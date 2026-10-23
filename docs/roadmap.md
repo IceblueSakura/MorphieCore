@@ -11,6 +11,7 @@ This page owns current scope, priorities, dependencies and exit gates. Start wit
   - [Stage 2 work plan](#stage-2-work-plan)
   - [Stage 3 work plan](#stage-3-work-plan)
   - [Generation Text production closure](#generation-text-production-closure)
+  - [Decision API design](#decision-api-design)
   - [Stage 4 scope](#stage-4-scope)
     - [Next stage-4 slice](#next-stage-4-slice)
     - [Embedding integration targets](#embedding-integration-targets)
@@ -54,7 +55,8 @@ This page owns current scope, priorities, dependencies and exit gates. Start wit
 | Cross-protocol conversion and counting | Stage 3 closed its selected projection and loop scope; counting is deferred | Preserve that evidence; the [Google pause](#google-api-pause) has selected text-report and stage-4 Embedding exceptions, not general Generation reopening |
 | Generation Text production readiness | Selected [production closure](#generation-text-production-closure) complete on 2026-10-22, with explicit unsupported-carrier and failover exclusions | Preserve the closed baseline during the prioritized [stage-4 design](#stage-4-scope) |
 | Code simplification | Completed on 2026-10-22: five preferred slices and selected local cleanups; full offline baseline and all 12 connected SDK scenarios passed | No remaining scheduled simplification; API/semantic contracts and freeze boundaries unchanged. Further cleanup needs its own demonstrated benefit; no new live-acceptance or measured-performance claim |
-| Embedding, other modalities and file resources | Sample-centered Embedding, compatible delivery and native Google/OpenAI-model integration accepted on 2026-10-23: full offline baseline, scoped SDK and bounded Provider checks. Grok static codec has no gateway/live acceptance | Next: [static Images Generate contract review](#next-stage-4-slice). Further Embedding modalities and video remain unselected |
+| Decision APIs | [Dual standard-SDK direction](architecture.md#decision-api-direction) selected on 2026-10-23; initial TypeSafe/OpenAI/Perplexity/Cloudflare protocol research only | [Decision design review](#decision-api-design) before further modality work; no implementation or binding activation |
+| Embedding, other modalities and file resources | Sample-centered Embedding, compatible delivery and native Google/OpenAI-model integration accepted on 2026-10-23: full offline baseline, scoped SDK and bounded Provider checks. Grok static codec has no gateway/live acceptance | After Decision design, retain [static Images Generate](#next-stage-4-slice) as the next Images review. Further Embedding modalities and video remain unselected |
 | Stage-5 follow-ups | Citations, tool discovery, hosted tools, server-side compaction, Batch and Realtime are recorded but **unscheduled** | No implementation queue or delivery commitment; select each slice before starting it |
 | Agent authorization and diagnostics | [Single-deployer, Agent-centered baseline](architecture.md#agent-identity-and-cluster-diagnostics) selected on 2026-10-23; implementation **unscheduled** | [Follow-up gates](#agent-authorization-and-diagnostics-follow-up); not a stage-5 API assignment or a prerequisite for current modality work |
 | Real acceptance | Selected stage-2 loops and bounded [production gates](#generation-text-production-closure) have recorded version/profile-specific evidence | Preserve historical limitations and [other deferred acceptance](#deferred-acceptance); new profiles or stronger claims need their own gates |
@@ -74,6 +76,8 @@ Phase completeness covers the declared feature scope, not all official Generatio
 | **5 — Unscheduled follow-ups** | Citations/source attribution, `tool_search`, hosted tools, server-side compaction, Batch and Realtime | **Unscheduled:** select each scope/design and explicitly schedule its slice before implementation. No start/delivery commitment or prerequisite for stages 1–4 |
 
 The five-stage order is unchanged. The selected [Generation Text production closure](#generation-text-production-closure) is a bounded handoff before stage 4, not a sixth stage, a reopening of stage-3 counting or a claim of complete official Generation coverage.
+
+The 2026-10-23 instruction prioritizes [Decision API research/design](#decision-api-design) before further stage-4 modality work. This is a design interlude, not a sixth stage, Decision implementation authorization or a rescheduling of stage 5.
 
 “Lossless” means semantic fidelity within an explicit protocol revision and feature domain, not byte-identical JSON or retention of unknown fields. Equivalent wire normalization is allowed. Preserve protocol records in their existing bounded owners; do not introduce raw passthrough or an IR extension bag. A same-named API at a different Provider is not proof of equivalent semantics.
 
@@ -206,11 +210,30 @@ Production exclusions and continuing rules:
 
 `count_tokens`, complete citations, cache-only prewarming, hosted tools/discovery, server-side compaction, wider budget scopes, additional clients/models and other stage-5 work remain deferred. Responses history stays process-local TTL storage, not persistence. Production readiness is correct selected text/tools/structured output, history, cancellation, failure handling and diagnosable sustained operation—not accounting accuracy, arbitrary schemas, every real refusal/parallel-call combination or permission to deploy. Stage 4 starts with its next-operation design; new semantic policy still needs a focused selection.
 
+### Decision API design
+
+**Current design priority, selected on 2026-10-23.** Plan stable standard TypeSafe and OpenAI SDK access through one Decision IR and upstream codecs/dialects. The [accepted direction](architecture.md#decision-api-direction), [proposed contracts](api-expansion-design.md#decisions) and [dated evidence](refs/2026-10-23-decision-contracts.md) have separate owners. Research starts with TypeSafe, OpenAI, Perplexity and Cloudflare; no generic mainstream-Provider compatibility claim follows.
+
+Before dependent implementation, complete this bounded review:
+
+1. Pin the SDK/schema baselines and resolve consequential source discrepancies. Include companion discovery, error handling, URL joining and request compression, not only inference JSON.
+2. Select the evidence/question/result owners, native preservation domains and directional cross-family rules. Show minimal counterexamples for names/order, structured rubrics, role evidence, Boolean choice values, confidence and refusal.
+3. Select a finite synchronous execution profile, bounds and target admission. Decide how to prevent or explicitly reject unsupported context/truncation behavior; do not inherit Generation fallback or silently split questions.
+4. Obtain human selection of the remaining contract choices. Record accepted rules in Architecture and schedule a coherent implementation slice only then. Both SDK families are required; a working single-vendor path is not closure of the interoperability goal.
+
+Future acceptance for an authorized implementation must separate:
+
+- **Offline contracts:** independent wire→IR and IR→wire expectations for each selected baseline/dialect and projection; exact question/answer correspondence, probabilities, refusal, strict JSON, bounds, cancellation and EOF/publication checks.
+- **Standard SDK loops:** pinned official clients with configured base URL/key/model, without patches or custom response types; actual typed answer completeness, discovery, success/error behavior and selected defaults including compression. Exercise accepted cross-Provider paths for both families. SDKs that skip unknown answers must not make incomplete delivery pass.
+- **Provider evidence:** fixed target/count/output bounds/timeout, serial calls through the project loader, no hidden retries and redacted reporting. Record model identity, grouping/usage and context behavior separately from protocol shape. Statistical quality/calibration and threshold portability require their own evidence, not a successful request.
+
+This review does not activate endpoints, promise every modality in either SDK, reopen deferred routing/counting, or authorize comprehensive coverage of unresolved contracts. Images retains its next internal review below; further modalities wait for this design discussion, not an implied full Decision rollout.
+
 ### Stage 4 scope
 
 The [API expansion design](api-expansion-design.md) supplies operation proposals, not implemented endpoints or approved type layouts. Keep conversational media in Generation where appropriate and independent operations in their own task contracts. Start implementation after [Generation Text production closure](#generation-text-production-closure), with per-operation selection. The order below is recommended; stage-4 work does not reopen completed stage-1/2/3 gates.
 
-**Current priority, updated on 2026-10-23: the selected Google/OpenAI Embedding slice is complete; review static Images Generate next.** The text-production prerequisite is closed. Embedding uses the accepted sample-centered contract and named lossy delivery rather than rejecting usable vectors for ancillary format gaps. The [readiness comparison](#next-stage-4-slice) retains the Images design priority, not its implementation authorization. Audio and Files are not current implementation work; video remains deferred.
+**Current priority, updated on 2026-10-23: the selected Google/OpenAI Embedding slice is complete; Decision design precedes further modality work.** The text-production prerequisite is closed. Embedding uses the accepted sample-centered contract and named lossy delivery rather than rejecting usable vectors for ancillary format gaps. The [readiness comparison](#next-stage-4-slice) retains static Generate as the next Images review, not its implementation authorization. Audio and Files are not current implementation work; video remains deferred.
 
 The current review exit for unselected operations is a coherent request/result and applicable event contract, source-backed model restrictions, bounded admission/execution/delivery and counterexamples for unresolved choices. The [accepted Embedding contract](architecture.md#independent-embedding-path) and [Image design choices](api-expansion-design.md#image-design-review) are distinct. Record newly selected structures in Architecture before dependent implementation or ordinary comprehensive coverage; earlier approvals do not extend to unresolved operations.
 
@@ -220,7 +243,7 @@ The current review exit for unselected operations is a coherent request/result a
 | S4-2a Speech | Complete the selected static binary contract, then independently deliver progressive binary/SSE where supported. Preserve text, instructions, voice, speed, format and reported accounting | Static and streamed evidence remain separate; bounded buffering, cancellation and honest completion hold. No fabricated transcript/usage or implicit voice-resource creation |
 | S4-2b Transcription | Complete file-based recognition with native multipart upstream preparation, static decoding and selected stream intake | Real reported text/timing/speaker/probability/usage facts survive; unsupported output formats reject instead of inventing timestamps. Large input and cancellation stay bounded; a reusable File object is not required |
 | S4-2c Translation | Reuse the necessary audio-input infrastructure from S4-2b, but select and implement native translation as a distinct operation | Current model/language restrictions are rechecked; translation intent and results are preserved. No implicit ASR-plus-Generation substitute |
-| S4-3 Images | **Design priority.** Proposed implementation order: Generate/defaults/result-delivery closure; direct-input Edit; selected single-output preview/final streaming. Keep source order, mask association, controls and artifact identity | Review operation/source owners, Grok public delivery/defaults, mask/input bounds and stream association/reports first. Later delivery needs independent generate/edit oracles and task-specific lifecycle checks; previews do not satisfy final counts. Only file-reference forms wait for S4-4c |
+| S4-3 Images | **Next modality review after Decision design.** Proposed implementation order: Generate/defaults/result-delivery closure; direct-input Edit; selected single-output preview/final streaming. Keep source order, mask association, controls and artifact identity | Review operation/source owners, Grok public delivery/defaults, mask/input bounds and stream association/reports first. Later delivery needs independent generate/edit oracles and task-specific lifecycle checks; previews do not satisfy final counts. Only file-reference forms wait for S4-4c |
 | S4-4a Files | After selecting storage authority, public-ID authorization, private mappings and retention/reference policy, implement create/read/list/delete and content access | Access isolation, bounded streaming/spooling, deletion/expiry with active references and restart-consistent mappings are verified. No credential-owned upstream ID is accepted as public authority |
 | S4-4b Multipart Uploads | Build on the selected file identity/lifecycle contract: create upload, add bounded parts, complete ordered parts, cancel and clean up incomplete uploads | Part identity/order, total bytes, expiry/cancel cleanup and uncertain remote completion are handled without blind replay or whole-file memory retention |
 | S4-4c File-reference integration | Connect authorized resource resolution to each selected task outside pure codecs; retain the task's existing direct-input path | Resource scope can restrict trusted targets but cannot supply origins/credentials. Selected file-backed operations work across restart and reject stale, unauthorized or incompatible references |
@@ -232,7 +255,7 @@ Optional Chat-carried audio is a separate slice after its task contract stabiliz
 
 #### Next stage-4 slice
 
-**Recommendation from the 2026-10-23 source/code review: close the static Generate public contract before widening Images.** This is design advancement within the existing priority, not approval of a dialect, IR structure or binding. Source detail belongs to the [dated recheck](refs/2026-10-22-embedding-image-contracts.md#static-generate-source-recheck-2026-10-23); the [review proposal](api-expansion-design.md#static-generate-review-proposal) owns the alternatives and minimal contract.
+**Recommendation from the 2026-10-23 source/code review: close the static Generate public contract before widening Images.** The later [Decision design priority](#decision-api-design) precedes this modality review; it does not select an Image dialect, IR structure or binding. Source detail belongs to the [dated recheck](refs/2026-10-22-embedding-image-contracts.md#static-generate-source-recheck-2026-10-23); the [review proposal](api-expansion-design.md#static-generate-review-proposal) owns the alternatives and minimal contract.
 
 | Candidate | Actual readiness | Consequence for the next slice |
 |---|---|---|

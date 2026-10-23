@@ -11,6 +11,11 @@
     - [Google output report owners (unselected)](#google-output-report-owners-unselected)
   - [Resource and execution safety](#resource-and-execution-safety)
 - [Operation contracts](#operation-contracts)
+  - [Decisions](#decisions)
+    - [SDK surfaces and discovery](#sdk-surfaces-and-discovery)
+    - [Decision ownership and wire families](#decision-ownership-and-wire-families)
+    - [Decision semantics and compatibility](#decision-semantics-and-compatibility)
+    - [Decision execution and review choices](#decision-execution-and-review-choices)
   - [Token counting](#token-counting)
   - [Embeddings](#embeddings)
     - [Embedding chain and ownership](#embedding-chain-and-ownership)
@@ -59,12 +64,15 @@ On 2026-10-22 the user prioritized **Embedding and Images design**. The detailed
 
 The subsequent Embedding selections are recorded in Architecture: [four-way encoding](architecture.md#embedding-encoding-compatibility), sample-centered inputs and [report/identity projection](architecture.md#google-embedding-compatibility) are implemented. Complete downstream usage with explicit request-based approximation supersedes missing-usage delivery; it does not reopen the deferred counting endpoint. This document retains only unselected Embedding extensions.
 
+On 2026-10-23 the user selected [dual-SDK Decision access](architecture.md#decision-api-direction), with research/design before further modality work. Both TypeSafe and OpenAI are required downstream families, rather than competing alternatives. The [Decision section](#decisions) proposes the detailed contract; selecting that direction does not approve its pending layouts, mappings or implementation.
+
 ## Requested scope
 
 The user selected OpenAI-first downstream contracts, broad coverage of current audio and image APIs, and no compatibility work for historical protocols. The subsequent five-stage plan explicitly adds video API/implementation adaptation to stage 4. OpenAI-first does not mean OpenAI-only upstream execution; video operations and concrete endpoints remain to be selected from current protocol evidence.
 
 | Requested surface | Expansion goal |
 |---|---|
+| OpenAI Decisions and TypeSafe System One, including SDK companion operations | Stable standard-SDK access through one Decision IR; adapt initially researched OpenAI, TypeSafe, Perplexity and Cloudflare upstreams. Concrete namespaces and compatibility profiles remain under review |
 | `POST /v1/messages/count_tokens` | Stage 3, deferred 2026-10-21: count a structured model input under the selected target/projection contract, without generation |
 | `POST /v1/responses/compact` | Stage 5, unscheduled: execute native context compaction and return reusable context |
 | `POST /v1/embeddings` | Complete the existing independent embedding contract |
@@ -98,6 +106,7 @@ One typed semantic core does not require one universal `GenerationRequest`. Stan
 
 | Surface | Semantic or service owner | Execution owner | Reuse from Generation |
 |---|---|---|---|
+| OpenAI Decisions / TypeSafe System One | Independent Decision task; detailed layout proposed below | Independent evaluation and complete-result delivery | Evidence/content values where meanings agree, not Generation controls or execution |
 | Messages and proposed Responses token counting | New `TokenCount` task | Independent counting operation | Ordered input, tools, media and count-relevant controls |
 | Responses compaction | New `ContextCompaction` task | Independent compaction operation | Ordered context, item identity and opaque replay |
 | Embeddings | Existing Embedding task | Existing independent path | Shared scalar/accounting values only where meanings match |
@@ -117,6 +126,7 @@ shared semantic values
 
 task contracts
   Generation
+  Decision
   TokenCount
   ContextCompaction
   Embedding
@@ -239,6 +249,96 @@ Existing conversation affinity does not replace resource ownership or durable jo
 Keep diagnostics body-free. Apply the existing private-capture policy deliberately when new paths are instrumented; binary, multipart and fragmented content must not become unredacted fallback logging.
 
 ## Operation contracts
+
+### Decisions
+
+The [dual-SDK direction](architecture.md#decision-api-direction) is selected. Everything below is a proposed realization, not approval of semantic layout, dialect behavior, SDK coverage or bindings. The [dated source note](refs/2026-10-23-decision-contracts.md) owns protocol findings and discrepancies; the [roadmap](roadmap.md#decision-api-design) owns ordering and gates.
+
+#### SDK surfaces and discovery
+
+Provide both official SDK families without monkey-patches, custom answer types or a third public decision schema. Clients may configure the gateway base URL, gateway credential, public model and documented standard options. Stable access includes request serialization, typed answer consumption, model discovery, errors and cancellation within an explicit feature/version profile; merely parsing a success body is insufficient.
+
+Recommended roots, still unselected:
+
+| Client | SDK base URL | Gateway operations |
+|---|---|---|
+| OpenAI | `http://127.0.0.1:<port>/v1` | `POST /v1/decisions`; retain existing OpenAI `GET /v1/models` and model retrieval |
+| TypeSafe | `http://127.0.0.1:<port>/typesafe` | SDK-appended `POST /typesafe/v1/systemone` and `GET /typesafe/v1/models` |
+
+Both official APIs use `GET /v1/models`, but TypeSafe returns `models:[{name,description,release_date}]` while OpenAI returns `object:"list",data:[...]`. Use a distinct TypeSafe root rather than header/User-Agent sniffing, merged response shapes or replacing existing discovery. Verify actual URL joining with the selected SDKs before freezing these paths. Reuse the activated public model catalog, not upstream enumeration; define honest TypeSafe metadata and filter its view to admitted Decision models. Do not fabricate release dates to satisfy its required schema.
+
+TypeSafe's documented Python SDK compresses requests of at least 1 KiB with zstd when available. Recommend supporting bounded zstd intake as part of stable default-client access, with separate compressed/decompressed byte ceilings and cancellation; disabling compression would instead be an explicit compatibility restriction. Pin Python and JavaScript/TypeScript SDK releases before claiming both languages. Test their actual defaults separately, including model selection, omitted values, media helpers and retry behavior. No client runtime or package version is accepted by this proposal alone.
+
+Keep error delivery native to the selected client family, including authentication before body decoding, validation paths, unsupported-operation errors, overload/rate-limit status and safe `Retry-After`. Do not relay private upstream error payloads. SDK retries are client behavior, not gateway retries; disable them in bounded acceptance runs and test error classification separately.
+
+#### Decision ownership and wire families
+
+```text
+OpenAI Decisions codec ─┐
+                       ├─ Decision IR → target admission/projection
+TypeSafe System One ───┘                 → upstream codec + selected dialect
+                                        → trusted transport
+native result → source facts → request-bound validation → client delivery view
+```
+
+Keep official baselines under their wire owners, conceptually `openai/decisions` and `typesafe/systemone`. Perplexity's `/v1/decisions` path does not make it OpenAI wire-compatible: its named questions and `state` belong to the System One-style family. Prefer shared TypeSafe baseline mapping plus explicit Perplexity/Cloudflare dialect differences where the source evidence supports that relationship. Use a separate native codec if a contract cannot be represented honestly as that baseline plus typed extensions; do not force reuse because field names overlap.
+
+Separate five responsibilities:
+
+| Owner | Responsibility |
+|---|---|
+| Semantic task | Evidence, typed questions/answers, ordered association and value invariants; no Provider or protocol dependency |
+| Protocol codec / dialect | Native fields, unions, map/array representation, required/nullable rules, response envelopes and documented deviations |
+| Projection / delivery policy | Explicit cross-family adaptations and derived client fields, preserving source facts |
+| Target profile | Effective model features, limits, context behavior, grouping and confidence-definition evidence |
+| Adapter / execution / transport | Trusted endpoint/model/account binding, preparation, credentials, HTTP lifecycle, budgets and publication |
+
+Cloudflare's account-bearing path and REST envelope must not leak into semantic state. Its account ID and native model selector come from trusted configuration, not business data. A grouping or pricing difference is not just a parser flag. Preserve missing native directions rather than manufacturing a universal protocol DTO or generic plugin framework.
+
+#### Decision semantics and compatibility
+
+Recommended core: one evidence value and an ordered collection of `Predicate`, `Choice` and `OrdinalScore` questions, with corresponding answers plus explicit `Refusal`. Preserve optional client names separately from positional association. `Box` and media evidence need their own review; do not reduce the long-term design to the three-type intersection.
+
+| Concern | Proposed owner and minimal counterexample |
+|---|---|
+| Identity and order | Use request-local positions internally; retain optional OpenAI names and TypeSafe map keys. Two unnamed OpenAI questions cannot be keyed by name; generated upstream-only IDs may serve correlation only if they do not change inference meaning or escape into client results |
+| Choice values | Preserve string and Boolean values distinctly. OpenAI `true` and `"true"` cannot both become the map key `"true"`. Any surrogate-label projection must retain a reversible association and be reviewed for changed model-visible meaning |
+| Ordinal score | Preserve ordered levels, original rubric and complete distribution. Score is the expected zero-based index, not mode, arbitrary numeric regression or application-weighted utility |
+| Structured evidence | Keep JSON data distinct from role-bearing conversation evidence. JSON stringification and flattening developer/user/tool roles are not automatically equivalent projections |
+| Instructions and criteria | Preserve absent/null/structured values where their baseline distinguishes them. Moving Noul true/false criteria into OpenAI instructions, or rendering structured rubric entries as text, requires an explicit rule rather than an implicit prompt template |
+| Independent versus joint evaluation | TypeSafe documents independent questions; Perplexity v1.2 permits question interaction. Forwarding the same map is not semantic equivalence. Select an independently evaluated target or explicitly approve that changed contract; do not silently emulate independence by splitting requests |
+| Media references | TypeSafe placeholder substitution, Perplexity nested image markers and OpenAI content parts have different recognition rules. Ordinary data must not accidentally become a media instruction; preserve reference identity and expansion bounds |
+| Refusal | Preserve per-question refusal, never probability zero or an omitted answer. TypeSafe has no documented equivalent; recommend failing the complete delivery with a selected native-client error rather than returning an incomplete success, retrying elsewhere or inventing an answer kind |
+| Probability and confidence | Preserve the reported distribution and confidence separately. A concentration statistic is not calibrated correctness, and identical fields do not make thresholds portable |
+| Model and usage reports | Separate requested label, bound target and reported model; an echoed alias does not establish serving revision. Preserve real input/output/cache counts and billing scope; free output tokens do not mean reported output usage is zero |
+
+Use separate immutable source reports and client delivery views, as in Embedding. Recommend preserving exact reported JSON numbers and validating finite ranges, answer coverage and distribution consistency with source-appropriate rounding tolerances. Do not repair or renormalize malformed results. Native score/selected-option consistency checks must account for rounding and ties.
+
+Confidence delivery needs an explicit choice, not a universal normalization:
+
+- **TypeSafe client:** recommend deriving its documented Choice/Score statistic from a valid upstream distribution when native confidence has another definition, while preserving the native report. This is a named delivery derivation, not the model's reported value or a new calibration guarantee. Resolve single-option behavior and version-specific formula discrepancies before approval.
+- **OpenAI client:** native OpenAI confidence remains exact. For other sources, recommend a declared compatible delivery of reported confidence without claiming the undocumented OpenAI formula or cross-model threshold equivalence; a stricter semantic contract would reject that mapping. Select this trade-off explicitly.
+- Do not create a new public `confidence_kind` field, claim unavailable confidence, or derive a probability of correctness. Optional diagnostic evidence uses established out-of-band mechanisms rather than changing standard success schemas.
+
+Compatibility must be directional. Preserve native TypeSafe→TypeSafe and OpenAI→OpenAI meanings before approving individual cross-family projections. Both SDKs must have meaningful accepted cross-Provider paths, not only aliases to their original Provider; this does not promise every feature against every target. Named map/array conversion alone is not proof that role evidence, rubric text, refusal or confidence is compatible.
+
+#### Decision execution and review choices
+
+Recommend synchronous complete JSON and one target per request initially. Do not split/merge questions, retry low confidence, add speculative fan-out, silently truncate input or substitute ordinary Generation. Multiple questions share evidence; they are not necessarily independent model calls or an asynchronous batch. Provider grouping can affect both answers and charging. Context limits belong to the target; byte heuristics cannot prove a token limit or absence of upstream truncation.
+
+Keep the immutable request and request-bound expected answer association through EOF, then validate and project the entire response before publication. Bound questions, options, structured depth/values, request/response bytes, decompression, media expansion and deadlines independently. Reuse authentication, cancellation and trusted transport, not Generation's history store, completion grammar or routing machinery. A future cross-model fallback policy needs its own selection and calibration evidence.
+
+Review these choices before dependent implementation:
+
+| Decision | Recommendation | Still to select |
+|---|---|---|
+| SDK roots and companion operations | Separate TypeSafe root; keep existing OpenAI discovery | Exact roots, SDK versions/languages, discovery metadata and native error mapping |
+| Input/result IR | Typed evidence, ordered questions, full distributions and refusal; no opaque wire bag | Conversation evidence reuse, structured rubric owners and media/Box scope |
+| Cross-family adaptation | Explicit request-local correlation and named semantic/delivery rules | Role/criteria projection, typed option mapping, confidence derivation and TypeSafe refusal error |
+| Initial executable slice | Text/JSON, three probability primitives, synchronous single-target execution | Concrete profiles, bounds and accepted feature domains for both SDKs |
+| Later capabilities | Preserve research coverage without premature implementation | Images/Box/multipart, audio/video, cache controls, streaming/Batch and fallback |
+
+None of these recommendations is selected solely by the dual-SDK direction. Use the [roadmap gates](roadmap.md#decision-api-design), not this section as a second implementation queue.
 
 ### Token counting
 
@@ -857,6 +957,7 @@ These recommendations have not been adopted merely by requesting this document.
 
 | Decision | Options and recommendation | Blocks |
 |---|---|---|
+| Dual-SDK Decision contract | Both standard SDK families and shared IR/codec/dialect adaptation are selected. The [Decision review](#decision-execution-and-review-choices) owns remaining roots, evidence/result types, projections, delivery and execution choices | Decision implementation and integration, not independent source research |
 | Prioritized Images | The [Image review](#image-design-review) owns pending structural choices. The selected Embedding contract has moved to [Architecture](architecture.md#independent-embedding-path); future extensions remain unselected | Dependent S4-3 implementation and integration |
 | Task grouping and shared content | Recommend independent TokenCount/Compaction, AudioToText variants, and Image Generate/Edit variants; share content without inheriting Generation execution | New task type and public Rust contract changes |
 | Counting companion surface | Recommend Responses input-token counting; image generations/edits already belong to stage 4 | Adding the Responses counting surface to delivery scope |
@@ -868,7 +969,7 @@ These recommendations have not been adopted merely by requesting this document.
 | Custom voices | Recommend authorized voice references first; voice creation/consent management as a separate resource slice. Broader audio resource coverage may be selected explicitly | Voice-resource endpoints, not ordinary speech |
 | Video contracts | Select current operations/endpoints, task versus content ownership, artifact access and any required job lifecycle before implementation | Video implementation, not stages 1–3 |
 | Realtime design | Client scenario, session/transport and interruption/recovery contracts are unselected; keep stage 5 unscheduled | Realtime implementation |
-| Later-operation selection | Generation Text closure and the selected Embedding design are complete; Images is the next design priority. Other stage-4 operation contracts still need just-in-time selection. All stage-5 tasks remain unscheduled | Per-operation design, activation and full-chain acceptance |
+| Later-operation selection | Generation Text closure and the selected Embedding design are complete; Decision design now precedes further modality work, with static Generate still the next Images review. Other stage-4 operation contracts need just-in-time selection. All stage-5 tasks remain unscheduled | Per-operation design, activation and full-chain acceptance |
 
 ## Execution handoff
 
@@ -890,6 +991,7 @@ These sources informed the proposal. Web references are mutable; recheck them an
 
 | Contract | Official source |
 |---|---|
+| Decisions | [Dated four-Provider and SDK findings](refs/2026-10-23-decision-contracts.md), with official schema/source links and unresolved discrepancies |
 | Responses input counting | [Count input tokens](https://developers.openai.com/api/reference/resources/responses/subresources/input_tokens/methods/count) |
 | Messages counting | [Count tokens](https://platform.claude.com/docs/en/api/messages/count_tokens), [counting semantics](https://platform.claude.com/docs/en/build-with-claude/token-counting) |
 | Compaction and state | [Compact](https://developers.openai.com/api/reference/resources/responses/methods/compact), [conversation state](https://developers.openai.com/api/docs/guides/conversation-state) |
