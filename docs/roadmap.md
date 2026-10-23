@@ -12,6 +12,7 @@ This page owns current scope, priorities, dependencies and exit gates. Start wit
   - [Stage 3 work plan](#stage-3-work-plan)
   - [Generation Text production closure](#generation-text-production-closure)
   - [Stage 4 scope](#stage-4-scope)
+    - [Next stage-4 slice](#next-stage-4-slice)
     - [Embedding integration targets](#embedding-integration-targets)
     - [Grok Imagine adaptation](#grok-imagine-adaptation)
   - [Stage 5 backlog](#stage-5-backlog)
@@ -51,7 +52,7 @@ This page owns current scope, priorities, dependencies and exit gates. Start wit
 | Cross-protocol conversion and counting | Stage 3 closed its selected projection and loop scope; counting is deferred | Preserve that evidence; the [Google pause](#google-api-pause) has selected text-report and stage-4 Embedding exceptions, not general Generation reopening |
 | Generation Text production readiness | Selected [production closure](#generation-text-production-closure) complete on 2026-10-22, with explicit unsupported-carrier and failover exclusions | Preserve the closed baseline during the prioritized [stage-4 design](#stage-4-scope) |
 | Code simplification | Completed on 2026-10-22: five preferred slices and selected local cleanups; full offline baseline and all 12 connected SDK scenarios passed | No remaining scheduled simplification; API/semantic contracts and freeze boundaries unchanged. Further cleanup needs its own demonstrated benefit; no new live-acceptance or measured-performance claim |
-| Embedding, other modalities and file resources | Shared text Embedding encoding/current-model closure implemented and accepted on 2026-10-22: four conversions, effective-default budgets, capabilities/receipts/capture, offline/SDK and four bounded Provider checks. Images remains design-priority; Grok static codec has no gateway/live acceptance and video is deferred | [Google Embedding](#embedding-integration-targets) is paused within stage 4 pending human review and an explicit user instruction to resume. Its binding remains disconnected |
+| Embedding, other modalities and file resources | Shared text Embedding encoding/current-model closure implemented and accepted on 2026-10-22: four conversions, effective-default budgets, capabilities/receipts/capture, offline/SDK and four bounded Provider checks. Grok static codec has no gateway/live acceptance | Next: [static Images Generate contract review](#next-stage-4-slice). Google Embedding stays paused pending human review and explicit resumption; video stays deferred |
 | Stage-5 follow-ups | Citations, tool discovery, hosted tools, server-side compaction, Batch and Realtime are recorded but **unscheduled** | No implementation queue or delivery commitment; select each slice before starting it |
 | Real acceptance | Selected stage-2 loops and bounded [production gates](#generation-text-production-closure) have recorded version/profile-specific evidence | Preserve historical limitations and [other deferred acceptance](#deferred-acceptance); new profiles or stronger claims need their own gates |
 
@@ -206,7 +207,7 @@ Production exclusions and continuing rules:
 
 The [API expansion design](api-expansion-design.md) supplies operation proposals, not implemented endpoints or approved type layouts. Keep conversational media in Generation where appropriate and independent operations in their own task contracts. Start implementation after [Generation Text production closure](#generation-text-production-closure), with per-operation selection. The order below is recommended; stage-4 work does not reopen completed stage-1/2/3 gates.
 
-**Current priority, updated on 2026-10-23: shared Embedding closure complete; Google Embedding paused; Images design unchanged.** The text-production prerequisite is closed. The user authorized the converged Embedding sequence after selecting encoding and Google ancillary policies, then paused its Google work for human review and explicit resumption. Images still needs its own structure/delivery review. No Google binding is activated. Audio and Files are not current implementation work; video remains explicitly deferred. File-reference paths can wait without blocking direct-input design.
+**Current priority, updated on 2026-10-23: shared Embedding closure complete; Google Embedding paused; review static Images Generate next.** The text-production prerequisite is closed. The user authorized the converged Embedding sequence after selecting encoding and Google ancillary policies, then paused its Google work for human review and explicit resumption. The [readiness comparison](#next-stage-4-slice) narrows the existing Images design priority, not its implementation authorization. No Google binding is activated. Audio and Files are not current implementation work; video remains explicitly deferred. File-reference paths can wait without blocking direct-input design.
 
 The current review exit is a coherent request/result and applicable event contract, source-backed defaults/model restrictions, bounded admission/execution/delivery, minimal counterexamples for unresolved choices and a separately named integration profile. The [Embedding](api-expansion-design.md#embedding-design-review) and [Image](api-expansion-design.md#image-design-review) decision tables own those choices. Record human-selected structures in Architecture before dependent implementation or ordinary comprehensive coverage; the earlier Generation approval does not extend to them. Source research and focused design experiments do not certify an API or authorize a live call.
 
@@ -226,6 +227,27 @@ The current review exit is a coherent request/result and applicable event contra
 Files design can proceed alongside the first operation slices; implementation need not delay direct-input media. Speech, image and file implementations may advance independently once their own contracts are selected, but shared-owner changes must stay coordinated. Native video/media job lifecycle belongs to that operation, not the general Batch API.
 
 Optional Chat-carried audio is a separate slice after its task contract stabilizes: preserve the existing static path, then verify genuine upstream streaming if selected. It neither blocks the main audio path nor establishes Realtime. For every operation, update the OpenAPI/usage surface only when implemented, keep admission and actual Provider evidence separate, and use the [stage-specific verification](api-expansion-design.md#verification).
+
+#### Next stage-4 slice
+
+**Recommendation from the 2026-10-23 source/code review: close the static Generate public contract before widening Images.** This is design advancement within the existing priority, not approval of a dialect, IR structure or binding. Source detail belongs to the [dated recheck](refs/2026-10-22-embedding-image-contracts.md#static-generate-source-recheck-2026-10-23); the [review proposal](api-expansion-design.md#static-generate-review-proposal) owns the alternatives and minimal contract.
+
+| Candidate | Actual readiness | Consequence for the next slice |
+|---|---|---|
+| Existing text Embedding | Shared conversion/current-model slice has offline, SDK and bounded Provider evidence; Google is explicitly paused. Token-ID support still needs tokenizer/carrier evidence | Preserve the completed slice; neither resume Google nor expand token inputs just to keep Embedding active |
+| Static Images Generate | Recent official/pinned-SDK notes, existing bounded task/executor and pure Grok codec. Missing creation time, PNG-default mismatch and native reports are concrete delivery blockers | Highest-value next review: choose one public contract and effective-default/result rules, without waiting for Edit or Files |
+| Direct-input Edit and image streaming | Substantial source research, but new source/mask ownership, finite input budgets and preview/final semantics remain unselected | Follow static closure under separate decisions; do not make the whole image family a prerequisite for Generate |
+| Speech, then file transcription/translation | Existing static paths, but Audio has no equally detailed pinned operation/model review. Progressive delivery, complete alignment and native multipart are not established by those paths | When selected, pin one static Speech profile first; do not start by promising all Audio formats or stream modes |
+| Files and Uploads | Safety requirements are written; storage authority, public-ID authorization, durable private mappings and retention remain unselected | Early authority review is useful, but complete Files implementation is not a dependency of direct-input media |
+| Video | Dated Grok/MiniMax protocol research exists; public job contract and persistence are unselected, and integration is explicitly deferred | Keep deferred; a well-documented upstream job API is not a ready gateway contract |
+
+The next review deliverable is deliberately small:
+
+1. Choose standard-only/disconnected Grok versus an explicit native-output profile or separate native surface. Resolve default encoding, optional reports and client selection together; no fabricated time or implicit model-based schema relaxation.
+2. State Generate-only owners, effective target defaults, pre-dispatch rejection and post-EOF validation. Keep broader ratio/tier exposure, Edit sources, previews and Files out of this first contract unless separately selected.
+3. After human selection, record accepted decisions in Architecture and implement the coherent static slice. Preserve standard delivery regressions and independent native/delivery oracles; OAuth integration and account entitlement remain separate gates.
+
+Exit from this review means a selected contract with finite bounds and explicit client/target profiles, not a successful native codec test. No new live call, binding activation or full image-API coverage follows from this recommendation.
 
 #### Embedding integration targets
 
