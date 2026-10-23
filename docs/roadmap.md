@@ -17,6 +17,7 @@ This page owns current scope, priorities, dependencies and exit gates. Start wit
     - [Embedding integration targets](#embedding-integration-targets)
     - [Grok Imagine adaptation](#grok-imagine-adaptation)
   - [Stage 5 backlog](#stage-5-backlog)
+- [Test supplementation](#test-supplementation)
 - [Phase rules](#phase-rules)
   - [Generation design review gate](#generation-design-review-gate)
   - [Observability follow-up](#observability-follow-up)
@@ -59,6 +60,7 @@ This page owns current scope, priorities, dependencies and exit gates. Start wit
 | Embedding, other modalities and file resources | Sample-centered Embedding, compatible delivery and native Google/OpenAI-model integration accepted on 2026-10-23: full offline baseline, scoped SDK and bounded Provider checks. Grok static codec has no gateway/live acceptance | After Decision design, retain [static Images Generate](#next-stage-4-slice) as the next Images review. Further Embedding modalities and video remain unselected |
 | Stage-5 follow-ups | Citations, tool discovery, hosted tools, server-side compaction, Batch and Realtime are recorded but **unscheduled** | No implementation queue or delivery commitment; select each slice before starting it |
 | Agent authorization and diagnostics | [Single-deployer, Agent-centered baseline](architecture.md#agent-identity-and-cluster-diagnostics) selected on 2026-10-23; implementation **unscheduled** | [Follow-up gates](#agent-authorization-and-diagnostics-follow-up); not a stage-5 API assignment or a prerequisite for current modality work |
+| External protocol tests | [Upstream-maintained test strategy](architecture.md#delivery-and-evidence-decisions) selected on 2026-10-23 as future supplementation; no imports or update automation implemented | [Test supplementation](#test-supplementation): official SDK/Vercel sources, latest-source tracking and layered SSE checks; no change to current API priorities |
 | Real acceptance | Selected stage-2 loops and bounded [production gates](#generation-text-production-closure) have recorded version/profile-specific evidence | Preserve historical limitations and [other deferred acceptance](#deferred-acceptance); new profiles or stronger claims need their own gates |
 
 The [approved Generation baseline](#generation-design-review-gate) leaves inventory exclusions and binding boundaries unchanged. Other real acceptance gates remain open. Google value guards and Interactions snapshots belong to stage 3: no Google client endpoint forms a same-protocol pair. Provider-specific reset dialects, persistence and cooldown tuning need separate evidence and approval; no background probes, balancing or multi-round retries are scheduled.
@@ -308,6 +310,25 @@ Reopening a task requires its client scenario, minimum semantic/resource depende
 - **Server-side compaction:** include the explicit Provider-executed `/responses/compact` operation. Receiving/replaying compaction items remains existing Generation scope. Automatic compaction triggers, mutation of stored conversations and background execution are not implied by the explicit operation.
 - **Batch:** select supported typed tasks, file dependencies, submission reconciliation, durable job identity, cancellation and per-record outcomes.
 - **Realtime:** select client scenarios, session/transport ownership, event/media contracts, interruption, recovery and resource bounds. Stage-4 audio/video adaptation does not implement Realtime.
+
+## Test supplementation
+
+**Planning direction selected on 2026-10-23; implementation remains unscheduled.** Prefer established upstream test assets over authoring another dataset. The goal is faithful request/response conversion, IR representation and stable multi-turn tool/history carriage between downstream Agents and upstream Providers. This supplements the existing gates; it does not replace the current Decision design priority or change the five-stage API order.
+
+Use the [source directory](references.md#test-source-repositories) and [Development rules](development.md#upstream-test-sources). Official SDKs and Vercel supply protocol and Provider-dialect cases; WPT and `eventsource-parser` supplement SSE. Test-only submodules or equivalent pinned source links are permitted. No submodule, dependency upgrade, automatic job or new acceptance claim is created by this plan.
+
+When scheduled, establish source provenance first; protocol, multi-turn and SSE slices can then proceed independently at their existing owners:
+
+| Slice | Exit evidence |
+|---|---|
+| Source links and latest-version tracking | Reproducible source/dependency revisions and provenance; candidate checks against latest GitHub sources, visible changes/unassessed cases and explicit baseline lag; no network dependency in ordinary offline runs |
+| Official SDK and Vercel integration | Reused fixtures exercise MorphieCore, with independent directional facts and actual SDK consumption. Cover supported official APIs and selected Provider dialects without equating generic compatibility with dialect coverage |
+| Multi-turn and complex tools | Reuse existing session/history coverage; add missing combinations such as interleaved multi-call streaming through Router and SDK, reverse-order results and complete next-request verification. Fixed tool results suffice; no gateway executor |
+| SSE supplementation | Framing, protocol-event and transport-lifecycle checks remain distinct; reused failure cases plus reproducible fragmentation/mutation checks protect bounds, cancellation, EOF, backpressure and publication safety |
+
+Each slice must distinguish exact preservation, approved adaptation, correct rejection, incomplete outcomes, unassessed cases and defects. Passing upstream-library tests alone is not codec/IR evidence. Apply the normal offline and connected SDK gates before promoting source revisions; installed-client and real Provider acceptance stay separate.
+
+BFCL, tau-bench, ComplexFuncBench and ToolSandbox are not dependencies or gates for this plan. Automatic tool execution, malformed-call repair, new Provider activation and unresolved protocol semantics remain outside scope. Preserve the existing safety assertions; upstream source evolution does not authorize relaxing them.
 
 ## Phase rules
 

@@ -5,6 +5,7 @@ This page indexes primary sources, licenses and dated research notes. It does no
 ## Contents
 
 - [Pinned sources](#pinned-sources)
+- [Test source repositories](#test-source-repositories)
 - [Research notes](#research-notes)
 - [Protocol docs](#protocol-docs)
   - [OpenAI](#openai)
@@ -35,6 +36,19 @@ This page indexes primary sources, licenses and dated research notes. It does no
 | new-api / RelayKit | [`1d4328e`](https://github.com/QuantumNous/new-api/tree/1d4328e97417a043a161a0dd30a5b129be3ace49/relaykit) | **AGPL-3.0** | Field-mapping ideas only; never port code into this MIT project |
 
 The SDK loopback gate uses the versions locked in `tests/sdk/uv.lock`, independent of the research revisions above.
+
+## Test source repositories
+
+Selected on 2026-10-23 for [future test supplementation](roadmap.md#test-supplementation). These repository links identify sources to track, not imported revisions or verified compatibility. [Development](development.md#upstream-test-sources) owns source linking, license/provenance checks and latest-candidate versus verified-baseline updates; existing pins above remain historical evidence.
+
+| Source | Repositories | Relevant assets |
+|---|---|---|
+| OpenAI official SDKs | [Python](https://github.com/openai/openai-python), [Node](https://github.com/openai/openai-node) | Chat/Responses request, response, streaming, parser and returned-history tests; applicable interruption, backpressure and cleanup cases |
+| Anthropic official SDKs | [Python](https://github.com/anthropics/anthropic-sdk-python), [TypeScript](https://github.com/anthropics/anthropic-sdk-typescript) | Messages blocks, tool-input fragments, thinking/signatures, partial output and history fixtures; not automatic tool runners |
+| Google Gen AI official SDKs | [Python](https://github.com/googleapis/python-genai), [JavaScript](https://github.com/googleapis/js-genai) | generateContent/Interactions wire and stream cases within selected upstream directions; not automatic function calling or new native client admission |
+| Vercel AI SDK | [Repository](https://github.com/vercel/ai) | Official-protocol and Provider packages, including `openai`, `anthropic`, `google`, `alibaba`, `deepseek`, `xai` and `openai-compatible`; raw JSON/chunk fixtures and applicable adapter assertions, not its IR or implicit repair policies |
+| Web Platform Tests | [EventSource](https://github.com/web-platform-tests/wpt/tree/master/eventsource) | SSE format/parser cases; browser-only API, reconnection and security-context behavior are separate |
+| EventSource Parser | [Repository and tests](https://github.com/rexxars/eventsource-parser) | Incremental parsing, multiline/multibyte, buffering and stream regressions; reference behavior is not authority for gateway resource budgets |
 
 ## Research notes
 

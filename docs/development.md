@@ -6,6 +6,7 @@ This guide owns tooling, test procedures and evidence reporting. Use offline, sy
 
 - [Environment](#environment)
 - [Test layout](#test-layout)
+- [Upstream test sources](#upstream-test-sources)
 - [Verification gates](#verification-gates)
   - [Offline baseline](#offline-baseline)
   - [Reusable Generation sessions](#reusable-generation-sessions)
@@ -61,6 +62,38 @@ Protocol mappings need independently hand-written wire→IR and IR→wire expect
 Select checks from the relevant [roadmap package](roadmap.md#planned-order). Same-protocol fidelity needs a pinned revision/domain and independent request, response, JSON/SSE and returned-history expectations; a successful tool loop does not prove losslessness. Independent tasks and resources need their own lifecycle checks, not Generation round trips.
 
 The [design-review gate](roadmap.md#generation-design-review-gate) owns approved scope, coverage authorization and outstanding approval requirements. Use counterexamples to support design review; do not encode unresolved defects as successful expectations. Passing checks, measured coverage and agent review are not human design approval.
+
+## Upstream test sources
+
+**Selected for future supplementation on 2026-10-23; source imports and update automation are not implemented.** Follow the [test plan](roadmap.md#test-supplementation) and [source directory](references.md#test-source-repositories). Reuse upstream fixtures, applicable assertions and test mechanisms through thin adapters into the existing test owners; do not maintain a duplicate benchmark framework.
+
+### Source links and updates
+
+- Keep upstream projects linked through test-only Git submodules or equivalent revision-locked sources. Record public repository, tracked default branch, resolved commit, relevant package/release versions and selected paths. A submodule gitlink pins a commit; branch tracking alone neither updates nor verifies it. Checkouts are development assets, never runtime dependencies.
+- Prefer direct fixture loading. Where extraction is necessary, retain the source commit, case/path, license notices, content digest and documented transformations. Review selected material for credentials or private payloads before importing it. A public fixture is not automatically safe, authoritative or a real Provider capture.
+- Maintain two tracks: regularly resolve the latest default-branch HEAD and latest releases for candidate checks; run ordinary offline regression against the last verified commits and dependency locks. Report candidate failures and baseline lag explicitly. Do not fetch floating sources during an offline test or silently fall back to stale fixtures.
+- Review changes to relevant types, request builders, stream reducers, tests and fixtures. New, changed, removed and unsupported cases must remain visible; importer failure or an unrecognized case is not a passing skip. For a monorepo, record the selected package versions as well as its commit.
+- Promote a candidate only after change review, the applicable offline baseline and connected SDK gates. Do not auto-refresh expected output to match our encoder. New protocol semantics still need their own selection; a latest-source check neither activates bindings nor reopens deferred features. The automation host and cadence remain implementation choices.
+
+### Adapters and evidence
+
+Use two complementary paths: raw upstream request/response/SSE fixtures through MorphieCore codecs, and actual SDK/Vercel consumers receiving gateway output and constructing the next request. Verify that the component under test actually ran; upstream tests passing against their own mocks or libraries do not establish gateway compatibility.
+
+Retain independent wire-to-IR and IR-to-wire expectations, including exact argument carriage, call/result identity, ordered owners, usage and complete next-turn history. Reuse upstream expectations where their contract matches; keep the small IR-specific assertions local. Distinguish official protocol requirements, Provider dialects, SDK conveniences and gateway policy. Missing Provider-specific fixtures remain coverage gaps; generic compatible-API tests do not establish every dialect.
+
+Run selected external code without private configuration or credentials, against synthetic loopback authorities, with retries and automatic tool execution disabled. Fetching sources does not authorize their install hooks, live snapshot regeneration or real Provider calls. No tool repair or model-capability scorer is part of this supplement.
+
+### SSE layers
+
+| Layer | Reused evidence | Local responsibility |
+|---|---|---|
+| Framing | WPT EventSource parsing cases and `eventsource-parser` regressions | Incremental bytes, UTF-8, line endings, fields, delimiters and limits; classify browser reconnection/control semantics and EOF-policy differences rather than claiming full browser conformance |
+| Protocol events | Official SDK and Vercel static/stream fixtures | Interleaved calls, argument fragments, text/reasoning owners, trailing reports, errors, terminal outcomes and returned history |
+| Transport lifecycle | Applicable SDK backpressure, interruption, early-exit and cleanup cases | Exercise the real gateway/transport boundary for bounded buffering, slow consumers, cancellation, upstream release, validated EOF and no replay after publication |
+
+Apply existing `proptest` machinery and bounded fuzzing where useful to reused inputs: within declared budgets, byte repartitioning and legal comments must preserve declared meaning; truncation and malformed-event mutations must not invent success. Keep seeds and minimized reproducers. Timer/slow-reader checks need controlled scheduling, not assumptions about TCP packet boundaries. Test coalescing on/off against the same source events, not independent model generations.
+
+Upstream implementation-specific assertions require adaptation, not blind adoption. For example, an SDK may accept events larger than the gateway budget or tolerate an unfinished stream; neither behavior permits weakening MorphieCore's limits or successful-terminal rules. Preserve current focused safety tests and the reusable session corpus rather than replacing them with an aggregate external-suite score.
 
 ## Verification gates
 
