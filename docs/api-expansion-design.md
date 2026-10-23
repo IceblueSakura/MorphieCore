@@ -28,6 +28,7 @@
 - [Resource services](#resource-services)
   - [Files and uploads](#files-and-uploads)
 - [Unscheduled designs](#unscheduled-designs)
+  - [Centralized agent authorization](#centralized-agent-authorization)
   - [1C design: Messages citations](#1c-design-messages-citations)
   - [Deferred tool discovery and web search](#deferred-tool-discovery-and-web-search)
   - [Context compaction](#context-compaction)
@@ -484,6 +485,12 @@ Exit evidence: create/read/list/delete and upload lifecycle contracts, restart-c
 ## Unscheduled designs
 
 The [stage-5 backlog](roadmap.md#stage-5-backlog) has no implementation queue or delivery commitment. Native cache-only prewarming and model-name service-policy selection also retain separate scheduling decisions. These branches share no automatic approval or activation.
+
+### Centralized agent authorization
+
+On 2026-10-23 the user requested planning for a shared deployment where agent1 can launch agent2 and a human approves agent2's access. Recommend an existing OAuth2/OIDC authorization server with standard Device Flow; MorphieCore remains the resource server. Rauthy is the first evaluation candidate. Keep application launch relationships separate from automatic security delegation, and keep downstream tokens separate from upstream Provider credentials.
+
+The [dated OAuth research](refs/2026-10-23-downstream-oauth.md) owns candidate evidence, limitations and validation questions. Server selection, SDK interoperability, permissions, revocation semantics and centralized ingress/resource isolation remain unresolved. This is unscheduled deployment/authentication planning, not a stage-5 API assignment, implementation approval or a change to the current [credential and loopback boundaries](architecture.md#credentials-and-security).
 
 ### 1C design: Messages citations
 

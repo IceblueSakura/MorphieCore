@@ -40,6 +40,7 @@ The SDK loopback gate uses the versions locked in `tests/sdk/uv.lock`, independe
 
 | Domain | Note | Evidence boundary |
 |---|---|---|
+| Downstream authorization | [OAuth2 and Rust authorization servers](refs/2026-10-23-downstream-oauth.md) | Device Flow fit, Rauthy/Kanidm/FerrisKey version evidence, SDK refresh and revocation constraints; checked 2026-10-23, no deployment or interoperability acceptance |
 | Media and resource carriers | [Multimodal carriers](refs/multimodal.md) | Input/tool-result media, Provider-owned file references and generated-media sources; collected 2026-10-12 with dated updates |
 | Embedding and standalone Images | [Embedding and Image contracts](refs/2026-10-22-embedding-image-contracts.md) | Official input/encoding/defaults, pinned SDK behavior, Google Discovery revision/fingerprint and SDK/protobuf discrepancies, ancillary compatibility, Edit and SSE owners; checked 2026-10-22. Static Generate defaults, report gaps and code seams rechecked 2026-10-23; design evidence only, no SDK or live acceptance |
 | Grok Imagine images and video | [Imagine contracts](refs/2026-10-22-grok-imagine.md) | Official generation/polling shapes, image-quality retirement, lite capabilities and unresolved schema/OAuth evidence; checked 2026-10-22, no live generation acceptance |
