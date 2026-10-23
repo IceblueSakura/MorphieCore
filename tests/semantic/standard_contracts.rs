@@ -1,5 +1,4 @@
-//! Executable requirements still unmet by the pre-redesign implementation.
-//! These are NOT expected-failure tests: explicit execution must fail until repaired.
+//! Source-derived requirements; ignored probes remain unmet, not expected-failure passes.
 //! Sources and scope: docs/refs/2026-10-23-stable-protocol-contracts.md.
 use morphiecore::protocol::{
     anthropic::messages::client::decode_client_request,
@@ -15,7 +14,6 @@ fn messages() -> Value {
 }
 
 #[test]
-#[ignore = "known standards gap: prediction is discarded before exact target selection"]
 fn prediction_survives_same_protocol_projection() {
     let adapter = adapter(Profile::Chat);
     let wire = json!({"model":"public", "messages":[{"role":"user","content":"Edit"}],
@@ -23,10 +21,68 @@ fn prediction_survives_same_protocol_projection() {
     let request = adapter
         .decode_client_request(wire.to_string().as_bytes())
         .unwrap();
+    assert_eq!(
+        request
+            .task
+            .semantic
+            .settings()
+            .prediction
+            .as_ref()
+            .unwrap()[0]
+            .as_str(),
+        "hello"
+    );
+    assert!(request.task.fidelity.normalizations().is_empty());
+    let original = request.clone();
     let output = adapter
         .encode_request(&request, "public", &TargetCaps::full())
         .unwrap();
     assert_eq!(output["prediction"], wire["prediction"]);
+    let mut restricted = TargetCaps::full();
+    restricted.prediction = false;
+    let (omitted, rules) = adapter
+        .encode_request_with_rules(&request, "public", &restricted)
+        .unwrap();
+    assert!(omitted.get("prediction").is_none());
+    assert!(rules.contains(&"generation.omit-prediction.v1"));
+    let (omitted, rules) = self::adapter(Profile::Responses)
+        .encode_request_with_rules(&request, "public", &TargetCaps::full())
+        .unwrap();
+    assert!(omitted.get("prediction").is_none());
+    assert!(rules.contains(&"generation.omit-prediction.v1"));
+    assert_eq!(request, original);
+    let mut settings = request.task.semantic.settings().clone();
+    settings.prediction = Some(vec![
+        morphiecore::semantic::value::Text::allowing_empty("A", "test", 8).unwrap(),
+        morphiecore::semantic::value::Text::allowing_empty("B", "test", 8).unwrap(),
+    ]);
+    let mut edited = request.clone();
+    edited.task.semantic = edited
+        .task
+        .semantic
+        .with_settings(settings.clone())
+        .unwrap();
+    let (wire, rules) = adapter
+        .encode_request_with_rules(&edited, "public", &TargetCaps::full())
+        .unwrap();
+    assert_eq!(
+        wire["prediction"],
+        json!({"type":"content","content":[
+        {"type":"text","text":"A"},{"type":"text","text":"B"}]})
+    );
+    assert!(!rules.contains(&"generation.omit-prediction.v1"));
+    settings.prediction.as_mut().unwrap().resize(
+        morphiecore::semantic::task::generation::MAX_ITEMS + 1,
+        morphiecore::semantic::value::Text::allowing_empty("", "test", 8).unwrap(),
+    );
+    assert!(
+        request
+            .task
+            .semantic
+            .clone()
+            .with_settings(settings)
+            .is_err()
+    );
 }
 
 #[test]
@@ -44,7 +100,6 @@ fn named_chat_participant_survives_same_protocol_projection() {
 }
 
 #[test]
-#[ignore = "known standards gap: Responses omitted strictness must allow service fallback"]
 fn responses_omitted_strict_can_reach_native_best_effort_fallback() {
     let adapter = adapter(Profile::Responses);
     let mut wire = json!({"model":"public","input":"Choose", "tools":[{"type":"function","name":"choose",
@@ -76,7 +131,7 @@ fn responses_omitted_strict_can_reach_native_best_effort_fallback() {
         output["tools"][0]["parameters"],
         wire["tools"][0]["parameters"]
     );
-    assert_ne!(output["tools"][0]["strict"], true);
+    assert!(output["tools"][0].get("strict").is_none());
 }
 
 #[test]

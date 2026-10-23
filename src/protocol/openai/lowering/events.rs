@@ -11,8 +11,23 @@ pub fn check_event(
     if matches!(event, StreamEvent::SafetyReport(_)) || !state.safety_reports().is_empty() {
         return Err(RepresentationError::Safety);
     }
-    if matches!(event, StreamEvent::UsageReport(_)) || state.usage_reports().has_details() {
+    if matches!(event, StreamEvent::UsageReport(report) if report.has_unrepresented_details())
+        || state.usage_reports().has_unrepresented_details()
+    {
         return Err(RepresentationError::ReportedFacts);
+    }
+    let usage = match event {
+        StreamEvent::Usage(usage) => Some(*usage),
+        StreamEvent::UsageReport(report) => report.scalar_summary(),
+        _ => None,
+    };
+    if let Some(usage) = usage {
+        let projected = if profile == Profile::Chat {
+            usage
+        } else {
+            super::projection::responses_usage(usage, &contract.adaptation.rules)?.0
+        };
+        super::checks::check_usage(projected, profile, &contract.adaptation.rules)?;
     }
     if let StreamEvent::Terminal { details, .. } = event {
         // Selected approximations are recorded when the terminal is lowered.
@@ -117,14 +132,6 @@ pub fn check_event(
         } => return Err(RepresentationError::Tools),
         StreamEvent::Progress(_) => {
             return Err(RepresentationError::InteractionProgress);
-        }
-        StreamEvent::Usage(usage) => {
-            let projected = if profile == Profile::Chat {
-                *usage
-            } else {
-                super::projection::responses_usage(*usage, &contract.adaptation.rules)?.0
-            };
-            super::checks::check_usage(projected, profile, &contract.adaptation.rules)?;
         }
         StreamEvent::ItemStarted { kind, replay, .. } => {
             match kind {

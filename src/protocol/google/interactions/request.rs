@@ -9,6 +9,7 @@ use std::collections::BTreeSet;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
 pub enum RequestRule {
+    OmitPrediction,
     OmitVerbosity,
     OmitMessagePhase,
     Hint(crate::protocol::cache::HintRule),
@@ -23,6 +24,7 @@ pub enum RequestRule {
 impl RequestRule {
     pub const fn name(self) -> &'static str {
         match self {
+            Self::OmitPrediction => "generation.omit-prediction.v1",
             Self::OmitVerbosity => "interactions.omit-verbosity.v1",
             Self::OmitMessagePhase => "interactions.omit-message-phase.v1",
             Self::Hint(rule) => rule.name(),
@@ -47,6 +49,9 @@ pub(super) fn project(
     rules: &mut BTreeSet<RequestRule>,
 ) -> Result<Value, CodecError> {
     let s = request.settings();
+    if s.prediction.is_some() {
+        rules.insert(RequestRule::OmitPrediction);
+    }
     if !s.safety.is_empty() {
         return Err(unsupported());
     }
@@ -226,7 +231,6 @@ fn thinking(
 ) -> Result<(), CodecError> {
     let r = &settings.reasoning;
     if r.presence == ReasoningPresence::Null
-        || !r.display.is_absent() && !r.summary.is_absent()
         || r.budget_tokens.is_some()
         || r.activation == Presence::Null
         || r.activation.value() == Some(&ReasoningActivation::Disabled)
@@ -236,18 +240,17 @@ fn thinking(
     if !r.context.is_absent() || !r.read_history.is_absent() {
         return Err(unsupported());
     }
-    let summary = match (&r.display, &r.summary) {
-        (Presence::Value(ReasoningDisplay::Summary), _)
-        | (Presence::Absent, Presence::Value(ReasoningSummary::Auto)) => Some("auto"),
-        (
-            Presence::Absent,
-            Presence::Value(ReasoningSummary::Concise | ReasoningSummary::Detailed),
-        ) => {
-            rules.insert(RequestRule::SummarizeReasoning);
+    let summary = match (&r.presentation.visibility, &r.presentation.summary) {
+        (Presence::Value(ReasoningDisplay::Summary), granularity) => {
+            if matches!(
+                granularity,
+                Presence::Value(ReasoningSummary::Concise | ReasoningSummary::Detailed)
+            ) {
+                rules.insert(RequestRule::SummarizeReasoning);
+            }
             Some("auto")
         }
-        (Presence::Value(ReasoningDisplay::Omitted), _)
-        | (Presence::Absent, Presence::Value(ReasoningSummary::Disabled)) => Some("none"),
+        (Presence::Value(ReasoningDisplay::Omitted), _) => Some("none"),
         (Presence::Absent, Presence::Absent) => None,
         _ => return Err(unsupported()),
     };

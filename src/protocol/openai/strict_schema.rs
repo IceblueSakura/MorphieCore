@@ -33,8 +33,8 @@ const UNSUPPORTED: &[&str] = &[
 ];
 
 /// `closed` is explicit `strict: true`: every object also needs
-/// `additionalProperties: false` and all properties required. Without it, this is
-/// the subset Responses applies to function tools whose `strict` is omitted.
+/// `additionalProperties: false` and all properties required. The open form checks
+/// normalization feasibility, not admission: omitted strictness permits service fallback.
 pub(super) fn admits(schema: &SchemaDocument, closed: bool) -> bool {
     let root = schema.root();
     let mut check = Check {

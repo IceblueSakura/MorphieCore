@@ -97,8 +97,8 @@ def run(base_url: str, stream: bool) -> dict[str, object]:
                     choice = result.choices[0]
                     finish, usage = choice.finish_reason, result.usage
                     message = choice.message.model_dump(exclude_none=True)
-            check(usage is not None and usage.total_tokens == 5)
-            check(usage.prompt_tokens == 3 and usage.completion_tokens == 2)
+            check(usage is not None and usage.total_tokens == 6)
+            check(usage.prompt_tokens == 4 and usage.completion_tokens == 2)
             check(usage.prompt_tokens_details.image_tokens == 1)
             check(usage.prompt_tokens_details.text_tokens == 3)
             check(usage.completion_tokens_details.text_tokens == 2)

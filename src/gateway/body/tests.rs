@@ -467,7 +467,7 @@ async fn messages_clients_get_anthropic_shapes_from_an_openai_target() {
         .endpoint
         .encode_request_with_rules(&request)
         .unwrap();
-    assert!(rules.contains(&"openai.omit-tool-result-errors.v1"));
+    assert!(rules.contains(&"openai.wrap-tool-result-errors.v1"));
     assert_eq!(
         chat["messages"][1],
         serde_json::json!({"role":"assistant","content":null,"reasoning_content":"plan",

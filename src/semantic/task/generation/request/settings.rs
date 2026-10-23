@@ -81,6 +81,8 @@ pub struct GenerationSettings {
     /// including ordered instruction items; history composition does not inherit them.
     pub instructions: Presence<Text>,
     pub controls: GenerationControls,
+    /// Ordered predicted output text: an optimization hint, never an output constraint.
+    pub prediction: Option<Vec<Text>>,
     /// Moving prefix boundary. Absence leaves the target's caching policy unchanged.
     pub automatic_prefix_cache: Option<PrefixCacheTtl>,
     pub tools: Option<Vec<ToolDefinition>>,
@@ -165,10 +167,26 @@ impl GenerationSettings {
             options.validate()?;
         }
         let instructions = self.instructions.value().map_or(0, |t| t.as_str().len());
+        let mut prediction_bytes = 0usize;
+        if let Some(parts) = &self.prediction {
+            if parts.is_empty() || parts.len() > MAX_ITEMS {
+                return Err(GenerationError::Limit);
+            }
+            for part in parts {
+                if part.as_str().len() > MAX_TEXT_BYTES {
+                    return Err(GenerationError::Limit);
+                }
+                prediction_bytes = prediction_bytes
+                    .checked_add(part.as_str().len() + 32)
+                    .filter(|n| *n <= MAX_TOTAL_BYTES)
+                    .ok_or(GenerationError::Limit)?;
+            }
+        }
         if instructions > MAX_TEXT_BYTES {
             return Err(GenerationError::Limit);
         }
         let bytes = instructions
+            + prediction_bytes
             + stop_bytes
             + crate::semantic::task::generation::safety::settings_bytes(&self.safety)?
             + usize::from(self.automatic_prefix_cache.is_some()) * 32

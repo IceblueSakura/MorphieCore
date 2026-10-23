@@ -19,7 +19,9 @@ fn reasoning(status: &str) -> Value {
 
 #[test]
 fn typed_disabled_summary_is_valid_semantics_without_a_responses_carrier() {
-    let mut reasoning = ReasoningRequest::present(Some(ReasoningSummary::Disabled));
+    let mut reasoning = ReasoningRequest::present(None);
+    reasoning.presentation.visibility =
+        morphiecore::semantic::value::Presence::Value(ReasoningDisplay::Omitted);
     reasoning.activation =
         morphiecore::semantic::value::Presence::Value(ReasoningActivation::Disabled);
     let settings = GenerationSettings {
@@ -29,8 +31,8 @@ fn typed_disabled_summary_is_valid_semantics_without_a_responses_carrier() {
     };
     let request = GenerationRequest::from_settings(vec![], settings.clone()).unwrap();
     assert_eq!(
-        request.reasoning().summary(),
-        Some(ReasoningSummary::Disabled)
+        request.reasoning().presentation.visibility.value(),
+        Some(&ReasoningDisplay::Omitted)
     );
     let fidelity = FidelityRecords::default();
     for profile in [Profile::Responses, Profile::Chat] {
@@ -93,9 +95,12 @@ fn standard_summary_presence_and_deprecated_alias_have_independent_wire_expectat
     ] {
         let decoded =
             responses::decode_generation(&json!({"input":"hello","reasoning":wire})).unwrap();
-        assert_eq!(decoded.semantic.reasoning().summary, summary);
+        assert_eq!(decoded.semantic.reasoning().presentation.summary, summary);
         let mut reasoning = ReasoningRequest::present(None);
-        reasoning.summary = summary;
+        reasoning.presentation.visibility = summary.value().map_or(Presence::Absent, |_| {
+            Presence::Value(ReasoningDisplay::Summary)
+        });
+        reasoning.presentation.summary = summary;
         let request = GenerationRequest::from_settings(
             vec![],
             GenerationSettings {
@@ -327,7 +332,7 @@ fn configuration_update_is_an_ordered_effort_item_not_a_settings_patch() {
             levels: &[(EffortLevel::Low, EffortLevel::High)],
         },
     }
-    .project_request(&request.task.semantic)
+    .project_request(&request.task.semantic, |_| false)
     .unwrap()
     .unwrap();
     assert!(

@@ -1369,19 +1369,18 @@ fn client_intake_carries_caps_and_rejects_active_fields_it_cannot_carry() {
     let mut prediction = body.clone();
     prediction["prediction"] = json!({"type":"content","content":"synthetic predicted output"});
     let decoded = decode(&prediction).unwrap();
-    assert_eq!(decoded.task.semantic, decode(&body).unwrap().task.semantic);
-    assert!(
+    assert_eq!(
         decoded
             .task
-            .fidelity
-            .normalizations()
-            .iter()
-            .any(|normalization| matches!(
-                normalization,
-                morphiecore::protocol::fidelity::Normalization::Omitted { rule, field }
-                    if *rule == "chat.omit-prediction.v1" && *field == "generation.prediction"
-            ))
+            .semantic
+            .settings()
+            .prediction
+            .as_ref()
+            .unwrap()[0]
+            .as_str(),
+        "synthetic predicted output"
     );
+    assert!(decoded.task.fidelity.normalizations().is_empty());
     assert!(!format!("{:?}", decoded.task.fidelity).contains("synthetic predicted output"));
     let wire = chat
         .encode_request(
@@ -1390,7 +1389,7 @@ fn client_intake_carries_caps_and_rejects_active_fields_it_cannot_carry() {
             &morphiecore::protocol::openai::TargetCaps::full(),
         )
         .unwrap();
-    assert!(wire.get("prediction").is_none());
+    assert_eq!(wire["prediction"], prediction["prediction"]);
     prediction["prediction"]["content"] = json!(7);
     assert!(decode(&prediction).is_err());
     let mut controlled = body.clone();

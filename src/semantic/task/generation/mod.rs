@@ -31,7 +31,7 @@ pub use content::item::{
 pub use content::reasoning::{
     EffortControl, EffortLevel, EffortScope, ReasoningActivation, ReasoningContent,
     ReasoningContext, ReasoningDisplay, ReasoningItem, ReasoningMode, ReasoningPresence,
-    ReasoningRequest, ReasoningSummary, ReplayMismatch,
+    ReasoningPresentation, ReasoningRequest, ReasoningSummary, ReplayMismatch,
 };
 pub use content::structured::StructuredValue;
 pub use content::text::{
@@ -84,7 +84,7 @@ pub use usage::reports::{
     UsageReport, UsageReports, UsageScope, UsageStage,
 };
 pub use usage::views::{DerivedTokenCount, UsageFormula};
-pub use usage::{InputTokenRelation, OutputTokenRelation, TotalTokenRelation, Usage};
+pub use usage::{InputTokenRelation, OutputTokenRelation, TotalTokenRelation, Usage, UsageCounts};
 
 pub use response::{
     CompletionCause, GenerationResponse, IncompleteReason, Outcome, ResponseError, TerminalDetails,

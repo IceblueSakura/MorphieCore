@@ -72,7 +72,10 @@ fn requests_reject_unselected_controls_while_incidental_reports_project() {
     settings.controls.max_output_tokens = Some(16384);
     let request = GenerationRequest::from_settings(vec![], settings.clone()).unwrap();
     let source = request.clone();
-    let semantic = QUANTIZE.project_request(&request).unwrap().unwrap();
+    let semantic = QUANTIZE
+        .project_request(&request, |_| false)
+        .unwrap()
+        .unwrap();
     assert_eq!(
         semantic.settings().effort.value().unwrap().level,
         EffortLevel::XHigh
@@ -180,8 +183,8 @@ fn requests_reject_unselected_controls_while_incidental_reports_project() {
         let mut control = ReasoningRequest::present(None);
         match dimension {
             0 => control.budget_tokens = Some(1024),
-            1 => control.display = Presence::Value(ReasoningDisplay::Omitted),
-            2 => control.display = Presence::Value(ReasoningDisplay::Summary),
+            1 => control.presentation.visibility = Presence::Value(ReasoningDisplay::Omitted),
+            2 => control.presentation.visibility = Presence::Value(ReasoningDisplay::Summary),
             _ => control.mode = Presence::Value(ReasoningMode::Adaptive),
         }
         let settings = GenerationSettings {
@@ -221,14 +224,27 @@ fn requests_reject_unselected_controls_while_incidental_reports_project() {
         .unwrap();
         let fidelity = FidelityRecords::default();
         for profile in [Profile::Responses, Profile::Chat] {
-            assert_eq!(
-                lower_request(&request, &fidelity, profile, TargetCaps::full()).err(),
-                Some(RepresentationError::Reasoning)
-            );
+            let exact = dimension == 2 && profile == Profile::Responses;
+            if exact {
+                let target =
+                    lower_request(&request, &fidelity, profile, TargetCaps::full()).unwrap();
+                assert_eq!(
+                    morphiecore::protocol::openai::responses::encode_generation(&target).unwrap()["reasoning"],
+                    serde_json::json!({"effort":"high","summary":"auto"})
+                );
+            } else {
+                assert_eq!(
+                    lower_request(&request, &fidelity, profile, TargetCaps::full()).err(),
+                    Some(RepresentationError::Reasoning)
+                );
+            }
             let target =
                 lower_response(&response, &fidelity, &metadata, profile, TargetCaps::full())
                     .unwrap();
-            assert!(target.projection().iter().any(|stage| stage.loss.is_some()));
+            assert_eq!(
+                target.projection().iter().any(|stage| stage.loss.is_some()),
+                !exact
+            );
             assert_eq!(
                 metadata.context.settings().unwrap().reasoning,
                 request.settings().reasoning
@@ -243,7 +259,14 @@ fn requests_reject_unselected_controls_while_incidental_reports_project() {
                 }
             };
             if profile == Profile::Responses {
-                assert_eq!(json["reasoning"], serde_json::json!({"effort":"high"}));
+                assert_eq!(
+                    json["reasoning"],
+                    if exact {
+                        serde_json::json!({"effort":"high","summary":"auto"})
+                    } else {
+                        serde_json::json!({"effort":"high"})
+                    }
+                );
             } else {
                 assert!(target.metadata().context.settings().is_none());
             }
@@ -282,19 +305,23 @@ fn requests_reject_unselected_controls_while_incidental_reports_project() {
                 intake.done().unwrap();
             }
             let materialized = intake.materialize().unwrap();
-            assert_eq!(
-                materialized.metadata.context.settings(),
-                target.metadata().context.settings()
-            );
+            let mut expected = target.metadata().context.settings().cloned();
+            if exact {
+                // The native auto label expresses unconstrained visible summary granularity.
+                expected.as_mut().unwrap().reasoning.presentation.summary =
+                    Presence::Value(ReasoningSummary::Auto);
+            }
+            assert_eq!(materialized.metadata.context.settings(), expected.as_ref());
             assert!(
                 matches!(&materialized.semantic.items()[0].1, Item::Message(message)
                     if matches!(&message.parts[0].content, ContentPart::Text(text) if text.as_str() == "ok"))
             );
-            assert!(
+            assert_eq!(
                 encoder
                     .projection()
                     .iter()
-                    .any(|stage| stage.loss.is_some())
+                    .any(|stage| stage.loss.is_some()),
+                !exact
             );
         }
     }

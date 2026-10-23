@@ -8,6 +8,33 @@ fn report(scope: UsageScope, stage: UsageStage, tokens: u64) -> UsageReport {
     report
 }
 
+#[test]
+fn modality_observations_have_one_owner_and_flat_views_follow_edits() {
+    let mut source = UsageReport::operation(Usage {
+        input_text_tokens: Some(3),
+        input_image_tokens: Some(4),
+        input_audio_tokens: Some(0),
+        ..Usage::operation(10, 2, 12)
+    });
+    source.validate().unwrap();
+    assert_eq!(source.details.modalities.len(), 3);
+    assert!(!source.has_unrepresented_details());
+    assert_eq!(source.counts.view().input_text_tokens, None);
+    assert_eq!(source.summary().input_text_tokens, Some(3));
+    assert_eq!(source.summary().input_audio_tokens, Some(0));
+    source.details.modalities[0].tokens = Some(6);
+    source.validate().unwrap();
+    assert_eq!(source.summary().input_text_tokens, Some(6));
+    source.details.modalities[0].tokens = Some(7);
+    assert_eq!(source.validate(), Err(GenerationError::InvalidResponse));
+    source.details.modalities.remove(0);
+    source.validate().unwrap();
+    assert_eq!(source.summary().input_text_tokens, None);
+    source.details.modalities[0].tokens = None;
+    assert!(source.has_unrepresented_details());
+    assert_eq!(source.summary().input_image_tokens, None);
+}
+
 fn split_modalities(input: u64, tool: u64, relation: ToolInputRelation) -> UsageReport {
     let mut counts = Usage::operation(0, 0, 0);
     counts.input_tokens = None;

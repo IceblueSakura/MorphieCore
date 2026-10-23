@@ -99,19 +99,82 @@ pub struct UsageDetails {
 pub struct UsageReport {
     pub scope: UsageScope,
     pub stage: UsageStage,
-    pub counts: Usage,
+    pub counts: UsageCounts,
     pub accounting: UsageAccounting,
     pub details: UsageDetails,
 }
 impl UsageReport {
     pub fn operation(counts: Usage) -> Self {
+        let modalities = [
+            (
+                UsageBucket::Input,
+                TokenModality::Text,
+                counts.input_text_tokens,
+            ),
+            (
+                UsageBucket::Input,
+                TokenModality::Image,
+                counts.input_image_tokens,
+            ),
+            (
+                UsageBucket::Input,
+                TokenModality::Audio,
+                counts.input_audio_tokens,
+            ),
+            (
+                UsageBucket::Output,
+                TokenModality::Text,
+                counts.output_text_tokens,
+            ),
+            (
+                UsageBucket::Output,
+                TokenModality::Audio,
+                counts.output_audio_tokens,
+            ),
+        ]
+        .into_iter()
+        .filter_map(|(bucket, modality, tokens)| {
+            tokens.map(|tokens| ModalityTokens {
+                bucket,
+                modality: Some(modality),
+                tokens: Some(tokens),
+                defaulted: false,
+            })
+        })
+        .collect();
         Self {
             scope: UsageScope::Operation,
             stage: UsageStage::Final,
-            counts,
+            counts: counts.aggregate_counts(),
             accounting: UsageAccounting::Direct,
-            details: UsageDetails::default(),
+            details: UsageDetails {
+                modalities,
+                ..Default::default()
+            },
         }
+    }
+    /// Whether the flat view retains every source observation without inventing provenance.
+    pub fn has_unrepresented_details(&self) -> bool {
+        self.scope != UsageScope::Operation
+            || self.stage != UsageStage::Final
+            || self.accounting != UsageAccounting::Direct
+            || !self.details.cache_writes.is_empty()
+            || !self.details.tool_requests.is_empty()
+            || !self.details.defaulted.is_empty()
+            || self.details.modalities.iter().any(|part| {
+                part.defaulted
+                    || part.tokens.is_none()
+                    || !matches!(
+                        (part.bucket, part.modality),
+                        (
+                            UsageBucket::Input,
+                            Some(TokenModality::Text | TokenModality::Image | TokenModality::Audio)
+                        ) | (
+                            UsageBucket::Output,
+                            Some(TokenModality::Text | TokenModality::Audio)
+                        )
+                    )
+            })
     }
     pub fn tool_input_tokens(&self) -> Option<u64> {
         match self.accounting {
@@ -292,17 +355,35 @@ impl UsageReport {
         }
         Ok(())
     }
+    fn modality(&self, bucket: UsageBucket, kind: TokenModality) -> Option<u64> {
+        self.details
+            .modalities
+            .iter()
+            .find(|part| part.bucket == bucket && part.modality == Some(kind))
+            .and_then(|part| part.tokens)
+    }
+    /// A flat view of reported buckets, without aggregating split input or reasoning.
+    pub fn reported_usage(&self) -> Usage {
+        let mut summary = self.counts.view();
+        summary.input_text_tokens = self.modality(UsageBucket::Input, TokenModality::Text);
+        summary.input_image_tokens = self.modality(UsageBucket::Input, TokenModality::Image);
+        summary.input_audio_tokens = self.modality(UsageBucket::Input, TokenModality::Audio);
+        summary.output_text_tokens = self.modality(UsageBucket::Output, TokenModality::Text);
+        summary.output_audio_tokens = self.modality(UsageBucket::Output, TokenModality::Audio);
+        summary
+    }
     /// A derived operation view; original counters and their inclusion evidence stay here.
     pub fn summary(&self) -> Usage {
+        let modality = |bucket, kind| self.modality(bucket, kind);
+        let mut summary = self.reported_usage();
         let UsageAccounting::SplitGeneration {
             tool_input_tokens,
             tool_input_relation,
             total_relation,
         } = self.accounting
         else {
-            return self.counts;
+            return summary;
         };
-        let mut summary = self.counts;
         summary.input_tokens = match tool_input_relation {
             ToolInputRelation::Included => self.counts.input_tokens,
             ToolInputRelation::Additional => self
@@ -324,13 +405,6 @@ impl UsageReport {
         summary.total_relation = match total_relation {
             SplitTotalRelation::InputToolOutputAndReasoning => TotalTokenRelation::InputAndOutput,
             SplitTotalRelation::Unreported => TotalTokenRelation::Unreported,
-        };
-        let modality = |bucket, kind| {
-            self.details
-                .modalities
-                .iter()
-                .find(|part| part.bucket == bucket && part.modality == Some(kind))
-                .and_then(|part| part.tokens)
         };
         let input = |kind| match tool_input_relation {
             ToolInputRelation::Included => modality(UsageBucket::Input, kind),
@@ -363,6 +437,11 @@ pub struct UsageReports {
     bytes: usize,
 }
 impl UsageReports {
+    pub fn has_unrepresented_details(&self) -> bool {
+        self.reports
+            .values()
+            .any(UsageReport::has_unrepresented_details)
+    }
     pub fn reports(&self) -> impl ExactSizeIterator<Item = &UsageReport> {
         self.reports.values()
     }

@@ -239,11 +239,7 @@ impl EventProjection {
                     }
                     StreamEvent::UsageReport(report) if !self.phase_only => {
                         report.validate()?;
-                        if report.scope != UsageScope::Operation
-                            || report.stage != UsageStage::Final
-                            || report.accounting != UsageAccounting::Direct
-                            || report.details != UsageDetails::default()
-                        {
+                        if report.has_unrepresented_details() {
                             self.record(crate::protocol::usage::report_loss("event.encode"));
                         }
                         if report.scope != UsageScope::Operation

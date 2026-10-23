@@ -6,6 +6,7 @@ pub const MAX_PROJECTION_STAGES: usize = 16;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum LossRule {
+    OmitPrediction,
     OmitOpeningReport,
     UsageReportView,
     OmitReportedReasoningControls,
@@ -32,6 +33,7 @@ pub enum LossRule {
 impl LossRule {
     pub const fn name(self) -> &'static str {
         match self {
+            Self::OmitPrediction => "generation.omit-prediction.v1",
             Self::OmitOpeningReport => "responses.terminal-report-snapshot.v1",
             Self::UsageReportView => "generation.usage-report-view.v1",
             Self::OmitReportedReasoningControls => {
@@ -64,6 +66,7 @@ impl LossRule {
     }
     pub const fn owner(self) -> &'static str {
         match self {
+            Self::OmitPrediction => "generation.prediction",
             Self::OmitOpeningReport => "response.reports.opening",
             Self::UsageReportView => "generation.usage.reports",
             Self::OmitReportedReasoningControls => "response.reported.reasoning",
@@ -155,15 +158,17 @@ pub(crate) fn reported_settings(
         }
         let before = settings.clone();
         settings.reasoning.budget_tokens = None;
-        settings.reasoning.display = Presence::Absent;
         if matches!(
             settings.reasoning.mode.value(),
             Some(ReasoningMode::Adaptive | ReasoningMode::Budgeted)
         ) {
             settings.reasoning.mode = Presence::Absent;
         }
-        if settings.reasoning.summary() == Some(ReasoningSummary::Disabled) {
-            settings.reasoning.summary = Presence::Absent;
+        if matches!(
+            settings.reasoning.presentation.visibility,
+            Presence::Null | Presence::Value(ReasoningDisplay::Omitted)
+        ) {
+            settings.reasoning.presentation = Default::default();
         }
         if settings
             .effort

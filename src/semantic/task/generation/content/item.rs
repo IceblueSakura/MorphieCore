@@ -144,6 +144,34 @@ impl ToolChange {
     }
 }
 impl Item {
+    /// All content-part identities owned by this item; operation IDs are separate.
+    pub fn part_ids(&self) -> impl Iterator<Item = PartId> {
+        let instructions: &[Part<Text>] = match self {
+            Self::Instruction(i) => &i.parts,
+            _ => &[],
+        };
+        let messages: &[Part] = match self {
+            Self::Message(m) => &m.parts,
+            _ => &[],
+        };
+        let results: &[Part<InputPart>] = match self {
+            Self::ToolResult(r) | Self::CustomResult(r) => match &r.output {
+                ToolOutput::Parts(parts) => parts,
+                _ => &[],
+            },
+            _ => &[],
+        };
+        let reasoning: &[(PartId, ReasoningContent)] = match self {
+            Self::Reasoning(r) => &r.parts,
+            _ => &[],
+        };
+        instructions
+            .iter()
+            .map(|p| p.id)
+            .chain(messages.iter().map(|p| p.id))
+            .chain(results.iter().map(|p| p.id))
+            .chain(reasoning.iter().map(|(id, _)| *id))
+    }
     pub fn has_replay_attachment(&self) -> bool {
         match self {
             Self::Message(message) => message.parts.iter().any(|part| part.replay.is_some()),

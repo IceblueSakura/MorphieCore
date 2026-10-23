@@ -318,12 +318,12 @@ pub fn decode_client_request(bytes: &[u8]) -> Result<Request, CodecError> {
             }
             _ => return Err(CodecError::Unsupported("Anthropic thinking mode".into())),
         }
-        settings.reasoning.display = settings::display(&shape::presence(
+        settings.reasoning.presentation.visibility = settings::display(&shape::presence(
             t,
             "display",
             wire::request::Display::read,
         )?);
-        if settings.reasoning.display == Presence::Null {
+        if settings.reasoning.presentation.visibility == Presence::Null {
             return Err(CodecError::Invalid("thinking display"));
         }
         let binding = wire::request::PrefixMismatch::read(t.get("block_binding"))?;

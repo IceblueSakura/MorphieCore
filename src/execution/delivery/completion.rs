@@ -166,20 +166,46 @@ pub(super) fn complete(
     } else {
         None
     };
-    let mut input_floor = 0;
+    // Modalities within a reported bucket are disjoint; different buckets need
+    // their own inclusion premise. Missing categories still do not become facts.
+    let modality_floor = |bucket| {
+        response
+            .usage_reports()
+            .operation()
+            .into_iter()
+            .flat_map(|report| &report.details.modalities)
+            .filter(|detail| detail.bucket == bucket)
+            .filter_map(|detail| detail.tokens)
+            .try_fold(0u64, |sum, count| {
+                sum.checked_add(count).ok_or(CodecError::Limit)
+            })
+    };
+    let mut input_floor = modality_floor(UsageBucket::Input)?;
+    let mut output_floor = modality_floor(UsageBucket::Output)?;
+    if let Some(report) = response.usage_reports().operation()
+        && report.counts.output_relation == OutputTokenRelation::ExcludesReasoning
+    {
+        output_floor = output_floor
+            .checked_add(report.counts.reasoning_tokens.unwrap_or(0))
+            .ok_or(CodecError::Limit)?;
+    }
     if let Some(report) = response.usage_reports().operation()
         && let UsageAccounting::SplitGeneration {
             tool_input_tokens,
+            tool_input_relation,
             total_relation,
-            ..
         } = report.accounting
     {
-        input_floor = tool_input_tokens.unwrap_or(0);
-        for detail in &report.details.modalities {
-            if matches!(detail.bucket, UsageBucket::Input | UsageBucket::ToolInput) {
-                input_floor = input_floor.max(detail.tokens.unwrap_or(0));
-            }
-        }
+        let tool_floor = tool_input_tokens
+            .unwrap_or(0)
+            .max(modality_floor(UsageBucket::ToolInput)?);
+        input_floor = if tool_input_relation == ToolInputRelation::Additional {
+            input_floor
+                .checked_add(tool_floor)
+                .ok_or(CodecError::Limit)?
+        } else {
+            input_floor.max(tool_floor)
+        };
         // Residual inference precedes recovery/estimation of exclusive buckets.
         // The attested total already includes tool input and reasoning.
         if total_relation == SplitTotalRelation::InputToolOutputAndReasoning
@@ -222,12 +248,11 @@ pub(super) fn complete(
             && let Some(input) = report.counts.input_tokens
         {
             estimated = true;
+            let tool = tool_input_tokens.unwrap_or(modality_floor(UsageBucket::ToolInput)?);
             u.input_tokens = Some(if tool_input_relation == ToolInputRelation::Additional {
-                input
-                    .checked_add(tool_input_tokens.unwrap_or(0))
-                    .ok_or(CodecError::Limit)?
+                input.checked_add(tool).ok_or(CodecError::Limit)?
             } else {
-                input.max(tool_input_tokens.unwrap_or(0))
+                input.max(tool)
             });
         }
         if u.output_tokens.is_none() && report.counts.output_tokens.is_some() {
@@ -320,17 +345,14 @@ pub(super) fn complete(
         input
             .max(u.cached_input_tokens.unwrap_or(0))
             .max(u.input_cache_write_tokens.unwrap_or(0))
-            .max(u.input_text_tokens.unwrap_or(0))
-            .max(u.input_audio_tokens.unwrap_or(0))
-            .max(u.input_image_tokens.unwrap_or(0))
+            .max(input_floor)
     } else {
         input
     };
     let output = if u.output_tokens.is_none() && total.is_none() {
         output
             .max(u.reasoning_tokens.unwrap_or(0))
-            .max(u.output_text_tokens.unwrap_or(0))
-            .max(u.output_audio_tokens.unwrap_or(0))
+            .max(output_floor)
             .max(add(
                 u.accepted_prediction_tokens.unwrap_or(0),
                 u.rejected_prediction_tokens.unwrap_or(0),
@@ -432,6 +454,35 @@ mod tests {
         complete(&mut delivery, &source, ClientProtocol::Messages, 100).unwrap();
         assert_eq!(delivery.usage.unwrap().input_tokens, Some(11));
         assert_eq!(source.usage(), Some(disjoint));
+    }
+
+    #[test]
+    fn missing_parents_are_bounded_by_disjoint_modalities_without_rewriting_reports() {
+        let mut counts = Usage::operation(0, 0, 0);
+        counts.input_tokens = None;
+        counts.output_tokens = None;
+        counts.total_tokens = None;
+        counts.total_relation = TotalTokenRelation::Unreported;
+        counts.input_text_tokens = Some(8);
+        counts.input_image_tokens = Some(7);
+        counts.output_text_tokens = Some(6);
+        counts.output_audio_tokens = Some(5);
+        let source = GenerationResponse::new(vec![], Outcome::Completed)
+            .unwrap()
+            .with_usage(Some(counts))
+            .unwrap();
+        let original = source.clone();
+        let mut delivery = GenerationDelivery::default();
+        for protocol in [
+            ClientProtocol::Chat,
+            ClientProtocol::Responses,
+            ClientProtocol::Messages,
+        ] {
+            complete(&mut delivery, &source, protocol, 1).unwrap();
+            assert_eq!(delivery.usage.unwrap().input_tokens, Some(15));
+            assert_eq!(delivery.usage.unwrap().output_tokens, Some(11));
+            assert_eq!(source, original);
+        }
     }
 
     #[test]

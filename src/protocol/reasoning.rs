@@ -154,8 +154,15 @@ impl ReasoningRequestPolicy {
     pub fn project_request(
         &self,
         source: &GenerationRequest,
+        exact: impl Fn(&GenerationSettings) -> bool,
     ) -> Result<Option<GenerationRequest>, CodecError> {
-        let settings = self.project(source.settings())?;
+        source.validate()?;
+        self.validate()?;
+        let settings = if exact(source.settings()) {
+            source.settings().clone()
+        } else {
+            self.project(source.settings())?
+        };
         let mut items = Cow::Borrowed(source.items());
         for (index, (_, item)) in source.items().iter().enumerate() {
             if let Item::ConfigurationUpdate(update) = item {
@@ -167,7 +174,11 @@ impl ReasoningRequestPolicy {
                     controls.reasoning.presence = ReasoningPresence::Present;
                     controls.reasoning.activation = Presence::Value(activation);
                 }
-                let projected = self.project(&controls)?;
+                let projected = if exact(&controls) {
+                    controls.clone()
+                } else {
+                    self.project(&controls)?
+                };
                 if projected.reasoning.budget_tokens.is_some() {
                     return Err(CodecError::Unsupported(
                         "configuration budget carrier".into(),
@@ -195,10 +206,9 @@ impl ReasoningRequestPolicy {
         let mut target = source.clone();
         match &self.conversion {
             ReasoningConversion::Scope { from, to, levels } => {
-                if let Some(control) = source.effort.value() {
-                    if control.scope != *from {
-                        return Err(CodecError::Unsupported("reasoning scope".into()));
-                    }
+                if let Some(control) = source.effort.value()
+                    && control.scope == *from
+                {
                     let level = levels
                         .iter()
                         .find(|(key, _)| *key == control.level)

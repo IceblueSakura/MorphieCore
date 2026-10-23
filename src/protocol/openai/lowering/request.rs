@@ -56,6 +56,18 @@ pub fn lower_request<'a>(
         stage.direction = projection::ProjectionDirection::Request;
         projection.push(stage);
     }
+    if semantic.settings().prediction.is_some() && (profile != Profile::Chat || !c.prediction) {
+        let mut settings = semantic.settings().clone();
+        settings.prediction = None;
+        semantic = std::borrow::Cow::Owned(semantic.into_owned().with_settings(settings)?);
+        let mut stage = projection::ProjectionStage::response(
+            profile,
+            c.adaptation.profile_id,
+            Some(projection::LossRule::OmitPrediction),
+        );
+        stage.direction = projection::ProjectionDirection::Request;
+        projection.push(stage);
+    }
     let r = semantic.as_ref();
     let q = check(r, c.clone())?;
     if r.controls().top_k.is_some()
@@ -285,12 +297,9 @@ fn check_strict_schemas(settings: &GenerationSettings) -> Result<(), Representat
         let ToolDefinition::Function(tool) = tool else {
             continue;
         };
-        let closed = match tool.strict {
-            FunctionStrictness::Explicit(true) => true,
-            FunctionStrictness::Omitted(StrictDefault::NormalizeSchema) => false,
-            _ => continue,
-        };
-        if tool.parameters.as_ref().is_some_and(|p| !admits(p, closed)) {
+        if tool.strict == FunctionStrictness::Explicit(true)
+            && tool.parameters.as_ref().is_some_and(|p| !admits(p, true))
+        {
             return Err(RepresentationError::Tools);
         }
     }

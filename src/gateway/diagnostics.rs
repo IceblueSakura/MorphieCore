@@ -127,7 +127,7 @@ fn reasoning_controls(
         "activation":format!("{:?}",controls.activation), "effort":format!("{:?}",controls.effort),
         "budget_tokens":controls.budget_tokens, "mode":format!("{:?}",controls.mode),
         "max_output_tokens":controls.max_output_tokens,
-        "summary":format!("{:?}",controls.summary), "display":format!("{:?}",controls.display),
+        "summary":format!("{:?}",controls.presentation.summary), "display":format!("{:?}",controls.presentation.visibility),
         "configuration_efforts":format!("{:?}",controls.configuration_efforts),
     })
 }
@@ -639,7 +639,7 @@ impl Trace {
                 && report.scope == crate::semantic::task::generation::UsageScope::Operation
             {
                 // Only source-reported detail flags; derived inclusive totals are not reports.
-                self.reported_usage(report.counts);
+                self.reported_usage(report.reported_usage());
             }
             let counts = &mut self.record.events;
             match event {

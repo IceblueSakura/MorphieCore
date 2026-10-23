@@ -18,10 +18,12 @@ pub(super) fn relation(reports: &ResponseReports, resolution: bool) -> Result<()
     if let (Some(before), Some(after)) = (&opening.settings, &terminal.settings) {
         let mut allowed = before.clone();
         if resolution {
-            if before.reasoning.summary == Presence::Value(ReasoningSummary::Auto)
-                && after.reasoning.summary == Presence::Value(ReasoningSummary::Detailed)
+            if before.reasoning.presentation.summary == Presence::Value(ReasoningSummary::Auto)
+                && after.reasoning.presentation.summary
+                    == Presence::Value(ReasoningSummary::Detailed)
             {
-                allowed.reasoning.summary = after.reasoning.summary.clone();
+                allowed.reasoning.presentation.summary =
+                    after.reasoning.presentation.summary.clone();
             }
             if before.reasoning.context.is_absent()
                 && after.reasoning.context == Presence::Value(ReasoningContext::AllTurns)

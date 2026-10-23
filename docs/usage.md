@@ -268,7 +268,7 @@ Replace the placeholders with a registered public label, one of its catalog endp
 | Candidate | `credential` | Pool reference; defaults to the binding's catalog pool |
 | Candidate | `attempt_timeout_ms` | One upstream attempt's timeout, further bounded by the remaining exchange deadline |
 | Candidate | `reasoning_as_text` | Permit the existing named history conversion; default `false` |
-| Candidate | `thinking_conversion` | `budget_to_effort` or `effort_to_budget`; omission performs no numeric conversion |
+| Candidate | `thinking_conversion` | `budget_to_effort` or `effort_to_budget` fallback; exact model-supported controls take precedence. Omission performs no numeric conversion |
 | Candidate | `allowed_effort` | Optional nonempty array of distinct `minimal`, `low`, `medium`, `high`, `xhigh`, `max` levels; narrows the catalog declaration when present |
 | Candidate | `maximum_output_tokens` | Optional positive `u64` model-output maximum, not a default; cannot exceed a catalog-declared maximum |
 | Candidate | `default_output_tokens` | Messages only: omit to inherit the binding default, set a positive `u64` to replace it, or `null` to clear it and require explicit request caps |
@@ -305,6 +305,8 @@ For `thinking_tokens`, provide all six positive values, for example:
 ```
 
 Place this object on the public model, alongside `candidates`. At least one candidate must select a conversion when a custom table is supplied. A conversion without a custom table uses the [shared preset](architecture.md#thinking-budget-quantization). Duplicate token values are allowed; nearest-budget matching and highest-level ties retain the existing algorithm.
+
+The table is consulted only when exact carriage is unavailable. For example, a supported reasoning-level `medium` request stays qualitative on Google even when `effort_to_budget` and a custom `medium:7000` preset are configured. That unused preset does not invalidate a caller's `6000` output ceiling. Conversely, an actual numeric conversion must still fit the caller ceiling and target limits; the gateway never raises the ceiling to make it fit.
 
 `budget_to_effort` uses the target's declared effort scope: response-wide for Messages, reasoning-only for the other current protocols. `effort_to_budget` accepts reasoning-scoped effort and currently requires a generateContent binding. An existing OpenAI qualitative level calibration cannot be combined with a numeric conversion. Unsupported target levels, incompatible controls and over-ceiling budgets still reject; the table does not widen model admission or change dialects.
 

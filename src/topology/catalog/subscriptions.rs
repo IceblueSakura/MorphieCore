@@ -94,6 +94,7 @@ impl SubscriptionBinding {
             cache: adapter.adaptation.cache,
             identity_hints: false,
             standard_context: false,
+            prediction: false,
             ..TargetCaps::full()
         };
         let path = provider

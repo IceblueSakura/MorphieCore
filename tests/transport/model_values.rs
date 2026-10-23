@@ -298,7 +298,7 @@ fn gemini_model_values_are_checked_by_both_preflight_and_preparation() {
 }
 
 #[test]
-fn gemini_checks_the_converted_effort_without_requantizing() {
+fn gemini_preserves_native_budgets_and_checks_fallback_levels_without_requantizing() {
     let binding = &GOOGLE_BINDINGS[0];
     let plain = source(json!({"model":binding.model,"input":"go","max_output_tokens":4096}));
     let mut settings = plain.task.semantic.settings().clone();
@@ -326,6 +326,25 @@ fn gemini_checks_the_converted_effort_without_requantizing() {
             _ => unreachable!(),
         }
         rejected(&endpoint, &request, "target effort");
+        // A wire field alone is not a declaration of native model support.
+        if let morphiecore::lowering::target::TargetCaps::GoogleGenerateContent(c) =
+            &mut endpoint.representation
+        {
+            c.native_thinking_budget = true;
+        }
+        let native_budget =
+            endpoint.protocol == morphiecore::topology::ProtocolProfile::GoogleGenerateContent;
+        if native_budget {
+            let (wire, rules) = endpoint.encode_request_with_rules(&request).unwrap();
+            assert_eq!(
+                wire["generationConfig"]["thinkingConfig"]["thinkingBudget"],
+                1024
+            );
+            assert!(!rules.contains(&"synthetic.budget-to-effort.v1"));
+            assert_eq!(representable(&endpoint, &request), Ok(()));
+        } else {
+            rejected(&endpoint, &request, "target effort");
+        }
         let mut settings = request.task.semantic.settings().clone();
         settings.reasoning.budget_tokens = Some(2048);
         let mut low = request.clone();
@@ -336,12 +355,12 @@ fn gemini_checks_the_converted_effort_without_requantizing() {
                 .iter()
                 .filter(|r| **r == "synthetic.budget-to-effort.v1")
                 .count(),
-            1
+            usize::from(!native_budget)
         );
-        if endpoint.protocol == morphiecore::topology::ProtocolProfile::GoogleGenerateContent {
+        if native_budget {
             assert_eq!(
-                wire["generationConfig"]["thinkingConfig"]["thinkingLevel"],
-                "LOW"
+                wire["generationConfig"]["thinkingConfig"]["thinkingBudget"],
+                2048
             );
         } else {
             assert_eq!(wire["generation_config"]["thinking_level"], "low");

@@ -59,6 +59,54 @@ fn typed(budget: Option<u64>) -> Request {
     .unwrap()
 }
 #[test]
+fn configured_fallback_never_replaces_supported_native_allocation_or_visibility() {
+    use morphiecore::protocol::reasoning::{
+        ReasoningConversion, ReasoningRequestPolicy, SHARED_BUDGETS,
+    };
+    let mut request = typed(Some(1024));
+    let mut settings = request.task.semantic.settings().clone();
+    settings.effort = Presence::Value(EffortControl {
+        scope: EffortScope::Response,
+        level: EffortLevel::Medium,
+    });
+    settings.reasoning.presentation.visibility = Presence::Value(ReasoningDisplay::Omitted);
+    request.task.semantic = request.task.semantic.with_settings(settings).unwrap();
+    let before = request.clone();
+    let mut configured = caps();
+    configured.reasoning_policy = Some(ReasoningRequestPolicy {
+        canonical_model: "m".into(),
+        rule: "synthetic.budget-to-effort.v1",
+        conversion: ReasoningConversion::BudgetToEffort {
+            scope: EffortScope::Response,
+            table: SHARED_BUDGETS.clone(),
+        },
+    });
+    let result = configured.encode_request(&request, &target()).unwrap();
+    assert_eq!(
+        result.value["thinking"],
+        json!({"type":"enabled","budget_tokens":1024,"display":"omitted"})
+    );
+    assert_eq!(result.value["output_config"]["effort"], "medium");
+    assert!(
+        result
+            .rules
+            .iter()
+            .all(|rule| !matches!(rule, anthropic::messages::RequestRule::ReasoningPolicy(_)))
+    );
+    assert_eq!(request, before);
+    let mut settings = request.task.semantic.settings().clone();
+    settings.reasoning.budget_tokens = None;
+    settings.reasoning.mode = Presence::Absent;
+    settings.reasoning.activation = Presence::Value(ReasoningActivation::Disabled);
+    request.task.semantic = request.task.semantic.with_settings(settings).unwrap();
+    configured.reasoning_policy.as_mut().unwrap().conversion =
+        ReasoningConversion::PreserveDisabled;
+    let result = configured.encode_request(&request, &target()).unwrap();
+    assert_eq!(result.value["thinking"], json!({"type":"disabled"}));
+    assert_eq!(result.value["output_config"]["effort"], "medium");
+}
+
+#[test]
 fn model_maximum_checks_inserted_default_without_replacing_explicit_caps() {
     use morphiecore::adapter::AdapterError;
     assert_eq!(caps().default_output_tokens, None);
@@ -192,6 +240,29 @@ fn output_defaults_check_budgets_after_selected_conversions() {
         },
     });
     target_caps.default_output_tokens = Some(4096);
+    let exact = target_caps.encode_request(&qualitative, &target()).unwrap();
+    assert_eq!(exact.value["output_config"]["effort"], "medium");
+    assert!(exact.value["thinking"].get("budget_tokens").is_none());
+    assert!(
+        exact
+            .rules
+            .iter()
+            .all(|rule| !matches!(rule, anthropic::messages::RequestRule::ReasoningPolicy(_)))
+    );
+    assert_eq!(qualitative, original);
+    // Only the non-native reasoning-scoped effort needs the configured numeric fallback.
+    let mut settings = qualitative.task.semantic.settings().clone();
+    settings.effort = Presence::Value(EffortControl {
+        scope: EffortScope::Reasoning,
+        level: EffortLevel::Medium,
+    });
+    qualitative.task.semantic = qualitative.task.semantic.with_settings(settings).unwrap();
+    let original = qualitative.clone();
+    target_caps.reasoning_policy.as_mut().unwrap().conversion =
+        ReasoningConversion::EffortToBudget {
+            scope: EffortScope::Reasoning,
+            table: SHARED_BUDGETS.clone(),
+        };
     assert!(matches!(
         target_caps.encode_request(&qualitative, &target()),
         Err(AdapterError::Codec(CodecError::Invalid("thinking budget")))

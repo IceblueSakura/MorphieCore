@@ -406,8 +406,7 @@ pub(in crate::protocol::openai) fn check_semantic(
         return Err(CodecError::Unsupported("Bailian null reasoning".into()));
     }
     if r.replay_mismatch.is_some()
-        || !r.display.is_absent()
-        || !r.summary.is_absent()
+        || !r.presentation.is_absent()
         || !r.context.is_absent()
         || !r.mode.is_absent() && r.mode != Presence::Value(ReasoningMode::Budgeted)
     {

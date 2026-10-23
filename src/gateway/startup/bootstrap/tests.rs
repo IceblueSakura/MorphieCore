@@ -1014,10 +1014,15 @@ fn configured_failover_orders_and_limits_a_models_providers() {
         .encode_request_with_rules(&request)
         .unwrap();
     assert_eq!(
-        wire["generationConfig"]["thinkingConfig"]["thinkingBudget"],
-        3072
+        wire["generationConfig"]["thinkingConfig"]["thinkingLevel"],
+        "MEDIUM"
     );
-    assert!(rules.contains(&"configured.effort-to-budget.v1"));
+    assert!(
+        wire["generationConfig"]["thinkingConfig"]
+            .get("thinkingBudget")
+            .is_none()
+    );
+    assert!(!rules.contains(&"configured.effort-to-budget.v1"));
     assert_eq!(request, before);
     assert!(
         matches!(
@@ -1034,12 +1039,15 @@ fn configured_failover_orders_and_limits_a_models_providers() {
         crate::gateway::family(Profile::Responses),
         google.model.into(),
     )];
-    assert!(
-        entry.candidates[0]
-            .endpoint
-            .encode_request(&request)
-            .is_err()
+    let wire = entry.candidates[0]
+        .endpoint
+        .encode_request(&request)
+        .unwrap();
+    assert_eq!(
+        wire["generationConfig"]["thinkingConfig"]["thinkingLevel"],
+        "MEDIUM"
     );
+    assert_eq!(wire["generationConfig"]["maxOutputTokens"], 6000);
 
     private_write(
         &gateway_file,

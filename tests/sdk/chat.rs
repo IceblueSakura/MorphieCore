@@ -29,7 +29,8 @@ use morphiecore::{
 };
 
 fn usage() -> serde_json::Value {
-    serde_json::json!({"prompt_tokens":3,"completion_tokens":2,"total_tokens":5,"prompt_tokens_details":{"text_tokens":3},"completion_tokens_details":{"text_tokens":2,"reasoning_tokens":1,"accepted_prediction_tokens":1,"rejected_prediction_tokens":0}})
+    // Three text tokens plus room for the one image token added by the typed edit below.
+    serde_json::json!({"prompt_tokens":4,"completion_tokens":2,"total_tokens":6,"prompt_tokens_details":{"text_tokens":3},"completion_tokens_details":{"text_tokens":2,"reasoning_tokens":1,"accepted_prediction_tokens":1,"rejected_prediction_tokens":0}})
 }
 
 pub(super) async fn handle(

@@ -151,6 +151,7 @@ impl ApiKeyBinding {
             cache: adapter.adaptation.cache,
             identity_hints: false,
             standard_context: false,
+            prediction: false,
             ..TargetCaps::full()
         };
         Ok(Endpoint {

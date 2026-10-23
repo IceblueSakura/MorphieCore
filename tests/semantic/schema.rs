@@ -125,7 +125,7 @@ mod schema_admission {
             json!({"anyOf":[{"type":["string","null"],"minLength":1},{"type":"array","items":{"type":"integer","minimum":0}}]}),
         );
         assert!(lowers(valid, true));
-        // Responses applies the subset to function tools whose `strict` is omitted.
+        // Omission delegates normalization and best-effort fallback to Responses.
         let tool = |strict: Option<bool>| {
             let mut tool = json!({"type":"function","name":"lookup","parameters":
                 {"type":"object","properties":{"x":{"oneOf":[{"type":"string"}]}}}});
@@ -141,7 +141,8 @@ mod schema_admission {
             )
             .is_ok()
         };
-        assert!(!tool(None));
+        assert!(tool(None));
+        assert!(!tool(Some(true)));
         assert!(tool(Some(false)));
 
         let normalized = responses::decode_generation(

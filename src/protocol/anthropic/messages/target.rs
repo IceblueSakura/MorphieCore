@@ -170,7 +170,36 @@ impl TargetCaps {
             None
         };
         if let Some(policy) = &self.reasoning_policy
-            && let Some(semantic) = policy.project_request(&projected.task.semantic)?
+            && let Some(semantic) =
+                policy.project_request(&projected.task.semantic, |settings| {
+                    use crate::{
+                        protocol::reasoning::ReasoningConversion, semantic::task::generation::*,
+                    };
+                    match policy.conversion {
+                        ReasoningConversion::BudgetToEffort { .. } => {
+                            self.manual_thinking
+                                && self.semantics.reasoning
+                                && settings.reasoning.budget_tokens.is_some_and(|budget| {
+                                    budget >= 1024
+                                        && settings
+                                            .controls
+                                            .max_output_tokens
+                                            .or(self.default_output_tokens)
+                                            .is_some_and(|ceiling| budget < ceiling)
+                                })
+                                && matches!(
+                                    settings.reasoning.mode,
+                                    Presence::Absent | Presence::Value(ReasoningMode::Budgeted)
+                                )
+                        }
+                        _ => settings.effort.value().is_some_and(|effort| {
+                            self.semantics.response_effort
+                                && effort.scope == EffortScope::Response
+                                && super::request::native_effort(effort.level).is_ok()
+                                && self.model_limits.check_values(None, [effort.level]).is_ok()
+                        }),
+                    }
+                })?
         {
             controls.push(policy.receipt(&request.task.semantic, &semantic)?);
             projected.to_mut().task.semantic = semantic;
@@ -306,7 +335,7 @@ impl TargetCaps {
                 }
                 RequestRule::SummarizeReasoning => projection.control_losses.push(Loss::Summary {
                     rule: rule.name(),
-                    input: settings.reasoning.summary.clone(),
+                    input: settings.reasoning.presentation.summary.clone(),
                     output: ReasoningDisplay::Summary,
                 }),
                 RequestRule::DeveloperAsSystem => projection.control_losses.push(Loss::Role {

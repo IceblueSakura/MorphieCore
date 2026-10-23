@@ -90,10 +90,13 @@ fn native_response_binding_activates_only_when_listed() {
         let wire: serde_json::Value = serde_json::from_slice(&prepared.body).unwrap();
         if candidate.endpoint.protocol == crate::topology::ProtocolProfile::AnthropicMessages {
             assert_eq!(wire["messages"][2]["content"][0]["is_error"], true);
-            assert!(!rules.contains(&"openai.omit-tool-result-errors.v1"));
+            assert!(!rules.contains(&"openai.wrap-tool-result-errors.v1"));
         } else {
-            assert_eq!(wire["messages"][2]["content"], "failed");
-            assert!(rules.contains(&"openai.omit-tool-result-errors.v1"));
+            assert_eq!(
+                wire["messages"][2]["content"],
+                "[tool result is_error=true]\nfailed"
+            );
+            assert!(rules.contains(&"openai.wrap-tool-result-errors.v1"));
         }
     }
     assert_eq!(entry.eligible(&request).unwrap().len(), 2);

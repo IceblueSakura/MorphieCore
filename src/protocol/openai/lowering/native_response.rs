@@ -209,7 +209,7 @@ pub(crate) fn project(
         )?])?;
     }
     let mut losses = vec![];
-    if source.usage_reports().has_details() {
+    if source.usage_reports().has_unrepresented_details() {
         losses.push(crate::protocol::usage::report_loss("response.encode"));
     }
     let coalesced = profile == Profile::Chat

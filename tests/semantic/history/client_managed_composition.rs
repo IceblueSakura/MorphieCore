@@ -45,7 +45,7 @@ impl Sample {
                 queries: None,
             },
             "interactions-v1" => {
-                reasoning.summary = Presence::Value(ReasoningSummary::Auto);
+                reasoning = ReasoningRequest::present(Some(ReasoningSummary::Auto));
                 usage.cached_input_tokens = None;
                 ProviderAction::Search {
                     query: None,
@@ -54,7 +54,7 @@ impl Sample {
             }
             "messages" => {
                 reasoning.mode = Presence::Value(ReasoningMode::Adaptive);
-                reasoning.display = Presence::Value(ReasoningDisplay::Omitted);
+                reasoning.presentation.visibility = Presence::Value(ReasoningDisplay::Omitted);
                 usage.input_relation = InputTokenRelation::ExcludesCacheReadAndWrite;
                 usage.total_relation = TotalTokenRelation::Unreported;
                 usage.input_tokens = Some(10);

@@ -23,6 +23,8 @@ pub struct TargetCaps {
     pub identity_hints: bool,
     /// Target admits metadata/service-tier/tool-budget context fields.
     pub standard_context: bool,
+    /// The selected model supports the native Chat predicted-output optimization.
+    pub prediction: bool,
 }
 impl TargetCaps {
     pub fn full() -> Self {
@@ -39,6 +41,7 @@ impl TargetCaps {
             cache: crate::protocol::cache::CacheProjection::all(),
             identity_hints: true,
             standard_context: true,
+            prediction: true,
         }
     }
 }

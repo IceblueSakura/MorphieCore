@@ -21,6 +21,7 @@ pub(super) fn unsupported() -> CodecError {
 /// Named degradable rules applied to one candidate's request copy.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
 pub enum RequestRule {
+    OmitPrediction,
     OmitVerbosity,
     OmitMessagePhase,
     Hint(crate::protocol::cache::HintRule),
@@ -41,6 +42,7 @@ pub enum RequestRule {
 impl RequestRule {
     pub const fn name(self) -> &'static str {
         match self {
+            Self::OmitPrediction => "generation.omit-prediction.v1",
             Self::OmitVerbosity => "gemini.omit-verbosity.v1",
             Self::OmitMessagePhase => "gemini.omit-message-phase.v1",
             Self::Hint(rule) => rule.name(),
@@ -63,6 +65,9 @@ pub(super) fn project(
     identity: &crate::semantic::context::ClientIdentityHints,
 ) -> Result<Value, CodecError> {
     let s = request.settings();
+    if s.prediction.is_some() {
+        rules.insert(RequestRule::OmitPrediction);
+    }
     if s.automatic_prefix_cache.is_some()
         || request
             .items()
@@ -298,10 +303,9 @@ fn thinking(
 ) -> Result<Option<Value>, CodecError> {
     let reasoning = &settings.reasoning;
     if reasoning.presence == ReasoningPresence::Null
-        || !reasoning.display.is_absent() && !reasoning.summary.is_absent()
         || reasoning
             .budget_tokens
-            .is_some_and(|budget| budget > i64::MAX as u64)
+            .is_some_and(|budget| budget > i32::MAX as u64)
         || reasoning.activation == Presence::Null
         || reasoning.activation.value() == Some(&ReasoningActivation::Disabled)
     {
@@ -310,12 +314,17 @@ fn thinking(
     if !reasoning.context.is_absent() || !reasoning.read_history.is_absent() {
         return Err(unsupported());
     }
-    let include = match (&reasoning.display, &reasoning.summary) {
-        (Presence::Value(ReasoningDisplay::Summary), _)
-        | (Presence::Absent, Presence::Value(ReasoningSummary::Auto)) => true,
-        (Presence::Absent, Presence::Value(ReasoningSummary::Concise))
-        | (Presence::Absent, Presence::Value(ReasoningSummary::Detailed)) => {
-            rules.insert(RequestRule::SummarizeReasoning);
+    let include = match (
+        &reasoning.presentation.visibility,
+        &reasoning.presentation.summary,
+    ) {
+        (Presence::Value(ReasoningDisplay::Summary), granularity) => {
+            if matches!(
+                granularity,
+                Presence::Value(ReasoningSummary::Concise | ReasoningSummary::Detailed)
+            ) {
+                rules.insert(RequestRule::SummarizeReasoning);
+            }
             true
         }
         (Presence::Null, _) => return Err(unsupported()),

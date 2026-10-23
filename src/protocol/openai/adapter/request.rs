@@ -92,24 +92,55 @@ fn with_schema_name(request: Cow<'_, Request>) -> Result<(Cow<'_, Request>, bool
     Ok((Cow::Owned(request), true))
 }
 
-fn without_tool_error_flags(
+fn with_tool_error_status(
     request: Cow<'_, Request>,
 ) -> Result<(Cow<'_, Request>, bool), CodecError> {
-    use crate::semantic::task::generation::Item;
-    if request.source != Some(crate::adapter::ClientProtocol::Messages)
-        || !request
+    use crate::semantic::{task::generation::*, value::Text};
+    if !request
             .task
             .semantic
             .items()
             .iter()
-            .any(|(_, item)| matches!(item, Item::ToolResult(result) if result.is_error.is_some()))
+            .any(|(_, item)| matches!(item, Item::ToolResult(result) | Item::CustomResult(result) if result.is_error.is_some()))
     {
         return Ok((request, false));
     }
+    let mut next = request
+        .task
+        .semantic
+        .items()
+        .iter()
+        .flat_map(|(_, item)| item.part_ids())
+        .filter(|id| id.scope() == LocalScope::DERIVED)
+        .map(PartId::get)
+        .max()
+        .unwrap_or(0);
     let mut items = request.task.semantic.items().to_vec();
     for (_, item) in &mut items {
-        if let Item::ToolResult(result) = item {
-            result.is_error = None;
+        if let Item::ToolResult(result) | Item::CustomResult(result) = item
+            && let Some(is_error) = result.is_error.take()
+        {
+            // This reports the supplied flag, not an inferred execution conclusion.
+            let prefix = format!("[tool result is_error={is_error}]\n");
+            match &mut result.output {
+                ToolOutput::Text(text) => text.insert_str(0, &prefix),
+                ToolOutput::Structured(value) => {
+                    result.output = ToolOutput::Text(format!("{prefix}{}", value.value()));
+                }
+                ToolOutput::Parts(parts) => {
+                    next = next.checked_add(1).ok_or(CodecError::Limit)?;
+                    parts.insert(
+                        0,
+                        Part::new(
+                            PartId::scoped(LocalScope::DERIVED, next),
+                            InputPart::Text(
+                                Text::new(prefix, "tool error status", 64)
+                                    .map_err(|_| CodecError::Limit)?,
+                            ),
+                        ),
+                    );
+                }
+            }
         }
     }
     let mut request = request.into_owned();
@@ -367,7 +398,29 @@ impl Adapter {
             return Err(CodecError::Invalid("overlapping reasoning policies").into());
         }
         if let Some(policy) = &self.adaptation.reasoning_policy
-            && let Some(semantic) = policy.project_request(&projected.task.semantic)?
+            && let Some(semantic) =
+                policy.project_request(&projected.task.semantic, |settings| {
+                    use crate::{
+                        protocol::reasoning::ReasoningConversion, semantic::task::generation::*,
+                    };
+                    match policy.conversion {
+                        ReasoningConversion::BudgetToEffort { .. } => {
+                            self.protocol == Profile::Chat
+                                && self.adaptation.rules.thinking_controls
+                        }
+                        _ => {
+                            contract.semantics.reasoning
+                                && !self.adaptation.rules.reject_reasoning_controls
+                                && settings.effort.value().is_some_and(|effort| {
+                                    effort.scope == EffortScope::Reasoning
+                                        && contract
+                                            .model_limits
+                                            .check_values(None, [effort.level])
+                                            .is_ok()
+                                })
+                        }
+                    }
+                })?
         {
             controls.push(policy.receipt(&projected.task.semantic, &semantic)?);
             projected.to_mut().task.semantic = semantic;
@@ -452,11 +505,19 @@ impl Adapter {
         if changed {
             rules.push("openai.default-schema-name.v1");
         }
-        // Messages permits this named loss only on targets without an error carrier.
-        // Keep the source and every native candidate unchanged.
-        let (projected, changed) = without_tool_error_flags(projected)?;
+        // Without a native flag, preserve the failure distinction in model-visible text.
+        // Keep source values, execution facts and every native candidate unchanged.
+        let (projected, changed) = with_tool_error_status(projected)?;
         if changed {
-            rules.push("openai.omit-tool-result-errors.v1");
+            rules.push("openai.wrap-tool-result-errors.v1");
+            controls.push(RequestControlLoss::Projection(
+                crate::lowering::generation::LossEvidence {
+                    rule: "openai.wrap-tool-result-errors.v1",
+                    field: "generation.tool_results.is_error",
+                    direction: "request.encode",
+                    action: "wrap",
+                },
+            ));
         }
         let request = projected.as_ref();
         request.check_context(contract.standard_context)?;
@@ -677,7 +738,63 @@ mod tests {
     use crate::protocol::openai::Dialect;
 
     #[test]
-    fn schema_naming_and_tool_error_omission_are_candidate_local() {
+    fn error_wrapping_keeps_media_owners_and_rejects_growth_beyond_the_text_bound() {
+        use crate::semantic::task::generation::*;
+        let body = serde_json::json!({"model":"m","max_tokens":64,"messages":[
+            {"role":"assistant","content":[{"type":"tool_use","id":"call","name":"lookup","input":{}}]},
+            {"role":"user","content":[{"type":"tool_result","tool_use_id":"call","is_error":true,
+                "content":[{"type":"image","source":{"type":"url","url":"https://example.invalid/image.png"}}]}]}
+        ]});
+        let mut source = crate::adapter::ClientAdapter::Messages
+            .decode_client_request(body.to_string().as_bytes())
+            .unwrap();
+        source.source = None; // Typed error semantics do not depend on the source protocol label.
+        let before = source.clone();
+        let (projected, changed) = with_tool_error_status(Cow::Borrowed(&source)).unwrap();
+        assert!(changed);
+        let Item::ToolResult(result) = &projected.task.semantic.items()[1].1 else {
+            panic!("result")
+        };
+        let ToolOutput::Parts(parts) = &result.output else {
+            panic!("parts")
+        };
+        assert_eq!(
+            parts[0].content.as_text(),
+            Some("[tool result is_error=true]\n")
+        );
+        assert_eq!(parts[0].id.scope(), LocalScope::DERIVED);
+        let Item::ToolResult(original) = &source.task.semantic.items()[1].1 else {
+            panic!("source result")
+        };
+        let ToolOutput::Parts(original_parts) = &original.output else {
+            panic!("source parts")
+        };
+        assert_eq!(&parts[1..], original_parts);
+        assert_eq!(source, before);
+        let wire = Adapter::new(Profile::Responses, Dialect::Standard, None)
+            .encode_request(&source, "m", &TargetCaps::full())
+            .unwrap();
+        assert_eq!(
+            wire["input"][1]["output"][0]["text"],
+            "[tool result is_error=true]\n"
+        );
+        assert_eq!(
+            wire["input"][1]["output"][1]["image_url"],
+            "https://example.invalid/image.png"
+        );
+        let mut items = source.task.semantic.items().to_vec();
+        let Item::ToolResult(result) = &mut items[1].1 else {
+            unreachable!()
+        };
+        result.output = ToolOutput::Text("x".repeat(MAX_TEXT_BYTES));
+        source.task.semantic = source.task.semantic.with_items(items).unwrap();
+        let oversized_source = source.clone();
+        assert!(with_tool_error_status(Cow::Borrowed(&source)).is_err());
+        assert_eq!(source, oversized_source);
+    }
+
+    #[test]
+    fn schema_naming_and_tool_error_wrapping_are_candidate_local() {
         use serde_json::json;
         for profile in [Profile::Chat, Profile::Responses] {
             let target = Adapter::new(profile, Dialect::Standard, None);
@@ -706,8 +823,12 @@ mod tests {
                 assert_eq!(
                     projected
                         .rules
-                        .contains(&"openai.omit-tool-result-errors.v1"),
+                        .contains(&"openai.wrap-tool-result-errors.v1"),
                     marker.is_some()
+                );
+                let content = marker.map_or_else(
+                    || "feedback".into(),
+                    |flag| format!("[tool result is_error={flag}]\nfeedback"),
                 );
                 match profile {
                     Profile::Chat => {
@@ -717,14 +838,14 @@ mod tests {
                         );
                         assert_eq!(
                             projected.value["messages"][1],
-                            json!({"role":"tool","tool_call_id":"call","content":"feedback"})
+                            json!({"role":"tool","tool_call_id":"call","content":content})
                         );
                     }
                     Profile::Responses => {
                         assert_eq!(projected.value["text"]["format"]["name"], "response");
                         assert_eq!(
                             projected.value["input"][1],
-                            json!({"type":"function_call_output","call_id":"call","output":"feedback"})
+                            json!({"type":"function_call_output","call_id":"call","output":content})
                         );
                     }
                 }

@@ -51,10 +51,6 @@ pub enum Normalization {
         field: &'static str,
     },
 }
-pub(crate) const PREDICTION_OMISSION: Normalization = Normalization::Omitted {
-    rule: "chat.omit-prediction.v1",
-    field: "generation.prediction",
-};
 /// A returned replay manifest no longer matched its visible history.
 pub(crate) const REPLAY_MANIFEST_OMISSION: Normalization = Normalization::Omitted {
     rule: "generation.omit-unmatched-replay-manifest.v1",

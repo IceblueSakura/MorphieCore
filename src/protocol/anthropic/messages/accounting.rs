@@ -124,7 +124,7 @@ pub(super) fn project(report: &UsageReport) -> Result<Option<UsageReport>, Codec
         return Ok(None);
     };
     let mut selected = report.clone();
-    selected.counts = project_usage(summary)?;
+    selected.counts = project_usage(summary)?.aggregate_counts();
     selected.accounting = UsageAccounting::Direct;
     selected.details.modalities.clear();
     selected.details.defaulted.clear();
@@ -457,7 +457,7 @@ mod tests {
                     counts.output_tokens = None;
                     counts.total_tokens = None;
                     counts.total_relation = TotalTokenRelation::Unreported;
-                    last.counts = counts;
+                    last.counts = counts.aggregate_counts();
                 }
                 _ => unreachable!(),
             }

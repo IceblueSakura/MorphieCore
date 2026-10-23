@@ -91,7 +91,9 @@ pub(super) fn represent_reasoning(
     ) {
         return Err(RepresentationError::Reasoning);
     }
-    if profile == Profile::Responses && controls.summary() == Some(ReasoningSummary::Disabled) {
+    if profile == Profile::Responses
+        && controls.presentation.visibility.value() == Some(&ReasoningDisplay::Omitted)
+    {
         return Err(RepresentationError::Reasoning);
     }
     for (id, item) in items {
@@ -159,7 +161,7 @@ pub(super) fn represent_reasoning(
             && controls.activation.is_absent()
             && controls.read_history.is_absent()
             && !native_budget
-            || !controls.summary.is_absent());
+            || !controls.presentation.is_absent());
     if has_reasoning_items
         && profile != Profile::Responses
         && !(profile == Profile::Chat

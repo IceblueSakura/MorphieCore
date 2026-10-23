@@ -40,7 +40,6 @@ pub enum ReasoningActivation {
 }
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ReasoningSummary {
-    Disabled,
     Auto,
     Concise,
     Detailed,
@@ -67,11 +66,33 @@ pub enum ReasoningDisplay {
     Summary,
     Omitted,
 }
+/// One presentation intent: visibility and summary granularity are independent axes.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct ReasoningPresentation {
+    pub visibility: crate::semantic::value::Presence<ReasoningDisplay>,
+    pub summary: crate::semantic::value::Presence<ReasoningSummary>,
+}
+impl ReasoningPresentation {
+    pub fn is_absent(&self) -> bool {
+        self.visibility.is_absent() && self.summary.is_absent()
+    }
+    pub fn validate(&self) -> Result<(), crate::semantic::task::generation::GenerationError> {
+        use crate::semantic::value::Presence;
+        if self.summary.value().is_some()
+            && self.visibility != Presence::Value(ReasoningDisplay::Summary)
+            || self.summary == Presence::Null && !self.visibility.is_absent()
+            || self.visibility == Presence::Null && !self.summary.is_absent()
+        {
+            return Err(crate::semantic::task::generation::GenerationError::InvalidControl);
+        }
+        Ok(())
+    }
+}
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct ReasoningRequest {
     pub presence: ReasoningPresence,
     pub activation: crate::semantic::value::Presence<ReasoningActivation>,
-    pub summary: crate::semantic::value::Presence<ReasoningSummary>,
+    pub presentation: ReasoningPresentation,
     pub context: crate::semantic::value::Presence<ReasoningContext>,
     /// Whether supplied historical reasoning is read. Absence uses the target's
     /// default; this is not a current-turn context window or replay permission.
@@ -80,7 +101,6 @@ pub struct ReasoningRequest {
     /// Reasoning tokens, distinct from the response-token ceiling. Whether it is a
     /// target or a cap is the target's rule; Messages documents a target.
     pub budget_tokens: Option<u64>,
-    pub display: crate::semantic::value::Presence<ReasoningDisplay>,
     /// Handling of returned reasoning that fails the target's conversation check.
     pub replay_mismatch: Option<ReplayMismatch>,
     encrypted_output: bool,
@@ -99,7 +119,12 @@ impl ReasoningRequest {
         use crate::semantic::value::Presence;
         Self {
             presence: ReasoningPresence::Present,
-            summary: summary.map_or(Presence::Absent, Presence::Value),
+            presentation: ReasoningPresentation {
+                visibility: summary.map_or(Presence::Absent, |_| {
+                    Presence::Value(ReasoningDisplay::Summary)
+                }),
+                summary: summary.map_or(Presence::Absent, Presence::Value),
+            },
             ..Default::default()
         }
     }
@@ -114,31 +139,24 @@ impl ReasoningRequest {
         self.presence
     }
     pub fn summary(&self) -> Option<ReasoningSummary> {
-        self.summary.value().copied()
+        self.presentation.summary.value().copied()
     }
     pub fn validate(&self) -> Result<(), crate::semantic::task::generation::GenerationError> {
+        self.presentation.validate()?;
         if self.budget_tokens == Some(0) {
             return Err(crate::semantic::task::generation::GenerationError::InvalidControl);
         }
         if self.presence != ReasoningPresence::Present
             && (!self.activation.is_absent()
-                || !self.summary.is_absent()
+                || !self.presentation.is_absent()
                 || !self.context.is_absent()
                 || !self.read_history.is_absent()
                 || !self.mode.is_absent()
-                || self.budget_tokens.is_some()
-                || !self.display.is_absent())
+                || self.budget_tokens.is_some())
         {
             return Err(crate::semantic::task::generation::GenerationError::InvalidControl);
         }
         if self.read_history == crate::semantic::value::Presence::Null {
-            return Err(crate::semantic::task::generation::GenerationError::InvalidControl);
-        }
-        if self.activation.value() == Some(&ReasoningActivation::Disabled)
-            && self
-                .summary()
-                .is_some_and(|s| s != ReasoningSummary::Disabled)
-        {
             return Err(crate::semantic::task::generation::GenerationError::InvalidControl);
         }
         if self.mode.value() == Some(&ReasoningMode::Budgeted) && self.budget_tokens.is_none()
@@ -148,13 +166,7 @@ impl ReasoningRequest {
                         self.mode.value(),
                         Some(ReasoningMode::Adaptive | ReasoningMode::Budgeted)
                     )
-                    || self.display.value() == Some(&ReasoningDisplay::Summary))
-            || self.display.value() == Some(&ReasoningDisplay::Omitted)
-                && self
-                    .summary()
-                    .is_some_and(|s| s != ReasoningSummary::Disabled)
-            || self.display.value() == Some(&ReasoningDisplay::Summary)
-                && self.summary() == Some(ReasoningSummary::Disabled)
+                    || self.presentation.visibility.value() == Some(&ReasoningDisplay::Summary))
         {
             return Err(crate::semantic::task::generation::GenerationError::InvalidControl);
         }

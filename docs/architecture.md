@@ -177,13 +177,13 @@ When a concept cannot be expressed, show a minimal counterexample and structural
 
 The accepted redesign removes competing writable representations, not legitimate distinctions:
 
-- Store modality token counts once in the scoped accounting breakdown; flat delivery counters are derived views.
-- Use one reasoning-presentation owner with independent visibility and summary granularity. Activation, effort scope, budget, readable text and opaque continuation remain distinct.
+- `UsageReport.counts` holds aggregate `UsageCounts`; modality observations live only in `details.modalities`. Flat `Usage` values are derived operation/delivery views. Scalar intake shorthands split their modalities when constructing a report. Editing or deleting a breakdown entry cannot restore an older flat value. Sum disjoint modalities only within their reported bucket; tool-input overlap still needs its own premise.
+- `ReasoningRequest.presentation` owns visibility and summary granularity. Hidden output is not a granularity enum; nullable summary preference is not an explicit hidden-output guarantee. Activation, effort scope, budget, readable text and opaque continuation remain distinct.
 - Own cache boundaries and explicit/inherited retention on the affected content/tool use. Fidelity may retain representation evidence, never resurrect a deleted semantic directive. Image-size enforcement similarly belongs on the image use.
 - Keep request intent, opening/terminal observations and completed delivery views separate. Derivation and estimation never overwrite source facts.
 - Keep runtime attempts and the execution-owned adaptation report outside the IR. Reports, logs and wire extensions are projections of that report, not competing semantic containers.
 
-These are approved ownership corrections, not claims that the current implementation has migrated.
+The [roadmap](roadmap.md#standards-reset-and-redesign) tracks the remaining owner-local directive and history migration. A representation record is not a second writable semantic owner.
 
 #### Tool examples and document context
 
@@ -588,6 +588,10 @@ GenerateContent emits only the fixed `labels.safety_identifier` entry. Values pe
 
 The old D3 intake-time omission of Chat `prediction` is superseded. Preserve its typed meaning until target projection, use an exact native carrier when supported, and otherwise omit the optimization with a receipt. Predicted content is not an output constraint or a source of fabricated prediction-token reports.
 
+`GenerationSettings.prediction` contains bounded ordered text parts, not wire JSON. Standard Chat has a native carrier; trusted `TargetCaps.prediction` independently declares model support. Existing catalog bindings keep it closed without that evidence. Unsupported targets record `generation.omit-prediction.v1` at request projection, never at intake. String/single-part normalization does not change the predicted text.
+
+Native tool-error flags remain exact. Without an OpenAI carrier, `openai.wrap-tool-result-errors.v1` prefixes the tool output with `[tool result is_error=true]\n` or `[tool result is_error=false]\n`. It preserves the supplied Boolean, not an inferred success or execution conclusion. Text keeps its payload; multipart results gain a separate bounded text part before their unchanged parts/resources; structured values retain exact JSON serialization inside the textual wrapper. The source, call links and execution facts remain unchanged. Added bytes/parts count against normal limits; overflow rejects instead of truncating.
+
 P8 permits approximation of summary/display granularity, such as concise or detailed summary intent to a target's single summary mode. Preserve the requested show/hide behavior independently: hiding must not become disclosure, and requested display must not be silently disabled. An absent preference remains absent. These control approximations do not enable reasoning, fabricate summaries, discard generated content or remove required replay. Reject a target that cannot preserve the visibility contract.
 
 P8 also permits named, target-specific approximation among developer, system and user roles when an exact carrier is unavailable. Preserve the original role and authority in source IR; project only the target copy and record the source/target roles. Preserve content and the relative order of existing history. This does not permit inventing assistant/tool speakers, repairing orphan results or accepting an invalid source role.
@@ -606,7 +610,7 @@ Keep omitted normalization-default strictness distinct from omitted non-strict d
 
 The reverse direction has an exact carrier: an omitted non-strict source default becomes explicit `strict:false` on Responses. Materialize that default without changing source IR/schema. Native normalization-with-fallback requires its own evidenced projection, not unconditional conversion to plain tools.
 
-Schema normalization and explicit strict tools have separate semantic requirements and capability checks. Supporting one does not imply the other. The current adapters' blanket normalization-default rejection is migration work, not the redesigned protocol contract.
+Schema normalization and explicit strict tools have separate semantic requirements and capability checks. Supporting one does not imply the other. Native Responses keeps omitted `strict` absent and sends the bounded original schema, including non-normalizable schemas, for service normalization/fallback. Mandatory local strict-subset admission applies to explicit `strict:true`. Cross-protocol normalization-default rejection remains until an evidenced equivalent projection exists.
 
 OpenAI terminal delivery uses selected approximations. Chat's `stop` officially covers a natural stop and a matched stop sequence, including beside forced tool calls, so natural and sequence-matched causes coarsen to it under `chat.coarsen-completion-cause.v1`; an ambiguous stop is exact. Responses `completed` has no cause carrier, so `responses.omit-completion-cause.v1` omits any cause. A recitation stop becomes OpenAI `content_filter` under `openai.recitation-as-content-filter.v1` and stays incomplete. OpenAI has no context-window reason: Chat reports `length` under `chat.context-window-as-length.v1`, and Responses stays incomplete with a null reason under `responses.omit-context-window-reason.v1`. Generic Messages still rejects ambiguous stops and recitation; its selected Google exception is defined below. These rules never turn a non-success outcome into success.
 
@@ -645,7 +649,7 @@ The IR separates activation from a scope-qualified effort control. [Reasoning ty
 
 Put activation on `ReasoningRequest` and one optional `EffortControl { scope, level }` on `GenerationSettings`. The initial scopes are `Reasoning` and `Response`. One scoped control is sufficient for the selected contracts; do not add two parallel effort fields without a counterexample requiring both at once. Keep protocol-relevant absence and null separate from active intent.
 
-Activation distinguishes disabled from enabled reasoning; enabled permits reasoning and does not promise a nonzero token count. Execution/allocation mode, numeric budget, summary, display and replay stay separate. `EffortLevel` contains only positive levels: native off spellings normalize to activation, not a minimum effort. An omitted activation does not invent enabled behavior.
+Activation distinguishes disabled from enabled reasoning; enabled permits reasoning and does not promise a nonzero token count. Execution/allocation mode, numeric budget and replay stay separate from presentation visibility/granularity. `EffortLevel` contains only positive levels: native off spellings normalize to activation, not a minimum effort. An omitted activation does not invent enabled behavior.
 
 Disabled activation plus response-wide high effort is valid IR. Disabled activation plus a positive reasoning-only effort, adaptive/budgeted allocation or numeric thinking budget is contradictory. Standard/pro execution mode is not an activation switch; validate its combinations against the target contract rather than banning it solely because reasoning is disabled. Validate official wire variants separately before constructing this contract.
 
@@ -696,6 +700,10 @@ For a target-specific table `{low: 500, medium: 500, high: 1000, xhigh: 1000}`, 
 The shared preset's upward tie boundaries are `1536 -> low`, `3072 -> medium`, `6144 -> high`, `12288 -> xhigh` and `20480 -> max`. Exact preset values retain their level, including `8192 -> high`, `16384 -> xhigh` and `24576 -> max`. Arbitrary numeric budgets remain lossy: the representative tokens do not replace the original source value.
 
 Absent controls stay absent. Off is decoded into activation before matching; protocol-specific zero/automatic sentinels never enter positive-budget quantization. If a target can preserve the requested native numeric budget, prefer that carrier instead of quantizing unnecessarily. Qualitative requests with an exact target carrier likewise need no budget round trip.
+
+Each target assesses the particular control before invoking the selected conversion, including native scope, model levels, numeric carriers and effective output ceiling. It does not retry the entire encoder after an arbitrary error. Apply this independently to root and ordered controls: an already-native root control must not reject merely because an ordered control needs scope conversion. Native Messages can retain budget plus response effort, or disabled thinking plus response effort. A configured fallback is not an instruction to erase either exact value.
+
+For generateContent, wire integer representability alone does not declare native model budget support. The exact-first predicate and budget-admission guard share the same capability decision: an explicit native budget declaration or the already selected numeric-target policy. Current catalog defaults remain closed; this introduces no new binding. Positive native budgets obey the selected Discovery `int32` carrier.
 
 Retain the original budget and record the selected table, matched level and representative tokens as adaptation evidence, not reported model effort. Quantization does not bypass scope or target-level admission, invent a missing table entry, activate a binding or change route policy.
 
@@ -1194,6 +1202,7 @@ The 2026-10-23 standards reset supersedes conflicting historical conversion, pub
 | Decision | Consequence |
 |---|---|
 | Standards reset and breaking redesign (2026-10-23) | User accepted semantic-union IR with unique ownership, exact-first ordered fallback, official public protocol baselines, actual-loss reporting and review of all prior conversions. Pin current stable dependencies and release sources before implementation; old mapping outputs are not regression authority. Reuse upstream standard-based tests in the integrated redesign gate, preserving independent safety invariants |
+| Canonical accounting and control projections (2026-10-23) | Scoped modality breakdowns and one reasoning-presentation owner replace competing writable facts. Preserve prediction until target selection, native Responses omitted-strict fallback and already representable allocation controls. Replace tool-error deletion with a bounded model-visible status wrapper; source facts, execution truth and caller ceilings remain protected. Owner-local cache/image and continuation work retain their separate remaining gates |
 | Five-stage development order | 1. Same-protocol lossless upstream/downstream IR codecs; 2. Basic agent tool interactions; 3. Cross-protocol stability and `count_tokens`; 4. Embedding/audio/image/video APIs and Files/multipart Uploads; 5. Unscheduled citations, tool discovery, hosted tools, server-side compaction, Batch and Realtime. Lossless claims are semantic and scoped; approved loss is not losslessness. Scope and exit conditions live in the [roadmap](roadmap.md#planned-order) |
 | Historical stage-1 baseline (2026-10-19) | Prior evidence used OpenAI Python 3.35.1, Anthropic Python 1.15.0 and pi 1.3.0. The 2026-10-23 stable-release reset replaces these active pins and their mapping-oracle authority, without changing the dates or scope of prior observations |
 | Installed-client stable release policy (2026-10-23) | Supersedes the 2026-10-21 major-only policy. Harnesses require selected stable release versions from the source lock; full version/build provenance and isolated execution remain necessary. Host binaries are not automatically changed; historical 2.x OpenCode behavior does not certify the selected release |

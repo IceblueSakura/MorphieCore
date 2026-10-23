@@ -1,8 +1,10 @@
 //! The final token report of one operation. Missing counts and undeclared
 //! relationships stay unknown.
+mod counts;
 pub(in crate::semantic::task::generation) mod reports;
 pub(in crate::semantic::task::generation) mod views;
 use crate::semantic::task::generation::GenerationError;
+pub use counts::UsageCounts;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum OutputTokenRelation {
     IncludesReasoning,
@@ -24,6 +26,7 @@ pub enum TotalTokenRelation {
     Unreported,
 }
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+/// A flat operation/delivery view. Source reports own modality counts in their breakdown.
 pub struct Usage {
     pub output_relation: OutputTokenRelation,
     pub input_relation: InputTokenRelation,

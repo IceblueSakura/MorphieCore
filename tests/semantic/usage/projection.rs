@@ -35,6 +35,97 @@ fn response() -> GenerationResponse {
 }
 
 #[test]
+fn canonical_report_events_reach_terminal_carriers_without_rewriting_source_facts() {
+    use morphiecore::protocol::openai::events::EventEncoder;
+    let report = UsageReport::operation(Usage {
+        input_image_tokens: Some(7),
+        input_audio_tokens: Some(0),
+        cached_input_tokens: Some(0),
+        input_cache_write_tokens: Some(0),
+        reasoning_tokens: Some(0),
+        ..Usage::operation(10, 2, 12)
+    });
+    let original = report.clone();
+    let fidelity = FidelityRecords::default();
+    for profile in [Profile::Chat, Profile::Responses] {
+        let mut encoder = EventEncoder::new(profile, metadata()).unwrap();
+        for event in text_events() {
+            encoder.encode(&event, &fidelity).unwrap();
+        }
+        assert!(
+            encoder
+                .encode(&StreamEvent::UsageReport(report.clone()), &fidelity)
+                .unwrap()
+                .is_empty()
+        );
+        let frames = encoder
+            .encode(
+                &crate::events_support::terminal(StreamTerminal::Completed),
+                &fidelity,
+            )
+            .unwrap();
+        encoder.finish().unwrap();
+        if profile == Profile::Chat {
+            let usage = frames
+                .iter()
+                .filter_map(|frame| frame.get("usage"))
+                .find(|usage| usage.is_object())
+                .unwrap();
+            assert_eq!(usage["prompt_tokens_details"]["image_tokens"], 7);
+            assert_eq!(usage["prompt_tokens_details"]["audio_tokens"], 0);
+        } else {
+            let usage = &frames.last().unwrap()["response"]["usage"];
+            assert_eq!(usage["input_tokens"], 10);
+            assert_eq!(usage["input_tokens_details"]["cached_tokens"], 0);
+            assert!(usage["input_tokens_details"].get("image_tokens").is_none());
+            assert!(encoder.projection().iter().any(|stage| {
+                stage
+                    .loss
+                    .is_some_and(|loss| loss.name() == "responses.omit-input-image-tokens.v1")
+            }));
+        }
+        assert!(!encoder.projection().iter().any(|stage| {
+            stage
+                .loss
+                .is_some_and(|loss| loss.name() == "generation.usage-report-view.v1")
+        }));
+        assert_eq!(report, original);
+    }
+}
+
+#[test]
+fn canonical_modalities_use_exact_chat_carriers_without_report_loss() {
+    let source = response();
+    let before = source.clone();
+    let fidelity = FidelityRecords::default();
+    let meta = metadata();
+    let target =
+        lower_response(&source, &fidelity, &meta, Profile::Chat, Contract::full()).unwrap();
+    assert!(!target.projection().iter().any(|stage| {
+        stage
+            .loss
+            .is_some_and(|loss| loss.name() == "generation.usage-report-view.v1")
+    }));
+    let wire = chat::encode_response(&target).unwrap();
+    assert_eq!(wire["usage"]["prompt_tokens_details"]["image_tokens"], 7);
+    assert_eq!(
+        source
+            .usage_reports()
+            .operation()
+            .unwrap()
+            .details
+            .modalities,
+        vec![ModalityTokens {
+            bucket: UsageBucket::Input,
+            modality: Some(TokenModality::Image),
+            tokens: Some(7),
+            defaulted: false
+        }]
+    );
+    assert_eq!(source, before);
+}
+
+#[test]
 fn responses_fingerprint_projection_is_explicit_and_keeps_source_metadata() {
     use crate::events_support::terminal;
     use morphiecore::{

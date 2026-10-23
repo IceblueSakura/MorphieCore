@@ -68,7 +68,7 @@ pub(crate) fn decode_generation_with(
         .and_then(Value::as_array)
         .ok_or(CodecError::Invalid("messages"))?;
     let mut b = Items::new(direction);
-    if let Some(prediction) = o.get("prediction").filter(|v| !v.is_null()) {
+    let prediction = if let Some(prediction) = o.get("prediction").filter(|v| !v.is_null()) {
         let prediction = object(prediction)?;
         direction.fields(prediction, &["type", "content"])?;
         if string(prediction, "type")? != "content" {
@@ -77,18 +77,22 @@ pub(crate) fn decode_generation_with(
         let content = prediction
             .get("content")
             .ok_or(CodecError::Invalid("prediction content"))?;
-        match content {
-            Value::String(_) => {
-                raw_string(prediction, "content")?;
-            }
-            Value::Array(_) => {
-                request_text_parts(content, direction)?;
-            }
-            _ => return Err(CodecError::Invalid("prediction content")),
-        }
-        b.fidelity
-            .record_omission(crate::protocol::fidelity::PREDICTION_OMISSION);
-    }
+        Some(
+            request_text_parts(content, direction)?
+                .into_iter()
+                .map(|text| {
+                    crate::semantic::value::Text::allowing_empty(
+                        text,
+                        "prediction text",
+                        MAX_TEXT_BYTES,
+                    )
+                })
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|_| CodecError::Limit)?,
+        )
+    } else {
+        None
+    };
     for message in messages {
         let start = b.items.len();
         let mut value = message.clone();
@@ -155,6 +159,7 @@ pub(crate) fn decode_generation_with(
     let verbosity = read_presence(o, "verbosity", crate::protocol::openai::settings::verbosity)?;
     let mut settings = GenerationSettings {
         controls,
+        prediction,
         text: TextOptions {
             presence: if format.is_absent() && verbosity.is_absent() {
                 Presence::Absent
@@ -303,6 +308,22 @@ pub fn encode_generation(target: &RequestRepresentation<'_>) -> Result<Value, Co
     }
     let mut v = json!({"messages": messages});
     let o = v.as_object_mut().expect("object literal");
+    if let Some(parts) = &target.semantic.settings().prediction {
+        let content = if parts.len() == 1 {
+            json!(parts[0].as_str())
+        } else {
+            json!(
+                parts
+                    .iter()
+                    .map(|part| json!({"type":"text","text":part.as_str()}))
+                    .collect::<Vec<_>>()
+            )
+        };
+        o.insert(
+            "prediction".into(),
+            json!({"type":"content","content":content}),
+        );
+    }
     write_control_values(
         target.semantic.controls(),
         o,

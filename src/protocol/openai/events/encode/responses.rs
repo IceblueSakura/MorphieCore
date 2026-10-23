@@ -359,10 +359,8 @@ impl EventEncoder {
             | StreamEvent::MessageEnvelope(_) => vec![],
             StreamEvent::LogprobsSnapshot { .. }
             | StreamEvent::TextMetadata { .. }
-            | StreamEvent::Usage(_) => vec![],
-            StreamEvent::UsageReport(_) => {
-                return Err(CodecError::Unsupported("scoped usage projection".into()));
-            }
+            | StreamEvent::Usage(_)
+            | StreamEvent::UsageReport(_) => vec![],
             StreamEvent::PartReplay { .. } => {
                 return Err(CodecError::Unsupported("owned replay attachment".into()));
             }

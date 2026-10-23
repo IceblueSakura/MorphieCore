@@ -118,7 +118,7 @@ pub fn lower_response<'a>(
             Some(loss),
         ));
     }
-    if r.usage_reports().has_details() {
+    if r.usage_reports().has_unrepresented_details() {
         if c.reported_facts == ReportedFactPolicy::StrictComplete {
             return Err(RepresentationError::ReportedFacts);
         }
@@ -192,10 +192,9 @@ fn validate_response(
     }
     require_reported_facts(r, metadata, c)?;
     if profile == Profile::Responses
-        && metadata
-            .context
-            .settings()
-            .is_some_and(|s| s.reasoning.summary() == Some(ReasoningSummary::Disabled))
+        && metadata.context.settings().is_some_and(|s| {
+            s.reasoning.presentation.visibility.value() == Some(&ReasoningDisplay::Omitted)
+        })
     {
         return Err(RepresentationError::Reasoning);
     }

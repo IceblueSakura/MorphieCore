@@ -123,7 +123,21 @@ impl TargetCaps {
         let mut controls = vec![];
         if let Some(policy) = &self.reasoning_policy
             && policy.applies_to(&request.task.semantic)
-            && let Some(semantic) = policy.project_request(&request.task.semantic)?
+            && let Some(semantic) = policy.project_request(&request.task.semantic, |settings| {
+                use crate::semantic::task::generation::*;
+                settings.reasoning.budget_tokens.is_none()
+                    && settings.effort.value().is_some_and(|effort| {
+                        effort.scope == EffortScope::Reasoning
+                            && matches!(
+                                effort.level,
+                                EffortLevel::Minimal
+                                    | EffortLevel::Low
+                                    | EffortLevel::Medium
+                                    | EffortLevel::High
+                            )
+                            && self.model_limits.check_values(None, [effort.level]).is_ok()
+                    })
+            })?
         {
             controls.push(policy.receipt(&request.task.semantic, &semantic)?);
             projected.to_mut().task.semantic = semantic;
@@ -194,7 +208,13 @@ impl TargetCaps {
                 }),
                 RequestRule::SummarizeReasoning => controls.push(Loss::Summary {
                     rule: rule.name(),
-                    input: request.task.semantic.reasoning().summary.clone(),
+                    input: request
+                        .task
+                        .semantic
+                        .reasoning()
+                        .presentation
+                        .summary
+                        .clone(),
                     output: ReasoningDisplay::Summary,
                 }),
                 RequestRule::DeveloperAsSystem => controls.push(Loss::Role {

@@ -82,6 +82,8 @@ pub struct TargetCaps {
     pub resource_time: Option<std::time::SystemTime>,
     pub cache: CacheProjection,
     pub reasoning_policy: Option<crate::protocol::reasoning::ReasoningRequestPolicy>,
+    /// Model-selected numeric carrier, independent of a configured conversion fallback.
+    pub native_thinking_budget: bool,
     pub reasoning_as_text: bool,
     /// Selected downstream terminal projection; native source facts stay unchanged.
     pub messages_terminal_projection: bool,
@@ -94,12 +96,22 @@ impl Default for TargetCaps {
             resource_time: None,
             cache: CacheProjection::default(),
             reasoning_policy: None,
+            native_thinking_budget: false,
             reasoning_as_text: false,
             messages_terminal_projection: false,
         }
     }
 }
 impl TargetCaps {
+    fn admits_budget(&self) -> bool {
+        self.native_thinking_budget
+            || self.reasoning_policy.as_ref().is_some_and(|policy| {
+                matches!(
+                    policy.conversion,
+                    crate::protocol::reasoning::ReasoningConversion::EffortToBudget { .. }
+                )
+            })
+    }
     fn check_context(&self, request: &Request) -> Result<bool, CodecError> {
         request.check_grouping()?;
         request.context.validate()?;
@@ -130,21 +142,42 @@ impl TargetCaps {
         let mut controls = vec![];
         if let Some(policy) = &self.reasoning_policy
             && policy.applies_to(&request.task.semantic)
-            && let Some(semantic) = policy.project_request(&request.task.semantic)?
+            && let Some(semantic) = policy.project_request(&request.task.semantic, |settings| {
+                use crate::{
+                    protocol::reasoning::ReasoningConversion, semantic::task::generation::*,
+                };
+                match policy.conversion {
+                    ReasoningConversion::BudgetToEffort { .. } => {
+                        self.admits_budget()
+                            && settings.effort.is_absent()
+                            && settings
+                                .reasoning
+                                .budget_tokens
+                                .is_some_and(|b| b <= i32::MAX as u64)
+                    }
+                    _ => {
+                        settings.reasoning.budget_tokens.is_none()
+                            && settings.effort.value().is_some_and(|effort| {
+                                effort.scope == EffortScope::Reasoning
+                                    && matches!(
+                                        effort.level,
+                                        EffortLevel::Minimal
+                                            | EffortLevel::Low
+                                            | EffortLevel::Medium
+                                            | EffortLevel::High
+                                    )
+                                    && self.model_limits.check_values(None, [effort.level]).is_ok()
+                            })
+                    }
+                }
+            })?
         {
             controls.push(policy.receipt(&request.task.semantic, &semantic)?);
             projected.to_mut().task.semantic = semantic;
             reasoning_rule = Some(policy.rule);
         }
         let request = projected.as_ref();
-        if request.task.semantic.reasoning().budget_tokens.is_some()
-            && !self.reasoning_policy.as_ref().is_some_and(|policy| {
-                matches!(
-                    policy.conversion,
-                    crate::protocol::reasoning::ReasoningConversion::EffortToBudget { .. }
-                )
-            })
-        {
+        if request.task.semantic.reasoning().budget_tokens.is_some() && !self.admits_budget() {
             return Err(CodecError::Unsupported("undeclared model thinking budget".into()).into());
         }
         let stripped = request.without_foreign_reasoning(Some(&target.origin()))?;
@@ -216,7 +249,13 @@ impl TargetCaps {
                 }),
                 RequestRule::SummarizeReasoning => controls.push(Loss::Summary {
                     rule: rule.name(),
-                    input: request.task.semantic.reasoning().summary.clone(),
+                    input: request
+                        .task
+                        .semantic
+                        .reasoning()
+                        .presentation
+                        .summary
+                        .clone(),
                     output: ReasoningDisplay::Summary,
                 }),
                 RequestRule::DeveloperAsSystem => controls.push(Loss::Role {

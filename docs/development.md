@@ -99,14 +99,14 @@ The connected SDK case makes eight serial synthetic requests: JSON and SSE tool 
 
 ### Pending standard requirements
 
-Known differences have executable **desired-behavior** probes, not expected-failure success assertions. They are explicitly ignored in ordinary regression because the current stage inventories them without rewriting runtime semantics. Run them separately:
+Known differences have executable **desired-behavior** probes, not expected-failure success assertions. Unrepaired probes remain explicitly ignored in ordinary regression; repaired ones run normally. Run the remaining probes separately:
 
 ```sh
 cargo test --locked --offline --test semantic standard_contracts -- --ignored
 cargo test --locked --offline --test transport interactions_allows_first_service_tier_report_at_terminal -- --ignored
 ```
 
-These commands currently fail at the recorded prediction, participant-name, omitted-strict, Messages sampling/direct-callers and Interactions late-report boundaries. A compilation/setup error is not a reproduced protocol gap. Repair each owner, remove its ignore marker and retain the independent assertion during the responsible redesign slice. Their failures block **new conformance acceptance**, not the provenance/fixture-integration preparation slice. The [inventory](refs/2026-10-23-stable-protocol-contracts.md#official-contract-difference-inventory) also records source-traced gaps not yet executable, explicit exclusions and SDK/schema disagreements.
+Prediction and native Responses omitted-strict requirements now run normally. These commands still fail at participant-name, Messages sampling/direct-callers and Interactions late-report boundaries. A compilation/setup error is not a reproduced protocol gap. Repair each owner, remove its ignore marker and retain the independent assertion during the responsible redesign slice. Remaining failures block **new conformance acceptance**, not publication of independently verified migration slices. The [inventory](refs/2026-10-23-stable-protocol-contracts.md#official-contract-difference-inventory) also records source-traced gaps not yet executable, explicit exclusions and SDK/schema disagreements.
 
 ### Source links and updates
 

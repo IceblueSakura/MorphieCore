@@ -11,8 +11,7 @@ pub struct ReasoningControls {
     pub budget_tokens: Option<u64>,
     pub max_output_tokens: Option<u64>,
     pub mode: Presence<ReasoningMode>,
-    pub summary: Presence<ReasoningSummary>,
-    pub display: Presence<ReasoningDisplay>,
+    pub presentation: ReasoningPresentation,
 }
 impl From<&GenerationSettings> for ReasoningControls {
     fn from(settings: &GenerationSettings) -> Self {
@@ -23,8 +22,7 @@ impl From<&GenerationSettings> for ReasoningControls {
             budget_tokens: settings.reasoning.budget_tokens,
             max_output_tokens: settings.controls.max_output_tokens,
             mode: settings.reasoning.mode.clone(),
-            summary: settings.reasoning.summary.clone(),
-            display: settings.reasoning.display.clone(),
+            presentation: settings.reasoning.presentation.clone(),
         }
     }
 }

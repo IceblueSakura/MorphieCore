@@ -6,8 +6,8 @@ use crate::protocol::openai::{
 use crate::semantic::task::generation::{
     ConfigurationUpdate, EffortControl, EffortLevel, EffortScope, GenerationSettings,
     ItemLifecycle, MAX_TEXT_BYTES, PartId, ReasoningActivation, ReasoningContent, ReasoningContext,
-    ReasoningItem, ReasoningMode, ReasoningPresence, ReasoningRequest, ReasoningSummary,
-    ReplayFormat, ReplayValue,
+    ReasoningDisplay, ReasoningItem, ReasoningMode, ReasoningPresence, ReasoningRequest,
+    ReasoningSummary, ReplayFormat, ReplayValue,
 };
 use serde_json::{Map, Value, json};
 
@@ -15,7 +15,7 @@ use serde_json::{Map, Value, json};
 pub(super) fn requires_extended_controls(settings: &GenerationSettings) -> bool {
     let value = &settings.reasoning;
     value.budget_tokens.is_some()
-        || !value.display.is_absent()
+        || value.presentation.visibility == crate::semantic::value::Presence::Null
         || settings
             .effort
             .value()
@@ -101,13 +101,17 @@ pub(super) fn request(
     read_effort(reasoning, &mut r, &mut settings.effort, "effort")?;
     // The standard nullable enum has no boolean disabled carrier.
     // https://github.com/openai/openai-python/blob/be9d66628ad7377bd36fe5a76ae6d735843f0e76/src/openai/types/shared_params/reasoning.py
-    r.summary = optional_label(reasoning, "summary", summary)?;
+    r.presentation.summary = optional_label(reasoning, "summary", summary)?;
     if reasoning.contains_key("generate_summary") {
         let old = optional_label(reasoning, "generate_summary", summary)?;
-        if !r.summary.is_absent() && r.summary != old {
+        if !r.presentation.summary.is_absent() && r.presentation.summary != old {
             return Err(CodecError::Invalid("conflicting summary controls"));
         }
-        r.summary = old;
+        r.presentation.summary = old;
+    }
+    if r.presentation.summary.value().is_some() {
+        r.presentation.visibility =
+            crate::semantic::value::Presence::Value(ReasoningDisplay::Summary);
     }
     r.context = optional_label(reasoning, "context", |s| {
         s.parse::<ReasoningContext>()
@@ -162,7 +166,9 @@ pub(super) fn write_request(
     if requires_extended_controls(settings) || !value.read_history.is_absent() {
         return Err(CodecError::Unsupported("reasoning controls".into()));
     }
-    if profile == Profile::Responses && value.summary() == Some(ReasoningSummary::Disabled) {
+    if profile == Profile::Responses
+        && value.presentation.visibility.value() == Some(&ReasoningDisplay::Omitted)
+    {
         // Typed control intent cannot be replaced by absence or null. This also
         // protects reported settings on events, before a final response exists.
         return Err(CodecError::Unsupported("reasoning summary".into()));
@@ -194,7 +200,14 @@ pub(super) fn write_request(
     }
     let mut reasoning = Map::new();
     put_effort(&mut reasoning, "effort");
-    put_presence(&mut reasoning, "summary", &value.summary, |v| {
+    let summary = if value.presentation.summary.is_absent()
+        && value.presentation.visibility.value() == Some(&ReasoningDisplay::Summary)
+    {
+        crate::semantic::value::Presence::Value(ReasoningSummary::Auto)
+    } else {
+        value.presentation.summary.clone()
+    };
+    put_presence(&mut reasoning, "summary", &summary, |v| {
         json!(summary_label(*v))
     });
     put_presence(&mut reasoning, "context", &value.context, |v| {
@@ -397,7 +410,6 @@ pub(super) fn effort_label(
 }
 fn summary_label(value: ReasoningSummary) -> &'static str {
     match value {
-        ReasoningSummary::Disabled => unreachable!("disabled has no Responses carrier"),
         ReasoningSummary::Auto => "auto",
         ReasoningSummary::Concise => "concise",
         ReasoningSummary::Detailed => "detailed",

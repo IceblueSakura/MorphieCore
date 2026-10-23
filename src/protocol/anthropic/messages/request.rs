@@ -207,7 +207,7 @@ impl Profile {
                     settings.reasoning.activation = Presence::Value(ReasoningActivation::Enabled);
                     settings.reasoning.mode = Presence::Value(ReasoningMode::Budgeted);
                     settings.reasoning.budget_tokens = Some(*budget_tokens);
-                    settings.reasoning.display = display(view);
+                    settings.reasoning.presentation.visibility = display(view);
                 }
                 super::Thinking::Adaptive {
                     display: view,
@@ -215,7 +215,7 @@ impl Profile {
                 } => {
                     settings.reasoning.activation = Presence::Value(ReasoningActivation::Enabled);
                     settings.reasoning.mode = Presence::Value(ReasoningMode::Adaptive);
-                    settings.reasoning.display = display(view);
+                    settings.reasoning.presentation.visibility = display(view);
                     settings.reasoning.replay_mismatch = block_binding.map(replay_mismatch);
                 }
             }
@@ -256,6 +256,7 @@ use super::items::unsupported;
 /// Named degradable rules applied to one candidate's request copy.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
 pub enum RequestRule {
+    OmitPrediction,
     ReasoningPolicy(&'static str),
     Hint(crate::protocol::cache::HintRule),
     OmitVerbosity,
@@ -287,6 +288,7 @@ pub enum RequestRule {
 impl RequestRule {
     pub const fn name(self) -> &'static str {
         match self {
+            Self::OmitPrediction => "generation.omit-prediction.v1",
             Self::ReasoningPolicy(rule) => rule,
             Self::Hint(rule) => rule.name(),
             Self::OmitVerbosity => "messages.omit-verbosity.v1",
@@ -354,7 +356,7 @@ fn native_tool(t: &FunctionTool) -> Result<super::Tool, CodecError> {
         eager_input_streaming: t.eager_input.map_or(Presence::Absent, Presence::Value),
     })
 }
-fn native_effort(level: EffortLevel) -> Result<super::Effort, CodecError> {
+pub(super) fn native_effort(level: EffortLevel) -> Result<super::Effort, CodecError> {
     Ok(match level {
         EffortLevel::Low => super::Effort::Low,
         EffortLevel::Medium => super::Effort::Medium,
@@ -434,6 +436,9 @@ pub(in crate::protocol::anthropic::messages) fn project(
     rules: &mut BTreeSet<RequestRule>,
 ) -> Result<super::Request, CodecError> {
     let s = request.settings();
+    if s.prediction.is_some() {
+        rules.insert(RequestRule::OmitPrediction);
+    }
     if request.cached_context().is_some() || !s.safety.is_empty() {
         return Err(unsupported());
     }
@@ -515,10 +520,7 @@ pub(in crate::protocol::anthropic::messages) fn project(
         }
     };
     let reasoning = &s.reasoning;
-    if reasoning.encrypted_output()
-        || reasoning.presence == ReasoningPresence::Null
-        || !reasoning.display.is_absent() && !reasoning.summary.is_absent()
-    {
+    if reasoning.encrypted_output() || reasoning.presence == ReasoningPresence::Null {
         return Err(unsupported());
     }
     if !reasoning.context.is_absent() || !reasoning.read_history.is_absent() {
@@ -526,21 +528,25 @@ pub(in crate::protocol::anthropic::messages) fn project(
     }
     // An OpenAI summary request selects the display; without one the field stays absent,
     // which equals the 5.x default (`omitted`).
-    let display = match (&reasoning.display, &reasoning.summary) {
-        (Presence::Value(ReasoningDisplay::Summary), _)
-        | (Presence::Absent, Presence::Value(ReasoningSummary::Auto)) => {
+    let display = match (
+        &reasoning.presentation.visibility,
+        &reasoning.presentation.summary,
+    ) {
+        (Presence::Value(ReasoningDisplay::Summary), granularity) => {
+            if matches!(
+                granularity,
+                Presence::Value(ReasoningSummary::Concise | ReasoningSummary::Detailed)
+            ) {
+                rules.insert(RequestRule::SummarizeReasoning);
+            }
             Presence::Value(super::Display::Summarized)
         }
-        (Presence::Absent, Presence::Value(ReasoningSummary::Concise))
-        | (Presence::Absent, Presence::Value(ReasoningSummary::Detailed)) => {
-            rules.insert(RequestRule::SummarizeReasoning);
-            Presence::Value(super::Display::Summarized)
+        (Presence::Value(ReasoningDisplay::Omitted), _) | (Presence::Absent, Presence::Null) => {
+            Presence::Value(super::Display::Omitted)
         }
-        (Presence::Value(ReasoningDisplay::Omitted), _)
-        | (Presence::Absent, Presence::Value(ReasoningSummary::Disabled))
-        | (Presence::Absent, Presence::Null) => Presence::Value(super::Display::Omitted),
         (Presence::Null, _) => Presence::Null,
         (Presence::Absent, Presence::Absent) => Presence::Absent,
+        _ => return Err(unsupported()),
     };
     let thinking = if let Some(budget_tokens) = reasoning.budget_tokens {
         if reasoning.activation == Presence::Value(ReasoningActivation::Disabled)
