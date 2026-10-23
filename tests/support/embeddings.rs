@@ -34,7 +34,11 @@ pub fn binding(provider: &ProviderDefinition) -> (ProviderEntry, EmbeddingRoute)
                     default_dimensions: 2,
                     encodings: morphiecore::lowering::embeddings::EncodingSupport::Float,
                     dimensions: DimensionSupport::UpTo(16),
-                    user: false,
+                    user: morphiecore::lowering::embeddings::UserPolicy::Reject,
+                    tokenizer: None,
+                    max_input_tokens: None,
+                    joint_text: false,
+                    reports: morphiecore::lowering::embeddings::ReportPolicy::Strict,
                 },
                 credential: CredentialBindingId::new("fixture-key").unwrap(),
                 execution: ExecutionContract {

@@ -130,8 +130,9 @@
     "endpoints": {
       "models": { "path": "/v1beta/models" },
       "generate_content": { "path": "/v1beta/models" },
-      "interactions": { "path": "/v1/interactions" }
+      "interactions": { "path": "/v1/interactions" },
+      "embeddings": { "path": "/v1beta/models/gemini-embedding-2:batchEmbedContents" }
     },
-    "sources": ["https://ai.google.dev/api/models", "https://ai.google.dev/api/generate-content", "https://ai.google.dev/api/interactions-api-v1"]
+    "sources": ["https://ai.google.dev/api/models", "https://ai.google.dev/api/generate-content", "https://ai.google.dev/api/interactions-api-v1", "https://ai.google.dev/api/embeddings"]
   }
 }

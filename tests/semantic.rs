@@ -20,6 +20,8 @@ mod attribution;
 mod chat;
 #[path = "semantic/compaction.rs"]
 mod compaction;
+#[path = "semantic/embedding.rs"]
+mod embedding;
 #[path = "semantic/google.rs"]
 mod google;
 #[path = "semantic/history.rs"]

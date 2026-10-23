@@ -214,7 +214,7 @@ pub(super) enum Producer {
     Embedding {
         runtime: Arc<crate::gateway::Runtime>,
         entry: Arc<crate::gateway::tasks::embeddings::BoundEmbedding>,
-        request: crate::adapter::embeddings::Request,
+        prepared: crate::execution::embeddings::PreparedEmbedding,
     },
 }
 impl Producer {
@@ -235,12 +235,12 @@ impl Producer {
             Self::Embedding {
                 runtime,
                 entry,
-                request,
+                prepared,
             } => {
                 crate::gateway::tasks::embeddings::produce(
                     runtime,
                     entry,
-                    request,
+                    prepared,
                     deadline,
                     &Lane { tx, state },
                     trace,

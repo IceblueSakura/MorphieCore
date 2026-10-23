@@ -324,7 +324,7 @@ impl Trace {
     }
     pub(super) fn embedding_receipts(&mut self, receipts: &[crate::lowering::embeddings::Receipt]) {
         if self.sink.is_some() {
-            self.embedding_receipts = receipts.to_vec();
+            self.embedding_receipts.extend_from_slice(receipts);
         }
     }
     pub(super) fn selection_skip(&mut self, reason: &'static str) {

@@ -1,59 +1,98 @@
-//! Bounded ordered text inputs and exact dense vector reports; no wire or runtime target.
-use crate::semantic::value::Presence;
+//! Independent samples, exact dense values and source accounting. No wire or runtime target.
 use serde_json::Number;
 
-pub const MAX_INPUTS: usize = 128;
-pub const MAX_INPUT_BYTES: usize = 256 << 10;
-pub const MAX_DIMENSIONS: usize = 8192;
-pub const MAX_VECTOR_VALUES: usize = 60_000;
-
 #[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
-#[error("invalid or over-budget embedding value")]
+#[error("invalid embedding value")]
 pub struct EmbeddingError;
 
+/// A logical vocabulary contract, not a model alias or a tokenizer implementation.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TokenizerScope {
+    Cl100kBase,
+}
+impl TokenizerScope {
+    /// Only ordinary mergeable tokens; special/control tokens are not admitted.
+    pub fn accepts(self, id: u32) -> bool {
+        match self {
+            Self::Cl100kBase => id < 100_256,
+        }
+    }
+}
+
 #[derive(Clone, Eq, PartialEq)]
-pub struct EmbeddingRequest {
-    inputs: Vec<String>,
-    pub dimensions: Presence<usize>,
+pub enum EmbeddingInput {
+    /// Ordered parts jointly embedded as one sample; never separate batch entries.
+    TextParts(Vec<String>),
+    TokenIds {
+        tokenizer: TokenizerScope,
+        ids: Vec<u32>,
+    },
 }
-impl std::fmt::Debug for EmbeddingRequest {
+impl std::fmt::Debug for EmbeddingInput {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("EmbeddingRequest")
-            .field("inputs", &"[redacted]")
-            .field("dimensions", &self.dimensions)
-            .finish()
+        f.write_str(match self {
+            Self::TextParts(_) => "TextParts([redacted])",
+            Self::TokenIds { .. } => "TokenIds([redacted])",
+        })
     }
 }
-impl EmbeddingRequest {
-    pub fn new(inputs: Vec<String>) -> Result<Self, EmbeddingError> {
-        let value = Self {
-            inputs,
-            dimensions: Presence::Absent,
-        };
-        value.validate()?;
-        Ok(value)
-    }
-    pub fn inputs(&self) -> &[String] {
-        &self.inputs
-    }
-    pub fn validate(&self) -> Result<(), EmbeddingError> {
-        let bytes = self.inputs.iter().try_fold(0usize, |total, text| {
-            if text.is_empty() {
-                return Err(EmbeddingError);
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EmbeddingSample {
+    input: EmbeddingInput,
+    dimensions: Option<usize>,
+}
+impl EmbeddingSample {
+    pub fn new(input: EmbeddingInput, dimensions: Option<usize>) -> Result<Self, EmbeddingError> {
+        let valid = match &input {
+            EmbeddingInput::TextParts(parts) => {
+                !parts.is_empty() && parts.iter().all(|p| !p.is_empty())
             }
-            total.checked_add(text.len()).ok_or(EmbeddingError)
-        })?;
-        if !(1..=MAX_INPUTS).contains(&self.inputs.len())
-            || bytes > MAX_INPUT_BYTES
-            || self.dimensions == Presence::Null
-            || self
-                .dimensions
-                .value()
-                .is_some_and(|d| !(1..=MAX_DIMENSIONS).contains(d))
-        {
+            EmbeddingInput::TokenIds { tokenizer, ids } => {
+                !ids.is_empty() && ids.iter().all(|id| tokenizer.accepts(*id))
+            }
+        };
+        if !valid || dimensions == Some(0) {
             return Err(EmbeddingError);
         }
-        Ok(())
+        Ok(Self { input, dimensions })
+    }
+    pub fn input(&self) -> &EmbeddingInput {
+        &self.input
+    }
+    pub fn dimensions(&self) -> Option<usize> {
+        self.dimensions
+    }
+}
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EmbeddingRequest {
+    samples: Vec<EmbeddingSample>,
+}
+impl EmbeddingRequest {
+    pub fn new(samples: Vec<EmbeddingSample>) -> Result<Self, EmbeddingError> {
+        if samples.is_empty() {
+            return Err(EmbeddingError);
+        }
+        Ok(Self { samples })
+    }
+    pub fn text(inputs: Vec<String>) -> Result<Self, EmbeddingError> {
+        Self::new(
+            inputs
+                .into_iter()
+                .map(|text| EmbeddingSample::new(EmbeddingInput::TextParts(vec![text]), None))
+                .collect::<Result<_, _>>()?,
+        )
+    }
+    pub fn samples(&self) -> &[EmbeddingSample] {
+        &self.samples
+    }
+    pub fn with_dimensions(&self, dimensions: Option<usize>) -> Result<Self, EmbeddingError> {
+        Self::new(
+            self.samples
+                .iter()
+                .map(|s| EmbeddingSample::new(s.input.clone(), dimensions))
+                .collect::<Result<_, _>>()?,
+        )
     }
 }
 
@@ -65,15 +104,14 @@ pub enum EmbeddingValues {
 impl EmbeddingValues {
     pub fn len(&self) -> usize {
         match self {
-            Self::ExactJson(values) => values.len(),
-            Self::Binary32(bits) => bits.len(),
+            Self::ExactJson(v) => v.len(),
+            Self::Binary32(v) => v.len(),
         }
     }
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
 }
-// Numeric components are business payloads, including when nested in errors.
 impl std::fmt::Debug for EmbeddingValues {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("EmbeddingValues")
@@ -81,18 +119,10 @@ impl std::fmt::Debug for EmbeddingValues {
             .finish()
     }
 }
-#[derive(Clone, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct EmbeddingVector {
     index: usize,
     values: EmbeddingValues,
-}
-impl std::fmt::Debug for EmbeddingVector {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("EmbeddingVector")
-            .field("index", &self.index)
-            .field("dimensions", &self.values.len())
-            .finish()
-    }
 }
 impl EmbeddingVector {
     pub fn new(index: usize, values: Vec<Number>) -> Result<Self, EmbeddingError> {
@@ -102,9 +132,19 @@ impl EmbeddingVector {
         Self::from_values(index, EmbeddingValues::Binary32(bits))
     }
     fn from_values(index: usize, values: EmbeddingValues) -> Result<Self, EmbeddingError> {
-        let value = Self { index, values };
-        value.validate()?;
-        Ok(value)
+        if values.is_empty()
+            || match &values {
+                EmbeddingValues::ExactJson(values) => values
+                    .iter()
+                    .any(|n| n.as_str().len() > 128 || n.as_f64().is_none_or(|v| !v.is_finite())),
+                EmbeddingValues::Binary32(bits) => {
+                    bits.iter().any(|v| !f32::from_bits(*v).is_finite())
+                }
+            }
+        {
+            return Err(EmbeddingError);
+        }
+        Ok(Self { index, values })
     }
     pub fn index(&self) -> usize {
         self.index
@@ -112,132 +152,108 @@ impl EmbeddingVector {
     pub fn values(&self) -> &EmbeddingValues {
         &self.values
     }
-    pub fn validate(&self) -> Result<(), EmbeddingError> {
-        if self.index >= MAX_INPUTS
-            || !(1..=MAX_DIMENSIONS).contains(&self.values.len())
-            || match &self.values {
-                EmbeddingValues::ExactJson(values) => values
-                    .iter()
-                    .any(|n| n.as_str().len() > 128 || n.as_f64().is_none_or(|v| !v.is_finite())),
-                EmbeddingValues::Binary32(bits) => {
-                    bits.iter().any(|bits| !f32::from_bits(*bits).is_finite())
-                }
-            }
-        {
-            return Err(EmbeddingError);
-        }
-        // Floating-point conversion is only a range check; the exact Number stays authoritative.
-        Ok(())
-    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum InputTokenReport {
-    Explicit(u64),
-    InputOnlyTotal,
+pub enum AccountingBasis {
+    InputOnly,
+    Unspecified,
 }
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum InputModality {
+    Unspecified,
+    Text,
+    Image,
+    Audio,
+    Video,
+    Document,
+}
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ModalityTokenCount {
+    pub modality: InputModality,
+    pub tokens: u64,
+}
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct EmbeddingUsage {
-    input: InputTokenReport,
-    total_tokens: u64,
+    input_tokens: Option<u64>,
+    total_tokens: Option<u64>,
+    basis: AccountingBasis,
+    details: Option<Vec<ModalityTokenCount>>,
 }
 impl EmbeddingUsage {
-    pub fn new(input_tokens: u64, total_tokens: u64) -> Result<Self, EmbeddingError> {
-        if total_tokens < input_tokens {
+    pub fn reported(
+        input: Option<u64>,
+        total: Option<u64>,
+        basis: AccountingBasis,
+        details: Option<Vec<ModalityTokenCount>>,
+    ) -> Result<Self, EmbeddingError> {
+        if matches!((input,total), (Some(i),Some(t)) if t < i) {
             return Err(EmbeddingError);
         }
         Ok(Self {
-            input: InputTokenReport::Explicit(input_tokens),
-            total_tokens,
+            input_tokens: input,
+            total_tokens: total,
+            basis,
+            details,
         })
     }
-    /// The aggregate explicitly measures input tokens; it is not an unknown prompt report.
-    pub fn from_input_only_total(total_tokens: u64) -> Self {
+    pub fn new(input: u64, total: u64) -> Result<Self, EmbeddingError> {
+        Self::reported(Some(input), Some(total), AccountingBasis::Unspecified, None)
+    }
+    pub fn from_input_only_total(total: u64) -> Self {
         Self {
-            input: InputTokenReport::InputOnlyTotal,
-            total_tokens,
+            input_tokens: None,
+            total_tokens: Some(total),
+            basis: AccountingBasis::InputOnly,
+            details: None,
         }
     }
-    pub fn input_tokens(self) -> u64 {
-        match self.input {
-            InputTokenReport::Explicit(tokens) => tokens,
-            InputTokenReport::InputOnlyTotal => self.total_tokens,
-        }
+    pub fn reported_input_tokens(&self) -> Option<u64> {
+        self.input_tokens
     }
-    pub fn reported_input_tokens(self) -> Option<u64> {
-        match self.input {
-            InputTokenReport::Explicit(tokens) => Some(tokens),
-            InputTokenReport::InputOnlyTotal => None,
-        }
-    }
-    pub fn total_tokens(self) -> u64 {
+    pub fn reported_total_tokens(&self) -> Option<u64> {
         self.total_tokens
     }
+    pub fn basis(&self) -> AccountingBasis {
+        self.basis
+    }
+    pub fn details(&self) -> Option<&[ModalityTokenCount]> {
+        self.details.as_deref()
+    }
 }
-
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct EmbeddingResponse {
     vectors: Vec<EmbeddingVector>,
-    pub usage: Presence<EmbeddingUsage>,
+    usage: Option<EmbeddingUsage>,
 }
 impl EmbeddingResponse {
     pub fn new(
         vectors: Vec<EmbeddingVector>,
-        usage: EmbeddingUsage,
+        usage: Option<EmbeddingUsage>,
     ) -> Result<Self, EmbeddingError> {
-        let value = Self {
-            vectors,
-            usage: Presence::Value(usage),
-        };
-        value.validate()?;
-        Ok(value)
+        if vectors.is_empty() {
+            return Err(EmbeddingError);
+        }
+        let mut seen = std::collections::BTreeSet::new();
+        for vector in &vectors {
+            if vector.index >= vectors.len() || !seen.insert(vector.index) {
+                return Err(EmbeddingError);
+            }
+        }
+        Ok(Self { vectors, usage })
     }
     pub fn vectors(&self) -> &[EmbeddingVector] {
         &self.vectors
     }
-    pub(crate) fn with_vectors(
-        &self,
-        vectors: Vec<EmbeddingVector>,
-    ) -> Result<Self, EmbeddingError> {
-        let value = Self {
-            vectors,
-            usage: self.usage.clone(),
-        };
-        value.validate()?;
-        Ok(value)
-    }
-    pub fn validate(&self) -> Result<(), EmbeddingError> {
-        if !(1..=MAX_INPUTS).contains(&self.vectors.len()) {
-            return Err(EmbeddingError);
-        }
-        let dimensions = self.vectors[0].values.len();
-        let mut seen = std::collections::BTreeSet::new();
-        let mut total = 0usize;
-        for vector in &self.vectors {
-            vector.validate()?;
-            total = total
-                .checked_add(vector.values.len())
-                .ok_or(EmbeddingError)?;
-            if total > MAX_VECTOR_VALUES
-                || vector.index >= self.vectors.len()
-                || vector.values.len() != dimensions
-                || !seen.insert(vector.index)
-            {
-                return Err(EmbeddingError);
-            }
-        }
-        Ok(())
+    pub fn usage(&self) -> Option<&EmbeddingUsage> {
+        self.usage.as_ref()
     }
     pub fn validate_for(&self, request: &EmbeddingRequest) -> Result<(), EmbeddingError> {
-        request.validate()?;
-        self.validate()?;
-        if self.vectors.len() != request.inputs.len()
+        if self.vectors.len() != request.samples.len()
             || self.vectors.iter().any(|v| {
-                v.index >= request.inputs.len()
-                    || request
-                        .dimensions
-                        .value()
-                        .is_some_and(|d| *d != v.values.len())
+                request.samples[v.index]
+                    .dimensions
+                    .is_some_and(|d| d != v.values.len())
             })
         {
             return Err(EmbeddingError);

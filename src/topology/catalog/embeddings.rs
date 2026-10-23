@@ -1,10 +1,11 @@
 //! Explicit text embedding bindings. No Generation or file-service admission is inferred.
 use crate::{
     adapter::embeddings::{Contract, DimensionSupport, Profile},
-    lowering::embeddings::EncodingSupport,
+    lowering::embeddings::{EncodingSupport, ReportPolicy, UserPolicy},
     provider::{
         CredentialBindingId, CredentialKind, ProviderDefinition, ProviderOperation, catalog,
     },
+    semantic::task::embedding::TokenizerScope,
     topology::{
         EndpointId, EndpointTarget, ExecutionContract, ModelId, ModelMetadata, RouteId,
         embeddings::{EmbeddingEndpoint, EmbeddingRoute, ProviderEntry},
@@ -17,9 +18,12 @@ pub struct EmbeddingBinding {
     pub max_inputs: usize,
     pub dimensions: &'static [usize],
     pub max_dimensions: usize,
+    pub min_dimensions: usize,
     pub default_dimensions: usize,
     pub encodings: EncodingSupport,
-    pub user: bool,
+    pub user: UserPolicy,
+    pub tokenizer: Option<TokenizerScope>,
+    pub max_input_tokens: Option<usize>,
     pub profile: Profile,
     pub released_at: u64,
     pub developer: &'static str,
@@ -34,10 +38,13 @@ pub const EMBEDDING_BINDINGS: &[EmbeddingBinding] = &[
         max_inputs: 20,
         dimensions: &[256, 512, 768, 1024, 1536, 2048, 2560],
         max_dimensions: 2560,
+        min_dimensions: 1,
         default_dimensions: 1024,
         encodings: EncodingSupport::Float,
-        user: false,
+        user: UserPolicy::Omit,
+        tokenizer: None,
         profile: Profile::DashScope,
+        max_input_tokens: None,
         // https://platform.qianwenai.com/docs/changelog/models#2026年7月15日
         released_at: 1_784_073_600,
         developer: "Alibaba",
@@ -50,13 +57,34 @@ pub const EMBEDDING_BINDINGS: &[EmbeddingBinding] = &[
         max_inputs: 128,
         dimensions: &[],
         max_dimensions: 1536,
+        min_dimensions: 1,
         default_dimensions: 1536,
         encodings: EncodingSupport::Both,
-        user: true,
+        user: UserPolicy::Forward,
+        tokenizer: Some(TokenizerScope::Cl100kBase),
         profile: Profile::OpenRouter,
+        max_input_tokens: Some(8192),
         // https://openai.com/index/new-embedding-models-and-api-updates/ (2024-01-25).
         released_at: 1_706_140_800,
         developer: "OpenAI",
+    },
+    // https://ai.google.dev/api/embeddings; GA date from the official changelog.
+    EmbeddingBinding {
+        model: "gemini-embedding-2",
+        upstream: "gemini-embedding-2",
+        provider: catalog::google,
+        max_inputs: 100,
+        dimensions: &[],
+        min_dimensions: 128,
+        max_dimensions: 3072,
+        default_dimensions: 3072,
+        encodings: EncodingSupport::Float,
+        user: UserPolicy::Omit,
+        tokenizer: None,
+        profile: Profile::Google,
+        max_input_tokens: Some(8192),
+        released_at: 1_776_816_000,
+        developer: "Google",
     },
 ];
 impl EmbeddingBinding {
@@ -103,11 +131,18 @@ impl EmbeddingBinding {
                     default_dimensions: self.default_dimensions,
                     encodings: self.encodings,
                     dimensions: if self.dimensions.is_empty() {
-                        DimensionSupport::UpTo(self.max_dimensions)
+                        DimensionSupport::Range {
+                            min: self.min_dimensions,
+                            max: self.max_dimensions,
+                        }
                     } else {
                         DimensionSupport::Selected(self.dimensions.to_vec())
                     },
                     user: self.user,
+                    tokenizer: self.tokenizer,
+                    max_input_tokens: self.max_input_tokens,
+                    joint_text: self.profile == Profile::Google,
+                    reports: ReportPolicy::Compatible,
                 },
                 credential: self.credential(),
                 execution: ExecutionContract {

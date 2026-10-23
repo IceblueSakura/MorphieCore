@@ -24,6 +24,7 @@ pub(crate) mod reports;
 pub(crate) mod usage;
 
 // Shared wire validation and framing.
+mod embedding;
 pub mod file_constraints;
 pub mod image_constraints;
 pub(crate) mod json;

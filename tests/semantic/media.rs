@@ -7,18 +7,37 @@ mod embeddings {
     };
     use serde_json::json;
 
+    fn policy(
+        encoding: morphiecore::adapter::embeddings::Encoding,
+    ) -> morphiecore::lowering::embeddings::DeliveryPolicy {
+        morphiecore::lowering::embeddings::DeliveryPolicy {
+            model: "public-vector".into(),
+            encoding,
+            reports: morphiecore::lowering::embeddings::ReportPolicy::Strict,
+        }
+    }
     #[test]
     fn text_batches_decode_without_generation_or_private_carriers() {
         let decoded = embeddings::decode_request(
         r#"{"model":"synthetic-vector","input":["first","第二条"],"dimensions":2,"encoding_format":"float","user":"synthetic"}"#.as_bytes(),
     ).unwrap();
-        assert_eq!(decoded.task.inputs(), &["first", "第二条"]);
-        assert_eq!(decoded.task.dimensions, Presence::Value(2));
+        assert_eq!(
+            decoded.task.samples()[0].input(),
+            &EmbeddingInput::TextParts(vec!["first".into()])
+        );
+        assert_eq!(
+            decoded.task.samples()[1].input(),
+            &EmbeddingInput::TextParts(vec!["第二条".into()])
+        );
+        assert_eq!(decoded.task.samples()[0].dimensions(), Some(2));
         assert_eq!(decoded.identity.user, Presence::Value("synthetic".into()));
         let single =
             embeddings::decode_request(br#"{"model":"synthetic-vector","input":"first"}"#).unwrap();
-        assert_eq!(single.task.inputs(), &["first"]);
-        assert_eq!(single.task.dimensions, Presence::Absent);
+        assert_eq!(
+            single.task.samples()[0].input(),
+            &EmbeddingInput::TextParts(vec!["first".into()])
+        );
+        assert_eq!(single.task.samples()[0].dimensions(), None);
         for extra in [
             json!({"input":""}),
             json!({"input":[]}),
@@ -62,22 +81,22 @@ mod embeddings {
         "usage":{"prompt_tokens":7,"total_tokens":7}}"#,
         )
         .unwrap();
-        let mut request = EmbeddingRequest::new(vec!["a".into(), "b".into()]).unwrap();
-        request.dimensions = Presence::Value(2);
+        let mut request = EmbeddingRequest::text(vec!["a".into(), "b".into()]).unwrap();
+        request = request.with_dimensions(Some(2)).unwrap();
         response.validate_for(&request).unwrap();
         assert_eq!(response.vectors()[0].index(), 1);
         let EmbeddingValues::ExactJson(values) = response.vectors()[0].values() else {
             panic!("exact JSON")
         };
         assert_eq!(values[1].to_string(), "0.12345678901234567890123456789");
-        assert_eq!(response.model(), "reported-vector");
+        assert_eq!(response.model(), Some("reported-vector"));
         let encoded = embeddings::encode_response(&response).unwrap();
         assert_eq!(encoded["data"][0]["index"], 1);
         assert_eq!(
             encoded["usage"],
             json!({"prompt_tokens":7,"total_tokens":7})
         );
-        request.dimensions = Presence::Value(3);
+        request = request.with_dimensions(Some(3)).unwrap();
         assert!(response.validate_for(&request).is_err());
     }
 
@@ -91,27 +110,27 @@ mod embeddings {
         "data":[{"object":"embedding","index":0,"embedding":[0.5,-0.125]}],
         "usage":{"total_tokens":7}}"#;
         assert!(embeddings::decode_response(wire).is_err());
-        assert!(Profile::OpenRouter.decode_response(wire).is_err());
+        assert!(Profile::OpenRouter.decode_response(wire).is_ok());
         let response = Profile::DashScope.decode_response(wire).unwrap();
         assert!(!format!("{response:?}").contains("synthetic-request-id"));
-        assert_eq!(response.id, Presence::Value("synthetic-request-id".into()));
-        let usage = response.task.usage.value().unwrap();
+        assert_eq!(response.id, Some("synthetic-request-id".into()));
+        let usage = response.task.usage().unwrap();
         assert_eq!(usage.reported_input_tokens(), None);
-        assert_eq!(usage.input_tokens(), 7);
-        assert_eq!(usage.total_tokens(), 7);
+        assert_eq!(usage.basis(), AccountingBasis::InputOnly);
+        assert_eq!(usage.reported_total_tokens(), Some(7));
         assert!(embeddings::encode_response(&response).is_err());
-        let projected = project_response(&response, Encoding::Float).unwrap();
+        let projected = project_response(&response, &policy(Encoding::Float)).unwrap();
         assert_eq!(
             projected
                 .receipts
                 .iter()
                 .map(|r| r.rule)
                 .collect::<Vec<_>>(),
-            vec![Rule::OmitResponseId]
+            vec![Rule::OmitResponseId, Rule::InputFromTotal]
         );
-        assert_eq!(response.id, Presence::Value("synthetic-request-id".into()));
+        assert_eq!(response.id, Some("synthetic-request-id".into()));
         assert_eq!(
-            embeddings::encode_response(&projected.response).unwrap(),
+            embeddings::encode_response_as(&projected.response, Encoding::Float).unwrap(),
             json!({"object":"list","model":"synthetic-qwen","data":[
             {"object":"embedding","index":0,"embedding":[0.5,-0.125]}],
             "usage":{"prompt_tokens":7,"total_tokens":7}})
@@ -120,7 +139,6 @@ mod embeddings {
             json!({"total_tokens":true}),
             json!({"total_tokens":-1}),
             json!({"total_tokens":7,"prompt_tokens":null}),
-            json!({}),
             json!({"total_tokens":7,"prompt_tokens":8}),
         ] {
             let mut invalid: serde_json::Value = serde_json::from_slice(wire).unwrap();
@@ -132,8 +150,8 @@ mod embeddings {
             );
         }
         let mut malformed = response;
-        malformed.id = Presence::Value(String::new());
-        assert!(project_response(&malformed, Encoding::Float).is_err());
+        malformed.id = Some(String::new());
+        assert!(project_response(&malformed, &policy(Encoding::Float)).is_err());
     }
 
     #[test]
@@ -161,10 +179,11 @@ mod embeddings {
             );
             let source = Profile::Standard.decode_response(wire.as_bytes()).unwrap();
             let snapshot = source.clone();
-            let float = project_response(&source, Encoding::Float).unwrap();
+            let float = project_response(&source, &policy(Encoding::Float)).unwrap();
             assert!(float.receipts.is_empty());
-            assert_eq!(float.response, source);
-            let projected = project_response(&source, Encoding::Base64).unwrap();
+            assert_eq!(float.response.vectors(), source.vectors());
+            assert_eq!(Some(float.response.model()), source.model());
+            let projected = project_response(&source, &policy(Encoding::Base64)).unwrap();
             assert_eq!(source, snapshot);
             assert_eq!(
                 projected.response.vectors()[0].values(),
@@ -188,16 +207,16 @@ mod embeddings {
             "-3.4028236e38",
         ] {
             let source = morphiecore::adapter::embeddings::Response {
-                model: "reported".into(),
-                id: Presence::Absent,
+                model: Some("reported".into()),
+                id: None,
                 task: EmbeddingResponse::new(
                     vec![EmbeddingVector::new(0, vec![decimal.parse().unwrap()]).unwrap()],
-                    EmbeddingUsage::new(1, 1).unwrap(),
+                    Some(EmbeddingUsage::new(1, 1).unwrap()),
                 )
                 .unwrap(),
             };
             assert!(
-                project_response(&source, Encoding::Base64).is_err(),
+                project_response(&source, &policy(Encoding::Base64)).is_err(),
                 "{decimal}"
             );
             assert!(
@@ -228,7 +247,7 @@ mod embeddings {
                 &EmbeddingValues::Binary32(vec![bits])
             );
             for encoding in [Encoding::Float, Encoding::Base64] {
-                let projected = project_response(&source, encoding).unwrap();
+                let projected = project_response(&source, &policy(encoding)).unwrap();
                 assert!(projected.receipts.is_empty());
                 let output = embeddings::encode_response_as(&projected.response, encoding).unwrap();
                 assert_eq!(
@@ -262,14 +281,14 @@ mod embeddings {
         }
         let decimal = EmbeddingVector::new(0, vec!["0.1".parse().unwrap()]).unwrap();
         let response = morphiecore::adapter::embeddings::Response {
-            model: "reported".into(),
-            id: Presence::Absent,
-            task: EmbeddingResponse::new(vec![decimal], EmbeddingUsage::new(1, 1).unwrap())
+            model: Some("reported".into()),
+            id: None,
+            task: EmbeddingResponse::new(vec![decimal], Some(EmbeddingUsage::new(1, 1).unwrap()))
                 .unwrap(),
         };
         assert_eq!(
             embeddings::encode_response_as(
-                &project_response(&response, Encoding::Base64)
+                &project_response(&response, &policy(Encoding::Base64))
                     .unwrap()
                     .response,
                 Encoding::Base64
@@ -290,28 +309,32 @@ mod embeddings {
             default_dimensions: 1536,
             dimensions: DimensionSupport::UpTo(1536),
             encodings: EncodingSupport::Base64,
-            user: false,
+            user: morphiecore::lowering::embeddings::UserPolicy::Reject,
+            tokenizer: None,
+            max_input_tokens: None,
+            joint_text: false,
+            reports: morphiecore::lowering::embeddings::ReportPolicy::Strict,
         };
         let mut request = Request::new(
             "selected",
-            EmbeddingRequest::new(vec!["x".into(); 39]).unwrap(),
+            EmbeddingRequest::text(vec!["x".into(); 39]).unwrap(),
         );
         let prepared = contract.prepare(&request).unwrap();
-        assert_eq!(request.encoding, Presence::Absent);
-        assert_eq!(prepared.target.task.dimensions, Presence::Absent);
+        assert_eq!(request.encoding, None);
+        assert_eq!(prepared.target.task.samples()[0].dimensions(), None);
         assert_eq!(prepared.expectation.upstream_encoding, Encoding::Base64);
-        assert_eq!(prepared.expectation.client_encoding, Encoding::Float);
-        request.task = EmbeddingRequest::new(vec!["x".into(); 40]).unwrap();
+        assert_eq!(prepared.delivery.encoding, Encoding::Float);
+        request.task = EmbeddingRequest::text(vec!["x".into(); 40]).unwrap();
         assert!(contract.prepare(&request).is_err());
-        request.task.dimensions = Presence::Value(1536);
+        request.task = request.task.with_dimensions(Some(1536)).unwrap();
         assert!(contract.prepare(&request).is_err());
-        request.task.dimensions = Presence::Value(128);
+        request.task = request.task.with_dimensions(Some(128)).unwrap();
         assert!(contract.prepare(&request).is_ok());
         contract.dimensions = DimensionSupport::Range {
             min: 128,
             max: 1536,
         };
-        request.task.dimensions = Presence::Value(127);
+        request.task = request.task.with_dimensions(Some(127)).unwrap();
         assert!(contract.prepare(&request).is_err());
         let wire = br#"{"object":"list","model":"reported","unknown":{},"data":[{"object":"embedding","index":0,"embedding":[0.1],"unknown":true}],"usage":{"prompt_tokens":1,"total_tokens":1,"unknown":[]} }"#;
         assert!(
@@ -328,7 +351,7 @@ mod embeddings {
             .unwrap()
             .replace("\"prompt_tokens\":1", "\"prompt_tokens\":null");
         assert!(Profile::Standard.decode_response(bad.as_bytes()).is_err());
-        request.task = EmbeddingRequest::new(vec!["x".into()]).unwrap();
+        request.task = EmbeddingRequest::text(vec!["x".into()]).unwrap();
         let expected = contract.prepare(&request).unwrap().expectation;
         let response = Profile::Standard.decode_response(wire).unwrap();
         assert!(
@@ -338,27 +361,34 @@ mod embeddings {
     }
 
     #[test]
-    fn numeric_projection_preserves_unreported_usage_but_strict_delivery_rejects_it() {
+    fn unreported_usage_requires_an_explicit_compatibility_policy() {
         use morphiecore::{
             adapter::embeddings::{Encoding, Response},
-            lowering::embeddings::project_response,
+            lowering::embeddings::{ReportPolicy, Rule, project_response},
         };
         for vector in [
             EmbeddingVector::new(0, vec!["0.1".parse().unwrap()]).unwrap(),
             EmbeddingVector::from_binary32(0, vec![0x3dcccccd]).unwrap(),
         ] {
-            let mut source = Response {
-                model: "reported".into(),
-                id: Presence::Absent,
-                task: EmbeddingResponse::new(vec![vector], EmbeddingUsage::new(1, 1).unwrap())
-                    .unwrap(),
+            let source = Response {
+                model: Some("reported".into()),
+                id: None,
+                task: EmbeddingResponse::new(vec![vector], None).unwrap(),
             };
-            source.task.usage = Presence::Absent;
             let snapshot = source.clone();
             for encoding in [Encoding::Float, Encoding::Base64] {
-                let projected = project_response(&source, encoding).unwrap();
-                assert_eq!(projected.response.task.usage, Presence::Absent);
-                assert!(embeddings::encode_response_as(&projected.response, encoding).is_err());
+                assert!(project_response(&source, &policy(encoding)).is_err());
+                let mut compatible = policy(encoding);
+                compatible.reports = ReportPolicy::Compatible;
+                let projected = project_response(&source, &compatible).unwrap();
+                assert!(projected.response.usage().is_none());
+                assert!(projected.receipts.iter().any(|r| r.rule == Rule::OmitUsage));
+                assert!(
+                    embeddings::encode_response_as(&projected.response, encoding)
+                        .unwrap()
+                        .get("usage")
+                        .is_none()
+                );
                 assert_eq!(source, snapshot);
             }
         }

@@ -31,7 +31,7 @@ Read by task:
 - Routing is bounded, cache-affine failover, not load balancing. Publication forbids replay.
 - Credentials come from the application store; inference never logs in or refreshes credentials. The CLI listener is loopback-only.
 - Responses history is gateway-owned TTL memory, not durable execution or Provider-held conversation state.
-- Standalone tasks remain maintenance-only until their selected [stage-4 slices](docs/roadmap.md#stage-4-scope). Planned Files, media and stage-5 APIs are not implied by current Generation media support.
+- Standalone tasks expand only through selected [stage-4 slices](docs/roadmap.md#stage-4-scope). The [Embedding path](docs/architecture.md#independent-embedding-path) is independent of Generation; planned Files, other media and stage-5 APIs are not implied by it.
 
 ## Run
 

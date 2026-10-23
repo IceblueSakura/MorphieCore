@@ -45,3 +45,43 @@ async fn embeddings_sdk_default_float_and_base64() {
         }
     }
 }
+
+#[tokio::test]
+#[ignore = "requires pinned OpenAI SDK; synthetic Google and scoped-token upstreams"]
+async fn embeddings_google_reports_and_scoped_token_inputs() {
+    for google in [true, false] {
+        let fixture = if google {
+            Fixture::start_google(None, None).await
+        } else {
+            Fixture::start(EncodingSupport::Both, None, None).await
+        };
+        let home = tempfile::tempdir().unwrap();
+        let mut command = super::isolated_sdk_python(home.path());
+        command.args([
+            "tests/sdk/embedding_inputs.py",
+            &fixture.base,
+            if google { "google" } else { "tokens" },
+        ]);
+        let output =
+            child_process::run(&mut command, b"", std::time::Duration::from_secs(20), 8192)
+                .await
+                .unwrap();
+        assert!(
+            output.status.success(),
+            "SDK failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(report["requests"], if google { 6 } else { 2 });
+        let seen = fixture.seen.lock().unwrap();
+        assert_eq!(seen.len(), if google { 6 } else { 2 });
+        if google {
+            for request in seen.iter() {
+                assert!(request.get("user").is_none());
+            }
+        } else {
+            assert_eq!(seen[0]["input"], serde_json::json!([[1, 2, 3]]));
+            assert_eq!(seen[1]["input"], serde_json::json!([[1, 2], [3]]));
+        }
+    }
+}

@@ -1,6 +1,12 @@
-//! Embedding envelopes keep model reports and client identity outside task content.
+//! Embedding envelopes and deployment bounds, separate from task values and source facts.
 pub use crate::lowering::embeddings::{Contract, DimensionSupport};
 use crate::semantic::{context::ClientIdentityHints, task::embedding::*, value::Presence};
+
+pub const MAX_INPUTS: usize = 128;
+pub const MAX_INPUT_BYTES: usize = 256 << 10;
+pub const MAX_DIMENSIONS: usize = 8192;
+pub const MAX_VECTOR_VALUES: usize = 60_000;
+pub const MAX_TOKEN_IDS: usize = 60_000;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Encoding {
@@ -15,25 +21,23 @@ impl Encoding {
         }
     }
 }
-/// Trusted response-report rules never expand the public standard request profile.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Profile {
     Standard,
     DashScope,
     OpenRouter,
+    Google,
 }
 impl Profile {
     pub fn encode_request(
         self,
-        request: &Request,
+        request: &TargetRequest,
         model: &str,
     ) -> Result<serde_json::Value, crate::protocol::CodecError> {
-        // Resolve the selected profile's float default in a typed target copy, never after encoding.
-        let mut target = request.clone();
-        if target.encoding == Presence::Absent {
-            target.encoding = Presence::Value(Encoding::Float);
+        match self {
+            Self::Google => crate::protocol::google::embeddings::encode_request(request, model),
+            _ => crate::protocol::openai::embeddings::encode_request(request, model),
         }
-        crate::protocol::openai::embeddings::encode_request(&target, model)
     }
     pub fn decode_response(self, bytes: &[u8]) -> Result<Response, crate::protocol::CodecError> {
         self.decode_response_as(bytes, Encoding::Float)
@@ -43,7 +47,10 @@ impl Profile {
         bytes: &[u8],
         encoding: Encoding,
     ) -> Result<Response, crate::protocol::CodecError> {
-        crate::protocol::openai::embeddings::decode_response_with(bytes, self, encoding)
+        match self {
+            Self::Google => crate::protocol::google::embeddings::decode_response(bytes),
+            _ => crate::protocol::openai::embeddings::decode_response_with(bytes, self, encoding),
+        }
     }
 }
 
@@ -51,7 +58,7 @@ impl Profile {
 pub struct Request {
     pub model: String,
     pub task: EmbeddingRequest,
-    pub encoding: Presence<Encoding>,
+    pub encoding: Option<Encoding>,
     pub identity: ClientIdentityHints,
 }
 impl std::fmt::Debug for Request {
@@ -69,47 +76,85 @@ impl Request {
         Self {
             model: model.into(),
             task,
-            encoding: Presence::Absent,
+            encoding: None,
             identity: ClientIdentityHints::default(),
         }
     }
+    pub fn validate(&self) -> Result<(), EmbeddingError> {
+        if !valid_model(&self.model)
+            || self.identity.safety_identifier != Presence::Absent
+            || self.identity.user == Presence::Null
+            || self
+                .identity
+                .user
+                .value()
+                .is_some_and(|s| s.is_empty() || s.len() > 256)
+        {
+            return Err(EmbeddingError);
+        }
+        Ok(())
+    }
+}
+pub(crate) fn valid_model(model: &str) -> bool {
+    !model.is_empty()
+        && model.len() <= 256
+        && !model.chars().any(|c| c.is_control() || c.is_whitespace())
 }
 #[derive(Clone, Eq, PartialEq)]
+pub struct TargetRequest {
+    pub task: EmbeddingRequest,
+    pub encoding: Encoding,
+    pub user: Option<String>,
+}
+impl std::fmt::Debug for TargetRequest {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("EmbeddingTarget")
+            .field("task", &self.task)
+            .field("encoding", &self.encoding)
+            .field("user", &self.user.as_ref().map(|_| "[redacted]"))
+            .finish()
+    }
+}
+/// Only upstream observations; bound identity and derived counters never enter this type.
+#[derive(Clone, Eq, PartialEq)]
 pub struct Response {
-    pub model: String,
+    pub model: Option<String>,
     pub task: EmbeddingResponse,
-    pub id: Presence<String>,
+    pub id: Option<String>,
 }
 impl std::fmt::Debug for Response {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("EmbeddingResponse")
             .field("model", &self.model)
             .field("task", &self.task)
-            .field("id", &"[redacted]")
+            .field("id", &self.id.as_ref().map(|_| "[redacted]"))
             .finish()
     }
 }
 impl Response {
     pub fn validate(&self) -> Result<(), EmbeddingError> {
-        self.task.validate()?;
-        if self.model.is_empty()
-            || self.model.len() > 256
-            || self
-                .model
-                .chars()
-                .any(|c| c.is_control() || c.is_whitespace())
-            || self.id == Presence::Null
+        if self.model.as_ref().is_some_and(|m| !valid_model(m))
             || self
                 .id
-                .value()
+                .as_ref()
                 .is_some_and(|s| s.is_empty() || s.len() > 256 || s.chars().any(char::is_control))
+        {
+            return Err(EmbeddingError);
+        }
+        let vectors = self.task.vectors();
+        if vectors.len() > MAX_INPUTS
+            || vectors.iter().any(|v| v.values().len() > MAX_DIMENSIONS)
+            || vectors
+                .iter()
+                .try_fold(0usize, |n, v| n.checked_add(v.values().len()))
+                .is_none_or(|n| n > MAX_VECTOR_VALUES)
         {
             return Err(EmbeddingError);
         }
         Ok(())
     }
-    pub fn model(&self) -> &str {
-        &self.model
+    pub fn model(&self) -> Option<&str> {
+        self.model.as_deref()
     }
     pub fn vectors(&self) -> &[EmbeddingVector] {
         self.task.vectors()
@@ -117,5 +162,28 @@ impl Response {
     pub fn validate_for(&self, request: &EmbeddingRequest) -> Result<(), EmbeddingError> {
         self.validate()?;
         self.task.validate_for(request)
+    }
+}
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DeliveryUsage {
+    pub input_tokens: u64,
+    pub total_tokens: u64,
+}
+/// A validated client view, never reused as an upstream report.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Delivery {
+    pub(crate) model: String,
+    pub(crate) vectors: Vec<EmbeddingVector>,
+    pub(crate) usage: Option<DeliveryUsage>,
+}
+impl Delivery {
+    pub fn model(&self) -> &str {
+        &self.model
+    }
+    pub fn vectors(&self) -> &[EmbeddingVector] {
+        &self.vectors
+    }
+    pub fn usage(&self) -> Option<&DeliveryUsage> {
+        self.usage.as_ref()
     }
 }

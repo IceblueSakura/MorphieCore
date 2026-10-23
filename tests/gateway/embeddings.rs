@@ -130,6 +130,9 @@ async fn embedding_encodings_receipts_capture_and_effective_width() {
         for (index, candidate) in candidates.iter().take(3).enumerate() {
             let mut expected =
                 vec![json!({"rule":"embedding.omit-response-id.v1","direction":"delivery"})];
+            if support == EncodingSupport::Float {
+                expected.push(json!({"rule":"embedding.input-from-input-only-total.v1","direction":"delivery","actions":["input_interpreted"]}));
+            }
             if index == 2 && support == EncodingSupport::Float {
                 expected.push(
                     json!({"rule":"embedding.float-json-to-binary32.v1","direction":"delivery"}),
@@ -236,4 +239,123 @@ async fn embedding_default_vector_budget_rejects_before_transport() {
     );
     assert_eq!(fixture.seen.lock().unwrap().len(), 1);
     assert!(fixture.seen.lock().unwrap()[0].get("dimensions").is_none());
+}
+
+#[tokio::test]
+async fn google_embedding_projection_reports_errors_and_one_attempt() {
+    let dir = filesystem::private_directory();
+    let capture = dir.path().join("capture.jsonl");
+    let diagnostics = dir.path().join("diagnostics.jsonl");
+    let fixture = Fixture::start_google(Some(&capture), Some(&diagnostics)).await;
+    let client = reqwest::Client::builder()
+        .no_proxy()
+        .timeout(std::time::Duration::from_secs(5))
+        .build()
+        .unwrap();
+    let url = format!("{}/v1/embeddings", fixture.base);
+    for encoding in ["float", "base64"] {
+        let response = client.post(&url).bearer_auth(CLIENT_KEY).json(&json!({
+            "model":"public-vector","input":["first","second"],"encoding_format":encoding,"user":"private-user"
+        })).send().await.unwrap();
+        assert_eq!(response.status(), 200);
+        let result: Value = response.json().await.unwrap();
+        assert_eq!(result["model"], "public-vector");
+        assert_eq!(result["data"].as_array().unwrap().len(), 2);
+        assert_eq!(result["data"][0]["index"], 0);
+        assert_eq!(result["data"][1]["index"], 1);
+        assert_eq!(result["usage"], json!({"prompt_tokens":7,"total_tokens":7}));
+        assert_eq!(
+            result["data"][0]["embedding"],
+            if encoding == "float" {
+                json!([0.1, -0.125])
+            } else {
+                json!("zczMPQAAAL4=")
+            }
+        );
+    }
+    for text in ["no-usage", "details-only"] {
+        let response = client
+            .post(&url)
+            .bearer_auth(CLIENT_KEY)
+            .json(&json!({"model":"public-vector","input":text}))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), 200);
+        let result: Value = response.json().await.unwrap();
+        assert!(result.get("usage").is_none());
+        assert_eq!(result["data"][0]["embedding"], json!([0.1, -0.125]));
+    }
+    for text in ["malformed-usage", "tensor", "partial"] {
+        let response = client
+            .post(&url)
+            .bearer_auth(CLIENT_KEY)
+            .json(&json!({"model":"public-vector","input":[text,"second"]}))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), 502);
+        let result: Value = response.json().await.unwrap();
+        assert_eq!(result["error"]["code"], "upstream_error");
+        assert!(result.get("data").is_none());
+    }
+    let response = client
+        .post(&url)
+        .bearer_auth(CLIENT_KEY)
+        .json(&json!({"model":"public-vector","input":"rate-limit"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 429);
+    assert_eq!(response.headers()["retry-after"], "3");
+    assert!(
+        !response
+            .text()
+            .await
+            .unwrap()
+            .contains("private diagnostic")
+    );
+    let before = fixture.seen.lock().unwrap().len();
+    assert_eq!(before, 8);
+    let response = client
+        .post(&url)
+        .bearer_auth(CLIENT_KEY)
+        .json(&json!({"model":"public-vector","input":[1,2]}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 400);
+    assert_eq!(fixture.seen.lock().unwrap().len(), before);
+    fixture.gateway.flush_diagnostics().await;
+    let records = std::fs::read_to_string(diagnostics).unwrap();
+    let records: Vec<Value> = records
+        .lines()
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect();
+    let candidates: Vec<_> = records
+        .iter()
+        .filter_map(|r| r["candidates"].as_array())
+        .flatten()
+        .collect();
+    assert_eq!(candidates.len(), 8);
+    for candidate in candidates.iter().take(2) {
+        let receipts = candidate["embedding_receipts"].as_array().unwrap();
+        for rule in [
+            "embedding.omit-user-hint.v1",
+            "embedding.bound-model-label.v1",
+            "embedding.input-only-total-from-prompt.v1",
+        ] {
+            assert_eq!(receipts.iter().filter(|r| r["rule"] == rule).count(), 1);
+        }
+    }
+    let details = candidates[3]["embedding_receipts"].as_array().unwrap();
+    assert!(
+        details
+            .iter()
+            .any(|r| r["rule"] == "embedding.omit-unavailable-usage.v1"
+                && r["actions"] == json!(["usage_omitted", "details_omitted"]))
+    );
+    let capture = std::fs::read_to_string(capture).unwrap();
+    assert!(!capture.contains("synthetic-embedding-upstream-key-0001"));
+    assert!(capture.contains("[REDACTED]"));
 }

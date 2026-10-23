@@ -6,9 +6,8 @@ use crate::gateway::{
     startup::credentials,
 };
 use crate::{
-    adapter::embeddings::{
-        Encoding, Profile, Request as EmbeddingRequest, Response as EmbeddingResponse,
-    },
+    adapter::embeddings::{Encoding, Profile, Response as EmbeddingResponse},
+    execution::embeddings::PreparedEmbedding,
     protocol::openai::embeddings as codec,
     provider::{CredentialKind, ProviderDefinition},
     topology::{CompiledTopology, embeddings::EmbeddingRoute},
@@ -97,25 +96,16 @@ async fn ingress(runtime: Arc<Runtime>, request: Request) -> Result<Response, Ap
         result=tokio::time::timeout(runtime.limits.body_timeout,admission::collect(request.into_body(),runtime.limits.request_bytes))
             =>result.map_err(|_|ApiError::new(StatusCode::REQUEST_TIMEOUT,"request_timeout"))??,
     };
-    let request = codec::decode_request(&bytes).map_err(|_| ApiError::invalid())?;
+    let parsed = codec::parse_request(&bytes).map_err(|_| ApiError::invalid())?;
     let entry = runtime
         .embeddings
-        .get(&request.model)
+        .get(parsed.model())
         .ok_or(ApiError::new(StatusCode::NOT_FOUND, "model_not_found"))?
         .clone();
-    let projected = entry
-        .route
-        .endpoint
-        .contract
-        .prepare(&request)
+    let request = parsed
+        .into_request(entry.route.endpoint.contract.tokenizer)
         .map_err(|_| ApiError::invalid())?;
-    let value = entry
-        .route
-        .endpoint
-        .profile
-        .encode_request(&projected.target, &entry.route.endpoint.upstream_model)
-        .map_err(|_| ApiError::invalid())?;
-    crate::semantic::value::json_size(&value, entry.route.endpoint.execution.request_body_limit)
+    let prepared = crate::execution::embeddings::prepare(&entry.route, &entry.provider, &request)
         .map_err(|_| ApiError::invalid())?;
     let deadline = Instant::now()
         + runtime.limits.exchange_timeout.min(Duration::from_millis(
@@ -125,7 +115,7 @@ async fn ingress(runtime: Arc<Runtime>, request: Request) -> Result<Response, Ap
         body::Producer::Embedding {
             runtime: runtime.clone(),
             entry,
-            request,
+            prepared,
         },
         body::ResponseType::Json,
         runtime.limits.clone(),
@@ -140,40 +130,36 @@ async fn ingress(runtime: Arc<Runtime>, request: Request) -> Result<Response, Ap
 pub(in crate::gateway) async fn produce(
     runtime: Arc<Runtime>,
     entry: Arc<BoundEmbedding>,
-    request: EmbeddingRequest,
+    prepared: PreparedEmbedding,
     deadline: Instant,
     lane: &body::Lane<'_>,
     trace: &mut Trace,
 ) -> Result<(), ApiError> {
     trace.begin_candidate(1);
-    let result = produce_one(&runtime, &entry, &request, deadline, lane, trace).await;
+    let result = produce_one(&runtime, &entry, prepared, deadline, lane, trace).await;
     trace.end_candidate(result.as_ref().err().map(|e| e.code), false);
     result
 }
 async fn produce_one(
     runtime: &Runtime,
     entry: &BoundEmbedding,
-    request: &EmbeddingRequest,
+    prepared: PreparedEmbedding,
     deadline: Instant,
     lane: &body::Lane<'_>,
     trace: &mut Trace,
 ) -> Result<(), ApiError> {
     trace.stage(Stage::Prepare);
     trace.executor(entry.provider.id.as_str());
-    let expectation = entry
-        .route
-        .endpoint
-        .contract
-        .prepare(request)
-        .map_err(|_| ApiError::invalid())?
-        .expectation;
+    let expectation = prepared.expectation.clone();
+    let delivery = prepared.delivery.clone();
     let (secret, grant) = entry.secret.resolve()?;
     if grant.is_some() {
         return Err(ApiError::upstream());
     }
-    let prepared =
-        crate::execution::embeddings::prepare(&entry.route, &entry.provider, &secret, request)
-            .map_err(|_| ApiError::invalid())?;
+    trace.embedding_receipts(&prepared.receipts);
+    let prepared = prepared
+        .authorize(&entry.provider, &secret)
+        .map_err(|_| ApiError::invalid())?;
     trace.stage(Stage::Connect);
     if let Some(capture) = &trace.capture {
         capture.upstream_request(&prepared, trace.capture_attempt);
@@ -198,11 +184,10 @@ async fn produce_one(
         .validate_response(&response)
         .map_err(|_| ApiError::upstream())?;
     trace.stage(Stage::Projection);
-    let projected =
-        crate::lowering::embeddings::project_response(&response, expectation.client_encoding)
-            .map_err(|_| ApiError::upstream())?;
+    let projected = crate::lowering::embeddings::project_response(&response, &delivery)
+        .map_err(|_| ApiError::upstream())?;
     trace.embedding_receipts(&projected.receipts);
-    let value = codec::encode_response_as(&projected.response, expectation.client_encoding)
+    let value = codec::encode_response_as(&projected.response, delivery.encoding)
         .map_err(|_| ApiError::upstream())?;
     crate::semantic::value::json_size(&value, runtime.limits.response_bytes)
         .map_err(|_| ApiError::upstream())?;
@@ -231,7 +216,11 @@ pub(in crate::gateway) async fn receive(
         );
     }
     if upstream.status().as_u16() != 200 {
-        return Err(ApiError::status(upstream.status().as_u16()));
+        let status = upstream.status().as_u16();
+        let retry = crate::gateway::error::retry_after(upstream.headers());
+        // The failed head is authoritative; a stalled optional error body must
+        // not erase its status or Retry-After behind the operation deadline.
+        return Err(ApiError::failure(status, b"", retry));
     }
     let limit = limit.min(crate::semantic::value::JsonLimits::ENVELOPE.bytes);
     let headers = upstream.headers();

@@ -51,7 +51,11 @@ struct Entry<'a> {
 }
 #[derive(Serialize)]
 struct EmbeddingContract<'a> {
-    input_kinds: [&'static str; 1],
+    input_kinds: Vec<&'static str>,
+    tokenizer: Option<crate::semantic::task::embedding::TokenizerScope>,
+    max_input_tokens: Option<usize>,
+    max_token_ids: usize,
+    usage_may_be_omitted: bool,
     default_dimensions: usize,
     dimensions: &'a crate::lowering::embeddings::DimensionSupport,
     max_inputs: usize,
@@ -66,7 +70,10 @@ impl<'a> Entry<'a> {
         model: &'a str,
         entry: &'a crate::gateway::tasks::embeddings::BoundEmbedding,
     ) -> Self {
-        use crate::{lowering::embeddings::Rule, semantic::task::embedding::*};
+        use crate::{
+            adapter::embeddings::*,
+            lowering::embeddings::{ReportPolicy, Rule, UserPolicy},
+        };
         let contract = &entry.route.endpoint.contract;
         let mut rounding = Case::new(
             "embedding.encoding",
@@ -80,12 +87,54 @@ impl<'a> Entry<'a> {
             Treatment::ApprovedAdaptation,
         );
         identifier.rules.push(Rule::OmitResponseId.name());
+        let compatible = contract.reports == ReportPolicy::Compatible;
+        let mut user = Case::new(
+            "embedding.user",
+            "upstream_identity_hint",
+            match contract.user {
+                UserPolicy::Forward => Treatment::Faithful,
+                UserPolicy::Omit => Treatment::ApprovedAdaptation,
+                UserPolicy::Reject => Treatment::Rejected,
+            },
+        );
+        if contract.user == UserPolicy::Omit {
+            user.rules.push(Rule::OmitUser.name());
+        }
+        let mut reports = Case::new(
+            "embedding.reports",
+            "source_accounting_and_model_presence",
+            if compatible {
+                Treatment::ApprovedAdaptation
+            } else {
+                Treatment::Faithful
+            },
+        );
+        if compatible {
+            reports.rules.extend(
+                [
+                    Rule::BoundModel,
+                    Rule::DeriveTotal,
+                    Rule::InputFromTotal,
+                    Rule::OmitUsage,
+                    Rule::OmitDetails,
+                ]
+                .map(Rule::name),
+            );
+        }
         Self {
             model,
             protocol: "embeddings",
             delivery_modes: vec!["json"],
             embedding: Some(EmbeddingContract {
-                input_kinds: ["text"],
+                input_kinds: if contract.tokenizer.is_some() {
+                    vec!["text", "token_ids"]
+                } else {
+                    vec!["text"]
+                },
+                tokenizer: contract.tokenizer,
+                max_input_tokens: contract.max_input_tokens,
+                max_token_ids: MAX_TOKEN_IDS,
+                usage_may_be_omitted: compatible,
                 default_dimensions: contract.default_dimensions,
                 dimensions: &contract.dimensions,
                 max_inputs: contract.max_inputs,
@@ -98,32 +147,18 @@ impl<'a> Entry<'a> {
                 output_encodings: ["float", "base64"],
             }),
             request: vec![
-                Case::new("embedding.input", "token_ids", Treatment::Rejected),
                 Case::new(
-                    "embedding.user",
-                    "upstream_identity_hint",
-                    if contract.user {
+                    "embedding.input",
+                    "token_ids",
+                    if contract.tokenizer.is_some() {
                         Treatment::Faithful
                     } else {
                         Treatment::Rejected
                     },
                 ),
+                user,
             ],
-            delivery: vec![
-                rounding,
-                identifier,
-                Case::new(
-                    "embedding.usage",
-                    if entry.route.endpoint.profile
-                        == crate::adapter::embeddings::Profile::DashScope
-                    {
-                        "reported_input_only_total_or_explicit_input"
-                    } else {
-                        "reported_input_and_total"
-                    },
-                    Treatment::Faithful,
-                ),
-            ],
+            delivery: vec![rounding, identifier, reports],
             history: vec![],
         }
     }

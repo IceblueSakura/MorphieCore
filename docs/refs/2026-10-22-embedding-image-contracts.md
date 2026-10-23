@@ -22,13 +22,13 @@ Both pinned Python sync and async resources replace caller-omitted encoding with
 
 The parser establishes binary32 practice but uses native-endian numeric interpretation; it does not independently specify portable wire byte order. Pinning byte order needs explicit profile evidence and independent byte fixtures before implementation.
 
-### Current code and design counterexamples
+### Initial code and design counterexamples (2026-10-22)
 
-- [Semantic input](../../src/semantic/task/embedding.rs) is bounded `Vec<String>`; exact `serde_json::Number` values are authoritative. Local limits are 128 inputs, 256 KiB text, 8,192 dimensions and 60,000 aggregate vector values.
+- At initial review, [semantic input](../../src/semantic/task/embedding.rs) was bounded `Vec<String>`; exact `serde_json::Number` values were authoritative. Local limits were 128 inputs, 256 KiB text, 8,192 dimensions and 60,000 aggregate vector values.
 - Before the shared encoding repair, the [codec](../../src/protocol/openai/embeddings.rs) and [adapter](../../src/adapter/embeddings.rs) accepted text/float only, rejecting pinned SDK defaults. The subsequent implementation adds both output encodings without pretending token-ID inputs are supported.
 - Before the effective-default repair, [target admission](../../src/lowering/embeddings.rs) checked aggregate vector values only for explicit dimensions. At the [catalog's](../../src/topology/catalog/embeddings.rs) 1,536-dimensional model, 40 inputs imply 61,440 values: omission passed while explicit 1,536 rejected. Both now reject before dispatch using the trusted default.
 - Existing result validation preserves order and unique reported indexes and validates count/dimensions against the request. Extend it with admitted defaults rather than replacing indexes with array positions.
-- Standard response parsing uses the shared closed-object helper, rejecting unknown fields. This differs from the intended strict-known/ignore-unknown upstream policy; tolerant unknown parsing must not weaken known types, duplicate-key rejection or bounds.
+- Initial standard response parsing used the shared closed-object helper, rejecting unknown fields. This differed from the intended strict-known/ignore-unknown upstream policy; tolerant unknown parsing must not weaken known types, duplicate-key rejection or bounds.
 
 JSON `0.1` is not exactly binary32 `0.100000001490116119384765625`. A small standard-library `struct`/`Decimal` check confirmed that arithmetic distinction during this review; it does not validate a Rust conversion implementation. Arbitrary exact JSON-number reports cannot pass through binary32 and remain unchanged. The later user selection permits standard rounding on a delivery copy under the [named encoding policy](../architecture.md#embedding-encoding-compatibility), superseding the earlier exact-only recommendation; float→float source precision remains unchanged.
 
@@ -51,7 +51,7 @@ The current REST response schema includes `usageMetadata` with `promptTokenCount
 
 Google's OpenAI-compatible endpoint is documented at `/v1beta/openai/embeddings`, but its embedding examples still name `gemini-embedding-2-preview` while the model/guide sources name stable `gemini-embedding-2`. The inspected compatibility section does not establish complete token-input, dimensions, encoding or usage behavior. Its examples using a default OpenAI SDK request do not prove that its response is Base64 or that the stable slug has identical support. Those contracts remain unverified, not proven unsupported.
 
-Selection therefore favors the native synchronous contract for design, not an assertion that it works with current credentials. No Google model enumeration, embedding inference, SDK or Provider acceptance was performed.
+At the 2026-10-22 review, selection favored the native synchronous contract for design, not an assertion that it worked with current credentials. That source review performed no Google model enumeration, embedding inference, SDK or Provider acceptance. Subsequent bounded evidence is recorded below.
 
 ### Google wire source reconciliation
 
@@ -107,6 +107,16 @@ Two current-model source checks constrain the shared work:
 
 - [DashScope synchronous API](https://help.aliyun.com/en/model-studio/text-embedding-synchronous-api), rechecked 2026-10-22, documents default 1,024 dimensions, 20 text inputs and **float-only** output for its compatible interface. The model table and generic dimension prose differ in model-specific allowances; retain the catalog-selected widths until a scoped recheck. This makes float→Base64 gateway conversion essential, not an optional Google enhancement.
 - [OpenRouter Embeddings](https://openrouter.ai/docs/api/api-reference/embeddings/submit-an-embedding-request), rechecked 2026-10-22, admits text/token alternatives and both float/Base64 in the request schema. That is codec evidence, not every target's tokenizer/encoding acceptance. Preserve reported indexes and current accounting; do not import `input_type`, routing preferences or other nonstandard controls into the selected downstream contract implicitly.
+
+### Implementation characterization (2026-10-23)
+
+After explicit user resumption, four native Google requests used the project loader, serial execution, no retries, 30-second deadlines and 512-KiB response caps. Default width returned 3072; two entries with nested `outputDimensionality:128` returned two 128-wide vectors; one 256-wide request returned 256. An intentionally over-limit synthetic text with `autoTruncate:false` returned a token-limit-specific 400, not a configuration rejection. All three successes reported `promptTokenCount` and modality details. This establishes the selected nested-config/no-truncation text path, not all input boundaries or guaranteed usage presence. Two additional serial native requests completed the original batch gate with the same bounds: 100 short inputs at 128 dimensions succeeded with all expected vectors; 101 returned a 400 identifying the 100-request batch limit. The selected local cap matches this observed boundary, not a claim about other models or protocols.
+
+Five separate Router-to-real-Provider checks passed with the same bounds and no internal retries: Google default/Base64 at 3072, a two-text float batch at 128, and Base64 plus an omitted unsupported `user` hint at 256; OpenAI's model through OpenRouter accepted a scoped token sequence at 128/float and a two-sequence batch at 256/Base64, including one 2049-token sequence. Every response had the expected vector count/width and usable usage. A prior Router run stopped on its first connection timeout; the embedded constructor does not inherit environment proxies, unlike the native probe. The corrected harness supplied the existing runtime proxy explicitly. No credentials, input/vector content or upstream error text was logged.
+
+The token carrier observation resolves the documented ambiguous 2048 wording for the tested OpenRouter binding; it does not establish direct OpenAI API behavior, every length or another tokenizer. The [OpenAI vocabulary definition](https://github.com/openai/tiktoken/blob/main/tiktoken_ext/openai_public.py) and [rank file](https://openaipublic.blob.core.windows.net/encodings/cl100k_base.tiktoken), checked on 2026-10-23, identify ordinary ranks exactly 0–100255. Rank-file SHA-256 is `223921b76ee99bde995b7ff738513eef100fb51d18c93597a113bcffe865b2a7`; 100256 is absent and the defined special tokens lie above it. The selected profile excludes special/control tokens rather than forwarding every `u32`.
+
+Separate pinned SDK loopback acceptance exercised 17 synthetic requests across numeric representations, Google reports and scoped token shapes. Ordinary OpenAI SDK vector access worked with absent usage; `_strict_response_validation=True` rejected it. Offline directional fixtures additionally distinguish detail-only usage from aggregate counts, preserve source facts, check indexed heterogeneous native dimensions, reject malformed reports/tensors and preserve numerical/lifecycle protections. These synthetic SDK and real Router checks are separate evidence, not a real SDK-to-Provider full-chain claim.
 
 ## Images
 

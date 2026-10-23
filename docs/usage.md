@@ -578,18 +578,28 @@ Standalone endpoints require explicit model activation:
 
 | Method and path | Purpose |
 |---|---|
-| `POST /v1/embeddings` | Text input, float or Base64 vectors |
+| `POST /v1/embeddings` | Text or model-scoped token IDs, float or Base64 vectors |
 | `POST /v1/images/generations` | Static inline images |
 | `POST /v1/audio/speech` | Binary audio |
 | `POST /v1/audio/transcriptions` | One WAV/MP3 multipart upload |
 
 The [OpenAPI summary](openapi.json) describes envelopes and selected constraints, not full vendor API conformance. Codecs define exact admission. Business input cannot choose an upstream origin, credential or auth header; inbound headers are not forwarded.
 
+### Embeddings
+
+Explicitly list `"gemini-embedding-2": {}` or `"text-embedding-3-small": {}` in the models configuration and bind the corresponding Google or OpenRouter single-member, nonfallback API-key pool. This does not activate either model automatically or change credentials. OpenAI's model currently uses OpenRouter; no direct OpenAI API binding is implied.
+
+Send the ordinary OpenAI request envelope to `/v1/embeddings`, for example `{"model":"gemini-embedding-2","input":["first","second"],"dimensions":128,"encoding_format":"base64"}`. Google uses native synchronous requests internally, with explicit no-truncation. The downstream path is not Google's native REST interface.
+
+`text-embedding-3-small` also accepts one token sequence or a batch of sequences under the declared ordinary `cl100k_base` vocabulary. Use IDs from that tokenizer only; special/control tokens, unknown IDs, mixed text/token batches and token inputs to Google/DashScope reject before dispatch. There is no detokenization or automatic splitting.
+
+Compatible profiles preserve valid vectors even when ancillary reports are absent. A missing model report uses the bound public label; usable input-only usage can be explicitly derived; unavailable usage is omitted, never filled with zeros. Strict OpenAI response validators can reject the missing-usage extension, although ordinary SDK vector access works. Unsupported `user` hints are omitted on Google/DashScope and forwarded on the current OpenAI-model binding. These are declared [adaptations](architecture.md#google-embedding-compatibility), not upstream reporting or attribution guarantees.
+
 ### Capability discovery and adaptation notice
 
 `GET /v1/morphiecore/capabilities` uses the ordinary ingress token. It returns a startup-immutable `version: 1` snapshot with `scope: "gateway_contract"` and `coverage: "partial"`. Each entry names an activated public model and client protocol, with separate `request`, `delivery` and `history` case lists. Other standalone media tasks are not assessed. No upstream request or request-body collection occurs; HEAD omits the body. The complete snapshot must fit both `response_bytes` and 256 KiB or startup fails.
 
-Embedding entries use `protocol: "embeddings"` and JSON-only delivery. Their `embedding` descriptor declares text-only input, default/explicit dimension support, input-count and vector-value ceilings, both client encodings and native encoding selection. These ceilings are intersected with body/runtime limits, not promises that every maximum-sized combination fits. Omitted dimensions use the trusted default for admission and result validation without injecting a dimension control upstream. Raw HTTP encoding omission means float; the Python SDK normally sends Base64 when its caller omits encoding. Float-to-Base64 delivery rounds directly to IEEE-754 binary32, nearest/ties-to-even, under `embedding.float-json-to-binary32.v1`; overflow and nonzero-to-zero underflow reject before publication. Signed zero and finite subnormals survive. Base64 uses standard padded little-endian binary32. Input text and upstream source vectors remain unchanged. Required usage, the DashScope input-only-total basis and reported model are preserved; Google compatibility and binding activation remain future work.
+Embedding entries use `protocol: "embeddings"` and JSON-only delivery. The descriptor declares input kinds, optional tokenizer/token limits, dimension/default/count budgets, native and client encodings, and whether usage may be omitted. Limits intersect with runtime/body ceilings rather than promising every maximum-sized combination fits. Omitted dimensions use trusted defaults without adding a wire control. Raw HTTP encoding omission means float; the Python SDK normally sends Base64 on caller omission. The [numeric policy](architecture.md#embedding-encoding-compatibility) preserves source precision and permits named binary32 rounding only on delivery copies. Request and delivery rule lists describe compatible omissions without exposing credentials or source payloads.
 
 Each case names a `feature`, a limited `domain`, and `faithful`, `approved_adaptation` or `rejected` treatment. Approved adaptations include stable `rules` IDs. Unlisted cases are `not_assessed`, not implicitly supported or rejected. Statements concern that feature/domain only, assuming all other validation succeeds; neither model-effective settings nor full client loops are asserted.
 

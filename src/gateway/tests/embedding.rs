@@ -5,6 +5,33 @@ use bytes::Bytes;
 const RESULT: &[u8] = br#"{"object":"list","model":"synthetic","data":[{"object":"embedding","index":0,"embedding":[0.5,1]}],"usage":{"prompt_tokens":1,"total_tokens":1}}"#;
 
 #[tokio::test]
+async fn failed_embedding_heads_do_not_wait_for_optional_error_bodies() {
+    for (status, code) in [(429, "rate_limit_exceeded"), (503, "server_is_overloaded")] {
+        let mut trace = Trace::new(None);
+        let (_tx, mut response, dropped) = source(status, "application/json");
+        response
+            .headers_mut()
+            .insert("retry-after", "3".parse().unwrap());
+        let error = tokio::time::timeout(
+            std::time::Duration::from_secs(1),
+            crate::gateway::tasks::embeddings::receive(
+                response,
+                4096,
+                &mut trace,
+                Profile::Google,
+                Encoding::Float,
+            ),
+        )
+        .await
+        .unwrap()
+        .unwrap_err();
+        assert_eq!(error.code, code);
+        assert_eq!(error.retry_after, Some(3));
+        dropped.await.unwrap();
+    }
+}
+
+#[tokio::test]
 async fn embedding_body_requires_eof_and_rejects_bad_heads_reads_and_limits() {
     let mut trace = Trace::new(None);
     let (tx, response, dropped) = source(200, "application/json");

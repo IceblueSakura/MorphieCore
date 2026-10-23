@@ -57,7 +57,9 @@ fn embeddings_need_explicit_selection_and_a_single_nonfallback_key() {
         let public = snapshot.to_string();
         assert!(!public.contains(provider.origin.as_str()));
         assert!(!public.contains(binding.credential().as_str()));
-        assert!(!public.contains("gemini-embedding-2"));
+        if binding.model != "gemini-embedding-2" {
+            assert!(!public.contains("gemini-embedding-2"));
+        }
         if let Some(text) = catalog::API_KEY_BINDINGS.iter().find(|b| {
             b.credential() == binding.credential() && !b.public_model().contract.audio_input
         }) {
