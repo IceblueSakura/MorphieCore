@@ -36,6 +36,15 @@ async fn embedding_encodings_receipts_capture_and_effective_width() {
             2
         );
         assert_eq!(capabilities["data"][0]["delivery_modes"], json!(["json"]));
+        assert_eq!(
+            capabilities["data"][0]["embedding"]["usage_may_be_estimated"],
+            true
+        );
+        assert!(
+            capabilities["data"][0]["embedding"]
+                .get("usage_may_be_omitted")
+                .is_none()
+        );
         for (ordinal, encoding) in [None, Some("float"), Some("base64")]
             .into_iter()
             .enumerate()
@@ -273,7 +282,7 @@ async fn google_embedding_projection_reports_errors_and_one_attempt() {
             }
         );
     }
-    for text in ["no-usage", "details-only"] {
+    for (text, tokens) in [("no-usage", 2), ("details-only", 3)] {
         let response = client
             .post(&url)
             .bearer_auth(CLIENT_KEY)
@@ -283,7 +292,10 @@ async fn google_embedding_projection_reports_errors_and_one_attempt() {
             .unwrap();
         assert_eq!(response.status(), 200);
         let result: Value = response.json().await.unwrap();
-        assert!(result.get("usage").is_none());
+        assert_eq!(
+            result["usage"],
+            json!({"prompt_tokens":tokens,"total_tokens":tokens})
+        );
         assert_eq!(result["data"][0]["embedding"], json!([0.1, -0.125]));
     }
     for text in ["malformed-usage", "tensor", "partial"] {
@@ -352,8 +364,9 @@ async fn google_embedding_projection_reports_errors_and_one_attempt() {
     assert!(
         details
             .iter()
-            .any(|r| r["rule"] == "embedding.omit-unavailable-usage.v1"
-                && r["actions"] == json!(["usage_omitted", "details_omitted"]))
+            .any(|r| r["rule"] == "embedding.estimate-missing-usage.v1"
+                && r["actions"]
+                    == json!(["input_estimated", "total_estimated", "details_omitted"]))
     );
     let capture = std::fs::read_to_string(capture).unwrap();
     assert!(!capture.contains("synthetic-embedding-upstream-key-0001"));

@@ -14,6 +14,7 @@ mod embeddings {
             model: "public-vector".into(),
             encoding,
             reports: morphiecore::lowering::embeddings::ReportPolicy::Strict,
+            estimated_input_tokens: std::num::NonZeroU64::new(2).unwrap(),
         }
     }
     #[test]
@@ -381,13 +382,15 @@ mod embeddings {
                 let mut compatible = policy(encoding);
                 compatible.reports = ReportPolicy::Compatible;
                 let projected = project_response(&source, &compatible).unwrap();
-                assert!(projected.response.usage().is_none());
-                assert!(projected.receipts.iter().any(|r| r.rule == Rule::OmitUsage));
                 assert!(
-                    embeddings::encode_response_as(&projected.response, encoding)
-                        .unwrap()
-                        .get("usage")
-                        .is_none()
+                    projected
+                        .receipts
+                        .iter()
+                        .any(|r| r.rule == Rule::EstimateUsage)
+                );
+                assert_eq!(
+                    embeddings::encode_response_as(&projected.response, encoding).unwrap()["usage"],
+                    json!({"prompt_tokens":2,"total_tokens":2})
                 );
                 assert_eq!(source, snapshot);
             }

@@ -150,9 +150,16 @@ async fn answer(
     } else {
         json!({"prompt_tokens":7,"total_tokens":7})
     };
-    Response::builder().header("content-type", "application/json").body(Body::from(json!({
+    let mut output = json!({
         "object":"list","model":"reported-vector","id":"synthetic-id","data":data,"usage":usage,"unknown":true
-    }).to_string())).unwrap()
+    });
+    if input[0].is_array() {
+        output.as_object_mut().unwrap().remove("usage");
+    }
+    Response::builder()
+        .header("content-type", "application/json")
+        .body(Body::from(output.to_string()))
+        .unwrap()
 }
 impl Fixture {
     pub async fn start(

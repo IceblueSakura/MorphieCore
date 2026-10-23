@@ -304,10 +304,10 @@ pub fn encode_response(response: &Response) -> Result<Value, CodecError> {
     let delivery = Delivery {
         model: response.model.clone().ok_or_else(invalid)?,
         vectors: response.vectors().to_vec(),
-        usage: Some(DeliveryUsage {
+        usage: DeliveryUsage {
             input_tokens: usage.reported_input_tokens().ok_or_else(invalid)?,
             total_tokens: usage.reported_total_tokens().ok_or_else(invalid)?,
-        }),
+        },
     };
     encode_response_as(&delivery, Encoding::Float)
 }
@@ -343,10 +343,9 @@ pub fn encode_response_as(response: &Delivery, encoding: Encoding) -> Result<Val
             Ok(json!({"object":"embedding","index":v.index(),"embedding":values}))
         })
         .collect::<Result<Vec<_>, _>>()?;
-    let mut value = json!({"object":"list","model":response.model(),"data":data});
-    if let Some(u) = response.usage() {
-        value["usage"] = json!({"prompt_tokens":u.input_tokens,"total_tokens":u.total_tokens});
-    }
+    let u = response.usage();
+    let value = json!({"object":"list","model":response.model(),"data":data,
+        "usage":{"prompt_tokens":u.input_tokens,"total_tokens":u.total_tokens}});
     crate::semantic::value::json_size(&value, crate::semantic::value::JsonLimits::ENVELOPE.bytes)
         .map_err(|_| CodecError::Limit)?;
     Ok(value)

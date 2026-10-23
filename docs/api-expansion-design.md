@@ -51,7 +51,7 @@ Code and tests remain the behavior specification. This document records ownershi
 
 On 2026-10-22 the user prioritized **Embedding and Images design**. The detailed proposals below are the current review surface, not approval of new IR layouts, delivery dialects, comprehensive coverage or bindings. Audio, Files and deferred video keep their existing scope; the [roadmap](roadmap.md#stage-4-scope) owns scheduling.
 
-The subsequent Google-model, encoding and ancillary compatibility selections are recorded separately in Architecture: [four-way encoding](architecture.md#embedding-encoding-compatibility), including named standard binary32 rounding, and [Google report/identity projection](architecture.md#google-embedding-compatibility) are selected behavior. Shared numeric/expectation owners are implemented; Google report and token layouts below remain proposed. The older exact-only conversion and strict-missing-usage recommendations are superseded.
+The subsequent Embedding selections are recorded in Architecture: [four-way encoding](architecture.md#embedding-encoding-compatibility), sample-centered inputs and [report/identity projection](architecture.md#google-embedding-compatibility) are implemented. Complete downstream usage with explicit request-based approximation supersedes missing-usage delivery; it does not reopen the deferred counting endpoint. This document retains only unselected Embedding extensions.
 
 ## Requested scope
 

@@ -464,7 +464,7 @@
           "tokenizer": {"enum": [null, "cl100k_base"]},
           "max_input_tokens": {"type": ["integer", "null"], "minimum": 1},
           "max_token_ids": {"const": 60000},
-          "usage_may_be_omitted": {"type": "boolean"},
+          "usage_may_be_estimated": {"type": "boolean"},
           "default_dimensions": {"type": "integer", "minimum": 1, "maximum": 8192},
           "dimensions": {"oneOf": [
             {"const": "unsupported"},
@@ -522,7 +522,7 @@
         "description": "Text or homogeneous token-ID inputs; token inputs require a published trusted tokenizer contract and are forwarded without retokenization. Aggregate text is bounded to 256 KiB UTF-8 and token inputs to 60000 IDs; target/runtime limits may be tighter. Float or padded Base64 little-endian finite binary32 delivery is available for every activated model. HTTP omission defaults to float; SDK omission may send Base64. Output budgets use effective defaults. Named float-to-binary32 rounding rejects overflow and nonzero-to-zero underflow. Unsupported user hints may be omitted with a declared adaptation."
       },
       "EmbeddingResponse": {
-        "type": "object", "required": ["object", "model", "data"], "additionalProperties": false,
+        "type": "object", "required": ["object", "model", "data", "usage"], "additionalProperties": false,
         "properties": {
           "object": {"const": "list"},
           "model": {"type": "string", "minLength": 1, "maxLength": 256},
@@ -538,7 +538,7 @@
             }
           }
         },
-        "description": "Vector order and complete input association are preserved. Compatible profiles use the bound public model only when upstream model identity is absent, derive counters only from reported input-only accounting, and omit usage when no usable aggregate exists. Omitted usage is an explicit departure from strict OpenAI response schemas, never zero or free service. Malformed present reports, incomplete transport, invalid vectors or dimensions still fail. Adaptation capabilities are advertised separately."
+        "description": "Every success includes complete usage. Preserve reported scalars, prefer attested input-only derivation, then estimate missing fields from the admitted request. The fixed approximation sums per-sample UTF-8 bytes divided by four rounded up (at least one), or scoped token-ID lengths. A missing input estimate is bounded by reported total; a missing total estimate is at least reported input. Estimates are not billing truth; reported zeros remain zero, never a missing-report default. Compatible profiles supply the bound model only when source model is absent. Malformed present reports, incomplete transport, invalid vectors or dimensions still fail. Provenance is in adaptation capabilities and operator receipts, not extra usage fields."
       },
       "EmbeddingVector": {
         "type": "object", "required": ["object", "index", "embedding"], "additionalProperties": false,

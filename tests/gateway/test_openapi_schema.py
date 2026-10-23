@@ -132,7 +132,7 @@ class EmbeddingSchemaTests(unittest.TestCase):
         self.assertEqual(post["requestBody"]["content"]["application/json"]["schema"]["$ref"],
                          "#/components/schemas/EmbeddingRequest")
 
-    def test_required_vectors_and_optional_usage_without_synthetic_counts(self):
+    def test_complete_embedding_response_requires_usage_counters(self):
         check = validator("EmbeddingResponse")
         response = {"object": "list", "model": "reported-vector",
                     "data": [{"object": "embedding", "index": 0, "embedding": [0.5, -0.125]}],
@@ -140,10 +140,8 @@ class EmbeddingSchemaTests(unittest.TestCase):
         check.validate(response)
         check.validate({**response, "data": [{"object": "embedding", "index": 0,
                                             "embedding": "AAAAPwAAAL4="}]})
-        no_usage = copy.deepcopy(response)
-        del no_usage["usage"]
-        check.validate(no_usage)
-        for pointer in ("object", "model", "data"):
+        check.validate({**response, "usage": {"prompt_tokens": 0, "total_tokens": 0}})
+        for pointer in ("object", "model", "data", "usage"):
             changed = copy.deepcopy(response)
             del changed[pointer]
             self.assertFalse(check.is_valid(changed))
@@ -151,7 +149,8 @@ class EmbeddingSchemaTests(unittest.TestCase):
                      [{"object": "embedding", "index": 0, "embedding": []}],
                      [{"object": "embedding", "index": 0, "embedding": "not-base64"}]):
             self.assertFalse(check.is_valid({**response, "data": data}))
-        for usage in (None, {}, {"prompt_tokens": True, "total_tokens": 1},
+        for usage in (None, 0, {}, {"prompt_tokens": 1}, {"total_tokens": 1},
+                      {"prompt_tokens": True, "total_tokens": 1},
                       {"prompt_tokens": -1, "total_tokens": 0}):
             self.assertFalse(check.is_valid({**response, "usage": usage}))
 

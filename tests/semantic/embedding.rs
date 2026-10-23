@@ -30,8 +30,187 @@ fn policy() -> DeliveryPolicy {
         model: "public-vector".into(),
         encoding: Encoding::Base64,
         reports: ReportPolicy::Compatible,
+        estimated_input_tokens: std::num::NonZeroU64::new(5).unwrap(),
     }
 }
+#[test]
+fn usage_estimates_count_samples_not_parts_or_vector_dimensions() {
+    for (parts, expected) in [
+        (vec![vec!["ab", "cd"]], 1),
+        (vec![vec!["ab"], vec!["cd"]], 2),
+        (vec![vec!["12345"], vec!["中🙂"]], 4),
+    ] {
+        let task = EmbeddingRequest::new(
+            parts
+                .into_iter()
+                .map(|parts| {
+                    EmbeddingSample::new(
+                        EmbeddingInput::TextParts(parts.into_iter().map(str::to_owned).collect()),
+                        None,
+                    )
+                    .unwrap()
+                })
+                .collect(),
+        )
+        .unwrap();
+        let snapshot = task.clone();
+        let prepared = contract()
+            .prepare(&Request::new("m", task.clone()))
+            .unwrap();
+        assert_eq!(prepared.delivery.estimated_input_tokens.get(), expected);
+        let smaller = contract()
+            .prepare(&Request::new("m", task.with_dimensions(Some(128)).unwrap()))
+            .unwrap();
+        assert_eq!(
+            smaller.delivery.estimated_input_tokens,
+            prepared.delivery.estimated_input_tokens
+        );
+        assert_eq!(task, snapshot);
+    }
+    let task = EmbeddingRequest::new(
+        [3, 2]
+            .into_iter()
+            .map(|n| {
+                EmbeddingSample::new(
+                    EmbeddingInput::TokenIds {
+                        tokenizer: TokenizerScope::Cl100kBase,
+                        ids: vec![9; n],
+                    },
+                    None,
+                )
+                .unwrap()
+            })
+            .collect(),
+    )
+    .unwrap();
+    let mut target = contract();
+    target.tokenizer = Some(TokenizerScope::Cl100kBase);
+    assert_eq!(
+        target
+            .prepare(&Request::new("m", task))
+            .unwrap()
+            .delivery
+            .estimated_input_tokens
+            .get(),
+        5
+    );
+}
+
+#[test]
+fn complete_usage_preserves_reports_and_bounds_only_missing_estimates() {
+    use AccountingBasis::{InputOnly, Unspecified};
+    for (input, total, basis, expected, rule, actions) in [
+        (
+            None,
+            None,
+            Unspecified,
+            (5, 5),
+            Some(Rule::EstimateUsage),
+            vec![Action::InputEstimated, Action::TotalEstimated],
+        ),
+        (
+            Some(2),
+            None,
+            Unspecified,
+            (2, 5),
+            Some(Rule::EstimateUsage),
+            vec![Action::TotalEstimated],
+        ),
+        (
+            Some(9),
+            None,
+            Unspecified,
+            (9, 9),
+            Some(Rule::EstimateUsage),
+            vec![Action::TotalEstimated],
+        ),
+        (
+            None,
+            Some(3),
+            Unspecified,
+            (3, 3),
+            Some(Rule::EstimateUsage),
+            vec![Action::InputEstimated],
+        ),
+        (
+            None,
+            Some(9),
+            Unspecified,
+            (5, 9),
+            Some(Rule::EstimateUsage),
+            vec![Action::InputEstimated],
+        ),
+        (
+            Some(0),
+            None,
+            Unspecified,
+            (0, 5),
+            Some(Rule::EstimateUsage),
+            vec![Action::TotalEstimated],
+        ),
+        (
+            None,
+            Some(0),
+            Unspecified,
+            (0, 0),
+            Some(Rule::EstimateUsage),
+            vec![Action::InputEstimated],
+        ),
+        (Some(0), Some(0), Unspecified, (0, 0), None, vec![]),
+        (Some(2), Some(9), Unspecified, (2, 9), None, vec![]),
+        (
+            Some(7),
+            None,
+            InputOnly,
+            (7, 7),
+            Some(Rule::DeriveTotal),
+            vec![Action::TotalDerived],
+        ),
+        (
+            None,
+            Some(7),
+            InputOnly,
+            (7, 7),
+            Some(Rule::InputFromTotal),
+            vec![Action::InputInterpreted],
+        ),
+        (
+            Some(u64::MAX),
+            None,
+            Unspecified,
+            (u64::MAX, u64::MAX),
+            Some(Rule::EstimateUsage),
+            vec![Action::TotalEstimated],
+        ),
+    ] {
+        let source = morphiecore::adapter::embeddings::Response {
+            model: Some("reported".into()),
+            id: None,
+            task: EmbeddingResponse::new(
+                vec![EmbeddingVector::from_binary32(0, vec![0]).unwrap()],
+                Some(EmbeddingUsage::reported(input, total, basis, None).unwrap()),
+            )
+            .unwrap(),
+        };
+        let snapshot = source.clone();
+        let result = project_response(&source, &policy()).unwrap();
+        let usage = result.response.usage();
+        assert_eq!((usage.input_tokens, usage.total_tokens), expected);
+        assert_eq!(source, snapshot);
+        assert_eq!(
+            result.receipts.iter().map(|r| r.rule).collect::<Vec<_>>(),
+            rule.into_iter().collect::<Vec<_>>()
+        );
+        if let Some(receipt) = result.receipts.first() {
+            assert_eq!(receipt.actions, actions);
+        }
+        assert_eq!(
+            openai::encode_response_as(&result.response, Encoding::Base64).unwrap()["usage"],
+            json!({"prompt_tokens":expected.0,"total_tokens":expected.1})
+        );
+    }
+}
+
 #[test]
 fn google_entries_preserve_sample_boundaries_and_per_sample_dimensions() {
     let task = EmbeddingRequest::new(vec![
@@ -213,6 +392,7 @@ fn token_shapes_require_trusted_scope_and_keep_integer_identity() {
 }
 #[test]
 fn google_usage_is_batch_scoped_and_projection_does_not_invent_source_facts() {
+    // A real aggregate outranks the deliberately different request estimate.
     let wire=br#"{"embeddings":[{"values":[0.1,-0.125]},{"values":[0,1]}],"usageMetadata":{"promptTokenCount":7,"promptTokenDetails":[{"modality":"TEXT","tokenCount":6}]},"unknown":true}"#;
     let source = google::decode_response(wire).unwrap();
     let snapshot = source.clone();
@@ -247,12 +427,24 @@ fn google_usage_is_batch_scoped_and_projection_does_not_invent_source_facts() {
     assert_eq!(source, snapshot);
     let details=google::decode_response(br#"{"embeddings":[{"values":[1]}],"usageMetadata":{"promptTokenDetails":[{"modality":"TEXT","tokenCount":99}]}}"#).unwrap();
     let delivered = project_response(&details, &policy()).unwrap();
-    assert!(delivered.response.usage().is_none());
-    assert!(delivered.receipts.iter().any(|r| r.rule == Rule::OmitUsage
-        && r.actions == [Action::UsageOmitted, Action::DetailsOmitted]));
+    assert_eq!(delivered.response.usage().input_tokens, 5);
+    assert_eq!(delivered.response.usage().total_tokens, 5);
+    assert!(
+        delivered
+            .receipts
+            .iter()
+            .any(|r| r.rule == Rule::EstimateUsage
+                && r.actions
+                    == [
+                        Action::InputEstimated,
+                        Action::TotalEstimated,
+                        Action::DetailsOmitted
+                    ])
+    );
 }
 #[test]
 fn strict_openai_wire_rejects_unprojected_loss() {
+    // Native serialization still requires actual reports, not a request fallback.
     use morphiecore::adapter::embeddings::Response;
     let wire=br#"{"object":"list","model":"m","data":[{"object":"embedding","index":0,"embedding":[1]},{"object":"embedding","index":1,"embedding":[1,2]}],"usage":{"prompt_tokens":1,"total_tokens":1}}"#;
     assert!(openai::decode_response(wire).is_err());
@@ -305,12 +497,14 @@ fn strict_openai_wire_rejects_unprojected_loss() {
         source.task.usage().unwrap().basis(),
         AccountingBasis::Unspecified
     );
+    let delivered = project_response(&source, &policy()).unwrap();
+    assert_eq!(delivered.response.usage().input_tokens, 5);
+    assert_eq!(delivered.response.usage().total_tokens, 7);
     assert!(
-        project_response(&source, &policy())
-            .unwrap()
-            .response
-            .usage()
-            .is_none()
+        delivered
+            .receipts
+            .iter()
+            .any(|r| r.rule == Rule::EstimateUsage)
     );
 }
 #[test]
@@ -328,7 +522,8 @@ fn compatible_encodings_and_missing_reports_do_not_relax_malformed_values() {
             openai::encode_response_as(&delivered.response, Encoding::Base64).unwrap()["data"][0]["embedding"],
             "zczMPQ=="
         );
-        assert!(delivered.response.usage().is_none());
+        assert_eq!(delivered.response.usage().input_tokens, 5);
+        assert_eq!(delivered.response.usage().total_tokens, 5);
         assert!(
             Profile::Standard
                 .decode_response_as(&bytes, Encoding::Base64)

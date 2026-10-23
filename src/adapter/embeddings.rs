@@ -174,7 +174,7 @@ pub struct DeliveryUsage {
 pub struct Delivery {
     pub(crate) model: String,
     pub(crate) vectors: Vec<EmbeddingVector>,
-    pub(crate) usage: Option<DeliveryUsage>,
+    pub(crate) usage: DeliveryUsage,
 }
 impl Delivery {
     pub fn model(&self) -> &str {
@@ -183,7 +183,7 @@ impl Delivery {
     pub fn vectors(&self) -> &[EmbeddingVector] {
         &self.vectors
     }
-    pub fn usage(&self) -> Option<&DeliveryUsage> {
-        self.usage.as_ref()
+    pub fn usage(&self) -> &DeliveryUsage {
+        &self.usage
     }
 }

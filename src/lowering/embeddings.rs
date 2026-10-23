@@ -3,6 +3,7 @@ use crate::{
     adapter::embeddings::{valid_model, *},
     semantic::{task::embedding::*, value::Presence},
 };
+use std::num::NonZeroU64;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Contract {
@@ -68,6 +69,8 @@ pub struct DeliveryPolicy {
     pub model: String,
     pub encoding: Encoding,
     pub reports: ReportPolicy,
+    /// Request-local fallback, never an upstream usage report or an admission token count.
+    pub estimated_input_tokens: NonZeroU64,
 }
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Expectation {
@@ -107,8 +110,8 @@ pub enum Rule {
     DeriveTotal,
     #[serde(rename = "embedding.input-from-input-only-total.v1")]
     InputFromTotal,
-    #[serde(rename = "embedding.omit-unavailable-usage.v1")]
-    OmitUsage,
+    #[serde(rename = "embedding.estimate-missing-usage.v1")]
+    EstimateUsage,
     #[serde(rename = "embedding.omit-usage-details.v1")]
     OmitDetails,
     #[serde(rename = "embedding.omit-user-hint.v1")]
@@ -122,7 +125,7 @@ impl Rule {
             Self::BoundModel => "embedding.bound-model-label.v1",
             Self::DeriveTotal => "embedding.input-only-total-from-prompt.v1",
             Self::InputFromTotal => "embedding.input-from-input-only-total.v1",
-            Self::OmitUsage => "embedding.omit-unavailable-usage.v1",
+            Self::EstimateUsage => "embedding.estimate-missing-usage.v1",
             Self::OmitDetails => "embedding.omit-usage-details.v1",
             Self::OmitUser => "embedding.omit-user-hint.v1",
         }
@@ -139,7 +142,8 @@ pub enum Direction {
 pub enum Action {
     TotalDerived,
     InputInterpreted,
-    UsageOmitted,
+    InputEstimated,
+    TotalEstimated,
     DetailsOmitted,
 }
 #[derive(Clone, Debug, Eq, PartialEq, serde::Serialize)]
@@ -186,39 +190,54 @@ pub fn project_response(
     let report = source.task.usage();
     let details = report.is_some_and(|u| u.details().is_some());
     let mut usage_rule = None;
-    let usage = match report.map(|u| {
-        (
-            u.reported_input_tokens(),
-            u.reported_total_tokens(),
-            u.basis(),
-        )
-    }) {
-        Some((Some(input), Some(total), _)) => Some(DeliveryUsage {
+    let usage = match report
+        .map(|u| {
+            (
+                u.reported_input_tokens(),
+                u.reported_total_tokens(),
+                u.basis(),
+            )
+        })
+        .unwrap_or((None, None, AccountingBasis::Unspecified))
+    {
+        (Some(input), Some(total), _) => DeliveryUsage {
             input_tokens: input,
             total_tokens: total,
-        }),
-        Some((None, Some(total), AccountingBasis::InputOnly)) => {
-            usage_rule = Some((Rule::InputFromTotal, Action::InputInterpreted));
-            Some(DeliveryUsage {
+        },
+        (None, Some(total), AccountingBasis::InputOnly) => {
+            usage_rule = Some((Rule::InputFromTotal, vec![Action::InputInterpreted]));
+            DeliveryUsage {
                 input_tokens: total,
                 total_tokens: total,
-            })
+            }
         }
-        Some((Some(input), None, AccountingBasis::InputOnly)) if compatible => {
-            usage_rule = Some((Rule::DeriveTotal, Action::TotalDerived));
-            Some(DeliveryUsage {
+        (Some(input), None, AccountingBasis::InputOnly) if compatible => {
+            usage_rule = Some((Rule::DeriveTotal, vec![Action::TotalDerived]));
+            DeliveryUsage {
                 input_tokens: input,
                 total_tokens: input,
-            })
+            }
         }
-        _ if compatible => {
-            usage_rule = Some((Rule::OmitUsage, Action::UsageOmitted));
-            None
+        (input, total, _) if compatible => {
+            let estimate = policy.estimated_input_tokens.get();
+            let mut actions = vec![];
+            if input.is_none() {
+                actions.push(Action::InputEstimated);
+            }
+            if total.is_none() {
+                actions.push(Action::TotalEstimated);
+            }
+            usage_rule = Some((Rule::EstimateUsage, actions));
+            // Preserve every reported scalar, bounding only the missing estimate
+            // so the completed view keeps total >= input, including reported zero.
+            DeliveryUsage {
+                input_tokens: input.unwrap_or_else(|| estimate.min(total.unwrap_or(estimate))),
+                total_tokens: total.unwrap_or_else(|| estimate.max(input.unwrap_or(estimate))),
+            }
         }
         _ => return Err(EmbeddingError),
     };
-    if let Some((rule, action)) = usage_rule {
-        let mut actions = vec![action];
+    if let Some((rule, mut actions)) = usage_rule {
         if details {
             actions.push(Action::DetailsOmitted);
         }
@@ -306,17 +325,22 @@ impl Contract {
         }
         let mut text_bytes = 0usize;
         let mut token_ids = 0usize;
+        let mut estimated_input_tokens = 0usize;
         let mut values = 0usize;
         let mut dimensions = vec![];
         for sample in request.task.samples() {
-            match sample.input() {
+            let estimate = match sample.input() {
                 EmbeddingInput::TextParts(parts) => {
                     if !self.joint_text && parts.len() != 1 {
                         return Err(EmbeddingError);
                     }
-                    for p in parts {
-                        text_bytes = text_bytes.checked_add(p.len()).ok_or(EmbeddingError)?;
-                    }
+                    let bytes = parts
+                        .iter()
+                        .try_fold(0usize, |n, p| n.checked_add(p.len()))
+                        .ok_or(EmbeddingError)?;
+                    text_bytes = text_bytes.checked_add(bytes).ok_or(EmbeddingError)?;
+                    // Joint parts are one sample: round once, not once per part.
+                    bytes.div_ceil(4).max(1)
                 }
                 EmbeddingInput::TokenIds { tokenizer, ids } => {
                     if Some(*tokenizer) != self.tokenizer
@@ -325,8 +349,12 @@ impl Contract {
                         return Err(EmbeddingError);
                     }
                     token_ids = token_ids.checked_add(ids.len()).ok_or(EmbeddingError)?;
+                    ids.len()
                 }
-            }
+            };
+            estimated_input_tokens = estimated_input_tokens
+                .checked_add(estimate)
+                .ok_or(EmbeddingError)?;
             let d = sample.dimensions().unwrap_or(self.default_dimensions);
             if sample
                 .dimensions()
@@ -370,6 +398,10 @@ impl Contract {
                 model: request.model.clone(),
                 encoding,
                 reports: self.reports,
+                estimated_input_tokens: NonZeroU64::new(
+                    u64::try_from(estimated_input_tokens).map_err(|_| EmbeddingError)?,
+                )
+                .ok_or(EmbeddingError)?,
             },
             receipts,
         })
