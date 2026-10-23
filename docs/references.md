@@ -39,16 +39,18 @@ The SDK loopback gate uses the versions locked in `tests/sdk/uv.lock`, independe
 
 ## Test source repositories
 
-Selected on 2026-10-23 for [future test supplementation](roadmap.md#test-supplementation). These repository links identify sources to track, not imported revisions or verified compatibility. [Development](development.md#upstream-test-sources) owns source linking, license/provenance checks and latest-candidate versus verified-baseline updates; existing pins above remain historical evidence.
+Selected on 2026-10-23 for [current text/SSE supplementation and later stage-4 acceptance](roadmap.md#test-supplementation). These repository links identify sources to track, not imported revisions or verified compatibility. [Development](development.md#upstream-test-sources) owns source linking, license/provenance checks and latest-candidate versus verified-baseline updates; existing pins above remain historical evidence.
 
 | Source | Repositories | Relevant assets |
 |---|---|---|
-| OpenAI official SDKs | [Python](https://github.com/openai/openai-python), [Node](https://github.com/openai/openai-node) | Chat/Responses request, response, streaming, parser and returned-history tests; applicable interruption, backpressure and cleanup cases |
+| OpenAI official SDKs | [Python](https://github.com/openai/openai-python), [Node](https://github.com/openai/openai-node) | Chat/Responses request, response, streaming, parser and returned-history tests; applicable interruption, backpressure and cleanup cases. Operation/resource tests are candidates for selected stage-4 slices |
 | Anthropic official SDKs | [Python](https://github.com/anthropics/anthropic-sdk-python), [TypeScript](https://github.com/anthropics/anthropic-sdk-typescript) | Messages blocks, tool-input fragments, thinking/signatures, partial output and history fixtures; not automatic tool runners |
-| Google Gen AI official SDKs | [Python](https://github.com/googleapis/python-genai), [JavaScript](https://github.com/googleapis/js-genai) | generateContent/Interactions wire and stream cases within selected upstream directions; not automatic function calling or new native client admission |
-| Vercel AI SDK | [Repository](https://github.com/vercel/ai) | Official-protocol and Provider packages, including `openai`, `anthropic`, `google`, `alibaba`, `deepseek`, `xai` and `openai-compatible`; raw JSON/chunk fixtures and applicable adapter assertions, not its IR or implicit repair policies |
+| Google Gen AI official SDKs | [Python](https://github.com/googleapis/python-genai), [JavaScript](https://github.com/googleapis/js-genai) | generateContent/Interactions wire and stream cases within selected upstream directions; operation-specific Image/Embedding candidates. Not automatic function calling or new native client admission |
+| Vercel AI SDK | [Repository](https://github.com/vercel/ai) | Official-protocol and Provider packages, including `openai`, `anthropic`, `google`, `alibaba`, `deepseek`, `xai` and `openai-compatible`; raw JSON/chunk fixtures and applicable adapter assertions, including image-model candidates for stage 4. Not its IR or implicit repair policies |
 | Web Platform Tests | [EventSource](https://github.com/web-platform-tests/wpt/tree/master/eventsource) | SSE format/parser cases; browser-only API, reconnection and security-context behavior are separate |
 | EventSource Parser | [Repository and tests](https://github.com/rexxars/eventsource-parser) | Incremental parsing, multiline/multibyte, buffering and stream regressions; reference behavior is not authority for gateway resource budgets |
+
+Image test paths observed in the 2026-10-23 source inventory include OpenAI Python `tests/api_resources/test_images.py`, Google Python `google/genai/tests/models/test_generate_images.py` and `test_edit_image.py`, and Vercel `packages/openai/src/image/openai-image-model.test.ts`, `packages/google/src/google-image-model.test.ts` and `packages/xai/src/xai-image-model.test.ts`. These are inspection candidates, not an audited coverage claim or selected Generate/Edit/streaming contract. Recheck their contents and revisions when selecting each operation.
 
 ## Research notes
 

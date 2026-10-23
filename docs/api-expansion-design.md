@@ -1224,6 +1224,8 @@ Extract shared values only when the selected operation needs them. Direct-input 
 
 Pin current official schemas and streaming grammars before implementation; documented carriers do not prove model-effective support. Use the existing [test design](development.md#test-layout), [design-review gate](roadmap.md#generation-design-review-gate) and [verification procedures](development.md#verification-gates), including separately scoped [real Provider checks](development.md#real-provider-checks).
 
+Stage-4 implementation follows the [current text/SSE prerequisite](roadmap.md#current-text-and-sse-gate) and includes [operation-level upstream-test acceptance](roadmap.md#stage-4-reuse-and-acceptance). Reuse the shared source/adaptation procedures rather than a separate modality harness; this does not select unresolved operation contracts.
+
 Keep independent wire-to-IR and IR-to-wire expectations, covering success and intended rejection at the responsible owner. Extend existing tests rather than building per-model/Provider matrices. Resource/job checks must address authorization, recovery, cancellation and uncertain submission.
 
 Compare the [OpenAPI summary](openapi.json) with implemented ingress and codecs; never publish planned endpoints as implemented paths. Preserve safety assertions and frozen routing. Report uncovered layers: codec support is not public admission, compilation is not runtime acceptance, static results are not streaming support, and remote success is not crash recovery.

@@ -65,7 +65,7 @@ The [design-review gate](roadmap.md#generation-design-review-gate) owns approved
 
 ## Upstream test sources
 
-**Selected for future supplementation on 2026-10-23; source imports and update automation are not implemented.** Follow the [test plan](roadmap.md#test-supplementation) and [source directory](references.md#test-source-repositories). Reuse upstream fixtures, applicable assertions and test mechanisms through thin adapters into the existing test owners; do not maintain a duplicate benchmark framework.
+**Selected on 2026-10-23; source imports and update automation are not implemented.** Follow the [text/SSE-first sequence and later operation gates](roadmap.md#test-supplementation) and [source directory](references.md#test-source-repositories). Reuse upstream fixtures, applicable assertions and test mechanisms through thin adapters into the existing test owners; do not maintain a duplicate benchmark framework.
 
 ### Source links and updates
 
@@ -79,9 +79,13 @@ The [design-review gate](roadmap.md#generation-design-review-gate) owns approved
 
 Use two complementary paths: raw upstream request/response/SSE fixtures through MorphieCore codecs, and actual SDK/Vercel consumers receiving gateway output and constructing the next request. Verify that the component under test actually ran; upstream tests passing against their own mocks or libraries do not establish gateway compatibility.
 
-Retain independent wire-to-IR and IR-to-wire expectations, including exact argument carriage, call/result identity, ordered owners, usage and complete next-turn history. Reuse upstream expectations where their contract matches; keep the small IR-specific assertions local. Distinguish official protocol requirements, Provider dialects, SDK conveniences and gateway policy. Missing Provider-specific fixtures remain coverage gaps; generic compatible-API tests do not establish every dialect.
+Retain independent wire-to-IR and IR-to-wire expectations for request controls, task results and reported facts, including exact argument carriage, call/result identity, ordered owners, usage and complete next-turn history for Generation. Reuse upstream expectations where their contract matches; keep the small IR-specific assertions local. Distinguish official protocol requirements, Provider dialects, SDK conveniences and gateway policy. Missing Provider-specific fixtures remain coverage gaps; generic compatible-API tests do not establish every dialect.
 
 Run selected external code without private configuration or credentials, against synthetic loopback authorities, with retries and automatic tool execution disabled. Fetching sources does not authorize their install hooks, live snapshot regeneration or real Provider calls. No tool repair or model-capability scorer is part of this supplement.
+
+For an operation-level extension, record which upstream cases exercise which local boundary and how to run them. Inspect mock-server assumptions and select raw fixtures or actual clients accordingly; SDK tests against their own generated mocks are not independent response oracles. Reuse source management and fixture readers, not a mandatory SSE representation: binary bodies, multipart inputs and job states stay in their responsible test layers.
+
+Replace handwritten fixtures or duplicate test logic only after transferring their useful assertions to checks with equivalent boundary and gate coverage. A connected or ignored SDK test does not automatically replace a default offline check. Preserve small diagnostic, IR-specific and safety cases; follow [coverage and pruning](#coverage-and-pruning) for a deliberate removal pass.
 
 ### SSE layers
 

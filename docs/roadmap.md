@@ -18,6 +18,8 @@ This page owns current scope, priorities, dependencies and exit gates. Start wit
     - [Grok Imagine adaptation](#grok-imagine-adaptation)
   - [Stage 5 backlog](#stage-5-backlog)
 - [Test supplementation](#test-supplementation)
+  - [Current text and SSE gate](#current-text-and-sse-gate)
+  - [Stage-4 reuse and acceptance](#stage-4-reuse-and-acceptance)
 - [Phase rules](#phase-rules)
   - [Generation design review gate](#generation-design-review-gate)
   - [Observability follow-up](#observability-follow-up)
@@ -54,13 +56,13 @@ This page owns current scope, priorities, dependencies and exit gates. Start wit
 | Client compatibility | Rejection audit, [phase transfer/return](architecture.md#message-phase-transfer), guarded extended-retention omission and retained citation rejection complete. [Downstream schema completion](architecture.md#downstream-schema-completion) implemented on 2026-10-23 with strict pinned-SDK JSON/SSE and stored-resource checks | Preserve SDK schema, source-fact and terminal-honesty regressions; broader official semantics remain explicitly scoped |
 | Integration | Selected R1a/R1b/R2 client loops and controlled routing acceptance passed their bounded scopes. R1b lifecycle reports and client history shorthand were explicitly selected on 2026-10-20 | [Production closure](#generation-text-production-closure): bounded capability and sustained-operation acceptance, not a full client/model matrix |
 | Cross-protocol conversion and counting | Stage 3 closed its selected projection and loop scope; counting is deferred | Preserve that evidence; the [Google pause](#google-api-pause) has selected text-report and stage-4 Embedding exceptions, not general Generation reopening |
-| Generation Text production readiness | Selected [production closure](#generation-text-production-closure) complete on 2026-10-22, with explicit unsupported-carrier and failover exclusions | Preserve the closed baseline during the prioritized [stage-4 design](#stage-4-scope) |
+| Generation Text production readiness | Selected [production closure](#generation-text-production-closure) complete on 2026-10-22, with explicit unsupported-carrier and failover exclusions | Preserve the closed baseline while completing the [current text/SSE test gate](#current-text-and-sse-gate) before further stage-4 implementation |
 | Code simplification | Completed on 2026-10-22: five preferred slices and selected local cleanups; full offline baseline and all 12 connected SDK scenarios passed | No remaining scheduled simplification; API/semantic contracts and freeze boundaries unchanged. Further cleanup needs its own demonstrated benefit; no new live-acceptance or measured-performance claim |
 | Decision APIs | [Dual standard-SDK direction](architecture.md#decision-api-direction) selected on 2026-10-23; initial TypeSafe/OpenAI/Perplexity/Cloudflare protocol research only | [Decision design review](#decision-api-design) before further modality work; no implementation or binding activation |
-| Embedding, other modalities and file resources | Sample-centered Embedding, compatible delivery and native Google/OpenAI-model integration accepted on 2026-10-23: full offline baseline, scoped SDK and bounded Provider checks. Grok static codec has no gateway/live acceptance | After Decision design, retain [static Images Generate](#next-stage-4-slice) as the next Images review. Further Embedding modalities and video remain unselected |
+| Embedding, other modalities and file resources | Sample-centered Embedding, compatible delivery and native Google/OpenAI-model integration accepted on 2026-10-23: full offline baseline, scoped SDK and bounded Provider checks. Grok static codec has no gateway/live acceptance | Complete the [text/SSE prerequisite](#current-text-and-sse-gate) before further implementation; retain Decision design and [static Images Generate](#next-stage-4-slice) review. Later slices inherit [operation-level test acceptance](#stage-4-reuse-and-acceptance); further Embedding modalities and video remain unselected |
 | Stage-5 follow-ups | Citations, tool discovery, hosted tools, server-side compaction, Batch and Realtime are recorded but **unscheduled** | No implementation queue or delivery commitment; select each slice before starting it |
 | Agent authorization and diagnostics | [Single-deployer, Agent-centered baseline](architecture.md#agent-identity-and-cluster-diagnostics) selected on 2026-10-23; implementation **unscheduled** | [Follow-up gates](#agent-authorization-and-diagnostics-follow-up); not a stage-5 API assignment or a prerequisite for current modality work |
-| External protocol tests | [Upstream-maintained test strategy](architecture.md#delivery-and-evidence-decisions) selected on 2026-10-23 as future supplementation; no imports or update automation implemented | [Test supplementation](#test-supplementation): official SDK/Vercel sources, latest-source tracking and layered SSE checks; no change to current API priorities |
+| External protocol tests | [Upstream-maintained test strategy](architecture.md#delivery-and-evidence-decisions) selected on 2026-10-23 as the next implementation work; no imports or update automation implemented | Close the [current text/SSE gate](#current-text-and-sse-gate), then reuse its sources and adapters for selected stage-4 acceptance |
 | Real acceptance | Selected stage-2 loops and bounded [production gates](#generation-text-production-closure) have recorded version/profile-specific evidence | Preserve historical limitations and [other deferred acceptance](#deferred-acceptance); new profiles or stronger claims need their own gates |
 
 The [approved Generation baseline](#generation-design-review-gate) leaves inventory exclusions and binding boundaries unchanged. Other real acceptance gates remain open. Google value guards and Interactions snapshots belong to stage 3: no Google client endpoint forms a same-protocol pair. Provider-specific reset dialects, persistence and cooldown tuning need separate evidence and approval; no background probes, balancing or multi-round retries are scheduled.
@@ -79,7 +81,7 @@ Phase completeness covers the declared feature scope, not all official Generatio
 
 The five-stage order is unchanged. The selected [Generation Text production closure](#generation-text-production-closure) is a bounded handoff before stage 4, not a sixth stage, a reopening of stage-3 counting or a claim of complete official Generation coverage.
 
-The 2026-10-23 instruction prioritizes [Decision API research/design](#decision-api-design) before further stage-4 modality work. This is a design interlude, not a sixth stage, Decision implementation authorization or a rescheduling of stage 5.
+The 2026-10-23 instructions retain [Decision API research/design](#decision-api-design) before further stage-4 modality work and select the [current text/SSE test gate](#current-text-and-sse-gate) as the next implementation work. Complete that gate before further stage-4 implementation; independent Decision design may continue. Neither activity is a sixth stage, Decision implementation authorization or a rescheduling of stage 5.
 
 “Lossless” means semantic fidelity within an explicit protocol revision and feature domain, not byte-identical JSON or retention of unknown fields. Equivalent wire normalization is allowed. Preserve protocol records in their existing bounded owners; do not introduce raw passthrough or an IR extension bag. A same-named API at a different Provider is not proof of equivalent semantics.
 
@@ -100,8 +102,8 @@ Inference frameworks such as llama.cpp and SGLang are design references, not int
 3. R2 readiness concerns its implemented pi Haiku profile, not wider native manual-budget or sampling support. An observed defect in a carrier actually used by R2 must still be fixed before accepting it.
 4. Complete selected stage-2 loops before routing acceptance and stage-3 conversion work. Keep separately scheduled real failover distinct from controlled synthetic recovery checks.
 5. Preserve the closed stage-3 projection/loop evidence. Counting remains deferred; its future implementation waits only for its selected effective-input projection.
-6. Complete the selected [Generation Text production closure](#generation-text-production-closure) before stage-4 implementation. Local owner decisions do not authorize unrelated admission or report mappings.
-7. In stage 4, select the next operation's contract just in time. Design file authority early, but let direct-input Embedding/audio/image slices proceed without the complete file service. File-reference integration waits for authorized resource resolution.
+6. Preserve the completed [Generation Text production closure](#generation-text-production-closure) and close the [current text/SSE test gate](#current-text-and-sse-gate) before further stage-4 implementation. Local owner decisions do not authorize unrelated admission or report mappings.
+7. In stage 4, select the next operation's contract just in time and apply [operation-level upstream-test acceptance](#stage-4-reuse-and-acceptance). Design file authority early, but let direct-input Embedding/audio/image slices proceed without the complete file service. File-reference integration waits for authorized resource resolution.
 
 Every implementation package follows the same bounded workflow:
 
@@ -235,11 +237,13 @@ This review does not activate endpoints, promise every modality in either SDK, r
 
 ### Stage 4 scope
 
-The [API expansion design](api-expansion-design.md) supplies operation proposals, not implemented endpoints or approved type layouts. Keep conversational media in Generation where appropriate and independent operations in their own task contracts. Start implementation after [Generation Text production closure](#generation-text-production-closure), with per-operation selection. The order below is recommended; stage-4 work does not reopen completed stage-1/2/3 gates.
+The [API expansion design](api-expansion-design.md) supplies operation proposals, not implemented endpoints or approved type layouts. Keep conversational media in Generation where appropriate and independent operations in their own task contracts. Further implementation requires the completed [Generation Text production closure](#generation-text-production-closure), the [current text/SSE test gate](#current-text-and-sse-gate) and per-operation selection. The order below is recommended; stage-4 work does not reopen completed stage-1/2/3 gates.
 
-**Current priority, updated on 2026-10-23: the selected Google/OpenAI Embedding slice is complete; Decision design precedes further modality work.** The text-production prerequisite is closed. Embedding uses the accepted sample-centered contract and named lossy delivery rather than rejecting usable vectors for ancillary format gaps. The [readiness comparison](#next-stage-4-slice) retains static Generate as the next Images review, not its implementation authorization. Audio and Files are not current implementation work; video remains deferred.
+**Current priority, updated on 2026-10-23: complete current text/SSE test supplementation before further stage-4 implementation; retain the Decision design prerequisite.** The selected Google/OpenAI Embedding slice and text-production closure remain accepted, not reopened by this new gate. Embedding uses the accepted sample-centered contract and named lossy delivery rather than rejecting usable vectors for ancillary format gaps. The [readiness comparison](#next-stage-4-slice) retains static Generate as the next Images review, not its implementation authorization. Audio and Files are not current implementation work; video remains deferred.
 
 The current review exit for unselected operations is a coherent request/result and applicable event contract, source-backed model restrictions, bounded admission/execution/delivery and counterexamples for unresolved choices. The [accepted Embedding contract](architecture.md#independent-embedding-path) and [Image design choices](api-expansion-design.md#image-design-review) are distinct. Record newly selected structures in Architecture before dependent implementation or ordinary comprehensive coverage; earlier approvals do not extend to unresolved operations.
+
+Every selected implementation slice also meets the shared [upstream-test acceptance conditions](#stage-4-reuse-and-acceptance). The table below adds operation-specific obligations; external tests do not replace local IR, resource or lifecycle evidence.
 
 | Package | Dependency and work | Exit condition |
 |---|---|---|
@@ -315,20 +319,36 @@ Reopening a task requires its client scenario, minimum semantic/resource depende
 
 ## Test supplementation
 
-**Planning direction selected on 2026-10-23; implementation remains unscheduled.** Prefer established upstream test assets over authoring another dataset. The goal is faithful request/response conversion, IR representation and stable multi-turn tool/history carriage between downstream Agents and upstream Providers. This supplements the existing gates; it does not replace the current Decision design priority or change the five-stage API order.
+**Selected on 2026-10-23 as the next implementation work, before further stage-4 implementation; not yet implemented.** First supplement currently supported text, tool/history and SSE contracts; then extend the same test sources and adapters to each selected stage-4 operation as one acceptance condition. Prefer established upstream assets over another hand-maintained dataset. Keep the five-stage API order and independent Decision design prerequisite; do not reopen completed Embedding acceptance or require every future modality test before this first gate.
 
 Use the [source directory](references.md#test-source-repositories) and [Development rules](development.md#upstream-test-sources). Official SDKs and Vercel supply protocol and Provider-dialect cases; WPT and `eventsource-parser` supplement SSE. Test-only submodules or equivalent pinned source links are permitted. No submodule, dependency upgrade, automatic job or new acceptance claim is created by this plan.
 
-When scheduled, establish source provenance first; protocol, multi-turn and SSE slices can then proceed independently at their existing owners:
+### Current text and SSE gate
+
+Scope the initial case inventory to implemented Chat, Responses and Messages paths, selected Provider dialects and supported Google upstream text directions. Preserve existing media-carrier regressions, but do not expand standalone image/audio/video operations, file services or unresolved Generation semantics. This is a finite current-contract gate, not a requirement to pass every test in every upstream repository.
+
+Establish source provenance first; protocol, multi-turn and SSE slices can then proceed independently at their existing owners:
 
 | Slice | Exit evidence |
 |---|---|
 | Source links and latest-version tracking | Reproducible source/dependency revisions and provenance; candidate checks against latest GitHub sources, visible changes/unassessed cases and explicit baseline lag; no network dependency in ordinary offline runs |
-| Official SDK and Vercel integration | Reused fixtures exercise MorphieCore, with independent directional facts and actual SDK consumption. Cover supported official APIs and selected Provider dialects without equating generic compatibility with dialect coverage |
+| Official SDK and Vercel integration | Reused fixtures exercise the current text codecs, with independent directional facts and actual SDK consumption. Cover the selected protocol/dialect inventory without equating generic compatibility with dialect coverage |
 | Multi-turn and complex tools | Reuse existing session/history coverage; add missing combinations such as interleaved multi-call streaming through Router and SDK, reverse-order results and complete next-request verification. Fixed tool results suffice; no gateway executor |
 | SSE supplementation | Framing, protocol-event and transport-lifecycle checks remain distinct; reused failure cases plus reproducible fragmentation/mutation checks protect bounds, cancellation, EOF, backpressure and publication safety |
 
 Each slice must distinguish exact preservation, approved adaptation, correct rejection, incomplete outcomes, unassessed cases and defects. Passing upstream-library tests alone is not codec/IR evidence. Apply the normal offline and connected SDK gates before promoting source revisions; installed-client and real Provider acceptance stay separate.
+
+**Exit before further stage-4 implementation:** all four slices above run against a recorded verified baseline, selected cases exercise MorphieCore and retained regressions pass the full offline baseline plus applicable SDK loops. Keep case discovery, expected outcomes, unsupported directions and latest-candidate differences visible. Importer failures, silently skipped selected cases and defects in claimed support block closure; excluded upstream features remain explicit exclusions, not new implementation obligations. An on-demand latest-candidate check is sufficient initially; recurring automation is not a separate blocker.
+
+### Stage-4 reuse and acceptance
+
+Use the same pinned sources, update mechanism and thin adapters rather than another multimodal harness. Apply these conditions per selected operation, after its design approval:
+
+1. Identify the applicable official SDK/Vercel cases, source revisions and local entry points for that operation and target. Inspect operation-specific assets; text tests and a whole-repository checkout do not establish image, audio, file or video coverage.
+2. Run selected cases through MorphieCore request preparation, codecs and delivery, with independent wire-to-IR/IR-to-wire expectations and actual SDK consumption where applicable. Exact preservation, approved adaptation and intended rejection need explicit assertions. Where no suitable upstream case exists, record the gap and retain or add a focused, source-backed local oracle; missing external coverage is not a passing skip.
+3. Keep the current text/SSE baseline green and add the operation's resource, lifecycle and safety checks. SSE reuse applies only to SSE paths; static, binary, multipart and asynchronous-job contracts need their own evidence. External tests supplement, not replace, the offline baseline and applicable SDK/real acceptance gates.
+
+Static Images Generate is the first planned modality application after its separate review: select image-model/API fixtures for controls, effective defaults, result encoding/counts and reported-field presence. Edit/mask/multipart and preview/final streams follow their own selected slices; do not treat static Generate or conversational image inputs as their acceptance. Apply the same per-operation rule to later Embedding extensions, Audio, Files/Uploads and Video without activating or rescheduling them.
 
 BFCL, tau-bench, ComplexFuncBench and ToolSandbox are not dependencies or gates for this plan. Automatic tool execution, malformed-call repair, new Provider activation and unresolved protocol semantics remain outside scope. Preserve the existing safety assertions; upstream source evolution does not authorize relaxing them.
 
