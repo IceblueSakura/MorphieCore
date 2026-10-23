@@ -47,6 +47,7 @@ direnv users can allow the root `.envrc` once. Refresh project inputs with `nix 
 | `tests/sdk_loopback.rs` → `sdk/` | Pinned Python SDK loopback scenarios; ignored by default |
 | `tests/clients.rs` → `clients/` | Ignored by default, Unix; explicitly selected installed clients against a synthetic CLI gateway |
 | `tests/{sdk,clients,gateway}/test_*.py` | Separate Python unittest discovery for SDK oracles, installed-client oracles and OpenAPI schemas |
+| `tests/upstream/{assets.py,test_assets.py}` | Offline provenance/extraction checks; explicit `--fetch` restores pinned public assets |
 | Pinned pi probe | Separate ignored library test and Node scripts; see the [probe procedure](#pinned-pi-history-carrier-probe) |
 
 Top-level Rust files are Cargo integration targets; nested files are registered modules, not additional targets. Keep roots small, but retain small target-local shared types there instead of adding forwarding modules. Do not flatten child modules into `tests/*.rs` merely to shorten paths. Test selection follows the lean policy in [AGENTS.md](../AGENTS.md#tests).
@@ -65,7 +66,47 @@ The [design-review gate](roadmap.md#generation-design-review-gate) owns approved
 
 ## Upstream test sources
 
-**Integrated into the accepted standards reset on 2026-10-23.** [sources.lock.json](../tests/upstream/sources.lock.json) fixes release commits and candidate paths; fixture acquisition/adapters and automatic updates are not yet implemented. Follow the [integrated sequence](roadmap.md#standards-reset-and-redesign). Reuse upstream fixtures, applicable assertions and real consumers through thin adapters into existing test owners, during the rewrite rather than afterward.
+**Integrated into the accepted standards reset on 2026-10-23.** [sources.lock.json](../tests/upstream/sources.lock.json) fixes release commits and candidate paths. [assets.lock.json](../tests/upstream/assets.lock.json) identifies the reviewed, vendored subset in `testdata/upstream/`; thin adapters and selected real-SDK consumers are implemented. Broader conformance integration and automatic release updates remain separate. Reuse assets during the rewrite rather than afterward.
+
+### Pinned asset acquisition and execution
+
+Ordinary tests require no source checkout or network. Imported bytes retain their original content and applicable licenses; local aliases, immutable revision/path and SHA-256 are recorded per file. `.gitattributes` disables newline normalization for this directory. Do not format fixtures or regenerate expected output from a MorphieCore encoder.
+
+```sh
+python3 tests/upstream/assets.py
+python3 -m unittest discover -s tests/upstream -p 'test_*.py'
+# Explicit network operation: only restore missing/changed files from the selected revisions.
+python3 tests/upstream/assets.py --fetch
+cargo test --locked --offline --test transport upstream_fixtures
+uv run --project tests/sdk --locked --offline cargo test --locked --offline \
+  --test sdk_loopback upstream_fixtures_reach_real_sdks -- --ignored --test-threads=1
+```
+
+The acquirer checks source/asset revision agreement and expected digests, permits only immutable GitHub raw URLs, rejects redirects and caps each response at 2 MiB with a 30-second socket timeout and no retries. It does not install packages or execute downloaded code. Missing files, digest drift, ambiguous extractions and changed source pins fail rather than becoming skipped coverage. An upstream update requires deliberate source and asset review, not `--fetch` rewriting the locks.
+
+`tests/support/upstream_assets.rs` performs only declared framing adaptations: append a missing dispatch delimiter to the selected Anthropic SDK fixtures, or frame Vercel JSON payload lines using their existing discriminator. The unmodified Anthropic fixtures still exercise strict EOF rejection. EventSource Parser extracts use only literal `onChunk` strings in three named functions; Python parses the literals without executing TypeScript. Generated sentinels/timers/random data are excluded and recorded in the [asset boundary inventory](refs/2026-10-23-stable-protocol-contracts.md#imported-asset-boundaries).
+
+| Asset family | Boundary exercised |
+|---|---|
+| OpenAI Python tool/length SSE | Incremental intake, exact arguments/call identity, actual usage, incomplete terminal |
+| Anthropic Python text/tool/sparse-usage SSE | Native IR and delivery, optional-count retention, strict EOF and invalid-order rejection |
+| Vercel Responses custom call | Unchanged output-array replay with distinct item/call IDs; missing-sequence stream is a rejection case, not a repaired success |
+| Vercel Google text | generateContent SSE content, signature-bearing owners and scoped source usage; static companion remains reference only |
+| Vercel Interactions | Original stream reproduces late-service-tier rejection; static companion remains reference only |
+| EventSource Parser | Literal multiline/CR/CRLF framing across every two-way byte split; no browser reconnection claim |
+
+The connected SDK case makes eight serial synthetic requests: JSON and SSE tool responses for Chat and Messages, each followed by SDK-built history carrying a fixed result. The real client decoder re-admits that history. Chat's second fixture deliberately ends at `length`; Messages returns a final text answer. Retries/tool execution are disabled, request ceilings are 32/128 tokens, HTTP timeout is eight seconds and child timeout is 45 seconds. This uses actual Attempt/ResponseDelivery and strict pinned SDK consumers, not the Router, real Providers or installed agents. It does not establish streaming latency, backpressure or adaptation-extension retention.
+
+### Pending standard requirements
+
+Known differences have executable **desired-behavior** probes, not expected-failure success assertions. They are explicitly ignored in ordinary regression because the current stage inventories them without rewriting runtime semantics. Run them separately:
+
+```sh
+cargo test --locked --offline --test semantic standard_contracts -- --ignored
+cargo test --locked --offline --test transport interactions_allows_first_service_tier_report_at_terminal -- --ignored
+```
+
+These commands currently fail at the recorded prediction, participant-name, omitted-strict, Messages sampling/direct-callers and Interactions late-report boundaries. A compilation/setup error is not a reproduced protocol gap. Repair each owner, remove its ignore marker and retain the independent assertion during the responsible redesign slice. Their failures block **new conformance acceptance**, not the provenance/fixture-integration preparation slice. The [inventory](refs/2026-10-23-stable-protocol-contracts.md#official-contract-difference-inventory) also records source-traced gaps not yet executable, explicit exclusions and SDK/schema disagreements.
 
 ### Source links and updates
 
@@ -117,6 +158,8 @@ Run affected targets first, then the full baseline:
 cargo test --locked --offline
 cargo clippy --locked --offline --all-targets -- -D warnings
 cargo fmt -- --check
+python3 tests/upstream/assets.py
+python3 -m unittest discover -s tests/upstream -p 'test_*.py'
 git diff --check
 ```
 

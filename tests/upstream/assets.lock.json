@@ -1,0 +1,144 @@
+{
+  "format": 1,
+  "files": [
+    {
+      "source": "anthropic-python",
+      "revision": "9313f13a5a643ceed10fafba6785eab8e04b6e6e",
+      "path": "LICENSE",
+      "local": "anthropic/LICENSE",
+      "sha256": "7fc343be7ec189b803c1872267cbaf0381b12ffdb22d972b8ea7b21b262ba563"
+    },
+    {
+      "source": "anthropic-python",
+      "revision": "9313f13a5a643ceed10fafba6785eab8e04b6e6e",
+      "path": "tests/lib/streaming/fixtures/basic_response.txt",
+      "local": "anthropic/basic.sse",
+      "sha256": "4cef9a87292eb74b7c282f7de5a2b407160d36a9dfed25be05f59047a59033bd"
+    },
+    {
+      "source": "anthropic-python",
+      "revision": "9313f13a5a643ceed10fafba6785eab8e04b6e6e",
+      "path": "tests/lib/streaming/fixtures/tool_use_response.txt",
+      "local": "anthropic/tool-use.sse",
+      "sha256": "53787cbf836155a1f5dffb60cde0cf0fa42e21db2dbed0aa76f51c76a70b02f6"
+    },
+    {
+      "source": "anthropic-python",
+      "revision": "9313f13a5a643ceed10fafba6785eab8e04b6e6e",
+      "path": "tests/lib/streaming/fixtures/message_delta_omitted_usage_response.txt",
+      "local": "anthropic/omitted-usage.sse",
+      "sha256": "163b57c8fbb83a2bd74c474b8afa130159a00c8fbce96d7d24e42c082f1fb76f"
+    },
+    {
+      "source": "anthropic-python",
+      "revision": "9313f13a5a643ceed10fafba6785eab8e04b6e6e",
+      "path": "tests/lib/streaming/fixtures/unknown_events_response.txt",
+      "local": "anthropic/unknown-events.sse",
+      "sha256": "b1c98201b0963c9a2e752e1c67ee2abb6df546cfc53f08fe1e79619ead0f0339"
+    },
+    {
+      "source": "openai-python",
+      "revision": "e8a0fd28bbdc1699c97ff0f602b1af3dd378382d",
+      "path": "LICENSE",
+      "local": "openai/LICENSE",
+      "sha256": "636eb7d79da9bb6d515a4b3fd417aa26679eb3cf16396ddab4bc55fa74e616e4"
+    },
+    {
+      "source": "openai-python",
+      "revision": "e8a0fd28bbdc1699c97ff0f602b1af3dd378382d",
+      "path": ".inline-snapshot/external/c6aa7e397b7123c3501f25df3a05d4daf7e8ad6d61ffa406ab5361fe36a8d5b1.bin",
+      "local": "openai/chat-tool.sse",
+      "sha256": "c6aa7e397b7123c3501f25df3a05d4daf7e8ad6d61ffa406ab5361fe36a8d5b1"
+    },
+    {
+      "source": "openai-python",
+      "revision": "e8a0fd28bbdc1699c97ff0f602b1af3dd378382d",
+      "path": ".inline-snapshot/external/4cc50a6135d254573a502310e6af1246f55edb6ad95fa24059f160996b68866d.bin",
+      "local": "openai/chat-length.sse",
+      "sha256": "4cc50a6135d254573a502310e6af1246f55edb6ad95fa24059f160996b68866d"
+    },
+    {
+      "source": "vercel-openai",
+      "revision": "594495a5af70547d9d7a13d6df334ae30db49622",
+      "path": "LICENSE",
+      "local": "vercel/LICENSE",
+      "sha256": "b4f9adb7c568904834d0dd6cc98d16c390d21ca32fc17ae7a267715269bd5529"
+    },
+    {
+      "source": "vercel-openai",
+      "revision": "594495a5af70547d9d7a13d6df334ae30db49622",
+      "path": "packages/openai/src/responses/__fixtures__/openai-custom-tool.1.chunks.txt",
+      "local": "vercel/responses-custom.jsonl",
+      "sha256": "f9b7c4bb95b765555417f3c36936157f7a793ef03bc04ce637052d241cb62da4"
+    },
+    {
+      "source": "vercel-openai",
+      "revision": "594495a5af70547d9d7a13d6df334ae30db49622",
+      "path": "packages/openai/src/responses/__fixtures__/openai-custom-tool.1.json",
+      "local": "vercel/responses-custom.json",
+      "sha256": "386f5c8709ef58f20624a970a0a2a7ecc08171e472937c2626ba20a66969a178"
+    },
+    {
+      "source": "vercel-google",
+      "revision": "594495a5af70547d9d7a13d6df334ae30db49622",
+      "path": "packages/google/src/__fixtures__/google-text.chunks.txt",
+      "local": "vercel/google-text.jsonl",
+      "sha256": "9269d63d64c886e9eb99e7e63eb67ba917023821b41751c7b4b5410777710b36"
+    },
+    {
+      "source": "vercel-google",
+      "revision": "594495a5af70547d9d7a13d6df334ae30db49622",
+      "path": "packages/google/src/__fixtures__/google-text.json",
+      "local": "vercel/google-text.json",
+      "sha256": "5eb4115eea1aa9e212ee423526f9ea71ca7a70ce88d3108fb506f9ac09648a9c"
+    },
+    {
+      "source": "vercel-google",
+      "revision": "594495a5af70547d9d7a13d6df334ae30db49622",
+      "path": "packages/google/src/interactions/__fixtures__/basic.chunks.txt",
+      "local": "vercel/interactions-basic.jsonl",
+      "sha256": "e4271a25abf286e052926695fc24fc93f9116d30c73f4751d46faf2b0aec9e91"
+    },
+    {
+      "source": "vercel-google",
+      "revision": "594495a5af70547d9d7a13d6df334ae30db49622",
+      "path": "packages/google/src/interactions/__fixtures__/basic.json",
+      "local": "vercel/interactions-basic.json",
+      "sha256": "56de76b817eba4c67513a63582d07f88de9bd3cdffc7d2ae34f234fe018b31f5"
+    },
+    {
+      "source": "eventsource-parser",
+      "revision": "dd51dd386fc567d3be9c0f29fa24e21efeb04c53",
+      "path": "LICENSE",
+      "local": "eventsource-parser/LICENSE",
+      "sha256": "835eb611a23301b27115ca1be9f754c876e643ceb7fe63049c6b50609a1cafeb"
+    },
+    {
+      "source": "eventsource-parser",
+      "revision": "dd51dd386fc567d3be9c0f29fa24e21efeb04c53",
+      "path": "test/fixtures.ts",
+      "local": "eventsource-parser/fixtures.ts",
+      "sha256": "37d1fcbd37fb0bfd85c26ba346d3d61838bb407e21a6fd410916af7bf230bd60"
+    }
+  ],
+  "framing": [
+    {
+      "from": "eventsource-parser/fixtures.ts",
+      "function": "getMultilineFixtureStream",
+      "local": "eventsource-parser/multiline.sse",
+      "sha256": "c96f78f6f0e512cb8e216c8ff86ecfdb1a76dd8c75741fb00396ef0f68c2e291"
+    },
+    {
+      "from": "eventsource-parser/fixtures.ts",
+      "function": "getCarriageReturnFixtureStream",
+      "local": "eventsource-parser/cr.sse",
+      "sha256": "64c28802c8c7a3a352395684d81d1c5c298ea4e2c35c64043dacfefa1bd7965d"
+    },
+    {
+      "from": "eventsource-parser/fixtures.ts",
+      "function": "getCarriageReturnLineFeedFixtureStream",
+      "local": "eventsource-parser/crlf.sse",
+      "sha256": "df8555b3b5887cf70e600dcd7b5beead60fa1105b9305fba83d04a900a7204e1"
+    }
+  ]
+}

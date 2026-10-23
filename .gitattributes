@@ -1,1 +1,3 @@
 *.sse whitespace=-blank-at-eof
+# Imported fixture bytes and literal framing extracts must not be normalized.
+testdata/upstream/** -text whitespace=-blank-at-eof,-blank-at-eol

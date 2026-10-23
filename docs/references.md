@@ -64,6 +64,8 @@ The SDK loopback gate uses `tests/sdk/uv.lock`; its current release selection is
 
 Selected on 2026-10-23 for [integrated text/SSE redesign acceptance and later operations](roadmap.md#test-supplementation). Release revisions are fixed in the source lock; the links below identify fixture families, not imported coverage. [Development](development.md#upstream-test-sources) owns acquisition, license/provenance checks and later release updates.
 
+The imported subset is identified in [assets.lock.json](../tests/upstream/assets.lock.json), with [explicit fixture adaptations and exclusions](refs/2026-10-23-stable-protocol-contracts.md#imported-asset-boundaries). Selected Anthropic 2.x/1.x SDK sources use Apache-2.0; older MIT source evidence does not determine their licenses.
+
 | Source | Repositories | Relevant assets |
 |---|---|---|
 | OpenAI official SDKs | [Python](https://github.com/openai/openai-python), [Node](https://github.com/openai/openai-node) | Chat/Responses request, response, streaming, parser and returned-history tests; applicable interruption, backpressure and cleanup cases. Operation/resource tests are candidates for selected stage-4 slices |

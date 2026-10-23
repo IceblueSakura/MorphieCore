@@ -40,6 +40,11 @@ mod openai_tool_loop;
 mod responses_wire;
 #[path = "sdk/text_loop.rs"]
 mod text_loop;
+#[path = "support/upstream_assets.rs"]
+#[allow(dead_code)] // Framing and intake-only helpers are exercised by the transport target.
+mod upstream_assets;
+#[path = "sdk/upstream_assets.rs"]
+mod upstream_fixture_sdk;
 
 use axum::{body::Body, http::StatusCode, response::Response};
 use std::sync::{Arc, Mutex};

@@ -40,6 +40,8 @@ mod providers;
 mod reasoning_replay;
 #[path = "semantic/schema.rs"]
 mod schema;
+#[path = "semantic/standard_contracts.rs"]
+mod standard_contracts;
 #[path = "semantic/text.rs"]
 mod text;
 #[path = "semantic/tool_calls.rs"]

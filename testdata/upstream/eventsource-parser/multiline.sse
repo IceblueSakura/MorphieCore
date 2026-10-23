@@ -1,0 +1,10 @@
+event: stock
+data: YHOO
+data: +2
+data: 10
+
+event: stock
+data: GOOG
+data: -8
+data: 1881
+

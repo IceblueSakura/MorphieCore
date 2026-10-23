@@ -12,7 +12,8 @@
       "paths": [
         "src/openai/types",
         "tests/lib",
-        "tests/api_resources"
+        "tests/api_resources",
+        ".inline-snapshot/external"
       ],
       "purpose": "SDK contracts and consumer fixtures"
     },
@@ -33,7 +34,7 @@
       "selection": "stable-release",
       "revision": "9313f13a5a643ceed10fafba6785eab8e04b6e6e",
       "release": "v2.1.0",
-      "license": "MIT",
+      "license": "Apache-2.0",
       "paths": [
         "src/anthropic/types",
         "tests/lib/streaming",
@@ -46,7 +47,7 @@
       "selection": "stable-release",
       "revision": "5badc765f17d373405f300ee8e69e7f490b1f172",
       "release": "sdk-v1.1.0",
-      "license": "MIT",
+      "license": "Apache-2.0",
       "paths": [
         "src/resources",
         "tests"
