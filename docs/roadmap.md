@@ -34,6 +34,7 @@ This page owns current scope, priorities, dependencies and exit gates. Start wit
   - [Deferred cache prewarming](#deferred-cache-prewarming)
   - [Deferred tool discovery and web search](#deferred-tool-discovery-and-web-search)
   - [Deferred token counting](#deferred-token-counting)
+  - [Models discovery interfaces](#models-discovery-interfaces)
   - [Messages citations](#messages-citations)
 - [Deferred acceptance](#deferred-acceptance)
   - [Target clients](#target-clients)
@@ -462,6 +463,7 @@ Minimal counterexamples and pinned sources are in [Generation contract boundarie
 | Question | Current behavior and recommendation | Blocks |
 |---|---|---|
 | Binding activation and reconnection (P7 follow-up) | The public capability/notice contract is selected. Complete model-level evidence and preflight/preparation checks, then specify bindings and client loops under the [reconnection sequence](#public-capability-and-reconnection-sequence). Do not reinterpret unsupported completion/safety carriers or reopen P8 policies | Binding activation and full-chain acceptance, not codec-only coverage |
+| [Models discovery interfaces](#models-discovery-interfaces) | **Tentative, unscheduled.** Retain the user-reviewed enhanced schema as a design draft; further standard Models completion, enhanced discovery and client metadata integration require a separately selected slice | This interface group only; no change to current priorities or stage gates |
 | [Native cache-only prewarming](#deferred-cache-prewarming) | Priority and scheduling undecided; select the operation and result contract when reopened | That slice only |
 | [Tool discovery and native `web_search`](#deferred-tool-discovery-and-web-search) | Stage-5 backlog, unscheduled; designs remain undecided | Those slices only |
 | [Token counting](#deferred-token-counting) | **Deferred on 2026-10-21.** The [upstream-first policy](architecture.md#token-counting-policy) remains selected; select the profile, estimate rule and provenance reporting when reopened, with no gateway tokenizer counting. The route stays absent, so no stub or estimated placeholder is published | Counting and its cross-protocol promises only; stages 1–2 and stage 4 do not wait on it |
@@ -507,6 +509,14 @@ Reopen by selecting one model/target profile with its upstream reliability crite
 When reopened, implement the independent Messages operation over that profile's effective-input projection, following the [counting contract](api-expansion-design.md#token-counting): share the rules that determine Generation's effective input, including instructions, ordered history, tool declarations/calls/results, media and input-affecting settings/defaults. Keep operation-specific validation and encoding separate; counting is not Generation with a zero output cap or a call to its full execution preparation. Prefer upstream values, run no tokenizer, create no generation task and maintain no separate message/default rules. Identify model/target, projection scope and count source without exposing trusted routing or credentials, and reject inputs outside the selected profile, including media without an applicable counting or estimation rule. Counting can still require authorized resource access and preprocessing; verify applicable byte/time bounds and cancellation without moving I/O into pure codecs or treating no generation as no resource cost.
 
 Exit evidence: independent request/result oracles for the count request's effective input and result meaning, agreement with the selected generation projection on count-relevant input, and upstream preference plus any selected coarse fallback with its provenance reporting and input coverage.
+
+### Models discovery interfaces
+
+**Tentative and unscheduled; documentation only.** The user accepted retaining the [reviewed schema draft](api-expansion-design.md#models-discovery-interfaces), not starting interface completion. Existing standard Models and partial capabilities remain unchanged. The proposed enhanced endpoints, shared discovery revision and client metadata adapters are not implemented or activated by this plan. This work has no assigned stage and does not change current priorities or block another slice.
+
+On resumption, select the standard-conformance scope first, then the enhanced schema/profile, evidence-backed aggregation, finite bounds and one versioned Agent integration. Formalize the wire schema only for the authorized slice; do not add planned paths to OpenAPI or reopen token counting, routing, Files or model activation merely to publish metadata.
+
+Future exit evidence must separate standard SDK list/retrieve/error behavior, enhanced snapshot/unknown-value/media-form and multi-candidate counterexamples, and actual client consumption. Verify that metadata changes the selected Agent's context/output budgeting and request controls rather than merely appearing in a response. Preserve auth, no-upstream-I/O, complete bounded lists, snapshot consistency and private-topology isolation; broader client/provider acceptance requires its own bounded scope.
 
 ### Messages citations
 
