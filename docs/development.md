@@ -23,7 +23,7 @@ This guide owns tooling, test procedures and evidence reporting. Use offline, sy
 
 ## Environment
 
-[flake.nix](../flake.nix) provides the toolchain; `flake.lock` pins nixpkgs. rustup is not needed.
+[flake.nix](../flake.nix) provides the toolchain; `flake.lock` pins nixpkgs and rust-overlay. The overlay reads the exact stable version in `rust-toolchain.toml`; rustup and host-wide upgrades are not needed. The shell also pins Python 3.13 tooling and Node 24 LTS through nixpkgs.
 
 ```sh
 nix develop          # Rust, Python 3.13 and uv
@@ -31,7 +31,7 @@ nix develop .#rust   # Rust only
 nix flake check      # Tool availability, not the Rust test baseline
 ```
 
-direnv users can allow the root `.envrc` once. Update nixpkgs separately with `nix flake update nixpkgs`, then run the full baseline.
+direnv users can allow the root `.envrc` once. Refresh project inputs with `nix flake update`, review their package versions, then run the applicable checks. Rust is selected independently of nixpkgs packaging lag. Do not claim every transitive/system package is the latest standalone release; dependency constraints and maintained runtime tracks remain explicit.
 
 ## Test layout
 
@@ -57,7 +57,7 @@ Semantic domain entries declare child modules; Rust module paths, not physical f
 
 Bootstrap fixtures take explicit service/models JSON and synthetic credential seeds, then call the real private-file loader. Keep model selection independent of installed keys and negative cases at their intended production boundary. Raw malformed-file cases retain a byte writer; JSON values cannot preserve duplicate keys. SDK command helpers share only identical environment setup, not process ownership, protocol oracles or report assertions.
 
-Protocol mappings need independently hand-written wire→IR and IR→wire expectations. Do not generate an oracle with the encoder under test. Round trips are supplementary.
+Protocol mappings need independent wire→IR and IR→wire expectations from official contracts and pinned upstream assets. Keep local assertions for IR ownership, safety or gaps in upstream coverage; do not maintain a duplicate protocol dataset or generate an oracle with the encoder under test. Round trips are supplementary.
 
 Select checks from the relevant [roadmap package](roadmap.md#planned-order). Same-protocol fidelity needs a pinned revision/domain and independent request, response, JSON/SSE and returned-history expectations; a successful tool loop does not prove losslessness. Independent tasks and resources need their own lifecycle checks, not Generation round trips.
 
@@ -65,15 +65,16 @@ The [design-review gate](roadmap.md#generation-design-review-gate) owns approved
 
 ## Upstream test sources
 
-**Selected on 2026-10-23; source imports and update automation are not implemented.** Follow the [text/SSE-first sequence and later operation gates](roadmap.md#test-supplementation) and [source directory](references.md#test-source-repositories). Reuse upstream fixtures, applicable assertions and test mechanisms through thin adapters into the existing test owners; do not maintain a duplicate benchmark framework.
+**Integrated into the accepted standards reset on 2026-10-23.** [sources.lock.json](../tests/upstream/sources.lock.json) fixes release commits and candidate paths; fixture acquisition/adapters and automatic updates are not yet implemented. Follow the [integrated sequence](roadmap.md#standards-reset-and-redesign). Reuse upstream fixtures, applicable assertions and real consumers through thin adapters into existing test owners, during the rewrite rather than afterward.
 
 ### Source links and updates
 
-- Keep upstream projects linked through test-only Git submodules or equivalent revision-locked sources. Record public repository, tracked default branch, resolved commit, relevant package/release versions and selected paths. A submodule gitlink pins a commit; branch tracking alone neither updates nor verifies it. Checkouts are development assets, never runtime dependencies.
+- Keep upstream projects linked through test-only Git submodules or the equivalent source lock. Record repository, stable release/tag, resolved commit, package version, license and candidate fixture paths. Fetch/check out that exact revision outside production sources, with no install hooks or live fixture regeneration. Candidate paths are an inventory, not imported coverage.
 - Prefer direct fixture loading. Where extraction is necessary, retain the source commit, case/path, license notices, content digest and documented transformations. Review selected material for credentials or private payloads before importing it. A public fixture is not automatically safe, authoritative or a real Provider capture.
-- Maintain two tracks: regularly resolve the latest default-branch HEAD and latest releases for candidate checks; run ordinary offline regression against the last verified commits and dependency locks. Report candidate failures and baseline lag explicitly. Do not fetch floating sources during an offline test or silently fall back to stale fixtures.
+- For this reset, current stable releases are mandatory; the former verified mapping baseline is not a fallback. Resolve package registries and official release tags together; monorepos require package-specific release tags. Sources without releases use explicitly labeled immutable snapshots. Pin all direct dependencies and refresh transitive locks within their upstream constraints; report incompatibilities rather than force unrelated major versions into the graph.
+- After accepting the new baseline, resolve later stable releases as explicit candidates. Main-branch research is supplementary, not a substitute for stable release pins. Record drift and failures; offline tests never fetch floating sources or silently restore stale expected output.
 - Review changes to relevant types, request builders, stream reducers, tests and fixtures. New, changed, removed and unsupported cases must remain visible; importer failure or an unrecognized case is not a passing skip. For a monorepo, record the selected package versions as well as its commit.
-- Promote a candidate only after change review, the applicable offline baseline and connected SDK gates. Do not auto-refresh expected output to match our encoder. New protocol semantics still need their own selection; a latest-source check neither activates bindings nor reopens deferred features. The automation host and cadence remain implementation choices.
+- Review release/API migration notes, request/response types, reducers, defaults and fixture changes before implementation. An old failing mapping assertion is classified against the new contract, not automatically repaired or skipped. Preserve valid assertions, replace obsolete ones using independent evidence, and remove tests only with obsolete behavior. A green old suite establishes maintenance evidence, not new conformance.
 
 ### Adapters and evidence
 
@@ -132,7 +133,7 @@ cargo test --locked --offline --test process
 
 ### Python checks
 
-The shared Python environment stays in `tests/sdk/`; test ownership does not determine environment location. Python and dependencies are pinned by `.python-version` and `uv.lock` there, including the selected OpenAI and Anthropic releases. uv owns the ignored `.venv/`; do not edit it by hand.
+The shared Python environment stays in `tests/sdk/`; test ownership does not determine environment location. Python and dependencies are pinned by `.python-version` and `uv.lock` there, including OpenAI, Anthropic and Google SDKs. `sdk_support.require_sdk` reads exact direct versions from `pyproject.toml`, avoiding duplicate version literals in scenarios. uv owns the ignored `.venv/`; do not edit it by hand.
 
 Discover the suites separately so moving a test cannot silently drop it from a recursive search:
 
@@ -227,7 +228,7 @@ All authority remains synthetic and catalog contracts remain selected explicitly
 
 #### Pinned pi history-carrier probe
 
-The optional ignored test uses the [pi client baseline](references.md#pinned-sources), Node 24.21.0 and the dependency lock in `tests/sdk/pi/`. Keep the pi checkout outside this repository; set `MORPHIECORE_PI_SOURCE` to it. Install the public test dependencies without private npm configuration or lifecycle scripts:
+The optional ignored test requires the pi release commit in [the source lock](../tests/upstream/sources.lock.json), the devShell's Node 24 LTS and `tests/sdk/pi/package-lock.json`. The probe checks the checkout revision. Keep it outside this repository and set `MORPHIECORE_PI_SOURCE`; install dependencies without private npm configuration or lifecycle scripts:
 
 ```sh
 tmp=$(mktemp -d)
@@ -239,7 +240,7 @@ MORPHIECORE_PI_SOURCE=/path/to/pinned/pi \
   cargo test --locked --offline --lib pinned_pi_owned_replay -- --ignored --nocapture
 ```
 
-The test clears the child environment, uses a temporary HOME, and replaces fetch with fixed synthetic SSE. It performs 24 serial fetches, two per case, with no retries, a 32-token cap and a five-second deadline per stream. Cases cover three protocols, equal-text owners, empty signed text, an exact-number mutation that drops its carrier, and phase-only history with unlabelled prefixes. The pinned Chat builder drops the opaque-only empty turn; that case asserts the [accepted limitation](refs/2026-10-17-generation-contracts.md#signed-google-parts) instead of restoration. Returned history is checked separately from request-control/tool admission. This is not a live-client, opencode, Provider or routed full-chain acceptance gate.
+The existing scenario clears the child environment, uses a temporary HOME and replaces fetch with fixed synthetic SSE: 24 serial fetches, no retries, a 32-token cap and a five-second deadline. Its manifest-specific expectations are legacy compatibility characterization pending redesign, not official-protocol or new-release acceptance. Preserve useful equal-owner, exact-number, phase and next-request cases when replacing their carriers.
 
 ### Documentation checks
 
@@ -315,7 +316,7 @@ MORPHIECORE_OPENCODE_BIN=/absolute/path/to/unwrapped/opencode \
   --ignored --test-threads=1 --nocapture
 ```
 
-Python 3 from the development environment needs only its standard library; `MORPHIECORE_CLIENT_PYTHON` optionally selects it. Use the locally available pi `1.x` and OpenCode `2.x`; the [version policy](architecture.md#scope-and-activation-decisions) gates only the major, not the minor/patch. Resolve their unwrapped entry points without executing credential-loading wrappers. Record full tested versions in every result. Pinned source revisions remain research evidence, not installed-binary version gates; a supported major does not establish behavior before the checks run.
+Python 3 from the development environment needs only its standard library; `MORPHIECORE_CLIENT_PYTHON` optionally selects it. The harness requires the exact stable pi/OpenCode release selected in [the source lock](../tests/upstream/sources.lock.json), permitting only build metadata suffixes. This supersedes the former major-only policy. Do not downgrade/upgrade host installations: use explicitly supplied isolated release binaries and record their full versions. Legacy driver scenarios require release-specific revalidation; a version match alone is not acceptance.
 
 Each of the three serial cases (pi Chat, pi native Messages, OpenCode Chat) fixes four client Generation requests and five upstream attempts: initial `read` on the primary, unpublished `503` on tool feedback, the same feedback completed by the secondary, an independent conversation recovering the primary, then original-session continuation on the secondary. Wire caps are 2048 tokens; candidate/route/exchange deadlines are 3/8/10 seconds, with a 120-second driver bound. The transparent admission forwarder counts client POSTs independently, rejects duplicates/excess requests and never rewrites payloads or session headers. pi retries are disabled; OpenCode's zero extra transmissions are observed, not inferred from an unsupported retry setting.
 

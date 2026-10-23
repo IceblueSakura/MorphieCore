@@ -1,14 +1,14 @@
 """Selected native Messages SDK loop; synthetic Router only, no Provider access."""
 import copy
-import importlib.metadata
 import json
 import sys
 from urllib.parse import urlsplit
 
 import anthropic
 import httpx2 as httpx
+from sdk_support import require_sdk
 
-assert importlib.metadata.version("anthropic") == "1.15.0"
+require_sdk("anthropic")
 origin, key = sys.argv[1:3]
 recovery_stream = sys.argv[3] if len(sys.argv) > 3 else None
 assert urlsplit(origin).hostname == "127.0.0.1"

@@ -2,9 +2,13 @@
   description = "Reusable MorphieCore development environments";
 
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
+  inputs.rust-overlay = {
+    url = "github:oxalica/rust-overlay";
+    inputs.nixpkgs.follows = "nixpkgs";
+  };
 
   outputs =
-    { nixpkgs, ... }:
+    { nixpkgs, rust-overlay, ... }:
     let
       systems = [
         "x86_64-linux"
@@ -15,20 +19,20 @@
       shellsFor =
         system:
         let
-          pkgs = nixpkgs.legacyPackages.${system};
+          pkgs = import nixpkgs {
+            inherit system;
+            overlays = [ rust-overlay.overlays.default ];
+          };
+          toolchain = pkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml;
           rust = pkgs.mkShell {
             name = "morphiecore-rust";
             packages = with pkgs; [
-              cargo
-              rustc
-              clippy
-              rustfmt
-              rust-analyzer
+              toolchain
               # aws-lc-sys and ring compile native code.
               cmake
               pkg-config
             ];
-            RUST_SRC_PATH = "${pkgs.rustPlatform.rustLibSrc}";
+            RUST_SRC_PATH = "${toolchain}/lib/rustlib/src/rust/library";
           };
         in
         {
@@ -40,6 +44,7 @@
             packages = with pkgs; [
               python313
               uv
+              nodejs_24
               git
               nixfmt
             ];

@@ -9,6 +9,7 @@ import tempfile
 
 import anthropic
 import httpx2 as httpx
+from sdk_support import require_sdk
 
 from messages_inputs_live import (CAP, DEADLINE_MS, GateError, Gateway, MODEL, BINDING,
                                  answer, call, request, require, user)
@@ -198,7 +199,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--gateway-bin", required=True, type=Path)
     args = parser.parse_args()
-    require(anthropic.__version__ == "1.15.0", "pinned_sdk_version")
+    require_sdk("anthropic")
     require(args.gateway_bin.is_absolute() and args.gateway_bin.is_file(), "explicit_gateway_binary")
     report = {"model": MODEL, "binding": BINDING, "sdk_version": anthropic.__version__,
               "request_budget": BUDGET, "max_tokens": CAP, "truncation_cap": 1,

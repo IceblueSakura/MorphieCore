@@ -5,8 +5,9 @@ from urllib.parse import urlsplit
 
 import anthropic
 import httpx2 as httpx
+from sdk_support import require_sdk
 
-assert anthropic.__version__ == "1.15.0"
+require_sdk("anthropic")
 origin = sys.argv[1]
 assert urlsplit(origin).hostname == "127.0.0.1"
 with httpx.Client(trust_env=False, timeout=10) as http:

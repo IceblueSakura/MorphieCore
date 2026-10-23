@@ -4,6 +4,8 @@ MorphieCore is a local gateway that hides Provider differences from agent client
 
 The project is in core design and validation. pi and opencode are the primary clients. Codec support, public admission and accepted client loops are separate claims; see [current status](docs/roadmap.md#current-status). Other agents require separately scheduled acceptance.
 
+The accepted [standards reset](docs/roadmap.md#standards-reset-and-redesign) first pins current stable dependencies and source releases, then integrates upstream protocol tests into the breaking semantic redesign. Historical mappings and client acceptance are not the new conformance baseline.
+
 ## Documentation map
 
 This is the entry point, not a second specification. Each document has one primary responsibility:

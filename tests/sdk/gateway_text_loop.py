@@ -3,7 +3,7 @@ import base64
 import ipaddress
 import json
 import sys
-from sdk_support import check
+from sdk_support import check, require_sdk
 from models_checks import check_models
 from speech_checks import check_speech
 from tokenplan_audio_checks import check_native_audio
@@ -16,8 +16,9 @@ from openai.types.responses import Response
 
 def run(base_url: str) -> None:
     """Verify real SDK tools, reasoning replay and JSON/SSE consumption without retries."""
+    require_sdk("openai")
     parsed = urlsplit(base_url)
-    if (openai.__version__ != "3.35.1" or parsed.scheme != "http"
+    if (parsed.scheme != "http"
             or not parsed.hostname or not parsed.port
             or not ipaddress.ip_address(parsed.hostname).is_loopback
             or parsed.path != "/v1" or parsed.query or parsed.fragment

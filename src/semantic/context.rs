@@ -144,13 +144,12 @@ impl ClientIdentityHints {
 }
 impl CacheHints {
     pub fn validate(&self) -> Result<(), ContextError> {
-        for (value, max) in [(&self.prompt_cache_key, 256)] {
-            if value
-                .value()
-                .is_some_and(|s| s.chars().count() > max || s.len() > max * 4)
-            {
-                return Err(ContextError::Limit);
-            }
+        if self
+            .prompt_cache_key
+            .value()
+            .is_some_and(|s| s.chars().count() > 256 || s.len() > 1024)
+        {
+            return Err(ContextError::Limit);
         }
         if let Some(options) = self.prompt_cache_options.value() {
             if options.mode == Presence::Null

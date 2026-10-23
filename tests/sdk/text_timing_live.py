@@ -6,6 +6,7 @@ from pathlib import Path
 import sys
 import tempfile
 import time
+from sdk_support import require_sdk
 
 from messages_capabilities_live import (anthropic, httpx, CAP, DEADLINE_MS, EFFORT, THINKING,
     Gateway, MODEL, BINDING, GateError, answer, failure_summary, profile, require, user)
@@ -74,7 +75,7 @@ def main():
     report = {"model": MODEL, "binding": BINDING, "request_budget": 1,
               "max_tokens": CAP, "attempt_timeout_ms": DEADLINE_MS}
     try:
-        require(anthropic.__version__ == "1.15.0", "pinned_sdk_version")
+        require_sdk("anthropic")
         require(args.gateway_bin.is_absolute() and args.gateway_bin.is_file(), "explicit_gateway_binary")
         with tempfile.TemporaryDirectory(prefix="morphiecore-text-timing-") as directory:
             gateway = Gateway(args.gateway_bin, Path(directory), 1)

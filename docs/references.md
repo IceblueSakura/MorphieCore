@@ -18,6 +18,29 @@ This page indexes primary sources, licenses and dated research notes. It does no
 
 ## Pinned sources
 
+### Current stable release selection
+
+Resolved on **2026-10-23**. [tests/upstream/sources.lock.json](../tests/upstream/sources.lock.json) is the authority for release tags, commits, licenses and candidate fixture paths. Package execution is separately locked by Cargo, uv, npm and Nix. A source pin is not fixture integration, design acceptance or live compatibility.
+
+| Source | Stable selection |
+|---|---|
+| OpenAI Python / Node | 3.37.0 / 7.43.0 |
+| Anthropic Python / TypeScript | 2.1.0 / 1.1.0; API migration target `2026-10-21` |
+| Google Gen AI Python / JavaScript | 2.33.0 / 2.31.0; keep v1/v1beta contracts distinct |
+| Vercel | `ai` 7.0.150; OpenAI 4.0.101, Anthropic 4.0.87, Google 4.0.104; package release tags, not monorepo HEAD |
+| pi / OpenCode | earendil-works/pi 1.4.0 / OpenCode 1.19.4; isolated client acceptance remains pending |
+| EventSource Parser | 4.1.2 |
+| WPT / Google protobufs | Immutable source snapshots; these sources have no selected package release |
+| Codex | 0.164.0 reference source only; no additional client activation |
+
+OpenCode's selected release was cross-checked with npm `opencode-ai`. The pi source is the existing earendil-works fork, not the unrelated `@mariozechner/pi-coding-agent` release line. Do not replace the intended client by matching a package name alone.
+
+The [stable-release protocol recheck](refs/2026-10-23-stable-protocol-contracts.md) records material source changes and disagreements. These selections supersede the earlier mapping baseline for the [accepted reset](roadmap.md#standards-reset-and-redesign), without retroactively changing dated evidence.
+
+### Historical evidence
+
+The following revisions explain prior decisions and observations. They are not active dependency pins or normative regression expectations for the redesign.
+
 | Source | Revision | License | Used for |
 |---|---|---|---|
 | OpenAI Python SDK | [`547ecb1`](https://github.com/openai/openai-python/tree/547ecb1e4fc233f19030736c29fee4374dfbaca1) (3.35.1) | Apache-2.0 | Stage-1 baseline, latest release checked on 2026-10-19: required, nullable and union checks for Responses, Chat and Embeddings types; Responses continuation and input-item pagination. The SDK loopback gate locks the same release |
@@ -35,11 +58,11 @@ This page indexes primary sources, licenses and dated research notes. It does no
 | Magpie | [`5104263`](https://github.com/yetone/magpie/tree/51042630ecf44ab639cece917f7da7923d79fbf4) | MIT | Consumer stream counterexamples, publication before content, cache breakpoints, failure scope, cooldown and target affinity; design reference, not ported |
 | new-api / RelayKit | [`1d4328e`](https://github.com/QuantumNous/new-api/tree/1d4328e97417a043a161a0dd30a5b129be3ace49/relaykit) | **AGPL-3.0** | Field-mapping ideas only; never port code into this MIT project |
 
-The SDK loopback gate uses the versions locked in `tests/sdk/uv.lock`, independent of the research revisions above.
+The SDK loopback gate uses `tests/sdk/uv.lock`; its current release selection is above. Passing legacy scenarios with new SDKs does not accept the new protocol design.
 
 ## Test source repositories
 
-Selected on 2026-10-23 for [current text/SSE supplementation and later stage-4 acceptance](roadmap.md#test-supplementation). These repository links identify sources to track, not imported revisions or verified compatibility. [Development](development.md#upstream-test-sources) owns source linking, license/provenance checks and latest-candidate versus verified-baseline updates; existing pins above remain historical evidence.
+Selected on 2026-10-23 for [integrated text/SSE redesign acceptance and later operations](roadmap.md#test-supplementation). Release revisions are fixed in the source lock; the links below identify fixture families, not imported coverage. [Development](development.md#upstream-test-sources) owns acquisition, license/provenance checks and later release updates.
 
 | Source | Repositories | Relevant assets |
 |---|---|---|
@@ -56,6 +79,7 @@ Image test paths observed in the 2026-10-23 source inventory include OpenAI Pyth
 
 | Domain | Note | Evidence boundary |
 |---|---|---|
+| Stable-release protocol reset | [Stable protocol contracts](refs/2026-10-23-stable-protocol-contracts.md) | Latest release/API migration evidence, standard-vs-SDK differences and new test entry points; checked 2026-10-23. Not a conformance certificate |
 | Decision APIs and SDKs | [Decision contracts](refs/2026-10-23-decision-contracts.md) | OpenAI/TypeSafe wire baselines, Perplexity/Cloudflare differences, confidence/grouping/media semantics and dual-SDK discovery/compression gaps; checked 2026-10-23. Mutable source research only, no pinned SDK acceptance or live inference |
 | Downstream authorization | [OAuth2 and Rust authorization servers](refs/2026-10-23-downstream-oauth.md) | Device Flow fit, Rauthy/Kanidm/FerrisKey version evidence, SDK refresh and revocation constraints; checked 2026-10-23, no deployment or interoperability acceptance |
 | Media and resource carriers | [Multimodal carriers](refs/multimodal.md) | Input/tool-result media, Provider-owned file references and generated-media sources; collected 2026-10-12 with dated updates |

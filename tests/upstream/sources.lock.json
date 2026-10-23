@@ -1,0 +1,230 @@
+{
+  "format": 1,
+  "resolved_at": "2026-10-23",
+  "status": "release-reset; protocol acceptance pending",
+  "sources": {
+    "openai-python": {
+      "repository": "https://github.com/openai/openai-python",
+      "selection": "stable-release",
+      "revision": "e8a0fd28bbdc1699c97ff0f602b1af3dd378382d",
+      "release": "v3.37.0",
+      "license": "Apache-2.0",
+      "paths": [
+        "src/openai/types",
+        "tests/lib",
+        "tests/api_resources"
+      ],
+      "purpose": "SDK contracts and consumer fixtures"
+    },
+    "openai-node": {
+      "repository": "https://github.com/openai/openai-node",
+      "selection": "stable-release",
+      "revision": "d02d4de77ea7a6f82325c02e6f44deb34ee3992c",
+      "release": "v7.43.0",
+      "license": "Apache-2.0",
+      "paths": [
+        "src/resources",
+        "tests"
+      ],
+      "purpose": "SDK contracts and consumer fixtures"
+    },
+    "anthropic-python": {
+      "repository": "https://github.com/anthropics/anthropic-sdk-python",
+      "selection": "stable-release",
+      "revision": "9313f13a5a643ceed10fafba6785eab8e04b6e6e",
+      "release": "v2.1.0",
+      "license": "MIT",
+      "paths": [
+        "src/anthropic/types",
+        "tests/lib/streaming",
+        "tests/api_resources"
+      ],
+      "purpose": "SDK contracts and consumer fixtures"
+    },
+    "anthropic-typescript": {
+      "repository": "https://github.com/anthropics/anthropic-sdk-typescript",
+      "selection": "stable-release",
+      "revision": "5badc765f17d373405f300ee8e69e7f490b1f172",
+      "release": "sdk-v1.1.0",
+      "license": "MIT",
+      "paths": [
+        "src/resources",
+        "tests"
+      ],
+      "purpose": "SDK contracts and consumer fixtures"
+    },
+    "google-python": {
+      "repository": "https://github.com/googleapis/python-genai",
+      "selection": "stable-release",
+      "revision": "92f72b3a236a5bc56e8e3327ab9563f77dd119c3",
+      "release": "v2.33.0",
+      "license": "Apache-2.0",
+      "paths": [
+        "google/genai/types.py",
+        "google/genai/_gaos",
+        "google/genai/tests"
+      ],
+      "purpose": "Version-specific Google contracts and fixtures"
+    },
+    "google-js": {
+      "repository": "https://github.com/googleapis/js-genai",
+      "selection": "stable-release",
+      "revision": "1748ce7031d2ab4f71c42e24f02a5a0fa6e43251",
+      "release": "v2.31.0",
+      "license": "Apache-2.0",
+      "paths": [
+        "src",
+        "test"
+      ],
+      "purpose": "Google SDK consumer and fixtures"
+    },
+    "pi": {
+      "repository": "https://github.com/earendil-works/pi",
+      "selection": "stable-release",
+      "revision": "4a080252f06caf63a525d7873c5d94d3c23887e0",
+      "release": "v1.4.0",
+      "license": "MIT",
+      "paths": [
+        "packages/ai",
+        "packages/coding-agent"
+      ],
+      "purpose": "Owned-client compatibility, not protocol authority"
+    },
+    "opencode": {
+      "repository": "https://github.com/anomalyco/opencode",
+      "selection": "stable-release",
+      "revision": "148842ef7cb1bc34192b3fff57d0f9721ab9c801",
+      "release": "v1.19.4",
+      "license": "MIT",
+      "paths": [
+        "packages/opencode"
+      ],
+      "purpose": "Owned-client compatibility, not protocol authority"
+    },
+    "eventsource-parser": {
+      "repository": "https://github.com/rexxars/eventsource-parser",
+      "selection": "stable-release",
+      "revision": "dd51dd386fc567d3be9c0f29fa24e21efeb04c53",
+      "release": "v4.1.2",
+      "license": "MIT",
+      "paths": [
+        "src",
+        "test"
+      ],
+      "purpose": "SSE framing, not terminal-honesty policy"
+    },
+    "codex": {
+      "repository": "https://github.com/openai/codex",
+      "selection": "stable-release",
+      "revision": "6aaac694803004a63c6f393d153c96d22521a6b9",
+      "release": "rust-v0.164.0",
+      "license": "Apache-2.0",
+      "paths": [
+        "codex-rs"
+      ],
+      "purpose": "Reference only; no client activation"
+    },
+    "wpt": {
+      "repository": "https://github.com/web-platform-tests/wpt",
+      "selection": "source-snapshot-no-release",
+      "revision": "fc50deede0c32c6ffaabc3686eb3c3c699e5f1f5",
+      "license": "BSD-3-Clause",
+      "paths": [
+        "eventsource"
+      ],
+      "purpose": "SSE framing; browser reconnection is separate"
+    },
+    "googleapis": {
+      "repository": "https://github.com/googleapis/googleapis",
+      "selection": "source-snapshot-no-release",
+      "revision": "1e9cfa78c60620af3c66aba343d99a75a9f79057",
+      "license": "Apache-2.0",
+      "paths": [
+        "google/ai/generativelanguage"
+      ],
+      "purpose": "Official proto evidence, not SDK capability claims"
+    },
+    "vercel-ai": {
+      "repository": "https://github.com/vercel/ai",
+      "selection": "stable-release",
+      "release": "ai@7.0.150",
+      "revision": "594495a5af70547d9d7a13d6df334ae30db49622",
+      "package": "ai",
+      "version": "7.0.150",
+      "integrity": "sha512-ZTgHXBTJf2ad0elG2HWhbNTUGPaYy8e5pzK4A8LP/dDa48bvIRi8Iv1/bQhklFmFssosajAjCsAZrieBUa+hYA==",
+      "license": "Apache-2.0",
+      "paths": [
+        "packages/ai"
+      ],
+      "purpose": "Fixture and consumer evidence; SDK repair policy is not a protocol oracle"
+    },
+    "vercel-openai": {
+      "repository": "https://github.com/vercel/ai",
+      "selection": "stable-release",
+      "release": "@ai-sdk/openai@4.0.101",
+      "revision": "594495a5af70547d9d7a13d6df334ae30db49622",
+      "package": "@ai-sdk/openai",
+      "version": "4.0.101",
+      "integrity": "sha512-GZ57KdfEfdHcM+Kkf1KsXq8T2KM2uG6BwPvWzL25F5uKjozpflol6hjxveKEf9v9YtbaKYi+t1PeaQ1g0jOThw==",
+      "license": "Apache-2.0",
+      "paths": [
+        "packages/openai"
+      ],
+      "purpose": "Fixture and consumer evidence; SDK repair policy is not a protocol oracle"
+    },
+    "vercel-anthropic": {
+      "repository": "https://github.com/vercel/ai",
+      "selection": "stable-release",
+      "release": "@ai-sdk/anthropic@4.0.87",
+      "revision": "594495a5af70547d9d7a13d6df334ae30db49622",
+      "package": "@ai-sdk/anthropic",
+      "version": "4.0.87",
+      "integrity": "sha512-x55N7G47mh9p38C2a6qMAzmUxlgKDCXoE9ohRaF4D3hcOGQrYIOZZ/9Iv4Uf9/OxlNDog9Yz4YPX2GL1+otGlg==",
+      "license": "Apache-2.0",
+      "paths": [
+        "packages/anthropic"
+      ],
+      "purpose": "Fixture and consumer evidence; SDK repair policy is not a protocol oracle"
+    },
+    "vercel-google": {
+      "repository": "https://github.com/vercel/ai",
+      "selection": "stable-release",
+      "release": "@ai-sdk/google@4.0.104",
+      "revision": "594495a5af70547d9d7a13d6df334ae30db49622",
+      "package": "@ai-sdk/google",
+      "version": "4.0.104",
+      "integrity": "sha512-7wSW1ajTBHPMV0cNeba8g42sZHElmc92yRTh8ZsBjkg9Zbg6hmPaPO1kBirSsJUc4oKe9jlp4+5i/0BfFu8RHA==",
+      "license": "Apache-2.0",
+      "paths": [
+        "packages/google"
+      ],
+      "purpose": "Fixture and consumer evidence; SDK repair policy is not a protocol oracle"
+    }
+  },
+  "artifacts": {
+    "google-interactions-v1": {
+      "url": "https://ai.google.dev/static/api/interactions-v1.openapi.json",
+      "sha256": "949c625701ee56dfc39bb988f1eb99ed07661e759094d802c7d7a319b7fd5912",
+      "version": "v1",
+      "last_modified": "Thu, 22 Oct 2026 20:39:20 GMT"
+    },
+    "google-interactions-v1beta": {
+      "url": "https://ai.google.dev/static/api/interactions.openapi.json",
+      "sha256": "b8f553e43b2afb1bf13d0c7bed659e00c8c92fe945a163918b4bcaf0a27b0833",
+      "version": "v1beta",
+      "last_modified": "Thu, 22 Oct 2026 21:57:22 GMT"
+    },
+    "google-generate-content-v1": {
+      "url": "https://generativelanguage.googleapis.com/$discovery/rest?version=v1",
+      "sha256": "7188cad1cd0c2875820c9abefa4eb63c9134177a02d6667cb2bdf40010ad34a0",
+      "version": "v1",
+      "revision": "20261023"
+    },
+    "google-generate-content-v1beta": {
+      "url": "https://generativelanguage.googleapis.com/$discovery/rest?version=v1beta",
+      "sha256": "1d42aac8490ac05da9cef90f2b98bf92e29bc3889dfe15484a9d49136bec35a8",
+      "version": "v1beta",
+      "revision": "20261023"
+    }
+  }
+}

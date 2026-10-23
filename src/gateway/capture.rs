@@ -287,7 +287,7 @@ impl Exchange {
             || self
                 .0
                 .used
-                .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |used| {
+                .try_update(Ordering::Relaxed, Ordering::Relaxed, |used| {
                     used.checked_add(bytes.len())
                         .filter(|next| *next <= writer.config.max_exchange_bytes)
                 })

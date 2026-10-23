@@ -2,7 +2,7 @@
 
 MorphieCore translates client and Provider protocols through one typed semantic IR. It is a gateway, not an agent loop: planning, agent memory and tool execution belong to the caller.
 
-This page owns accepted principles, domain contracts and decision records. [Roadmap](roadmap.md) owns scope, priority and acceptance status; [API expansion design](api-expansion-design.md) owns unselected alternatives. Code and tests define behavior. Configuration and commands belong to [Usage](usage.md) and [Development](development.md).
+This page owns accepted principles, domain contracts and decision records. [Roadmap](roadmap.md) owns scope, priority and acceptance status; [API expansion design](api-expansion-design.md) owns unselected alternatives. Code and tests describe implemented behavior, not authority over official contracts. Configuration and commands belong to [Usage](usage.md) and [Development](development.md).
 
 ## Contents
 
@@ -58,6 +58,10 @@ This page owns accepted principles, domain contracts and decision records. [Road
 Generation supports JSON and SSE. Google upstreams use streaming intake even for downstream JSON delivery. Interactions uses stateless, full-history requests.
 
 All three Generation client protocols use the public model's configured ordered candidates. A Messages client does not imply a native Anthropic upstream. Standalone Embeddings, Images, Speech and Transcription have separate contracts; only selected [stage-4 slices](roadmap.md#stage-4-scope) expand them.
+
+**Accepted standards reset (2026-10-23; implementation pending).** Public Chat, Responses and Messages follow their current official versioned contracts, not a MorphieCore or Provider dialect. Future generateContent and Interactions ingress has the same requirement, without activating those endpoints now. Provider-specific syntax and observed exceptions belong only to trusted upstream adapters. A separately named diagnostic extension must not change standard field meanings or masquerade as model-generated content.
+
+Resolve current stable SDK/package releases and corresponding source revisions before the redesign. Record API versions, revisions and beta selections separately; an SDK superset is not a protocol-version contract. The [release-reset sequence](roadmap.md#standards-reset-and-redesign) supersedes the old mapping baseline as a regression oracle. Historical successful loops remain scoped evidence, not current conformance.
 
 Provider facts live in [providers.json](../src/provider/providers.json), validated by [provider/catalog.rs](../src/provider/catalog.rs). Public models and bindings remain in [topology/catalog.rs](../src/topology/catalog.rs) and [gateway bootstrap](../src/gateway/startup/bootstrap.rs). Registration does not prove activation or live account access.
 
@@ -148,7 +152,7 @@ Execution is typed dataflow with scoped state machines, not a generic pipeline o
 
 ### Semantic IR
 
-The IR is neither a protocol DTO nor a union of vendor fields.
+The IR is the union of evidenced official protocol meanings, with equivalent meanings sharing one authoritative owner. It is neither a protocol DTO nor a union of vendor fields. One official API is sufficient evidence for a concept; representation and binding activation remain separate.
 
 Generation semantics come from the official OpenAI, Anthropic and Google APIs. One official API is enough to justify a concept. Preserve its meaning in the IR even when a target needs a declared lossy projection; reject losses of protected semantics or cases without an approved adaptation. Provider dialects and adaptation policies belong to protocol codecs, not semantic types. Reasoning activation, numeric budgets and qualitative effort are not interchangeable. Realtime and standalone tasks do not determine Generation completeness.
 
@@ -168,6 +172,18 @@ Generation semantics come from the official OpenAI, Anthropic and Google APIs. O
 Clients may resend full history or use [gateway-managed Responses history](#stateful-history), which materializes the same full IR and uses the same pipeline. Cache affinity is not history storage.
 
 When a concept cannot be expressed, show a minimal counterexample and structural options before changing the IR. Do not hide it in private adapter fields.
+
+#### Canonical ownership
+
+The accepted redesign removes competing writable representations, not legitimate distinctions:
+
+- Store modality token counts once in the scoped accounting breakdown; flat delivery counters are derived views.
+- Use one reasoning-presentation owner with independent visibility and summary granularity. Activation, effort scope, budget, readable text and opaque continuation remain distinct.
+- Own cache boundaries and explicit/inherited retention on the affected content/tool use. Fidelity may retain representation evidence, never resurrect a deleted semantic directive. Image-size enforcement similarly belongs on the image use.
+- Keep request intent, opening/terminal observations and completed delivery views separate. Derivation and estimation never overwrite source facts.
+- Keep runtime attempts and the execution-owned adaptation report outside the IR. Reports, logs and wire extensions are projections of that report, not competing semantic containers.
+
+These are approved ownership corrections, not claims that the current implementation has migrated.
 
 #### Tool examples and document context
 
@@ -348,7 +364,7 @@ This is the selected boundary, not a claim that all existing codecs implement it
 
 A dialect may normalize an equivalent alias, with conflict checks against the canonical field. A declared semantic extension enters typed IR through an explicit decoder; it cannot hide required content in a restoration-only sidecar. Non-semantic reports and representation records stay bounded, source- and owner-bound outside the semantic task. Unknown fields never become restorable extensions.
 
-Trusted adapters select dialects. Apply the same extension admission to requests, static reports, streamed events and returned history, while retaining their direction-specific unknown-field policies. Registered MorphieCore downstream extensions remain explicit extensions, not additions to an official schema.
+Trusted upstream adapters select dialects. Apply the same upstream extension admission to requests, static reports, streamed events and returned history, while retaining their direction-specific unknown-field policies. Public codecs select official contracts independently of the upstream. Legacy MorphieCore Chat controls and replay carriers are migration work, not additions to the official schema.
 
 Encode from the current typed meaning. A source extension cannot override canonical output, restore a deleted owner or cross an incompatible target. Dialect representation precedes final serialization; there are no post-encoding JSON patches. Projection need not be invertible: named approximations remain losses, not equivalent mappings.
 
@@ -430,7 +446,23 @@ The shared preflight/preparation encoder checks final typed controls after selec
 
 #### Accurate IR and declared loss
 
-The selected policy favors useful conversion over exact wire correspondence. Preserve source intent and observed facts in the IR; prefer an exact target carrier, then an explicitly approved omission or approximation on a target-private copy. Missing fidelity alone need not reject a request. This is the migration contract, not a claim that current codecs implement every rule; see the [implementation plan](roadmap.md#ir-and-codec-migration).
+The accepted order is **lossless mapping → bounded semantic approximation → meaningful simple estimation, otherwise rejection**. Validate the source first and retain its intent and observed facts. For each target, test exact model-supported carriage before applying a configured fallback; the presence of a conversion policy never preempts an available exact carrier. Work only on target-private copies. Exact arithmetic with established premises is derivation, not estimation; equivalent normalization is not loss. Omission is a classified lossy mapping, not permission to discard fields at intake.
+
+Estimation applies only to quantities with an explicit bounded method and domain. Never estimate identities, opaque signatures, tool success, authentication authority, safety intervention or successful termination. Invalid source requests still reject. An adaptation report does not authorize withdrawing an explicit output-schema/tool-choice guarantee, disclosing hidden reasoning or raising a caller's output ceiling. Codecs remain direct typed transformations, not a generic rule engine.
+
+All previously accepted conversion rules are reopened under this order. The following corrections are selected; implementation and source-specific coverage belong to the roadmap:
+
+| Rule family | Accepted treatment |
+|---|---|
+| Prediction and advisory controls | Preserve in IR until target selection; exact native carriage first, then named omission |
+| Reasoning allocation/presentation | Preserve supported budget, effort and visibility; only then apply evidenced directional approximation or bounded estimates |
+| Responses omitted strictness | Follow current official normalization-with-best-effort-fallback semantics; explicit `strict:true` remains a different guarantee. Record effective reports separately from request intent |
+| Tool-result errors | Preserve native error meaning; absent a native carrier, prefer bounded model-visible error wrapping over deleting the only failure indicator |
+| Instructions, sampling and schema/media controls | Seek accurate carriers and supported combinations before rejection. Use named order/authority-preserving composition, fixed-sampling omission and evidenced directional detail mappings; do not infer equivalence from matching names |
+| Output ceilings and attribution | Consider downward ceiling adjustment only for source-valid upper bounds, never an increase or a changed minimum/target. Advisory attribution may omit when no valid carrier exists; never rewrite security identity to fit |
+| Ordered configuration/tool changes | Prefer native history carriers. Flattening must declare its historical/prefix loss and cannot claim byte-stable prior context |
+| Replay and phase | Preserve legitimate semantic owners; separate incompatible opaque state from visible content. Do not fabricate reasoning owners to transport manifests; necessary opaque context cannot be estimated |
+| Accounting and ancillary reports | Preserve actual values, then justified derivation, then field-specific estimates. Report actual omissions/approximations/estimates at their delivery boundary |
 
 Classify losses by their effect on task constraints, output quality, execution and security, not by whether a field is optional in an SDK. A verbosity preference may be omitted when no target carrier exists. A required output schema, tool selection, call/result link, content item or honest terminal cannot be discarded merely to complete a request. Billing, storage and disclosure controls also need an explicit policy even when they do not change answer quality.
 
@@ -443,6 +475,7 @@ Explicit prefix-cache breakpoints belong to the content or tool-definition owner
 | Exact representation | Preserve meaning; check source conflicts before alias normalization |
 | Advisory loss | Omit selected verbosity preferences or predicted-output optimization through named rules; other fields need individual classification |
 | Behavioral approximation | Use selected effort/budget, summary-granularity and role mappings on target copies. Preserve visibility and output ceilings; preserve supported sampling and omit fixed/ignored sampling only under a target policy. Record changes and validate target restrictions |
+| Meaningful estimate | Fill only eligible missing quantities using a named bounded method; preserve actual zeros and identify the estimated fields downstream |
 | Protected meaning | Preserve task content, constraints, execution identity, security boundaries and result truth; reject when no faithful carrier exists |
 
 Decode according to the source protocol before target projection. Known types, variants and relations remain strict even when a later target may omit the field. A known but unsupported critical field is not an unknown field. A target profile's restriction must not prevent the client decoder from expressing a valid source concept already supported by the IR.
@@ -479,7 +512,7 @@ Responses preserves assistant `commentary` and `final_answer` exactly, independe
 
 Requests to Chat, Messages, generateContent and Interactions may omit phase on a target-private copy under `[chat,messages,gemini,interactions].omit-message-phase.v1`. This is lossy visible-history transfer, not equivalent continuation. Source content, order, call/result links and phase remain unchanged.
 
-Chat/Messages delivery does not permanently discard phase by default. `generation.return-message-phase.v1` carries it and its original message boundaries through the existing bounded attachment manifest, including phase-only responses without signatures. Responses uses its native field instead. The manifest is built before wire grouping and published only with the EOF-validated terminal. Standard Chat without structured reasoning rejects this carrier. Existing content-order, annotation, accounting and terminal restrictions still apply; this policy does not establish every Responses-to-Messages answer loop. A carrier preserves replay information, not phase-aware client UI or structured-output parsing.
+Responses uses its native phase field. The legacy `generation.return-message-phase.v1` manifest implementation for Chat/Messages is superseded as a public contract: a phase-only answer must not acquire a fabricated reasoning/thinking owner. Select legitimate continuation/state carriage or a separately specified extension; otherwise preserve visible content/order and report the selected phase loss. A diagnostic notice itself cannot restore phase or establish client retention.
 
 Returned edited or missing manifests follow the existing attachment contract: keep visible history, do not guess labels, and record a recognized mismatching carrier's omission. See the [source evidence](refs/2026-10-17-generation-contracts.md#compatibility-policy-review-2026-10-18).
 
@@ -553,7 +586,7 @@ GenerateContent emits only the fixed `labels.safety_identifier` entry. Values pe
 
 #### Selected request approximations
 
-D3 selects named omission of Chat `prediction` until a faithful carrier is implemented. Validate its known source shape before omitting the optimization, and record the omission rather than treating it as an unknown field. Predicted content is not a constraint on generated text. Neither output text nor reported accepted/rejected prediction counts may be synthesized from it; loss receipts do not contain the predicted body.
+The old D3 intake-time omission of Chat `prediction` is superseded. Preserve its typed meaning until target projection, use an exact native carrier when supported, and otherwise omit the optimization with a receipt. Predicted content is not an output constraint or a source of fabricated prediction-token reports.
 
 P8 permits approximation of summary/display granularity, such as concise or detailed summary intent to a target's single summary mode. Preserve the requested show/hide behavior independently: hiding must not become disclosure, and requested display must not be silently disabled. An absent preference remains absent. These control approximations do not enable reasoning, fabricate summaries, discard generated content or remove required replay. Reject a target that cannot preserve the visibility contract.
 
@@ -569,11 +602,11 @@ P8 protects the model-visible filename. Preserve it through an exact carrier, in
 
 P8 permits omission of an explicit reasoning-context control only when the selected target's default is proven equivalent. Otherwise preserve its exact carrier or reject, including when equivalence is unknown. Keep absent controls absent. This policy does not permit deleting messages, necessary reasoning replay or compacted history to simulate a context setting, and does not apply to a Messages document's `context` field.
 
-P8 rejects `DefaultStrictAsPlain`. Keep omitted normalization-default strictness distinct from omitted non-strict defaults and explicit `strict: false`. Responses normalization-default tools must not become plain native tools; reject when their source semantics cannot be preserved. This decision does not select a new schema-normalization implementation or permit removal of explicit schema constraints.
+Keep omitted normalization-default strictness distinct from omitted non-strict defaults and explicit `strict:false`. Current Responses semantics attempt normalization and permit best-effort fallback when normalization is impossible; the old unconditional rejection is superseded. Preserve that native behavior first, then assess cross-protocol equivalence. Explicit `strict:true` cannot become best effort merely to obtain a response.
 
-The reverse direction has an exact carrier: an omitted non-strict source default becomes explicit `strict: false` on Responses. Materialize the effective default in the target wire without changing the source IR or schema. This is not a lossy rule and does not permit normalization-default-to-plain conversion.
+The reverse direction has an exact carrier: an omitted non-strict source default becomes explicit `strict:false` on Responses. Materialize that default without changing source IR/schema. Native normalization-with-fallback requires its own evidenced projection, not unconditional conversion to plain tools.
 
-Schema normalization and explicit strict tools have separate semantic requirements and capability checks. Supporting one does not imply the other. Native contracts reject normalization-default tools even when their codec carries explicit strict tools.
+Schema normalization and explicit strict tools have separate semantic requirements and capability checks. Supporting one does not imply the other. The current adapters' blanket normalization-default rejection is migration work, not the redesigned protocol contract.
 
 OpenAI terminal delivery uses selected approximations. Chat's `stop` officially covers a natural stop and a matched stop sequence, including beside forced tool calls, so natural and sequence-matched causes coarsen to it under `chat.coarsen-completion-cause.v1`; an ambiguous stop is exact. Responses `completed` has no cause carrier, so `responses.omit-completion-cause.v1` omits any cause. A recitation stop becomes OpenAI `content_filter` under `openai.recitation-as-content-filter.v1` and stays incomplete. OpenAI has no context-window reason: Chat reports `length` under `chat.context-window-as-length.v1`, and Responses stays incomplete with a null reason under `responses.omit-context-window-reason.v1`. Generic Messages still rejects ambiguous stops and recitation; its selected Google exception is defined below. These rules never turn a non-success outcome into success.
 
@@ -746,17 +779,23 @@ Chat omits incidental settings echoes because its response has no settings carri
 
 #### Public capability and adaptation notice
 
-P7 selects an authenticated read-only capability snapshot and a conservative HTTP response-header notice of possible adaptation. The [initial partial surface](usage.md#capability-discovery-and-adaptation-notice) publishes gateway-boundary contracts for activated Generation clients, not model-effective support or full-loop availability. Unlisted cases are unassessed. Actual per-exchange loss receipts remain in internal diagnostics; no public receipt store, custom SSE events or response-body extensions are selected.
+The capability snapshot describes supported request domains, delivery and history contracts, not unions of candidate feature bits or model-effective guarantees. Unlisted cases remain unassessed. Keep `/v1/models` standard and hide credentials, deployment origins and private candidate identities.
 
-Publish by public model and distinguish request acceptance, downstream delivery and history replay, including JSON/SSE limits. Describe faithful support, approved adaptation with stable rule IDs, and rejection. Reuse typed contracts and policies; do not serialize admission booleans or union candidate capabilities. Reveal no credentials, deployment origins or internal candidate identities. Keep `/v1/models` as model discovery rather than overloading its standard fields.
+**Actual-loss reporting is selected on 2026-10-23 and not yet implemented.** It supersedes the internal-only P7 policy. Report successful non-rejection losses briefly through a semantically suitable official field, otherwise an explicit namespaced extension. Error, stop, refusal, annotation, safety and usage fields are not generic warning containers. Standard fields retain their official meaning; an extension cannot establish full conformance merely because an SDK tolerates it.
 
-The notice means possible adaptation, not applied loss or proof of Provider-effective settings. Its absence does not certify an exact full loop, and clients may not display it. Late stream reports make response headers unsuitable as complete actual-loss receipts. Do not buffer a complete stream to collect receipts, rely on trailers, add per-request loss-policy overrides or change routing. Neither a notice nor a receipt authorizes dropping completion causes, safety reports or other protected facts; only a selected named rule does.
+One bounded execution-owned adaptation report is authoritative. Pure codecs return immutable evidence; commit it only after the responsible transformation and serialization checks succeed. Distinguish prepared, sent and delivered effects. A response reports its producing attempt, not rejected/abandoned candidates; valid published prefixes survive later failure. Diagnostics and JSON/SSE/stored retrieval project this report rather than maintaining separate mutable ledgers.
 
-The [P7 boundary review](roadmap.md#p7-boundary-review) owns further capability expansion and reconnection sequencing. Model-level binding evidence and selected client loops must be specified before activating additional support; publishing a gateway rejection or delivery policy does not activate it.
+Public entries use allowlisted codes, short fixed descriptions and affected fields, with method identifiers for estimates. Aggregate repeated occurrences, bound bytes/counts and signal overflow instead of silently dropping records. Do not expose business values or private Provider/model rule names. Exact carriage and derivation are not warnings.
+
+Attach streaming updates to valid protocol envelopes; preserve standard event order and terminal grammar. Reserve space for final notices, but do not fabricate content, reasoning, usage chunks, errors or success solely for a notice. Receipt-only output must not prematurely publish a held candidate. Late reports cannot be represented by headers alone; cancellation cannot guarantee final notice delivery. Verify raw-event visibility separately from SDK final-object retention.
+
+The existing `X-MorphieCore-Adaptation: possible` header and partial snapshot remain current implementation, not actual-loss evidence. Extension spelling and per-protocol placements require the source-backed consumer checks in the [redesign gate](roadmap.md#current-text-and-sse-gate); no public receipt store or routing change is implied.
 
 ## History and replay
 
 ### Reasoning replay
+
+**Migration boundary:** real semantic replay owners, dependency checks and trusted issuer isolation remain required. The legacy public `mc1.`/`mca1.` transport described below is implementation evidence, not the new official API contract. In particular, gateway manifests must not appear as fabricated reasoning/thinking owners. Prefer accurate native carriers and existing gateway-held continuation; any additional semantic extension requires its own contract and client-retention evidence. Keep internal opaque state separate from public retrieval representation, without a lossy typed-history → temporary-wire → typed-history composition step.
 
 Opaque upstream values reach clients in a tagged envelope:
 
@@ -811,7 +850,7 @@ Pinned pi parser/request-builder checks preserve equal-text owners and signed ca
 
 ### Chat reasoning extensions
 
-Chat uses OpenRouter shapes for semantics its standard fields cannot carry:
+The current implementation uses the following OpenRouter shapes. Under the accepted standards reset these are upstream dialect/legacy compatibility evidence, not the public official Chat schema:
 
 | Carrier | Meaning |
 |---|---|
@@ -829,9 +868,9 @@ Streamed readable deltas carry both readable views and no empty opener. Client i
 
 For registered plaintext views, absence, null and an empty string make no text assertion. Nonempty duplicate views must agree with each other and with the readable structured view. Malformed known values still fail. An empty details list has no parts; explicit structured parts, including empty text, retain their content, order and owners. This normalization does not change visibility controls or relax post-terminal lifecycle checks.
 
-Register new extension shapes here one at a time. The old `_openbridge` attachment is rejected and never emitted.
+Register upstream extension shapes here one at a time, not in the public official Chat baseline. The old `_openbridge` attachment is rejected and never emitted.
 
-DashScope's selected Bailian Chat carrier is readable `reasoning_content` plus the independent `preserve_thinking` control, not OpenRouter encrypted details. The public gateway Chat codec registers this source control so it is not lost before target preparation. `ReasoningRequest.read_history` preserves absent/true/false without inventing effort or activation; null and non-booleans reject. It controls whether supplied historical reasoning is read, not current-turn context, replay permission or retention. Do not insert a model default or map false to `CurrentTurn`. The evidenced native dialect carries it; unsupported targets reject. Readable reasoning cannot resume after text or call output begins, even when an earlier reasoning owner exists.
+DashScope's upstream Bailian Chat carrier is readable `reasoning_content` plus the independent `preserve_thinking` control, not OpenRouter encrypted details. Its current public registration is legacy behavior to remove from the official client baseline. `ReasoningRequest.read_history` preserves the distinct history-reading meaning without inventing effort, activation or retention. Do not map it to `CurrentTurn` merely by name. Readable reasoning cannot resume after text/call output begins.
 
 ### Compacted history
 
@@ -1124,7 +1163,7 @@ Each request receives a gateway-generated run-nonce/sequence correlation ID; can
 
 ### Configurable exchange capture
 
-P6 selects configurable full business-message capture for this internal gateway, not just field summaries. Keep independent header/body controls for four boundaries: inbound client request, outbound upstream request, inbound upstream response and outbound client response. Body capture includes JSON, streamed application content, tool arguments/results and non-authentication opaque payloads when enabled. Capture is not a source of replay or semantic restoration.
+The single deployer owns all downstream clients and explicitly authorizes sensitive business request/response headers and bodies in controlled private logs for diagnosis. P6's four independent capture boundaries remain: inbound client request, outbound upstream request, inbound upstream response and outbound client response. Body capture includes JSON, streamed application content, tool arguments/results and non-authentication opaque payloads when enabled. Capture is not a source of replay, protocol truth or public test fixtures.
 
 Capture is opt-in and off by default. Use private local storage, restrictive file permissions and finite queue, per-exchange and aggregate retention limits. Record redaction, truncation, dropped records and incomplete streams explicitly; do not label a partial record as complete. Keep the current best-effort availability contract: capture failure does not change the business response. Enabling content capture does not authorize remote export or printing captured business content into tool output.
 
@@ -1148,13 +1187,16 @@ Distinguish a captured HTTP exchange, gateway-observed conversation history and 
 
 These records preserve accepted choices and their consequences, grouped by domain. Detailed contracts above remain authoritative; implementation status, remaining work and acceptance belong to the [roadmap](roadmap.md#current-status). A selected decision is not evidence of a working client loop.
 
+The 2026-10-23 standards reset supersedes conflicting historical conversion, public-dialect, manifest, internal-only notice and old-baseline decisions below. Preserve their dates as evidence; do not use them to constrain the approved redesign.
+
 ### Scope and activation decisions
 
 | Decision | Consequence |
 |---|---|
+| Standards reset and breaking redesign (2026-10-23) | User accepted semantic-union IR with unique ownership, exact-first ordered fallback, official public protocol baselines, actual-loss reporting and review of all prior conversions. Pin current stable dependencies and release sources before implementation; old mapping outputs are not regression authority. Reuse upstream standard-based tests in the integrated redesign gate, preserving independent safety invariants |
 | Five-stage development order | 1. Same-protocol lossless upstream/downstream IR codecs; 2. Basic agent tool interactions; 3. Cross-protocol stability and `count_tokens`; 4. Embedding/audio/image/video APIs and Files/multipart Uploads; 5. Unscheduled citations, tool discovery, hosted tools, server-side compaction, Batch and Realtime. Lossless claims are semantic and scoped; approved loss is not losslessness. Scope and exit conditions live in the [roadmap](roadmap.md#planned-order) |
-| Stage-1 baseline and scope (2026-10-19) | Lossless claims and tests use the latest releases checked that day: OpenAI Python 3.35.1, Anthropic Python 1.15.0 and pi 1.3.0, the installed client. The SDK loopback gate locks the same SDK releases. The user added Grok and public OpenAI SIWC Responses verification to DashScope Chat, OpenRouter Responses and OpenCode Go Messages. This does not reschedule real loops or activate bindings |
-| Installed-client version policy (2026-10-21) | The user confirmed OpenCode 2.0.6→2.0.32 continuity, then selected major-only harness gates: pi 1.x and OpenCode 2.x. Use locally available agents with isolated test state; do not pin harness minor/patch versions. Record actual full versions separately from pinned research sources. Major admission is not behavioral acceptance of every release or a rerun of untested routes |
+| Historical stage-1 baseline (2026-10-19) | Prior evidence used OpenAI Python 3.35.1, Anthropic Python 1.15.0 and pi 1.3.0. The 2026-10-23 stable-release reset replaces these active pins and their mapping-oracle authority, without changing the dates or scope of prior observations |
+| Installed-client stable release policy (2026-10-23) | Supersedes the 2026-10-21 major-only policy. Harnesses require selected stable release versions from the source lock; full version/build provenance and isolated execution remain necessary. Host binaries are not automatically changed; historical 2.x OpenCode behavior does not certify the selected release |
 | Google response-effort slice (2026-10-21) | User selected only the [three-level request-scope approximation](#google-response-effort-projection) and body-free terminal/usage failure classification. Terminal compatibility proposals and accounting approximations remain unselected; do not claim Messages full-loop acceptance |
 | Google basic-loop closure and pause (2026-10-21) | User subsequently selected the bounded [Messages terminal profile](#google-messages-terminal-projection), basic tool/final-history acceptance, then [paused further Google API expansion](roadmap.md#google-api-pause). Incomplete coverage is accepted, not reclassified as full support; no new usage approximation or optional report owner is selected |
 | Generation Text production closure (2026-10-21) | User selected a bounded closure before stage 4: protected-field repairs, local input/citation/report additions, existing-profile structured-output/tool-choice acceptance and sustained-operation checks. Scope is the existing loopback pi/opencode gateway, not new Providers, clients, routing mechanisms or deployment authorization. The [roadmap](roadmap.md#generation-text-production-closure) owns packages and exit gates; this selection is not implementation or acceptance evidence |
@@ -1317,7 +1359,7 @@ These records preserve accepted choices and their consequences, grouped by domai
 | Required and incidental output evidence | P5 preserves required output facts and allows selected incidental-report loss after validation; request intent never fabricates upstream reports |
 | Configurable internal exchange capture | P6 permits opt-in business headers/bodies at all four I/O boundaries with separate controls, finite retention and best-effort writes. Credentials are always redacted; no switch permits credential-bearing logs |
 | Cluster diagnostics planning (2026-10-23) | [Future capture baseline](#configurable-exchange-capture) permits sensitive business diagnostics in explicitly configured deployer-owned infrastructure, preserves mandatory authentication redaction and bounded best-effort capture, and distinguishes observed exchanges from complete Agent traces. No backend deployment or export is activated |
-| Public capability and adaptation notice | P7 selects an authenticated capability snapshot distinguishing faithful support, approved adaptation and rejection, plus a conservative possible-adaptation HTTP notice. Actual receipts remain internal; standard response bodies and SSE stay unchanged. Implementation and reconnection remain separately scheduled |
+| Actual adaptation reporting (2026-10-23) | Supersedes P7's internal-only receipts: one bounded execution report supplies short actual-loss notices through semantically correct standard fields or namespaced extensions. Preserve selected-attempt isolation, publication honesty, privacy and standard event grammar; capabilities and a possible-adaptation header are not actual receipts |
 | Bounded text-delta coalescing | Startup-only, disabled-by-default optimization after client projection and before encoding. One pending run retains its prepared context and fixed deadline; invalid bounds fail startup. Final-only clients retain existing materialization; original intake validation and publication safety remain authoritative |
 | Scoped source accounting | Retain raw buckets and latest operation/step snapshots independently; derive delivery views without summing snapshots or inferring unknown inclusion relations. Source-default zeros and optional counts remain distinguishable |
 | Honest delivery | Publication forbids advancement; success requires validated EOF and handoff |
@@ -1327,4 +1369,4 @@ These records preserve accepted choices and their consequences, grouped by domai
 | Terminal stop evidence | Completion cause is separate from outcome and turn progress, including Google STOP beside calls. Source reports never derive from sent controls or output text. Chat coarsens and Responses omits causes under the [selected terminal approximations](#selected-request-approximations); the [Google Messages profile](#google-messages-terminal-projection) changes only a delivery copy with recorded context/approximation. Strict native codecs, non-success outcomes and unknown-context rejection remain unchanged |
 | Safety policy and reported assessment | Request probability-threshold settings belong to `GenerationSettings`; actual input/output assessments belong independently to `GenerationResponse` and report events. Preserve report order and source facts without deriving them from controls, confusing probability with severity or inferring an outcome. Default, disabled filtering and no category blocking remain distinct. Assessment-only reports are omitted under a named rule; blocking reports and unsupported policy carriers reject |
 
-Pinned clients and protocol sources are in [References](references.md). Observed client behavior is an oracle, not permission to weaken security or fabricate semantics.
+Pinned clients and protocol sources are in [References](references.md). Official contracts govern protocol expectations; observed client behavior is compatibility evidence, not permission to redefine those contracts, weaken security or fabricate semantics.

@@ -6,45 +6,45 @@ description = "Experimental routing gateway for a distributed Agent Runtime"
 license = "MIT"
 
 [dependencies]
-axum = { version = "0.8.9", default-features = false, features = ["http1", "json", "tokio"] }
-futures-util = { version = "0.3.34", default-features = false, features = ["std"] }
-getrandom = "0.4.3"
-httpdate = "1.0.3"
-reqwest = { version = "0.13.5", default-features = false, features = ["stream", "rustls"] }
-subtle = "2.6.1"
-tokio = { version = "1.53.2", features = ["rt-multi-thread", "macros", "net", "sync", "time", "signal", "io-util"], default-features = false }
-bytes = "1.12.1"
-base64 = "0.23.1"
-url = "2.5.8"
-mime = "0.3.17"
-multer = { version = "3.1.0", default-features = false }
-serde = { version = "1.0.229", features = ["derive"] }
-serde_json = { version = "1.0.151", features = ["preserve_order", "arbitrary_precision", "raw_value"] }
-sha2 = "0.11.0"
-ring = "0.17.14"
-thiserror = "2.0.21"
-strum = { version = "0.28.0", features = ["derive"] }
-fs-mistrust = { version = "0.16.0", default-features = false }
-atomicwrites = "0.4.4"
-clap = { version = "4.6.7", default-features = false, features = ["std", "derive", "help", "usage"] }
-serde_with = { version = "3.24.0", default-features = false, features = ["std"] }
-secrecy = "0.10.3"
-zeroize = "1.9.0"
-oauth2 = { version = "5.0.0", default-features = false }
-tokio-util = { version = "0.7.19", default-features = false, features = ["rt"] }
-jsonwebtoken = { version = "11.1.0", default-features = false, features = ["aws_lc_rs"] }
-httparse = "1.10.1"
-unicode-general-category = "1.1.0"
+axum = { version = "=0.8.9", default-features = false, features = ["http1", "json", "tokio"] }
+futures-util = { version = "=0.3.34", default-features = false, features = ["std"] }
+getrandom = "=0.4.3"
+httpdate = "=1.0.3"
+reqwest = { version = "=0.13.5", default-features = false, features = ["stream", "rustls"] }
+subtle = "=2.6.1"
+tokio = { version = "=1.54.1", features = ["rt-multi-thread", "macros", "net", "sync", "time", "signal", "io-util"], default-features = false }
+bytes = "=1.12.1"
+base64 = "=0.23.1"
+url = "=2.5.8"
+mime = "=0.3.17"
+multer = { version = "=3.1.0", default-features = false }
+serde = { version = "=1.0.229", features = ["derive"] }
+serde_json = { version = "=1.0.154", features = ["preserve_order", "arbitrary_precision", "raw_value"] }
+sha2 = "=0.11.1"
+ring = "=0.17.14"
+thiserror = "=2.0.21"
+strum = { version = "=0.28.0", features = ["derive"] }
+fs-mistrust = { version = "=0.16.0", default-features = false }
+atomicwrites = "=0.4.4"
+clap = { version = "=4.6.7", default-features = false, features = ["std", "derive", "help", "usage"] }
+serde_with = { version = "=3.24.0", default-features = false, features = ["std"] }
+secrecy = "=0.10.3"
+zeroize = "=1.9.1"
+oauth2 = { version = "=5.0.0", default-features = false }
+tokio-util = { version = "=0.7.20", default-features = false, features = ["rt"] }
+jsonwebtoken = { version = "=11.1.0", default-features = false, features = ["aws_lc_rs"] }
+httparse = "=1.10.1"
+unicode-general-category = "=1.1.0"
 
 [target.'cfg(windows)'.dependencies]
-windows-permissions = "0.2.4"
+windows-permissions = "=0.2.4"
 
 [target.'cfg(unix)'.dev-dependencies]
-libc = "0.2.190"
+libc = "=0.2.191"
 
 [dev-dependencies]
-proptest = { version = "1.11.0", default-features = false, features = ["std"] }
-tempfile = "3.27.0"
-reqwest = { version = "0.13.5", default-features = false, features = ["json"] }
-tower = { version = "0.5.3", features = ["util"] }
-tokio = { version = "1.53.2", default-features = false, features = ["process", "io-util", "test-util"] }
+proptest = { version = "=1.12.0", default-features = false, features = ["std"] }
+tempfile = "=3.27.0"
+reqwest = { version = "=0.13.5", default-features = false, features = ["json"] }
+tower = { version = "=0.5.3", features = ["util"] }
+tokio = { version = "=1.54.1", default-features = false, features = ["process", "io-util", "test-util"] }

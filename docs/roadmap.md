@@ -5,6 +5,7 @@ This page owns current scope, priorities, dependencies and exit gates. Start wit
 ## Contents
 
 - [Current status](#current-status)
+- [Standards reset and redesign](#standards-reset-and-redesign)
 - [Planned order](#planned-order)
   - [Execution sequence and work-package rules](#execution-sequence-and-work-package-rules)
   - [Stage 1 work plan](#stage-1-work-plan)
@@ -49,25 +50,44 @@ This page owns current scope, priorities, dependencies and exit gates. Start wit
 
 ## Current status
 
+**Current priority (2026-10-23):** complete the latest-stable release reset, then execute the accepted breaking redesign with upstream-derived standard-protocol tests. The table below records the pre-reset implementation and historical acceptance; it is not the regression oracle for new semantics. [The integrated sequence](#standards-reset-and-redesign) supersedes conflicting earlier freeze, mapping-preservation and test-supplement-only instructions for this scoped work.
+
 | Area | State | Next step |
 |---|---|---|
 | Routing | Functional phase complete under the [stable routing baseline](architecture.md#failover); feature development closed. Selected [controlled acceptance](#controlled-routing-acceptance) passed through Router, SDK and installed clients | [Production closure](#generation-text-production-closure) requires separate real evidence for routes promising failover; no routing feature expansion |
-| Generation IR/codec | Selected stage-1 codecs and [production repairs](#generation-text-production-closure) implemented; the [stage-1/2 design baseline is human-approved](#generation-design-review-gate). Independent native oracles, history parity and pinned SDK/client-carrier checks retain the [inventory's explicit exclusions](refs/2026-10-19-same-protocol-inventory.md) | Maintain the accepted contracts and explicit unsupported carriers; no all-official-semantics claim |
+| Generation IR/codec | Pre-reset codecs and production repairs are implemented within the historical inventory | Execute the accepted ownership/mapping redesign against current official sources; no all-official-semantics claim |
 | Client compatibility | Rejection audit, [phase transfer/return](architecture.md#message-phase-transfer), guarded extended-retention omission and retained citation rejection complete. [Downstream schema completion](architecture.md#downstream-schema-completion) implemented on 2026-10-23 with strict pinned-SDK JSON/SSE and stored-resource checks | Preserve SDK schema, source-fact and terminal-honesty regressions; broader official semantics remain explicitly scoped |
 | Integration | Selected R1a/R1b/R2 client loops and controlled routing acceptance passed their bounded scopes. R1b lifecycle reports and client history shorthand were explicitly selected on 2026-10-20 | [Production closure](#generation-text-production-closure): bounded capability and sustained-operation acceptance, not a full client/model matrix |
 | Cross-protocol conversion and counting | Stage 3 closed its selected projection and loop scope; counting is deferred | Preserve that evidence; the [Google pause](#google-api-pause) has selected text-report and stage-4 Embedding exceptions, not general Generation reopening |
-| Generation Text production readiness | Selected [production closure](#generation-text-production-closure) complete on 2026-10-22, with explicit unsupported-carrier and failover exclusions | Preserve the closed baseline while completing the [current text/SSE test gate](#current-text-and-sse-gate) before further stage-4 implementation |
+| Generation Text production readiness | Historical production closure completed on 2026-10-22 with explicit exclusions | Re-establish selected readiness after the standards redesign and integrated text/SSE gate, before further stage-4 implementation |
 | Code simplification | Completed on 2026-10-22: five preferred slices and selected local cleanups; full offline baseline and all 12 connected SDK scenarios passed | No remaining scheduled simplification; API/semantic contracts and freeze boundaries unchanged. Further cleanup needs its own demonstrated benefit; no new live-acceptance or measured-performance claim |
 | Decision APIs | [Dual standard-SDK direction](architecture.md#decision-api-direction) selected on 2026-10-23; initial TypeSafe/OpenAI/Perplexity/Cloudflare protocol research only | [Decision design review](#decision-api-design) before further modality work; no implementation or binding activation |
 | Embedding, other modalities and file resources | Sample-centered Embedding, compatible delivery and native Google/OpenAI-model integration accepted on 2026-10-23: full offline baseline, scoped SDK and bounded Provider checks. Grok static codec has no gateway/live acceptance | Complete the [text/SSE prerequisite](#current-text-and-sse-gate) before further implementation; retain Decision design and [static Images Generate](#next-stage-4-slice) review. Later slices inherit [operation-level test acceptance](#stage-4-reuse-and-acceptance); further Embedding modalities and video remain unselected |
 | Stage-5 follow-ups | Citations, tool discovery, hosted tools, server-side compaction, Batch and Realtime are recorded but **unscheduled** | No implementation queue or delivery commitment; select each slice before starting it |
 | Agent authorization and diagnostics | [Single-deployer, Agent-centered baseline](architecture.md#agent-identity-and-cluster-diagnostics) selected on 2026-10-23; implementation **unscheduled** | [Follow-up gates](#agent-authorization-and-diagnostics-follow-up); not a stage-5 API assignment or a prerequisite for current modality work |
-| External protocol tests | [Upstream-maintained test strategy](architecture.md#delivery-and-evidence-decisions) selected on 2026-10-23 as the next implementation work; no imports or update automation implemented | Close the [current text/SSE gate](#current-text-and-sse-gate), then reuse its sources and adapters for selected stage-4 acceptance |
+| External protocol tests | Stable release/source revisions are now selected in [the source lock](../tests/upstream/sources.lock.json); fixture adapters and new conformance acceptance are not implemented | Integrate upstream assets during the redesign, then close the [current text/SSE gate](#current-text-and-sse-gate); do not first restore old mapping expectations |
 | Real acceptance | Selected stage-2 loops and bounded [production gates](#generation-text-production-closure) have recorded version/profile-specific evidence | Preserve historical limitations and [other deferred acceptance](#deferred-acceptance); new profiles or stronger claims need their own gates |
 
 The [approved Generation baseline](#generation-design-review-gate) leaves inventory exclusions and binding boundaries unchanged. Other real acceptance gates remain open. Google value guards and Interactions snapshots belong to stage 3: no Google client endpoint forms a same-protocol pair. Provider-specific reset dialects, persistence and cooldown tuning need separate evidence and approval; no background probes, balancing or multi-round retries are scheduled.
 
 Phase completeness covers the declared feature scope, not all official Generation semantics; explicit rejection is safer than silent loss but is not completeness. Chat Completions, Responses and Messages are equally important for same-protocol request, response, static delivery, streaming and history replay. Google generateContent and Interactions supply upstream request encoding and SSE intake only; record missing directions rather than implying a complete same-protocol pair.
+
+## Standards reset and redesign
+
+The user accepted the complete design review on 2026-10-23 and required a current-stable dependency/source reset before implementation. [Architecture](architecture.md#protocols) owns the new contracts; [Development](development.md#upstream-test-sources) owns procedures. This is a revision of Generation stages 1–3 and their test gate, not a sixth API stage.
+
+| Slice | Work and exit evidence |
+|---|---|
+| Release reset | Exact direct dependency pins, refreshed transitive locks, fixed Rust/devShell and stable SDK/client/parser release commits. Sources without releases use identified immutable snapshots, never mislabeled stable releases. Review API-version and source/schema differences; package installation alone does not accept protocol behavior |
+| Standard contract inventory | Compare current official request/result/event/history and HTTP/version contracts with implemented behavior. Include Anthropic `2026-10-21`, Responses omitted-strict fallback and separate Google API versions. Classify contradictory SDK/schema/observed-wire evidence explicitly; do not silently promote a Provider exception into a public standard |
+| Canonical ownership and mapping | Consolidate usage modality counts, reasoning presentation and owner-local cache/behavioral directives. Preserve source intent and facts; implement exact-first selection, then bounded approximation, meaningful estimates or rejection. Revisit prediction, tool-result errors, allocation, schemas, roles, sampling, media detail, historical controls and all prior named omissions |
+| Standard delivery and continuation | Remove public Provider/MorphieCore dialect assumptions and fabricated reasoning manifest owners. Preserve valid native replay and existing managed-history state without lossy temporary-wire composition. Check required fields on success/failure, stream order, EOF, errors and cancellation |
+| Actual adaptation reports | One execution-owned bounded report, selected-attempt and successful-boundary evidence, field-specific estimates, JSON/SSE/retrieval agreement and concise standard/namespaced notice carriers. Verify raw SDK events separately from final-object retention; do not publish a held candidate merely to report preparation |
+| Integrated acceptance | Close all four [text/SSE gate](#current-text-and-sse-gate) slices against the new contracts, then independently accept selected stable clients and bounded Providers. No legacy expected-output regeneration or blanket weakening to recover green tests |
+
+Upstream fixtures and real SDK consumers enter each owner/codec slice as it is rewritten, not as a comprehensive cleanup after implementation. Reuse existing valuable scenarios and safety assertions; classify each affected old expectation as retained, replaced by a source-backed contract, or removed with its obsolete behavior. Keep unresolved semantics visible rather than skipping them as passed.
+
+Dependencies and source selection are preparation. Remaining fixture acquisition/adapters and conformance checks are part of implementation, not established by the lock. Historical client/Provider success cannot certify the updated releases. Runtime routing redesign, new bindings, native Google ingress, token counting, later modalities and stage-5 APIs are not activated. Independent Decision design may continue, but does not block this reset.
 
 ## Planned order
 
@@ -81,13 +101,13 @@ Phase completeness covers the declared feature scope, not all official Generatio
 
 The five-stage order is unchanged. The selected [Generation Text production closure](#generation-text-production-closure) is a bounded handoff before stage 4, not a sixth stage, a reopening of stage-3 counting or a claim of complete official Generation coverage.
 
-The 2026-10-23 instructions retain [Decision API research/design](#decision-api-design) before further stage-4 modality work and select the [current text/SSE test gate](#current-text-and-sse-gate) as the next implementation work. Complete that gate before further stage-4 implementation; independent Decision design may continue. Neither activity is a sixth stage, Decision implementation authorization or a rescheduling of stage 5.
+The latest 2026-10-23 instruction selects the [standards reset and redesign](#standards-reset-and-redesign), integrating the existing text/SSE plan rather than first accepting the old mappings. Complete the integrated gate before further stage-4 implementation. Decision research/design remains independent and precedes later modality work; neither activity activates stage 5.
 
 “Lossless” means semantic fidelity within an explicit protocol revision and feature domain, not byte-identical JSON or retention of unknown fields. Equivalent wire normalization is allowed. Preserve protocol records in their existing bounded owners; do not introduce raw passthrough or an IR extension bag. A same-named API at a different Provider is not proof of equivalent semantics.
 
-Audit existing same-protocol loss paths and distinguish codec loss from model/product policy. Basic tool-field fidelity belongs to stage 1; stage 2 adds the agent interaction loop. Previously approved adaptations remain active until deliberately changed, but their occurrence cannot pass a lossless check. Deferred citations or other unsupported semantics remain explicit coverage gaps and reject where required; postponing them never permits silent loss or a claim of complete protocol coverage.
+Audit existing same-protocol loss paths and distinguish codec loss from model/product policy. Basic tool-field fidelity belongs to stage 1; stage 2 adds the agent interaction loop. All previously approved conversions are reopened under the new hierarchy; current behavior is not normative merely because an old test asserts it. Deferred features remain explicit coverage gaps, not silently discarded content or complete protocol support.
 
-Design review and focused coverage proceed within each stage, not as a requirement to finish every later-stage design first. Keep the existing human approval, publication and integration gates. Preserve security, bounds, cancellation, replay isolation, honest terminals and existing regression assertions at every stage; later scheduling defers expansion, not necessary maintenance. Existing media carriers remain covered during stages 1–3; new modality APIs and execution paths belong to stage 4. Other-agent acceptance keeps its [separate scheduling](#deferred-acceptance).
+Design review and focused coverage proceed within each stage, not as a requirement to finish every later-stage design first. Preserve security, bounds, cancellation, replay isolation and honest terminals while replacing obsolete mapping assertions. Existing media safety coverage remains; new modality APIs and execution paths belong to stage 4. Other-agent acceptance keeps its [separate scheduling](#deferred-acceptance).
 
 The P7 boundary review becomes eligible after first-stage local completion, without waiting for deferred cache and tool slices, and is required before route-facing acceptance. Its analysis may proceed alongside design closure.
 
@@ -102,7 +122,7 @@ Inference frameworks such as llama.cpp and SGLang are design references, not int
 3. R2 readiness concerns its implemented pi Haiku profile, not wider native manual-budget or sampling support. An observed defect in a carrier actually used by R2 must still be fixed before accepting it.
 4. Complete selected stage-2 loops before routing acceptance and stage-3 conversion work. Keep separately scheduled real failover distinct from controlled synthetic recovery checks.
 5. Preserve the closed stage-3 projection/loop evidence. Counting remains deferred; its future implementation waits only for its selected effective-input projection.
-6. Preserve the completed [Generation Text production closure](#generation-text-production-closure) and close the [current text/SSE test gate](#current-text-and-sse-gate) before further stage-4 implementation. Local owner decisions do not authorize unrelated admission or report mappings.
+6. Apply the [standards reset and redesign](#standards-reset-and-redesign), then close the integrated text/SSE gate before further stage-4 implementation. Preserve safety evidence, not superseded mapping expectations; unrelated API activation remains separate.
 7. In stage 4, select the next operation's contract just in time and apply [operation-level upstream-test acceptance](#stage-4-reuse-and-acceptance). Design file authority early, but let direct-input Embedding/audio/image slices proceed without the complete file service. File-reference integration waits for authorized resource resolution.
 
 Every implementation package follows the same bounded workflow:
@@ -129,7 +149,7 @@ Grok/SIWC verification covers their existing Responses bindings, restricted requ
 
 | Pair | Field or carrier | Current treatment | Recommendation |
 |---|---|---|---|
-| Chat | `prediction` | Omitted at intake for every target under D3 | Keep D3 unless a selected Chat binding supports it; then move the omission to target projection |
+| Chat | `prediction` | Legacy intake omission under D3 | Superseded: retain typed meaning before target selection, then exact carriage or reported omission |
 | Chat | Participant `name`, `n` other than 1, `store: true`, `logit_bias`, request `moderation`, content `prompt_cache_breakpoint`, non-null moderation reports, custom-tool SSE | Rejected | Keep as recorded stage-1 gaps; rejecting cache boundaries/reports prevents silent loss but is not exact support |
 | All | Unsupported hosted/server item and block variants; Messages citations, `clear_at`, active geography/speed/fallback requests; Responses active `prompt`, `conversation`, `context_management`, access programs and misalignment details | Rejected within the inventory's stated subsets | Messages context/examples now have bounded carriers with separately closed binding admission under [production closure](#generation-text-production-closure); other exclusions remain deferred |
 | Messages / Responses | Messages `diagnostics` and unowned execution reports; deferred Responses hosted event families | Ignored, explicitly classified in the inventory. Protected controls/beta execution facts reject; stable refusal reports now have native carriers | Keep remaining gaps explicit, not lossless |
@@ -239,7 +259,7 @@ This review does not activate endpoints, promise every modality in either SDK, r
 
 The [API expansion design](api-expansion-design.md) supplies operation proposals, not implemented endpoints or approved type layouts. Keep conversational media in Generation where appropriate and independent operations in their own task contracts. Further implementation requires the completed [Generation Text production closure](#generation-text-production-closure), the [current text/SSE test gate](#current-text-and-sse-gate) and per-operation selection. The order below is recommended; stage-4 work does not reopen completed stage-1/2/3 gates.
 
-**Current priority, updated on 2026-10-23: complete current text/SSE test supplementation before further stage-4 implementation; retain the Decision design prerequisite.** The selected Google/OpenAI Embedding slice and text-production closure remain accepted, not reopened by this new gate. Embedding uses the accepted sample-centered contract and named lossy delivery rather than rejecting usable vectors for ancillary format gaps. The [readiness comparison](#next-stage-4-slice) retains static Generate as the next Images review, not its implementation authorization. Audio and Files are not current implementation work; video remains deferred.
+**Current priority: complete the standards reset, accepted Generation redesign and integrated text/SSE gate before further stage-4 implementation.** Decision design remains independent preparation for later modalities. Existing Embedding behavior is historical acceptance; do not expand its operations during the Generation reset. The [readiness comparison](#next-stage-4-slice) retains static Generate as the next Images review, not implementation authorization. Audio/Files are not current implementation work; video remains deferred.
 
 The current review exit for unselected operations is a coherent request/result and applicable event contract, source-backed model restrictions, bounded admission/execution/delivery and counterexamples for unresolved choices. The [accepted Embedding contract](architecture.md#independent-embedding-path) and [Image design choices](api-expansion-design.md#image-design-review) are distinct. Record newly selected structures in Architecture before dependent implementation or ordinary comprehensive coverage; earlier approvals do not extend to unresolved operations.
 
@@ -319,20 +339,20 @@ Reopening a task requires its client scenario, minimum semantic/resource depende
 
 ## Test supplementation
 
-**Selected on 2026-10-23 as the next implementation work, before further stage-4 implementation; not yet implemented.** First supplement currently supported text, tool/history and SSE contracts; then extend the same test sources and adapters to each selected stage-4 operation as one acceptance condition. Prefer established upstream assets over another hand-maintained dataset. Keep the five-stage API order and independent Decision design prerequisite; do not reopen completed Embedding acceptance or require every future modality test before this first gate.
+**Integrated into the accepted breaking redesign on 2026-10-23.** Use current stable release assets to verify standard text, tool/history and SSE contracts during each implementation slice. Do not make the pre-reset implementation the expected-output oracle or first repair all old mappings. Extend the same sources/adapters to later selected operations; no separate hand-maintained protocol dataset or benchmark framework is selected.
 
-Use the [source directory](references.md#test-source-repositories) and [Development rules](development.md#upstream-test-sources). Official SDKs and Vercel supply protocol and Provider-dialect cases; WPT and `eventsource-parser` supplement SSE. Test-only submodules or equivalent pinned source links are permitted. No submodule, dependency upgrade, automatic job or new acceptance claim is created by this plan.
+Use the [source lock](../tests/upstream/sources.lock.json), [source directory](references.md#test-source-repositories) and [Development rules](development.md#upstream-test-sources). Official contracts and SDKs supply normative wire evidence; Vercel supplies additional fixtures and consumer/dialect cases, not repair-policy authority. WPT and `eventsource-parser` supplement SSE. Fixture acquisition and thin adapters remain to be implemented; pins alone establish no coverage.
 
 ### Current text and SSE gate
 
-Scope the initial case inventory to implemented Chat, Responses and Messages paths, selected Provider dialects and supported Google upstream text directions. Preserve existing media-carrier regressions, but do not expand standalone image/audio/video operations, file services or unresolved Generation semantics. This is a finite current-contract gate, not a requirement to pass every test in every upstream repository.
+Scope the initial case inventory to official Chat, Responses and Messages contracts, selected upstream dialects and existing Google upstream text directions, including accepted owner/mapping corrections. Preserve valid media and safety assertions, but do not activate standalone modalities, file services or Google ingress. This is a finite declared-contract gate, not every upstream test or every official feature.
 
 Establish source provenance first; protocol, multi-turn and SSE slices can then proceed independently at their existing owners:
 
 | Slice | Exit evidence |
 |---|---|
-| Source links and latest-version tracking | Reproducible source/dependency revisions and provenance; candidate checks against latest GitHub sources, visible changes/unassessed cases and explicit baseline lag; no network dependency in ordinary offline runs |
-| Official SDK and Vercel integration | Reused fixtures exercise the current text codecs, with independent directional facts and actual SDK consumption. Cover the selected protocol/dialect inventory without equating generic compatibility with dialect coverage |
+| Source links and latest-version tracking | Reproducible latest stable release/source pins, provenance and visible unresolved source deltas; main-branch research is supplementary. No old baseline fallback or network dependency in ordinary offline runs |
+| Official SDK and Vercel integration | Reused fixtures exercise the redesigned codecs with independent directional expectations and actual SDK consumption, including new API versions and actual-loss extensions; generic compatibility is not dialect coverage |
 | Multi-turn and complex tools | Reuse existing session/history coverage; add missing combinations such as interleaved multi-call streaming through Router and SDK, reverse-order results and complete next-request verification. Fixed tool results suffice; no gateway executor |
 | SSE supplementation | Framing, protocol-event and transport-lifecycle checks remain distinct; reused failure cases plus reproducible fragmentation/mutation checks protect bounds, cancellation, EOF, backpressure and publication safety |
 
@@ -356,7 +376,9 @@ BFCL, tau-bench, ComplexFuncBench and ToolSandbox are not dependencies or gates 
 
 ### Generation design review gate
 
-**Status: approved and closed for the declared stage-1/2 baseline on 2026-10-20.** The user explicitly approved the six-area baseline at `26b63eb`; [Architecture](architecture.md#scope-and-activation-decisions) records that decision. The earlier 2026-10-17 audit-coverage authorization was not approval; this later human decision closes the gate. The selected R1a/R1b/R2 loops, lifecycle reports and history shorthand retain their [bounded acceptance](#stage-2-work-plan).
+**Current status: the standards-reset redesign was fully accepted on 2026-10-23.** Its ordering and scope are in [the integrated sequence](#standards-reset-and-redesign). No second blanket approval of those principles is required. Concrete unresolved carriers or new semantics still need source-backed selection; approval is not implementation or conformance evidence.
+
+The earlier stage-1/2 approval at `26b63eb` on 2026-10-20 and the table below are historical scope evidence. They do not make old SDK releases, public manifests, internal-only receipts or mapping expectations authoritative for the redesign.
 
 The six areas below summarize the approved stage-1/2 baseline, not a new specification or a claim of exhaustive coverage.
 
@@ -489,12 +511,12 @@ After selecting a slice, require an independent static and streamed tool turn, a
 
 #### Public capability and reconnection sequence
 
-The [selected contract](architecture.md#public-capability-and-adaptation-notice) has an [initial partial surface](usage.md#capability-discovery-and-adaptation-notice); actual receipts stay internal. It does not establish model-effective support or full-loop availability. An acceptance boolean cannot distinguish exact verbosity support from the approved `gemini.omit-verbosity.v1` omission, and streamed usage may introduce losses after headers.
+The [selected actual-report contract](architecture.md#public-capability-and-adaptation-notice) supersedes the implemented internal-only receipts and possible-adaptation header. Capability declarations still do not establish model-effective support or full-loop availability. An acceptance boolean cannot distinguish exact support from omission, and streamed usage may introduce losses after headers.
 
 1. Establish model-level evidence and preflight/preparation agreement for each selected existing binding; reject uncalibrated values and stop at interfaces needing routing-policy changes.
 2. Extend the capability view only with independently verified declarations. Do not activate bindings implicitly or treat an unlisted case as rejection.
 3. Reconnect exact-carrier client loops first, then approved adapted paths. Verify tool calls, results, final answers and replay for JSON and SSE. Blocking safety reports and unsupported completion carriers remain rejected.
-   Verify phase-only manifest return through the selected pinned clients; the codec carrier does not prove clients retain it. Before enabling extended-retention omission, review each target's default storage policy without treating cache presence as retention evidence.
+   Verify the redesigned legitimate phase/replay carriers and actual-loss extension through selected release-pinned consumers; raw-event parsing does not prove final-object or next-request retention. Before enabling extended-retention omission, review target storage policy without treating cache presence as retention evidence.
 4. Require the full offline baseline and connected SDK gate per slice, then schedule bounded pi/opencode and Provider acceptance.
 
 ### Controlled routing acceptance

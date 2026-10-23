@@ -15,6 +15,12 @@ READ = "synthetic-client-read"
 NEXT = "synthetic-client-next"
 PROBE = "synthetic-client-recover"
 TEXT = "cedar-71"
+SOURCE_PINS = json.loads(
+    (Path(__file__).parents[1] / "upstream" / "sources.lock.json").read_text()
+)["sources"]
+CLIENT_VERSIONS = {
+    name: SOURCE_PINS[name]["release"].removeprefix("v") for name in ("pi", "opencode")
+}
 
 
 def check(condition, code):
@@ -23,9 +29,11 @@ def check(condition, code):
 
 
 def check_client_version(case, version):
-    prefix, major = ("(?:opencode v)?", "2") if case == "opencode-chat" else ("", "1")
-    check(re.fullmatch(prefix + major + r"\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?", version)
-          is not None, "unaccepted_client_major_version")
+    name = "opencode" if case == "opencode-chat" else "pi"
+    prefix = "(?:opencode v)?" if name == "opencode" else ""
+    check(re.fullmatch(prefix + re.escape(CLIENT_VERSIONS[name])
+                      + r"(?:\+[0-9A-Za-z.-]+)?", version)
+          is not None, "unpinned_client_release")
 
 
 def private_json(path, value):

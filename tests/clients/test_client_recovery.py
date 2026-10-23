@@ -41,7 +41,7 @@ class ClientRecoveryOracles(unittest.TestCase):
         version, gateway = MagicMock(), MagicMock()
         for child in (version, gateway):
             child.__enter__.return_value = child
-        version.wait.return_value = b"1.3.0"
+        version.wait.return_value = drivers.CLIENT_VERSIONS["pi"].encode()
         gateway.first_line = queue.Queue()
         gateway.first_line.put(b"MorphieCore listening on http://127.0.0.1:1\n")
         with tempfile.TemporaryDirectory() as directory:
@@ -59,24 +59,26 @@ class ClientRecoveryOracles(unittest.TestCase):
                     recovery.main()
             self.assertEqual(output.getvalue(), "")
 
-    def test_installed_clients_are_gated_by_major_not_minor_or_patch(self):
+    def test_installed_clients_require_the_selected_stable_release(self):
+        pi = drivers.CLIENT_VERSIONS["pi"]
+        opencode = drivers.CLIENT_VERSIONS["opencode"]
         for case, versions in [
-            ("pi-chat", ["1.3.0", "1.99.12", "1.4.0-dev.1"]),
-            ("pi-messages", ["1.3.0+local", "1.12.3"]),
-            ("opencode-chat", ["opencode v2.0.6+e5ecb57", "opencode v2.0.32",
-                               "opencode v2.99.12-dev.1+local", "2.1.0"]),
+            ("pi-chat", [pi, pi + "+local"]),
+            ("pi-messages", [pi]),
+            ("opencode-chat", [opencode, "opencode v" + opencode,
+                               "opencode v" + opencode + "+local"]),
         ]:
             for version in versions:
                 with self.subTest(case=case, version=version):
                     drivers.check_client_version(case, version)
         for case, versions in [
-            ("pi-chat", ["0.99.0", "2.0.0", "11.3.0", "1", "1.x", "1.3.0\nextra"]),
-            ("opencode-chat", ["opencode v1.0.0", "opencode v3.0.0", "opencode v20.0.0",
+            ("pi-chat", ["0.99.0", pi + "-dev.1", "1", "1.x", pi + "\nextra"]),
+            ("opencode-chat", ["opencode v1.0.0", opencode + "-dev.1",
                                "opencode v2", "unknown", ""]),
         ]:
             for version in versions:
                 with self.subTest(case=case, version=version), self.assertRaisesRegex(
-                    RuntimeError, "^unaccepted_client_major_version$"
+                    RuntimeError, "^unpinned_client_release$"
                 ):
                     drivers.check_client_version(case, version)
 

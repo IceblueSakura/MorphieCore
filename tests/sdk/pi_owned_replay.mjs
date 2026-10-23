@@ -3,6 +3,10 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { resolve } from 'node:path';
+import { execFileSync } from 'node:child_process';
+const pins = JSON.parse(readFileSync(new URL('../upstream/sources.lock.json', import.meta.url), 'utf8'));
+assert.equal(execFileSync('git', ['-C', process.argv[2], 'rev-parse', 'HEAD'],
+  {encoding:'utf8'}).trim(), pins.sources.pi.revision, 'Use the pinned stable pi source');
 globalThis.fetch = async () => { throw new Error('Unexpected external fetch'); };
 const cases = JSON.parse(readFileSync(0, 'utf8'));
 assert.equal(cases.length, 12);

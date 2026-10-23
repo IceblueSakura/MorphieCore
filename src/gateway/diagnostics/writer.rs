@@ -123,7 +123,7 @@ impl Sink {
     pub(super) fn request_id(&self) -> Option<String> {
         self.0
             .next
-            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |n| n.checked_add(1))
+            .try_update(Ordering::Relaxed, Ordering::Relaxed, |n| n.checked_add(1))
             .ok()
             .map(|n| format!("{}:{n}", self.0.run))
     }

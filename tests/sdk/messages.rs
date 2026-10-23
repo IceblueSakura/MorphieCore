@@ -34,7 +34,13 @@ async fn handle(
     headers: HeaderMap,
     body: Bytes,
 ) -> Response {
-    if headers.get("x-api-key").and_then(|v| v.to_str().ok()) != Some("synthetic-local-token") {
+    // Current stable SDKs use Bearer; the API also accepts one X-Api-Key.
+    let bearer = headers.get("authorization").and_then(|v| v.to_str().ok());
+    let key = headers.get("x-api-key").and_then(|v| v.to_str().ok());
+    if !matches!(
+        (bearer, key),
+        (Some("Bearer synthetic-local-token"), None) | (None, Some("synthetic-local-token"))
+    ) {
         return Response::builder()
             .status(StatusCode::UNAUTHORIZED)
             .body(Body::empty())

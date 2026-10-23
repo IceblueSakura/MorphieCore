@@ -1,5 +1,8 @@
 """Pinned, isolated SDK client and optimization-independent scenario checks."""
 import ipaddress
+import importlib.metadata
+from pathlib import Path
+import tomllib
 from urllib.parse import urlsplit
 import openai
 
@@ -13,10 +16,17 @@ def check(condition, message="SDK contract failed"):
         raise SdkCheckFailure(message)
 
 
+def require_sdk(package: str) -> None:
+    """Use the dependency manifest as the sole SDK version authority."""
+    manifest = tomllib.loads(Path(__file__).with_name("pyproject.toml").read_text())
+    versions = dict(value.split("==", 1) for value in manifest["project"]["dependencies"])
+    if importlib.metadata.version(package) != versions[package]:
+        raise RuntimeError(f"expected pinned {package}=={versions[package]}")
+
+
 def client_for(base_url: str) -> openai.OpenAI:
     """Reject non-loopback targets and private client defaults before making requests."""
-    if openai.__version__ != "3.35.1":
-        raise RuntimeError("expected pinned openai==3.35.1")
+    require_sdk("openai")
     parsed = urlsplit(base_url)
     if (parsed.scheme != "http" or not parsed.hostname or not parsed.port
             or not ipaddress.ip_address(parsed.hostname).is_loopback
