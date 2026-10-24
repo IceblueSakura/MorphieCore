@@ -23,7 +23,7 @@ async fn installed_case(
     let (domain, binding) = if native {
         ("opencode-go", "opencode-go-api-key")
     } else {
-        ("aliyun-dashscope-cn", "aliyun-dashscope-cn-api-key")
+        ("aliyun-tokenplan-cn", "aliyun-tokenplan-cn-api-key")
     };
     let manager = CredentialManager::new(root.join("credentials"), vec![]).unwrap();
     for alias in ["primary", "secondary"] {

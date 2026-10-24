@@ -363,7 +363,7 @@ def main():
     check_client_version(case, version)
     with ExitStack() as stack:
         origin = stack.enter_context(server(state, False))
-        binding = "opencode-go-haiku-messages" if native else "dashscope-flash-chat"
+        binding = "opencode-go-haiku-messages" if native else "aliyun-tokenplan-cn-chat"
         model = "claude-haiku-5-5" if native else "qwen3.8-flash"
         private_json(root / "gateway.json", {"client_key": KEY, "bind": "127.0.0.1:0",
             "models_file": "models.json", "exchange_timeout_ms": 10000,

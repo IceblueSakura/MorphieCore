@@ -21,7 +21,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "sdk"))
 from messages_inputs_live import Gateway, GateError
 
 MODEL = "qwen3.8-flash"
-BINDING = "dashscope-flash-chat"
+BINDING = "aliyun-tokenplan-cn-chat"
 CAP = 2048
 BUDGET = 3
 

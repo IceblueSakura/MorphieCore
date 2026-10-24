@@ -165,7 +165,7 @@ def main():
             "models_file": "models.json", "exchange_timeout_ms": 10000, "diagnostics": "diagnostics.jsonl"})
         private_json(root / "models.json", {"models": {"qwen3.8-flash": {"max_attempts": 1,
             "chat_profile": "readable_reasoning",
-            "total_timeout_ms": 8000, "candidates": [{"binding": "dashscope-flash-chat",
+            "total_timeout_ms": 8000, "candidates": [{"binding": "aliyun-tokenplan-cn-chat",
                 "base_url": upstream + "/v1", "attempt_timeout_ms": 3000}]}}})
         gateway = stack.enter_context(Child([gateway_binary, "--config", str(root / "gateway.json"),
             "--credentials-dir", str(root / "credentials")], env, work))

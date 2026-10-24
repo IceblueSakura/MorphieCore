@@ -332,7 +332,7 @@ def main():
     with ExitStack() as stack:
         upstream = stack.enter_context(authority(state))
         model = "claude-haiku-5-5" if state.native else "qwen3.8-flash"
-        binding = "opencode-go-haiku-messages" if state.native else "dashscope-flash-chat"
+        binding = "opencode-go-haiku-messages" if state.native else "aliyun-tokenplan-cn-chat"
         private_json(root / "gateway.json", {"client_key": KEY, "bind": "127.0.0.1:0",
             "models_file": "models.json", "concurrency": 1,
             "exchange_timeout_ms": 30000, "diagnostics": "diagnostics.jsonl"})
