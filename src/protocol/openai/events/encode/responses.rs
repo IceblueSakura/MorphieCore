@@ -407,7 +407,7 @@ impl EventEncoder {
                 } else {
                     crate::protocol::reports::terminal_view(&mut metadata.context.reports)?;
                 }
-                let mut target = crate::protocol::openai::lowering::lower_response(
+                let target = crate::protocol::openai::lowering::lower_response(
                     &response,
                     &self.fidelity,
                     &metadata,
@@ -415,7 +415,6 @@ impl EventEncoder {
                     self.contract.clone(),
                 )
                 .map_err(|_| CodecError::Unsupported("terminal representation".into()))?;
-                target.attachment = self.attachment.take();
                 let v = crate::protocol::openai::responses::encode_response(&target)?;
                 let kind = match terminal {
                     StreamTerminal::Completed => "response.completed",
@@ -427,33 +426,7 @@ impl EventEncoder {
                     StreamTerminal::Error => unreachable!(),
                 };
                 super::record_stages(&mut self.projection, target.projection().iter().cloned());
-                let mut out = vec![];
-                if let Some(carrier) = &target.attachment {
-                    // The carrier is the last snapshot item; announce it like any other item.
-                    let item = crate::protocol::attachments::response_item(carrier.as_str());
-                    let index = v["output"]
-                        .as_array()
-                        .and_then(|output| output.len().checked_sub(1))
-                        .ok_or(CodecError::Invalid("attachment output"))?;
-                    let mut opening = item.clone();
-                    opening["status"] = json!("in_progress");
-                    opening
-                        .as_object_mut()
-                        .expect("item")
-                        .remove("encrypted_content");
-                    out.push(json!({
-                        "type": "response.output_item.added",
-                        "output_index": index,
-                        "item": opening,
-                    }));
-                    out.push(json!({
-                        "type": "response.output_item.done",
-                        "output_index": index,
-                        "item": item,
-                    }));
-                }
-                out.push(json!({"type":kind,"response":v}));
-                out
+                vec![json!({"type":kind,"response":v})]
             }
         };
         Ok(result)

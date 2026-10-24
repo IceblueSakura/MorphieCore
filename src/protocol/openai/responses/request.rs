@@ -50,11 +50,6 @@ pub(super) fn decode_generation_with_history(
         None if history.is_some() || o.get("instructions").is_some_and(Value::is_string) => {}
         _ => return Err(CodecError::Invalid("input")),
     }
-    if history.is_some() && !b.attachments.is_empty() {
-        return Err(CodecError::Unsupported(
-            "legacy managed-history manifest".into(),
-        ));
-    }
     if let Some((input, output)) = history {
         for (index, group) in groups.iter_mut().enumerate() {
             if group.members().is_empty() && group.before().is_none() {
@@ -72,12 +67,6 @@ pub(super) fn decode_generation_with_history(
             }
         }
     }
-    crate::protocol::attachments::restore(
-        &mut b.items,
-        &mut groups,
-        &mut b.fidelity,
-        std::mem::take(&mut b.attachments),
-    )?;
     let semantic = GenerationRequest::from_resources(
         b.items,
         settings::read(o, false, direction)?,

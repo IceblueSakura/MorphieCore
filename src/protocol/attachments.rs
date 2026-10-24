@@ -3,8 +3,7 @@
 mod carriers;
 mod restore;
 pub(crate) use carriers::{
-    Carried, chat_detail, check_chat_support, is_marker, messages_block, messages_marker,
-    response_item, responses_marker, take_chat,
+    Carried, chat_detail, check_chat_support, is_marker, messages_block, messages_marker, take_chat,
 };
 #[cfg(test)]
 use restore::{Ids, restore_marker};
@@ -436,8 +435,8 @@ pub(crate) fn strip(
             .with_usage_reports(source.usage_reports().clone())?;
     Ok(copy)
 }
-/// Only the wire view drops attachments. The validated source owns them until EOF,
-/// when the same static packet builder supplies the return carrier.
+/// Only the wire view drops attachments. Execution must either retain typed managed
+/// Responses history or provide the remaining legacy Chat/Messages return carrier.
 pub(crate) fn wire_event(event: &StreamEvent, source: &FidelityRecords) -> Option<StreamEvent> {
     if matches!(event, StreamEvent::PartReplay { .. }) {
         return None;

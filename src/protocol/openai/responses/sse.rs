@@ -186,12 +186,6 @@ pub struct ResponsesSseEncoder {
     rejected: bool,
 }
 impl ResponsesSseEncoder {
-    pub(crate) fn set_attachment(
-        &mut self,
-        value: crate::protocol::attachments::Carrier,
-    ) -> Result<(), SseError> {
-        Ok(self.codec.set_attachment(value)?)
-    }
     pub(crate) fn projection(
         &self,
     ) -> &[crate::protocol::openai::lowering::projection::ProjectionStage] {

@@ -158,7 +158,9 @@ impl Adapter {
     pub fn decode_client_request(&self, bytes: &[u8]) -> Result<Request, CodecError> {
         self.decode_client_history(bytes, None)
     }
-    pub(crate) fn decode_client_history(
+    /// Compose caller-resolved typed Responses history with new client input.
+    /// This pure codec entry point neither resolves response IDs nor authorizes storage.
+    pub fn decode_client_history(
         &self,
         bytes: &[u8],
         history: Option<(
@@ -166,6 +168,9 @@ impl Adapter {
             &crate::protocol::DecodedResponse,
         )>,
     ) -> Result<Request, CodecError> {
+        if history.is_some() && self.protocol != Profile::Responses {
+            return Err(CodecError::ProfileMismatch);
+        }
         let ignored = IgnoredFields::default();
         let mut request = self.decode_in(bytes, DecodeDirection::Client(&ignored), history)?;
         request.ignored_fields = ignored.into_names();

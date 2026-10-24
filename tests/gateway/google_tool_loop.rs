@@ -243,7 +243,7 @@ async fn exercise(api: fixture::Api) {
                 let mut tool = function;
                 tool["type"] = json!("function");
                 json!({"model":"gemini-3.8-flash","input":[{"role":"user","content":"Read."}],
-                    "store":false,"max_output_tokens":256,"reasoning":{"effort":"low","summary":"auto"},
+                    "store":true,"max_output_tokens":256,"reasoning":{"effort":"low","summary":"auto"},
                     "include":["reasoning.encrypted_content"],"tools":[tool],"stream":stream})
             };
             if stream && profile == Profile::Chat {
@@ -327,13 +327,21 @@ async fn exercise(api: fixture::Api) {
                                     "continued"
                                 }));
                     }
-                    body["input"].as_array_mut().unwrap().extend(output.clone());
-                    body["input"].as_array_mut().unwrap().push(if turn <= 2 {
+                    assert!(!response.to_string().contains("mca1."));
+                    assert_eq!(
+                        output
+                            .iter()
+                            .filter(|item| item["type"] == "reasoning")
+                            .count(),
+                        usize::from(api == fixture::Api::Interactions && turn <= 3)
+                    );
+                    body["previous_response_id"] = response["id"].clone();
+                    body["input"] = json!([if turn <= 2 {
                         json!({"type":"function_call_output","call_id":format!("c{turn}"),
                             "output":if turn == 1 {fixture::ERROR} else {fixture::RESULT}})
                     } else {
                         json!({"role":"user","content":"Continue."})
-                    });
+                    }]);
                 }
             }
             assert_eq!(fixture.seen.lock().unwrap().len(), 4);
@@ -350,4 +358,64 @@ async fn ordinary_stop_tool_error_correction_and_final_history() {
 #[tokio::test]
 async fn interactions_tool_correction_and_signed_final_history() {
     exercise(fixture::Api::Interactions).await;
+}
+
+#[tokio::test]
+async fn stateless_responses_do_not_publish_success_or_store_signed_calls() {
+    let client = reqwest::Client::builder()
+        .no_proxy()
+        .timeout(std::time::Duration::from_secs(5))
+        .build()
+        .unwrap();
+    for api in [fixture::Api::GenerateContent, fixture::Api::Interactions] {
+        for stream in [false, true] {
+            let fixture = fixture::start(Profile::Responses, api).await;
+            let mut response = client.post(format!("{}/responses", fixture.base))
+                .bearer_auth(fixture::KEY)
+                .json(&json!({"model":"gemini-3.8-flash","input":"Read.","store":false,
+                    "stream":stream,"max_output_tokens":256,"reasoning":{"effort":"low","summary":"auto"},
+                    "tools":[{"type":"function","name":"read","strict":false,"parameters":{
+                        "type":"object","properties":{"path":{"type":"string"}},"required":["path"]}}]}))
+                .send().await.unwrap();
+            // A signature in the first intake batch can reject before publication.
+            // A later signature must fail an already published stream, never succeed.
+            if stream && response.status() == 200 {
+                let mut bytes = vec![];
+                let aborted = loop {
+                    match response.chunk().await {
+                        Ok(Some(chunk)) => bytes.extend_from_slice(&chunk),
+                        Ok(None) => break false,
+                        Err(_) => break true,
+                    }
+                };
+                let body = String::from_utf8(bytes).unwrap();
+                assert!(aborted || body.contains("event: error\n"));
+                assert!(!body.contains("event: response.completed\n"));
+                assert!(!body.contains("mca1."));
+                for line in body.lines().filter_map(|line| line.strip_prefix("data: ")) {
+                    let event: Value = serde_json::from_str(line).unwrap();
+                    if let Some(id) = event["response"]["id"].as_str() {
+                        let stored = client
+                            .get(format!("{}/responses/{id}", fixture.base))
+                            .bearer_auth(fixture::KEY)
+                            .send()
+                            .await
+                            .unwrap();
+                        assert_eq!(stored.status(), 404);
+                    }
+                }
+            } else {
+                assert_eq!(response.status(), 502);
+                assert_eq!(
+                    response.json::<Value>().await.unwrap()["error"]["code"],
+                    "upstream_error"
+                );
+            }
+            assert_eq!(
+                fixture.seen.lock().unwrap().len(),
+                1,
+                "no retry after projection failure"
+            );
+        }
+    }
 }

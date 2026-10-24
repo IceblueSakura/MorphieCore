@@ -134,18 +134,14 @@ pub fn encode(target: &ResponseRepresentation<'_>) -> Result<Value, CodecError> 
         target.semantic.message_envelopes(),
         Profile::Responses,
     )?;
-    let mut output = responses::items::encode_items(
+    let output = responses::items::encode_items(
         target.semantic.items(),
         target.fidelity,
         true,
         target.semantic.resources(),
     )?;
-    if let Some(carrier) = &target.attachment {
-        let item = crate::protocol::attachments::response_item(carrier.as_str());
-        if output.iter().any(|old| old.get("id") == item.get("id")) {
-            return Err(CodecError::Invalid("attachment identity"));
-        }
-        output.push(item);
+    if target.attachment.is_some() {
+        return Err(CodecError::Unsupported("Responses manifest carrier".into()));
     }
     let m = &target.metadata;
     let created = m

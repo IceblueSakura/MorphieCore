@@ -302,15 +302,12 @@ pub(in crate::protocol::openai) fn decode_items(
         let o = object(value)?;
         if !response
             && matches!(direction, DecodeDirection::Client(_))
-            && let Some(carried) = crate::protocol::attachments::responses_marker(o)
+            && o.get("type").and_then(Value::as_str) == Some("reasoning")
+            && o.get("encrypted_content")
+                .and_then(Value::as_str)
+                .is_some_and(crate::protocol::attachments::is_marker)
         {
-            b.attachments
-                .push(crate::protocol::attachments::Marker::prefix(
-                    carried,
-                    &b.items,
-                    b.attachments.last(),
-                ));
-            continue;
+            return Err(CodecError::Unsupported("legacy Responses manifest".into()));
         }
         let id = b.id()?;
         let typ = o

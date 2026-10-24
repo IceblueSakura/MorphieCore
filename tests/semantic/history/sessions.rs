@@ -4,8 +4,12 @@ mod facts;
 
 use morphiecore::{
     adapter::{AdapterError, ClientAdapter, Request, UpstreamAdapter},
-    execution::{Attempt, ResponseDelivery, replay::open_from_client},
+    execution::{
+        Attempt, ResponseDelivery,
+        replay::{CLIENT_ORIGIN, open_from_client, seal_for_client},
+    },
     protocol::{
+        DecodedRequest, DecodedResponse,
         anthropic::messages,
         google::{generate_content, interactions},
         native::ReplayTarget,
@@ -29,6 +33,9 @@ enum Api {
     Interactions,
 }
 impl Api {
+    fn managed(self) -> bool {
+        matches!(self, Self::GenerateContent | Self::Interactions)
+    }
     fn name(self) -> &'static str {
         match self {
             Self::Chat => "chat",
@@ -273,6 +280,33 @@ fn append_delivery(api: Api, body: &mut Value, value: Value) {
         _ => history.extend(value["output"].as_array().unwrap().iter().cloned()),
     }
 }
+/// Google signatures without a standard Responses carrier use typed managed history.
+/// Public JSON/SSE storage delivery is covered separately at execution/Router/SDK layers.
+fn decode_history(
+    api: Api,
+    body: &Value,
+    retained: Option<&(DecodedRequest, DecodedResponse)>,
+) -> Request {
+    if api.managed() {
+        let client = api.client();
+        let (adapter, _) = client.as_openai().unwrap();
+        adapter
+            .decode_client_history(
+                &serde_json::to_vec(body).unwrap(),
+                retained.map(|(a, b)| (a, b)),
+            )
+            .unwrap()
+    } else {
+        api.client()
+            .decode_client_request(&serde_json::to_vec(body).unwrap())
+            .unwrap()
+    }
+}
+fn retained_native(attempt: &Attempt) -> DecodedResponse {
+    let mut response = attempt.response().unwrap().clone();
+    seal_for_client(&mut response, &CLIENT_ORIGIN).unwrap();
+    response
+}
 fn update(body: &mut Value, fields: Option<&Value>, history: &str) {
     if let Some(fields) = fields {
         assert!(!fields.as_object().unwrap().contains_key(history));
@@ -384,6 +418,7 @@ fn run(
 ) -> Attempt {
     let mut client = corpus.client_request.clone();
     let mut expected = corpus.upstream_request.clone();
+    let mut retained = None;
     for (index, turn) in corpus.turns.iter().enumerate() {
         update(
             &mut client,
@@ -395,10 +430,8 @@ fn run(
             turn.upstream_update.as_ref(),
             api.native_history(),
         );
-        let mut request = api
-            .client()
-            .decode_client_request(&serde_json::to_vec(&client).unwrap())
-            .unwrap();
+        let mut request = decode_history(api, &client, retained.as_ref());
+        let sealed_input = request.task.clone();
         open_from_client(&mut request).unwrap();
         assert_history(api, &request, index);
         let before = request.clone();
@@ -420,12 +453,17 @@ fn run(
         assert_eq!(request, before, "projection must not edit source history");
         let alternate = final_source.filter(|_| turn.name == "final");
         let attempt = intake(api, alternate.unwrap_or(&turn.source), stream, chunk_size);
-        let value: Value =
-            serde_json::from_slice(&delivery(api).encode_json(&attempt).unwrap()).unwrap();
         if alternate.is_some() {
             return attempt;
         }
-        append_delivery(api, &mut client, value);
+        if api.managed() {
+            retained = Some((sealed_input, retained_native(&attempt)));
+            client[api.client_history()] = json!([]);
+        } else {
+            let value =
+                serde_json::from_slice(&delivery(api).encode_json(&attempt).unwrap()).unwrap();
+            append_delivery(api, &mut client, value);
+        }
         client[api.client_history()]
             .as_array_mut()
             .unwrap()
@@ -436,10 +474,7 @@ fn run(
             .extend(turn.upstream_append.clone());
         if index == corpus.turns.len() - 1 {
             // Also check the last answer's replay; no unused tail oracle.
-            let mut request = api
-                .client()
-                .decode_client_request(&serde_json::to_vec(&client).unwrap())
-                .unwrap();
+            let mut request = decode_history(api, &client, retained.as_ref());
             open_from_client(&mut request).unwrap();
             assert_history(api, &request, index + 1);
             let (actual, rules) = api.encode(&request).unwrap();
@@ -570,6 +605,8 @@ fn sparse_interactions_accounting_remains_unknown() {
     let usage = &response.usage_reports().operation().unwrap().counts;
     assert_eq!(usage.cached_input_tokens, None);
     assert_eq!(usage.reasoning_tokens, None);
+    let retained = retained_native(&attempt);
+    assert_eq!(retained.semantic.usage_reports(), response.usage_reports());
     let value: Value =
         serde_json::from_slice(&delivery(Api::Interactions).encode_json(&attempt).unwrap())
             .unwrap();
@@ -591,17 +628,22 @@ fn edited_returned_reasoning_cannot_reuse_the_original_replay_authority() {
         let corpus = load(api);
         let turn = &corpus.turns[0];
         let attempt = intake(api, &turn.source, true, 11);
-        let value = serde_json::from_slice(&delivery(api).encode_json(&attempt).unwrap()).unwrap();
         let mut client = corpus.client_request.clone();
-        append_delivery(api, &mut client, value);
+        let retained = if api.managed() {
+            let input = decode_history(api, &client, None).task;
+            client[api.client_history()] = json!([]);
+            Some((input, retained_native(&attempt)))
+        } else {
+            let value =
+                serde_json::from_slice(&delivery(api).encode_json(&attempt).unwrap()).unwrap();
+            append_delivery(api, &mut client, value);
+            None
+        };
         client[api.client_history()]
             .as_array_mut()
             .unwrap()
             .extend(turn.client_append.clone());
-        let mut request = api
-            .client()
-            .decode_client_request(&serde_json::to_vec(&client).unwrap())
-            .unwrap();
+        let mut request = decode_history(api, &client, retained.as_ref());
         open_from_client(&mut request).unwrap();
         let mut expected = corpus.upstream_request.clone();
         expected[api.native_history()]

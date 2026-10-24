@@ -18,23 +18,10 @@ impl Marker {
             },
         }
     }
-    pub(crate) fn prefix(
-        carried: Carried,
-        items: &[(ItemId, Item)],
-        previous: Option<&Self>,
-    ) -> Self {
-        let end = items.len();
-        let mut start = end;
-        let boundary = previous.map_or(0, |marker| marker.end);
-        while start > boundary && assistant(&items[start - 1].1) {
-            start -= 1;
-        }
-        Self::bounded(carried, start, end)
-    }
 }
 fn assistant(item: &Item) -> bool {
     matches!(item, Item::Reasoning(_) | Item::ToolCall(_))
-        || matches!(item,Item::Message(m) if m.role==MessageRole::Assistant)
+        || matches!(item, Item::Message(m) if m.role == MessageRole::Assistant)
 }
 struct TextPiece<'a> {
     part: &'a Part,

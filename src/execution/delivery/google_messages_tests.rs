@@ -263,6 +263,15 @@ fn google_finish_explanation_omission_keeps_incomplete_source_and_requires_recei
                 Obfuscation::Disabled,
             )
             .with_request(&endpoint, &request);
+            if client.protocol() == ClientProtocol::Responses {
+                delivery = delivery.with_storage(
+                    "resp_stored",
+                    crate::protocol::ResponseStorage {
+                        store: Presence::Value(true),
+                        ..Default::default()
+                    },
+                );
+            }
             let mut attempt = Attempt::new(endpoint.adapter().unwrap(), 65536, Default::default());
             attempt.begin(200, "text/event-stream").unwrap();
             let mut output = feed(&mut attempt, &mut delivery, &frames, stream, false);

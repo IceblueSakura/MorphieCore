@@ -5,7 +5,7 @@ use crate::{
     adapter::{ClientAdapter, ClientEncoder, ClientProtocol},
     execution::{Attempt, AttemptError, Lifecycle},
     protocol::{
-        ResponseMetadata, fidelity::FidelityRecords, openai::obfuscation::Obfuscation,
+        CodecError, ResponseMetadata, fidelity::FidelityRecords, openai::obfuscation::Obfuscation,
         stream::SseLimits,
     },
     semantic::{context::StreamOptions, task::generation::StreamEvent},
@@ -216,6 +216,12 @@ impl ResponseDelivery {
         self.storage = Some((id.into(), storage));
         self
     }
+    fn managed_responses(&self) -> bool {
+        self.client.protocol() == ClientProtocol::Responses
+            && self.storage.as_ref().is_some_and(|(_, storage)| {
+                storage.store == crate::semantic::value::Presence::Value(true)
+            })
+    }
     pub fn lifecycle(&self) -> &Lifecycle {
         &self.lifecycle
     }
@@ -362,7 +368,7 @@ impl ResponseDelivery {
     pub fn encode_json(&mut self, attempt: &Attempt) -> Result<Vec<u8>, AttemptError> {
         self.encode_json_snapshot(attempt).map(|(_, body)| body)
     }
-    /// Finalize JSON delivery and retain the exact projection for stored history.
+    /// Finalize public JSON and retain its typed history, including managed-only replay.
     pub(crate) fn encode_json_snapshot(
         &mut self,
         attempt: &Attempt,
@@ -383,7 +389,7 @@ impl ResponseDelivery {
         }
         result
     }
-    /// The same final representation serves creation, retrieval and stored replay.
+    /// Creation and retrieval share presentation; typed replay can retain hidden owners.
     fn complete_presentation(&mut self, attempt: &Attempt) -> Result<(), AttemptError> {
         let Some(presentation) = self.presentation.as_mut() else {
             return Ok(());
@@ -431,7 +437,9 @@ impl ResponseDelivery {
     ) -> Result<(crate::protocol::DecodedResponse, Vec<u8>), AttemptError> {
         self.complete_presentation(attempt)?;
         let response = self.client_response(attempt)?;
-        let (decoded, value, losses) = self.client.snapshot_with_evidence(response)?;
+        let (decoded, value, losses) = self
+            .client
+            .snapshot_with_history(response, self.managed_responses())?;
         for loss in losses {
             if !self.losses.contains(&loss) {
                 self.losses.push(loss);
@@ -509,7 +517,21 @@ impl ResponseDelivery {
                     .check_chat_source(&self.client_view(attempt)?.0)?;
             }
             let mut frames = self.flush_pending()?;
-            // Replay and phase return use the existing EOF-validated materialization.
+            if self.client.protocol() == ClientProtocol::Responses
+                && !self.managed_responses()
+                && attempt
+                    .response()?
+                    .semantic
+                    .items()
+                    .iter()
+                    .any(|(_, item)| item.has_replay_attachment())
+            {
+                return Err(CodecError::Unsupported(
+                    "stateless Responses replay attachment".into(),
+                )
+                .into());
+            }
+            // Remaining Chat/Messages manifests use the EOF-validated materialization.
             if self.client.needs_attachment(&attempt.response()?.semantic)
                 // The streamed events already recorded their own projection losses.
                 && let Some(packet) = crate::protocol::attachments::Packet::from_response(
@@ -597,6 +619,7 @@ impl ResponseDelivery {
                 padding,
             )?);
         }
+        let managed = self.managed_responses();
         let encoder = self.encoder.as_mut().expect("encoder initialized");
         if events.iter().any(|event| {
             matches!(
@@ -608,6 +631,27 @@ impl ResponseDelivery {
             )
         }) {
             self.client.check_phase_carrier()?;
+        }
+        if self.client.protocol() == ClientProtocol::Responses
+            && !managed
+            && events.iter().any(|event| match event {
+                StreamEvent::PartReplay { .. } => true,
+                StreamEvent::ItemStarted {
+                    kind: crate::semantic::task::generation::ItemKind::ToolCall { .. },
+                    replay: Some(_),
+                    ..
+                } => true,
+                StreamEvent::ItemFinished {
+                    item,
+                    replay: Some(_),
+                    ..
+                } => context.fidelity.is_call_replay(*item),
+                _ => false,
+            })
+        {
+            return Err(
+                CodecError::Unsupported("stateless Responses replay attachment".into()).into(),
+            );
         }
         let wire_events: Vec<_> = events
             .iter()
@@ -747,5 +791,7 @@ impl ResponseDelivery {
 
 #[cfg(test)]
 mod google_messages_tests;
+#[cfg(test)]
+mod responses_history_tests;
 #[cfg(test)]
 mod tests;

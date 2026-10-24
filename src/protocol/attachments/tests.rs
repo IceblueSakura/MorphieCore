@@ -186,11 +186,7 @@ fn stream_delivery(protocol: ClientProtocol) -> (Attempt, ResponseDelivery) {
 fn client_carriers_restore_distinct_equal_text_owners_and_calls() {
     let (source, _) = source();
     assert_eq!(source.semantic.items().len(), 4);
-    for protocol in [
-        ClientProtocol::Chat,
-        ClientProtocol::Responses,
-        ClientProtocol::Messages,
-    ] {
+    for protocol in [ClientProtocol::Chat, ClientProtocol::Messages] {
         let client = client(protocol);
         let (retained, body) = delivered(&client, &source);
         assert_eq!(retained.semantic.items().len(), 4);
@@ -269,11 +265,7 @@ fn assert_unsigned_history(request: &crate::adapter::Request, context: &str) {
 #[test]
 fn changed_visible_history_drops_its_carrier_but_keeps_the_request() {
     let (source, _) = source();
-    for protocol in [
-        ClientProtocol::Chat,
-        ClientProtocol::Responses,
-        ClientProtocol::Messages,
-    ] {
+    for protocol in [ClientProtocol::Chat, ClientProtocol::Messages] {
         let client = client(protocol);
         let (_, body) = delivered(&client, &source);
         let request = returned(protocol, &body);
@@ -304,32 +296,12 @@ fn changed_visible_history_drops_its_carrier_but_keeps_the_request() {
         }
         let context = format!("{protocol:?} arguments");
         assert_unsigned_history(&assert_dropped(&client, &changed, &context), &context);
-        if protocol == ClientProtocol::Responses {
-            let mut changed = request.clone();
-            changed["input"].as_array_mut().unwrap().swap(2, 3);
-            assert_unsigned_history(&assert_dropped(&client, &changed, "reordered"), "reordered");
-            let mut changed = request.clone();
-            changed["input"][2]["status"] = json!("incomplete");
-            // generateContent has no partial-history carrier; that limit is independent.
-            assert_dropped(&client, &changed, "status");
-            let mut changed = request.clone();
-            changed["input"].as_array_mut().unwrap().remove(2);
-            assert_unsigned_history(&assert_dropped(&client, &changed, "deleted"), "deleted");
-            let mut changed = request.clone();
-            let carrier = changed["input"].as_array().unwrap().len() - 2;
-            changed["input"][carrier]["encrypted_content"] = json!("mca1.!");
-            assert_unsigned_history(&assert_dropped(&client, &changed, "malformed"), "malformed");
-        }
     }
 }
 #[test]
 fn stream_carrier_is_published_only_with_the_eof_gated_terminal() {
     let (source, _) = source();
-    for protocol in [
-        ClientProtocol::Chat,
-        ClientProtocol::Responses,
-        ClientProtocol::Messages,
-    ] {
+    for protocol in [ClientProtocol::Chat, ClientProtocol::Messages] {
         let client = client(protocol);
         let (_, body) = delivered(&client, &source);
         let (mut attempt, mut delivery) = stream_delivery(protocol);
@@ -375,38 +347,7 @@ fn stream_carrier_is_published_only_with_the_eof_gated_terminal() {
         );
         let text = String::from_utf8(bytes).unwrap();
         let count = text.matches(marker(&body, protocol)).count();
-        assert_eq!(
-            count,
-            if protocol == ClientProtocol::Responses {
-                2
-            } else {
-                1
-            },
-            "{protocol:?}"
-        );
-        if protocol == ClientProtocol::Responses {
-            let end = text
-                .lines()
-                .filter_map(|l| l.strip_prefix("data: "))
-                .filter_map(|l| serde_json::from_str::<Value>(l).ok())
-                .next_back()
-                .unwrap();
-            assert_eq!(end["type"], "response.incomplete");
-            assert_eq!(
-                end["response"]["output"]
-                    .as_array()
-                    .unwrap()
-                    .last()
-                    .unwrap(),
-                &json!({
-                    "type":"reasoning",
-                    "id":body["output"].as_array().unwrap().last().unwrap()["id"],
-                    "status":"completed",
-                    "summary":[],
-                    "encrypted_content":marker(&body, protocol)
-                })
-            );
-        }
+        assert_eq!(count, 1, "{protocol:?}");
     }
 }
 #[test]
@@ -418,6 +359,15 @@ fn premature_or_truncated_eof_never_publishes_the_carrier() {
     ] {
         for truncated in [false, true] {
             let (mut attempt, mut delivery) = stream_delivery(protocol);
+            if protocol == ClientProtocol::Responses {
+                delivery = delivery.with_storage(
+                    "resp_stored",
+                    crate::protocol::ResponseStorage {
+                        store: crate::semantic::value::Presence::Value(true),
+                        ..Default::default()
+                    },
+                );
+            }
             let wire = source_wire(9007199254740993);
             let (n, events) = attempt.push(wire.as_bytes()).unwrap();
             assert_eq!(n, wire.len());
@@ -457,16 +407,6 @@ fn premature_or_truncated_eof_never_publishes_the_carrier() {
 }
 #[test]
 fn client_carriers_have_independent_wire_shapes() {
-    assert_eq!(
-        response_item("mca1.synthetic"),
-        json!({
-            "type":"reasoning",
-            "id":"rs_mca_5caf1c16dabeb0a8c98b1a50a7e431dd",
-            "status":"completed",
-            "summary":[],
-            "encrypted_content":"mca1.synthetic"
-        })
-    );
     assert_eq!(
         chat_detail("mca1.synthetic"),
         json!({
@@ -548,11 +488,7 @@ fn pinned_pi_owned_replay() {
     let pi_source = std::path::PathBuf::from(
         std::env::var("MORPHIECORE_PI_SOURCE").expect("set MORPHIECORE_PI_SOURCE"),
     );
-    let protocols = [
-        ClientProtocol::Chat,
-        ClientProtocol::Responses,
-        ClientProtocol::Messages,
-    ];
+    let protocols = [ClientProtocol::Chat, ClientProtocol::Messages];
     let mut fixtures = vec![];
     for (number, empty) in [(7, false), (9007199254740993, false), (7, true)] {
         for protocol in protocols {
@@ -660,10 +596,11 @@ fn pinned_pi_owned_replay() {
         String::from_utf8_lossy(&output.stderr)
     );
     let returned: Vec<Value> = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(returned.len(), 12);
+    assert_eq!(returned.len(), 4 * protocols.len());
     for (n, body) in returned.iter().enumerate() {
-        let protocol = protocols[n % 3];
-        if n >= 9 {
+        let protocol = protocols[n % protocols.len()];
+        let scenario = n / protocols.len();
+        if scenario == 3 {
             let request = client(protocol)
                 .decode_client_request(body.to_string().as_bytes())
                 .unwrap();
@@ -689,7 +626,7 @@ fn pinned_pi_owned_replay() {
             );
             continue;
         }
-        let rounded = (3..6).contains(&n);
+        let rounded = scenario == 1;
         let decoded = if rounded {
             // pi rounds the large integer; the changed call drops the whole carrier.
             assert_dropped(&client(protocol), body, &format!("{protocol:?} rounded"))
@@ -726,7 +663,7 @@ fn pinned_pi_owned_replay() {
             );
             continue;
         }
-        if n == 6 {
+        if scenario == 2 && protocol == ClientProtocol::Chat {
             // Accepted client limitation: pinned pi Chat drops an assistant turn with
             // neither text nor calls, so its signature is lost but the request proceeds.
             assert!(!body.to_string().contains(PREFIX));
@@ -734,16 +671,16 @@ fn pinned_pi_owned_replay() {
             assert!(contents.iter().all(|content| content["role"] == "user"));
             continue;
         }
-        let mut expected = if n >= 6 {
+        let mut expected = if scenario == 2 {
             json!([{"text":"","thoughtSignature":"UzE="}])
         } else {
             expected_parts()
         };
-        if n < 3 {
+        if scenario == 0 {
             expected[3]["functionCall"]["args"]["n"] = json!(7);
         }
         assert_eq!(wire["contents"][1]["parts"], expected, "{protocol:?}");
-        if n < 3 {
+        if scenario == 0 {
             assert_eq!(
                 wire["contents"][2]["parts"][0]["functionResponse"]["id"],
                 "c"
@@ -999,17 +936,15 @@ fn manifests_reject_duplicate_keys_and_oversized_parts() {
 }
 #[test]
 fn ordinary_reasoning_cannot_hide_an_unrestored_carrier() {
-    let (source, _) = source();
     let client = client(ClientProtocol::Responses);
-    let (_, body) = delivered(&client, &source);
+    let input = json!({"model":"public","input":[{"type":"reasoning","id":"legacy","summary":[],
+        "encrypted_content":"mca1.synthetic"}]});
+    assert!(
+        matches!(client.decode_client_request(input.to_string().as_bytes()),
+        Err(CodecError::Unsupported(reason)) if reason == "legacy Responses manifest")
+    );
     let raw = Adapter::new(Profile::Responses, Dialect::Standard, None);
-    let mut request = raw
-        .decode_request(
-            json!({"model":"public","input":body["output"]})
-                .to_string()
-                .as_bytes(),
-        )
-        .unwrap();
+    let mut request = raw.decode_request(input.to_string().as_bytes()).unwrap();
     assert!(matches!(
         open_from_client(&mut request),
         Err(CodecError::Invalid("unrestored attachment carrier"))
@@ -1052,8 +987,8 @@ fn unsupported_chat_carrier_is_rejected_by_static_and_stream_delivery() {
 #[test]
 fn independent_empty_carriers_rebuild_once_and_share_aggregate_budgets() {
     let (source, _) = decode_source_wire(&source_wire_case(7, true));
-    let (_, body) = delivered(&client(ClientProtocol::Responses), &source);
-    let token = marker(&body, ClientProtocol::Responses);
+    let (_, body) = delivered(&client(ClientProtocol::Messages), &source);
+    let token = marker(&body, ClientProtocol::Messages);
     let mut items = vec![];
     let mut markers = vec![];
     for n in 1..=4096 {
@@ -1070,7 +1005,7 @@ fn independent_empty_carriers_rebuild_once_and_share_aggregate_budgets() {
                 )],
             }),
         ));
-        let marker = Marker::prefix(Carried::Manifest(token.into()), &items, markers.last());
+        let marker = Marker::bounded(Carried::Manifest(token.into()), n as usize - 1, n as usize);
         assert_eq!((marker.start, marker.end), (n as usize - 1, n as usize));
         markers.push(marker);
     }

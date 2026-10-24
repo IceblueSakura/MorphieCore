@@ -40,6 +40,9 @@ impl EventEncoder {
         &mut self,
         value: crate::protocol::attachments::Carrier,
     ) -> Result<(), CodecError> {
+        if self.profile == Profile::Responses {
+            return Err(CodecError::Unsupported("Responses manifest carrier".into()));
+        }
         crate::protocol::attachments::check_chat_support(
             self.profile,
             self.contract.adaptation.rules.structured_chat_reasoning,

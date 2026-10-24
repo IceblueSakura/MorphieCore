@@ -47,12 +47,12 @@ impl ClientAdapter {
         &self,
         response: &crate::semantic::task::generation::GenerationResponse,
     ) -> bool {
-        response
-            .items()
-            .iter()
-            .any(|(_, item)| item.has_replay_attachment())
-            || self.protocol() != ClientProtocol::Responses
-                && crate::protocol::phase::has_phase(response.items())
+        self.protocol() != ClientProtocol::Responses
+            && (response
+                .items()
+                .iter()
+                .any(|(_, item)| item.has_replay_attachment())
+                || crate::protocol::phase::has_phase(response.items()))
     }
     fn phase_carrier(&self) -> bool {
         match self {
@@ -128,7 +128,16 @@ impl ClientAdapter {
     }
     pub(crate) fn snapshot_with_evidence(
         &self,
+        decoded: DecodedResponse,
+    ) -> Result<(DecodedResponse, Value, Vec<LossEvidence>), super::AdapterError> {
+        self.snapshot_with_history(decoded, false)
+    }
+    /// Only execution-owned storage authorizes a richer typed continuation than
+    /// the public response. Upstream metadata cannot opt into this path.
+    pub(crate) fn snapshot_with_history(
+        &self,
         mut decoded: DecodedResponse,
+        managed: bool,
     ) -> Result<
         (
             DecodedResponse,
@@ -137,6 +146,38 @@ impl ClientAdapter {
         ),
         super::AdapterError,
     > {
+        let hidden = decoded
+            .semantic
+            .items()
+            .iter()
+            .any(|(_, item)| item.has_replay_attachment());
+        if self.protocol() == ClientProtocol::Responses && hidden {
+            if !managed {
+                return Err(CodecError::Unsupported(
+                    "stateless Responses replay attachment".into(),
+                )
+                .into());
+            }
+            decoded
+                .fidelity
+                .check_attachment_bindings(decoded.semantic.items())?;
+            let mut wire = crate::protocol::attachments::strip(&decoded, false)?;
+            let mut losses = self.project_native(&mut wire)?;
+            let (projected, value, extra) = self.encode_snapshot(wire, None)?;
+            losses.extend(extra);
+            decoded.semantic = decoded
+                .semantic
+                .with_usage_reports(projected.semantic.usage_reports().clone())
+                .map_err(CodecError::from)?
+                .with_details(projected.semantic.details().clone())
+                .map_err(CodecError::from)?
+                .with_progress(projected.semantic.progress())
+                .map_err(CodecError::from)?
+                .with_safety_reports(projected.semantic.safety_reports().to_vec())
+                .map_err(CodecError::from)?;
+            decoded.metadata = projected.metadata;
+            return Ok((decoded, value, losses));
+        }
         if !self.needs_attachment(&decoded.semantic) {
             return self.encode_snapshot(decoded, None);
         }
@@ -436,7 +477,9 @@ impl ClientEncoder {
     ) -> Result<(), SseError> {
         match &mut self.encoder {
             Encoder::Chat(encoder) => encoder.set_attachment(value),
-            Encoder::Responses(encoder) => encoder.set_attachment(value),
+            Encoder::Responses(_) => {
+                Err(CodecError::Unsupported("Responses manifest carrier".into()).into())
+            }
             Encoder::Messages(encoder) => Ok(encoder.set_attachment(value)?),
         }
     }

@@ -53,29 +53,6 @@ pub(crate) fn take_chat(message: &mut Value) -> Option<Carried> {
         Carried::Unusable
     })
 }
-pub(crate) fn responses_marker(fields: &serde_json::Map<String, Value>) -> Option<Carried> {
-    if fields.get("type").and_then(Value::as_str) != Some("reasoning") {
-        return None;
-    }
-    let value = fields
-        .get("encrypted_content")
-        .and_then(Value::as_str)
-        .filter(|s| is_marker(s))?;
-    let usable = label(fields)
-        && ["summary", "content"].iter().all(|field| {
-            fields
-                .get(*field)
-                .is_none_or(|v| v.as_array().is_some_and(Vec::is_empty))
-        })
-        && fields
-            .get("status")
-            .is_none_or(|v| v.as_str() == Some("completed"));
-    Some(if usable {
-        Carried::Manifest(value.to_owned())
-    } else {
-        Carried::Unusable
-    })
-}
 pub(crate) fn messages_marker(
     block: &crate::protocol::anthropic::messages::Block,
 ) -> Option<Carried> {
@@ -96,15 +73,6 @@ pub(crate) fn messages_marker(
 }
 fn carrier_id(token: &str) -> String {
     format!("rs_mca_{}", &digest(&[token])[..32])
-}
-pub(crate) fn response_item(token: &str) -> Value {
-    json!({
-        "type": "reasoning",
-        "id": carrier_id(token),
-        "status": "completed",
-        "summary": [],
-        "encrypted_content": token,
-    })
 }
 pub(crate) fn chat_detail(token: &str) -> Value {
     json!({

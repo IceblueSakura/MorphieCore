@@ -88,19 +88,38 @@ fn deliver(bytes: &[u8], profile: Profile, stream: bool) -> Result<Value, String
 #[test]
 fn signed_text_and_partial_outputs_keep_replay_and_terminal_contracts() {
     let empty = incomplete_frames(json!([{"text":"","thoughtSignature":"U0lH"}]));
-    let response = deliver(&empty, Profile::Responses, false).unwrap();
-    assert_eq!(response["output"][0]["content"][0]["text"], "");
+    for stream in [false, true] {
+        assert!(
+            deliver(&empty, Profile::Responses, stream)
+                .unwrap_err()
+                .contains("stateless Responses replay attachment")
+        );
+    }
+    let target = ReplayTarget::new("synthetic-google", "gemini-synthetic").unwrap();
+    let mut attempt = Attempt::new(
+        UpstreamAdapter::GoogleGenerateContent { target },
+        2 << 20,
+        SseLimits::default(),
+    );
+    attempt.begin(200, "text/event-stream").unwrap();
+    assert_eq!(attempt.push(&empty).unwrap().0, empty.len());
+    attempt.finish().unwrap();
+    let mut response = attempt.response().unwrap().clone();
+    morphiecore::execution::replay::seal_for_client(
+        &mut response,
+        &morphiecore::execution::replay::CLIENT_ORIGIN,
+    )
+    .unwrap();
     let client = Adapter::new(
         Profile::Responses,
         Dialect::Standard,
         Some(morphiecore::execution::replay::CLIENT_ORIGIN.clone()),
     );
+    let old = client
+        .decode_client_request(br#"{"model":"m","input":"go"}"#)
+        .unwrap();
     let mut returned = client
-        .decode_client_request(
-            json!({"model":"m","input":response["output"]})
-                .to_string()
-                .as_bytes(),
-        )
+        .decode_client_history(br#"{"model":"m","input":[]}"#, Some((&old.task, &response)))
         .unwrap();
     morphiecore::execution::replay::open_from_client(&mut returned).unwrap();
     let (encoded, _) = morphiecore::protocol::google::generate_content::encode_generation_request(
@@ -111,11 +130,11 @@ fn signed_text_and_partial_outputs_keep_replay_and_terminal_contracts() {
     )
     .unwrap();
     assert_eq!(
-        encoded["contents"][0]["parts"],
+        encoded["contents"][1]["parts"],
         json!([{"text":"","thoughtSignature":"U0lH"}])
     );
     let mut items = returned.task.semantic.items().to_vec();
-    let Item::Message(message) = &mut items[0].1 else {
+    let Item::Message(message) = &mut items[1].1 else {
         panic!("signed text")
     };
     message.parts[0].content =
@@ -130,20 +149,6 @@ fn signed_text_and_partial_outputs_keep_replay_and_terminal_contracts() {
         )
         .is_err()
     );
-    let stream = deliver(&empty, Profile::Responses, true).unwrap();
-    assert!(
-        stream
-            .as_str()
-            .unwrap()
-            .contains("event: response.incomplete\n")
-    );
-    assert!(
-        !stream
-            .as_str()
-            .unwrap()
-            .contains("event: response.completed\n")
-    );
-
     let partial = b"data: {\"responseId\":\"resp\",\"modelVersion\":\"gemini-synthetic\",\"candidates\":[{\"index\":0,\"content\":{\"role\":\"model\",\"parts\":[{\"text\":\"partial\"}]},\"finishReason\":\"MAX_TOKENS\"}],\"usageMetadata\":{\"promptTokenCount\":1,\"candidatesTokenCount\":1,\"totalTokenCount\":2}}\n\n";
     let json = deliver(partial, Profile::Responses, false).unwrap();
     assert_eq!(json["status"], "incomplete");

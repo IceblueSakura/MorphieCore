@@ -9,7 +9,7 @@ assert.equal(execFileSync('git', ['-C', process.argv[2], 'rev-parse', 'HEAD'],
   {encoding:'utf8'}).trim(), pins.sources.pi.revision, 'Use the pinned stable pi source');
 globalThis.fetch = async () => { throw new Error('Unexpected external fetch'); };
 const cases = JSON.parse(readFileSync(0, 'utf8'));
-assert.equal(cases.length, 12);
+assert.equal(cases.length, 8);
 const returned = [];
 for (const fixture of cases) {
   const api = fixture.api;

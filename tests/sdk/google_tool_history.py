@@ -68,7 +68,8 @@ def run(base, profile, api):
     requests = 0
     with httpx.Client(trust_env=False, event_hooks={"request": [transmissions.append]}) as http, \
             openai.OpenAI(base_url=base, api_key=KEY, max_retries=0,
-                          timeout=5.0, http_client=http) as client:
+                          timeout=5.0, http_client=http,
+                          _strict_response_validation=profile == "responses") as client:
         for stream in (False, True):
             if profile == "chat":
                 params = dict(model="gemini-3.8-flash", max_completion_tokens=256,
@@ -77,7 +78,7 @@ def run(base, profile, api):
             else:
                 params = dict(model="gemini-3.8-flash", max_output_tokens=256,
                               reasoning={"effort": "low", "summary": "auto"},
-                              tools=[{"type": "function", **function}], store=False,
+                              tools=[{"type": "function", **function}], store=True,
                               include=["reasoning.encrypted_content"],
                               input=[{"role": "user", "content": "Read."}])
             for turn in range(1, 5):
@@ -113,7 +114,11 @@ def run(base, profile, api):
                         params["messages"].append({"role": "user", "content": "Continue."})
                 else:
                     output = result["output"]
-                    params["input"].extend(output)
+                    check("mca1." not in json.dumps(result))
+                    check(len([item for item in output if item["type"] == "reasoning"]) ==
+                          (1 if api == "interactions" and turn <= 3 else 0))
+                    params["previous_response_id"] = result["id"]
+                    params["input"] = []
                     if turn <= 2:
                         call, = [item for item in output if item["type"] == "function_call"]
                         check(call["call_id"] == f"c{turn}" and call["name"] == "read")
