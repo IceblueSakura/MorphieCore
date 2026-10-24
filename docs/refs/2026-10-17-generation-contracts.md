@@ -27,6 +27,7 @@ Later observations retain their own dates and evidence scope below. [Architectur
   - [Responses text-container presence, 2026-10-20](#responses-text-container-presence-2026-10-20)
   - [Production client profiles, 2026-10-21](#production-client-profiles-2026-10-21)
     - [Sustained-operation boundaries, 2026-10-22](#sustained-operation-boundaries-2026-10-22)
+    - [Current-host reacceptance, 2026-10-24](#current-host-reacceptance-2026-10-24)
   - [Signed Google parts](#signed-google-parts)
 - [Protected semantics without complete owners](#protected-semantics-without-complete-owners)
   - [Refusal-detail boundaries, 2026-10-21](#refusal-detail-boundaries-2026-10-21)
@@ -358,6 +359,16 @@ The separate [controlled lifecycle gate](../development.md#sustained-operation-a
 Independent service checks passed stopped-reader admission/recovery, one-entry/64 KiB history rejection/deletion/restart, actual CLI two-file 1 MiB rotation/nine-byte tail repair/new run IDs, unowned-file startup refusal, 1 KiB capture retention saturation with healthy HTTP/redacted auth, and logging-full/disconnected admission behavior. Existing explicit-clock TTL, writer failure/health and body lifecycle owner assertions remain separate. These are bounded compositions, not RSS/read-ahead/endurance benchmarks or persistent history.
 
 One separately bounded Go/Haiku pinned-SDK no-tool request used 2048 output tokens, 120 seconds, one candidate/attempt and no retries. [Live timing](../development.md#no-tool-text-timing) observed client first text/terminal at 1730.680/4568.093 ms, with source first delta/elapsed at 1709/4564 ms. No tool ran, and private capture was deleted. Different clock origins and one sample establish neither a latency SLO, real installed-client timing, remote computation/billing cancellation nor multi-Provider/account-compatible failover.
+
+#### Current-host reacceptance, 2026-10-24
+
+The user selected actual host-installed Agents for all future Agent acceptance, independent of protocol source pins. The inspected unwrapped launchers report pi **1.4.0** and OpenCode **2.0.32**. No host configuration, credential lifecycle, installation replacement or deployment was changed. Current procedures and bounds live in [Development](../development.md#production-profile-acceptance), not in this observation note.
+
+The 12 synthetic installed-client scenarios pass after selecting readable Chat and ordinary model headers for Messages API version `2026-10-21`. Initial native runs failed before upstream dispatch because pi's default header did not match the new gateway version; configuring its existing `model.headers` carrier fixes that mismatch without rewriting traffic. The installed `pi-ai/dist/api/anthropic-messages.js` merges those headers into its SDK client. The installed `pi-coding-agent/dist/core/compaction/compaction.js::generateTurnPrefixSummary` also appends `Additional focus` when custom instructions exist. Correct the old prefix-summary oracle to keep that focus in the instruction section exactly once, while preserving the exact disjoint serialized conversation and excluding reasoning/signature prose. Recovery, cancellation/held-content, ordinary/split/retried summaries, strict-downgrade characterization and rebuilt tool history remain distinct synthetic claims.
+
+The separate real Go/Haiku examples gate passes **three requests/attempts**, each capped at 2048 tokens and 120 seconds, with one candidate/attempt and no hidden retries. It checks root/inline examples, changed tools and model-issued tool-result identity through the project loader and native Messages. It does not establish real installed-Agent timing, failover, reasoning replay or every native capability.
+
+The real pi readable-Chat loop on `dashscope-flash-chat` / `qwen3.8-flash` fails before tool completion with an upstream HTTP **400** at response head. Its initial run was bounded to three requests but did not retain exact failure counts; two subsequent, independently budgeted singleton diagnostics each record one client request and one candidate attempt with the same HTTP status. Safe classification finds `model` in the error message, with an unclassified code; this establishes neither model unavailability nor a specific parameter/credential cause. The runner now retains bounded body-free failure counts/classes before deleting temporary captures. No private Provider error text or capture became a fixture. Stop repeated calls; OpenCode's same real path remains unrun, and neither the live Chat reasoning loop nor overall production reacceptance is closed.
 
 ### Function strictness defaults
 

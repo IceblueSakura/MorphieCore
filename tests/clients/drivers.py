@@ -26,7 +26,7 @@ def check_client_version(case, version):
     # The caller supplies the current host's unwrapped binary. Validate its
     # version record, not equality with an independent protocol source lock.
     prefix = "(?:opencode v)?" if case == "opencode-chat" else ""
-    check(re.fullmatch(prefix + r"\d+\.\d+\.\d+(?:\+[0-9A-Za-z.-]+)?", version)
+    check(re.fullmatch(prefix + r"\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?", version)
           is not None, "invalid_client_version")
 
 
@@ -131,9 +131,9 @@ class Pi(Child):
         self.process.stdin.flush()
         return identity
 
-    def command(self, kind, **fields):
+    def command(self, kind, *, timeout=20, **fields):
         identity = self.submit(kind, **fields)
-        deadline = time.monotonic() + 20
+        deadline = time.monotonic() + timeout
         events = []
         acknowledged = False
         settled = kind != "prompt"
@@ -151,8 +151,8 @@ class Pi(Child):
                 settled = True
         return data, events
 
-    def prompt(self, message, expected):
-        _, events = self.command("prompt", message=message)
+    def prompt(self, message, expected, *, timeout=20):
+        _, events = self.command("prompt", message=message, timeout=timeout)
         check(not any(e["type"].startswith(("auto_retry", "compaction", "summarization_retry"))
                       for e in events), "pi_automatic_retry_or_compaction")
         finished = [e["message"] for e in events if e.get("type") == "message_end"
@@ -178,7 +178,7 @@ def environment(root):
     return env
 
 
-def pi_configuration(root, origin, native, compaction=None, retry=None):
+def pi_configuration(root, origin, native, compaction=None, retry=None, provider_timeout_ms=5000):
     directory = root / "pi-agent"
     directory.mkdir(mode=0o700)
     compat = ({"supportsMidConvoEffort": True, "supportsMidConvoSystemMessages": True,
@@ -194,9 +194,10 @@ def pi_configuration(root, origin, native, compaction=None, retry=None):
         "baseUrl": origin if native else origin + "/v1",
         "api": "anthropic-messages" if native else "openai-completions", "apiKey": "$INGRESS_KEY",
         "models": [{"id": model, "reasoning": True, "contextWindow": 128000,
-                    "maxTokens": 2048, "compat": compat}]}}})
+                    "maxTokens": 2048, "compat": compat,
+                    "headers": {"anthropic-version": "2026-10-21"} if native else {}}]}}})
     private_json(directory / "settings.json", {"retry": {"enabled": False,
-        **(retry or {}), "provider": {"maxRetries": 0, "timeoutMs": 5000}},
+        **(retry or {}), "provider": {"maxRetries": 0, "timeoutMs": provider_timeout_ms}},
         "compaction": {"enabled": False, **(compaction or {})}, "cacheWarming": "off"})
     return directory, model
 
@@ -247,13 +248,13 @@ def check_opencode_session(database, identity, expected):
     check(idle == ("succeeded",), "opencode_idle_outcome")
 
 
-def opencode_prompt(binary, env, work, prompt, title, session=None, origin=None):
+def opencode_prompt(binary, env, work, prompt, title, session=None, origin=None, timeout=30):
     args = [binary, "run", *(["--server", origin] if origin else ["--standalone"]),
             "--format", "json", "--title", title, "-m", "recovery/qwen3.8-flash#low"]
     if session:
         args.extend(["--session", session])
     with Child([*args, prompt], env, work) as child:
-        output = child.wait()
+        output = child.wait(timeout=timeout)
     events = [json.loads(line) for line in output.split(b"\n") if line]
     identities = {e["sessionID"] for e in events if "sessionID" in e}
     check(len(identities) == 1, "opencode_session_event_identity")

@@ -232,7 +232,8 @@ def handler(state, ingress, direct_client=False):
                     state.incoming(self.headers, body)
                     upstream = urlsplit(state.gateway)
                     check(upstream.hostname == "127.0.0.1", "nonlocal_gateway")
-                    with closing(http.client.HTTPConnection(upstream.hostname, upstream.port, timeout=3)) as connection:
+                    with closing(http.client.HTTPConnection(upstream.hostname, upstream.port,
+                            timeout=getattr(state, "forward_timeout", 3))) as connection:
                         connection.connect()
                         outgoing = connection.sock
                         self.server.track(outgoing)

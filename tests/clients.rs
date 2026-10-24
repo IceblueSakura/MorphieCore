@@ -76,7 +76,7 @@ async fn installed_case(
     );
     let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(report["case"], case);
-    // The Python driver validates the supported major before launching the case.
+    // The Python driver records the current host binary's actual version.
     assert!(report["version"].as_str().is_some_and(|v| !v.is_empty()));
     eprintln!("{report}");
     report

@@ -114,7 +114,7 @@ pub fn assert_request(body: &Value) -> usize {
         let assistant = &history[1];
         let reasoning = history[0]["content"] == "reasoning";
         let mut expected = vec![
-            history[0].clone(),
+            json!({"role":"user","content":if reasoning {"reasoning"} else {"lookup"}}),
             json!({"role":"assistant","content":null,"tool_calls":[
                 {"id":"call-lookup","type":"function","function":{"name":"lookup","arguments":"{ \"key\": \"A\" }"}},
                 {"id":"call-second","type":"function","function":{"name":"lookup","arguments":"{\"key\":\"B\"}"}}

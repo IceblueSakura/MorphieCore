@@ -61,7 +61,9 @@ def assert_summary(body, native, path, prefix=False):
               "prefix_summary_envelope")
         conversation = prompt.split("# Conversation\n", 1)[1].split("\n# Instructions\n", 1)[0]
         check(conversation.strip() == f"[User]: {RECENT_PROMPT}"
-              and all(value not in prompt for value in [FOCUS, READ, str(path), "[Assistant]:"]),
+              and FOCUS not in conversation and prompt.count(FOCUS) == 1
+              and f"Additional focus: {FOCUS}" in prompt
+              and all(value not in prompt for value in [READ, str(path), "[Assistant]:"]),
               "prefix_summary_serialized_exchange")
     else:
         check(all(value in prompt for value in [

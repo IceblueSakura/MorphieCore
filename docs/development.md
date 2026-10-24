@@ -342,9 +342,22 @@ For the selected [production closure](roadmap.md#generation-text-production-clos
 
 Source-derived expectations are not fresh acceptance. Record exclusions, including unverified account-compatible replay and process-local Responses history across restart. Preserve existing version-continuity results without treating them as acceptance of newly exercised paths.
 
+For the explicit readable Chat real-Agent gate, use the current installed unwrapped binary:
+
+```sh
+python3 tests/clients/reasoning_live.py pi-chat \
+  --gateway /absolute/path/to/morphiecore \
+  --client-binary /absolute/path/to/current/unwrapped/pi
+# Run separately and serially with opencode-chat and the current OpenCode binary.
+```
+
+This runner fixes `dashscope-flash-chat` / `qwen3.8-flash`, three Generation requests, 2048 output tokens each, one candidate/attempt and 120-second attempt/exchange deadlines. It admits an actual read/tool-result/final-answer loop and same-session recall, rejecting extra transmissions before forwarding. It reuses the ordinary CLI credential loader and isolated Agent drivers; no host Agent configuration or credentials are read by the runner. Temporary opt-in upstream request/response and client response capture checks exact readable-reasoning retention and call-ID/argument-value continuity, then is deleted. Raw payloads never become output or protocol fixtures. Reports expose only counts and fixed error classifications; a model-related error phrase is not proof of its cause. Use an outer process bound of 420 seconds. This gate is separate from synthetic recovery, SDK compatibility, real failover and ordinary summarization.
+
 #### Initial production-profile baseline
 
-The declarations and successful runs below are historical, not acceptance of the current standard-delivery redesign. On 2026-10-24 the user selected the current host-installed pi 1.4.0 and OpenCode 2.0.32 for reacceptance, not older OpenCode source-lock binaries. Test-owned isolated configuration selects readable Chat reasoning on `dashscope-flash-chat`, native pi Messages on `opencode-go-haiku-messages`, and separate Standard Chat controls. The [contract-closure gate](roadmap.md#standards-reset-and-redesign) must pass first. Protocol source pins remain independent reference evidence; no installed-client or real-Provider reacceptance is asserted yet.
+The declarations and successful runs below retain their own dates. On 2026-10-24 the user selected the current host-installed pi 1.4.0 and OpenCode 2.0.32 for reacceptance, not older OpenCode source-lock binaries. Test-owned isolated configuration selects readable Chat reasoning on `dashscope-flash-chat`, native pi Messages on `opencode-go-haiku-messages`, and separate Standard Chat controls. Protocol source pins remain independent reference evidence.
+
+The [current-host follow-up](refs/2026-10-17-generation-contracts.md#current-host-reacceptance-2026-10-24) reaccepts all 12 installed-client synthetic recovery/summary/lifecycle scenarios and the separate three-request Go/Haiku Provider examples gate. The real Chat loop remains **blocked** by upstream HTTP 400 at response head; neither live Chat reasoning replay nor the overall production closure is accepted. Installed pi Messages selects `anthropic-version: 2026-10-21` through ordinary test-owned model headers, not gateway header rewriting or host configuration.
 
 Use the existing `dashscope-flash-chat` and `opencode-go-haiku-messages` bindings for the three recovery profiles below. Production initially promises a single candidate per route; the synthetic two-key recovery pool is not real failover acceptance. The drivers' explicit compat/config values are authoritative; do not substitute client defaults.
 

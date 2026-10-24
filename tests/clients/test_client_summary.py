@@ -133,7 +133,8 @@ class ClientSummaryOracles(unittest.TestCase):
         body = self.standalone(True)
         body["messages"][-1]["content"] = (
             f"# Conversation\n[User]: {summary.RECENT_PROMPT}\n\n"
-            "# Instructions\n## Original Request\nSummarize only earlier context.")
+            "# Instructions\n## Original Request\nSummarize only earlier context.\n\n"
+            f"Additional focus: {summary.FOCUS}")
         self.assertEqual(summary.classify(body), "prefix-summary")
         summary.assert_summary(body, True, self.path, prefix=True)
         for leak in [summary.FOCUS, str(self.path), "[Assistant]: fabricated continuation"]:

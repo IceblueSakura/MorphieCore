@@ -63,18 +63,17 @@ class ClientRecoveryOracles(unittest.TestCase):
         pi = "1.4.0"
         opencode = "2.0.32"
         for case, versions in [
-            ("pi-chat", [pi, pi + "+local", "1.5.0"]),
+            ("pi-chat", [pi, pi + "+local", "1.5.0", pi + "-dev.1"]),
             ("pi-messages", [pi]),
-            ("opencode-chat", [opencode, "opencode v" + opencode,
+            ("opencode-chat", [opencode, opencode + "-dev.1", "opencode v" + opencode,
                                "opencode v" + opencode + "+local"]),
         ]:
             for version in versions:
                 with self.subTest(case=case, version=version):
                     drivers.check_client_version(case, version)
         for case, versions in [
-            ("pi-chat", [pi + "-dev.1", "1", "1.x", pi + "\nextra"]),
-            ("opencode-chat", [opencode + "-dev.1",
-                               "opencode v2", "unknown", ""]),
+            ("pi-chat", ["1", "1.x", pi + "\nextra"]),
+            ("opencode-chat", ["opencode v2", "unknown", ""]),
         ]:
             for version in versions:
                 with self.subTest(case=case, version=version), self.assertRaisesRegex(

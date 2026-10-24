@@ -42,20 +42,31 @@ def private_json(path, value):
 
 
 class Gateway:
-    def __init__(self, binary, directory, budget):
+    def __init__(self, binary, directory, budget, *, model=MODEL, binding=BINDING,
+                 chat_profile=None, capture_response=False):
         self.root = directory
         self.budget = budget
         self.requests = []
         self.key = secrets.token_urlsafe(32)
+        capture = {"path": str(directory / "capture.jsonl"),
+                   "upstream_request": {"body": True}, "max_unit_bytes": 1048576}
+        if capture_response:
+            capture["client_response"] = {"body": True}
+            capture["upstream_response"] = {"body": True}
         private_json(directory / "gateway.json", {
             "client_key": self.key, "bind": "127.0.0.1:0", "models_file": "models.json",
             "exchange_timeout_ms": DEADLINE_MS, "diagnostics": "diagnostics.jsonl",
-            "capture": {"path": str(directory / "capture.jsonl"),
-                        "upstream_request": {"body": True}, "max_unit_bytes": 1048576}})
-        private_json(directory / "models.json", {"models": {MODEL: {
+            "capture": capture})
+        candidate = {"binding": binding, "attempt_timeout_ms": DEADLINE_MS,
+                     "maximum_output_tokens": CAP}
+        if chat_profile is None:
+            candidate["default_output_tokens"] = None
+        selection = {
             "max_attempts": 1, "total_timeout_ms": DEADLINE_MS,
-            "candidates": [{"binding": BINDING, "attempt_timeout_ms": DEADLINE_MS,
-                            "default_output_tokens": None, "maximum_output_tokens": CAP}]}}})
+            "candidates": [candidate]}
+        if chat_profile is not None:
+            selection["chat_profile"] = chat_profile
+        private_json(directory / "models.json", {"models": {model: selection}})
         # Inherit HOME only for the application loader's ordinary store resolution.
         # Do not read private configuration, credentials or environment values here.
         self.process = subprocess.Popen([str(binary), "--config", str(directory / "gateway.json")],
