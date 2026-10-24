@@ -8,7 +8,7 @@ async fn tool_publication_withholds_success_until_eof_and_never_replays() {
     use std::time::Duration;
     for profile in [Profile::Chat, Profile::Responses] {
         let chat = profile == Profile::Chat;
-        for mode in ["hold", "cut", "cancel"] {
+        for mode in ["hold", "cut", "cancel", "terminal-cut"] {
             let fixture = fixture::start(profile, true).await;
             let client = reqwest::Client::builder()
                 .no_proxy()
@@ -112,7 +112,7 @@ async fn tool_publication_withholds_success_until_eof_and_never_replays() {
                         }
                     }
                 }
-                assert_eq!(failed, mode == "cut");
+                assert_eq!(failed, matches!(mode, "cut" | "terminal-cut"));
                 let body = String::from_utf8_lossy(&received);
                 assert_eq!(
                     body.contains(if chat { "[DONE]" } else { "response.completed" }),

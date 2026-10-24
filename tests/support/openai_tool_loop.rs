@@ -139,8 +139,8 @@ async fn answer(
         .as_str()
         .or_else(|| history[0]["content"][0]["text"].as_str())
         .unwrap();
-    if matches!(mode, "hold" | "cut" | "cancel") {
-        let cut = mode == "cut";
+    if matches!(mode, "hold" | "cut" | "cancel" | "terminal-cut") {
+        let cut = matches!(mode, "cut" | "terminal-cut");
         let stream = futures_util::stream::unfold(
             (0, DropSignal(control), bytes, cut),
             |(phase, guard, bytes, cut)| async move {

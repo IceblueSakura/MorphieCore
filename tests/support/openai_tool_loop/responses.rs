@@ -15,7 +15,9 @@ pub fn snapshot(turn: usize) -> Value {
             {"id":"comment","type":"message","role":"assistant","phase":"commentary",
                 "status":"completed","content":[{"type":"output_text","text":"checking","annotations":[],"logprobs":[]}]},
             {"id":"call-item","type":"function_call","status":"completed","call_id":"call-lookup",
-                "name":"lookup","arguments":"{ \"key\": \"A\" }"}
+                "name":"lookup","arguments":"{ \"key\": \"A\" }"},
+            {"id":"second-item","type":"function_call","status":"completed","call_id":"call-second",
+                "name":"lookup","arguments":"{\"key\":\"B\"}"}
         ])}else{json!([
             {"id":format!("answer-{turn}"),"type":"message","role":"assistant","phase":"final_answer",
                 "status":"completed","content":[{"type":"output_text","text":"cedar-71","annotations":[],"logprobs":[]}]}
@@ -24,7 +26,37 @@ pub fn snapshot(turn: usize) -> Value {
 }
 pub fn events(turn: usize) -> Vec<Value> {
     let mut events = crate::responses_wire::response_events(snapshot(turn));
-    for event in &mut events {
+    if turn == 1 {
+        // Announce both owners before completing either. Finish the later
+        // call first, while preserving each call's independent fragment order.
+        let first = events
+            .iter()
+            .position(|e| e["type"] == "response.output_item.added" && e["output_index"] == 2)
+            .unwrap();
+        let end = events
+            .iter()
+            .position(|e| e["type"] == "response.completed")
+            .unwrap();
+        let call_events = [
+            json!({"type":"response.output_item.added","output_index":2,"item":{"id":"call-item",
+                "type":"function_call","status":"in_progress","call_id":"call-lookup","name":"lookup","arguments":""}}),
+            json!({"type":"response.output_item.added","output_index":3,"item":{"id":"second-item",
+                "type":"function_call","status":"in_progress","call_id":"call-second","name":"lookup","arguments":""}}),
+            json!({"type":"response.function_call_arguments.delta","output_index":2,"item_id":"call-item","delta":"{ \"key\":"}),
+            json!({"type":"response.function_call_arguments.delta","output_index":3,"item_id":"second-item","delta":"{\"key\":"}),
+            json!({"type":"response.function_call_arguments.delta","output_index":3,"item_id":"second-item","delta":"\"B\"}"}),
+            json!({"type":"response.function_call_arguments.done","output_index":3,"item_id":"second-item","arguments":"{\"key\":\"B\"}"}),
+            json!({"type":"response.output_item.done","output_index":3,"item":{"id":"second-item",
+                "type":"function_call","status":"completed","call_id":"call-second","name":"lookup","arguments":"{\"key\":\"B\"}"}}),
+            json!({"type":"response.function_call_arguments.delta","output_index":2,"item_id":"call-item","delta":" \"A\" }"}),
+            json!({"type":"response.function_call_arguments.done","output_index":2,"item_id":"call-item","arguments":"{ \"key\": \"A\" }"}),
+            json!({"type":"response.output_item.done","output_index":2,"item":{"id":"call-item",
+                "type":"function_call","status":"completed","call_id":"call-lookup","name":"lookup","arguments":"{ \"key\": \"A\" }"}}),
+        ];
+        events.splice(first..end, call_events);
+    }
+    for (sequence, event) in events.iter_mut().enumerate() {
+        event["sequence_number"] = json!(sequence);
         if matches!(
             event["type"].as_str(),
             Some("response.created" | "response.in_progress")
@@ -66,25 +98,31 @@ pub fn assert_request(body: &Value) -> usize {
         1
     };
     if turn >= 2 {
-        assert!(history.contains(&json!({"id":"reason","type":"reasoning",
+        let mut expected = vec![
+            json!({"type":"message","role":"user","content":[{"type":"input_text","text":"lookup"}]}),
+            json!({"id":"reason","type":"reasoning",
             "summary":[{"type":"summary_text","text":"Plan 🧪"}],
-            "content":[{"type":"reasoning_text","text":"Check"}],"encrypted_content":"synthetic-final-token"})));
-        assert!(history.iter().any(|v| v["type"] == "function_call"
-            && v["call_id"] == "call-lookup"
-            && v["name"] == "lookup"
-            && v["arguments"] == "{ \"key\": \"A\" }"));
-        assert!(
-            history
-                .iter()
-                .any(|v| v["phase"] == "commentary" && v["content"][0]["text"] == "checking")
+            "content":[{"type":"reasoning_text","text":"Check"}],"encrypted_content":"synthetic-final-token"}),
+            json!({"id":"comment","type":"message","role":"assistant","phase":"commentary",
+                "content":[{"type":"output_text","text":"checking","annotations":[],"logprobs":[]}]}),
+            json!({"id":"call-item","type":"function_call","call_id":"call-lookup",
+                "name":"lookup","arguments":"{ \"key\": \"A\" }"}),
+            json!({"id":"second-item","type":"function_call","call_id":"call-second",
+                "name":"lookup","arguments":"{\"key\":\"B\"}"}),
+            json!({"type":"function_call_output","call_id":"call-second","output":"second-result"}),
+            json!({"type":"function_call_output","call_id":"call-lookup","output":RESULT}),
+        ];
+        if turn == 3 {
+            expected.extend([
+                json!({"id":"answer-2","type":"message","role":"assistant","phase":"final_answer",
+                    "content":[{"type":"output_text","text":"cedar-71","annotations":[],"logprobs":[]}]}),
+                json!({"type":"message","role":"user","content":[{"type":"input_text","text":"next"}]}),
+            ]);
+        }
+        assert_eq!(
+            history, &expected,
+            "complete Responses continuation turn {turn}"
         );
-        assert!(history.contains(&json!({"type":"function_call_output",
-            "call_id":"call-lookup","output":RESULT})));
-    }
-    if turn == 3 {
-        assert!(history.iter().any(|v| v["role"] == "assistant"
-            && v["phase"] == "final_answer"
-            && v["content"][0]["text"] == "cedar-71"));
     }
     turn
 }

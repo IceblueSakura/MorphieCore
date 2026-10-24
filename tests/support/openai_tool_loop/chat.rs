@@ -1,4 +1,4 @@
-//! DashScope Chat wire and ordered reasoning/tool-result history expectations.
+//! DashScope Chat wire and interleaved calls with independent history expectations.
 use super::RESULT;
 use serde_json::{Value, json};
 
@@ -7,7 +7,9 @@ pub fn snapshot(turn: usize, reasoning: bool) -> Value {
             "model":"qwen3.8-flash","choices":[{"index":0,
                 "message":if turn == 1 { json!({"role":"assistant","content":null,
                     "reasoning_content":"Plan 🧪","tool_calls":[{"id":"call-lookup","type":"function",
-                    "function":{"name":"lookup","arguments":"{ \"key\": \"A\" }"}}]}) }
+                    "function":{"name":"lookup","arguments":"{ \"key\": \"A\" }"}},
+                    {"id":"call-second","type":"function",
+                    "function":{"name":"lookup","arguments":"{\"key\":\"B\"}"}}]}) }
                 else {json!({"role":"assistant","reasoning_content":"Check","content":"cedar-71"})},
                 "finish_reason":if turn == 1 {"tool_calls"}else{"stop"}}],
             "usage":{"prompt_tokens":11,"completion_tokens":7,"total_tokens":18,
@@ -37,6 +39,15 @@ pub fn events(turn: usize, reasoning: bool) -> Vec<Value> {
         events.push(chunk(
             json!({"tool_calls":[{"index":0,"id":"call-lookup","type":"function",
             "function":{"name":"lookup","arguments":"{ \"key\":"}}]}),
+            Value::Null,
+        ));
+        events.push(chunk(
+            json!({"tool_calls":[{"index":1,"id":"call-second","type":"function",
+            "function":{"name":"lookup","arguments":"{\"key\":"}}]}),
+            Value::Null,
+        ));
+        events.push(chunk(
+            json!({"tool_calls":[{"index":1,"function":{"arguments":"\"B\"}"}}]}),
             Value::Null,
         ));
         events.push(chunk(
@@ -90,26 +101,34 @@ pub fn assert_request(body: &Value) -> usize {
         roles,
         match turn {
             1 => vec!["user"],
-            2 => vec!["user", "assistant", "tool"],
-            3 => vec!["user", "assistant", "tool", "assistant", "user"],
+            2 => vec!["user", "assistant", "tool", "tool"],
+            3 => vec!["user", "assistant", "tool", "tool", "assistant", "user"],
             _ => unreachable!(),
         }
     );
     if turn >= 2 {
         let assistant = &history[1];
         assert!(assistant.get("reasoning_content").is_none());
-        assert_eq!(assistant["tool_calls"].as_array().unwrap().len(), 1);
-        assert_eq!(
-            assistant["tool_calls"][0],
-            json!({"id":"call-lookup","type":"function",
-            "function":{"name":"lookup","arguments":"{ \"key\": \"A\" }"}})
-        );
-        assert_eq!(history[2]["tool_call_id"], "call-lookup");
-        assert_eq!(history[2]["content"], RESULT);
-    }
-    if turn == 3 {
-        assert_eq!(history[3]["content"], "cedar-71");
-        assert!(history[3].get("reasoning_content").is_none());
+        let mut expected = vec![
+            json!({"role":"user","content":"lookup"}),
+            json!({"role":"assistant","content":null,"tool_calls":[
+                {"id":"call-lookup","type":"function","function":{"name":"lookup","arguments":"{ \"key\": \"A\" }"}},
+                {"id":"call-second","type":"function","function":{"name":"lookup","arguments":"{\"key\":\"B\"}"}}
+            ]}),
+            json!({"role":"tool","tool_call_id":"call-second","content":"second-result"}),
+            json!({"role":"tool","tool_call_id":"call-lookup","content":RESULT}),
+        ];
+        // JSON null and the streaming client's empty accumulator are distinct
+        // valid observations; neither may change the calls or surrounding history.
+        assert!(assistant["content"].is_null() || assistant["content"] == "");
+        expected[1]["content"] = assistant["content"].clone();
+        if turn == 3 {
+            expected.extend([
+                json!({"role":"assistant","content":"cedar-71"}),
+                json!({"role":"user","content":"next"}),
+            ]);
+        }
+        assert_eq!(history, &expected, "complete Chat continuation turn {turn}");
     }
     turn
 }

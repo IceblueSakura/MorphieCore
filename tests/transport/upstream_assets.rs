@@ -354,3 +354,149 @@ fn interactions_allows_first_service_tier_report_at_terminal() {
         assert_eq!(counts.output_tokens, Some(26));
     }
 }
+
+fn feed(
+    attempt: &mut morphiecore::execution::Attempt,
+    bytes: &[u8],
+    chunk: usize,
+) -> Result<(), morphiecore::execution::AttemptError> {
+    for part in bytes.chunks(chunk) {
+        let mut rest = part;
+        while !rest.is_empty() {
+            let (used, _) = attempt.push(rest)?;
+            assert!(used > 0 && used <= rest.len());
+            rest = &rest[used..];
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn upstream_ingress_budgets_are_independent_and_fragmentation_invariant() {
+    use morphiecore::{
+        execution::{Attempt, AttemptError},
+        protocol::stream::{SseError, SseLimits},
+        transport::sse::SseDecodeError,
+    };
+    let target = ReplayTarget::new("public-fixture", "gemini-fixture").unwrap();
+    for (adapter, bytes) in [
+        (openai(Profile::Chat), asset("openai/chat-tool.sse")),
+        (
+            UpstreamAdapter::GoogleGenerateContent {
+                target: target.clone(),
+            },
+            jsonl_sse("vercel/google-text.jsonl", None),
+        ),
+        (
+            UpstreamAdapter::GoogleInteractions { target },
+            jsonl_sse("vercel/interactions-basic.jsonl", Some("event_type")),
+        ),
+    ] {
+        // Raw reviewed LF framing supplies exact budgets, independently of the
+        // production parser. No payload or terminal is repaired.
+        let raw = std::str::from_utf8(&bytes).unwrap();
+        let frames: Vec<_> = raw.split_inclusive("\n\n").collect();
+        assert!(
+            frames
+                .iter()
+                .all(|f| f.ends_with("\n\n") && !f.contains('\r'))
+        );
+        let event_bytes = frames.iter().map(|f| f.len()).max().unwrap();
+        let exact = SseLimits {
+            max_event_bytes: event_bytes,
+            max_wire_bytes: bytes.len(),
+            max_events: frames.len(),
+            ..Default::default()
+        };
+        for chunk in [1, bytes.len()] {
+            for budget in ["exact", "event", "wire", "count"] {
+                let mut limits = exact;
+                match budget {
+                    "event" => limits.max_event_bytes -= 1,
+                    "wire" => limits.max_wire_bytes -= 1,
+                    "count" => limits.max_events -= 1,
+                    _ => {}
+                }
+                let mut attempt = Attempt::new(adapter.clone(), 2 << 20, limits);
+                attempt.begin(200, "text/event-stream").unwrap();
+                let result = feed(&mut attempt, &bytes, chunk);
+                if budget == "exact" {
+                    result.unwrap();
+                    assert!(attempt.response().is_err());
+                    assert_eq!(
+                        attempt.finish().unwrap().semantic.outcome(),
+                        Outcome::Completed
+                    );
+                } else {
+                    let error = result.unwrap_err();
+                    assert!(
+                        match budget {
+                            "event" => matches!(
+                                error,
+                                AttemptError::Sse(SseError::Framing(SseDecodeError::EventTooLarge))
+                            ),
+                            _ => matches!(error, AttemptError::Sse(SseError::Limit)),
+                        },
+                        "{adapter:?} {budget}: {error:?}"
+                    );
+                    assert!(
+                        attempt.push(&bytes).is_err(),
+                        "rejection must absorb a valid suffix"
+                    );
+                    assert!(attempt.finish().is_err());
+                    assert!(attempt.response().is_err());
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn google_protocol_errors_before_and_after_content_poison_the_attempt() {
+    use morphiecore::{
+        execution::{Attempt, AttemptError},
+        protocol::{
+            CodecError,
+            stream::{SseError, SseLimits},
+        },
+    };
+    let target = ReplayTarget::new("public-fixture", "gemini-fixture").unwrap();
+    for (adapter, bytes, error, status) in [
+        (
+            UpstreamAdapter::GoogleGenerateContent {
+                target: target.clone(),
+            },
+            jsonl_sse("vercel/google-text.jsonl", None),
+            "data: {\"error\":{\"code\":429,\"message\":\"synthetic quota\"}}\n\n",
+            429,
+        ),
+        (
+            UpstreamAdapter::GoogleInteractions { target },
+            jsonl_sse("vercel/interactions-basic.jsonl", Some("event_type")),
+            "event: error\ndata: {\"event_type\":\"error\",\"error\":{\"code\":\"UNAVAILABLE\",\"message\":\"synthetic unavailable\"}}\n\n",
+            503,
+        ),
+    ] {
+        let raw = std::str::from_utf8(&bytes).unwrap();
+        let frames: Vec<_> = raw.split_inclusive("\n\n").collect();
+        let prefix = frames[..frames.len() - 1].concat();
+        for after_content in [false, true] {
+            for chunk in [1, bytes.len()] {
+                let mut attempt = Attempt::new(adapter.clone(), 2 << 20, SseLimits::default());
+                attempt.begin(200, "text/event-stream").unwrap();
+                if after_content {
+                    feed(&mut attempt, prefix.as_bytes(), chunk).unwrap();
+                    assert!(attempt.response().is_err());
+                }
+                let error = feed(&mut attempt, error.as_bytes(), chunk).unwrap_err();
+                assert!(
+                    matches!(error, AttemptError::Sse(SseError::Codec(CodecError::StreamFailure(code))) if code == status),
+                    "{error:?}"
+                );
+                assert!(feed(&mut attempt, &bytes, chunk).is_err());
+                assert!(attempt.finish().is_err());
+                assert!(attempt.response().is_err());
+            }
+        }
+    }
+}

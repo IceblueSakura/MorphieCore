@@ -35,7 +35,7 @@ Resolved on **2026-10-23**. [tests/upstream/sources.lock.json](../tests/upstream
 
 OpenCode's selected release was cross-checked with npm `opencode-ai`. The pi source is the existing earendil-works fork, not the unrelated `@mariozechner/pi-coding-agent` release line. Do not replace the intended client by matching a package name alone.
 
-The [stable-release protocol recheck](refs/2026-10-23-stable-protocol-contracts.md) records material source changes and disagreements. These selections supersede the earlier mapping baseline for the [accepted reset](roadmap.md#standards-reset-and-redesign), without retroactively changing dated evidence.
+The [stable-release protocol recheck](refs/2026-10-23-stable-protocol-contracts.md) records material source changes and disagreements. These selections supersede the earlier mapping baseline for the [accepted reset](roadmap.md#standards-reset-and-redesign), without retroactively changing dated evidence. The [2026-10-24 candidate review](refs/2026-10-23-stable-protocol-contracts.md#latest-candidate-review-2026-10-24) identifies newer Anthropic Python/TypeScript and Vercel core releases; the table is the verified baseline, not a claim of today's latest versions.
 
 ### Historical evidence
 

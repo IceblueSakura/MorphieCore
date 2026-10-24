@@ -157,7 +157,9 @@ fn advance(body: &mut Value, content: Value, turn: usize) {
     messages.push(json!({"role":"assistant","content":content}));
     let next = match turn {
         1 => {
-            json!({"role":"user","content":[{"type":"tool_result","tool_use_id":"call-lookup","content":"A","is_error":false}]})
+            json!({"role":"user","content":[
+                {"type":"tool_result","tool_use_id":"call-second","content":"second-result","is_error":true},
+                {"type":"tool_result","tool_use_id":"call-lookup","content":"A","is_error":false}]})
         }
         2 => json!({"role":"user","content":[{"type":"text","text":"inspect"}]}),
         3 => {

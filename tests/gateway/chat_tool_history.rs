@@ -181,7 +181,7 @@ async fn history_case(recover: bool) {
             assert!(message.get("reasoning_content").is_none());
             assert!(message.get("reasoning_details").is_none());
             if turn == 1 {
-                assert_eq!(message["tool_calls"].as_array().unwrap().len(), 1);
+                assert_eq!(message["tool_calls"].as_array().unwrap().len(), 2);
                 assert_eq!(
                     message["tool_calls"][0],
                     json!({"id":"call-lookup","type":"function",
@@ -189,6 +189,7 @@ async fn history_case(recover: bool) {
                 );
                 body["messages"].as_array_mut().unwrap().extend([
                     message,
+                    json!({"role":"tool","tool_call_id":"call-second","content":"second-result"}),
                     json!({"role":"tool","tool_call_id":"call-lookup","content":fixture::RESULT}),
                 ]);
             } else {

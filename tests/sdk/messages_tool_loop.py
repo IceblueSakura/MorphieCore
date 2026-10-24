@@ -28,7 +28,8 @@ def send(client, body, streamed, session):
 
 with httpx.Client(trust_env=False, timeout=10,
                   event_hooks={"request": [transmissions.append]}) as http:
-    with anthropic.Anthropic(api_key=key, base_url=origin, max_retries=0, http_client=http) as client:
+    with anthropic.Anthropic(api_key=key, base_url=origin, max_retries=0, http_client=http,
+                             _strict_response_validation=True) as client:
         for streamed in deliveries:
             body = copy.deepcopy(profile)
             body["stream"] = streamed
@@ -47,12 +48,14 @@ with httpx.Client(trust_env=False, timeout=10,
                     assert content[0]["type"] == "thinking"
                     assert content[0]["thinking"] == ("plan lookup" if turn == 1 else "plan inspect")
                     assert content[0]["signature"].startswith("mc1.")
-                    assert content[-1] == {
+                    assert content[-2 if turn == 1 else -1] == {
                         "type": "tool_use", "id": "call-lookup" if turn == 1 else "call-inspect",
                         "name": "lookup" if turn == 1 else "inspect", "input": {"key": "A"} if turn == 1 else {},
                     }
                     if turn == 1:
                         assert content[1]["type"] == "redacted_thinking" and content[1]["data"].startswith("mc1.")
+                        assert content[-1] == {"type": "tool_use", "id": "call-second",
+                                               "name": "lookup", "input": {"key": "B"}}
                 else:
                     assert content == [{"type": "text", "text": "A" if turn == 2 else "B" if turn == 4 else "A B"}]
                 if recovery_stream is not None and turn == 2:
@@ -71,7 +74,13 @@ with httpx.Client(trust_env=False, timeout=10,
                 else:
                     next_block = {"type": "text", "text": "inspect" if turn == 2 else "repeat"}
                 next_block["cache_control"] = {"type": "ephemeral", "ttl": "1h"}
-                body["messages"].append({"role": "user", "content": [next_block]})
+                next_blocks = [next_block]
+                if turn == 1:
+                    next_block.pop("cache_control")
+                    next_blocks.insert(0, {"type": "tool_result", "tool_use_id": "call-second",
+                                           "content": "second-result", "is_error": True,
+                                           "cache_control": {"type": "ephemeral", "ttl": "1h"}})
+                body["messages"].append({"role": "user", "content": next_blocks})
                 if turn == 2:
                     body["messages"].append({"role": "system", "content": [
                         {"type": "text", "text": "Inspect mode."},

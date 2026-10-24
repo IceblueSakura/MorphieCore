@@ -73,22 +73,25 @@ def run(base):
                         reason, = [i for i in output if i["type"] == "reasoning"]
                         check(reason["summary"][0]["text"] == "Plan 🧪" and reason.get("encrypted_content"))
                         check(any(i.get("phase") == "commentary" for i in output))
-                        call, = [i for i in output if i["type"] == "function_call"]
+                        call, second = [i for i in output if i["type"] == "function_call"]
                         check(call["call_id"] == "call-lookup" and call["name"] == "lookup"
                               and call["arguments"] == '{ "key": "A" }')
-                        new = {"type": "function_call_output", "call_id": call["call_id"], "output": RESULT}
+                        check(second["call_id"] == "call-second" and second["id"] != second["call_id"]
+                              and second["name"] == "lookup" and second["arguments"] == '{"key":"B"}')
+                        new = [{"type": "function_call_output", "call_id": second["call_id"], "output": "second-result"},
+                               {"type": "function_call_output", "call_id": call["call_id"], "output": RESULT}]
                     else:
                         check(any(i.get("phase") == "final_answer" and
                                   i["content"][0]["text"] == "cedar-71" for i in output))
-                        new = {"role": "user", "content": "next"}
+                        new = [{"role": "user", "content": "next"}]
                     if stored:
-                        params.update(previous_response_id=result["id"], input=[new])
+                        params.update(previous_response_id=result["id"], input=new)
                         retrieved = client.responses.retrieve(result["id"])
                         check(retrieved.model_dump(exclude_unset=True) == result)
                         for item in client.responses.input_items.list(result["id"]):
                             TypeAdapter(ResponseItem).validate_python(item.model_dump(by_alias=True, exclude_unset=True))
                     else:
-                        params["input"].extend([*output, new])
+                        params["input"].extend([*output, *new])
     print(json.dumps({"requests": requests, "protocols": 1, "deliveries": 2,
                       "three_turn_history": True, "stored_stateless": True}))
 

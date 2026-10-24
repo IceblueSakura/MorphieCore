@@ -17,34 +17,22 @@ def chat_completion(client, params, stream):
     if not stream:
         value = client.chat.completions.create(**params).model_dump(exclude_unset=True)
         return value
-    message = {"role": "assistant", "content": ""}
-    calls = {}
-    finish = None
-    usage = None
-    with client.chat.completions.create(**params, stream=True,
-                                       stream_options={"include_usage": True}) as events:
+    with client.chat.completions.stream(**params, stream_options={"include_usage": True}) as events:
         for event in events:
-            if event.usage is not None:
-                usage = event.usage.model_dump(exclude_unset=True)
-            for choice in event.choices:
-                delta = choice.delta.model_dump(exclude_unset=True)
-                for key in ("content",):
-                    if delta.get(key):
-                        message[key] += delta[key]
-                for part in delta.get("tool_calls") or []:
-                    call = calls.setdefault(part["index"], {
-                        "type": "function", "function": {"name": "", "arguments": ""}})
-                    if part.get("id"):
-                        call["id"] = part["id"]
-                    for key in ("name", "arguments"):
-                        call["function"][key] += part.get("function", {}).get(key) or ""
-                if choice.finish_reason:
-                    check(finish is None)
-                    finish = choice.finish_reason
-    check(finish is not None)
-    if calls:
-        message["tool_calls"] = [calls[k] for k in sorted(calls)]
-    return {"choices": [{"message": message, "finish_reason": finish}], "usage": usage}
+            if event.type == "chunk":
+                check(all(not {"reasoning_content", "reasoning_details"}.intersection(
+                    choice.delta.model_extra or {}) for choice in event.chunk.choices))
+        result = events.get_final_completion().model_dump(exclude_unset=True)
+    message = result["choices"][0]["message"]
+    # Parsed fields and delta indices belong to the SDK accumulator, not history.
+    if "parsed" in message:
+        check(message.pop("parsed") is None)
+    for index, call in enumerate(message.get("tool_calls") or []):
+        if "index" in call:
+            check(call.pop("index") == index)
+        if "parsed_arguments" in call["function"]:
+            check(call["function"].pop("parsed_arguments") is None)
+    return result
 
 
 
@@ -73,9 +61,13 @@ def run(base, recovery_stream=None):
                 check("reasoning_content" not in message and "reasoning_details" not in message)
                 params["messages"].append(message)
                 if turn == 1:
-                    call, = message["tool_calls"]
+                    call, second = message["tool_calls"]
                     check(call == {"id": "call-lookup", "type": "function",
                                    "function": {"name": "lookup", "arguments": '{ "key": "A" }'}})
+                    check(second == {"id": "call-second", "type": "function",
+                                     "function": {"name": "lookup", "arguments": '{"key":"B"}'}})
+                    params["messages"].append({"role": "tool", "tool_call_id": second["id"],
+                                               "content": "second-result"})
                     params["messages"].append({"role": "tool", "tool_call_id": call["id"],
                                                "content": RESULT})
                 else:

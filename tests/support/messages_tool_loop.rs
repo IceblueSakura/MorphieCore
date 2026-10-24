@@ -51,7 +51,8 @@ pub fn snapshot(turn: usize) -> Value {
         1 => json!([
             {"type":"thinking","thinking":"plan lookup","signature":"native-lookup-signature"},
             {"type":"redacted_thinking","data":"native-redacted"},
-            {"type":"tool_use","id":"call-lookup","name":"lookup","input":{"key":"A"}}
+            {"type":"tool_use","id":"call-lookup","name":"lookup","input":{"key":"A"}},
+            {"type":"tool_use","id":"call-second","name":"lookup","input":{"key":"B"}}
         ]),
         3 => json!([
             {"type":"thinking","thinking":"plan inspect","signature":"native-inspect-signature"},
@@ -102,9 +103,12 @@ async fn answer(
             json!({"role":"assistant","content":[
                 {"type":"thinking","thinking":"plan lookup","signature":"native-lookup-signature"},
                 {"type":"redacted_thinking","data":"native-redacted"},
-                {"type":"tool_use","id":"call-lookup","name":"lookup","input":{"key":"A"}}
+                {"type":"tool_use","id":"call-lookup","name":"lookup","input":{"key":"A"}},
+                {"type":"tool_use","id":"call-second","name":"lookup","input":{"key":"B"}}
             ]}),
-            json!({"role":"user","content":[{"type":"tool_result","tool_use_id":"call-lookup","content":"A","is_error":false}]}),
+            json!({"role":"user","content":[
+                {"type":"tool_result","tool_use_id":"call-second","content":"second-result","is_error":true},
+                {"type":"tool_result","tool_use_id":"call-lookup","content":"A","is_error":false}]}),
             json!({"role":"system","content":[],"output_config":{"effort":"high"}}),
         ]);
     }

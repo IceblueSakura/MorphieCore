@@ -286,14 +286,17 @@ async fn stored_and_stateless_tool_history_agree_in_json_and_sse() {
                     );
                 }
                 let next = if turn == 1 {
-                    json!({"type":"function_call_output","call_id":"call-lookup","output":fixture::RESULT})
+                    json!([
+                        {"type":"function_call_output","call_id":"call-second","output":"second-result"},
+                        {"type":"function_call_output","call_id":"call-lookup","output":fixture::RESULT}
+                    ])
                 } else {
-                    json!({"role":"user","content":"next"})
+                    json!([{"role":"user","content":"next"}])
                 };
                 if stored {
                     output_id = response["id"].clone();
                     body["previous_response_id"] = output_id.clone();
-                    body["input"] = json!([next]);
+                    body["input"] = next;
                 } else {
                     let mut returned = output.clone();
                     if stream {
@@ -311,7 +314,10 @@ async fn stored_and_stateless_tool_history_agree_in_json_and_sse() {
                         }
                     }
                     body["input"].as_array_mut().unwrap().extend(returned);
-                    body["input"].as_array_mut().unwrap().push(next);
+                    body["input"]
+                        .as_array_mut()
+                        .unwrap()
+                        .extend(next.as_array().unwrap().iter().cloned());
                 }
             }
             effective.push(

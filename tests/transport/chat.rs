@@ -49,6 +49,61 @@ fn options(usage: bool) -> StreamOptions {
 }
 
 #[test]
+fn decoded_padding_has_an_aggregate_utf8_budget_and_poisoned_rejection() {
+    use morphiecore::protocol::stream::SseError;
+    let mut chunks = wire::events(2);
+    for chunk in chunks.iter_mut().take(2) {
+        chunk["obfuscation"] = json!("🧪");
+    }
+    let bytes: Vec<_> = chunks
+        .iter()
+        .flat_map(frame)
+        .chain(b"data: [DONE]\n\n".iter().copied())
+        .collect();
+    for size in [1, bytes.len()] {
+        let mut exact = ChatSseDecoder::new(
+            200,
+            "text/event-stream",
+            SseLimits {
+                max_obfuscation_bytes: 8,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        consume(&mut exact, &bytes, size);
+        exact.finish().unwrap();
+        let mut limited = ChatSseDecoder::new(
+            200,
+            "text/event-stream",
+            SseLimits {
+                max_obfuscation_bytes: 7,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let mut failure = None;
+        'chunks: for chunk in bytes.chunks(size) {
+            let mut rest = chunk;
+            while !rest.is_empty() {
+                match limited.consume(rest) {
+                    Ok((used, _)) => {
+                        assert!(used > 0);
+                        rest = &rest[used..];
+                    }
+                    Err(error) => {
+                        failure = Some(error);
+                        break 'chunks;
+                    }
+                }
+            }
+        }
+        assert!(matches!(failure, Some(SseError::Limit)));
+        assert!(matches!(limited.consume(&bytes), Err(SseError::Closed)));
+        assert!(matches!(limited.finish(), Err(SseError::Closed)));
+    }
+}
+
+#[test]
 fn chat_rejects_uncarried_cache_boundaries_before_client_field_filtering() {
     use morphiecore::protocol::{
         CodecError,
