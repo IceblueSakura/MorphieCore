@@ -80,7 +80,7 @@ Release reset and the bounded official-contract inventory/initial asset integrat
 
 | Slice | Work and exit evidence |
 |---|---|
-| Canonical ownership and mapping | **In progress.** Usage/presentation dedup, prediction retention, owner-local cache/image directives, participant labels, direct-only tool defaults, native omitted-strict fallback, exact-first allocation and tool-error wrapping are implemented. Continue remaining basic-tool fidelity, role, sampling, schema/media, historical-control and omission corrections without expanding frozen APIs |
+| Canonical ownership and mapping | **In progress.** Usage/presentation dedup, prediction retention, owner-local cache/image directives, participant labels, direct-only tool defaults, native omitted-strict fallback, exact-first allocation and tool-error wrapping are implemented. Apply the [latest Messages contract](architecture.md#protocols): reject removed public fields and delete obsolete Messages mappings rather than maintain older-version compatibility. Continue remaining basic-tool fidelity, role, schema/media, historical-control and omission corrections without expanding frozen APIs |
 | Standard delivery and continuation | Remove public Provider/MorphieCore dialect assumptions and fabricated reasoning manifest owners. Preserve valid native replay and existing managed-history state without lossy temporary-wire composition. Check required fields on success/failure, stream order, EOF, errors and cancellation |
 | Actual adaptation reports | One execution-owned bounded report, selected-attempt and successful-boundary evidence, field-specific estimates, JSON/SSE/retrieval agreement and concise standard/namespaced notice carriers. Verify raw SDK events separately from final-object retention; do not publish a held candidate merely to report preparation |
 | Integrated acceptance | Close all four [text/SSE gate](#current-text-and-sse-gate) slices against the new contracts, then independently accept selected stable clients and bounded Providers. No legacy expected-output regeneration or blanket weakening to recover green tests |
@@ -574,7 +574,7 @@ The remaining deferred gaps are explicit exclusions, not claims of complete offi
 - Messages turn-scoped system messages (`clear_at`) have no IR owner and reject.
 - Generated media beyond Chat audio need a selected output, stream and replay design. Other hosted tools remain deferred; observation types do not imply an end-to-end contract.
 - Chat `store: true` rejects; there are no stored completions.
-- Messages codecs carry `top_k`; the selected fixed-sampling Go/Haiku binding rejects it. Tokenizer-unbound `logit_bias` rejects.
+- Tokenizer-unbound `logit_bias` rejects.
 - The wider budget-scope exception for manual interleaved thinking remains deferred. S1-3 supports only ordinary manual-budget relations; this does not disable adaptive thinking or existing tool loops.
 - Gemini finish reasons without content semantics (`MALFORMED_FUNCTION_CALL`, `UNEXPECTED_TOOL_CALL`, `TOO_MANY_TOOL_CALLS`, `LANGUAGE`, `OTHER`) stay attempt failures under the routing freeze.
 - Tool-result video has no carrier on any bound target.
