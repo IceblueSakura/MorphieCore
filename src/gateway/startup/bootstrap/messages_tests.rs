@@ -5,7 +5,7 @@ use crate::{
     adapter::{AdapterError, ClientAdapter, ClientProtocol},
     execution::{AttemptError, admit, plan::representable, prepare},
     lowering::generation::RepresentationError,
-    semantic::task::generation::{GenerationFeature, Item, PrefixCacheTtl},
+    semantic::task::generation::{GenerationFeature, Item, PrefixCacheBoundary, PrefixCacheTtl},
 };
 use serde_json::{Value, json};
 use tower::ServiceExt;
@@ -481,8 +481,8 @@ async fn configured_messages_cache_admission_requires_all_native_candidates() {
             assert_eq!(
                 system.parts.iter().map(|p| p.cache).collect::<Vec<_>>(),
                 [
-                    Some(PrefixCacheTtl::OneHour),
-                    Some(PrefixCacheTtl::FiveMinutes)
+                    Some(PrefixCacheBoundary::Ttl(PrefixCacheTtl::OneHour)),
+                    Some(PrefixCacheBoundary::Ttl(PrefixCacheTtl::FiveMinutes))
                 ]
             );
             let Item::ToolResult(result) = &request.task.semantic.items().last().unwrap().1 else {

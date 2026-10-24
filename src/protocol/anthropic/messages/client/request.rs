@@ -230,7 +230,7 @@ pub fn decode_client_request(bytes: &[u8]) -> Result<Request, CodecError> {
                                 replay: None,
                                 id: PartId::scoped(scope, i as u64 + 1),
                                 content: text(&s.content)?,
-                                cache: s.cache,
+                                cache: s.cache.map(PrefixCacheBoundary::Ttl),
                             })
                         })
                         .collect::<Result<_, CodecError>>()?,

@@ -74,9 +74,9 @@ pub use tools::provider::{
 pub use tools::result::{ToolExecution, ToolOutput, ToolResult};
 pub use tools::{
     ArgumentFormat, CallContext, CallOrigin, CallerMode, CustomCall, CustomFormat, CustomTool,
-    FunctionStrictness, FunctionTool, GrammarSyntax, ItemLifecycle, PrefixCacheTtl, Program,
-    ProgramOutput, StrictDefault, ToolArguments, ToolCall, ToolChoice, ToolDefinition,
-    ToolDispatch, ToolKind, ToolNamespace, ToolReference,
+    FunctionStrictness, FunctionTool, GrammarSyntax, ItemLifecycle, PrefixCacheBoundary,
+    PrefixCacheTtl, Program, ProgramOutput, StrictDefault, ToolArguments, ToolCall, ToolChoice,
+    ToolDefinition, ToolDispatch, ToolKind, ToolNamespace, ToolReference,
 };
 pub use usage::reports::{
     CacheWriteTokens, ModalityTokens, SplitTotalRelation, TokenModality, ToolInputRelation,

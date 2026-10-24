@@ -1252,7 +1252,7 @@ fn restore_keeps_described_phase_and_drops_unsplittable_carriers() {
 
     // A cache marker ending inside a restored part has no faithful owner.
     let mut cached = text(1, "O");
-    cached.cache = Some(PrefixCacheTtl::FiveMinutes);
+    cached.cache = Some(PrefixCacheBoundary::Ttl(PrefixCacheTtl::FiveMinutes));
     dropped(
         history(None, vec![cached, text(2, "K")]),
         marker(None, vec![segment("OK")]),

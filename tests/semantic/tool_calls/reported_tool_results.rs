@@ -22,8 +22,8 @@ fn result() -> Value {
 }
 fn custom_result() -> Value {
     json!({"id":"out_2","type":"custom_tool_call_output","call_id":"custom",
-            "output":[{"type":"input_text","text":"caption"},
-                {"type":"input_image","image_url":"https://example.invalid/result.png"}],
+            "output":[{"type":"input_text","text":"caption","prompt_cache_breakpoint":{"mode":"explicit"}},
+                {"type":"input_image","image_url":"https://example.invalid/result.png","prompt_cache_breakpoint":{"mode":"explicit"}}],
             "status":"completed"})
 }
 fn semantic() -> GenerationResponse {
@@ -55,11 +55,18 @@ fn semantic() -> GenerationResponse {
                     cache: None,
                     name: None,
                     output: ToolOutput::Parts(vec![
-                        Part::new(PartId::new(1), InputPart::Text(text("caption"))),
-                        Part::new(
-                            PartId::new(2),
-                            InputPart::Resource(crate::resources_support::image(1)),
-                        ),
+                        Part {
+                            id: PartId::new(1),
+                            content: InputPart::Text(text("caption")),
+                            cache: Some(PrefixCacheBoundary::RequestLifetime),
+                            replay: None,
+                        },
+                        Part {
+                            id: PartId::new(2),
+                            content: InputPart::Resource(crate::resources_support::image(1)),
+                            cache: Some(PrefixCacheBoundary::RequestLifetime),
+                            replay: None,
+                        },
                     ]),
                     status: Some(ItemLifecycle::Completed),
                     is_error: None,
@@ -168,6 +175,134 @@ fn reported_results_preserve_facts_and_reject_missing_downstream_carriers() {
         output.as_array().unwrap()
     );
     assert!(responses::decode_generation(&replay).is_ok());
+}
+
+#[test]
+fn result_cache_snapshot_edits_are_semantic_and_native_ttls_reject_before_publication() {
+    // Current pinned Responses output content has nullable breakpoint reports.
+    let marked = custom_result();
+    let mut cleared = marked.clone();
+    for part in cleared["output"].as_array_mut().unwrap() {
+        part["prompt_cache_breakpoint"] = Value::Null;
+    }
+    let decoded =
+        responses::decode_response(&envelope("completed", json!([cleared.clone()]))).unwrap();
+    assert!(!decoded.semantic.items()[0].1.has_cache_breakpoints());
+    for (mut opening, closing, count) in [
+        (marked.clone(), cleared.clone(), 0),
+        (cleared, marked.clone(), 2),
+        (marked.clone(), marked, 2),
+    ] {
+        let mut decoder = EventDecoder::new(Profile::Responses);
+        opening["status"] = json!("in_progress");
+        for event in [
+            created(),
+            json!({"type":"response.output_item.added","output_index":0,"item":opening}),
+            json!({"type":"response.output_item.done","output_index":0,"item":closing.clone()}),
+            json!({"type":"response.completed","response":envelope("completed", json!([closing.clone()]))}),
+        ] {
+            decoder.push(&event).unwrap();
+        }
+        let final_value = decoder.materialize().unwrap();
+        assert_eq!(
+            final_value.semantic.items()[0].1.cache_boundaries().count(),
+            count
+        );
+        // Changed snapshots get fresh local identities; compare actual native output,
+        // not unrelated static/stream allocation counters.
+        let target = lower_response(
+            &final_value.semantic,
+            &final_value.fidelity,
+            &final_value.metadata,
+            Profile::Responses,
+            TargetCaps::full(),
+        )
+        .unwrap();
+        let mut expected = closing;
+        for part in expected["output"].as_array_mut().unwrap() {
+            if part["prompt_cache_breakpoint"].is_null() {
+                part.as_object_mut()
+                    .unwrap()
+                    .remove("prompt_cache_breakpoint");
+            }
+        }
+        assert_eq!(
+            responses::encode_response(&target).unwrap()["output"],
+            json!([expected])
+        );
+        assert!(final_value.semantic.resources().len() <= 2);
+    }
+
+    let Item::CustomResult(mut result) = semantic().items()[1].1.clone() else {
+        unreachable!()
+    };
+    // A text-only independent result needs no resource declarations.
+    result.output = ToolOutput::Parts(vec![Part {
+        id: PartId::new(1),
+        content: InputPart::Text(text("caption")),
+        cache: Some(PrefixCacheBoundary::RequestLifetime),
+        replay: None,
+    }]);
+    let mut outer_ttl = result.clone();
+    outer_ttl.cache = Some(PrefixCacheTtl::FiveMinutes);
+    assert_eq!(
+        GenerationResponse::new(
+            vec![(ItemId::new(1), Item::CustomResult(outer_ttl))],
+            Outcome::Completed
+        ),
+        Err(GenerationError::InvalidResponse)
+    );
+    let mut native_ttl = result.clone();
+    let ToolOutput::Parts(parts) = &mut native_ttl.output else {
+        unreachable!()
+    };
+    parts[0].cache = Some(PrefixCacheBoundary::Ttl(PrefixCacheTtl::FiveMinutes));
+    assert_eq!(
+        GenerationResponse::new(
+            vec![(ItemId::new(1), Item::CustomResult(native_ttl.clone()))],
+            Outcome::Completed
+        ),
+        Err(GenerationError::InvalidResponse)
+    );
+    result.status = Some(ItemLifecycle::InProgress);
+    native_ttl.status = Some(ItemLifecycle::InProgress);
+    let started = reduce(StreamState::new(), StreamEvent::Started).unwrap();
+    assert_eq!(
+        reduce(
+            started.clone(),
+            start(1, ItemKind::CustomResult(native_ttl.clone()))
+        ),
+        Err(EventError::Semantic(GenerationError::InvalidResponse))
+    );
+    let state = reduce(started, start(1, ItemKind::CustomResult(result))).unwrap();
+    assert_eq!(
+        reduce(
+            state.clone(),
+            StreamEvent::ToolResultOutput {
+                item: ItemId::new(1),
+                output: native_ttl.output,
+            }
+        ),
+        Err(EventError::Semantic(GenerationError::InvalidResponse))
+    );
+    let state = reduce(
+        state,
+        StreamEvent::ToolResultOutput {
+            item: ItemId::new(1),
+            output: ToolOutput::Parts(vec![Part::new(
+                PartId::new(1),
+                InputPart::Text(text("caption")),
+            )]),
+        },
+    )
+    .unwrap();
+    let state = reduce(state, close(1, ItemLifecycle::Completed)).unwrap();
+    let state = reduce(state, terminal(StreamTerminal::Completed)).unwrap();
+    assert!(
+        !materialize(&state).unwrap().items()[0]
+            .1
+            .has_cache_breakpoints()
+    );
 }
 
 #[test]

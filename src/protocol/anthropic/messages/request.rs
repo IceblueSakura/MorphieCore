@@ -165,7 +165,7 @@ impl Profile {
                                     replay: None,
                                     id: PartId::scoped(scope, i as u64 + 1),
                                     content: text(&s.content)?,
-                                    cache: s.cache,
+                                    cache: s.cache.map(PrefixCacheBoundary::Ttl),
                                 })
                             })
                             .collect::<Result<_, CodecError>>()?,
@@ -249,7 +249,7 @@ impl Profile {
     }
 }
 
-use super::items::unsupported;
+use super::items::{cache_ttl, unsupported};
 /// Named degradable rules applied to one candidate's request copy.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
 pub enum RequestRule {
@@ -387,10 +387,17 @@ fn system_messages(
                 if i.authority == InstructionAuthority::Developer {
                     rules.insert(RequestRule::DeveloperAsSystem);
                 }
-                blocks.extend(i.parts.iter().map(|p| super::CacheMarked {
-                    content: Block::Text(p.content.as_str().into()),
-                    cache: p.cache,
-                }));
+                blocks.extend(
+                    i.parts
+                        .iter()
+                        .map(|p| {
+                            Ok(super::CacheMarked {
+                                content: Block::Text(p.content.as_str().into()),
+                                cache: cache_ttl(p.cache)?,
+                            })
+                        })
+                        .collect::<Result<Vec<_>, CodecError>>()?,
+                );
             }
             Item::ToolChange(change) => blocks.push(super::CacheMarked {
                 content: match &change.action {
@@ -472,11 +479,13 @@ pub(in crate::protocol::anthropic::messages) fn project(
         system = Presence::Value(WireText::Blocks(
             i.parts
                 .iter()
-                .map(|p| super::CacheMarked {
-                    content: p.content.as_str().into(),
-                    cache: p.cache,
+                .map(|p| {
+                    Ok(super::CacheMarked {
+                        content: p.content.as_str().into(),
+                        cache: cache_ttl(p.cache)?,
+                    })
                 })
-                .collect(),
+                .collect::<Result<_, CodecError>>()?,
         ));
     }
     let tools = if s.tools.is_some() {
@@ -708,37 +717,40 @@ pub(in crate::protocol::anthropic::messages) fn project(
                 item_blocks(*owner, item, request, fidelity, target, normalized, omitted)?
                     .into_iter()
                     .enumerate()
-                    .map(|(index, block)| super::CacheMarked {
-                        cache: match item {
-                            Item::Message(m) => m.parts[index].cache,
-                            Item::ToolCall(c) => c.cache,
-                            Item::ToolResult(r) => r.cache,
-                            _ => None,
-                        },
-                        content: match block {
-                            Block::ToolUse {
-                                id,
-                                name,
-                                input,
-                                caller,
-                            } => Block::ToolUse {
-                                id: call_id(&id, rules),
-                                name,
-                                input,
-                                caller,
+                    .map(|(index, block)| {
+                        Ok(super::CacheMarked {
+                            cache: match item {
+                                Item::Message(m) => cache_ttl(m.parts[index].cache)?,
+                                Item::ToolCall(c) => c.cache,
+                                Item::ToolResult(r) => r.cache,
+                                _ => None,
                             },
-                            Block::ToolResult {
-                                tool_use_id,
-                                content,
-                                is_error,
-                            } => Block::ToolResult {
-                                tool_use_id: call_id(&tool_use_id, rules),
-                                content,
-                                is_error,
+                            content: match block {
+                                Block::ToolUse {
+                                    id,
+                                    name,
+                                    input,
+                                    caller,
+                                } => Block::ToolUse {
+                                    id: call_id(&id, rules),
+                                    name,
+                                    input,
+                                    caller,
+                                },
+                                Block::ToolResult {
+                                    tool_use_id,
+                                    content,
+                                    is_error,
+                                } => Block::ToolResult {
+                                    tool_use_id: call_id(&tool_use_id, rules),
+                                    content,
+                                    is_error,
+                                },
+                                other => other,
                             },
-                            other => other,
-                        },
-                    }),
+                        })
+                    })
+                    .collect::<Result<Vec<_>, CodecError>>()?,
             );
         }
         messages.push(InputMessage {

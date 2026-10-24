@@ -58,7 +58,7 @@ impl Intake {
                     replay: None,
                     id: PartId::scoped(self.scope, base + i as u64),
                     content: text(&part.content)?,
-                    cache: part.cache,
+                    cache: part.cache.map(PrefixCacheBoundary::Ttl),
                 })
             })
             .collect::<Result<_, CodecError>>()?;
@@ -254,7 +254,7 @@ impl Intake {
                                     Ok(Part {
                                         replay: None,
                                         id: part,
-                                        cache: block.cache,
+                                        cache: block.cache.map(PrefixCacheBoundary::Ttl),
                                         content: match &block.content {
                                             ResultBlock::Text(s) => InputPart::Text(text(s)?),
                                             ResultBlock::Media(m) => {
@@ -297,7 +297,7 @@ impl Intake {
             let id = self.block(&block.content, role)?;
             let item = &mut self.items.last_mut().expect("inserted block").1;
             match item {
-                Item::Message(m) => m.parts[0].cache = block.cache,
+                Item::Message(m) => m.parts[0].cache = block.cache.map(PrefixCacheBoundary::Ttl),
                 Item::ToolCall(c) => c.cache = block.cache,
                 Item::ToolResult(r) => r.cache = block.cache,
                 _ if block.cache.is_some() => {
@@ -381,22 +381,24 @@ pub(in crate::protocol::anthropic::messages) fn validate_cache(
         match item {
             Item::Instruction(i) => {
                 for part in &i.parts {
-                    if !text_cache_eligible(part.content.as_str(), part.cache)? {
+                    let cache = super::cache_ttl(part.cache)?;
+                    if !text_cache_eligible(part.content.as_str(), cache)? {
                         continue;
                     }
-                    markers.extend(part.cache);
-                    last = Some(part.cache);
+                    markers.extend(cache);
+                    last = Some(cache);
                 }
             }
             Item::Message(m) => {
                 for part in &m.parts {
+                    let cache = super::cache_ttl(part.cache)?;
                     if let ContentPart::Text(text) = &part.content
-                        && !text_cache_eligible(text.as_str(), part.cache)?
+                        && !text_cache_eligible(text.as_str(), cache)?
                     {
                         continue;
                     }
-                    markers.extend(part.cache);
-                    last = Some(part.cache);
+                    markers.extend(cache);
+                    last = Some(cache);
                 }
             }
             Item::ToolCall(c) => {
@@ -406,10 +408,11 @@ pub(in crate::protocol::anthropic::messages) fn validate_cache(
             Item::ToolResult(r) => {
                 if let ToolOutput::Parts(parts) = &r.output {
                     for part in parts {
+                        let cache = super::cache_ttl(part.cache)?;
                         if let InputPart::Text(text) = &part.content {
-                            text_cache_eligible(text.as_str(), part.cache)?;
+                            text_cache_eligible(text.as_str(), cache)?;
                         }
-                        markers.extend(part.cache);
+                        markers.extend(cache);
                     }
                 }
                 markers.extend(r.cache);

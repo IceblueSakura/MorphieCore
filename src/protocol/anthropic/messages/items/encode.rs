@@ -109,7 +109,7 @@ pub(in crate::protocol::anthropic::messages) fn item_blocks(
                         .iter()
                         .map(|part| {
                             Ok(crate::protocol::anthropic::messages::CacheMarked {
-                                cache: part.cache,
+                                cache: super::cache_ttl(part.cache)?,
                                 content: match &part.content {
                                     InputPart::Text(t) => ResultBlock::Text(t.as_str().into()),
                                     InputPart::Resource(r) => ResultBlock::Media(media(r)?),

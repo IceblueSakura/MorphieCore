@@ -219,12 +219,19 @@ fn request_codecs_enforce_result_carriers_before_rendering() {
                         {"type":"input_image","image_url":"https://example.invalid/image.png"}
                     ])
                 );
-                let mut breakpoint = FidelityRecords::default();
-                breakpoint.record_cache_breakpoint(PartId::new(1)).unwrap();
+                let mut items = semantic.items().to_vec();
+                let Item::ToolResult(result) = &mut items[1].1 else {
+                    unreachable!()
+                };
+                let ToolOutput::Parts(parts) = &mut result.output else {
+                    unreachable!()
+                };
+                parts[0].cache = Some(PrefixCacheBoundary::RequestLifetime);
+                let marked = semantic.clone().with_items(items).unwrap();
                 let forged = RequestRepresentation {
-                    semantic: std::borrow::Cow::Borrowed(&semantic),
+                    semantic: std::borrow::Cow::Borrowed(&marked),
                     projection: vec![],
-                    fidelity: &breakpoint,
+                    fidelity: &fidelity,
                     profile,
                     adaptation: Default::default(),
                 };
@@ -232,6 +239,34 @@ fn request_codecs_enforce_result_carriers_before_rendering() {
                     responses::encode_generation(&forged).unwrap()["input"][1]["output"][0]["prompt_cache_breakpoint"],
                     serde_json::json!({"mode":"explicit"})
                 );
+                let mut items = marked.items().to_vec();
+                let Item::ToolResult(result) = &mut items[1].1 else {
+                    unreachable!()
+                };
+                let ToolOutput::Parts(parts) = &mut result.output else {
+                    unreachable!()
+                };
+                parts[0].cache = Some(PrefixCacheBoundary::Ttl(PrefixCacheTtl::OneHour));
+                let native_ttl = marked.clone().with_items(items).unwrap();
+                for (semantic, profile) in
+                    [(&marked, Profile::Chat), (&native_ttl, Profile::Responses)]
+                {
+                    let forged = RequestRepresentation {
+                        semantic: std::borrow::Cow::Borrowed(semantic),
+                        projection: vec![],
+                        fidelity: &fidelity,
+                        profile,
+                        adaptation: Default::default(),
+                    };
+                    let result = match profile {
+                        Profile::Chat => chat::encode_generation(&forged),
+                        Profile::Responses => responses::encode_generation(&forged),
+                    };
+                    assert_eq!(
+                        result,
+                        Err(CodecError::Unsupported("cache boundary carrier".into()))
+                    );
+                }
             } else {
                 assert!(matches!(result, Err(CodecError::Unsupported(_))));
             }

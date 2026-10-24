@@ -853,7 +853,10 @@ fn ordered_system_blocks_and_disabled_controls_have_independent_semantic_owners(
     let Item::Instruction(instruction) = &content.semantic.items()[0].1 else {
         panic!("system owner")
     };
-    assert_eq!(instruction.parts[0].cache, Some(PrefixCacheTtl::OneHour));
+    assert_eq!(
+        instruction.parts[0].cache,
+        Some(PrefixCacheBoundary::Ttl(PrefixCacheTtl::OneHour))
+    );
     assert_eq!(instruction.parts[1].cache, None);
     assert_eq!(
         content.semantic.settings().automatic_prefix_cache,
@@ -877,7 +880,7 @@ fn ordered_system_blocks_and_disabled_controls_have_independent_semantic_owners(
                             replay: None,
                             id: PartId::new(1),
                             content: text("stable"),
-                            cache: Some(PrefixCacheTtl::OneHour),
+                            cache: Some(PrefixCacheBoundary::Ttl(PrefixCacheTtl::OneHour)),
                         },
                         Part::new(PartId::new(2), text("changing")),
                     ],
@@ -893,7 +896,7 @@ fn ordered_system_blocks_and_disabled_controls_have_independent_semantic_owners(
                         replay: None,
                         id: PartId::new(3),
                         content: ContentPart::Text(text("go").into()),
-                        cache: Some(PrefixCacheTtl::FiveMinutes),
+                        cache: Some(PrefixCacheBoundary::Ttl(PrefixCacheTtl::FiveMinutes)),
                     }],
                 }),
             ),
@@ -950,7 +953,10 @@ fn ordered_system_blocks_and_disabled_controls_have_independent_semantic_owners(
     let Item::Message(message) = &long.semantic.items()[0].1 else {
         panic!("message")
     };
-    assert_eq!(message.parts[0].cache, Some(PrefixCacheTtl::OneHour));
+    assert_eq!(
+        message.parts[0].cache,
+        Some(PrefixCacheBoundary::Ttl(PrefixCacheTtl::OneHour))
+    );
     assert_eq!(
         p.encode_generation_request(&long.semantic, &long.fidelity, &target())
             .unwrap()
@@ -985,7 +991,10 @@ fn ordered_system_blocks_and_disabled_controls_have_independent_semantic_owners(
     let ToolOutput::Parts(parts) = &result.output else {
         panic!("inner owners")
     };
-    assert_eq!(parts[0].cache, Some(PrefixCacheTtl::OneHour));
+    assert_eq!(
+        parts[0].cache,
+        Some(PrefixCacheBoundary::Ttl(PrefixCacheTtl::OneHour))
+    );
     assert_eq!(parts[1].cache, None);
     let encoded = p
         .encode_generation_request(&nested.semantic, &nested.fidelity, &target())
@@ -1073,7 +1082,7 @@ fn ordered_system_blocks_and_disabled_controls_have_independent_semantic_owners(
         replay: None,
         id: PartId::new(4),
         content: ContentPart::Text(Text::allowing_empty("", "fixture", 64).unwrap().into()),
-        cache: Some(PrefixCacheTtl::FiveMinutes),
+        cache: Some(PrefixCacheBoundary::Ttl(PrefixCacheTtl::FiveMinutes)),
     });
     let cached_edit = manual.clone().with_items(items).unwrap();
     assert_eq!(

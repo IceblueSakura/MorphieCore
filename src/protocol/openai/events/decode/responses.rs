@@ -428,11 +428,9 @@ impl EventDecoder {
         if let Some(previous) = previous
             && crate::protocol::openai::responses::items::output_wire(
                 &previous.output,
-                &self.fidelity,
                 self.state()?.resources(),
             ) == crate::protocol::openai::responses::items::output_wire(
                 &result.output,
-                &sources.fidelity,
                 &sources.resources,
             )
         {
@@ -444,9 +442,6 @@ impl EventDecoder {
         if let ToolOutput::Parts(parts) = &mut result.output {
             for part in parts {
                 let next = self.allocate_part()?;
-                if sources.fidelity.cache_breakpoint(part.id) {
-                    self.fidelity.record_cache_breakpoint(next)?;
-                }
                 part.id = next;
             }
         }

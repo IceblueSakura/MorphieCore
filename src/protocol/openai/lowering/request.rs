@@ -238,26 +238,17 @@ pub fn lower_request<'a>(
         }
     }
     for (_, item) in r.items() {
-        if item.has_cache_breakpoints() {
-            return Err(RepresentationError::Controls);
-        }
-        let parts: Vec<_> = match item {
-            Item::Instruction(i) => i.parts.iter().map(|p| p.id).collect(),
-            Item::Message(m) => m.parts.iter().map(|p| p.id).collect(),
-            Item::ToolResult(r) | Item::CustomResult(r) => match &r.output {
-                ToolOutput::Parts(p) => p.iter().map(|p| p.id).collect(),
-                _ => vec![],
-            },
-            _ => vec![],
-        };
-        if profile == Profile::Chat && parts.iter().any(|id| fidelity.cache_breakpoint(*id)) {
+        if item
+            .cache_boundaries()
+            .any(|cache| profile == Profile::Chat || matches!(cache, PrefixCacheBoundary::Ttl(_)))
+        {
             return Err(RepresentationError::Controls);
         }
         if let Item::Message(m) = item
             && m.parts.iter().any(|p| {
                 matches!(&p.content, ContentPart::Text(t)
                     if !t.is_plain()
-                        && (m.role == MessageRole::User || fidelity.cache_breakpoint(p.id)))
+                        && (m.role == MessageRole::User || p.cache.is_some()))
             })
         {
             return Err(RepresentationError::TextMetadata);

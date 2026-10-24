@@ -25,7 +25,8 @@ use morphiecore::{
     },
     semantic::{
         task::generation::{
-            ContentPart, Continuation, GenerationResponse, Item, Outcome, StreamEvent,
+            ContentPart, Continuation, GenerationRequirements, GenerationResponse, Item, Outcome,
+            PrefixCacheBoundary, StreamEvent,
         },
         value::{Presence, ReplayOrigin, Text},
     },
@@ -127,6 +128,31 @@ async fn handle(State(state): State<Suite>, headers: HeaderMap, body: Bytes) -> 
         seen.0 += 1;
         seen.0
     };
+    assert_eq!(
+        encoded["prompt_cache_options"],
+        serde_json::json!({"mode":"explicit","ttl":"30m"})
+    );
+    assert_eq!(
+        encoded["input"][0]["content"],
+        serde_json::json!([{
+            "type":"input_text","text":"hello 🧪","prompt_cache_breakpoint":{"mode":"explicit"}
+        }])
+    );
+    assert!(!GenerationRequirements::derive(&decoded.task.semantic).explicit_cache);
+    assert_eq!(
+        decoded.task.semantic.items()[0]
+            .1
+            .cache_boundaries()
+            .collect::<Vec<_>>(),
+        [PrefixCacheBoundary::RequestLifetime]
+    );
+    if turn >= 2 {
+        assert!(encoded["input"].as_array().unwrap().iter().any(|item|
+            item["type"] == "function_call_output" && item["output"] == serde_json::json!([{
+                "type":"input_text","text":"{\"n\":1}","prompt_cache_breakpoint":{"mode":"explicit"}
+            }])
+        ));
+    }
     if encoded["reasoning"] != serde_json::json!({"effort":"low","summary":"auto"}) {
         return failure(StatusCode::BAD_REQUEST, "reasoning controls", &state);
     }

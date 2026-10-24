@@ -98,7 +98,7 @@ pub(in crate::protocol::openai) fn write_call_context(
         );
     }
 }
-fn output(b: &mut Items, v: &Value) -> Result<ToolOutput, CodecError> {
+fn output(b: &mut Items, v: &Value, response: bool) -> Result<ToolOutput, CodecError> {
     if let Some(s) = v.as_str() {
         if s.len() > MAX_TEXT_BYTES {
             return Err(CodecError::Limit);
@@ -106,10 +106,14 @@ fn output(b: &mut Items, v: &Value) -> Result<ToolOutput, CodecError> {
         return Ok(ToolOutput::Text(s.into()));
     }
     let a = v.as_array().ok_or(CodecError::Invalid("tool output"))?;
-    Ok(ToolOutput::Parts(input_parts(b, a)?))
+    Ok(ToolOutput::Parts(input_parts(b, a, response)?))
 }
 /// Text and media input content of tool results.
-fn input_parts(b: &mut Items, a: &[Value]) -> Result<Vec<Part<InputPart>>, CodecError> {
+fn input_parts(
+    b: &mut Items,
+    a: &[Value],
+    response: bool,
+) -> Result<Vec<Part<InputPart>>, CodecError> {
     let direction = b.direction;
     if a.len() > MAX_ITEMS {
         return Err(CodecError::Limit);
@@ -121,7 +125,7 @@ fn input_parts(b: &mut Items, a: &[Value]) -> Result<Vec<Part<InputPart>>, Codec
             "input_text" => {
                 direction.fields(o, &["type", "text", "prompt_cache_breakpoint"])?;
                 let id = b.part_id()?;
-                record_input_form(b, id, o)?;
+                b.fidelity.record_input_text(id)?;
                 (
                     id,
                     InputPart::Text(
@@ -140,13 +144,11 @@ fn input_parts(b: &mut Items, a: &[Value]) -> Result<Vec<Part<InputPart>>, Codec
                     direction,
                 )?;
                 let id = b.part_id()?;
-                record_breakpoint(b, id, o)?;
                 (id, InputPart::Resource(b.resource(resource)?))
             }
             "input_file" => {
                 let resource = crate::protocol::openai::content::file::read(o, direction)?;
                 let id = b.part_id()?;
-                record_breakpoint(b, id, o)?;
                 (id, InputPart::Resource(b.resource(resource)?))
             }
             // Open Responses places video in tool results; targets without a carrier reject it.
@@ -157,26 +159,41 @@ fn input_parts(b: &mut Items, a: &[Value]) -> Result<Vec<Part<InputPart>>, Codec
             }
             _ => return Err(CodecError::Unsupported("input content part".into())),
         };
-        p.push(Part::new(part.0, part.1));
+        let mut part = Part::new(part.0, part.1);
+        part.cache = read_breakpoint(o, response)?;
+        p.push(part);
     }
     Ok(p)
 }
-fn record_input_form(b: &mut Items, id: PartId, o: &Map<String, Value>) -> Result<(), CodecError> {
+fn record_input_form(
+    b: &mut Items,
+    id: PartId,
+    o: &Map<String, Value>,
+) -> Result<Option<PrefixCacheBoundary>, CodecError> {
     b.fidelity.record_input_text(id)?;
-    record_breakpoint(b, id, o)
+    read_breakpoint(o, false)
 }
-fn record_breakpoint(b: &mut Items, id: PartId, o: &Map<String, Value>) -> Result<(), CodecError> {
-    if let Some(v) = o.get("prompt_cache_breakpoint") {
-        if v != &json!({"mode":"explicit"}) {
-            return Err(CodecError::Invalid("prompt cache breakpoint"));
+fn read_breakpoint(
+    o: &Map<String, Value>,
+    response: bool,
+) -> Result<Option<PrefixCacheBoundary>, CodecError> {
+    match o.get("prompt_cache_breakpoint") {
+        None => Ok(None),
+        Some(Value::Null) if response => Ok(None),
+        Some(v)
+            if v.as_object()
+                .and_then(|o| o.get("mode"))
+                .and_then(Value::as_str)
+                == Some("explicit") =>
+        {
+            Ok(Some(PrefixCacheBoundary::RequestLifetime))
         }
-        b.fidelity.record_cache_breakpoint(id)?;
+        _ => Err(CodecError::Invalid("prompt cache breakpoint")),
     }
-    Ok(())
 }
-fn input_part(id: PartId, text: &str, fidelity: &FidelityRecords) -> Value {
+fn input_part(text: &str, cache: Option<PrefixCacheBoundary>) -> Value {
     let mut v = json!({"type":"input_text","text":text});
-    if fidelity.cache_breakpoint(id) {
+    if cache == Some(PrefixCacheBoundary::RequestLifetime) {
         v["prompt_cache_breakpoint"] = json!({"mode":"explicit"});
     }
     v
@@ -246,6 +263,7 @@ pub(in crate::protocol::openai) fn tool_result(
         output: output(
             b,
             o.get("output").ok_or(CodecError::Invalid("tool output"))?,
+            response,
         )?,
         status: if o.contains_key("status") {
             Some(status(o, ItemLifecycle::Completed)?)
@@ -450,8 +468,8 @@ pub(in crate::protocol::openai) fn decode_items(
                         }
                         direction.fields(part, &["type", "text", "prompt_cache_breakpoint"])?;
                         let id = b.part_id()?;
-                        record_input_form(b, id, part)?;
-                        parts.push(Part::new(
+                        let cache = record_input_form(b, id, part)?;
+                        let mut part = Part::new(
                             id,
                             Text::allowing_empty(
                                 string(part, "text")?,
@@ -459,7 +477,9 @@ pub(in crate::protocol::openai) fn decode_items(
                                 MAX_TEXT_BYTES,
                             )
                             .map_err(|_| CodecError::Limit)?,
-                        ));
+                        );
+                        part.cache = cache;
+                        parts.push(part);
                     }
                     Item::Instruction(Instruction {
                         authority: if role == "system" {
@@ -533,7 +553,7 @@ pub(in crate::protocol::openai) fn decode_items(
                             _ => return Err(CodecError::Unsupported("content part".into())),
                         };
                         let part_id = b.part_id()?;
-                        match kind {
+                        let cache = match kind {
                             // The SDK union admits assistant `input_text`, but the API accepts
                             // only `output_text`; it is the same assistant text, re-spelled.
                             "input_text" if role == MessageRole::Assistant => {
@@ -542,14 +562,15 @@ pub(in crate::protocol::openai) fn decode_items(
                                         "assistant input_text breakpoint".into(),
                                     ));
                                 }
+                                None
                             }
                             "input_text" => record_input_form(b, part_id, p)?,
-                            "input_image" | "input_file" => record_breakpoint(b, part_id, p)?,
-                            _ => {}
-                        }
+                            "input_image" | "input_file" => read_breakpoint(p, false)?,
+                            _ => None,
+                        };
                         parts.push(Part {
                             replay: None,
-                            cache: None,
+                            cache,
                             id: part_id,
                             content,
                         });
@@ -607,9 +628,8 @@ pub(in crate::protocol::openai) fn compaction_content(
     Ok(value)
 }
 fn media_part(
-    id: PartId,
     resource: &ResourceUse,
-    fidelity: &FidelityRecords,
+    cache: Option<PrefixCacheBoundary>,
     resources: &ResourceTable,
 ) -> Value {
     let resource = resource.media(resources).expect("validated resource");
@@ -621,34 +641,26 @@ fn media_part(
         ResourceKind::Video => crate::protocol::openai::content::video::write_responses(resource),
         ResourceKind::Audio => unreachable!("lowering rejects audio without a Responses carrier"),
     };
-    if fidelity.cache_breakpoint(id) {
+    if cache == Some(PrefixCacheBoundary::RequestLifetime) {
         v["prompt_cache_breakpoint"] = json!({"mode":"explicit"});
     }
     v
 }
-fn input_wire(
-    parts: &[Part<InputPart>],
-    fidelity: &FidelityRecords,
-    resources: &ResourceTable,
-) -> Value {
+fn input_wire(parts: &[Part<InputPart>], resources: &ResourceTable) -> Value {
     json!(
         parts
             .iter()
             .map(|part| match &part.content {
-                InputPart::Text(text) => input_part(part.id, text.as_str(), fidelity),
-                InputPart::Resource(resource) => media_part(part.id, resource, fidelity, resources),
+                InputPart::Text(text) => input_part(text.as_str(), part.cache),
+                InputPart::Resource(resource) => media_part(resource, part.cache, resources),
             })
             .collect::<Vec<_>>()
     )
 }
-pub(in crate::protocol::openai) fn output_wire(
-    o: &ToolOutput,
-    fidelity: &FidelityRecords,
-    resources: &ResourceTable,
-) -> Value {
+pub(in crate::protocol::openai) fn output_wire(o: &ToolOutput, resources: &ResourceTable) -> Value {
     match o {
         ToolOutput::Text(s) => json!(s),
-        ToolOutput::Parts(p) => input_wire(p, fidelity, resources),
+        ToolOutput::Parts(p) => input_wire(p, resources),
         ToolOutput::Structured(_) => {
             unreachable!("lowering rejects tool result semantics without a carrier")
         }
@@ -665,13 +677,14 @@ pub(in crate::protocol::openai) fn encode_items(
         let mut v = match item {
             Item::Instruction(i) => {
                 let content = if let [part] = i.parts.as_slice()
-                    && !fidelity.cache_breakpoint(part.id)
+                    && part.cache.is_none()
                 {
                     json!(part.content.as_str())
                 } else {
                     json!(
-                        i.texts()
-                            .map(|(id, text)| input_part(id, text, fidelity))
+                        i.parts
+                            .iter()
+                            .map(|p| input_part(p.content.as_str(), p.cache))
                             .collect::<Vec<_>>()
                     )
                 };
@@ -698,7 +711,7 @@ pub(in crate::protocol::openai) fn encode_items(
                             if !response
                                 && (user || fidelity.input_text_form(p.id) && t.is_plain()) =>
                         {
-                            input_part(p.id, t.as_str(), fidelity)
+                            input_part(t.as_str(), p.cache)
                         }
                         ContentPart::Text(t) => crate::protocol::openai::content::text::write(
                             t,
@@ -708,9 +721,7 @@ pub(in crate::protocol::openai) fn encode_items(
                         ContentPart::Refusal(t) => {
                             json!({"type": "refusal", "refusal": t.as_str()})
                         }
-                        ContentPart::Resource(value) => {
-                            media_part(p.id, value, fidelity, resources)
-                        }
+                        ContentPart::Resource(value) => media_part(value, p.cache, resources),
                         ContentPart::Audio(_) | ContentPart::AudioReference(_) => {
                             unreachable!("lowering rejects audio without a Responses carrier")
                         }
@@ -749,7 +760,7 @@ pub(in crate::protocol::openai) fn encode_items(
                 } else {
                     "function_call_output"
                 };
-                let output = output_wire(&r.output, fidelity, resources);
+                let output = output_wire(&r.output, resources);
                 let mut v = json!({ "type": kind, "output": output });
                 if let Some(call_id) = &r.call_id {
                     v["call_id"] = json!(call_id.as_str());

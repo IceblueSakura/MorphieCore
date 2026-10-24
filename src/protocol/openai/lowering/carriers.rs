@@ -89,6 +89,12 @@ pub(in crate::protocol::openai) fn check_message_carriers(
     groups: &[MessageEnvelope],
     profile: Profile,
 ) -> Result<(), CodecError> {
+    if items.iter().any(|(_, item)| {
+        item.cache_boundaries()
+            .any(|cache| profile == Profile::Chat || matches!(cache, PrefixCacheBoundary::Ttl(_)))
+    }) {
+        return Err(CodecError::Unsupported("cache boundary carrier".into()));
+    }
     if profile == Profile::Chat
         && items
             .iter()

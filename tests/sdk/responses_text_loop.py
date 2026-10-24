@@ -4,6 +4,7 @@ import sys
 from sdk_support import check, client_for
 
 import openai
+from openai.types.responses.response_input_text_param import ResponseInputTextParam
 from pydantic import BaseModel
 
 
@@ -32,12 +33,17 @@ def run(base_url: str, stream: bool, opaque: bool = True) -> dict[str, object]:
         {"type": "function", "name": "lookup", "parameters": {"type": "object", "properties": {"n": {"type": "integer"}}, "required": ["n"], "additionalProperties": False}, "strict": True},
         {"type": "custom", "name": "sql", "format": {"type": "grammar", "syntax": "regex", "definition": "SELECT [0-9]+"}},
     ]
-    history: list[dict[str, object]] = [{"role": "user", "content": "hello 🧪"}]
+    cached_text: ResponseInputTextParam = {
+        "type": "input_text", "text": "hello 🧪",
+        "prompt_cache_breakpoint": {"mode": "explicit"},
+    }
+    history: list[dict[str, object]] = [{"role": "user", "content": [cached_text]}]
     event_counts: list[int] = []
     try:
         for turn in (1, 2, 3):
             params = dict(model="fixture-model", input=history, instructions="Answer precisely",
                           store=False, tools=tools, tool_choice="auto" if turn == 1 else "none",
+                          prompt_cache_options={"mode": "explicit", "ttl": "30m"},
                           reasoning={"effort": "low", "summary": "auto"},
                           text={"format": {"type": "json_schema", "name": "answer", "schema": {"type": "object", "properties": {"ok": {"type": "boolean"}}, "required": ["ok"], "additionalProperties": False}, "strict": True}})
             if turn == 2:
@@ -75,7 +81,9 @@ def run(base_url: str, stream: bool, opaque: bool = True) -> dict[str, object]:
                 history.extend(dumped)
                 history.extend([
                     {"type": "custom_tool_call_output", "call_id": "c_sql", "output": "1"},
-                    {"type": "function_call_output", "call_id": "c_lookup", "output": "{\"n\":1}"},
+                    {"type": "function_call_output", "call_id": "c_lookup", "output": [
+                        {"type": "input_text", "text": "{\"n\":1}",
+                         "prompt_cache_breakpoint": {"mode": "explicit"}}]},
                 ])
             elif turn == 2:
                 dumped = [item.model_dump(exclude_none=True) for item in result.output]

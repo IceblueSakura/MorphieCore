@@ -65,6 +65,14 @@ pub enum PrefixCacheTtl {
     FiveMinutes,
     OneHour,
 }
+/// An exact prefix boundary owned by one content use.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PrefixCacheBoundary {
+    /// Use the request's cache lifetime policy; never copy an effective default here.
+    RequestLifetime,
+    /// The boundary supplies its own TTL, independent of request-wide caching.
+    Ttl(PrefixCacheTtl),
+}
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct FunctionTool {
     pub name: Text,

@@ -275,6 +275,7 @@ fn charge_tool_result(
         &mut parts,
         &state.resources,
         &mut state.file_decoded_bytes,
+        true,
     )?;
     state.part_ids.extend(parts);
     if state.part_ids.len() > MAX_ITEMS {

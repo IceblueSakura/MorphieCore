@@ -13,3 +13,15 @@ pub(in crate::protocol::anthropic::messages) use encode::item_blocks;
 pub(in crate::protocol::anthropic::messages) fn unsupported() -> CodecError {
     CodecError::Unsupported("native semantic carrier".into())
 }
+
+/// Native boundaries own their TTL; a request-lifetime boundary cannot be guessed.
+pub(in crate::protocol::anthropic::messages) fn cache_ttl(
+    cache: Option<crate::semantic::task::generation::PrefixCacheBoundary>,
+) -> Result<Option<crate::semantic::task::generation::PrefixCacheTtl>, CodecError> {
+    use crate::semantic::task::generation::PrefixCacheBoundary;
+    match cache {
+        None => Ok(None),
+        Some(PrefixCacheBoundary::Ttl(ttl)) => Ok(Some(ttl)),
+        Some(PrefixCacheBoundary::RequestLifetime) => Err(unsupported()),
+    }
+}

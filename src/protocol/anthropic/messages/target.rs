@@ -8,7 +8,9 @@ use crate::{
         native::{ReplayTarget, group_client_history, normalize_stateless_defaults},
     },
     semantic::{
-        context::ExecutionHints, task::generation::GenerationSemanticContract, value::Presence,
+        context::ExecutionHints,
+        task::generation::{GenerationSemanticContract, ToolDefinition},
+        value::Presence,
     },
 };
 
@@ -259,8 +261,15 @@ impl TargetCaps {
                 })?);
         }
         let default_cache = settings.automatic_prefix_cache.is_none()
-            && !crate::semantic::task::generation::GenerationRequirements::derive(&semantic)
-                .explicit_cache
+            && !semantic
+                .items()
+                .iter()
+                .any(|(_, i)| i.has_cache_breakpoints())
+            && !semantic
+                .tools()
+                .iter()
+                .flat_map(|t| t.leaves())
+                .any(|t| matches!(t, ToolDefinition::Function(t) if t.cache.is_some()))
             && self.automatic_cache_default.is_some();
         if default_cache {
             settings.automatic_prefix_cache = self.automatic_cache_default;

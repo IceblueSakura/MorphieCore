@@ -82,9 +82,6 @@ impl TextCursor<'_> {
                 let mut value = part.clone();
                 // Preserve existing metadata only when its entire part survives.
                 value.id = id;
-                if fidelity.cache_breakpoint(part.id) {
-                    fidelity.record_cache_breakpoint(id)?;
-                }
                 if fidelity.input_text_form(part.id) {
                     fidelity.record_input_text(id)?;
                 }
@@ -93,7 +90,6 @@ impl TextCursor<'_> {
         }
         let mut value = String::with_capacity(len);
         let mut cache = None;
-        let mut breakpoint = false;
         while value.len() < len {
             let piece = self.parts.get(self.index).ok_or_else(invalid)?;
             piece.check(status, phase)?;
@@ -112,12 +108,11 @@ impl TextCursor<'_> {
             value.push_str(&text.as_str()[self.offset..end]);
             self.offset = end;
             if self.offset == text.as_str().len() {
-                if part.cache.is_some() || fidelity.cache_breakpoint(part.id) {
+                if part.cache.is_some() {
                     if value.len() != len {
                         return Err(CodecError::Unsupported("attachment cache boundary".into()));
                     }
                     cache = part.cache;
-                    breakpoint = fidelity.cache_breakpoint(part.id);
                 }
                 self.index += 1;
                 self.offset = 0;
@@ -132,9 +127,6 @@ impl TextCursor<'_> {
             ),
         );
         part.cache = cache;
-        if breakpoint {
-            fidelity.record_cache_breakpoint(id)?;
-        }
         Ok(part)
     }
     fn finish(&self) -> bool {

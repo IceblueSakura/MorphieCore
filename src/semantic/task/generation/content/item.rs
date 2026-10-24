@@ -64,7 +64,7 @@ pub enum ContentPart {
 pub struct Part<T = ContentPart> {
     pub id: PartId,
     pub content: T,
-    pub cache: Option<PrefixCacheTtl>,
+    pub cache: Option<PrefixCacheBoundary>,
     /// Opaque continuation attached to this generated value, never to adjacent text.
     pub replay: Option<ReplayValue>,
 }
@@ -213,21 +213,43 @@ impl Item {
         });
         message.chain(input)
     }
+    pub fn cache_boundaries(&self) -> impl Iterator<Item = PrefixCacheBoundary> {
+        let instructions: &[Part<Text>] = match self {
+            Self::Instruction(i) => &i.parts,
+            _ => &[],
+        };
+        let messages: &[Part] = match self {
+            Self::Message(m) => &m.parts,
+            _ => &[],
+        };
+        let results: &[Part<InputPart>] = match self {
+            Self::ToolResult(r) | Self::CustomResult(r) => match &r.output {
+                ToolOutput::Parts(parts) => parts,
+                _ => &[],
+            },
+            _ => &[],
+        };
+        let outer = match self {
+            Self::ToolCall(c) => [c.cache, None],
+            Self::ToolChange(c) => [
+                c.cache,
+                match &c.action {
+                    ToolChangeAction::AddDefinition(t) => t.cache,
+                    _ => None,
+                },
+            ],
+            Self::ToolResult(r) | Self::CustomResult(r) => [r.cache, None],
+            _ => [None, None],
+        };
+        instructions
+            .iter()
+            .filter_map(|p| p.cache)
+            .chain(messages.iter().filter_map(|p| p.cache))
+            .chain(results.iter().filter_map(|p| p.cache))
+            .chain(outer.into_iter().flatten().map(PrefixCacheBoundary::Ttl))
+    }
     pub fn has_cache_breakpoints(&self) -> bool {
-        match self {
-            Self::Instruction(i) => i.parts.iter().any(|p| p.cache.is_some()),
-            Self::Message(m) => m.parts.iter().any(|p| p.cache.is_some()),
-            Self::ToolCall(c) => c.cache.is_some(),
-            Self::ToolChange(c) => {
-                c.cache.is_some()
-                    || matches!(&c.action, ToolChangeAction::AddDefinition(t) if t.cache.is_some())
-            }
-            Self::ToolResult(r) | Self::CustomResult(r) => {
-                r.cache.is_some()
-                    || matches!(&r.output, ToolOutput::Parts(parts) if parts.iter().any(|p| p.cache.is_some()))
-            }
-            _ => false,
-        }
+        self.cache_boundaries().next().is_some()
     }
     pub fn is_call(&self) -> bool {
         matches!(

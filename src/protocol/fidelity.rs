@@ -108,7 +108,6 @@ struct CreatorBinding {
 pub struct FidelityRecords {
     response_item_ids: BTreeMap<ItemId, Text>,
     reported_creators: BTreeMap<ItemId, CreatorBinding>,
-    cache_breakpoints: std::collections::BTreeSet<PartId>,
     input_text_forms: std::collections::BTreeSet<PartId>,
     item_replay: BTreeMap<ItemId, ReplayBinding>,
     part_replay: BTreeMap<(ItemId, PartId), ReplayBinding>,
@@ -132,7 +131,7 @@ impl FidelityRecords {
                 .values()
                 .map(|id| 1024 + id.as_str().len())
                 .sum::<usize>()
-            + (self.cache_breakpoints.len() + self.input_text_forms.len()) * 512
+            + self.input_text_forms.len() * 512
             + (self.item_replay.len() + self.part_replay.len() + self.audio.len()) * 2048
             + self
                 .cached_context
@@ -246,16 +245,6 @@ impl FidelityRecords {
     pub fn input_text_form(&self, owner: PartId) -> bool {
         self.input_text_forms.contains(&owner)
     }
-    pub fn record_cache_breakpoint(&mut self, owner: PartId) -> Result<(), CodecError> {
-        if self.cache_breakpoints.len() >= MAX_ITEMS {
-            return Err(CodecError::Limit);
-        }
-        self.cache_breakpoints.insert(owner);
-        Ok(())
-    }
-    pub fn cache_breakpoint(&self, owner: PartId) -> bool {
-        self.cache_breakpoints.contains(&owner)
-    }
     pub fn record_response_item_id(
         &mut self,
         owner: ItemId,
@@ -358,7 +347,6 @@ impl FidelityRecords {
                 parts.extend(values.iter().map(|p| p.id));
             }
         }
-        self.cache_breakpoints.retain(|owner| parts.contains(owner));
         self.input_text_forms.retain(|owner| parts.contains(owner));
         self.audio.retain(|owner, _| parts.contains(owner));
         self.response_item_ids

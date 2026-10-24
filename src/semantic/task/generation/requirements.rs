@@ -1,7 +1,7 @@
 use crate::semantic::task::generation::{
     ContentPart, EffortScope, FunctionStrictness, GenerationRequest, GenerationResponse, Item,
-    OutputConstraint, ReasoningPresence, ResourceKind, ResourceLocation, ResourceUse,
-    StrictDefault, ToolDefinition,
+    OutputConstraint, PrefixCacheBoundary, ReasoningPresence, ResourceKind, ResourceLocation,
+    ResourceUse, StrictDefault, ToolDefinition,
 };
 use crate::semantic::value::Presence;
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -38,6 +38,7 @@ pub struct GenerationRequirements {
     pub tool_examples: bool,
     pub tool_changes: bool,
     pub normalization_default_tools: bool,
+    /// Owner-supplied TTL support. Request-lifetime boundaries use codec admission.
     pub explicit_cache: bool,
     pub cached_context: bool,
     pub safety_settings: bool,
@@ -131,7 +132,9 @@ impl GenerationRequirements {
         };
         let mut conversation = false;
         for (_, i) in r.items() {
-            x.explicit_cache |= i.has_cache_breakpoints();
+            x.explicit_cache |= i
+                .cache_boundaries()
+                .any(|c| matches!(c, PrefixCacheBoundary::Ttl(_)));
             x.ordered_instructions |= conversation && matches!(i, Item::Instruction(_));
             conversation |= !matches!(i, Item::Instruction(_));
             match i {

@@ -142,12 +142,21 @@ fn responses_tool_output_carries_files_and_needs_file_admission() {
     let semantic = &decoded.task.semantic;
     let needs = GenerationRequirements::derive(semantic);
     assert_eq!((needs.tool_result_media, needs.file_inputs), (1, 1));
+    assert!(
+        !needs.explicit_cache,
+        "inherited lifetime is not native TTL admission"
+    );
+    assert_eq!(
+        semantic.items()[0].1.cache_boundaries().collect::<Vec<_>>(),
+        [PrefixCacheBoundary::RequestLifetime]
+    );
     let Item::ToolResult(result) = &semantic.items()[2].1 else {
         panic!("tool result")
     };
     let ToolOutput::Parts(parts) = &result.output else {
         panic!("parts")
     };
+    assert_eq!(parts[0].cache, Some(PrefixCacheBoundary::RequestLifetime));
     let InputPart::Resource(pdf) = &parts[0].content else {
         panic!("file part")
     };
@@ -160,6 +169,50 @@ fn responses_tool_output_carries_files_and_needs_file_admission() {
         .unwrap();
     assert_eq!(output["input"][0]["content"], input[0]["content"]);
     assert_eq!(output["input"][2]["output"], input[2]["output"]);
+    let mut fresh = decoded.clone();
+    fresh.task.fidelity = Default::default();
+    assert_eq!(
+        adapter()
+            .encode_request(&fresh, "synthetic", &Contract::full())
+            .unwrap()["input"],
+        output["input"]
+    );
+    let mut items = semantic.items().to_vec();
+    let Item::Message(message) = &mut items[0].1 else {
+        unreachable!()
+    };
+    message.parts[0].cache = None;
+    let Item::ToolResult(result) = &mut items[2].1 else {
+        unreachable!()
+    };
+    let ToolOutput::Parts(parts) = &mut result.output else {
+        unreachable!()
+    };
+    parts[0].cache = None;
+    let mut edited = decoded.clone();
+    edited.task.semantic = semantic.clone().with_items(items).unwrap();
+    let edited = adapter()
+        .encode_request(&edited, "synthetic", &Contract::full())
+        .unwrap();
+    let mut expected = input.clone();
+    expected[0]["content"][0]
+        .as_object_mut()
+        .unwrap()
+        .remove("prompt_cache_breakpoint");
+    expected[2]["output"][0]
+        .as_object_mut()
+        .unwrap()
+        .remove("prompt_cache_breakpoint");
+    assert_eq!(edited["input"], expected);
+    assert_eq!(semantic.items()[2].1.cache_boundaries().count(), 1);
+    let mut invalid = request.clone();
+    invalid["input"][2]["output"][0]["prompt_cache_breakpoint"] = Value::Null;
+    assert_eq!(
+        adapter()
+            .decode_request(&serde_json::to_vec(&invalid).unwrap())
+            .unwrap_err(),
+        morphiecore::protocol::CodecError::Invalid("prompt cache breakpoint")
+    );
     let mut no_files = Contract::full();
     no_files.semantics.file_input = false;
     assert!(
@@ -176,6 +229,138 @@ fn responses_tool_output_carries_files_and_needs_file_admission() {
             .is_err()
     );
 }
+#[test]
+fn request_lifetime_boundaries_have_independent_ir_and_reject_unrelated_ttls() {
+    use morphiecore::protocol::{
+        CodecError,
+        anthropic::messages::Profile as Messages,
+        google::{generate_content, interactions},
+        native::ReplayTarget,
+        openai::lowering::{RepresentationError, lower_request},
+    };
+    let mut controls = GenerationControls::default();
+    controls.max_output_tokens = Some(32);
+    let mut part = Part::new(PartId::new(1), text("stable"));
+    part.cache = Some(PrefixCacheBoundary::RequestLifetime);
+    let request = GenerationRequest::new(
+        vec![
+            (
+                ItemId::new(1),
+                Item::Instruction(Instruction {
+                    authority: InstructionAuthority::System,
+                    parts: vec![part],
+                    status: None,
+                }),
+            ),
+            (
+                ItemId::new(2),
+                Item::Message(Message {
+                    role: MessageRole::User,
+                    phase: None,
+                    status: ItemLifecycle::Completed,
+                    parts: vec![Part::new(
+                        PartId::new(2),
+                        ContentPart::Text(text("go").into()),
+                    )],
+                }),
+            ),
+        ],
+        controls,
+    )
+    .unwrap()
+    .with_message_envelopes(vec![
+        MessageEnvelope::new(
+            GroupId::new(LocalScope::ROOT, 1),
+            MessageEnvelopeRole::User,
+            vec![ItemId::new(2)],
+        )
+        .unwrap(),
+    ])
+    .unwrap();
+    // The exact boundary does not need source fidelity or a copied 30m default.
+    let fidelity = Default::default();
+    let target = lower_request(&request, &fidelity, Profile::Responses, Contract::full()).unwrap();
+    let wire = morphiecore::protocol::openai::responses::encode_generation(&target).unwrap();
+    assert_eq!(
+        wire["input"][0],
+        json!({"role":"system","content":[
+            {"type":"input_text","text":"stable","prompt_cache_breakpoint":{"mode":"explicit"}}
+        ]})
+    );
+    assert!(!GenerationRequirements::derive(&request).explicit_cache);
+    // Keep the native envelope contract from masking the cache-carrier rejection.
+    let ungrouped = request.clone().with_message_envelopes(vec![]).unwrap();
+    assert_eq!(
+        lower_request(
+            &ungrouped,
+            &Default::default(),
+            Profile::Chat,
+            Contract::full()
+        )
+        .err(),
+        Some(RepresentationError::Controls)
+    );
+    let native = ReplayTarget::new("synthetic", "model").unwrap();
+    assert_eq!(
+        Messages::AdaptiveTextTools
+            .encode_generation_request(&request, &Default::default(), &native)
+            .unwrap_err(),
+        CodecError::Unsupported("native semantic carrier".into())
+    );
+    assert_eq!(
+        generate_content::encode_generation_request(&request, &Default::default(), &native, None)
+            .unwrap_err(),
+        CodecError::Unsupported("Gemini semantic carrier".into())
+    );
+    assert_eq!(
+        interactions::encode_generation_request(&request, &Default::default(), &native)
+            .unwrap_err(),
+        CodecError::Unsupported("Interactions semantic carrier".into())
+    );
+
+    let mut items = request.items().to_vec();
+    let Item::Instruction(instruction) = &mut items[0].1 else {
+        unreachable!()
+    };
+    instruction.parts[0].cache = Some(PrefixCacheBoundary::Ttl(PrefixCacheTtl::FiveMinutes));
+    let native_ttl = request.clone().with_items(items).unwrap();
+    assert!(GenerationRequirements::derive(&native_ttl).explicit_cache);
+    assert_eq!(
+        lower_request(
+            &native_ttl,
+            &Default::default(),
+            Profile::Responses,
+            Contract::full()
+        )
+        .err(),
+        Some(RepresentationError::Controls)
+    );
+    let native_wire = Messages::AdaptiveTextTools
+        .encode_generation_request(&native_ttl, &Default::default(), &native)
+        .unwrap();
+    assert_eq!(
+        native_wire.value["system"],
+        json!([{"type":"text","text":"stable","cache_control":{"type":"ephemeral"}}])
+    );
+    assert_eq!(
+        request.items()[0].1.cache_boundaries().collect::<Vec<_>>(),
+        [PrefixCacheBoundary::RequestLifetime]
+    );
+    let mut items = request.items().to_vec();
+    let mut generated = Part::new(PartId::new(1), ContentPart::Text(text("answer").into()));
+    generated.cache = Some(PrefixCacheBoundary::RequestLifetime);
+    items[0].1 = Item::Message(Message {
+        role: MessageRole::Assistant,
+        phase: None,
+        status: ItemLifecycle::Completed,
+        parts: vec![generated],
+    });
+    assert_eq!(
+        request.with_items(items),
+        Err(GenerationError::InvalidControl)
+    );
+}
+
 #[test]
 fn inline_file_media_need_their_input_modality() {
     // opencode sends audio over Responses as a file with an audio data URL.

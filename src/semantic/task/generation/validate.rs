@@ -109,7 +109,10 @@ pub fn items(
         if !ids.insert(*id) {
             return Err(GenerationError::DuplicateItemId);
         }
-        if response && item.has_cache_breakpoints() {
+        if response
+            && item.has_cache_breakpoints()
+            && !matches!(item, Item::ToolResult(_) | Item::CustomResult(_))
+        {
             return Err(GenerationError::InvalidResponse);
         }
         charge(&mut bytes, usize::from(item.has_cache_breakpoints()) * 32)?;
@@ -155,6 +158,15 @@ pub fn items(
                         add(&mut bytes, value.as_str())?;
                     }
                     charge(&mut bytes, usize::from(p.cache.is_some()) * 32)?;
+                    if p.cache == Some(PrefixCacheBoundary::RequestLifetime)
+                        && (m.role != MessageRole::User
+                            || !matches!(&p.content,
+                            ContentPart::Text(t) if t.is_plain())
+                                && !matches!(&p.content, ContentPart::Resource(r)
+                                if matches!(r.description, ResourceDescription::Image { .. } | ResourceDescription::File(_))))
+                    {
+                        return Err(GenerationError::InvalidControl);
+                    }
                     match &p.content {
                         ContentPart::Text(t) => {
                             // Citations and probabilities describe generated text; no
@@ -394,6 +406,7 @@ pub fn items(
                     &mut parts,
                     resources,
                     &mut file_decoded_bytes,
+                    response,
                 )?;
             }
         }
@@ -406,7 +419,11 @@ pub(super) fn tool_result(
     parts: &mut BTreeSet<PartId>,
     resources: &ResourceTable,
     file_decoded_bytes: &mut usize,
+    response: bool,
 ) -> Result<(), GenerationError> {
+    if response && r.cache.is_some() {
+        return Err(GenerationError::InvalidResponse);
+    }
     call_context(&r.context, bytes)?;
     for (value, max) in [(&r.call_id, 256), (&r.name, 128)] {
         if let Some(value) = value {
@@ -422,6 +439,15 @@ pub(super) fn tool_result(
             for part in p {
                 if part.replay.is_some() {
                     return Err(GenerationError::InvalidReplay);
+                }
+                if response && matches!(part.cache, Some(PrefixCacheBoundary::Ttl(_))) {
+                    return Err(GenerationError::InvalidResponse);
+                }
+                if part.cache == Some(PrefixCacheBoundary::RequestLifetime)
+                    && matches!(&part.content, InputPart::Resource(r)
+                        if !matches!(r.description, ResourceDescription::Image { .. } | ResourceDescription::File(_)))
+                {
+                    return Err(GenerationError::InvalidControl);
                 }
                 part_id(parts, part.id)?;
                 charge(bytes, usize::from(part.cache.is_some()) * 32)?;
