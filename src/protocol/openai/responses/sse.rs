@@ -225,6 +225,22 @@ impl ResponsesSseEncoder {
         }
         Ok(result?)
     }
+    /// A gateway failure is not a model-reported failed Response. Preserve its
+    /// classification in the standard error event and close this encoder.
+    pub(crate) fn fail(&mut self, error: &Value) -> Result<Bytes, SseError> {
+        if self.rejected {
+            return Err(SseError::Closed);
+        }
+        self.rejected = true;
+        if self.events >= self.limits.max_events {
+            return Err(SseError::Limit);
+        }
+        let frame = error_frame(error, self.events, self.limits.max_event_bytes)?;
+        if frame.len() > self.limits.max_wire_bytes.saturating_sub(self.wire_bytes) {
+            return Err(SseError::Limit);
+        }
+        Ok(frame)
+    }
     pub fn encode(
         &mut self,
         event: &StreamEvent,
@@ -284,6 +300,23 @@ impl ResponsesSseEncoder {
         }
         Ok(self.codec.finish()?)
     }
+}
+pub(crate) fn error_frame(
+    error: &Value,
+    sequence: usize,
+    max_bytes: usize,
+) -> Result<Bytes, SseError> {
+    let error = error.get("error").ok_or(CodecError::Invalid("error"))?;
+    let message = error
+        .get("message")
+        .and_then(Value::as_str)
+        .ok_or(CodecError::Invalid("error message"))?;
+    let value = json!({
+        "type":"error", "sequence_number":sequence,
+        "code":error.get("code").and_then(Value::as_str),
+        "message":message, "param":error.get("param").and_then(Value::as_str),
+    });
+    encode_frame(&value, max_bytes)
 }
 /// Encode exactly one payload with a matching event name and a complete LF delimiter.
 pub fn encode_frame(payload: &Value, max_bytes: usize) -> Result<Bytes, SseError> {

@@ -556,8 +556,18 @@ async fn real_router_uses_provider_http_for_json_sse_tools_and_cross_profile() {
         "</v1/morphiecore/capabilities>; rel=\"describedby\""
     );
     let failed = response.text().await.unwrap();
-    assert!(failed.contains("response.failed") && failed.contains("context_length_exceeded"));
-    assert!(!failed.contains("response.completed"));
+    let failure: Value = serde_json::from_str(
+        failed
+            .lines()
+            .find_map(|line| line.strip_prefix("data: "))
+            .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(failure["type"], "error");
+    assert_eq!(failure["sequence_number"], 0);
+    assert_eq!(failure["code"], "context_length_exceeded");
+    assert!(failure.get("response").is_none());
+    assert_eq!(failed.matches("data: ").count(), 1);
     let before = observed.0.lock().unwrap().len();
     let response = client
         .post(format!("{url}/v1/responses"))

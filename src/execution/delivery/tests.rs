@@ -218,7 +218,7 @@ fn lifecycle_reports_freeze_opening_batches_and_charge_both_observations() {
 #[test]
 fn classified_failure_after_opening_has_no_invented_terminal_reports() {
     // A classified failure after a native Responses opening has no upstream
-    // terminal report, but must still reach clients as response.failed.
+    // terminal report. A standard error must not invent a failed Response.
     let adapter = Adapter::new(Profile::Responses, Dialect::Standard, None);
     let mut attempt = Attempt::new(adapter.clone(), 65536, Default::default());
     attempt.begin(200, "text/event-stream").unwrap();
@@ -247,13 +247,104 @@ fn classified_failure_after_opening_has_no_invented_terminal_reports() {
             .unwrap(),
     )
     .unwrap();
-    assert_eq!(value["type"], "response.failed");
-    assert_eq!(
-        value["response"]["error"]["code"],
-        "context_length_exceeded"
-    );
-    assert!(value["response"].get("reasoning").is_none());
-    assert!(value["response"].get("service_tier").is_none());
+    assert_eq!(value["type"], "error");
+    assert_eq!(value["sequence_number"], 2);
+    assert_eq!(value["code"], "context_length_exceeded");
+    assert_eq!(value["message"], "Context limit");
+    assert!(value.get("response").is_none());
+    assert!(failure_delivery.fail_stream(&json!({"error":{}})).is_err());
+}
+
+#[test]
+fn classified_response_errors_obey_remaining_budgets_and_poison_failed_delivery() {
+    let error = json!({"error":{
+        "code":"server_is_overloaded","message":"x".repeat(4096),"param":null
+    }});
+    let make = |limits, started| {
+        let adapter = Adapter::new(Profile::Responses, Dialect::Standard, None);
+        let mut attempt = Attempt::new(adapter.clone(), 65536, Default::default());
+        attempt.begin(200, "text/event-stream").unwrap();
+        let mut delivery = ResponseDelivery::new(
+            ClientAdapter::openai(adapter, TargetCaps::full()),
+            "public",
+            limits,
+            StreamOptions::default(),
+            Obfuscation::Disabled,
+        );
+        let prefix = if started {
+            let (_, events) = attempt.push(br#"data: {"type":"response.created","sequence_number":0,"response":{"id":"r","object":"response","created_at":1,"model":"m","status":"in_progress","output":[]}}
+
+"#).unwrap();
+            delivery.encode_events(&attempt, &events).unwrap()
+        } else {
+            vec![]
+        };
+        (
+            attempt,
+            delivery,
+            prefix.iter().map(Bytes::len).sum::<usize>(),
+        )
+    };
+    for started in [false, true] {
+        let (_, mut reference, prefix_bytes) = make(SseLimits::default(), started);
+        let error_bytes: usize = reference
+            .fail_stream(&error)
+            .unwrap()
+            .iter()
+            .map(Bytes::len)
+            .sum();
+        let event_count = if started { 3 } else { 1 };
+        for limits in [
+            SseLimits {
+                max_events: event_count,
+                ..Default::default()
+            },
+            SseLimits {
+                max_wire_bytes: prefix_bytes + error_bytes,
+                ..Default::default()
+            },
+            SseLimits {
+                max_event_bytes: error_bytes,
+                ..Default::default()
+            },
+        ] {
+            let (_, mut delivery, _) = make(limits, started);
+            assert!(delivery.fail_stream(&error).is_ok(), "exact fit");
+            assert!(delivery.fail_stream(&error).is_err(), "closed");
+        }
+        let mut exceeded = vec![
+            SseLimits {
+                max_wire_bytes: prefix_bytes + error_bytes - 1,
+                ..Default::default()
+            },
+            SseLimits {
+                max_event_bytes: error_bytes - 1,
+                ..Default::default()
+            },
+        ];
+        if started {
+            exceeded.push(SseLimits {
+                max_events: event_count - 1,
+                ..Default::default()
+            });
+        }
+        for limits in exceeded {
+            let (attempt, mut delivery, _) = make(limits, started);
+            assert!(delivery.fail_stream(&error).is_err(), "budget must reject");
+            assert!(
+                delivery
+                    .fail_stream(&json!({"error":{"message":"small"}}))
+                    .is_err()
+            );
+            assert!(
+                delivery
+                    .encode_events(&attempt, &[StreamEvent::Started])
+                    .is_err()
+            );
+            assert!(delivery.finish_stream(&attempt).is_err());
+            assert!(delivery.commit().is_err());
+        }
+    }
 }
 
 #[test]

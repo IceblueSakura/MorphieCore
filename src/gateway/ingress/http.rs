@@ -223,7 +223,7 @@ pub(in crate::gateway) async fn handle(
     .map(crate::gateway::ingress::capabilities::notice)
 }
 /// A Responses stream that failed before its first frame still answers as a
-/// stream, ending in `response.failed`.
+/// stream with a standard error event, without manufacturing a failed Response.
 fn failed_stream(
     entry: &crate::gateway::BoundEntry,
     error: &ApiError,

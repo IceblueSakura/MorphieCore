@@ -11,7 +11,7 @@ from chat_bridge_checks import check_chat_bridge
 from urllib.parse import urlsplit
 
 import openai
-from openai.types.responses import Response
+from openai.types.responses import Response, ResponseErrorEvent
 
 
 def run(base_url: str) -> None:
@@ -246,6 +246,24 @@ def run(base_url: str) -> None:
             check(image.size == "1536x1024" and image.quality == "high"
                   and image.background == "transparent" and image.output_format == "webp")
             check(image.usage is None)
+        # Quota evidence changes executor health; run it last rather than bypassing
+        # cooldowns or making unrelated success cases depend on recovery timing.
+        for prompt, code in (("context", "context_length_exceeded"),
+                             ("quota", "insufficient_quota")):
+            requests += 1
+            # Consume raw typed events: the high-level final-response reducer
+            # raises on error and must not turn it into a successful Response.
+            with client.responses.create(
+                model="public-model", input=prompt, stream=True, store=False,
+                metadata={"case": "classified-error"},
+            ) as events:
+                received = list(events)
+            check(len(received) == 1)
+            failure = ResponseErrorEvent.model_validate(
+                received[0].model_dump(by_alias=True, exclude_unset=True))
+            check(failure.type == "error" and failure.sequence_number == 0)
+            check(failure.code == code and failure.param is None)
+            check("synthetic private" not in failure.message)
     print(json.dumps({"requests": requests + model_requests + speech_requests + native_audio_requests,
                      "model_requests": model_requests, "native_audio_requests": native_audio_requests,
                      "protocols": 2, "deliveries": 2, "image_requests": 3, "speech_requests": speech_requests}))

@@ -690,31 +690,15 @@ impl ResponseDelivery {
             }
         }
     }
-    /// End a stream with a classified failure (`{"error":{...}}`), never a success
-    /// terminal. Responses gets `response.failed`, opening the response when nothing
-    /// was sent, since Codex reads `context_length_exceeded` and `insufficient_quota`
-    /// only there; Chat gets an error chunk and no `[DONE]`, as OpenAI sends.
+    /// End a stream with a classified protocol error, never a fabricated Response
+    /// or successful terminal. Chat gets an error chunk without `[DONE]`.
     pub fn fail_stream(&mut self, error: &serde_json::Value) -> Result<Vec<Bytes>, AttemptError> {
         let result = (|| {
             self.ready()?;
             let mut pending = self.flush_pending()?;
-            let unopened =
-                if self.client.protocol() == ClientProtocol::Responses && self.encoder.is_none() {
-                    Some(ResponseMetadata {
-                        delivery: self.presentation.clone(),
-                        storage: None,
-                        id: Some(response_id()?),
-                        model: self.public_label.clone(),
-                        created: self.native_created.clone(),
-                        context: Default::default(),
-                        instruction_fidelity: Default::default(),
-                    })
-                } else {
-                    None
-                };
             let (frames, terminal) =
                 self.client
-                    .failure_frames(self.encoder.as_mut(), error, unopened, self.limits)?;
+                    .failure_frames(self.encoder.as_mut(), error, self.limits)?;
             pending.extend(frames);
             if let Some(coalescer) = &mut self.coalescer {
                 coalescer.close();

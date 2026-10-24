@@ -89,6 +89,7 @@ struct Observed(
     Arc<std::sync::atomic::AtomicUsize>,
     Arc<std::sync::atomic::AtomicUsize>,
     Arc<std::sync::atomic::AtomicUsize>,
+    Arc<std::sync::atomic::AtomicUsize>,
 );
 async fn provider(
     State(state): State<Observed>,
@@ -100,6 +101,20 @@ async fn provider(
         "Bearer synthetic-upstream-credential-0001"
     );
     assert_eq!(request["model"], "private-model");
+    if request["metadata"]["case"] == "classified-error" {
+        let count = state.6.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        assert!(count < 2, "classified failures must not retry");
+        let quota = request["input"][0]["content"][0]["text"] == "quota";
+        return Response::builder()
+            .status(if quota { 402 } else { 400 })
+            .header("content-type", "application/json")
+            .body(Body::from(if quota {
+                r#"{"error":{"code":"insufficient_quota","message":"synthetic private quota"}}"#
+            } else {
+                r#"{"error":{"code":"context_length_exceeded","message":"synthetic private context"}}"#
+            }))
+            .unwrap();
+    }
     let chat = request.get("messages").is_some();
     let stream = request["stream"] == true;
     let owner_case = request["metadata"]["case"] == "empty-owner";
@@ -493,7 +508,7 @@ async fn sdk_uses_gateway_for_both_protocols_and_deliveries() {
         String::from_utf8_lossy(&output.stderr)
     );
     let report: Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(report["requests"], 56);
+    assert_eq!(report["requests"], 58);
     assert_eq!(report["model_requests"], 7);
     assert_eq!(report["native_audio_requests"], 10);
     assert_eq!(report["speech_requests"], 9);
@@ -502,6 +517,7 @@ async fn sdk_uses_gateway_for_both_protocols_and_deliveries() {
     assert_eq!(observed.3.load(std::sync::atomic::Ordering::SeqCst), 3);
     assert_eq!(observed.4.load(std::sync::atomic::Ordering::SeqCst), 3);
     assert_eq!(observed.5.load(std::sync::atomic::Ordering::SeqCst), 3);
+    assert_eq!(observed.6.load(std::sync::atomic::Ordering::SeqCst), 2);
     {
         let observed = observed.0.lock().unwrap();
         assert_eq!(observed.len(), 14);

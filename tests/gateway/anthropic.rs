@@ -712,8 +712,7 @@ async fn json_and_stream_clients_replay_native_thinking_and_tools() {
         }
     }
     assert_eq!(seen.lock().unwrap().len(), 26);
-    // Error classes: Codex reads overflow only from a streamed `response.failed`;
-    // a failure after headers ends the stream with its class instead of a cut.
+    // Standard error events preserve classes without inventing a failed Response.
     for profile in [Profile::Responses, Profile::Chat] {
         let responses = profile == Profile::Responses;
         for stream in [false, true] {
@@ -786,9 +785,10 @@ async fn json_and_stream_clients_replay_native_thinking_and_tools() {
                 )
                 .unwrap();
                 if responses {
-                    assert_eq!(last["type"], "response.failed");
-                    assert_eq!(last["response"]["status"], "failed");
-                    assert_eq!(last["response"]["error"]["code"], code);
+                    assert_eq!(last["type"], "error");
+                    assert_eq!(last["code"], code);
+                    assert!(last["sequence_number"].is_u64());
+                    assert!(last.get("response").is_none());
                 } else {
                     assert_eq!(last["error"]["code"], code);
                 }

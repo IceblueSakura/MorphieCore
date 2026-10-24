@@ -345,13 +345,8 @@ impl ClientAdapter {
         &self,
         encoder: Option<&mut ClientEncoder>,
         error: &Value,
-        unopened: Option<ResponseMetadata>,
         limits: SseLimits,
     ) -> Result<(Vec<Bytes>, bool), SseError> {
-        use crate::semantic::{
-            task::generation::{ResponseError, StreamTerminal, TerminalDetails},
-            value::Text,
-        };
         match self.protocol() {
             ClientProtocol::Messages => {
                 return Ok((
@@ -364,40 +359,25 @@ impl ClientAdapter {
             }
             ClientProtocol::Responses => {}
         }
-        let field = |key: &str| {
-            error["error"][key]
-                .as_str()
-                .and_then(|v| Text::new(v, "error", 4096).ok())
-        };
-        let failed = StreamEvent::Terminal {
-            terminal: StreamTerminal::Failed,
-            details: TerminalDetails {
-                error: Some(ResponseError {
-                    code: field("code"),
-                    message: field("message").ok_or(CodecError::Invalid("failure message"))?,
-                    param: None,
-                    original_type: field("type"),
-                }),
-                incomplete: None,
-                completion: None,
-                ..Default::default()
-            },
-        };
-        let source = FidelityRecords::default();
-        let frames = if let Some(encoder) = encoder {
-            encoder.encode(&failed, &source)?
+        let frame = if let Some(ClientEncoder {
+            encoder: Encoder::Responses(encoder),
+            ..
+        }) = encoder
+        {
+            encoder.fail(error)?
         } else {
-            let mut encoder = self.stream_encoder(
-                unopened.ok_or(CodecError::Invalid("failure metadata"))?,
-                limits,
-                StreamOptions::default(),
-                Obfuscation::Disabled,
+            limits.validate()?;
+            let frame = crate::protocol::openai::responses::sse::error_frame(
+                error,
+                0,
+                limits.max_event_bytes,
             )?;
-            let mut frames = encoder.encode(&StreamEvent::Started, &source)?;
-            frames.extend(encoder.encode(&failed, &source)?);
-            frames
+            if frame.len() > limits.max_wire_bytes {
+                return Err(SseError::Limit);
+            }
+            frame
         };
-        Ok((frames, true))
+        Ok((vec![frame], true))
     }
 }
 

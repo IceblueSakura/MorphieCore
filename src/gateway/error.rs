@@ -91,7 +91,7 @@ impl ApiError {
     }
 }
 impl ApiError {
-    /// Classes Codex reads only from a streamed Responses `response.failed`.
+    /// Classified request failures returned as standard Responses error events.
     pub fn streams_as_failed(&self) -> bool {
         matches!(self.code, "context_length_exceeded" | "insufficient_quota")
     }
