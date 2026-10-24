@@ -9,6 +9,7 @@ This guide owns tooling, test procedures and evidence reporting. Use offline, sy
 - [Upstream test sources](#upstream-test-sources)
 - [Verification gates](#verification-gates)
   - [Offline baseline](#offline-baseline)
+  - [Telemetry ecosystem checks](#telemetry-ecosystem-checks)
   - [Reusable Generation sessions](#reusable-generation-sessions)
   - [SDK loopback gate](#sdk-loopback-gate)
   - [Documentation checks](#documentation-checks)
@@ -44,6 +45,7 @@ direnv users can allow the root `.envrc` once. Refresh project inputs with `nix 
 | `tests/credential.rs` → `credential/` | Offline credential CLI checks with synthetic stores/authorities; Unix-gated |
 | `tests/gateway.rs` → `gateway/` | Offline Router → synthetic Provider and isolated binary startup |
 | `tests/process.rs` → `process/` | Offline child I/O limits, timeout, cancellation and descendant cleanup |
+| `tests/telemetry.rs` → `telemetry/` | Test-only tracing/OTel correlation, sampling, aggregation, cancellation, bounded batch/export failure and loopback OTLP; no production instrumentation |
 | `tests/sdk_loopback.rs` → `sdk/` | Pinned Python SDK loopback scenarios; ignored by default |
 | `tests/clients.rs` → `clients/` | Ignored by default, Unix; explicitly selected installed clients against a synthetic CLI gateway |
 | `tests/{sdk,clients,gateway}/test_*.py` | Separate Python unittest discovery for SDK oracles, installed-client oracles and OpenAPI schemas |
@@ -193,6 +195,25 @@ cargo test --locked --offline --test semantic provider_observations::
 cargo test --locked --offline --test gateway bootstrap::
 cargo test --locked --offline --test process
 ```
+
+### Telemetry ecosystem checks
+
+The selected [Rust telemetry stack](architecture.md#observability) has a test-only integration, verified on **2026-10-24**. Pins remain in `[dev-dependencies]` and `Cargo.lock`; no production exporter, global provider, public diagnostic schema, Collector deployment or private-capture migration is activated.
+
+```sh
+cargo test --locked --offline --test telemetry
+cargo tree --locked --offline -d
+```
+
+Run the target normally, not directly with `--ignored`. Its ordinary wrapper reuses the owned-child helper to run four environment-cleared checks serially, with a 45-second deadline and 64-KiB output caps. The ignored children are executed and their successful completion checked by that wrapper, not omitted from the offline baseline. Only synthetic OTEL settings enter the child; no inherited credential, proxy, resource or exporter environment is used.
+
+The in-memory SDK checks assert exact request/attempt/projection log-span attribution, one failed attempt beside one successful request, outcome-specific counters and a duration histogram. Events use the log bridge only, avoiding duplicate trace events. `skip_all` and target filtering exclude synthetic payload/error sentinels; this is not automatic redaction of arbitrary approved fields. The default log bridge does not copy request fields from tracing spans, so independently queried log fields need explicit recording. Scoped dispatch must remain active during span destruction and registry parent cleanup; the test retains the attempt owner handle through task join and releases it under that dispatch.
+
+The abort check runs with sampling on and off: logs remain available, an unfinished worker closes its span without a fabricated terminal event, and span closure alone classifies neither success nor cancellation. This is a synthetic instrumented worker, not a gateway/SSE-body acceptance claim. Existing gateway publication, EOF, body-drop and cancellation tests retain that authority.
+
+The loopback receiver observes actual protobuf HTTP export, identical retry bodies after one `503`, non-retryable `400`, timeout and pre-HTTP oversize rejection. Endpoint builder precedence is exercised against a synthetic environment endpoint; headers reveal a limitation: the reviewed SDK merges a synthetic environment-only header even with explicit builder headers. Content-type/bytes and response handling are checked, not backend ingestion, indexing, TLS, full protobuf field decoding or retained queries. No listener or Provider exists outside test-owned loopback.
+
+A gated test exporter deterministically holds one batch: two queued records remain, six overflow records drop, and the separate local shutdown summary exposes that count without re-exporting SDK health. The first warning inside the tracing bridge may be suppressed by reentrancy protection; it is not a reliable standalone overflow alarm. Shutdown timeout ends the caller's wait, not the exporter; explicit release reaches exporter shutdown afterward. Stable runtime drop/failure health and configuration isolation still need production integration. A later successful empty flush is not recovery of a failed batch, and neither flush nor shutdown is a durable-delivery receipt.
 
 ### Python checks
 

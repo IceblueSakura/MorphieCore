@@ -50,7 +50,7 @@ This page owns current scope, priorities, dependencies and exit gates. Start wit
 
 ## Current status
 
-**Current priority (2026-10-24):** converge the [Decision design](#decision-api-design) before further modality work. The standards redesign, scoped offline/SDK text/SSE gate, selected current-host/Provider reacceptance and six correctness follow-ups are closed within the [recorded boundaries](#standards-reset-and-redesign). Unified actual adaptation reporting remains deferred. This handoff starts neither Decision implementation nor new stage-4 APIs.
+**Current priority (2026-10-24):** converge the [Decision design](#decision-api-design) before further modality work. The standards redesign, scoped offline/SDK text/SSE gate, selected current-host/Provider reacceptance and six correctness follow-ups are closed within the [recorded boundaries](#standards-reset-and-redesign). The user subsequently selected the [ecosystem-first observability direction](architecture.md#observability) and a test-only feasibility slice before concrete implementation. Unified actual adaptation reporting and production telemetry wiring remain unimplemented; this starts neither Decision implementation nor new stage-4 APIs.
 
 | Area | State | Next step |
 |---|---|---|
@@ -407,6 +407,8 @@ The sourced [contract boundaries](refs/2026-10-17-generation-contracts.md) retai
 ### Observability follow-up
 
 **Direction selected on 2026-10-20; minimal production work selected on 2026-10-21 and accepted on 2026-10-22.** Follow [Observability](architecture.md#observability). The completed [production closure](#generation-text-production-closure) adds only signals and bounded diagnostics maintenance/checks needed for concrete acceptance. Keep future investigation at those existing owners; broader instrumentation remains deferred, not a full programme or another stage-1/2 approval gate.
+
+**Scope update selected on 2026-10-24.** The user accepted unified typed conversion/error evidence, an execution-owned bounded report and independent log/wire projections, with mature crates investigated before concrete interfaces. The [selected Rust stack](architecture.md#observability) now has a [test-only integration](development.md#telemetry-ecosystem-checks), not gateway instrumentation or public extension acceptance. Further work must settle owner-local evidence interfaces and commit boundaries before production wiring; configuration isolation, runtime export health and storage migration remain explicit integration issues. Do not infer authorization for Collector deployment, content export, credential changes or relaxed private-file guarantees.
 
 Protocol, security and lifecycle defects retain their own gates. Use established libraries where needed. The later [Agent authorization and diagnostics baseline](#agent-authorization-and-diagnostics-follow-up) governs future cluster work; no telemetry backend deployment or content export is activated.
 
