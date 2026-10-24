@@ -12,7 +12,7 @@ pub(in crate::protocol::openai) fn strict_default(profile: Profile) -> StrictDef
 pub(in crate::protocol::openai) fn reject_chat_orchestration(
     o: &Map<String, Value>,
 ) -> Result<(), CodecError> {
-    if let Some(key) = [
+    if let Some(_key) = [
         "async",
         "defer_loading",
         "allowed_callers",
@@ -22,7 +22,9 @@ pub(in crate::protocol::openai) fn reject_chat_orchestration(
     .into_iter()
     .find(|key| o.get(*key).is_some_and(|v| !v.is_null()))
     {
-        return Err(CodecError::Unsupported(key.into()));
+        return Err(CodecError::Unsupported(
+            crate::protocol::failure::CarrierReason::UnknownField,
+        ));
     }
     Ok(())
 }
@@ -38,9 +40,13 @@ pub(in crate::protocol::openai) fn tool_call(
             reject_chat_orchestration(o)?;
             direction.fields(o, &["id", "type", "function", "index"])?;
             if string(o, "type")? != "function" {
-                return Err(CodecError::Unsupported("tool kind".into()));
+                return Err(CodecError::Unsupported(
+                    crate::protocol::failure::CarrierReason::Tools,
+                ));
             }
-            let f = object(o.get("function").ok_or(CodecError::Invalid("function"))?)?;
+            let f = object(o.get("function").ok_or(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            ))?)?;
             reject_chat_orchestration(f)?;
             direction.fields(
                 f,

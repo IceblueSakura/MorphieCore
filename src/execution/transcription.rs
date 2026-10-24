@@ -20,7 +20,9 @@ pub fn prepare(
         || endpoint.execution.streaming
         || endpoint.execution.retry_before_commit
     {
-        return Err(AttemptError::Protocol("transcription binding"));
+        return Err(AttemptError::Protocol(
+            crate::execution::attempt::ProtocolReason::TranscriptionBinding,
+        ));
     }
     let value = endpoint
         .profile
@@ -43,7 +45,10 @@ pub fn prepare(
             .entry(crate::provider::ProviderOperation::Transcription)
             .map_or(provider.auth, |entry| entry.auth)
             .auth_header(secret),
-        body: serde_json::to_vec(&value)
-            .map_err(|_| AttemptError::Protocol("transcription serialization"))?,
+        body: serde_json::to_vec(&value).map_err(|_| {
+            AttemptError::Protocol(
+                crate::execution::attempt::ProtocolReason::TranscriptionSerialization,
+            )
+        })?,
     })
 }

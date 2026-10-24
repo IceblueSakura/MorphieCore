@@ -1,5 +1,10 @@
 //! Independent Interactions request expectations; no native encoder builds the oracle.
 use morphiecore::protocol::{
+    CodecError as Failure,
+    failure::{CarrierReason as Carrier, ShapeReason as Shape},
+    stream::SseError as WireFailure,
+};
+use morphiecore::protocol::{
     google::interactions::encode_generation_request,
     native::ReplayTarget,
     openai::{Adapter, Dialect, Profile},
@@ -35,7 +40,7 @@ fn interaction_frames() -> Vec<serde_json::Value> {
 fn decode_interaction(
     frames: &[serde_json::Value],
     done: bool,
-) -> Result<morphiecore::protocol::DecodedResponse, String> {
+) -> Result<morphiecore::protocol::DecodedResponse, WireFailure> {
     use morphiecore::protocol::{google::interactions::GenerationSseDecoder, stream::SseLimits};
     let mut d = GenerationSseDecoder::new(
         200,
@@ -60,11 +65,11 @@ fn decode_interaction(
     for chunk in wire.as_bytes().chunks(7) {
         let mut rest = chunk;
         while !rest.is_empty() {
-            let (n, _) = d.consume(rest).map_err(|e| e.to_string())?;
+            let (n, _) = d.consume(rest)?;
             rest = &rest[n..];
         }
     }
-    d.finish().map_err(|e| e.to_string())
+    d.finish()
 }
 
 #[test]
@@ -155,7 +160,7 @@ fn empty_assistant_envelopes_cannot_disappear_behind_complete_member_coverage() 
         assert_eq!(
             encode_generation_request(&request, &FidelityRecords::default(), &target),
             Err(morphiecore::protocol::CodecError::Unsupported(
-                "Interactions semantic carrier".into()
+                morphiecore::protocol::failure::CarrierReason::Unavailable
             ))
         );
     }
@@ -187,11 +192,10 @@ fn lifecycle_distinguishes_optional_fields_from_invalid_or_unsupported_values() 
                 assert!(decode_interaction(&changed, true).is_ok());
                 continue;
             }
-            assert!(
-                decode_interaction(&changed, true)
-                    .unwrap_err()
-                    .contains(key)
-            );
+            assert!(matches!(
+                decode_interaction(&changed, true).unwrap_err(),
+                WireFailure::Codec(Failure::Invalid(Shape::Identity))
+            ));
         }
         if index != 0 {
             let mut changed = frames.clone();
@@ -201,11 +205,10 @@ fn lifecycle_distinguishes_optional_fields_from_invalid_or_unsupported_values() 
             } else {
                 changed[index]["interaction"][key] = json!("foreign");
             }
-            assert!(
-                decode_interaction(&changed, true)
-                    .unwrap_err()
-                    .contains("interaction identity changed")
-            );
+            assert!(matches!(
+                decode_interaction(&changed, true).unwrap_err(),
+                WireFailure::Codec(Failure::Invalid(Shape::MetadataIdChanged))
+            ));
         }
         for value in [
             None,
@@ -234,32 +237,29 @@ fn lifecycle_distinguishes_optional_fields_from_invalid_or_unsupported_values() 
             }
             let error = decode_interaction(&changed, true).unwrap_err();
             assert!(
-                error.contains("invalid") && error.contains("status"),
+                matches!(error, WireFailure::Codec(Failure::Invalid(Shape::Status))),
                 "{error}"
             );
         }
     }
     let mut unsupported = frames.clone();
     unsupported[0]["interaction"]["status"] = json!("failed");
-    assert!(
-        decode_interaction(&unsupported, true)
-            .unwrap_err()
-            .contains("unsupported")
-    );
+    assert!(matches!(
+        decode_interaction(&unsupported, true).unwrap_err(),
+        WireFailure::Codec(Failure::Unsupported(Carrier::Unavailable))
+    ));
     unsupported = frames.clone();
     unsupported[1]["status"] = json!("queued");
-    assert!(
-        decode_interaction(&unsupported, true)
-            .unwrap_err()
-            .contains("unsupported")
-    );
+    assert!(matches!(
+        decode_interaction(&unsupported, true).unwrap_err(),
+        WireFailure::Codec(Failure::Unsupported(Carrier::Unavailable))
+    ));
     unsupported = frames;
     unsupported[1]["event_id"] = json!(17);
-    assert!(
-        decode_interaction(&unsupported, true)
-            .unwrap_err()
-            .contains("invalid event_id")
-    );
+    assert!(matches!(
+        decode_interaction(&unsupported, true).unwrap_err(),
+        WireFailure::Codec(Failure::Invalid(Shape::Identity))
+    ));
 }
 
 #[test]
@@ -328,18 +328,16 @@ fn lifecycle_identity_binds_first_observation_without_inventing_status() {
     assert_eq!(decode_interaction(&intermittent, true).unwrap(), expected);
     let mut contradictory = frames.clone();
     contradictory[1]["interaction_id"] = json!("first");
-    assert!(
-        decode_interaction(&contradictory, true)
-            .unwrap_err()
-            .contains("identity changed")
-    );
+    assert!(matches!(
+        decode_interaction(&contradictory, true).unwrap_err(),
+        WireFailure::Codec(Failure::Invalid(Shape::MetadataIdChanged))
+    ));
     let mut overlong = frames.clone();
     overlong[1]["interaction_id"] = json!("x".repeat(257));
-    assert!(
-        decode_interaction(&overlong, true)
-            .unwrap_err()
-            .contains("interaction_id")
-    );
+    assert!(matches!(
+        decode_interaction(&overlong, true).unwrap_err(),
+        WireFailure::Codec(Failure::Invalid(Shape::Identity))
+    ));
     for (key, value) in [
         ("id", json!(null)),
         ("id", json!(17)),
@@ -350,11 +348,8 @@ fn lifecycle_identity_binds_first_observation_without_inventing_status() {
     ] {
         let mut malformed = frames.clone();
         malformed[0]["interaction"][key] = value;
-        assert!(
-            decode_interaction(&malformed, true)
-                .unwrap_err()
-                .contains(key)
-        );
+        assert!(matches!(decode_interaction(&malformed, true)
+                .unwrap_err(),WireFailure::Codec(Failure::Invalid(reason)) if reason==if key=="status" {Shape::Status} else {Shape::Identity}));
     }
 }
 
@@ -402,11 +397,10 @@ fn status_observations_neither_finish_nor_override_the_final_envelope() {
         );
         // A checkpoint cannot make a final envelope with pending calls valid.
         frames.last_mut().unwrap()["interaction"]["status"] = json!("completed");
-        assert!(
-            decode_interaction(&frames, true)
-                .unwrap_err()
-                .contains("Interactions terminal status")
-        );
+        assert!(matches!(
+            decode_interaction(&frames, true).unwrap_err(),
+            WireFailure::Codec(Failure::Invalid(Shape::TerminalStatus))
+        ));
     }
     // Source types do not establish an irreversible status-transition graph.
     let mut frames = interaction_frames();
@@ -423,11 +417,10 @@ fn status_observations_neither_finish_nor_override_the_final_envelope() {
         InteractionProgress::TurnFinished
     );
     frames.push(resumed);
-    assert!(
-        decode_interaction(&frames, true)
-            .unwrap_err()
-            .contains("event after completion")
-    );
+    assert!(matches!(
+        decode_interaction(&frames, true).unwrap_err(),
+        WireFailure::Codec(Failure::Invalid(Shape::AfterFinish))
+    ));
 }
 
 #[test]
@@ -443,6 +436,11 @@ fn continuation_is_rejected_at_each_native_owner_and_poisoning_is_absorbing() {
             (json!("checkpoint"), false),
             (json!(7), false),
         ] {
+            let expected = if value.is_string() {
+                Failure::Unsupported(Carrier::Terminal)
+            } else {
+                Failure::Invalid(Shape::InvalidValue)
+            };
             let mut changed = frames.clone();
             if index == 1 {
                 changed[index]["continuation_token"] = value;
@@ -452,11 +450,8 @@ fn continuation_is_rejected_at_each_native_owner_and_poisoning_is_absorbing() {
             if accepted {
                 assert!(decode_interaction(&changed, true).is_ok());
             } else {
-                assert!(
-                    decode_interaction(&changed, true)
-                        .unwrap_err()
-                        .contains("continuation_token")
-                );
+                assert!(matches!(decode_interaction(&changed, true)
+                        .unwrap_err(),WireFailure::Codec(ref reason) if reason==&expected));
             }
         }
     }
@@ -473,13 +468,10 @@ fn continuation_is_rejected_at_each_native_owner_and_poisoning_is_absorbing() {
     let foreign = json!({"event_type":"interaction.status_update","interaction_id":"foreign",
         "status":"in_progress","usage":{"total_tokens":999}});
     let foreign = format!("data: {foreign}\n\n");
-    assert!(
-        decoder
-            .consume(foreign.as_bytes())
-            .unwrap_err()
-            .to_string()
-            .contains("interaction identity changed")
-    );
+    assert!(matches!(
+        decoder.consume(foreign.as_bytes()).unwrap_err(),
+        WireFailure::Codec(Failure::Invalid(Shape::MetadataIdChanged))
+    ));
     assert!(matches!(
         decoder.consume(opening.as_bytes()),
         Err(SseError::Closed)
@@ -498,27 +490,24 @@ fn audit_step_errors_and_unrepresented_lifecycle_facts_cannot_complete() {
     assert!(decode_interaction(&base, true).is_ok());
     let mut error = base.clone();
     error[1]["step"]["error"] = json!({"code":7,"message":"denied"});
-    assert!(
-        decode_interaction(&error, true)
-            .unwrap_err()
-            .contains("Interactions model_output error")
-    );
+    assert!(matches!(
+        decode_interaction(&error, true).unwrap_err(),
+        WireFailure::Codec(Failure::Unsupported(Carrier::StepError))
+    ));
     let mut cited = base.clone();
     cited[1]["step"]["content"][0]["annotations"] = json!([{
         "type":"url_citation","start_index":0,"end_index":1,"url":"https://example.test/source"}]);
-    assert!(
-        decode_interaction(&cited, true)
-            .unwrap_err()
-            .contains("Interactions annotations")
-    );
+    assert!(matches!(
+        decode_interaction(&cited, true).unwrap_err(),
+        WireFailure::Codec(Failure::Unsupported(Carrier::Annotations))
+    ));
     let mut cited_thought = interaction_frames();
     cited_thought[3]["delta"]["content"]["annotations"] =
         cited[1]["step"]["content"][0]["annotations"].clone();
-    assert!(
-        decode_interaction(&cited_thought, true)
-            .unwrap_err()
-            .contains("Interactions annotations")
-    );
+    assert!(matches!(
+        decode_interaction(&cited_thought, true).unwrap_err(),
+        WireFailure::Codec(Failure::Unsupported(Carrier::Annotations))
+    ));
     cited_thought[3]["delta"]["content"]["annotations"] = json!([]);
     assert!(decode_interaction(&cited_thought, true).is_ok());
     for (key, value) in [
@@ -531,17 +520,15 @@ fn audit_step_errors_and_unrepresented_lifecycle_facts_cannot_complete() {
         let mut unsupported = base.clone();
         unsupported[3]["interaction"][key] = value.clone();
         assert!(
-            decode_interaction(&unsupported, true)
-                .unwrap_err()
-                .contains(key),
+            matches!(decode_interaction(&unsupported, true)
+                .unwrap_err(),WireFailure::Codec(ref reason) if reason==&if key=="steps" {Failure::Invalid(Shape::TerminalSnapshot)} else {Failure::Unsupported(Carrier::Terminal)}),
             "{key}"
         );
         unsupported = base.clone();
         unsupported[0]["interaction"][key] = value;
         assert!(
-            decode_interaction(&unsupported, true)
-                .unwrap_err()
-                .contains(key),
+            matches!(decode_interaction(&unsupported, true)
+                .unwrap_err(),WireFailure::Codec(ref reason) if reason==&if key=="steps" {Failure::Invalid(Shape::TerminalSnapshot)} else {Failure::Unsupported(Carrier::Terminal)}),
             "{key}"
         );
     }
@@ -581,11 +568,10 @@ fn service_reports_preserve_matching_v1_phases_without_inference_or_capacity_ali
         } else {
             "standard"
         });
-        assert!(
-            decode_interaction(&drift, true)
-                .unwrap_err()
-                .contains("service_tier changed")
-        );
+        assert!(matches!(
+            decode_interaction(&drift, true).unwrap_err(),
+            WireFailure::Codec(Failure::Invalid(Shape::Metadata))
+        ));
         let mut late = frames.clone();
         late[0]["interaction"]
             .as_object_mut()
@@ -652,11 +638,12 @@ fn service_reports_preserve_matching_v1_phases_without_inference_or_capacity_ali
     }
     let mut wrong_owner = base;
     wrong_owner[1]["service_tier"] = json!("standard");
-    assert!(
-        decode_interaction(&wrong_owner, true)
-            .unwrap_err()
-            .contains("Interactions status service_tier")
-    );
+    assert!(matches!(
+        decode_interaction(&wrong_owner, true).unwrap_err(),
+        WireFailure::Codec(Failure::Unsupported(Carrier::Field(
+            morphiecore::lowering::generation::Field::ServiceClass
+        )))
+    ));
 }
 
 #[test]
@@ -748,72 +735,89 @@ fn lifecycle_snapshots_compare_source_ordinals_without_republishing_content() {
         snapshot
     };
     for (snapshot, expected) in [
-        (json!([]), "snapshot steps"),
-        (json!(17), "Interactions steps"),
+        (json!([]), Failure::Invalid(Shape::TerminalSnapshot)),
+        (json!(17), Failure::Invalid(Shape::SnapshotShape)),
         (
             change(0, "content", json!([{"type":"text","text":"new"}])),
-            "snapshot steps",
+            Failure::Invalid(Shape::TerminalSnapshot),
         ),
         (
             change(1, "summary", json!([{"type":"text","text":"changed"}])),
-            "snapshot steps",
+            Failure::Invalid(Shape::TerminalSnapshot),
         ),
-        (change(1, "signature", json!("changed")), "snapshot steps"),
-        (change(1, "error", json!({"code":7})), "model_output error"),
+        (
+            change(1, "signature", json!("changed")),
+            Failure::Invalid(Shape::TerminalSnapshot),
+        ),
+        (
+            change(1, "error", json!({"code":7})),
+            Failure::Unsupported(Carrier::StepError),
+        ),
         (
             change(
                 1,
                 "summary",
                 json!([{"type":"text","text":"P"},{"type":"text","text":"lan"}]),
             ),
-            "snapshot multipart",
+            Failure::Unsupported(Carrier::MultipartContent),
         ),
-        (change(2, "id", json!("foreign")), "snapshot steps"),
-        (change(2, "name", json!("other")), "snapshot steps"),
+        (
+            change(2, "id", json!("foreign")),
+            Failure::Invalid(Shape::TerminalSnapshot),
+        ),
+        (
+            change(2, "name", json!("other")),
+            Failure::Invalid(Shape::TerminalSnapshot),
+        ),
         (
             change(2, "arguments", json!({"path":"b"})),
-            "snapshot steps",
+            Failure::Invalid(Shape::TerminalSnapshot),
         ),
-        (change(2, "signature", json!("new")), "snapshot steps"),
-        (change(0, "type", json!("thought")), "snapshot steps"),
+        (
+            change(2, "signature", json!("new")),
+            Failure::Invalid(Shape::TerminalSnapshot),
+        ),
+        (
+            change(0, "type", json!("thought")),
+            Failure::Invalid(Shape::TerminalSnapshot),
+        ),
     ] {
         let mut changed = frames.clone();
         changed[last]["interaction"]["steps"] = snapshot;
         let error = decode_interaction(&changed, true).unwrap_err();
-        assert!(error.contains(expected), "{expected}: {error}");
+        assert!(
+            matches!(error,WireFailure::Codec(ref reason) if reason==&expected),
+            "{expected}: {error}"
+        );
     }
     let mut missing = frames.clone();
     missing[last]["interaction"]["steps"][2]
         .as_object_mut()
         .unwrap()
         .remove("arguments");
-    assert!(
-        decode_interaction(&missing, true)
-            .unwrap_err()
-            .contains("arguments")
-    );
+    assert!(matches!(
+        decode_interaction(&missing, true).unwrap_err(),
+        WireFailure::Codec(Failure::Invalid(Shape::SnapshotShape))
+    ));
     let mut signature_only_in_snapshot = frames.clone();
     signature_only_in_snapshot.remove(6);
-    assert!(
-        decode_interaction(&signature_only_in_snapshot, true)
-            .unwrap_err()
-            .contains("snapshot steps")
-    );
+    assert!(matches!(
+        decode_interaction(&signature_only_in_snapshot, true).unwrap_err(),
+        WireFailure::Codec(Failure::Invalid(Shape::TerminalSnapshot))
+    ));
     let mut multipart = frames.clone();
     multipart[4]["step"]["summary"] =
         json!([{"type":"text","text":"A"},{"type":"text","text":"B"}]);
-    assert!(
-        decode_interaction(&multipart, true)
-            .unwrap_err()
-            .contains("multipart step content")
-    );
+    assert!(matches!(
+        decode_interaction(&multipart, true).unwrap_err(),
+        WireFailure::Codec(Failure::Unsupported(Carrier::MultipartContent))
+    ));
     let mut introduced = frames;
     introduced[6]["delta"]["signature"] = json!("other");
-    assert!(
-        decode_interaction(&introduced, true)
-            .unwrap_err()
-            .contains("snapshot steps")
-    );
+    assert!(matches!(
+        decode_interaction(&introduced, true).unwrap_err(),
+        WireFailure::Codec(Failure::Invalid(Shape::TerminalSnapshot))
+    ));
 }
 
 #[test]
@@ -869,19 +873,17 @@ fn step_stream_preserves_usage_call_arguments_and_thought_signature() {
     for invalid in [json!(null), json!(42)] {
         let mut malformed = placeholder.clone();
         malformed[2]["step"]["signature"] = invalid;
-        assert!(
-            decode_interaction(&malformed, true)
-                .unwrap_err()
-                .contains("signature")
-        );
+        assert!(matches!(
+            decode_interaction(&malformed, true).unwrap_err(),
+            WireFailure::Codec(Failure::Invalid(Shape::Signature))
+        ));
     }
     let mut duplicate = placeholder;
     duplicate.insert(5, duplicate[4].clone());
-    assert!(
-        decode_interaction(&duplicate, true)
-            .unwrap_err()
-            .contains("duplicate step signature")
-    );
+    assert!(matches!(
+        decode_interaction(&duplicate, true).unwrap_err(),
+        WireFailure::Codec(Failure::Invalid(Shape::Sequence))
+    ));
     assert_eq!(decoded.metadata.id.as_deref(), Some("i"));
     assert_eq!(
         decoded.semantic.progress(),
@@ -932,19 +934,17 @@ fn step_stream_preserves_usage_call_arguments_and_thought_signature() {
     ]);
     assert_eq!(decode_interaction(&snapshots, true).unwrap(), signed);
     snapshots[last]["interaction"]["steps"][1]["signature"] = json!("different");
-    assert!(
-        decode_interaction(&snapshots, true)
-            .unwrap_err()
-            .contains("snapshot steps")
-    );
+    assert!(matches!(
+        decode_interaction(&snapshots, true).unwrap_err(),
+        WireFailure::Codec(Failure::Invalid(Shape::TerminalSnapshot))
+    ));
     for signature in [json!(null), json!(17), json!("")] {
         let mut malformed = interaction_frames();
         malformed[6]["step"]["signature"] = signature;
-        assert!(
-            decode_interaction(&malformed, true)
-                .unwrap_err()
-                .contains("signature")
-        );
+        assert!(matches!(
+            decode_interaction(&malformed, true).unwrap_err(),
+            WireFailure::Codec(Failure::Invalid(Shape::Signature))
+        ));
     }
     let usage = decoded.semantic.usage().unwrap();
     assert_eq!(
@@ -1050,11 +1050,10 @@ fn step_stream_rejects_missing_call_identity_and_unfinished_or_late_data() {
     );
     let mut invalid_usage = opening.clone();
     invalid_usage[0]["interaction"]["usage"] = json!({"total_input_tokens":-1});
-    assert!(
-        decode_interaction(&invalid_usage, true)
-            .unwrap_err()
-            .contains("total_input_tokens")
-    );
+    assert!(matches!(
+        decode_interaction(&invalid_usage, true).unwrap_err(),
+        WireFailure::Codec(Failure::Invalid(Shape::Usage))
+    ));
     for entry in [
         json!({"modality":"text"}),
         json!({"modality":"text","tokens":null}),
@@ -1240,12 +1239,10 @@ fn function_call_signatures_are_native_and_dependency_bound() {
         json!({"anchor":"function_call","signature":"x","unexpected":true}),
     ] {
         let (request, fidelity, _, _) = history(payload);
-        assert!(
-            encode_generation_request(&request, &fidelity, &target)
-                .unwrap_err()
-                .to_string()
-                .contains("signature payload")
-        );
+        assert!(matches!(
+            encode_generation_request(&request, &fidelity, &target).unwrap_err(),
+            Failure::Invalid(Shape::SignaturePayload)
+        ));
     }
 }
 
@@ -1302,12 +1299,10 @@ fn rejects_orphaned_or_wrong_target_signatures() {
         .unwrap();
     let request = request.with_items(items).unwrap();
     let target = ReplayTarget::new("synthetic-google", "gemini-synthetic").unwrap();
-    assert!(
-        encode_generation_request(&request, &fidelity, &target)
-            .unwrap_err()
-            .to_string()
-            .contains("signature payload")
-    );
+    assert!(matches!(
+        encode_generation_request(&request, &fidelity, &target).unwrap_err(),
+        Failure::Invalid(Shape::SignaturePayload)
+    ));
     let (request, fidelity) = signed_history(ReplayFormat::GoogleInteractionsV1Thought);
     let other = ReplayTarget::new("synthetic-google", "other-model").unwrap();
     assert!(encode_generation_request(&request, &fidelity, &other).is_err());
@@ -1568,7 +1563,7 @@ fn media_become_v1_content_and_video_has_no_carrier() {
                     .as_bytes()
             )
             .unwrap_err(),
-        morphiecore::protocol::CodecError::Unsupported("instruction content".into())
+        morphiecore::protocol::CodecError::Unsupported(morphiecore::protocol::failure::CarrierReason::Unavailable)
     );
     let strict = morphiecore::protocol::anthropic::messages::client::decode_client_request(
         json!({"model":"public","max_tokens":8,"messages":[{"role":"user","content":[
@@ -1794,11 +1789,11 @@ fn tool_result_execution_reports_require_a_real_carrier() {
         let original = source.clone();
         let (interactions, generate) = encode(&source);
         assert!(
-            matches!(&generate, Err(morphiecore::protocol::CodecError::Unsupported(r)) if r == "Gemini semantic carrier"),
+            matches!(&generate, Err(morphiecore::protocol::CodecError::Unsupported(r)) if matches!(r,morphiecore::protocol::failure::CarrierReason::Unavailable)),
             "{execution:?}"
         );
         assert!(
-            matches!(&interactions, Err(morphiecore::protocol::CodecError::Unsupported(r)) if r == "Interactions semantic carrier"),
+            matches!(&interactions, Err(morphiecore::protocol::CodecError::Unsupported(r)) if matches!(r,morphiecore::protocol::failure::CarrierReason::Unavailable)),
             "{execution:?}"
         );
         for contract in [

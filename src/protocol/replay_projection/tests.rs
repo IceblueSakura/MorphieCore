@@ -129,7 +129,9 @@ fn attachment_dependencies_detect_removed_values_owners_and_lifecycle_edits() {
     changed.semantic = changed.semantic.with_items(items).unwrap();
     assert!(matches!(
         seal_for_client(&mut changed, &CLIENT_ORIGIN),
-        Err(CodecError::Invalid("part replay dependency"))
+        Err(CodecError::Invalid(
+            crate::protocol::failure::ShapeReason::InvalidValue
+        ))
     ));
 }
 
@@ -207,6 +209,7 @@ fn foreign_signed_text_drops_only_replay_and_affected_call_aliases() {
         .unwrap();
     let request = crate::adapter::Request::from_generation(
         crate::protocol::DecodedRequest {
+            evidence: Default::default(),
             semantic: GenerationRequest::new(items, GenerationControls::default()).unwrap(),
             fidelity: source.fidelity,
         },
@@ -337,7 +340,7 @@ fn native_history_validates_deleted_anchors_before_partial_attachments() {
     let request = GenerationRequest::new(items, GenerationControls::default()).unwrap();
     assert!(matches!(
         crate::protocol::native::native_reasoning_history(&request, &fidelity, &target(), &[]),
-        Err(CodecError::Unsupported(reason)) if reason == "partial foreign attachment"
+        Err(CodecError::Unsupported(reason)) if reason == crate::protocol::failure::CarrierReason::Replay
     ));
     let request = request
         .with_message_envelopes(vec![MessageEnvelope::empty(
@@ -352,6 +355,7 @@ fn native_history_validates_deleted_anchors_before_partial_attachments() {
     ));
     let request = crate::adapter::Request::from_generation(
         crate::protocol::DecodedRequest {
+            evidence: Default::default(),
             semantic: request,
             fidelity,
         },
@@ -360,7 +364,7 @@ fn native_history_validates_deleted_anchors_before_partial_attachments() {
     .unwrap();
     assert!(matches!(
         request.without_foreign_reasoning(Some(&ReplayTarget::new("other", "other").unwrap().origin())),
-        Err(CodecError::Unsupported(reason)) if reason == "partial foreign attachment"
+        Err(CodecError::Unsupported(reason)) if reason == crate::protocol::failure::CarrierReason::Replay
     ));
 }
 
@@ -371,13 +375,15 @@ fn ordinary_reasoning_cannot_hide_an_unrestored_carrier() {
         "encrypted_content":"mca1.synthetic"}]});
     assert!(
         matches!(client.decode_client_request(input.to_string().as_bytes()),
-        Err(CodecError::Unsupported(reason)) if reason == "legacy Responses manifest")
+        Err(CodecError::Unsupported(reason)) if reason == crate::protocol::failure::CarrierReason::Replay)
     );
     let raw = Adapter::new(Profile::Responses, Dialect::Standard, None);
     let mut request = raw.decode_request(input.to_string().as_bytes()).unwrap();
     assert!(matches!(
         open_from_client(&mut request),
-        Err(CodecError::Invalid("unrestored attachment carrier"))
+        Err(CodecError::Invalid(
+            crate::protocol::failure::ShapeReason::InvalidValue
+        ))
     ));
 }
 
@@ -481,6 +487,8 @@ fn legacy_surrogate_signatures_are_dropped_with_a_receipt() {
             &target(),
             None,
         ),
-        Err(CodecError::Invalid("Gemini signature payload"))
+        Err(CodecError::Invalid(
+            crate::protocol::failure::ShapeReason::InvalidValue
+        ))
     ));
 }

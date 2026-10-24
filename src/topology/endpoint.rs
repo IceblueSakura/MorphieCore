@@ -29,7 +29,7 @@ fn omit_messages_controls(
         Some(ReplayMismatch::Drop) => rules.push("messages.omit-block-binding.v1"),
         Some(ReplayMismatch::Reject) => {
             return Err(crate::protocol::CodecError::Unsupported(
-                "thinking.block_binding".into(),
+                crate::protocol::failure::CarrierReason::Reasoning,
             ));
         }
         None => {}
@@ -117,7 +117,9 @@ impl Endpoint {
         if let Some(policy) = reasoning_policy {
             policy.validate()?;
             if policy.canonical_model != self.canonical_model.as_str() {
-                return Err(CodecError::Invalid("reasoning policy model"));
+                return Err(CodecError::Invalid(
+                    crate::protocol::failure::ShapeReason::InvalidValue,
+                ));
             }
         }
         Ok(match (&self.protocol, &self.representation) {
@@ -156,7 +158,9 @@ impl Endpoint {
                 if let Some(mapping) = caps.adaptation.effort_mapping {
                     mapping.validate()?;
                     if mapping.canonical_model != self.canonical_model.as_str() {
-                        return Err(CodecError::Invalid("reasoning mapping model"));
+                        return Err(CodecError::Invalid(
+                            crate::protocol::failure::ShapeReason::InvalidValue,
+                        ));
                     }
                 }
                 UpstreamAdapter::OpenAi(Box::new(Adapter {
@@ -178,7 +182,7 @@ impl Endpoint {
     pub fn encode_request(
         &self,
         request: &crate::adapter::Request,
-    ) -> Result<serde_json::Value, crate::adapter::AdapterError> {
+    ) -> Result<serde_json::Value, crate::adapter::ConversionFailure> {
         self.encode_request_with_rules(request)
             .map(|(value, _)| value)
     }
@@ -186,48 +190,62 @@ impl Endpoint {
     pub fn encode_request_with_rules(
         &self,
         request: &crate::adapter::Request,
-    ) -> Result<(serde_json::Value, Vec<&'static str>), crate::adapter::AdapterError> {
+    ) -> Result<(serde_json::Value, Vec<&'static str>), crate::adapter::ConversionFailure> {
         self.encode_request_with_evidence(request)
-            .map(|projection| (projection.value, projection.rules))
+            .map(|projection| {
+                let rules = projection.evidence.rule_names();
+                (projection.value, rules)
+            })
     }
     pub(crate) fn encode_request_with_evidence(
         &self,
         request: &crate::adapter::Request,
-    ) -> Result<crate::protocol::RequestProjection, crate::adapter::AdapterError> {
-        use crate::adapter::UpstreamAdapter;
-        let (request, omitted) = match &self.representation {
-            TargetCaps::AnthropicMessages(_) => (std::borrow::Cow::Borrowed(request), vec![]),
-            _ => omit_messages_controls(request)?,
-        };
-        let request = request.as_ref();
-        let mut projection = match (self.adapter()?, &self.representation) {
-            (UpstreamAdapter::OpenAi(adapter), TargetCaps::OpenAi(caps)) => {
-                let mut contract = caps.as_ref().clone();
-                contract.replay_origin = contract.replay_origin.map(|_| self.replay_origin());
-                adapter.encode_request_with_evidence(request, &self.upstream_model, &contract)
-            }
-            (
-                UpstreamAdapter::AnthropicMessages { target, .. },
-                TargetCaps::AnthropicMessages(caps),
-            ) => caps.encode_request(request, &target).map(|projection| {
-                crate::protocol::RequestProjection {
-                    value: projection.value,
-                    rules: projection.rules.iter().map(|rule| rule.name()).collect(),
-                    controls: projection.control_losses,
+    ) -> Result<
+        crate::lowering::generation::Conversion<serde_json::Value>,
+        crate::adapter::ConversionFailure,
+    > {
+        let result = (|| {
+            use crate::adapter::UpstreamAdapter;
+            let (request, omitted) = match &self.representation {
+                TargetCaps::AnthropicMessages(_) => (std::borrow::Cow::Borrowed(request), vec![]),
+                _ => omit_messages_controls(request)?,
+            };
+            let request = request.as_ref();
+            let mut projection = match (self.adapter()?, &self.representation) {
+                (UpstreamAdapter::OpenAi(adapter), TargetCaps::OpenAi(caps)) => {
+                    let mut contract = caps.as_ref().clone();
+                    contract.replay_origin = contract.replay_origin.map(|_| self.replay_origin());
+                    adapter.encode_request_with_evidence(request, &self.upstream_model, &contract)
                 }
-            }),
-            (
-                UpstreamAdapter::GoogleGenerateContent { target },
-                TargetCaps::GoogleGenerateContent(caps),
-            ) => caps.encode_request(request, &target),
-            (
-                UpstreamAdapter::GoogleInteractions { target },
-                TargetCaps::GoogleInteractions(caps),
-            ) => caps.encode_request(request, &target),
-            _ => Err(crate::protocol::CodecError::ProfileMismatch.into()),
-        }?;
-        projection.rules.extend(omitted);
-        Ok(projection)
+                (
+                    UpstreamAdapter::AnthropicMessages { target, .. },
+                    TargetCaps::AnthropicMessages(caps),
+                ) => caps.encode_request(request, &target),
+                (
+                    UpstreamAdapter::GoogleGenerateContent { target },
+                    TargetCaps::GoogleGenerateContent(caps),
+                ) => caps.encode_request(request, &target),
+                (
+                    UpstreamAdapter::GoogleInteractions { target },
+                    TargetCaps::GoogleInteractions(caps),
+                ) => caps.encode_request(request, &target),
+                _ => Err(crate::protocol::CodecError::ProfileMismatch.into()),
+            }?;
+            for rule in omitted {
+                projection
+                    .evidence
+                    .push(crate::lowering::generation::Effect::new(
+                        rule,
+                        crate::lowering::generation::Field::ToolResultError,
+                        crate::lowering::generation::ConversionBoundary::RequestProject,
+                        crate::lowering::generation::Change::Approximate,
+                    ));
+            }
+            Ok(projection)
+        })();
+        result.map_err(|error: crate::adapter::ConversionFailure| {
+            error.at(crate::lowering::generation::ConversionBoundary::RequestEncode)
+        })
     }
     /// Closed Provider header projection; no inbound header map or runtime target selection.
     pub(crate) fn request_headers(

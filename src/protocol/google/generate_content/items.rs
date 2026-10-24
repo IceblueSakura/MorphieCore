@@ -114,7 +114,9 @@ fn item_parts(
             let Some(value) = own else {
                 // Every turn converts alike, keeping the projection append-only.
                 if r.replay.is_some() {
-                    return Err(CodecError::Invalid("Gemini replay format"));
+                    return Err(CodecError::Invalid(
+                        crate::protocol::failure::ShapeReason::InvalidValue,
+                    ));
                 }
                 let text = readable();
                 if !text.trim().is_empty() {
@@ -124,7 +126,9 @@ fn item_parts(
                 return Ok(());
             };
             if !fidelity.replay_matches_request(id, r, Some(&target.origin()), request) {
-                return Err(CodecError::Invalid("Gemini replay dependency"));
+                return Err(CodecError::Invalid(
+                    crate::protocol::failure::ShapeReason::InvalidValue,
+                ));
             }
             let token = value.replay_token().ok_or_else(unsupported)?;
             if r.parts.is_empty() && super::replay::is_legacy(token) {
@@ -153,7 +157,9 @@ fn item_parts(
                     s.as_bytes(),
                     crate::semantic::value::JsonLimits::STRUCTURED,
                 )
-                .map_err(|_| CodecError::Invalid("Gemini object arguments"))?,
+                .map_err(|_| {
+                    CodecError::Invalid(crate::protocol::failure::ShapeReason::InvalidValue)
+                })?,
                 ToolArguments::StructuredPartial(_) => return Err(unsupported()),
             };
             if !args.is_object() {
@@ -200,7 +206,9 @@ fn item_parts(
                     }
                     _ => None,
                 })
-                .ok_or(CodecError::Invalid("Gemini result without call"))?;
+                .ok_or(CodecError::Invalid(
+                    crate::protocol::failure::ShapeReason::InvalidValue,
+                ))?;
             let key = if r.is_error == Some(true) {
                 "error"
             } else {

@@ -120,7 +120,7 @@ fn blocks(v: &mut Value, ignored: &mut BTreeSet<String>) -> Result<(), CodecErro
                 )
             {
                 return Err(CodecError::Unsupported(
-                    "Anthropic content cache breakpoint".into(),
+                    crate::protocol::failure::CarrierReason::Unavailable,
                 ));
             }
             let kind = block.get("type").and_then(Value::as_str).map(str::to_owned);
@@ -166,14 +166,18 @@ pub fn decode_client_request(bytes: &[u8]) -> Result<Request, CodecError> {
         "stream",
     ] {
         if o.get(field).is_some_and(Value::is_null) {
-            return Err(CodecError::Invalid("Anthropic null"));
+            return Err(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            ));
         }
     }
-    if let Some(key) = UNSUPPORTED.iter().find(|key| {
+    if let Some(_key) = UNSUPPORTED.iter().find(|key| {
         o.get(**key)
             .is_some_and(|v| !v.is_null() && !(**key == "mcp_servers" && v == &json!([])))
     }) {
-        return Err(CodecError::Unsupported((*key).into()));
+        return Err(CodecError::Unsupported(
+            crate::protocol::failure::CarrierReason::UnknownField,
+        ));
     }
     let mut ignored = BTreeSet::new();
     keep(&mut v, TOP, &mut ignored);
@@ -196,7 +200,9 @@ pub fn decode_client_request(bytes: &[u8]) -> Result<Request, CodecError> {
         required(&o, "max_tokens")?
             .as_u64()
             .filter(|n| *n > 0)
-            .ok_or(CodecError::Invalid("max_tokens"))?,
+            .ok_or(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            ))?,
     );
     let scope = LocalScope::ROOT;
     let mut intake = Intake::new(scope);
@@ -228,7 +234,9 @@ pub fn decode_client_request(bytes: &[u8]) -> Result<Request, CodecError> {
         }
     }
     if let Some(tools) = o.get("tools") {
-        let tools = tools.as_array().ok_or(CodecError::Invalid("tools"))?;
+        let tools = tools.as_array().ok_or(CodecError::Invalid(
+            crate::protocol::failure::ShapeReason::InvalidValue,
+        ))?;
         settings.tools = Some(
             tools
                 .iter()
@@ -276,7 +284,9 @@ pub fn decode_client_request(bytes: &[u8]) -> Result<Request, CodecError> {
                     .get("budget_tokens")
                     .and_then(Value::as_u64)
                     .filter(|n| *n >= 1024)
-                    .ok_or(CodecError::Invalid("thinking budget"))?;
+                    .ok_or(CodecError::Invalid(
+                        crate::protocol::failure::ShapeReason::InvalidValue,
+                    ))?;
                 settings.reasoning = ReasoningRequest::present(None);
                 settings.reasoning.activation = Presence::Value(ReasoningActivation::Enabled);
                 settings.reasoning.mode = Presence::Value(ReasoningMode::Budgeted);
@@ -286,12 +296,16 @@ pub fn decode_client_request(bytes: &[u8]) -> Result<Request, CodecError> {
                     .max_output_tokens
                     .is_some_and(|cap| budget >= cap)
                 {
-                    return Err(CodecError::Invalid("thinking budget"));
+                    return Err(CodecError::Invalid(
+                        crate::protocol::failure::ShapeReason::InvalidValue,
+                    ));
                 }
             }
             Some("adaptive") => {
                 if t.contains_key("budget_tokens") {
-                    return Err(CodecError::Invalid("adaptive thinking budget"));
+                    return Err(CodecError::Invalid(
+                        crate::protocol::failure::ShapeReason::InvalidValue,
+                    ));
                 }
                 settings.reasoning = ReasoningRequest::present(None);
                 settings.reasoning.activation = Presence::Value(ReasoningActivation::Enabled);
@@ -299,12 +313,18 @@ pub fn decode_client_request(bytes: &[u8]) -> Result<Request, CodecError> {
             }
             Some("disabled") => {
                 if t.contains_key("budget_tokens") || t.contains_key("display") {
-                    return Err(CodecError::Invalid("disabled thinking controls"));
+                    return Err(CodecError::Invalid(
+                        crate::protocol::failure::ShapeReason::InvalidValue,
+                    ));
                 }
                 settings.reasoning = ReasoningRequest::present(None);
                 settings.reasoning.activation = Presence::Value(ReasoningActivation::Disabled);
             }
-            _ => return Err(CodecError::Unsupported("Anthropic thinking mode".into())),
+            _ => {
+                return Err(CodecError::Unsupported(
+                    crate::protocol::failure::CarrierReason::Reasoning,
+                ));
+            }
         }
         settings.reasoning.presentation.visibility = settings::display(&shape::presence(
             t,
@@ -312,12 +332,16 @@ pub fn decode_client_request(bytes: &[u8]) -> Result<Request, CodecError> {
             wire::request::Display::read,
         )?);
         if settings.reasoning.presentation.visibility == Presence::Null {
-            return Err(CodecError::Invalid("thinking display"));
+            return Err(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            ));
         }
         let binding = wire::request::PrefixMismatch::read(t.get("block_binding"))?;
         if binding.is_some() && settings.reasoning.mode != Presence::Value(ReasoningMode::Adaptive)
         {
-            return Err(CodecError::Invalid("thinking.block_binding"));
+            return Err(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            ));
         }
         settings.reasoning.replay_mismatch =
             binding.map(crate::protocol::anthropic::messages::settings::replay_mismatch);
@@ -339,13 +363,17 @@ pub fn decode_client_request(bytes: &[u8]) -> Result<Request, CodecError> {
     }
     let messages = required(&o, "messages")?
         .as_array()
-        .ok_or(CodecError::Invalid("messages"))?;
+        .ok_or(CodecError::Invalid(
+            crate::protocol::failure::ShapeReason::InvalidValue,
+        ))?;
     let mut roles = Vec::with_capacity(messages.len());
     for message in messages {
         let mut message = message.clone();
         // Turn-scoped clearing changes the model contract.
         if message.get("clear_at").is_some_and(|v| !v.is_null()) {
-            return Err(CodecError::Unsupported("message clear_at".into()));
+            return Err(CodecError::Unsupported(
+                crate::protocol::failure::CarrierReason::Unavailable,
+            ));
         }
         keep(
             &mut message,
@@ -375,7 +403,9 @@ pub fn decode_client_request(bytes: &[u8]) -> Result<Request, CodecError> {
                 blocks(&mut content, &mut ignored)?;
                 content
                     .as_array()
-                    .ok_or(CodecError::Invalid("content"))?
+                    .ok_or(CodecError::Invalid(
+                        crate::protocol::failure::ShapeReason::InvalidValue,
+                    ))?
                     .iter()
                     .map(|v| wire::request::CacheMarked::read(v, Block::read))
                     .collect::<Result<_, _>>()?
@@ -385,7 +415,9 @@ pub fn decode_client_request(bytes: &[u8]) -> Result<Request, CodecError> {
             continue;
         }
         if effort.is_some() {
-            return Err(CodecError::Invalid("Anthropic message output_config"));
+            return Err(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            ));
         }
         roles.push((role, true));
         let parsed = if content.is_string() {
@@ -398,13 +430,17 @@ pub fn decode_client_request(bytes: &[u8]) -> Result<Request, CodecError> {
             blocks(&mut content, &mut ignored)?;
             content
                 .as_array()
-                .ok_or(CodecError::Invalid("content"))?
+                .ok_or(CodecError::Invalid(
+                    crate::protocol::failure::ShapeReason::InvalidValue,
+                ))?
                 .iter()
                 .map(|v| wire::request::CacheMarked::read(v, Block::read))
                 .collect::<Result<_, _>>()?
         };
         if !wire::request::input_block_bytes(role, &parsed, true)?.1 {
-            return Err(CodecError::Invalid("Anthropic empty message"));
+            return Err(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            ));
         }
         if parsed.iter().any(|block| match &block.content {
             Block::Thinking { signature, .. } | Block::RedactedThinking(signature) => {
@@ -412,7 +448,9 @@ pub fn decode_client_request(bytes: &[u8]) -> Result<Request, CodecError> {
             }
             _ => false,
         }) {
-            return Err(CodecError::Unsupported("legacy Messages manifest".into()));
+            return Err(CodecError::Unsupported(
+                crate::protocol::failure::CarrierReason::Replay,
+            ));
         }
         intake.request_message(role, &parsed)?;
     }
@@ -442,13 +480,21 @@ pub fn decode_client_request(bytes: &[u8]) -> Result<Request, CodecError> {
     let semantic = GenerationRequest::from_resources(items, settings, intake.resources)?;
     crate::protocol::anthropic::messages::items::validate_cache(&semantic)?;
     fidelity.bind_replay_origin(&crate::execution::replay::CLIENT_ORIGIN)?;
-    let mut request = Request::from_generation(DecodedRequest { semantic, fidelity }, &model)?;
+    let mut request = Request::from_generation(
+        DecodedRequest {
+            evidence: Default::default(),
+            semantic,
+            fidelity,
+        },
+        &model,
+    )?;
     request.context.identity.user = wire::request::read_user_id(&o)?;
     request.service_policy = service::read_policy(&o)?;
     request.source = Some(crate::adapter::ClientProtocol::Messages);
     if let Some(stream) = o.get("stream") {
-        request.delivery.stream =
-            Presence::Value(stream.as_bool().ok_or(CodecError::Invalid("stream"))?);
+        request.delivery.stream = Presence::Value(stream.as_bool().ok_or(CodecError::Invalid(
+            crate::protocol::failure::ShapeReason::InvalidValue,
+        ))?);
     }
     request.ignored_fields = ignored.into_iter().collect();
     Ok(request)

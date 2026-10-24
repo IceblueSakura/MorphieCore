@@ -26,7 +26,11 @@ pub(super) fn read_policy(
             Some("ultrafast") if profile == Profile::Responses => {
                 ServicePolicy::UltraFastProcessing
             }
-            _ => return Err(CodecError::Invalid("service policy")),
+            _ => {
+                return Err(CodecError::Invalid(
+                    crate::protocol::failure::ShapeReason::InvalidValue,
+                ));
+            }
         })
     })
 }
@@ -42,7 +46,11 @@ pub(super) fn policy_wire(
         ServicePolicy::PriorityProcessing => "priority",
         ServicePolicy::ScaleProcessing => "scale",
         ServicePolicy::UltraFastProcessing if profile == Profile::Responses => "ultrafast",
-        _ => return Err(CodecError::Unsupported("service policy".into())),
+        _ => {
+            return Err(CodecError::Unsupported(
+                crate::protocol::failure::CarrierReason::Unavailable,
+            ));
+        }
     })
 }
 pub(super) fn write_policy(
@@ -71,7 +79,11 @@ pub(super) fn read_class(
             Some("priority") => ServiceClass::PriorityProcessing,
             Some("scale") => ServiceClass::ScaleProcessing,
             Some("ultrafast") if profile == Profile::Responses => ServiceClass::UltraFastProcessing,
-            _ => return Err(CodecError::Invalid("reported service")),
+            _ => {
+                return Err(CodecError::Invalid(
+                    crate::protocol::failure::ShapeReason::InvalidValue,
+                ));
+            }
         })
     })
 }
@@ -87,7 +99,11 @@ pub(super) fn class_wire(
         ServiceClass::PriorityProcessing => "priority",
         ServiceClass::ScaleProcessing => "scale",
         ServiceClass::UltraFastProcessing if profile == Profile::Responses => "ultrafast",
-        _ => return Err(CodecError::Unsupported("reported service".into())),
+        _ => {
+            return Err(CodecError::Unsupported(
+                crate::protocol::failure::CarrierReason::Unavailable,
+            ));
+        }
     })
 }
 pub(super) fn write_class(

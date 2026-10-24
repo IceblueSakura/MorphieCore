@@ -87,7 +87,9 @@ def run(base):
                     if stored:
                         params.update(previous_response_id=result["id"], input=new)
                         retrieved = client.responses.retrieve(result["id"])
-                        check(retrieved.model_dump(exclude_unset=True) == result)
+                        retained = retrieved.model_dump(exclude_unset=True)
+                        check({k: v for k, v in retained.items() if k != "morphiecore"}
+                              == {k: v for k, v in result.items() if k != "morphiecore"})
                         for item in client.responses.input_items.list(result["id"]):
                             TypeAdapter(ResponseItem).validate_python(item.model_dump(by_alias=True, exclude_unset=True))
                     else:

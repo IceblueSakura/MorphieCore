@@ -12,7 +12,9 @@ pub(crate) fn validate(probs: &[Logprob]) -> Result<(), CodecError> {
             .as_ref()
             .is_none_or(|top| top.iter().any(|p| p.token.is_none() || p.logprob.is_none()))
     }) {
-        return Err(CodecError::Invalid("Chat probability details"));
+        return Err(CodecError::Invalid(
+            crate::protocol::failure::ShapeReason::InvalidValue,
+        ));
     }
     Ok(())
 }
@@ -47,7 +49,11 @@ pub(in crate::protocol::openai) fn carrier(
     let key = match kind {
         PartKind::Text => "content",
         PartKind::Refusal => "refusal",
-        _ => return Err(CodecError::Invalid("probability owner")),
+        _ => {
+            return Err(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            ));
+        }
     };
     Ok(match probs {
         Presence::Absent => None,
@@ -78,7 +84,9 @@ pub(in crate::protocol::openai) fn attach(
                 }
                 _ => None,
             })
-            .ok_or(CodecError::Invalid("probability owner"))?;
+            .ok_or(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            ))?;
         *content = match content {
             ContentPart::Text(text) => {
                 ContentPart::Text(text.clone().with_logprobs(Presence::Value(probs))?)
@@ -105,7 +113,9 @@ pub(in crate::protocol::openai) fn choice(
                 };
                 if let Some(next) = next {
                     if result.is_some() {
-                        return Err(CodecError::Invalid("multiple probability owners"));
+                        return Err(CodecError::Invalid(
+                            crate::protocol::failure::ShapeReason::InvalidValue,
+                        ));
                     }
                     result = Some(next);
                 }

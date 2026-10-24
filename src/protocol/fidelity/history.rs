@@ -24,10 +24,16 @@ impl FidelityRecords {
                 Item::Compaction(value) if binding.kind == ReplayOwnerKind::Compaction => {
                     value.fingerprint()
                 }
-                _ => return Err(CodecError::Invalid("history replay owner")),
+                _ => {
+                    return Err(CodecError::Invalid(
+                        crate::protocol::failure::ShapeReason::InvalidValue,
+                    ));
+                }
             };
             if binding.dependency != dependency {
-                return Err(CodecError::Invalid("history replay dependency"));
+                return Err(CodecError::Invalid(
+                    crate::protocol::failure::ShapeReason::InvalidValue,
+                ));
             }
             match new {
                 Item::Reasoning(r) => self.record_replay(new_id, r, binding.origin.clone())?,
@@ -35,7 +41,11 @@ impl FidelityRecords {
                 Item::Compaction(value) => {
                     self.record_compaction(new_id, value, binding.origin.clone())?
                 }
-                _ => return Err(CodecError::Invalid("history replay owner")),
+                _ => {
+                    return Err(CodecError::Invalid(
+                        crate::protocol::failure::ShapeReason::InvalidValue,
+                    ));
+                }
             }
         }
         // Creator and response-wide reports are output observations, not request
@@ -51,7 +61,9 @@ impl FidelityRecords {
             for (ordinal, (a, b)) in old.parts.iter().zip(&new.parts).enumerate() {
                 if let Some(binding) = source.part_replay.get(&(old_id, a.id)) {
                     if binding.dependency != replay::part_dependency(old.status, ordinal, a)? {
-                        return Err(CodecError::Invalid("history part replay dependency"));
+                        return Err(CodecError::Invalid(
+                            crate::protocol::failure::ShapeReason::InvalidValue,
+                        ));
                     }
                     self.record_part_replay(
                         new_id,
@@ -67,10 +79,16 @@ impl FidelityRecords {
                             (v.reference().fingerprint(), Some(v.fingerprint()))
                         }
                         ContentPart::AudioReference(v) => (v.fingerprint(), None),
-                        _ => return Err(CodecError::Invalid("history audio owner")),
+                        _ => {
+                            return Err(CodecError::Invalid(
+                                crate::protocol::failure::ShapeReason::InvalidValue,
+                            ));
+                        }
                     };
                     if binding.reference != reference || body.is_some() && binding.body != body {
-                        return Err(CodecError::Invalid("history audio dependency"));
+                        return Err(CodecError::Invalid(
+                            crate::protocol::failure::ShapeReason::InvalidValue,
+                        ));
                     }
                     self.record_audio(b.id, &b.content, binding.origin.clone())?;
                 }

@@ -13,7 +13,9 @@ pub(in crate::protocol::openai) fn attach(
     let Some(value) = value.filter(|v| !v.is_null()) else {
         return Ok(());
     };
-    let rows = value.as_array().ok_or(CodecError::Invalid("annotations"))?;
+    let rows = value.as_array().ok_or(CodecError::Invalid(
+        crate::protocol::failure::ShapeReason::InvalidValue,
+    ))?;
     if rows.len() > MAX_ITEMS {
         return Err(CodecError::Limit);
     }
@@ -27,19 +29,22 @@ pub(in crate::protocol::openai) fn attach(
         },
     ] = parts
     else {
-        return Err(CodecError::Invalid("annotation owner"));
+        return Err(CodecError::Invalid(
+            crate::protocol::failure::ShapeReason::InvalidValue,
+        ));
     };
     let mut annotations = Vec::new();
     for row in rows {
         let row = object(row)?;
         items.direction.fields(row, &["type", "url_citation"])?;
         if string(row, "type")? != "url_citation" {
-            return Err(CodecError::Unsupported("Chat annotation kind".into()));
+            return Err(CodecError::Unsupported(
+                crate::protocol::failure::CarrierReason::Unavailable,
+            ));
         }
-        let cite = object(
-            row.get("url_citation")
-                .ok_or(CodecError::Invalid("url citation"))?,
-        )?;
+        let cite = object(row.get("url_citation").ok_or(CodecError::Invalid(
+            crate::protocol::failure::ShapeReason::InvalidValue,
+        ))?)?;
         items
             .direction
             .fields(cite, &["start_index", "end_index", "title", "url"])?;

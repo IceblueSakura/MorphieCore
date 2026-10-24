@@ -16,11 +16,15 @@ fn responses_final_encoding_and_managed_history_cannot_drop_participants() {
     };
     assert_eq!(
         responses::encode_generation(&forged),
-        Err(CodecError::Unsupported("participant carrier".into()))
+        Err(CodecError::Unsupported(
+            crate::protocol::failure::CarrierReason::Unavailable
+        ))
     );
     assert_eq!(
         responses::managed::input_items(&request.task, "synthetic", None),
-        Err(CodecError::Unsupported("participant carrier".into()))
+        Err(CodecError::Unsupported(
+            crate::protocol::failure::CarrierReason::Unavailable
+        ))
     );
 }
 
@@ -137,6 +141,7 @@ fn static_codecs_reject_new_domains_even_for_forged_target_handles() {
             let forged = ResponseRepresentation {
                 semantic: std::borrow::Cow::Borrowed(semantic),
                 projection: vec![],
+                projection_steps: 0,
                 fidelity: &fidelity,
                 metadata: std::borrow::Cow::Borrowed(&metadata),
                 profile,
@@ -285,7 +290,9 @@ fn request_codecs_enforce_result_carriers_before_rendering() {
                     };
                     assert_eq!(
                         result,
-                        Err(CodecError::Unsupported("cache boundary carrier".into()))
+                        Err(CodecError::Unsupported(
+                            crate::protocol::failure::CarrierReason::Unavailable
+                        ))
                     );
                 }
             } else {

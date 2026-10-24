@@ -23,7 +23,9 @@ impl PreparedEmbedding {
         secret: &SecretMaterial,
     ) -> Result<UpstreamRequest, AttemptError> {
         if provider.id != self.provider || provider.origin != self.origin {
-            return Err(AttemptError::Protocol("embedding binding mismatch"));
+            return Err(AttemptError::Protocol(
+                crate::execution::attempt::ProtocolReason::EmbeddingBindingMismatch,
+            ));
         }
         Ok(UpstreamRequest {
             origin: self.origin.as_str().into(),
@@ -50,21 +52,22 @@ pub fn prepare(
         || provider.id != route.endpoint.provider
         || provider.origin != route.endpoint.target.origin
     {
-        return Err(AttemptError::Protocol("embedding binding mismatch"));
+        return Err(AttemptError::Protocol(
+            crate::execution::attempt::ProtocolReason::EmbeddingBindingMismatch,
+        ));
     }
-    let projected = route
-        .endpoint
-        .contract
-        .prepare(request)
-        .map_err(|_| AttemptError::Protocol("embedding admission"))?;
+    let projected = route.endpoint.contract.prepare(request).map_err(|_| {
+        AttemptError::Protocol(crate::execution::attempt::ProtocolReason::EmbeddingAdmission)
+    })?;
     let value = route
         .endpoint
         .profile
         .encode_request(&projected.target, &route.endpoint.upstream_model)?;
     crate::semantic::value::json_size(&value, route.endpoint.execution.request_body_limit)
         .map_err(|_| AttemptError::Limit)?;
-    let body = serde_json::to_vec(&value)
-        .map_err(|_| AttemptError::Protocol("embedding serialization"))?;
+    let body = serde_json::to_vec(&value).map_err(|_| {
+        AttemptError::Protocol(crate::execution::attempt::ProtocolReason::EmbeddingSerialization)
+    })?;
     Ok(PreparedEmbedding {
         provider: provider.id.clone(),
         origin: provider.origin.clone(),

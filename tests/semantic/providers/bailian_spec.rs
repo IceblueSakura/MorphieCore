@@ -1,6 +1,6 @@
 use crate::events_support::text;
 use morphiecore::{
-    adapter::{AdapterError, Request},
+    adapter::{ConversionFailure, Request},
     protocol::{
         CodecError, DecodedRequest,
         fidelity::FidelityRecords,
@@ -47,6 +47,7 @@ fn request(settings: GenerationSettings) -> Request {
     .unwrap();
     Request::from_generation(
         DecodedRequest {
+            evidence: Default::default(),
             semantic,
             fidelity: FidelityRecords::default(),
         },
@@ -228,7 +229,7 @@ fn output_caps_sampling_and_model_specific_ignored_controls_fail_closed() {
             .decode_client_request(budget.to_string().as_bytes())
             .unwrap();
         assert!(
-            matches!(target.encode_request_with_rules(&input),Err(AdapterError::Codec(CodecError::Unsupported(field))) if field=="Bailian thinking_budget carrier")
+            matches!(target.encode_request_with_rules(&input),Err(ConversionFailure { cause: morphiecore::adapter::ConversionCause::Codec(CodecError::Unsupported(field)), .. }) if field == morphiecore::protocol::failure::CarrierReason::Reasoning)
         );
         let mut cap = chat();
         cap["max_completion_tokens"] = json!(64);
@@ -346,7 +347,7 @@ fn model_binding_and_local_delivery_prefs_cannot_be_bypassed_by_direct_native_ad
     };
     assert!(
         matches!(morphiecore::protocol::openai::chat::envelope::encode_request(&lowered,&context),
-            Err(CodecError::Unsupported(field)) if field=="Bailian native effort level")
+            Err(CodecError::Unsupported(field)) if field == morphiecore::protocol::failure::CarrierReason::Unavailable)
     );
     wire["reasoning_effort"] = json!("high");
     let input = client(Profile::Chat)
@@ -398,7 +399,7 @@ fn model_binding_and_local_delivery_prefs_cannot_be_bypassed_by_direct_native_ad
         .unwrap();
     assert!(
         matches!(endpoint("dashscope-flash",ProtocolProfile::OpenAiResponses).encode_request_with_rules(&input),
-            Err(AdapterError::Codec(CodecError::Unsupported(field))) if field=="Bailian history item")
+            Err(ConversionFailure { cause: morphiecore::adapter::ConversionCause::Codec(CodecError::Unsupported(field)), .. }) if field == morphiecore::protocol::failure::CarrierReason::Unavailable)
     );
     assert!(
         native(Profile::Responses)
@@ -516,7 +517,7 @@ fn responses_unlisted_guarantees_and_non_adjacent_results_reject_without_reorder
         .unwrap();
     let before = input.clone();
     assert!(
-        matches!(target.encode_request_with_rules(&input),Err(AdapterError::Codec(CodecError::Unsupported(field))) if field=="Bailian function output adjacency")
+        matches!(target.encode_request_with_rules(&input),Err(ConversionFailure { cause: morphiecore::adapter::ConversionCause::Codec(CodecError::Unsupported(field)), .. }) if field == morphiecore::protocol::failure::CarrierReason::Unavailable)
     );
     assert_eq!(input, before);
     wire["input"] = json!([

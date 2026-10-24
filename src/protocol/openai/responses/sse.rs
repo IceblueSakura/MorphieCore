@@ -31,6 +31,9 @@ pub struct ResponsesSseDecoder {
     rejected: bool,
 }
 impl ResponsesSseDecoder {
+    pub(crate) fn take_intake_evidence(&mut self) -> crate::lowering::generation::EvidenceDelta {
+        self.codec.take_evidence()
+    }
     pub fn new(
         status: u16,
         content_type: &str,
@@ -118,9 +121,9 @@ impl ResponsesSseDecoder {
             return Ok(vec![]);
         }
         let mut payload = crate::protocol::json::decode(frame.data().as_bytes())?;
-        let object = payload
-            .as_object_mut()
-            .ok_or(CodecError::Invalid("SSE payload"))?;
+        let object = payload.as_object_mut().ok_or(CodecError::Invalid(
+            crate::protocol::failure::ShapeReason::InvalidValue,
+        ))?;
         let declared = frame.event().filter(|s| !s.is_empty());
         match (declared, object.get("type")) {
             (Some(header), Some(Value::String(body))) if header == body => {}
@@ -133,7 +136,9 @@ impl ResponsesSseDecoder {
         if let Some(padding) = payload.get("obfuscation") {
             let bytes = padding
                 .as_str()
-                .ok_or(CodecError::Invalid("obfuscation"))?
+                .ok_or(CodecError::Invalid(
+                    crate::protocol::failure::ShapeReason::InvalidValue,
+                ))?
                 .len();
             charge_padding(
                 &mut self.obfuscation_bytes,
@@ -177,6 +182,7 @@ impl ResponsesSseDecoder {
     }
 }
 pub struct ResponsesSseEncoder {
+    notice: Option<crate::protocol::diagnostics::AdaptationNotice>,
     codec: EventEncoder,
     limits: SseLimits,
     wire_bytes: usize,
@@ -186,9 +192,14 @@ pub struct ResponsesSseEncoder {
     rejected: bool,
 }
 impl ResponsesSseEncoder {
-    pub(crate) fn projection(
-        &self,
-    ) -> &[crate::protocol::openai::lowering::projection::ProjectionStage] {
+    pub(crate) fn set_notice(&mut self, notice: crate::protocol::diagnostics::AdaptationNotice) {
+        self.notice = Some(notice);
+    }
+    pub(crate) fn take_evidence(&mut self) -> crate::lowering::generation::EvidenceDelta {
+        self.codec.take_evidence()
+    }
+    #[cfg(test)]
+    pub(crate) fn projection(&self) -> &[crate::lowering::generation::Effect] {
         self.codec.projection()
     }
     pub fn new(
@@ -200,6 +211,7 @@ impl ResponsesSseEncoder {
         limits.validate()?;
         metadata.context.validate().map_err(CodecError::from)?;
         Ok(Self {
+            notice: None,
             codec: EventEncoder::new(Profile::Responses, metadata)?.with_contract(contract),
             limits,
             wire_bytes: 0,
@@ -229,7 +241,14 @@ impl ResponsesSseEncoder {
         if self.events >= self.limits.max_events {
             return Err(SseError::Limit);
         }
-        let frame = error_frame(error, self.events, self.limits.max_event_bytes)?;
+        let frame = error_frame(
+            error,
+            self.events,
+            self.limits
+                .max_event_bytes
+                .min(self.limits.max_wire_bytes.saturating_sub(self.wire_bytes)),
+            self.notice.as_ref(),
+        )?;
         if frame.len() > self.limits.max_wire_bytes.saturating_sub(self.wire_bytes) {
             return Err(SseError::Limit);
         }
@@ -245,6 +264,14 @@ impl ResponsesSseEncoder {
         }
         let result = (|| {
             let values = self.codec.encode(event, fidelity)?;
+            let mut notice = if matches!(event, StreamEvent::Terminal { .. }) {
+                self.notice.take()
+            } else {
+                None
+            };
+            if let Some(notice) = &mut notice {
+                notice.add_effects(self.codec.projection());
+            }
             let mut frames = vec![];
             for mut value in values {
                 self.events += 1;
@@ -253,7 +280,9 @@ impl ResponsesSseEncoder {
                 }
                 let typ = value["type"]
                     .as_str()
-                    .ok_or(CodecError::Invalid("event type"))?
+                    .ok_or(CodecError::Invalid(
+                        crate::protocol::failure::ShapeReason::InvalidValue,
+                    ))?
                     .to_owned();
                 if typ.ends_with(".delta")
                     && let Obfuscation::Seeded(seed) = &self.padding
@@ -271,6 +300,21 @@ impl ResponsesSseEncoder {
                     )?;
                 }
                 crate::protocol::openai::responses::envelope::validate_stream_payload(&value)?;
+                if matches!(
+                    typ.as_str(),
+                    "response.completed"
+                        | "response.incomplete"
+                        | "response.failed"
+                        | "response.cancelled"
+                ) && let Some(notice) = &notice
+                {
+                    let available = self
+                        .limits
+                        .max_event_bytes
+                        .min(self.limits.max_wire_bytes.saturating_sub(self.wire_bytes))
+                        .saturating_sub(typ.len() + 16);
+                    notice.attach(&mut value, available, true);
+                }
                 let frame = encode_frame(&value, self.limits.max_event_bytes)?;
                 self.wire_bytes = self
                     .wire_bytes
@@ -299,17 +343,29 @@ pub(crate) fn error_frame(
     error: &Value,
     sequence: usize,
     max_bytes: usize,
+    notice: Option<&crate::protocol::diagnostics::AdaptationNotice>,
 ) -> Result<Bytes, SseError> {
-    let error = error.get("error").ok_or(CodecError::Invalid("error"))?;
+    let error = error.get("error").ok_or(CodecError::Invalid(
+        crate::protocol::failure::ShapeReason::InvalidValue,
+    ))?;
     let message = error
         .get("message")
         .and_then(Value::as_str)
-        .ok_or(CodecError::Invalid("error message"))?;
-    let value = json!({
+        .ok_or(CodecError::Invalid(
+            crate::protocol::failure::ShapeReason::InvalidValue,
+        ))?;
+    let mut value = json!({
         "type":"error", "sequence_number":sequence,
         "code":error.get("code").and_then(Value::as_str),
         "message":message, "param":error.get("param").and_then(Value::as_str),
     });
+    if let Some(notice) = notice {
+        notice.attach(
+            &mut value,
+            max_bytes.saturating_sub("error".len() + 16),
+            false,
+        );
+    }
     encode_frame(&value, max_bytes)
 }
 /// Encode exactly one payload with a matching event name and a complete LF delimiter.
@@ -331,7 +387,8 @@ pub fn encode_frame(payload: &Value, max_bytes: usize) -> Result<Bytes, SseError
     }
     let mut wire = Vec::with_capacity(prefix.len() + size + 2);
     wire.extend_from_slice(prefix.as_bytes());
-    serde_json::to_writer(&mut wire, payload).map_err(|_| CodecError::Invalid("event JSON"))?;
+    serde_json::to_writer(&mut wire, payload)
+        .map_err(|_| CodecError::Invalid(crate::protocol::failure::ShapeReason::Json))?;
     wire.extend_from_slice(b"\n\n");
     Ok(Bytes::from(wire))
 }

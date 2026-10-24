@@ -45,7 +45,7 @@ pub(in crate::protocol::openai) fn source(
             && effort.is_some_and(|v| v.as_str() == Some("none"))
         {
             return Err(CodecError::Unsupported(
-                "Bailian native effort-none spelling".into(),
+                crate::protocol::failure::CarrierReason::Unavailable,
             ));
         }
         if profile == Profile::Responses && o.contains_key("stream_options")
@@ -55,13 +55,15 @@ pub(in crate::protocol::openai) fn source(
                     .is_some_and(|o| o.contains_key("include_obfuscation"))
         {
             return Err(CodecError::Unsupported(
-                "Bailian native stream options".into(),
+                crate::protocol::failure::CarrierReason::Unavailable,
             ));
         }
     }
     for key in UNOWNED {
         if o.contains_key(*key) {
-            return Err(CodecError::Unsupported(format!("unowned Bailian {key}")));
+            return Err(CodecError::Unsupported(
+                crate::protocol::failure::CarrierReason::UnknownField,
+            ));
         }
     }
     for message in o
@@ -78,7 +80,9 @@ pub(in crate::protocol::openai) fn source(
             continue;
         };
         if message.contains_key("partial") || message.contains_key("prefix") {
-            return Err(CodecError::Unsupported("assistant prefill".into()));
+            return Err(CodecError::Unsupported(
+                crate::protocol::failure::CarrierReason::Unavailable,
+            ));
         }
         for part in message
             .get("content")
@@ -99,7 +103,9 @@ pub(in crate::protocol::openai) fn source(
             .iter()
             .any(|k| part.contains_key(*k))
             {
-                return Err(CodecError::Unsupported("Bailian content controls".into()));
+                return Err(CodecError::Unsupported(
+                    crate::protocol::failure::CarrierReason::Unavailable,
+                ));
             }
             if native
                 && part
@@ -107,7 +113,9 @@ pub(in crate::protocol::openai) fn source(
                     .and_then(Value::as_object)
                     .is_some_and(|image| image.contains_key("detail"))
             {
-                return Err(CodecError::Unsupported("Bailian image detail".into()));
+                return Err(CodecError::Unsupported(
+                    crate::protocol::failure::CarrierReason::Unavailable,
+                ));
             }
         }
     }
@@ -117,7 +125,7 @@ pub(in crate::protocol::openai) fn source(
             || o.get("reasoning_effort") == Some(&json!("none"));
         if !matches!(model, "glm-5.3" | "glm-5.3-prime") && !disabled {
             return Err(CodecError::Unsupported(
-                "Bailian answer-only max_tokens".into(),
+                crate::protocol::failure::CarrierReason::Unavailable,
             ));
         }
     }
@@ -130,9 +138,9 @@ pub(in crate::protocol::openai) fn read_controls(
     profile: Profile,
 ) -> Result<(), CodecError> {
     if let Some(value) = o.get("enable_thinking") {
-        let enabled = value
-            .as_bool()
-            .ok_or(CodecError::Invalid("enable_thinking"))?;
+        let enabled = value.as_bool().ok_or(CodecError::Invalid(
+            crate::protocol::failure::ShapeReason::InvalidValue,
+        ))?;
         let activation = if enabled {
             ReasoningActivation::Enabled
         } else {
@@ -141,7 +149,9 @@ pub(in crate::protocol::openai) fn read_controls(
         if !settings.reasoning.activation.is_absent()
             && settings.reasoning.activation != Presence::Value(activation)
         {
-            return Err(CodecError::Invalid("conflicting thinking controls"));
+            return Err(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            ));
         }
         settings.reasoning.presence = ReasoningPresence::Present;
         settings.reasoning.activation = Presence::Value(activation);
@@ -149,16 +159,18 @@ pub(in crate::protocol::openai) fn read_controls(
     if let Some(value) = o.get("thinking_budget") {
         if profile != Profile::Chat {
             return Err(CodecError::Unsupported(
-                "Bailian Responses thinking_budget".into(),
+                crate::protocol::failure::CarrierReason::Unavailable,
             ));
         }
         let budget = value
             .as_u64()
             .filter(|v| *v > 0)
-            .ok_or(CodecError::Invalid("thinking_budget"))?;
+            .ok_or(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            ))?;
         if !settings.effort.is_absent() {
             return Err(CodecError::Unsupported(
-                "combined effort and thinking_budget".into(),
+                crate::protocol::failure::CarrierReason::Unavailable,
             ));
         }
         if settings
@@ -167,7 +179,7 @@ pub(in crate::protocol::openai) fn read_controls(
             .is_some_and(|cap| budget > cap)
         {
             return Err(CodecError::Unsupported(
-                "independent thinking/output ceilings".into(),
+                crate::protocol::failure::CarrierReason::Unavailable,
             ));
         }
         settings.reasoning.presence = ReasoningPresence::Present;
@@ -176,10 +188,12 @@ pub(in crate::protocol::openai) fn read_controls(
     }
     if let Some(value) = o.get("top_k") {
         if profile != Profile::Chat {
-            return Err(CodecError::Unsupported("Bailian Responses top_k".into()));
+            return Err(CodecError::Unsupported(
+                crate::protocol::failure::CarrierReason::Unavailable,
+            ));
         }
         settings.controls.top_k = Some(value.as_u64().filter(|v| (1..=100).contains(v)).ok_or(
-            CodecError::Unsupported("Bailian top_k disabling semantics".into()),
+            CodecError::Unsupported(crate::protocol::failure::CarrierReason::Unavailable),
         )? as u32);
     }
     settings.validate()?;
@@ -218,7 +232,9 @@ pub(in crate::protocol::openai) fn write_reasoning(
     profile: Profile,
 ) -> Result<(), CodecError> {
     if settings.reasoning.activation == Presence::Null || settings.effort == Presence::Null {
-        return Err(CodecError::Unsupported("null thinking controls".into()));
+        return Err(CodecError::Unsupported(
+            crate::protocol::failure::CarrierReason::Reasoning,
+        ));
     }
     if let Some(activation) = settings.reasoning.activation.value() {
         o.insert(
@@ -321,7 +337,7 @@ pub(in crate::protocol::openai) fn check_native_effort(
         && (!mapping.native_levels.contains(&control.level) || control.scope != mapping.scope)
     {
         return Err(CodecError::Unsupported(
-            "Bailian native effort level".into(),
+            crate::protocol::failure::CarrierReason::Unavailable,
         ));
     }
     Ok(())
@@ -350,7 +366,9 @@ pub(in crate::protocol::openai) fn check_context(
                 || !ctx.moderation.is_absent()
                 || !ctx.context_management.is_absent())
     {
-        return Err(CodecError::Unsupported("Bailian execution controls".into()));
+        return Err(CodecError::Unsupported(
+            crate::protocol::failure::CarrierReason::Unavailable,
+        ));
     }
     Ok(())
 }
@@ -365,37 +383,43 @@ pub(in crate::protocol::openai) fn check_semantic(
     if c.temperature().is_some_and(|v| !(0.0..2.0).contains(&v))
         || c.top_p().is_some_and(|v| v <= 0.0)
     {
-        return Err(CodecError::Unsupported("Bailian sampling bounds".into()));
+        return Err(CodecError::Unsupported(
+            crate::protocol::failure::CarrierReason::Unavailable,
+        ));
     }
     let qwen = matches!(model, "qwen3.8-flash" | "qwen3.8-max");
     let glm = matches!(model, "glm-5.3" | "glm-5.3-prime");
     let disabled = r.activation.value() == Some(&ReasoningActivation::Disabled);
     if qwen && !disabled && c.temperature().is_some_and(|v| v < 0.6) {
         return Err(CodecError::Unsupported(
-            "Bailian thinking temperature floor".into(),
+            crate::protocol::failure::CarrierReason::Unavailable,
         ));
     }
     if glm && disabled {
-        return Err(CodecError::Unsupported("GLM5.3 always thinks".into()));
+        return Err(CodecError::Unsupported(
+            crate::protocol::failure::CarrierReason::Unavailable,
+        ));
     }
     if r.budget_tokens.is_some() && (glm || model == "kimi-k3" || !s.effort.is_absent()) {
         return Err(CodecError::Unsupported(
-            "Bailian thinking_budget carrier".into(),
+            crate::protocol::failure::CarrierReason::Reasoning,
         ));
     }
     if c.top_k.is_some_and(|n| n > 100) || c.top_k.is_some() && model == "kimi-k3" {
-        return Err(CodecError::Unsupported("Bailian top_k carrier".into()));
+        return Err(CodecError::Unsupported(
+            crate::protocol::failure::CarrierReason::Unavailable,
+        ));
     }
     if c.seed.is_some_and(|n| !(0..=2147483647).contains(&n))
         || c.top_logprobs.is_some_and(|n| n > 5)
     {
         return Err(CodecError::Unsupported(
-            "Bailian seed/probability bounds".into(),
+            crate::protocol::failure::CarrierReason::Unavailable,
         ));
     }
     if (qwen || glm || model == "kimi-k3") && c.logprobs == Presence::Value(true) {
         return Err(CodecError::Unsupported(
-            "Bailian model logprobs support".into(),
+            crate::protocol::failure::CarrierReason::Unavailable,
         ));
     }
     if s.effort == Presence::Null
@@ -403,26 +427,32 @@ pub(in crate::protocol::openai) fn check_semantic(
         || r.presence == ReasoningPresence::Null
         || c.logprobs == Presence::Null
     {
-        return Err(CodecError::Unsupported("Bailian null reasoning".into()));
+        return Err(CodecError::Unsupported(
+            crate::protocol::failure::CarrierReason::Reasoning,
+        ));
     }
     if r.replay_mismatch.is_some()
         || !r.presentation.is_absent()
         || !r.context.is_absent()
         || !r.mode.is_absent() && r.mode != Presence::Value(ReasoningMode::Budgeted)
     {
-        return Err(CodecError::Unsupported("Bailian reasoning controls".into()));
+        return Err(CodecError::Unsupported(
+            crate::protocol::failure::CarrierReason::Reasoning,
+        ));
     }
     if profile == Profile::Chat {
         if (glm && !matches!(s.output(), OutputConstraint::Text))
             || model == "kimi-k3" && matches!(s.output(), OutputConstraint::JsonSchema { .. })
         {
             return Err(CodecError::Unsupported(
-                "Bailian model structured output support".into(),
+                crate::protocol::failure::CarrierReason::Unavailable,
             ));
         }
         for tool in semantic.tools() {
             let ToolDefinition::Function(tool) = tool else {
-                return Err(CodecError::Unsupported("Bailian Chat tool kind".into()));
+                return Err(CodecError::Unsupported(
+                    crate::protocol::failure::CarrierReason::Tools,
+                ));
             };
             if tool.description.is_none()
                 || tool.output_schema.is_some()
@@ -434,7 +464,7 @@ pub(in crate::protocol::openai) fn check_semantic(
                 )
             {
                 return Err(CodecError::Unsupported(
-                    "Bailian non-strict function definition".into(),
+                    crate::protocol::failure::CarrierReason::Unavailable,
                 ));
             }
         }
@@ -442,18 +472,22 @@ pub(in crate::protocol::openai) fn check_semantic(
             s.tool_choice,
             Some(ToolChoice::Allowed { .. } | ToolChoice::Custom(_) | ToolChoice::Qualified(_))
         ) {
-            return Err(CodecError::Unsupported("Bailian Chat tool choice".into()));
+            return Err(CodecError::Unsupported(
+                crate::protocol::failure::CarrierReason::Tools,
+            ));
         }
         if c.frequency_penalty().is_some() || !s.text.verbosity.is_absent() || !s.instructions.is_absent()
             || semantic.items().iter().any(|(_,i)|matches!(i,Item::Instruction(v) if v.authority==InstructionAuthority::Developer)) {
-            return Err(CodecError::Unsupported("Bailian Chat controls".into()));
+            return Err(CodecError::Unsupported(crate::protocol::failure::CarrierReason::Unavailable));
         }
         if qwen && matches!(s.tool_choice, Some(ToolChoice::Required)) {
-            return Err(CodecError::Unsupported("Qwen required tool choice".into()));
+            return Err(CodecError::Unsupported(
+                crate::protocol::failure::CarrierReason::Tools,
+            ));
         }
         if !disabled && matches!(s.tool_choice, Some(ToolChoice::Specific(_))) {
             return Err(CodecError::Unsupported(
-                "Qwen thinking forced tool choice".into(),
+                crate::protocol::failure::CarrierReason::Unavailable,
             ));
         }
     } else {
@@ -466,21 +500,21 @@ pub(in crate::protocol::openai) fn check_semantic(
             || !r.read_history.is_absent()
         {
             return Err(CodecError::Unsupported(
-                "unlisted Bailian Responses control".into(),
+                crate::protocol::failure::CarrierReason::Unavailable,
             ));
         }
         if c.max_output_tokens
             .is_some_and(|n| n < 16 || !model.is_empty() && !qwen && !disabled)
         {
             return Err(CodecError::Unsupported(
-                "Bailian Responses total output ceiling".into(),
+                crate::protocol::failure::CarrierReason::Unavailable,
             ));
         }
         let tools = semantic.tools();
         for tool in tools {
             let ToolDefinition::Function(t) = tool else {
                 return Err(CodecError::Unsupported(
-                    "Bailian Responses tool kind".into(),
+                    crate::protocol::failure::CarrierReason::Unavailable,
                 ));
             };
             if t.description.is_none()
@@ -493,7 +527,7 @@ pub(in crate::protocol::openai) fn check_semantic(
                 )
             {
                 return Err(CodecError::Unsupported(
-                    "Bailian non-strict function definition".into(),
+                    crate::protocol::failure::CarrierReason::Unavailable,
                 ));
             }
         }
@@ -507,29 +541,33 @@ pub(in crate::protocol::openai) fn check_semantic(
         );
         if required && tools.len() != 1 {
             return Err(CodecError::Unsupported(
-                "Bailian required-tool cardinality".into(),
+                crate::protocol::failure::CarrierReason::Unavailable,
             ));
         }
         for (index, (_, item)) in semantic.items().iter().enumerate() {
             match item {
                 Item::ToolCall(c) if !c.context.is_direct() => {
-                    return Err(CodecError::Unsupported("Bailian call context".into()));
+                    return Err(CodecError::Unsupported(
+                        crate::protocol::failure::CarrierReason::Unavailable,
+                    ));
                 }
                 Item::ToolResult(result) => {
                     if !matches!(result.output, ToolOutput::Text(_)) {
                         return Err(CodecError::Unsupported(
-                            "Bailian function output string".into(),
+                            crate::protocol::failure::CarrierReason::Unavailable,
                         ));
                     }
                     if !matches!(index.checked_sub(1).and_then(|n|semantic.items().get(n)),Some((_,Item::ToolCall(c))) if result.required_call_id().ok()==Some(c.call_id.as_str()))
                     {
                         return Err(CodecError::Unsupported(
-                            "Bailian function output adjacency".into(),
+                            crate::protocol::failure::CarrierReason::Unavailable,
                         ));
                     }
                 }
                 Item::Message(m) if m.phase.is_some() => {
-                    return Err(CodecError::Unsupported("Bailian message phase".into()));
+                    return Err(CodecError::Unsupported(
+                        crate::protocol::failure::CarrierReason::Unavailable,
+                    ));
                 }
                 Item::Reasoning(r)
                     if r.replay.is_some()
@@ -538,7 +576,7 @@ pub(in crate::protocol::openai) fn check_semantic(
                             .any(|(_, p)| matches!(p, ReasoningContent::Text(_))) =>
                 {
                     return Err(CodecError::Unsupported(
-                        "Bailian reasoning history carrier".into(),
+                        crate::protocol::failure::CarrierReason::UnknownField,
                     ));
                 }
                 Item::CustomCall(_)
@@ -547,7 +585,9 @@ pub(in crate::protocol::openai) fn check_semantic(
                 | Item::Compaction(_)
                 | Item::Program(_)
                 | Item::ProgramOutput(_) => {
-                    return Err(CodecError::Unsupported("Bailian history item".into()));
+                    return Err(CodecError::Unsupported(
+                        crate::protocol::failure::CarrierReason::Unavailable,
+                    ));
                 }
                 _ => {}
             }
@@ -568,7 +608,7 @@ pub(in crate::protocol::openai) fn write_tools(
         for tool in tools {
             let ToolDefinition::Function(t) = tool else {
                 return Err(CodecError::Unsupported(
-                    "Bailian Responses tool kind".into(),
+                    crate::protocol::failure::CarrierReason::Unavailable,
                 ));
             };
             if t.output_schema.is_some()
@@ -580,10 +620,10 @@ pub(in crate::protocol::openai) fn write_tools(
                 )
             {
                 return Err(CodecError::Unsupported(
-                    "Bailian non-strict function definition".into(),
+                    crate::protocol::failure::CarrierReason::Unavailable,
                 ));
             }
-            let mut value = json!({"type":"function","name":t.name.as_str(),"description":t.description.as_ref().ok_or(CodecError::Invalid("function description"))?});
+            let mut value = json!({"type":"function","name":t.name.as_str(),"description":t.description.as_ref().ok_or(CodecError::Invalid(crate::protocol::failure::ShapeReason::InvalidValue))?});
             if let Some(schema) = &t.parameters {
                 value["parameters"] = schema.root().clone();
             }

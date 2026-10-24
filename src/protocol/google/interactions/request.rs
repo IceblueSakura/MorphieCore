@@ -23,6 +23,39 @@ pub enum RequestRule {
     JoinInstructionParts,
 }
 impl RequestRule {
+    pub(crate) fn effect(self, request: &GenerationRequest) -> crate::lowering::generation::Effect {
+        use crate::lowering::generation::{Change, ConversionBoundary as B, Effect, Field, Owner};
+        let (field, change) = match self {
+            Self::DeveloperAsSystem => (Field::InstructionAuthority, Change::Approximate),
+            Self::Hint(hint) => return hint.effect(),
+            Self::JoinInstructionParts => (Field::InstructionAuthority, Change::Approximate),
+            Self::OmitCacheKey => (Field::Cache, Change::Omit),
+            Self::OmitMessagePhase => (Field::MessagePhase, Change::Omit),
+            Self::OmitPrediction => (Field::Prediction, Change::Omit),
+            Self::OmitSampling => (Field::Sampling, Change::Omit),
+            Self::OmitSchemaName => (Field::SchemaName, Change::Omit),
+            Self::OmitVerbosity => (Field::Verbosity, Change::Omit),
+            Self::ReasoningAsText => (Field::ReportedReasoning, Change::Approximate),
+            Self::SummarizeReasoning => (Field::ReasoningSummary, Change::Approximate),
+            Self::TransferVisibleHistory => (Field::Replay, Change::Omit),
+        };
+        match self {
+            Self::SummarizeReasoning => Effect::Summary {
+                rule: self.name().into(),
+                owner: Owner::Root,
+                input: request.reasoning().presentation.summary.clone(),
+                output: ReasoningDisplay::Summary,
+            },
+            Self::DeveloperAsSystem => Effect::Role {
+                rule: self.name().into(),
+                owner: Owner::Root,
+                input: InstructionAuthority::Developer,
+                output: InstructionAuthority::System,
+            },
+            _ => Effect::new(self.name(), field, B::RequestProject, change),
+        }
+    }
+
     pub const fn name(self) -> &'static str {
         match self {
             Self::OmitSampling => "interactions.omit-ignored-sampling.v1",
@@ -41,7 +74,7 @@ impl RequestRule {
     }
 }
 pub(super) fn unsupported() -> CodecError {
-    CodecError::Unsupported("Interactions semantic carrier".into())
+    CodecError::Unsupported(crate::protocol::failure::CarrierReason::Unavailable)
 }
 
 pub(super) fn project(
@@ -325,7 +358,7 @@ pub fn encode_generation_request(
     request.validate()?;
     if request.cached_context().is_some() {
         return Err(CodecError::Unsupported(
-            "Interactions cached context".into(),
+            crate::protocol::failure::CarrierReason::Unavailable,
         ));
     }
     let mut rules = std::collections::BTreeSet::new();

@@ -126,7 +126,10 @@ async fn handle(
             assert!(used > 0);
             rest = &rest[used..];
             if streamed {
-                let frames = delivery.encode_events(&attempt, &events).unwrap();
+                let frames = delivery
+                    .encode_events(&attempt, &events)
+                    .map(|batch| batch.into_bytes())
+                    .unwrap();
                 if !frames.is_empty() && delivery.lifecycle().may_retry_or_fallback() {
                     delivery.commit().unwrap();
                 }
@@ -139,6 +142,7 @@ async fn handle(
         output.extend(
             delivery
                 .finish_stream(&attempt)
+                .map(|batch| batch.into_bytes())
                 .unwrap()
                 .into_iter()
                 .flatten(),

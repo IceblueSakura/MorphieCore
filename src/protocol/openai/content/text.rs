@@ -37,10 +37,14 @@ pub(in crate::protocol::openai) fn read_existing(
         None if replay && items.direction.client() => {
             // Selected client-input shorthand only. Closed request decoding and
             // every upstream snapshot still require the official array.
-            items.fidelity.record_history_annotations_default();
+            items.evidence.record_history_annotations_default();
             vec![]
         }
-        _ => return Err(CodecError::Invalid("annotations")),
+        _ => {
+            return Err(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            ));
+        }
     };
     let logprobs = read_presence(o, "logprobs", read_logprobs)?;
     Ok(TextContent::new(text, annotations, logprobs)?)
@@ -50,12 +54,16 @@ pub(in crate::protocol::openai) fn read_annotations(
     items: &mut Items,
     existing: &[Annotation],
 ) -> Result<Vec<Annotation>, CodecError> {
-    let a = v.as_array().ok_or(CodecError::Invalid("annotations"))?;
+    let a = v.as_array().ok_or(CodecError::Invalid(
+        crate::protocol::failure::ShapeReason::InvalidValue,
+    ))?;
     if a.len() > MAX_ITEMS {
         return Err(CodecError::Limit);
     }
     if a.len() < existing.len() {
-        return Err(CodecError::Invalid("annotation snapshot"));
+        return Err(CodecError::Invalid(
+            crate::protocol::failure::ShapeReason::SnapshotAnnotations,
+        ));
     }
     a.iter()
         .enumerate()
@@ -70,34 +78,38 @@ pub(in crate::protocol::openai) fn read_annotations(
         .collect()
 }
 pub(in crate::protocol::openai) fn read_logprobs(v: &Value) -> Result<Vec<Logprob>, CodecError> {
-    let a = v.as_array().ok_or(CodecError::Invalid("logprobs"))?;
+    let a = v.as_array().ok_or(CodecError::Invalid(
+        crate::protocol::failure::ShapeReason::Probabilities,
+    ))?;
     if a.len() > MAX_ITEMS {
         return Err(CodecError::Limit);
     }
     // Protocol extensions are ignored; the semantic structs remain closed.
     let mut known = a.clone();
     for token in &mut known {
-        let token = token
-            .as_object_mut()
-            .ok_or(CodecError::Invalid("logprobs"))?;
+        let token = token.as_object_mut().ok_or(CodecError::Invalid(
+            crate::protocol::failure::ShapeReason::Probabilities,
+        ))?;
         token.retain(|key, _| {
             matches!(key.as_str(), "token" | "logprob" | "bytes" | "top_logprobs")
         });
         if let Some(top) = token.get_mut("top_logprobs").filter(|v| !v.is_null()) {
-            let top = top.as_array_mut().ok_or(CodecError::Invalid("logprobs"))?;
+            let top = top.as_array_mut().ok_or(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::Probabilities,
+            ))?;
             if top.len() > MAX_ITEMS {
                 return Err(CodecError::Limit);
             }
             for entry in top {
-                let entry = entry
-                    .as_object_mut()
-                    .ok_or(CodecError::Invalid("logprobs"))?;
+                let entry = entry.as_object_mut().ok_or(CodecError::Invalid(
+                    crate::protocol::failure::ShapeReason::Probabilities,
+                ))?;
                 entry.retain(|key, _| matches!(key.as_str(), "token" | "logprob" | "bytes"));
             }
         }
     }
-    let p: Vec<Logprob> =
-        serde_json::from_value(Value::Array(known)).map_err(|_| CodecError::Invalid("logprobs"))?;
+    let p: Vec<Logprob> = serde_json::from_value(Value::Array(known))
+        .map_err(|_| CodecError::Invalid(crate::protocol::failure::ShapeReason::Probabilities))?;
     validate_logprobs(&p)?;
     Ok(p)
 }

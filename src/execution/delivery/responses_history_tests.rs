@@ -95,14 +95,22 @@ fn stored_responses_keep_signed_owners_without_public_manifest_in_json_and_sse()
         let (mut attempt, mut delivery) = setup(Some(true));
         let events = push(&mut attempt);
         let prefix = if stream {
-            delivery.encode_events(&attempt, &events).unwrap().concat()
+            delivery
+                .encode_events(&attempt, &events)
+                .map(|batch| batch.into_bytes())
+                .unwrap()
+                .concat()
         } else {
             vec![]
         };
         assert!(!String::from_utf8_lossy(&prefix).contains("response.incomplete"));
         attempt.finish().unwrap();
         let retained = if stream {
-            let suffix = delivery.finish_stream(&attempt).unwrap().concat();
+            let suffix = delivery
+                .finish_stream(&attempt)
+                .map(|batch| batch.into_bytes())
+                .unwrap()
+                .concat();
             let text = String::from_utf8(suffix).unwrap();
             let terminal: Value = text
                 .lines()
@@ -113,13 +121,17 @@ fn stored_responses_keep_signed_owners_without_public_manifest_in_json_and_sse()
             assert_eq!(terminal["type"], "response.incomplete");
             check_public(&terminal["response"]);
             let (retained, body) = delivery.snapshot(&attempt).unwrap();
-            assert_eq!(
-                serde_json::from_slice::<Value>(&body).unwrap(),
-                terminal["response"]
-            );
+            let mut json = serde_json::from_slice::<Value>(&body).unwrap();
+            let mut streamed = terminal["response"].clone();
+            json.as_object_mut().unwrap().remove("morphiecore");
+            streamed.as_object_mut().unwrap().remove("morphiecore");
+            assert_eq!(json, streamed);
             retained
         } else {
-            let (retained, body) = delivery.encode_json_snapshot(&attempt).unwrap();
+            let (retained, body) = delivery
+                .encode_json_snapshot(&attempt)
+                .map(|(response, batch)| (response, batch.into_bytes().concat()))
+                .unwrap();
             check_public(&serde_json::from_slice::<Value>(&body).unwrap());
             retained
         };
@@ -175,8 +187,8 @@ fn stateless_responses_reject_hidden_signatures_and_poison_delivery() {
     let client = ClientAdapter::openai(client(), TargetCaps::full());
     assert!(
         matches!(client.snapshot(source),
-        Err(crate::adapter::AdapterError::Codec(CodecError::Unsupported(reason)))
-            if reason == "stateless Responses replay attachment"),
+        Err(crate::adapter::ConversionFailure { cause: crate::adapter::ConversionCause::Codec(CodecError::Unsupported(reason)), .. })
+            if matches!(reason,crate::protocol::failure::CarrierReason::Replay)),
         "reported storage does not authorize execution-owned retention"
     );
     for store in [None, Some(false)] {
@@ -184,15 +196,18 @@ fn stateless_responses_reject_hidden_signatures_and_poison_delivery() {
             let (mut attempt, mut delivery) = setup(store);
             let events = push(&mut attempt);
             let result = if stream {
-                delivery.encode_events(&attempt, &events).map(|_| ())
+                delivery
+                    .encode_events(&attempt, &events)
+                    .map(|batch| batch.into_bytes())
+                    .map(|_| ())
             } else {
                 attempt.finish().unwrap();
                 delivery.encode_json(&attempt).map(|_| ())
             };
             assert!(
-                matches!(result, Err(AttemptError::Codec(CodecError::Unsupported(ref reason)))
-                    | Err(AttemptError::Adapter(crate::adapter::AdapterError::Codec(CodecError::Unsupported(ref reason))))
-                    if reason == "stateless Responses replay attachment"),
+                matches!(result, Err(AttemptError::Codec(CodecError::Unsupported(reason)))
+                    | Err(AttemptError::Adapter(crate::adapter::ConversionFailure { cause: crate::adapter::ConversionCause::Codec(CodecError::Unsupported(reason)), .. }))
+                    if matches!(reason,crate::protocol::failure::CarrierReason::Replay)),
                 "{result:?}"
             );
             assert!(delivery.commit().is_err());

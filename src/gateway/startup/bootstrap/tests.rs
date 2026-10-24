@@ -141,7 +141,8 @@ fn shared_provider_credentials_keep_model_and_protocol_targets_distinct() {
                 crate::gateway::ingress::admission::prepare(
                     &boot.gateway.state,
                     family(protocol),
-                    &serde_json::to_vec(&request).unwrap()
+                    &serde_json::to_vec(&request).unwrap(),
+                    &crate::execution::report::Report::default()
                 )
                 .is_ok()
             );
@@ -160,8 +161,7 @@ fn shared_provider_credentials_keep_model_and_protocol_targets_distinct() {
     let (entry, request) = crate::gateway::ingress::admission::prepare(
         &boot.gateway.state,
         ClientProtocol::Chat,
-        br#"{"model":"glm-5.3-prime","messages":[{"role":"user","content":"hi"}],"max_completion_tokens":64}"#,
-    ).unwrap();
+        br#"{"model":"glm-5.3-prime","messages":[{"role":"user","content":"hi"}],"max_completion_tokens":64}"#,&crate::execution::report::Report::default()).unwrap();
     assert_eq!(entry.public.canonical_model.as_str(), "glm-5.3");
     assert_eq!(entry.candidates.len(), 1);
     let candidate = &entry.candidates[0];
@@ -224,6 +224,7 @@ fn subscription_and_metered_entries_never_exchange_credentials_or_origins() {
                     &boot.gateway.state,
                     family(profile),
                     &serde_json::to_vec(&value).unwrap(),
+                    &crate::execution::report::Report::default(),
                 );
                 let (entry, request) = admitted.unwrap();
                 assert_eq!(
@@ -549,6 +550,7 @@ fn codex_history_reaches_the_native_binding_by_named_rules() {
             &boot.gateway.state,
             ClientProtocol::Responses,
             &serde_json::to_vec(&body(reasoning, input)).unwrap(),
+            &crate::execution::report::Report::default(),
         )
         .unwrap();
         request.conversation =
@@ -582,9 +584,10 @@ fn codex_history_reaches_the_native_binding_by_named_rules() {
     assert_eq!(
         rules,
         [
+            "messages.default-automatic-cache.v1",
+            "messages.normalize-tool-arguments.v1",
             "messages.omit-sampling.v1",
             "messages.project-call-ids.v1",
-            "messages.default-automatic-cache.v1"
         ]
     );
     // Reasoning-only effort cannot become response-wide effort, and display
@@ -618,6 +621,7 @@ fn codex_history_reaches_the_native_binding_by_named_rules() {
         &boot.gateway.state,
         ClientProtocol::Responses,
         &serde_json::to_vec(&body(serde_json::Value::Null, &history)).unwrap(),
+        &crate::execution::report::Report::default(),
     )
     .unwrap();
     rejected.conversation =
@@ -649,17 +653,26 @@ fn codex_history_reaches_the_native_binding_by_named_rules() {
     assert_eq!(
         rules,
         [
-            "messages.omit-sampling.v1",
-            "messages.transfer-visible-history.v1",
-            "messages.reasoning-as-text.v1",
             "messages.default-automatic-cache.v1",
+            "messages.normalize-tool-arguments.v1",
+            "messages.omit-sampling.v1",
+            "messages.reasoning-as-text.v1",
+            "messages.transfer-visible-history.v1",
         ]
     );
     // A client ID equal to a projected digest fails instead of merging two calls.
     input.truncate(3);
     input.extend(call(projected, "again"));
     let error = prepare(serde_json::Value::Null, &input).unwrap_err();
-    assert!(format!("{error:?}").contains("duplicate call"), "{error:?}");
+    assert!(
+        matches!(
+            error.codec(),
+            Some(crate::protocol::CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::CallIdentity
+            ))
+        ),
+        "{error:?}"
+    );
 }
 
 #[test]
@@ -975,6 +988,7 @@ fn configured_failover_orders_and_limits_a_models_providers() {
             "thinking":{"type":"adaptive"},"output_config":{"effort":"medium"},
             "messages":[{"role":"user","content":"go"}]}))
         .unwrap(),
+        &crate::execution::report::Report::default(),
     )
     .unwrap();
     let before = request.clone();
@@ -985,14 +999,15 @@ fn configured_failover_orders_and_limits_a_models_providers() {
             .encode_request_with_evidence(&request)
             .unwrap();
         let evidence: Vec<_> = projection
-            .controls
+            .evidence
             .iter()
             .filter_map(|c| match c {
-                crate::lowering::generation::RequestControlLoss::Reasoning {
+                crate::lowering::generation::Effect::Reasoning {
                     rule,
                     input,
                     output,
                     preset_tokens,
+                    ..
                 } => Some((rule, input, output, preset_tokens)),
                 _ => None,
             })
@@ -1000,7 +1015,7 @@ fn configured_failover_orders_and_limits_a_models_providers() {
         assert_eq!(evidence.len(), 1);
         let (rule, input, output, preset) = evidence[0];
         assert_eq!(
-            *rule,
+            rule.as_str(),
             "google.gemini-3.8-flash.response-effort-to-thinking.v1"
         );
         assert_eq!(
@@ -1061,8 +1076,7 @@ fn configured_failover_orders_and_limits_a_models_providers() {
         &configured.gateway.state, ClientProtocol::Responses,
         &serde_json::to_vec(&serde_json::json!({
             "model":google.model,"input":"hi","reasoning":{"effort":"medium"},"max_output_tokens":6000
-        })).unwrap(),
-    ).unwrap();
+        })).unwrap(),&crate::execution::report::Report::default()).unwrap();
     let before = request.clone();
     let (wire, rules) = entry.candidates[0]
         .endpoint
@@ -1082,8 +1096,8 @@ fn configured_failover_orders_and_limits_a_models_providers() {
     assert!(
         matches!(
             entry.candidates[0].endpoint.encode_request(&scoped_request),
-            Err(crate::adapter::AdapterError::Codec(crate::protocol::CodecError::Unsupported(reason)))
-                if reason == "thinking allocation scope"
+            Err(crate::adapter::ConversionFailure { cause: crate::adapter::ConversionCause::Codec(crate::protocol::CodecError::Unsupported(reason)), .. })
+                if matches!(reason,crate::protocol::failure::CarrierReason::Reasoning)
         ),
         "an explicit numeric policy replaces, rather than chains with, the scope policy"
     );

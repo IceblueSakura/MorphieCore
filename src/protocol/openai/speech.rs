@@ -13,7 +13,7 @@ use bytes::Bytes;
 use serde_json::{Value, json};
 
 fn invalid() -> CodecError {
-    CodecError::Invalid("speech")
+    CodecError::Invalid(crate::protocol::failure::ShapeReason::InvalidValue)
 }
 pub(crate) fn valid_model(model: &str) -> bool {
     !model.is_empty()

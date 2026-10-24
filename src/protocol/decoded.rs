@@ -6,11 +6,13 @@ use crate::{
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct DecodedRequest {
+    pub evidence: crate::lowering::generation::EvidenceDelta,
     pub semantic: GenerationRequest,
     pub fidelity: FidelityRecords,
 }
 #[derive(Clone, Debug, PartialEq)]
 pub struct DecodedResponse {
+    pub evidence: crate::lowering::generation::EvidenceDelta,
     pub semantic: GenerationResponse,
     pub fidelity: FidelityRecords,
     pub metadata: ResponseMetadata,
@@ -38,7 +40,7 @@ impl ResponseMetadata {
         self.id
             .as_deref()
             .filter(|id| !id.is_empty() && id.len() <= 256)
-            .ok_or(CodecError::Invalid("response id"))
+            .ok_or(CodecError::Invalid(super::failure::ShapeReason::Metadata))
     }
     /// Validate shared facts without imposing a wire family's required fields.
     pub fn validate(&self) -> Result<(), CodecError> {
@@ -58,14 +60,14 @@ impl ResponseMetadata {
             || self.model.is_empty()
             || self.model.len() > 256
         {
-            return Err(CodecError::Invalid("metadata"));
+            return Err(CodecError::Invalid(super::failure::ShapeReason::Metadata));
         }
         if self
             .created
             .as_ref()
             .is_some_and(|created| !crate::semantic::value::valid_timestamp(created))
         {
-            return Err(CodecError::Invalid("timestamp"));
+            return Err(CodecError::Invalid(super::failure::ShapeReason::Metadata));
         }
         self.context.validate()?;
         Ok(())
@@ -87,28 +89,52 @@ impl ResponseStorage {
         if self.previous_response_id.value().is_some_and(|id| {
             id.is_empty() || id.len() > 256 || !id.bytes().all(|b| b.is_ascii_graphic())
         }) {
-            return Err(CodecError::Invalid("previous_response_id"));
+            return Err(CodecError::Invalid(
+                super::failure::ShapeReason::InvalidValue,
+            ));
         }
         Ok(())
     }
 }
 #[derive(Clone, Debug, Eq, thiserror::Error, PartialEq)]
 pub enum CodecError {
+    #[error("{cause}")]
+    Representation {
+        boundary: crate::lowering::generation::ConversionBoundary,
+        #[source]
+        cause: crate::lowering::generation::RepresentationError,
+    },
     #[error(transparent)]
     Context(#[from] crate::semantic::context::ContextError),
     #[error("invalid {0}")]
-    Invalid(&'static str),
+    Invalid(super::failure::ShapeReason),
     #[error("unsupported field or representation: {0}")]
-    Unsupported(String),
+    Unsupported(super::failure::CarrierReason),
     #[error("codec input exceeds slice limits")]
     Limit,
+    #[error("codec resource limit: {0:?}")]
+    Resource(super::failure::Resource),
     /// An upstream error inside a stream, as the HTTP status its type documents.
-    #[error("upstream stream error (HTTP {0})")]
-    StreamFailure(u16),
+    #[error("upstream stream error ({0})")]
+    StreamFailure(super::failure::SourceFailureEvidence),
     #[error("target representation belongs to another codec")]
     ProfileMismatch,
     #[error(transparent)]
     Semantic(#[from] GenerationError),
     #[error(transparent)]
     Event(#[from] crate::semantic::task::generation::EventError),
+}
+
+impl From<crate::semantic::value::JsonError> for CodecError {
+    fn from(error: crate::semantic::value::JsonError) -> Self {
+        use crate::semantic::value::{JsonError, JsonResource};
+        match error {
+            JsonError::Invalid => Self::Invalid(super::failure::ShapeReason::Json),
+            JsonError::Limit(resource) => Self::Resource(match resource {
+                JsonResource::Bytes => super::failure::Resource::Bytes,
+                JsonResource::Depth => super::failure::Resource::Depth,
+                JsonResource::Nodes => super::failure::Resource::Nodes,
+            }),
+        }
+    }
 }

@@ -15,8 +15,18 @@ pub(super) fn read(
             "standard" => ServiceClass::StandardProcessing,
             "flex" => ServiceClass::FlexibleProcessing,
             "priority" => ServiceClass::PriorityProcessing,
-            _ => return Err(CodecError::Unsupported("Google service class".into())),
+            _ => {
+                return Err(CodecError::Unsupported(
+                    crate::protocol::failure::CarrierReason::Field(
+                        crate::lowering::generation::Field::ServiceClass,
+                    ),
+                ));
+            }
         }),
-        Some(_) => return Err(CodecError::Invalid(field)),
+        Some(_) => {
+            return Err(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::Metadata,
+            ));
+        }
     })
 }

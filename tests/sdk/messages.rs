@@ -97,7 +97,23 @@ async fn handle(
         native.value["thinking"],
         json!({"type":"enabled","budget_tokens":1024})
     );
-    assert!(native.rules.is_empty());
+    assert_eq!(
+        native.evidence.len(),
+        request
+            .task
+            .semantic
+            .items()
+            .iter()
+            .filter(|(_, item)| matches!(
+                item,
+                morphiecore::semantic::task::generation::Item::ToolCall(_)
+            ))
+            .count()
+    );
+    assert!(native.evidence.iter().all(|effect| effect.rule()
+        == "messages.normalize-tool-arguments.v1"
+        && effect.semantic_field() == morphiecore::lowering::generation::Field::ToolArguments
+        && effect.change() == morphiecore::lowering::generation::Change::Normalize));
     let turn = {
         let mut n = seen.lock().unwrap();
         *n += 1;
@@ -215,7 +231,10 @@ async fn handle(
             frame["type"].as_str().unwrap()
         );
         let (_, events) = attempt.push(bytes.as_bytes()).unwrap();
-        let produced = delivery.encode_events(&attempt, &events).unwrap();
+        let produced = delivery
+            .encode_events(&attempt, &events)
+            .map(|batch| batch.into_bytes())
+            .unwrap();
         if !produced.is_empty() && delivery.lifecycle().may_retry_or_fallback() {
             delivery.commit().unwrap();
         }
@@ -225,6 +244,7 @@ async fn handle(
     output.extend(
         delivery
             .finish_stream(&attempt)
+            .map(|batch| batch.into_bytes())
             .unwrap()
             .into_iter()
             .flatten(),

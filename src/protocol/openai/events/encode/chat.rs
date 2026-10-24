@@ -39,7 +39,9 @@ impl EventEncoder {
             .iter()
             .filter(|i| matches!(i.kind, ItemKind::ToolCall { .. }))
             .position(|i| i.id == item)
-            .ok_or(CodecError::Invalid("call index"))
+            .ok_or(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            ))
     }
     /// Compute before reduction: aggregate snapshots must not replay emitted probabilities.
     pub(in crate::protocol::openai::events) fn chat_probabilities(
@@ -92,17 +94,22 @@ impl EventEncoder {
             if i.id == item {
                 return Ok(index
                     + match part {
-                        Some(part) => i
-                            .parts
-                            .iter()
-                            .position(|p| p.id == part)
-                            .ok_or(CodecError::Invalid("part identity"))?,
+                        Some(part) => {
+                            i.parts
+                                .iter()
+                                .position(|p| p.id == part)
+                                .ok_or(CodecError::Invalid(
+                                    crate::protocol::failure::ShapeReason::InvalidValue,
+                                ))?
+                        }
                         None => i.parts.len(),
                     });
             }
             index += i.parts.len() + usize::from(i.replay.is_some());
         }
-        Err(CodecError::Invalid("item identity"))
+        Err(CodecError::Invalid(
+            crate::protocol::failure::ShapeReason::InvalidValue,
+        ))
     }
     /// Readable deltas carry both the view and the detail, as the static message does.
     fn chat_delta(
@@ -151,7 +158,11 @@ impl EventEncoder {
                 }
                 json!({ "reasoning_content": fragment, "reasoning_details": [detail] })
             }
-            _ => return Err(CodecError::Unsupported("Chat reasoning".into())),
+            _ => {
+                return Err(CodecError::Unsupported(
+                    crate::protocol::failure::CarrierReason::Reasoning,
+                ));
+            }
         })
     }
     fn chat_terminal(&mut self) -> Result<Vec<Value>, CodecError> {
@@ -163,7 +174,7 @@ impl EventEncoder {
             Profile::Chat,
             self.contract.clone(),
         )
-        .map_err(|_| CodecError::Unsupported("Chat terminal".into()))?;
+        .map_err(|_| CodecError::Unsupported(crate::protocol::failure::CarrierReason::Terminal))?;
         let finish = crate::protocol::openai::terminal::chat_finish(&response)?;
         let mut chunks = vec![];
         chunks.push(self.chunk(json!({}), json!(finish)));

@@ -26,19 +26,27 @@ pub(crate) fn decode_with(
     let o = object(&v)?;
     crate::protocol::openai::responses::envelope::response_fields(o)?;
     if string(o, "object")? != "response" {
-        return Err(CodecError::Invalid("response object"));
+        return Err(CodecError::Invalid(
+            crate::protocol::failure::ShapeReason::Object,
+        ));
     }
     let outcome = match string(o, "status")? {
         "completed" => Outcome::Completed,
         "incomplete" => Outcome::Incomplete,
         "failed" => Outcome::Failed,
         "cancelled" => Outcome::Cancelled,
-        _ => return Err(CodecError::Unsupported("response status".into())),
+        _ => {
+            return Err(CodecError::Unsupported(
+                crate::protocol::failure::CarrierReason::Unavailable,
+            ));
+        }
     };
     let output = o
         .get("output")
         .and_then(Value::as_array)
-        .ok_or(CodecError::Invalid("output"))?;
+        .ok_or(CodecError::Invalid(
+            crate::protocol::failure::ShapeReason::InvalidValue,
+        ))?;
     let mut b = Items::new(DecodeDirection::Upstream);
     let item_status = if outcome == Outcome::Completed {
         "completed"
@@ -51,7 +59,7 @@ pub(crate) fn decode_with(
         responses::items::ItemSide::Output,
         item_status,
     )?;
-    for (_, item) in &mut b.items {
+    for (owner, item) in &mut b.items {
         if let Item::ConfigurationUpdate(update) = item {
             let native = update.effort;
             crate::protocol::openai::reasoning::admit_configuration_mapping(
@@ -63,10 +71,12 @@ pub(crate) fn decode_with(
                 (adaptation.effort_mapping, native, update.effort)
                 && input != output
             {
-                b.fidelity.record_effort_mapping(
+                b.evidence.record_effort_mapping(
                     mapping.rule,
-                    input.level.into(),
-                    output.level.into(),
+                    input,
+                    output,
+                    crate::lowering::generation::ConversionBoundary::ResponseDecode,
+                    crate::lowering::generation::Owner::item(*owner),
                 );
             }
         }
@@ -75,7 +85,8 @@ pub(crate) fn decode_with(
         o.get("usage"),
         Profile::Responses,
         adaptation,
-        &mut b.fidelity,
+        &mut b.evidence,
+        crate::lowering::generation::ConversionBoundary::ResponseDecode,
     )?;
     let semantic = GenerationResponse::from_resources(b.items, outcome, b.resources)?
         .with_usage(usage)?
@@ -87,7 +98,13 @@ pub(crate) fn decode_with(
         &mut b.fidelity,
         Some(&semantic),
     )?;
-    let metadata = context::metadata(o, Profile::Responses, adaptation, &mut b.fidelity)?;
+    let metadata = context::metadata(
+        o,
+        Profile::Responses,
+        adaptation,
+        &mut b.evidence,
+        crate::lowering::generation::ConversionBoundary::ResponseDecode,
+    )?;
     b.fidelity.capture_routing_extras(
         Profile::Responses,
         adaptation,
@@ -96,6 +113,7 @@ pub(crate) fn decode_with(
         metadata.required_id()?,
     )?;
     Ok(DecodedResponse {
+        evidence: b.evidence,
         semantic,
         fidelity: b.fidelity,
         metadata,
@@ -108,10 +126,12 @@ pub fn encode(target: &ResponseRepresentation<'_>) -> Result<Value, CodecError> 
     if target.semantic.items().iter().any(|(_, item)| {
         matches!(item, Item::ToolResult(r) | Item::CustomResult(r) if r.status.is_none())
     }) {
-        return Err(CodecError::Unsupported("result output lifecycle".into()));
+        return Err(CodecError::Unsupported(crate::protocol::failure::CarrierReason::Unavailable));
     }
     if !target.metadata.context.system_fingerprint.is_absent() {
-        return Err(CodecError::Unsupported("unprojected fingerprint".into()));
+        return Err(CodecError::Unsupported(
+            crate::protocol::failure::CarrierReason::Unavailable,
+        ));
     }
     check_response_carriers(&target.semantic)?;
     crate::protocol::openai::content::citations::check_items(
@@ -141,10 +161,9 @@ pub fn encode(target: &ResponseRepresentation<'_>) -> Result<Value, CodecError> 
         target.semantic.resources(),
     )?;
     let m = &target.metadata;
-    let created = m
-        .created
-        .as_ref()
-        .ok_or(CodecError::Invalid("created time"))?;
+    let created = m.created.as_ref().ok_or(CodecError::Invalid(
+        crate::protocol::failure::ShapeReason::Metadata,
+    ))?;
     let usage = target
         .metadata
         .delivery
@@ -159,7 +178,7 @@ pub fn encode(target: &ResponseRepresentation<'_>) -> Result<Value, CodecError> 
             .map(|(usage, _)| {
                 accounting::encode_usage(usage, Profile::Responses, &target.adaptation.rules)
             })
-            .map_err(|_| CodecError::Unsupported("delivery usage".into()))
+            .map_err(|_| CodecError::Unsupported(crate::protocol::failure::CarrierReason::Usage))
         })
         .transpose()?;
     let mut value = json!({

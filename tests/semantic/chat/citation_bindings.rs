@@ -257,7 +257,8 @@ fn unresolved_file_citation_units_reject_native_json_history_and_old_ir_shapes()
         json!({"type":"file_citation","file_id":"synthetic-file","filename":"","index":2});
     let mut wire = crate::wire::response(2);
     wire["output"][0]["content"][0]["annotations"] = json!([annotation.clone()]);
-    let expected = CodecError::Unsupported("file_citation insertion units".into());
+    let expected =
+        CodecError::Unsupported(morphiecore::protocol::failure::CarrierReason::Unavailable);
     assert_eq!(
         adapter
             .decode_response(wire.to_string().as_bytes())

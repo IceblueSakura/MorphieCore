@@ -206,7 +206,7 @@ fn accounting_keeps_distinct_counters_scoped_and_invalidates_after_edits() {
             assert!(matches!(
                 source.decode_response(invalid.to_string().as_bytes()),
                 Err(morphiecore::protocol::CodecError::Invalid(
-                    "reported penalty"
+                    morphiecore::protocol::failure::ShapeReason::InvalidValue
                 ))
             ));
             let mut decoder = source.event_decoder();

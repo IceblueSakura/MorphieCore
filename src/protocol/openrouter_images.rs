@@ -14,7 +14,7 @@ use crate::{
 };
 use serde_json::{Map, Value, json};
 fn invalid() -> CodecError {
-    CodecError::Invalid("OpenRouter image generation")
+    CodecError::Invalid(crate::protocol::failure::ShapeReason::InvalidValue)
 }
 pub fn encode_request(request: &Request, model: &str) -> Result<Value, CodecError> {
     // A supported aspect ratio is not an exact pixel-size or encoding guarantee.

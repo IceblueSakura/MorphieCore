@@ -33,30 +33,6 @@ pub(crate) fn declared_response_extras(
     }
 }
 
-/// Intake audit facts only; never used to restore or change semantic values.
-#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
-pub enum Normalization {
-    /// Client assistant-history shorthand, never an upstream annotation report.
-    HistoryAnnotationsDefault,
-    CacheWriteDefault {
-        profile: &'static str,
-    },
-    ReasoningEffortMapping {
-        rule: &'static str,
-        input: &'static str,
-        output: &'static str,
-    },
-    /// A selected rule dropped a client control or carrier at intake.
-    Omitted {
-        rule: &'static str,
-        field: &'static str,
-    },
-}
-/// Messages reports of upstream input changes; their paths index the upstream request.
-pub(crate) const INPUT_TRANSFORMATIONS_OMISSION: Normalization = Normalization::Omitted {
-    rule: "messages.omit-input-transformations.v1",
-    field: "response.input_transformations",
-};
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct ResponseExtras {
     protocol: Profile,
@@ -111,7 +87,6 @@ pub struct FidelityRecords {
     cached_context: Option<CachedContextBinding>,
     response_extras: Option<ResponseExtras>,
     routing_extras: Option<ResponseExtras>,
-    normalizations: std::collections::BTreeSet<Normalization>,
 }
 impl FidelityRecords {
     /// Conservative retained-context accounting for the optional delivery buffer.
@@ -133,7 +108,6 @@ impl FidelityRecords {
                 .cached_context
                 .as_ref()
                 .map_or(0, |binding| binding.reference.bytes() + 512)
-            + self.normalizations.len() * 1024
             + [self.response_extras.as_ref(), self.routing_extras.as_ref()]
                 .into_iter()
                 .flatten()
@@ -155,7 +129,9 @@ impl FidelityRecords {
             .as_ref()
             .is_some_and(|old| old != &binding)
         {
-            return Err(CodecError::Invalid("cached context binding"));
+            return Err(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            ));
         }
         self.cached_context = Some(binding);
         Ok(())
@@ -166,15 +142,18 @@ impl FidelityRecords {
         origin: &ReplayOrigin,
         now: Option<std::time::SystemTime>,
     ) -> Result<(), CodecError> {
-        let binding = self
-            .cached_context
-            .as_ref()
-            .ok_or(CodecError::Invalid("cached context binding"))?;
+        let binding = self.cached_context.as_ref().ok_or(CodecError::Invalid(
+            crate::protocol::failure::ShapeReason::InvalidValue,
+        ))?;
         if &binding.reference != reference || &binding.origin != origin {
-            return Err(CodecError::Invalid("cached context binding"));
+            return Err(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            ));
         }
         if reference.expires_at().is_some() {
-            reference.check_at(now.ok_or(CodecError::Invalid("cached context clock"))?)?;
+            reference.check_at(now.ok_or(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            ))?)?;
         }
         Ok(())
     }
@@ -188,10 +167,16 @@ impl FidelityRecords {
         let (reference, body) = match content {
             ContentPart::Audio(v) => (v.reference(), Some(v.fingerprint())),
             ContentPart::AudioReference(v) => (v, None),
-            _ => return Err(CodecError::Invalid("audio owner")),
+            _ => {
+                return Err(CodecError::Invalid(
+                    crate::protocol::failure::ShapeReason::InvalidValue,
+                ));
+            }
         };
         if self.audio.len() >= MAX_ITEMS || self.audio.contains_key(&owner) {
-            return Err(CodecError::Invalid("audio binding"));
+            return Err(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            ));
         }
         self.audio.insert(
             owner,
@@ -213,21 +198,28 @@ impl FidelityRecords {
         let (reference, body) = match content {
             ContentPart::Audio(v) => (v.reference(), Some(v.fingerprint())),
             ContentPart::AudioReference(v) => (v, None),
-            _ => return Err(CodecError::Invalid("audio owner")),
+            _ => {
+                return Err(CodecError::Invalid(
+                    crate::protocol::failure::ShapeReason::InvalidValue,
+                ));
+            }
         };
-        let binding = self
-            .audio
-            .get(&owner)
-            .ok_or(CodecError::Invalid("audio binding"))?;
+        let binding = self.audio.get(&owner).ok_or(CodecError::Invalid(
+            crate::protocol::failure::ShapeReason::InvalidValue,
+        ))?;
         if origin.is_none()
             || binding.origin.as_ref() != origin
             || binding.reference != reference.fingerprint()
             || body.is_some() && body != binding.body
         {
-            return Err(CodecError::Invalid("audio binding"));
+            return Err(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            ));
         }
         if reference.expires_at().is_some() {
-            reference.check_at(now.ok_or(CodecError::Invalid("audio clock"))?)?;
+            reference.check_at(now.ok_or(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            ))?)?;
         }
         Ok(())
     }
@@ -253,7 +245,7 @@ impl FidelityRecords {
             })
         {
             return Err(CodecError::Invalid(
-                "duplicate or excessive wire item identities",
+                crate::protocol::failure::ShapeReason::InvalidValue,
             ));
         }
         let value = Text::new(value, "wire item id", 256).map_err(|_| CodecError::Limit)?;
@@ -285,37 +277,12 @@ impl FidelityRecords {
                 .map(str::to_owned)
                 .or_else(|| generated.then(|| generated_item_id(*owner)));
             if alias.is_some_and(|alias| !aliases.insert(alias)) {
-                return Err(CodecError::Invalid("duplicate target wire identity"));
+                return Err(CodecError::Invalid(
+                    crate::protocol::failure::ShapeReason::InvalidValue,
+                ));
             }
         }
         Ok(())
-    }
-    pub fn normalizations(&self) -> &std::collections::BTreeSet<Normalization> {
-        &self.normalizations
-    }
-    pub(crate) fn record_history_annotations_default(&mut self) {
-        self.normalizations
-            .insert(Normalization::HistoryAnnotationsDefault);
-    }
-    pub(crate) fn record_cache_write_default(&mut self, profile: &'static str) {
-        self.normalizations
-            .insert(Normalization::CacheWriteDefault { profile });
-    }
-    pub(crate) fn record_effort_mapping(
-        &mut self,
-        rule: &'static str,
-        input: &'static str,
-        output: &'static str,
-    ) {
-        self.normalizations
-            .insert(Normalization::ReasoningEffortMapping {
-                rule,
-                input,
-                output,
-            });
-    }
-    pub(crate) fn record_omission(&mut self, omission: Normalization) {
-        self.normalizations.insert(omission);
     }
     pub fn retain_owners(&mut self, items: &[(ItemId, Item)]) {
         let owners: BTreeMap<_, _> = items.iter().map(|(id, item)| (*id, item)).collect();

@@ -166,22 +166,31 @@ pub(in crate::gateway) async fn produce_chain(
                         trace.affinity("unavailable", false, false);
                     }
                 }
-                let (mut prepared, rules, controls) =
-                    crate::execution::attempt::prepare_with_evidence(
-                        &candidate.endpoint,
-                        &candidate.provider,
-                        &secret,
-                        &local,
-                    )
-                    .map_err(|_| ApiError::invalid())?;
-                trace.request_controls(&controls);
-                trace.request_rules(rules);
+                let conversion = crate::execution::attempt::prepare_with_evidence(
+                    &candidate.endpoint,
+                    &candidate.provider,
+                    &secret,
+                    &local,
+                )
+                .map_err(|error| {
+                    trace.report.failure(
+                        Some(crate::lowering::generation::ConversionBoundary::RequestEncode),
+                        &error,
+                    );
+                    ApiError::invalid()
+                })?;
+                let mut prepared = conversion.value;
                 if let Some(grant) = grant {
                     prepared.safe_headers.extend(
                         crate::provider::subscription::headers(candidate.provider.auth, &grant)
                             .map_err(|_| ApiError::upstream())?,
                     );
                 }
+                trace.report.accept(
+                    crate::execution::report::View::UpstreamRequest,
+                    conversion.evidence,
+                );
+                trace.report.update(|a| a.prepared = true);
                 let key_sent = serde_json::from_slice::<serde_json::Value>(&prepared.body)
                     .ok()
                     .is_some_and(|v| {
@@ -197,6 +206,7 @@ pub(in crate::gateway) async fn produce_chain(
                     capture.upstream_request(&prepared, chain.attempts);
                 }
                 state.waiting_upstream.store(true, Ordering::Release);
+                trace.report.update(|a| a.send_started = true);
                 let response = runtime
                     .transport
                     .send(
@@ -204,7 +214,12 @@ pub(in crate::gateway) async fn produce_chain(
                         attempt_deadline.saturating_duration_since(Instant::now()),
                     )
                     .await
-                    .map_err(ApiError::transport)?;
+                    .map_err(|class| {
+                        trace
+                            .report
+                            .failure(None, &crate::execution::AttemptError::Transport(class));
+                        ApiError::transport(class)
+                    })?;
                 state.waiting_upstream.store(false, Ordering::Release);
                 trace.affinity_carriers(key_sent, session_sent);
                 response
@@ -239,7 +254,15 @@ pub(in crate::gateway) async fn produce_chain(
             Ok(())
         })
         .await
-        .unwrap_or_else(|_| Err(state.timeout_error()));
+        .unwrap_or_else(|_| {
+            trace.report.failure(
+                None,
+                &crate::execution::AttemptError::Deadline(
+                    crate::execution::attempt::DeadlineReason::Attempt,
+                ),
+            );
+            Err(state.timeout_error())
+        });
         match result {
             Ok(()) => {
                 if let Some(lease) = &health.lease {
@@ -250,6 +273,12 @@ pub(in crate::gateway) async fn produce_chain(
                 return Ok(());
             }
             Err(error) => {
+                trace.report.update(|a| {
+                    a.public_code = Some(error.code);
+                    a.public_status = Some(error.status.as_u16());
+                    a.policy_class = error.fallback;
+                    a.health_failure = error.health;
+                });
                 if let Some(observation) = health.failed(error) {
                     trace.health(observation);
                 }
@@ -261,6 +290,7 @@ pub(in crate::gateway) async fn produce_chain(
                     && error.fallback.is_some()
                     && Instant::now() < deadline
                     && (index + 1..candidates.len()).any(|next| chain.skip(next).is_none());
+                trace.report.update(|a| a.advanced = advance);
                 if !advance {
                     trace.selection_stop(if state.published.load(Ordering::Acquire) {
                         "published"

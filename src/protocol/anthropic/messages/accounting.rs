@@ -79,7 +79,7 @@ fn tools(report: &UsageReport) -> Option<ServerToolUsage> {
 /// Messages usage: input excludes cache reads and reported cache writes.
 /// An unreported write category stays absent; the remaining input keeps any such writes.
 fn project_usage(u: Usage) -> Result<Usage, CodecError> {
-    let unsupported = || CodecError::Unsupported("Messages usage".into());
+    let unsupported = || CodecError::Unsupported(crate::protocol::failure::CarrierReason::Usage);
     u.validate()?;
     let input = u.input_tokens.ok_or_else(unsupported)?;
     let input = match u.input_relation {
@@ -159,7 +159,9 @@ pub(super) fn wire(
     service_class: Presence<ServiceClass>,
 ) -> Result<super::Usage, CodecError> {
     if project(report)?.as_ref() != Some(report) {
-        return Err(CodecError::Unsupported("Messages usage report".into()));
+        return Err(CodecError::Unsupported(
+            crate::protocol::failure::CarrierReason::Usage,
+        ));
     }
     let counts = report.counts;
     Ok(super::Usage {
@@ -167,9 +169,9 @@ pub(super) fn wire(
         input_tokens: counts
             .input_tokens
             .map_or(Presence::Absent, Presence::Value),
-        output_tokens: counts
-            .output_tokens
-            .ok_or(CodecError::Invalid("Messages output usage"))?,
+        output_tokens: counts.output_tokens.ok_or(CodecError::Invalid(
+            crate::protocol::failure::ShapeReason::Usage,
+        ))?,
         cache_creation_input_tokens: counts
             .input_cache_write_tokens
             .map_or(Presence::Absent, Presence::Value),
@@ -200,12 +202,14 @@ pub(super) fn json_with_fallback(
         return Ok(delivery_wire(counts)?.wire());
     }
     if reports.reports().len() != 1 {
-        return Err(CodecError::Unsupported("Messages usage scopes".into()));
+        return Err(CodecError::Unsupported(
+            crate::protocol::failure::CarrierReason::Usage,
+        ));
     }
     Ok(wire(
-        reports
-            .operation()
-            .ok_or(CodecError::Invalid("Messages usage"))?,
+        reports.operation().ok_or(CodecError::Invalid(
+            crate::protocol::failure::ShapeReason::Usage,
+        ))?,
         Presence::Absent,
     )?
     .wire())
@@ -335,7 +339,7 @@ mod tests {
         assert!(
             super::super::client::content_losses(&source.semantic)
                 .iter()
-                .any(|loss| loss.rule == "generation.usage-report-view.v1")
+                .any(|loss| loss.rule() == "generation.usage-report-view.v1")
         );
         let (retained, body) = crate::adapter::ClientAdapter::Messages
             .snapshot(source.clone())
@@ -401,7 +405,7 @@ mod tests {
             "usage":{"output_tokens":7,"cache_creation":usage_json()["cache_creation"]}});
         assert!(
             matches!(p.decode_event("message_delta",delta.to_string().as_bytes()),
-            Err(CodecError::Unsupported(field)) if field == "Messages delta cache breakdown")
+            Err(CodecError::Unsupported(field)) if field == crate::protocol::failure::CarrierReason::Unavailable)
         );
 
         let mut encoder = super::super::client::sse::ClientEventEncoder::new("id", "model");
@@ -416,7 +420,7 @@ mod tests {
         assert!(!frames.is_empty());
         assert!(
             matches!(encoder.encode(&StreamEvent::UsageReport(expected())),
-            Err(CodecError::Unsupported(field)) if field == "Messages late cache breakdown")
+            Err(CodecError::Unsupported(field)) if field == crate::protocol::failure::CarrierReason::Usage)
         );
         assert!(encoder.finish().is_err());
     }
@@ -462,13 +466,12 @@ mod tests {
                 _ => unreachable!(),
             }
             last.validate().unwrap();
-            let expected = if field == 4 {
-                "Messages usage"
-            } else {
-                "Messages erased usage observation"
-            };
-            assert!(matches!(encoder.encode(&StreamEvent::UsageReport(last)),
-                Err(CodecError::Unsupported(reason)) if reason == expected));
+            let expected = crate::protocol::failure::CarrierReason::Usage;
+            let rejected = encoder.encode(&StreamEvent::UsageReport(last));
+            assert!(
+                matches!(rejected,Err(CodecError::Unsupported(reason)) if reason == expected),
+                "{field}: {rejected:?}"
+            );
             assert!(encoder.encode(&terminal).is_err());
             assert!(encoder.finish().is_err());
         }

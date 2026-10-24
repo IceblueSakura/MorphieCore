@@ -1,6 +1,6 @@
 //! Model restrictions apply after projection, not to protocol-wide carriers.
 use morphiecore::{
-    adapter::{AdapterError, Request},
+    adapter::{ConversionFailure, Request},
     execution::{
         AttemptError,
         plan::{RejectionReason, representable},
@@ -188,7 +188,11 @@ fn google_scope_mapping_does_not_saturate_disable_or_allocate() {
             body["output_config"]["effort"] = json!(level);
             let request = messages(body);
             assert!(morphiecore::execution::admit(&binding.public_model(), &request).is_ok());
-            rejected(&endpoint, &request, "unmapped reasoning scope");
+            rejected(
+                &endpoint,
+                &request,
+                morphiecore::protocol::failure::CarrierReason::Reasoning,
+            );
         }
         for thinking in [
             json!({"type":"disabled"}),
@@ -233,17 +237,21 @@ fn google_scope_mapping_does_not_saturate_disable_or_allocate() {
     }
 }
 
-fn rejected(endpoint: &Endpoint, request: &Request, reason: &str) {
+fn rejected(
+    endpoint: &Endpoint,
+    request: &Request,
+    reason: morphiecore::protocol::failure::CarrierReason,
+) {
     let before = request.clone();
     assert!(matches!(endpoint.encode_request(request),
-        Err(AdapterError::Codec(CodecError::Unsupported(value))) if value == reason));
+        Err(ConversionFailure { cause: morphiecore::adapter::ConversionCause::Codec(CodecError::Unsupported(value)), .. }) if value == reason));
     assert_eq!(
         representable(endpoint, request),
         Err(RejectionReason::Representation)
     );
     assert!(matches!(prepare(endpoint, &GOOGLE_BINDINGS[0].provider(),
         &SecretMaterial::new("synthetic").unwrap(), request),
-        Err(AttemptError::Adapter(AdapterError::Codec(CodecError::Unsupported(value)))) if value == reason));
+        Err(AttemptError::Adapter(ConversionFailure { cause: morphiecore::adapter::ConversionCause::Codec(CodecError::Unsupported(value)), .. })) if value == reason));
     assert_eq!(request, &before);
 }
 
@@ -277,10 +285,18 @@ fn gemini_model_values_are_checked_by_both_preflight_and_preparation() {
         assert_eq!(request, before);
         let minimal = source(json!({"model":binding.model,"input":"go",
             "reasoning":{"effort":"minimal"},"max_output_tokens":4096}));
-        rejected(&endpoint, &minimal, "target effort");
+        rejected(
+            &endpoint,
+            &minimal,
+            morphiecore::protocol::failure::CarrierReason::Unavailable,
+        );
         let excessive =
             source(json!({"model":binding.model,"input":"go","max_output_tokens":65537}));
-        rejected(&endpoint, &excessive, "target maximum output tokens");
+        rejected(
+            &endpoint,
+            &excessive,
+            morphiecore::protocol::failure::CarrierReason::Unavailable,
+        );
 
         // Restrictions belong to this binding, not the generic Google carriers.
         *endpoint.representation.model_limits_mut() = ModelLimits::default();
@@ -325,7 +341,11 @@ fn gemini_preserves_native_budgets_and_checks_fallback_levels_without_requantizi
             }
             _ => unreachable!(),
         }
-        rejected(&endpoint, &request, "target effort");
+        rejected(
+            &endpoint,
+            &request,
+            morphiecore::protocol::failure::CarrierReason::Unavailable,
+        );
         // A wire field alone is not a declaration of native model support.
         if let morphiecore::lowering::target::TargetCaps::GoogleGenerateContent(c) =
             &mut endpoint.representation
@@ -343,7 +363,11 @@ fn gemini_preserves_native_budgets_and_checks_fallback_levels_without_requantizi
             assert!(!rules.contains(&"synthetic.budget-to-effort.v1"));
             assert_eq!(representable(&endpoint, &request), Ok(()));
         } else {
-            rejected(&endpoint, &request, "target effort");
+            rejected(
+                &endpoint,
+                &request,
+                morphiecore::protocol::failure::CarrierReason::Unavailable,
+            );
         }
         let mut settings = request.task.semantic.settings().clone();
         settings.reasoning.budget_tokens = Some(2048);
@@ -412,9 +436,12 @@ fn openai_limits_check_calibrated_levels_and_do_not_insert_caps() {
         caps.model_limits.allowed_effort = Some(vec![EffortLevel::Medium].into());
         assert!(matches!(
             adapter.encode_request(&request, "synthetic", &caps),
-            Err(AdapterError::Representation(
-                morphiecore::lowering::generation::RepresentationError::Controls
-            ))
+            Err(ConversionFailure {
+                cause: morphiecore::adapter::ConversionCause::Representation(
+                    morphiecore::lowering::generation::RepresentationError::Controls
+                ),
+                ..
+            })
         ));
         caps.model_limits.allowed_effort = Some(vec![EffortLevel::High].into());
         let mut capped = request.clone();
@@ -423,9 +450,12 @@ fn openai_limits_check_calibrated_levels_and_do_not_insert_caps() {
         capped.task.semantic = capped.task.semantic.with_settings(settings).unwrap();
         assert!(matches!(
             adapter.encode_request(&capped, "synthetic", &caps),
-            Err(AdapterError::Representation(
-                morphiecore::lowering::generation::RepresentationError::Controls
-            ))
+            Err(ConversionFailure {
+                cause: morphiecore::adapter::ConversionCause::Representation(
+                    morphiecore::lowering::generation::RepresentationError::Controls
+                ),
+                ..
+            })
         ));
         let mut settings = capped.task.semantic.settings().clone();
         settings.controls.max_output_tokens = Some(32);

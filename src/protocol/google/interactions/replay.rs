@@ -37,7 +37,8 @@ impl Signed {
         value.to_string()
     }
     pub fn decode(raw: &str, format: ReplayFormat) -> Result<Self, CodecError> {
-        let invalid = || CodecError::Invalid("Interactions signature payload");
+        let invalid =
+            || CodecError::Invalid(crate::protocol::failure::ShapeReason::SignaturePayload);
         let value = parse_json(raw.as_bytes(), JsonLimits::STRUCTURED).map_err(|_| invalid())?;
         let o = value.as_object().ok_or_else(invalid)?;
         if o.keys()

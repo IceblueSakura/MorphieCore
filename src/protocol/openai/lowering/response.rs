@@ -71,19 +71,14 @@ pub fn lower_response<'a>(
     let mut semantic = std::borrow::Cow::Borrowed(r);
     let mut projection: Vec<_> = terminal_losses
         .into_iter()
-        .map(|loss| {
-            projection::ProjectionStage::response(profile, c.adaptation.profile_id, Some(loss))
-        })
+        .map(|loss| (loss).effect(crate::lowering::generation::ConversionBoundary::ResponseProject))
         .collect();
     if let Some(loss) = projection::reported_settings(metadata.to_mut(), profile)? {
         if c.reported_facts == ReportedFactPolicy::StrictComplete {
             return Err(RepresentationError::ReportedFacts);
         }
-        projection.push(projection::ProjectionStage::response(
-            profile,
-            c.adaptation.profile_id,
-            Some(loss),
-        ));
+        projection
+            .push((loss).effect(crate::lowering::generation::ConversionBoundary::ResponseProject));
     }
     crate::protocol::reports::relation(&metadata.context.reports, true)
         .map_err(|_| RepresentationError::Metadata)?;
@@ -94,40 +89,34 @@ pub fn lower_response<'a>(
         if c.reported_facts == ReportedFactPolicy::StrictComplete {
             return Err(RepresentationError::ReportedFacts);
         }
-        projection.push(projection::ProjectionStage::response(
-            profile,
-            c.adaptation.profile_id,
-            Some(projection::LossRule::OmitOpeningReport),
-        ));
+        projection.push(
+            (projection::LossRule::OmitOpeningReport)
+                .effect(crate::lowering::generation::ConversionBoundary::ResponseProject),
+        );
     }
     if profile == Profile::Responses && !metadata.context.system_fingerprint.is_absent() {
         metadata.to_mut().context.system_fingerprint = crate::semantic::value::Presence::Absent;
-        projection.push(projection::ProjectionStage::response(
-            profile,
-            c.adaptation.profile_id,
-            Some(projection::LossRule::OmitResponsesSystemFingerprint),
-        ));
+        projection.push(
+            (projection::LossRule::OmitResponsesSystemFingerprint)
+                .effect(crate::lowering::generation::ConversionBoundary::ResponseProject),
+        );
     }
     if let Some((groups, loss)) =
         message_groups::project(r.items(), r.message_envelopes(), profile)?
     {
         semantic = std::borrow::Cow::Owned(r.clone().with_message_envelopes(groups)?);
-        projection.push(projection::ProjectionStage::response(
-            profile,
-            c.adaptation.profile_id,
-            Some(loss),
-        ));
+        projection
+            .push((loss).effect(crate::lowering::generation::ConversionBoundary::ResponseProject));
     }
     if r.usage_reports().has_unrepresented_details() {
         if c.reported_facts == ReportedFactPolicy::StrictComplete {
             return Err(RepresentationError::ReportedFacts);
         }
         semantic = std::borrow::Cow::Owned(semantic.into_owned().with_usage(r.usage())?);
-        projection.push(projection::ProjectionStage::response(
-            profile,
-            c.adaptation.profile_id,
-            Some(projection::LossRule::UsageReportView),
-        ));
+        projection.push(
+            (projection::LossRule::UsageReportView)
+                .effect(crate::lowering::generation::ConversionBoundary::ResponseProject),
+        );
     }
     if let Some(usage) = r.usage() {
         let (projected, losses) = match profile {
@@ -137,7 +126,7 @@ pub fn lower_response<'a>(
         if !losses.is_empty() {
             semantic = std::borrow::Cow::Owned(semantic.into_owned().with_usage(Some(projected))?);
             projection.extend(losses.into_iter().map(|loss| {
-                projection::ProjectionStage::response(profile, c.adaptation.profile_id, Some(loss))
+                (loss).effect(crate::lowering::generation::ConversionBoundary::ResponseProject)
             }));
         }
     }
@@ -148,19 +137,14 @@ pub fn lower_response<'a>(
         semantic = std::borrow::Cow::Owned(semantic.into_owned().with_details(details)?);
     }
     validate_response(&semantic, fidelity, &metadata, profile, &c)?;
-    if projection.is_empty() {
-        projection.push(projection::ProjectionStage::response(
-            profile,
-            c.adaptation.profile_id,
-            None,
-        ));
-    }
+
     Ok(ResponseRepresentation {
         semantic,
         fidelity,
         metadata,
         profile,
         adaptation: c.adaptation,
+        projection_steps: projection.len().max(1),
         projection,
     })
 }

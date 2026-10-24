@@ -97,7 +97,9 @@ fn validate_label_value(value: &str) -> Result<(), CodecError> {
                 )
         })
     {
-        return Err(CodecError::Invalid("Google safety label"));
+        return Err(CodecError::Invalid(
+            crate::protocol::failure::ShapeReason::InvalidValue,
+        ));
     }
     Ok(())
 }

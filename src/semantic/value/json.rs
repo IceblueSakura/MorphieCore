@@ -31,12 +31,18 @@ impl JsonLimits {
         nodes: 8_192,
     };
 }
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum JsonResource {
+    Bytes,
+    Depth,
+    Nodes,
+}
 #[derive(Clone, Debug, Eq, thiserror::Error, PartialEq)]
 pub enum JsonError {
     #[error("invalid JSON")]
     Invalid,
     #[error("JSON exceeds resource limits")]
-    Limit,
+    Limit(JsonResource),
 }
 
 /// Raw fragments borrow the bounded input; no second body or floating-point parse.
@@ -52,7 +58,7 @@ pub(crate) fn validate_json_prefix(input: &[u8], limits: JsonLimits) -> Result<(
         nodes: limits.nodes.min(JsonLimits::ENVELOPE.nodes),
     };
     if input.len() > limits.bytes {
-        return Err(JsonError::Limit);
+        return Err(JsonError::Limit(JsonResource::Bytes));
     }
     depth_preflight(input, limits.depth)?;
     // Count wire tokens, not serde's arbitrary-precision Number pseudo-map.
@@ -105,7 +111,7 @@ pub(crate) fn validate_json_prefix(input: &[u8], limits: JsonLimits) -> Result<(
         };
         nodes += usize::from(starts);
         if nodes > limits.nodes {
-            return Err(JsonError::Limit);
+            return Err(JsonError::Limit(JsonResource::Nodes));
         }
     }
     let mut parser = serde_json::Deserializer::from_slice(input);
@@ -174,12 +180,12 @@ fn parse(input: &[u8], limits: JsonLimits, reject_duplicates: bool) -> Result<Va
         nodes: limits.nodes.min(JsonLimits::ENVELOPE.nodes),
     };
     if input.len() > limits.bytes {
-        return Err(JsonError::Limit);
+        return Err(JsonError::Limit(JsonResource::Bytes));
     }
     depth_preflight(input, limits.depth)?;
     let mut budget = Budget {
         nodes: 0,
-        exhausted: false,
+        exhausted: None,
         limits,
         reject_duplicates,
     };
@@ -194,11 +200,9 @@ fn parse(input: &[u8], limits: JsonLimits, reject_duplicates: bool) -> Result<Va
         Ok(value)
     });
     result.map_err(|_| {
-        if budget.exhausted {
-            JsonError::Limit
-        } else {
-            JsonError::Invalid
-        }
+        budget
+            .exhausted
+            .map_or(JsonError::Invalid, JsonError::Limit)
     })
 }
 
@@ -220,7 +224,7 @@ fn depth_preflight(input: &[u8], maximum: usize) -> Result<(), JsonError> {
                 b'{' | b'[' => {
                     depth += 1;
                     if depth > maximum {
-                        return Err(JsonError::Limit);
+                        return Err(JsonError::Limit(JsonResource::Depth));
                     }
                 }
                 b'}' | b']' => depth = depth.saturating_sub(1),
@@ -232,14 +236,14 @@ fn depth_preflight(input: &[u8], maximum: usize) -> Result<(), JsonError> {
 }
 struct Budget {
     nodes: usize,
-    exhausted: bool,
+    exhausted: Option<JsonResource>,
     limits: JsonLimits,
     reject_duplicates: bool,
 }
 impl Budget {
     fn charge<E: de::Error>(&mut self) -> Result<(), E> {
         if self.nodes >= self.limits.nodes {
-            self.exhausted = true;
+            self.exhausted = Some(JsonResource::Nodes);
             return Err(E::custom("JSON limit"));
         }
         self.nodes += 1;
@@ -301,7 +305,7 @@ impl<'de> Visitor<'de> for Seed<'_> {
     }
     fn visit_seq<A: SeqAccess<'de>>(self, mut seq: A) -> Result<Value, A::Error> {
         if self.depth >= self.budget.limits.depth {
-            self.budget.exhausted = true;
+            self.budget.exhausted = Some(JsonResource::Depth);
             return Err(de::Error::custom("JSON depth"));
         }
         let mut values = Vec::new();
@@ -315,7 +319,7 @@ impl<'de> Visitor<'de> for Seed<'_> {
     }
     fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<Value, A::Error> {
         if self.depth >= self.budget.limits.depth {
-            self.budget.exhausted = true;
+            self.budget.exhausted = Some(JsonResource::Depth);
             return Err(de::Error::custom("JSON depth"));
         }
         let mut values = Map::new();

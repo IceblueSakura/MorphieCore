@@ -14,7 +14,7 @@ use base64::{Engine, engine::general_purpose::STANDARD};
 use serde_json::{Map, Value, json};
 
 fn invalid() -> CodecError {
-    CodecError::Invalid("native speech")
+    CodecError::Invalid(crate::protocol::failure::ShapeReason::InvalidValue)
 }
 fn object<'a>(v: &'a Value, keys: &[&str]) -> Result<&'a Map<String, Value>, CodecError> {
     let m = v.as_object().ok_or_else(invalid)?;
@@ -55,7 +55,9 @@ pub fn encode_request(request: &Request, model: &str) -> Result<Value, CodecErro
         || request.task.instructions.is_some()
         || request.task.speed.is_some()
     {
-        return Err(CodecError::Unsupported("native speech control".into()));
+        return Err(CodecError::Unsupported(
+            crate::protocol::failure::CarrierReason::Unavailable,
+        ));
     }
     if !speech::valid_model(model) {
         return Err(invalid());

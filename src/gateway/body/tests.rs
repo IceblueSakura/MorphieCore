@@ -283,7 +283,7 @@ async fn diagnostic_status_and_final_intake_are_from_the_original_attempt() {
         Instant::now() + Duration::from_secs(2),
         gate.state.shutdown.clone(),
         gate.state.permits.clone().acquire_owned().await.unwrap(),
-        super::Trace::new(gate.state.diagnostics.as_ref()),
+        super::Trace::generation(gate.state.diagnostics.as_ref()),
     )
     .await
     .unwrap();
@@ -310,13 +310,15 @@ async fn diagnostic_status_and_final_intake_are_from_the_original_attempt() {
     let raw = std::fs::read_to_string(&path).unwrap();
     assert!(!raw.contains("synthetic-private-fingerprint"));
     let record: serde_json::Value = serde_json::from_str(raw.lines().last().unwrap()).unwrap();
-    let losses = record["candidates"][0]["losses"].as_array().unwrap();
+    let losses = record["generation"]["attempts"][0]["evidence"]["entries"]
+        .as_array()
+        .unwrap();
     assert_eq!(
         losses
             .iter()
             .filter(
                 |loss| loss["rule"] == "responses.omit-system-fingerprint.v1"
-                    && loss["direction"] == "event.encode"
+                    && loss["direction"] == "event.project"
             )
             .count(),
         1
@@ -448,6 +450,7 @@ async fn messages_clients_get_anthropic_shapes_from_an_openai_target() {
         &gate.state,
         ClientProtocol::Messages,
         body.to_string().as_bytes(),
+        &crate::execution::report::Report::default(),
     )
     .unwrap();
     assert!(request.ignored_fields.is_empty());
@@ -1058,6 +1061,42 @@ async fn invalid_heads_and_static_overflow_fail_without_exposing_provider_data()
         .unwrap_err();
         assert_eq!(error.status, 502);
         assert_eq!(reads.load(Ordering::SeqCst), 0);
+    }
+    // The broad media admission succeeds; the decoder rejects this charset.
+    // Keep its typed failure instead of only the public upstream presentation.
+    {
+        let gate = gateway(Limits::default());
+        let (_tx, upstream, _, reads) = upstream(200, "text/event-stream; charset=iso-8859-1");
+        let entry = gate.state.entries[&(family(Profile::Chat), "fixture-model".into())].clone();
+        let request=entry.client.as_openai().unwrap().0.decode_request(br#"{"model":"fixture-model","messages":[{"role":"user","content":"hello"}],"stream":true}"#).unwrap();
+        let candidate = entry.candidates[0].clone();
+        let trace = Trace::generation(None);
+        let report = trace.report.clone();
+        let error = bounded(respond(
+            entry,
+            candidate,
+            request,
+            upstream,
+            &gate.state.limits,
+            Instant::now() + Duration::from_secs(1),
+            gate.state.shutdown.clone(),
+            gate.state.permits.clone().acquire_owned().await.unwrap(),
+            trace,
+        ))
+        .await
+        .unwrap_err();
+        assert_eq!(error.status, 502);
+        assert_eq!(reads.load(Ordering::SeqCst), 0);
+        let snapshot = report.snapshot();
+        let failure = snapshot.attempts[0].failure.as_ref().unwrap();
+        assert!(matches!(
+            failure.cause,
+            crate::execution::AttemptError::Sse(crate::protocol::stream::SseError::Http)
+        ));
+        assert_eq!(
+            failure.boundary,
+            Some(crate::lowering::generation::ConversionBoundary::EventDecode)
+        );
     }
     let gate = gateway(Limits {
         // Allow both startup discovery views while keeping the upstream body over budget.

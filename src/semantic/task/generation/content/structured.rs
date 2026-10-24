@@ -15,7 +15,7 @@ impl StructuredValue {
     pub fn from_bytes(input: &[u8]) -> Result<Self, GenerationError> {
         use crate::semantic::value::{JsonError, JsonLimits, parse_json};
         let value = parse_json(input, JsonLimits::STRUCTURED).map_err(|error| match error {
-            JsonError::Limit => GenerationError::Limit,
+            JsonError::Limit(_) => GenerationError::Limit,
             JsonError::Invalid => GenerationError::InvalidJsonValue,
         })?;
         Self::new(value)

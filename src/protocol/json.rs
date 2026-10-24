@@ -4,14 +4,14 @@ use crate::semantic::value::{JsonError, JsonLimits, parse_json};
 
 pub(crate) fn decode(input: &[u8]) -> Result<serde_json::Value, CodecError> {
     parse_json(input, JsonLimits::ENVELOPE).map_err(|error| match error {
-        JsonError::Limit => CodecError::Limit,
-        JsonError::Invalid => CodecError::Invalid("JSON"),
+        JsonError::Limit(resource) => CodecError::from(JsonError::Limit(resource)),
+        JsonError::Invalid => CodecError::Invalid(crate::protocol::failure::ShapeReason::Json),
     })
 }
 pub(crate) fn decode_image_response(input: &[u8]) -> Result<serde_json::Value, CodecError> {
     crate::semantic::value::parse_image_response_json(input).map_err(|error| match error {
-        JsonError::Limit => CodecError::Limit,
-        JsonError::Invalid => CodecError::Invalid("JSON"),
+        JsonError::Limit(resource) => CodecError::from(JsonError::Limit(resource)),
+        JsonError::Invalid => CodecError::Invalid(crate::protocol::failure::ShapeReason::Json),
     })
 }
 #[cfg(test)]
@@ -27,7 +27,12 @@ mod tests {
             r#"{"items":[{"a":1,"a":1}]}"#,
             r#"{"outer":{"a":null,"a":false}}"#,
         ] {
-            assert_eq!(decode(input.as_bytes()), Err(CodecError::Invalid("JSON")));
+            assert_eq!(
+                decode(input.as_bytes()),
+                Err(CodecError::Invalid(
+                    crate::protocol::failure::ShapeReason::Json
+                ))
+            );
         }
         assert_eq!(
             decode(br#"{"a":{"x":1},"b":{"x":2}}"#).unwrap(),
@@ -51,7 +56,10 @@ mod tests {
             b"\xef\xbb\xbf{}",
         ] {
             let error = decode(input).unwrap_err();
-            assert_eq!(error, CodecError::Invalid("JSON"));
+            assert_eq!(
+                error,
+                CodecError::Invalid(crate::protocol::failure::ShapeReason::Json)
+            );
             assert_eq!(error.to_string(), "invalid JSON");
         }
         assert_eq!(
@@ -74,7 +82,9 @@ mod tests {
         assert!(value["nested"].is_object());
         assert_eq!(
             decode(br#"{"$serde_json::private::Number":"1","$serde_json::private::Number":"2"}"#),
-            Err(CodecError::Invalid("JSON"))
+            Err(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::Json
+            ))
         );
     }
 
@@ -88,7 +98,12 @@ mod tests {
             input[..4].copy_from_slice(b"null");
             assert_eq!(parse(&input).unwrap(), Value::Null);
             input.push(b' ');
-            assert_eq!(parse(&input), Err(CodecError::Limit));
+            assert_eq!(
+                parse(&input),
+                Err(CodecError::Resource(
+                    crate::protocol::failure::Resource::Bytes
+                ))
+            );
         }
     }
 
@@ -101,7 +116,12 @@ mod tests {
                 if accepted {
                     assert!(result.is_ok());
                 } else {
-                    assert_eq!(result.err(), Some(CodecError::Limit));
+                    assert_eq!(
+                        result.err(),
+                        Some(CodecError::Resource(
+                            crate::protocol::failure::Resource::Depth
+                        ))
+                    );
                 }
             }
         }
@@ -113,7 +133,12 @@ mod tests {
         let input = format!("[{}]", vec!["0"; nodes - 1].join(","));
         assert!(decode(input.as_bytes()).is_ok());
         let input = format!("[{}]", vec!["0"; nodes].join(","));
-        assert_eq!(decode(input.as_bytes()).err(), Some(CodecError::Limit));
+        assert_eq!(
+            decode(input.as_bytes()).err(),
+            Some(CodecError::Resource(
+                crate::protocol::failure::Resource::Nodes
+            ))
+        );
         for (entries, accepted) in [(nodes / 2 - 1, true), (nodes / 2, false)] {
             let input = format!(
                 "{{{}}}",
@@ -126,8 +151,56 @@ mod tests {
             if accepted {
                 assert!(result.is_ok());
             } else {
-                assert_eq!(result.err(), Some(CodecError::Limit));
+                assert_eq!(
+                    result.err(),
+                    Some(CodecError::Resource(
+                        crate::protocol::failure::Resource::Nodes
+                    ))
+                );
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod resource_tests {
+    use super::*;
+    use crate::{
+        protocol::failure::Resource,
+        semantic::value::{JsonLimits, parse_json},
+    };
+    #[test]
+    fn byte_depth_and_node_bounds_keep_their_responsible_resource() {
+        for (input, limits, resource) in [
+            (
+                b"[0]".as_slice(),
+                JsonLimits {
+                    bytes: 2,
+                    ..JsonLimits::STRUCTURED
+                },
+                Resource::Bytes,
+            ),
+            (
+                b"[[0]]".as_slice(),
+                JsonLimits {
+                    depth: 1,
+                    ..JsonLimits::STRUCTURED
+                },
+                Resource::Depth,
+            ),
+            (
+                b"[0,0]".as_slice(),
+                JsonLimits {
+                    nodes: 2,
+                    ..JsonLimits::STRUCTURED
+                },
+                Resource::Nodes,
+            ),
+        ] {
+            assert_eq!(
+                CodecError::from(parse_json(input, limits).unwrap_err()),
+                CodecError::Resource(resource)
+            );
         }
     }
 }

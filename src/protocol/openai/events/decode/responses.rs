@@ -12,60 +12,63 @@ pub(super) struct State {
 }
 
 // Fixed structural failure labels only; never include IDs, text or ciphertext.
-fn terminal_snapshot_difference(actual: &[Value], expected: &[Value]) -> &'static str {
+fn terminal_snapshot_difference(
+    actual: &[Value],
+    expected: &[Value],
+) -> crate::protocol::failure::ShapeReason {
     if actual.len() != expected.len() {
-        return "terminal snapshot count";
+        return crate::protocol::failure::ShapeReason::SnapshotShape;
     }
     for (a, e) in actual.iter().zip(expected) {
         if a == e {
             continue;
         }
         if a["id"] != e["id"] || a["type"] != e["type"] {
-            return "terminal snapshot identity";
+            return crate::protocol::failure::ShapeReason::SnapshotIdentity;
         }
         if a["status"] != e["status"] {
-            return "terminal snapshot lifecycle";
+            return crate::protocol::failure::ShapeReason::SnapshotLifecycle;
         }
         if a["phase"] != e["phase"] {
-            return "terminal snapshot phase";
+            return crate::protocol::failure::ShapeReason::SnapshotPhase;
         }
         if a["encrypted_content"] != e["encrypted_content"] {
             return match (
                 a["encrypted_content"].is_null(),
                 e["encrypted_content"].is_null(),
             ) {
-                (false, true) => "terminal snapshot replay added",
-                (true, false) => "terminal snapshot replay removed",
-                _ => "terminal snapshot replay changed",
+                (false, true) => crate::protocol::failure::ShapeReason::SnapshotReplayAdded,
+                (true, false) => crate::protocol::failure::ShapeReason::SnapshotReplayRemoved,
+                _ => crate::protocol::failure::ShapeReason::SnapshotReplayChanged,
             };
         }
         if a["summary"] != e["summary"] {
-            return "terminal snapshot summary";
+            return crate::protocol::failure::ShapeReason::SnapshotSummary;
         }
         if let (Some(ap), Some(ep)) = (a["content"].as_array(), e["content"].as_array()) {
             if ap.len() != ep.len() {
-                return "terminal snapshot content";
+                return crate::protocol::failure::ShapeReason::SnapshotShape;
             }
             for (p, q) in ap.iter().zip(ep) {
                 if p["text"] != q["text"] {
-                    return "terminal snapshot text";
+                    return crate::protocol::failure::ShapeReason::SnapshotText;
                 }
                 if p["annotations"] != q["annotations"] {
-                    return "terminal snapshot annotations";
+                    return crate::protocol::failure::ShapeReason::SnapshotAnnotations;
                 }
                 if p["logprobs"] != q["logprobs"] {
                     let empty = |v: &Value| v.is_null() || v.as_array().is_some_and(Vec::is_empty);
                     return if empty(&p["logprobs"]) && empty(&q["logprobs"]) {
-                        "terminal snapshot probability presence"
+                        crate::protocol::failure::ShapeReason::SnapshotProbabilityPresence
                     } else {
-                        "terminal snapshot probabilities"
+                        crate::protocol::failure::ShapeReason::SnapshotProbabilities
                     };
                 }
             }
         }
-        return "terminal snapshot";
+        return crate::protocol::failure::ShapeReason::TerminalSnapshot;
     }
-    "terminal snapshot"
+    crate::protocol::failure::ShapeReason::TerminalSnapshot
 }
 
 impl EventDecoder {
@@ -82,8 +85,9 @@ impl EventDecoder {
                 e.remove("type");
                 e.remove("sequence_number");
                 let details = crate::protocol::openai::terminal::decode_details(
-                    &serde_json::from_value(json!({"error":e}))
-                        .map_err(|_| CodecError::Invalid("error"))?,
+                    &serde_json::from_value(json!({"error":e})).map_err(|_| {
+                        CodecError::Invalid(crate::protocol::failure::ShapeReason::InvalidValue)
+                    })?,
                 )?;
                 self.emit(
                     StreamEvent::Terminal {
@@ -95,7 +99,9 @@ impl EventDecoder {
             }
             "response.queued" | "response.created" | "response.in_progress" => {
                 event_fields(o, &["type", "response"])?;
-                let r = object(o.get("response").ok_or(CodecError::Invalid("response"))?)?;
+                let r = object(o.get("response").ok_or(CodecError::Invalid(
+                    crate::protocol::failure::ShapeReason::InvalidValue,
+                ))?)?;
                 crate::protocol::openai::responses::envelope::response_fields(r)?;
                 let queued_creation = self.adaptation.rules.responses_queued_creation
                     && typ == "response.created"
@@ -117,13 +123,17 @@ impl EventDecoder {
                         .iter()
                         .any(|k| r.get(*k).is_some_and(|v| !v.is_null()))
                 {
-                    return Err(CodecError::Invalid("initial response"));
+                    return Err(CodecError::Invalid(
+                        crate::protocol::failure::ShapeReason::InvalidValue,
+                    ));
                 }
                 match typ {
                     "response.queued" => self.emit(StreamEvent::Queued, &mut out)?,
                     "response.created" => {
                         if self.responses.queued_creation_pending {
-                            return Err(CodecError::Invalid("duplicate queued creation"));
+                            return Err(CodecError::Invalid(
+                                crate::protocol::failure::ShapeReason::InvalidValue,
+                            ));
                         }
                         if queued_creation {
                             self.emit(StreamEvent::Queued, &mut out)?;
@@ -140,7 +150,9 @@ impl EventDecoder {
                             self.responses.queued_creation_pending = false;
                         }
                         if !self.state()?.started() {
-                            return Err(CodecError::Invalid("response not started"));
+                            return Err(CodecError::Invalid(
+                                crate::protocol::failure::ShapeReason::InvalidValue,
+                            ));
                         }
                     }
                 }
@@ -187,15 +199,22 @@ impl EventDecoder {
     ) -> Result<(), CodecError> {
         event_fields(o, &["type", "output_index", "item"])?;
         if index(o, "output_index")? != self.ids.len() {
-            return Err(CodecError::Invalid("output index"));
+            return Err(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::Identity,
+            ));
         }
-        let v = object(o.get("item").ok_or(CodecError::Invalid("item"))?)?;
+        let v = object(o.get("item").ok_or(CodecError::Invalid(
+            crate::protocol::failure::ShapeReason::InvalidValue,
+        ))?)?;
         if v.get("status")
             .filter(|v| !v.is_null())
             .is_some_and(|s| s.as_str() != Some("in_progress"))
         {
-            return Err(CodecError::Invalid("item status"));
+            return Err(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::Item,
+            ));
         }
+        let mut configuration_mapping = None;
         let kind = match string(v, "type")? {
             "message" => {
                 DecodeDirection::Upstream
@@ -206,7 +225,9 @@ impl EventDecoder {
                         .and_then(Value::as_array)
                         .is_some_and(Vec::is_empty)
                 {
-                    return Err(CodecError::Invalid("initial message"));
+                    return Err(CodecError::Invalid(
+                        crate::protocol::failure::ShapeReason::Item,
+                    ));
                 }
                 ItemKind::Message {
                     phase: crate::protocol::openai::responses::items::read_phase(v)?,
@@ -231,7 +252,9 @@ impl EventDecoder {
                     || v.get("content")
                         .is_some_and(|v| !v.is_null() && !v.as_array().is_some_and(Vec::is_empty))
                 {
-                    return Err(CodecError::Invalid("initial reasoning"));
+                    return Err(CodecError::Invalid(
+                        crate::protocol::failure::ShapeReason::Reasoning,
+                    ));
                 }
                 ItemKind::Reasoning
             }
@@ -277,11 +300,7 @@ impl EventDecoder {
                     (self.adaptation.effort_mapping, native, update.effort)
                     && input != output
                 {
-                    self.fidelity.record_effort_mapping(
-                        mapping.rule,
-                        input.level.into(),
-                        output.level.into(),
-                    );
+                    configuration_mapping = Some((mapping.rule, input, output));
                 }
                 ItemKind::ConfigurationUpdate(update)
             }
@@ -303,7 +322,9 @@ impl EventDecoder {
                     .fields(v, &["type", "id", "call_id", "result", "status"])?;
                 if v.get("status").filter(|v| !v.is_null()).is_some() {
                     // The done snapshot owns the terminal status; added is initial.
-                    return Err(CodecError::Invalid("program output status"));
+                    return Err(CodecError::Invalid(
+                        crate::protocol::failure::ShapeReason::InvalidValue,
+                    ));
                 }
                 ItemKind::ProgramOutput {
                     call_id: text(string(v, "call_id")?, "call id", 256)?,
@@ -335,9 +356,22 @@ impl EventDecoder {
                     )?,
                 }
             }
-            _ => return Err(CodecError::Unsupported("item kind".into())),
+            _ => {
+                return Err(CodecError::Unsupported(
+                    crate::protocol::failure::CarrierReason::Unavailable,
+                ));
+            }
         };
         let item = self.allocate_item()?;
+        if let Some((rule, input, output)) = configuration_mapping {
+            self.evidence.record_effort_mapping(
+                rule,
+                input,
+                output,
+                crate::lowering::generation::ConversionBoundary::EventDecode,
+                crate::lowering::generation::Owner::item(item),
+            );
+        }
         self.fidelity
             .record_response_item_id(item, string(v, "id")?)?;
         let replay = if matches!(kind, ItemKind::Reasoning | ItemKind::Compaction) {
@@ -452,9 +486,13 @@ impl EventDecoder {
         let id = *self
             .ids
             .get(index(o, "output_index")?)
-            .ok_or(CodecError::Invalid("output index"))?;
+            .ok_or(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::Identity,
+            ))?;
         if string(o, "item_id")? != self.fidelity.response_item_id(id).unwrap_or("") {
-            return Err(CodecError::Invalid("item id"));
+            return Err(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::Identity,
+            ));
         }
         Ok(id)
     }
@@ -474,7 +512,9 @@ impl EventDecoder {
             .nth(n)
             .filter(|p| p.kind == kind)
             .map(|p| p.id)
-            .ok_or(CodecError::Invalid("part index"))
+            .ok_or(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::Identity,
+            ))
     }
     fn declare_sources(
         &mut self,
@@ -513,17 +553,21 @@ impl EventDecoder {
         let item = self.owner(o)?;
         let part = self.part_for(item, PartKind::Text, index(o, "content_index")?)?;
         if index(o, "annotation_index")? != self.state()?.part(item, part)?.annotations.len() {
-            return Err(CodecError::Invalid("annotation index"));
+            return Err(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            ));
         }
-        let v = o
-            .get("annotation")
-            .ok_or(CodecError::Invalid("annotation"))?;
+        let v = o.get("annotation").ok_or(CodecError::Invalid(
+            crate::protocol::failure::ShapeReason::InvalidValue,
+        ))?;
         let mut sources =
             Items::from_resources(self.state()?.resources().clone(), DecodeDirection::Upstream);
         let annotation = crate::protocol::openai::content::citations::read(v, &mut sources)?;
         self.declare_sources(&sources.resources, out)?;
         if annotation.value().kind == CitationKind::ArtifactReference {
-            return Err(CodecError::Unsupported("file_path annotation event".into()));
+            return Err(CodecError::Unsupported(
+                crate::protocol::failure::CarrierReason::Unavailable,
+            ));
         }
         self.emit(
             StreamEvent::AnnotationAdded {
@@ -552,7 +596,9 @@ impl EventDecoder {
             ],
         )?;
         let item = self.owner(o)?;
-        let p = object(o.get("part").ok_or(CodecError::Invalid("part"))?)?;
+        let p = object(o.get("part").ok_or(CodecError::Invalid(
+            crate::protocol::failure::ShapeReason::InvalidValue,
+        ))?)?;
         let kind = part_kind(p)?;
         let summary = string(o, "type")? == "response.reasoning_summary_part.added";
         if o.contains_key(if summary {
@@ -560,10 +606,14 @@ impl EventDecoder {
         } else {
             "summary_index"
         }) {
-            return Err(CodecError::Invalid("part index domain"));
+            return Err(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::Identity,
+            ));
         }
         if summary != (kind == PartKind::Summary) {
-            return Err(CodecError::Invalid("part kind"));
+            return Err(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            ));
         }
         let key = if summary {
             "summary_index"
@@ -579,7 +629,9 @@ impl EventDecoder {
             .filter(|p| (p.kind == PartKind::Summary) == summary)
             .count();
         if n != count || !part_text(p, kind)?.is_empty() {
-            return Err(CodecError::Invalid("initial part"));
+            return Err(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            ));
         }
         if kind == PartKind::Text {
             let text = crate::protocol::openai::content::text::read(
@@ -590,7 +642,9 @@ impl EventDecoder {
             if !text.annotations().is_empty()
                 || text.logprobs().value().is_some_and(|v| !v.is_empty())
             {
-                return Err(CodecError::Invalid("initial text metadata"));
+                return Err(CodecError::Invalid(
+                    crate::protocol::failure::ShapeReason::Probabilities,
+                ));
             }
         }
         let part = self.allocate_part()?;
@@ -643,7 +697,9 @@ impl EventDecoder {
             .iter()
             .any(|k| Some(*k) != key && o.contains_key(*k))
         {
-            return Err(CodecError::Invalid("part index domain"));
+            return Err(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::Identity,
+            ));
         }
         let n = key.map(|k| index(o, k)).transpose()?.unwrap_or(0);
         let part = match self.part_for(item, kind, n) {
@@ -693,7 +749,9 @@ impl EventDecoder {
         )?;
         let (item, part, kind) = self.value_identity(o, true, out)?;
         if o.contains_key("logprobs") && kind != PartKind::Text {
-            return Err(CodecError::Invalid("logprob owner"));
+            return Err(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::Probabilities,
+            ));
         }
         // The pinned text delta/done schemas require the array, including when empty.
         // https://github.com/openai/openai-python/blob/be9d66628ad7377bd36fe5a76ae6d735843f0e76/src/openai/types/responses/response_text_delta_event.py
@@ -701,7 +759,11 @@ impl EventDecoder {
             match o.get("logprobs") {
                 Some(value) => crate::protocol::openai::content::text::read_logprobs(value)?,
                 None if self.adaptation.rules.responses_unreported_text_logprobs => vec![],
-                None => return Err(CodecError::Invalid("logprobs")),
+                None => {
+                    return Err(CodecError::Invalid(
+                        crate::protocol::failure::ShapeReason::Probabilities,
+                    ));
+                }
             }
         } else {
             vec![]
@@ -743,7 +805,9 @@ impl EventDecoder {
                 if matches!(kind, PartKind::Arguments | PartKind::StructuredArguments)
                     && name.as_str() == Some(expected.as_str()))
         {
-            return Err(CodecError::Invalid("function name echo"));
+            return Err(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            ));
         }
         let key = match kind {
             PartKind::Arguments | PartKind::StructuredArguments => "arguments",
@@ -755,14 +819,18 @@ impl EventDecoder {
             .iter()
             .any(|k| *k != key && o.contains_key(*k))
         {
-            return Err(CodecError::Invalid("value domain"));
+            return Err(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            ));
         }
         let mut builder = self
             .state()?
             .part(item, part)?
             .value()
             .fragments()
-            .ok_or(CodecError::Invalid("value builder"))?
+            .ok_or(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            ))?
             .to_owned();
         // Some Responses servers stream a call's arguments partly or not at all
         // and send them whole here; the missing suffix becomes the last delta.
@@ -791,18 +859,24 @@ impl EventDecoder {
             string(o, key)? == builder
         };
         if !matches {
-            return Err(CodecError::Invalid("value snapshot"));
+            return Err(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::ValueSnapshot,
+            ));
         }
         if kind == PartKind::Text
             && !o.contains_key("logprobs")
             && (!self.adaptation.rules.responses_unreported_text_logprobs
                 || !self.state()?.part(item, part)?.logprobs.is_absent())
         {
-            return Err(CodecError::Invalid("logprobs"));
+            return Err(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::Probabilities,
+            ));
         }
         if let Some(v) = o.get("logprobs") {
             if kind != PartKind::Text {
-                return Err(CodecError::Invalid("logprob owner"));
+                return Err(CodecError::Invalid(
+                    crate::protocol::failure::ShapeReason::Probabilities,
+                ));
             }
             let probabilities = crate::protocol::openai::content::text::read_logprobs(v)?;
             // The required empty event array is not an optional static report.
@@ -851,7 +925,9 @@ impl EventDecoder {
             ],
         )?;
         let item = self.owner(o)?;
-        let p = object(o.get("part").ok_or(CodecError::Invalid("part"))?)?;
+        let p = object(o.get("part").ok_or(CodecError::Invalid(
+            crate::protocol::failure::ShapeReason::InvalidValue,
+        ))?)?;
         let kind = part_kind(p)?;
         let summary = string(o, "type")? == "response.reasoning_summary_part.done";
         if o.contains_key(if summary {
@@ -859,10 +935,14 @@ impl EventDecoder {
         } else {
             "summary_index"
         }) {
-            return Err(CodecError::Invalid("part index domain"));
+            return Err(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::Identity,
+            ));
         }
         if summary != (kind == PartKind::Summary) {
-            return Err(CodecError::Invalid("part kind"));
+            return Err(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            ));
         }
         let part = self.part_for(
             item,
@@ -882,9 +962,13 @@ impl EventDecoder {
                 .part(item, part)?
                 .value()
                 .fragments()
-                .ok_or(CodecError::Invalid("value builder"))?
+                .ok_or(CodecError::Invalid(
+                    crate::protocol::failure::ShapeReason::InvalidValue,
+                ))?
         {
-            return Err(CodecError::Invalid("part snapshot"));
+            return Err(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::ValueSnapshot,
+            ));
         }
         if kind == PartKind::Text {
             let mut sources =
@@ -910,7 +994,11 @@ impl EventDecoder {
             match o.get("status") {
                 None | Some(Value::Null) => false,
                 Some(value) if value == "incomplete" => true,
-                Some(_) => return Err(CodecError::Invalid("summary completion status")),
+                Some(_) => {
+                    return Err(CodecError::Invalid(
+                        crate::protocol::failure::ShapeReason::InvalidValue,
+                    ));
+                }
             }
         } else {
             false
@@ -938,8 +1026,12 @@ impl EventDecoder {
         let item = *self
             .ids
             .get(index(o, "output_index")?)
-            .ok_or(CodecError::Invalid("output index"))?;
-        let v = o.get("item").ok_or(CodecError::Invalid("item"))?;
+            .ok_or(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::Identity,
+            ))?;
+        let v = o.get("item").ok_or(CodecError::Invalid(
+            crate::protocol::failure::ShapeReason::InvalidValue,
+        ))?;
         let p = object(v)?;
         if let ItemKind::ToolResult(old) | ItemKind::CustomResult(old) =
             &self.state()?.item(item)?.kind
@@ -954,11 +1046,15 @@ impl EventDecoder {
                 }
                 || self.fidelity.response_item_id(item) != Some(string(p, "id")?)
             {
-                return Err(CodecError::Invalid("result identity"));
+                return Err(CodecError::Invalid(
+                    crate::protocol::failure::ShapeReason::InvalidValue,
+                ));
             }
             let next = self.read_tool_result(p, custom, Some(&old), out)?;
             if old.call_id != next.call_id || old.name != next.name || old.context != next.context {
-                return Err(CodecError::Invalid("result association changed"));
+                return Err(CodecError::Invalid(
+                    crate::protocol::failure::ShapeReason::InvalidValue,
+                ));
             }
             self.emit(
                 StreamEvent::ToolResultOutput {
@@ -972,7 +1068,9 @@ impl EventDecoder {
             ItemLifecycle::Completed
         } else {
             match p.get("status").filter(|v| !v.is_null()) {
-                Some(v) => lifecycle(v.as_str().ok_or(CodecError::Invalid("item status"))?)?,
+                Some(v) => lifecycle(v.as_str().ok_or(CodecError::Invalid(
+                    crate::protocol::failure::ShapeReason::Item,
+                ))?)?,
                 None => ItemLifecycle::Completed,
             }
         };
@@ -1035,7 +1133,9 @@ impl EventDecoder {
             normalized[0]["created_by"] = actor.clone();
         }
         if normalized.first() != Some(&expected) {
-            return Err(CodecError::Invalid("item snapshot"));
+            return Err(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::ItemSnapshot,
+            ));
         }
         Ok(())
     }
@@ -1059,7 +1159,9 @@ impl EventDecoder {
             .find(|(key, _)| *key == index)
         {
             if old != &update {
-                return Err(CodecError::Invalid("configuration snapshot changed"));
+                return Err(CodecError::Invalid(
+                    crate::protocol::failure::ShapeReason::ConfigurationConflict,
+                ));
             }
         } else {
             self.responses.native_configurations.push((index, update));
@@ -1071,10 +1173,13 @@ impl EventDecoder {
         response: &Map<String, Value>,
         out: &mut Vec<StreamEvent>,
     ) -> Result<(), CodecError> {
-        let output = response
-            .get("output")
-            .and_then(Value::as_array)
-            .ok_or(CodecError::Invalid("terminal output"))?;
+        let output =
+            response
+                .get("output")
+                .and_then(Value::as_array)
+                .ok_or(CodecError::Invalid(
+                    crate::protocol::failure::ShapeReason::InvalidValue,
+                ))?;
         let pending: Vec<_> = self
             .state()?
             .items()
@@ -1084,10 +1189,13 @@ impl EventDecoder {
             .map(|(index, item)| (index, item.clone()))
             .collect();
         for (index, item) in pending {
-            let snapshot = output
-                .get(index)
-                .and_then(Value::as_object)
-                .ok_or(CodecError::Invalid("terminal reasoning identity"))?;
+            let snapshot =
+                output
+                    .get(index)
+                    .and_then(Value::as_object)
+                    .ok_or(CodecError::Invalid(
+                        crate::protocol::failure::ShapeReason::InvalidValue,
+                    ))?;
             if snapshot.get("type").and_then(Value::as_str) != Some("reasoning")
                 || snapshot.get("id").and_then(Value::as_str)
                     != self.fidelity.response_item_id(item.id)
@@ -1098,7 +1206,9 @@ impl EventDecoder {
                     .is_some_and(|v| !v.is_null())
                 || item.parts.iter().any(|p| p.kind != PartKind::ReasoningText)
             {
-                return Err(CodecError::Invalid("terminal reasoning closure"));
+                return Err(CodecError::Invalid(
+                    crate::protocol::failure::ShapeReason::Reasoning,
+                ));
             }
             // These events are not published unless the whole terminal snapshot
             // below exactly matches accumulated values. Never add snapshot text.
@@ -1139,7 +1249,9 @@ impl EventDecoder {
         out: &mut Vec<StreamEvent>,
     ) -> Result<(), CodecError> {
         event_fields(o, &["type", "response"])?;
-        let r = o.get("response").ok_or(CodecError::Invalid("response"))?;
+        let r = o.get("response").ok_or(CodecError::Invalid(
+            crate::protocol::failure::ShapeReason::InvalidValue,
+        ))?;
         if let Some(output) = r.get("output").and_then(Value::as_array) {
             for (index, item) in output.iter().enumerate() {
                 if let Some(value) = item.as_object()
@@ -1164,7 +1276,9 @@ impl EventDecoder {
                         .iter()
                         .any(|part| !part.finished || !part.value_finished)
             }) {
-                return Err(CodecError::Invalid("unfinished event-owned output"));
+                return Err(CodecError::Invalid(
+                    crate::protocol::failure::ShapeReason::InvalidValue,
+                ));
             }
             // Real item.done snapshots already checked every value and owner.
             // Missing/null/nonempty conflicting terminal output never uses this rule.
@@ -1189,13 +1303,19 @@ impl EventDecoder {
         let p = object(r)?;
         let status = string(p, "status")?;
         if string(o, "type")? != format!("response.{status}") {
-            return Err(CodecError::Invalid("terminal status"));
+            return Err(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            ));
         }
         let terminal = match status {
             "completed" => StreamTerminal::Completed,
             "incomplete" => StreamTerminal::Incomplete,
             "failed" => StreamTerminal::Failed,
-            _ => return Err(CodecError::Invalid("terminal")),
+            _ => {
+                return Err(CodecError::Invalid(
+                    crate::protocol::failure::ShapeReason::InvalidValue,
+                ));
+            }
         };
         self.observe_metadata(p)?;
         let decoded =
@@ -1206,7 +1326,9 @@ impl EventDecoder {
             self.close_terminal_reasoning(p, out)?;
         }
         sync_replays(
-            self.state.as_ref().ok_or(CodecError::Invalid("state"))?,
+            self.state.as_ref().ok_or(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            ))?,
             &mut self.fidelity,
             None,
         )?;
@@ -1282,11 +1404,93 @@ mod snapshot_tests {
             "encrypted_content": "synthetic-private-second",
         })];
         for (actual, expected, label) in [
-            (&first, &absent, "terminal snapshot replay added"),
-            (&absent, &first, "terminal snapshot replay removed"),
-            (&second, &first, "terminal snapshot replay changed"),
+            (
+                &first,
+                &absent,
+                crate::protocol::failure::ShapeReason::SnapshotReplayAdded,
+            ),
+            (
+                &absent,
+                &first,
+                crate::protocol::failure::ShapeReason::SnapshotReplayRemoved,
+            ),
+            (
+                &second,
+                &first,
+                crate::protocol::failure::ShapeReason::SnapshotReplayChanged,
+            ),
         ] {
             assert_eq!(terminal_snapshot_difference(actual, expected), label);
+        }
+    }
+}
+
+#[cfg(test)]
+mod mapping_evidence_tests {
+    use super::*;
+    use crate::{
+        lowering::generation::{Change, ConversionBoundary as B, Field, Owner},
+        protocol::{openai::dialect::adaptation::Adaptation, reasoning::ReasoningEffortMapping},
+    };
+    #[test]
+    fn response_and_configuration_aliases_keep_event_boundary_and_distinct_owners() {
+        let adaptation = Adaptation {
+            effort_mapping: Some(&ReasoningEffortMapping {
+                canonical_model: "synthetic",
+                rule: "synthetic.effort-alias.v1",
+                scope: EffortScope::Reasoning,
+                native_levels: &[EffortLevel::High, EffortLevel::XHigh],
+                encode: &[(EffortLevel::High, EffortLevel::High)],
+                decode: &[
+                    (EffortLevel::XHigh, EffortLevel::High),
+                    (EffortLevel::High, EffortLevel::High),
+                ],
+            }),
+            ..Default::default()
+        };
+        let mut decoder = EventDecoder::new(Profile::Responses).with_adaptation(adaptation);
+        decoder.push(&serde_json::json!({"type":"response.created","sequence_number":0,"response":{"id":"r","object":"response","created_at":1,"model":"synthetic","status":"in_progress","output":[],"reasoning":{"effort":"xhigh"}}})).unwrap();
+        let root = decoder.take_evidence();
+        assert_eq!(root.len(), 1);
+        let effect = &root[0];
+        assert_eq!(
+            (
+                effect.boundary(),
+                effect.owner(),
+                effect.semantic_field(),
+                effect.change()
+            ),
+            (
+                B::EventDecode,
+                Owner::Root,
+                Field::ReportedEffort,
+                Change::Normalize
+            )
+        );
+        let mut owners = Vec::new();
+        for index in 0..2 {
+            let events=decoder.push(&serde_json::json!({"type":"response.output_item.added","sequence_number":index+1,"output_index":index,"item":{"type":"configuration_update","id":format!("configuration_{index}"),"reasoning":{"effort":"xhigh"}}})).unwrap();
+            owners.push(
+                events
+                    .iter()
+                    .find_map(|e| match e {
+                        StreamEvent::ItemStarted {
+                            item,
+                            kind: ItemKind::ConfigurationUpdate(_),
+                            ..
+                        } => Some(Owner::item(*item)),
+                        _ => None,
+                    })
+                    .unwrap(),
+            );
+        }
+        let effects = decoder.take_evidence();
+        assert_eq!(effects.len(), 2);
+        for (effect, owner) in effects.iter().zip(owners) {
+            assert_eq!(
+                (effect.boundary(), effect.owner(), effect.semantic_field()),
+                (B::EventDecode, owner, Field::Effort)
+            );
         }
     }
 }

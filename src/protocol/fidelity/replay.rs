@@ -78,7 +78,9 @@ impl FidelityRecords {
         if self.part_replay.get(&key).is_some_and(|old| {
             old.final_value && !final_value || old.origin.is_some() && old.origin != origin
         }) {
-            return Err(CodecError::Invalid("part replay rebinding"));
+            return Err(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            ));
         }
         self.part_replay.insert(
             key,
@@ -141,13 +143,19 @@ impl FidelityRecords {
         let final_value = value.replay_token().is_some();
         if let Some(old) = self.item_replay.get(&owner) {
             if old.kind != kind {
-                return Err(CodecError::Invalid("replay owner rebinding"));
+                return Err(CodecError::Invalid(
+                    crate::protocol::failure::ShapeReason::InvalidValue,
+                ));
             }
             if old.final_value && !final_value {
-                return Err(CodecError::Invalid("opaque replay phase"));
+                return Err(CodecError::Invalid(
+                    crate::protocol::failure::ShapeReason::InvalidValue,
+                ));
             }
             if old.origin.is_some() && old.origin != origin {
-                return Err(CodecError::Invalid("replay origin rebinding"));
+                return Err(CodecError::Invalid(
+                    crate::protocol::failure::ShapeReason::InvalidValue,
+                ));
             }
         }
         self.item_replay.insert(
@@ -221,7 +229,9 @@ impl FidelityRecords {
                 _ => false,
             };
             if !valid {
-                return Err(CodecError::Invalid("native replay dependency"));
+                return Err(CodecError::Invalid(
+                    crate::protocol::failure::ShapeReason::InvalidValue,
+                ));
             }
         }
         for ((owner, part), binding) in &self.part_replay {
@@ -234,7 +244,9 @@ impl FidelityRecords {
                     self.part_replay_matches(*owner, *status, *ordinal, p, target)
                 });
             if !valid {
-                return Err(CodecError::Invalid("native part replay dependency"));
+                return Err(CodecError::Invalid(
+                    crate::protocol::failure::ShapeReason::InvalidValue,
+                ));
             }
         }
         Ok(())
@@ -252,7 +264,9 @@ impl FidelityRecords {
             .chain(self.part_replay.values())
             .any(|binding| binding.origin.as_ref() != Some(target))
         {
-            return Err(CodecError::Invalid("native replay origin"));
+            return Err(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            ));
         }
         for (owner, item) in request.items() {
             let valid = match item {
@@ -276,7 +290,9 @@ impl FidelityRecords {
                 _ => true,
             };
             if !valid {
-                return Err(CodecError::Invalid("native replay dependency"));
+                return Err(CodecError::Invalid(
+                    crate::protocol::failure::ShapeReason::InvalidValue,
+                ));
             }
         }
         Ok(())
@@ -304,7 +320,9 @@ impl FidelityRecords {
                     if self.call_replay_matches(*owner,call,binding.origin.as_ref()))
                 })
             {
-                return Err(CodecError::Invalid("call replay dependency"));
+                return Err(CodecError::Invalid(
+                    crate::protocol::failure::ShapeReason::InvalidValue,
+                ));
             }
         }
         for ((owner, part), binding) in &self.part_replay {
@@ -314,7 +332,9 @@ impl FidelityRecords {
                     self.part_replay_matches(*owner, *status, *ordinal, p, binding.origin.as_ref())
                 })
             {
-                return Err(CodecError::Invalid("part replay dependency"));
+                return Err(CodecError::Invalid(
+                    crate::protocol::failure::ShapeReason::InvalidValue,
+                ));
             }
         }
         Ok(())
@@ -347,7 +367,9 @@ impl FidelityRecords {
             .filter(|(owner, _)| owners.is_none_or(|owners| owners.contains(owner)))
             .any(|(_, r)| r.origin.as_ref().is_some_and(|old| old != origin))
         {
-            return Err(CodecError::Invalid("replay origin rebinding"));
+            return Err(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            ));
         }
         for replay in self
             .item_replay
@@ -402,12 +424,13 @@ pub(super) fn part_dependency(
 ) -> Result<[u8; 32], CodecError> {
     use sha2::{Digest, Sha256};
     let ContentPart::Text(text) = &part.content else {
-        return Err(CodecError::Invalid("part replay owner"));
+        return Err(CodecError::Invalid(
+            crate::protocol::failure::ShapeReason::InvalidValue,
+        ));
     };
-    let value = part
-        .replay
-        .as_ref()
-        .ok_or(CodecError::Invalid("part replay"))?;
+    let value = part.replay.as_ref().ok_or(CodecError::Invalid(
+        crate::protocol::failure::ShapeReason::InvalidValue,
+    ))?;
     let mut hash = Sha256::new();
     hash.update(format!("{status:?}").as_bytes());
     hash.update((ordinal as u64).to_le_bytes());
@@ -419,13 +442,13 @@ pub(super) fn part_dependency(
 }
 pub(super) fn call_dependency(call: &ToolCall) -> Result<[u8; 32], CodecError> {
     use sha2::{Digest, Sha256};
-    let value = call
-        .replay
-        .as_ref()
-        .ok_or(CodecError::Invalid("call replay"))?;
+    let value = call.replay.as_ref().ok_or(CodecError::Invalid(
+        crate::protocol::failure::ShapeReason::InvalidValue,
+    ))?;
     let arguments = match &call.arguments {
-        ToolArguments::Structured(value) => serde_json::to_string(value.value())
-            .map_err(|_| CodecError::Invalid("call arguments"))?,
+        ToolArguments::Structured(value) => serde_json::to_string(value.value()).map_err(|_| {
+            CodecError::Invalid(crate::protocol::failure::ShapeReason::InvalidValue)
+        })?,
         ToolArguments::Raw(raw) => {
             crate::semantic::task::generation::StructuredValue::from_bytes(raw.as_bytes())
                 .ok()

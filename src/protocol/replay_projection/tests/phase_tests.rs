@@ -27,6 +27,7 @@ fn source() -> DecodedResponse {
     })
     .collect();
     DecodedResponse {
+        evidence: Default::default(),
         semantic: GenerationResponse::new(items, Outcome::Incomplete)
             .unwrap()
             .with_details(TerminalDetails {
@@ -82,14 +83,21 @@ fn phase_delivery_preserves_content_without_fabricated_owners() {
             assert_eq!(body["output"][2]["phase"], "commentary");
             assert_eq!(body["output"][3]["phase"], "final_answer");
             assert_eq!(body["output"].as_array().unwrap().len(), 4);
-            assert!(!losses.iter().any(|e| e.field == "generation.message.phase"));
+            assert!(
+                !losses
+                    .iter()
+                    .any(|e| e.field() == "generation.message.phase")
+            );
         } else {
             assert!(!crate::protocol::phase::has_phase(
                 retained.semantic.items()
             ));
-            assert!(losses.iter().any(
-                |e| e.rule == "generation.omit-delivery-message-phase.v1" && e.action == "omit"
-            ));
+            assert!(
+                losses
+                    .iter()
+                    .any(|e| e.rule() == "generation.omit-delivery-message-phase.v1"
+                        && e.action() == "omit")
+            );
             if protocol == ClientProtocol::Chat {
                 assert_eq!(
                     body["choices"][0]["message"],
@@ -193,6 +201,7 @@ fn phase_stream_preserves_return_carrier_at_eof_without_changing_terminal_policy
                 output.extend(
                     delivery
                         .encode_events(&attempt, &events)
+                        .map(|batch| batch.into_bytes())
                         .unwrap_or_else(|error| {
                             panic!("{protocol:?} {} {events:?}: {error:?}", frame["type"])
                         })
@@ -203,11 +212,22 @@ fn phase_stream_preserves_return_carrier_at_eof_without_changing_terminal_policy
             if truncated {
                 attempt.push(b"data: {").unwrap();
                 assert!(attempt.finish().is_err());
-                assert!(delivery.finish_stream(&attempt).is_err());
+                assert!(
+                    delivery
+                        .finish_stream(&attempt)
+                        .map(|batch| batch.into_bytes())
+                        .is_err()
+                );
                 continue;
             }
             attempt.finish().unwrap();
-            output.extend(delivery.finish_stream(&attempt).unwrap().concat());
+            output.extend(
+                delivery
+                    .finish_stream(&attempt)
+                    .map(|batch| batch.into_bytes())
+                    .unwrap()
+                    .concat(),
+            );
             let text = String::from_utf8(output).unwrap();
             if protocol == ClientProtocol::Responses {
                 assert!(!text.contains("mca1."));
@@ -219,19 +239,19 @@ fn phase_stream_preserves_return_carrier_at_eof_without_changing_terminal_policy
                 assert!(text.contains("\"stop_reason\":\"max_tokens\""));
                 assert!(
                     delivery
-                        .losses()
+                        .effects()
                         .iter()
-                        .any(|e| e.rule == "generation.omit-delivery-message-phase.v1"
-                            && e.action == "omit")
+                        .any(|e| e.rule() == "generation.omit-delivery-message-phase.v1"
+                            && e.action() == "omit")
                 );
             } else {
                 assert!(!text.contains("mca1."));
                 assert!(!text.contains("reasoning_details"));
                 assert!(
                     delivery
-                        .losses()
+                        .effects()
                         .iter()
-                        .any(|e| e.rule == "generation.omit-delivery-message-phase.v1")
+                        .any(|e| e.rule() == "generation.omit-delivery-message-phase.v1")
                 );
                 assert!(text.contains(if protocol == ClientProtocol::Chat {
                     "\"finish_reason\":\"length\""
@@ -302,9 +322,17 @@ fn unphased_streams_cannot_use_phase_grouping_to_bypass_original_chat_admission(
                 event["type"].as_str().unwrap()
             );
             let (_, events) = attempt.push(wire.as_bytes()).unwrap();
-            delivery.encode_events(&attempt, &events).unwrap();
+            delivery
+                .encode_events(&attempt, &events)
+                .map(|batch| batch.into_bytes())
+                .unwrap();
         }
         attempt.finish().unwrap();
-        assert!(delivery.finish_stream(&attempt).is_err());
+        assert!(
+            delivery
+                .finish_stream(&attempt)
+                .map(|batch| batch.into_bytes())
+                .is_err()
+        );
     }
 }

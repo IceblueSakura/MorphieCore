@@ -7,7 +7,7 @@ use crate::{
 use serde_json::{Map, Number, Value};
 
 fn invalid() -> CodecError {
-    CodecError::Invalid("Gemini logprobs")
+    CodecError::Invalid(crate::protocol::failure::ShapeReason::Probabilities)
 }
 fn object(value: &Value) -> Result<&Map<String, Value>, CodecError> {
     value.as_object().ok_or_else(invalid)
@@ -36,7 +36,9 @@ fn token(value: &Value) -> Result<TopLogprob, CodecError> {
         if id.as_i64().is_none_or(|id| i32::try_from(id).is_err()) {
             return Err(invalid());
         }
-        return Err(CodecError::Unsupported("Gemini tokenId".into()));
+        return Err(CodecError::Unsupported(
+            crate::protocol::failure::CarrierReason::TokenId,
+        ));
     }
     Ok(TopLogprob {
         token: object
@@ -51,7 +53,9 @@ pub(super) fn read(value: &Value) -> Result<Vec<Logprob>, CodecError> {
     let object = object(value)?;
     if let Some(value) = object.get("logProbabilitySum") {
         probability(value)?;
-        return Err(CodecError::Unsupported("Gemini logProbabilitySum".into()));
+        return Err(CodecError::Unsupported(
+            crate::protocol::failure::CarrierReason::SumLogprob,
+        ));
     }
     let chosen = list(object.get("chosenCandidates"))?;
     let top = object

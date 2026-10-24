@@ -10,7 +10,7 @@ use bytes::Bytes;
 use std::collections::BTreeMap;
 pub const MAX_UPLOAD_BYTES: usize = MAX_INPUT_BYTES + (16 << 10);
 fn invalid() -> CodecError {
-    CodecError::Invalid("transcription upload")
+    CodecError::Invalid(crate::protocol::failure::ShapeReason::InvalidValue)
 }
 pub async fn decode_request(content_type: &str, bytes: Bytes) -> Result<Request, CodecError> {
     if bytes.len() > MAX_UPLOAD_BYTES {

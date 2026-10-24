@@ -10,7 +10,7 @@ use crate::{
 use serde_json::Value;
 
 fn mismatch() -> SseError {
-    invalid("Interactions snapshot steps")
+    invalid(crate::protocol::failure::ShapeReason::TerminalSnapshot)
 }
 
 pub(super) fn reconcile(
@@ -23,7 +23,7 @@ pub(super) fn reconcile(
     };
     let steps = value
         .as_array()
-        .ok_or_else(|| invalid("Interactions steps"))?;
+        .ok_or_else(|| invalid(crate::protocol::failure::ShapeReason::SnapshotShape))?;
     if steps.len() > MAX_ITEMS {
         return Err(SseError::Limit);
     }
@@ -34,7 +34,10 @@ pub(super) fn reconcile(
     for (step, owner) in steps.iter().zip(owners) {
         let step = object(step, "Interactions snapshot step")?;
         if step.get("error").is_some_and(|value| !value.is_null()) {
-            return Err(CodecError::Unsupported("Interactions model_output error".into()).into());
+            return Err(CodecError::Unsupported(
+                crate::protocol::failure::CarrierReason::StepError,
+            )
+            .into());
         }
         let item = match owner {
             None => None,
@@ -63,7 +66,11 @@ pub(super) fn reconcile(
             let ItemKind::ToolCall { call_id, name, .. } = &item.kind else {
                 return Err(mismatch());
             };
-            let arguments = object(field(step, "arguments")?, "snapshot call arguments")?;
+            let arguments = object(
+                field(step, "arguments")
+                    .map_err(|_| invalid(crate::protocol::failure::ShapeReason::SnapshotShape))?,
+                "snapshot call arguments",
+            )?;
             let [part] = item.parts.as_slice() else {
                 return Err(mismatch());
             };
@@ -82,13 +89,14 @@ pub(super) fn reconcile(
                 "thought" => ReplayFormat::GoogleInteractionsV1Thought,
                 "function_call" => ReplayFormat::GoogleInteractionsV1FunctionCall,
                 _ => {
-                    return Err(
-                        CodecError::Unsupported("Interactions signature owner".into()).into(),
-                    );
+                    return Err(CodecError::Unsupported(
+                        crate::protocol::failure::CarrierReason::MultipartContent,
+                    )
+                    .into());
                 }
             };
             if signature.is_empty() {
-                return Err(invalid("step signature"));
+                return Err(invalid(crate::protocol::failure::ShapeReason::Signature));
             }
             let replay = item
                 .and_then(|item| item.replay.as_ref())
@@ -119,12 +127,13 @@ pub(super) fn reconcile(
 fn text(value: &Value, item: Option<&StreamItem>) -> Result<(), SseError> {
     let parts = value
         .as_array()
-        .ok_or_else(|| invalid("snapshot content"))?;
+        .ok_or_else(|| invalid(crate::protocol::failure::ShapeReason::SnapshotShape))?;
     // Deltas carry no content-part index. Do not assert unknown segmentation.
     if parts.len() > 1 {
-        return Err(
-            CodecError::Unsupported("Interactions snapshot multipart content".into()).into(),
-        );
+        return Err(CodecError::Unsupported(
+            crate::protocol::failure::CarrierReason::MultipartContent,
+        )
+        .into());
     }
     let actual = match item.map(|item| item.parts.as_slice()).unwrap_or_default() {
         [] => "",
@@ -135,9 +144,13 @@ fn text(value: &Value, item: Option<&StreamItem>) -> Result<(), SseError> {
         let part = object(part, "snapshot content part")?;
         check_annotations(part)?;
         if required(part, "type")? != "text" {
-            return Err(CodecError::Unsupported("Interactions content type".into()).into());
+            return Err(CodecError::Unsupported(
+                crate::protocol::failure::CarrierReason::MultipartContent,
+            )
+            .into());
         }
-        string(part, "text")?.ok_or_else(|| invalid("snapshot text"))?
+        string(part, "text")?
+            .ok_or_else(|| invalid(crate::protocol::failure::ShapeReason::SnapshotShape))?
     } else {
         ""
     };

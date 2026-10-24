@@ -2,7 +2,7 @@
 mod request;
 pub use crate::protocol::openai::dialect::Dialect;
 use crate::{
-    adapter::{AdapterError, Request},
+    adapter::{ConversionFailure, Request},
     protocol::{
         CodecError, DecodedResponse,
         openai::{
@@ -76,7 +76,7 @@ impl Adapter {
         &self,
         response: &DecodedResponse,
         contract: &TargetCaps,
-    ) -> Result<Value, AdapterError> {
+    ) -> Result<Value, ConversionFailure> {
         let target = lower_response(
             &response.semantic,
             &response.fidelity,

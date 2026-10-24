@@ -38,12 +38,10 @@ pub fn lower_request<'a>(
         && let Some(projected) = crate::protocol::phase::omit_request(r)?
     {
         semantic = std::borrow::Cow::Owned(projected);
-        let mut stage = projection::ProjectionStage::response(
-            profile,
-            c.adaptation.profile_id,
-            Some(projection::LossRule::OmitChatMessagePhase),
-        );
-        stage.direction = projection::ProjectionDirection::Request;
+        let mut stage = (projection::LossRule::OmitChatMessagePhase)
+            .effect(crate::lowering::generation::ConversionBoundary::ResponseProject);
+        stage =
+            stage.with_boundary(crate::lowering::generation::ConversionBoundary::RequestProject);
         projection.push(stage);
     }
     if let Some((groups, loss)) =
@@ -52,20 +50,19 @@ pub fn lower_request<'a>(
         // Replay dependencies must be checked against the final target value below.
         semantic = std::borrow::Cow::Owned(semantic.into_owned().with_message_envelopes(groups)?);
         let mut stage =
-            projection::ProjectionStage::response(profile, c.adaptation.profile_id, Some(loss));
-        stage.direction = projection::ProjectionDirection::Request;
+            (loss).effect(crate::lowering::generation::ConversionBoundary::ResponseProject);
+        stage =
+            stage.with_boundary(crate::lowering::generation::ConversionBoundary::RequestProject);
         projection.push(stage);
     }
     if semantic.settings().prediction.is_some() && (profile != Profile::Chat || !c.prediction) {
         let mut settings = semantic.settings().clone();
         settings.prediction = None;
         semantic = std::borrow::Cow::Owned(semantic.into_owned().with_settings(settings)?);
-        let mut stage = projection::ProjectionStage::response(
-            profile,
-            c.adaptation.profile_id,
-            Some(projection::LossRule::OmitPrediction),
-        );
-        stage.direction = projection::ProjectionDirection::Request;
+        let mut stage = (projection::LossRule::OmitPrediction)
+            .effect(crate::lowering::generation::ConversionBoundary::ResponseProject);
+        stage =
+            stage.with_boundary(crate::lowering::generation::ConversionBoundary::RequestProject);
         projection.push(stage);
     }
     let r = semantic.as_ref();

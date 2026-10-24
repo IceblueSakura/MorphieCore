@@ -50,6 +50,7 @@ fn bootstrap_loads_selected_key_and_requires_reactivation_after_rotation() {
         &first.gateway.state,
         ClientProtocol::Responses,
         br#"{"model":"deepseek-flash","input":"synthetic request"}"#,
+        &crate::execution::report::Report::default(),
     )
     .unwrap();
     let prepared =

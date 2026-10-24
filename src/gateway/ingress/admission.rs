@@ -130,8 +130,9 @@ pub(in crate::gateway) fn prepare(
     state: &Runtime,
     protocol: ClientProtocol,
     bytes: &[u8],
+    report: &crate::execution::report::Report,
 ) -> Result<(Arc<BoundEntry>, Request), ApiError> {
-    prepare_in(state, protocol, bytes, |entry| {
+    prepare_in(state, protocol, bytes, report, |entry| {
         entry.client.decode_client_request(bytes)
     })
 }
@@ -139,6 +140,7 @@ pub(in crate::gateway) fn prepare(
 pub(in crate::gateway) fn prepare_responses(
     state: &Runtime,
     bytes: &[u8],
+    report: &crate::execution::report::Report,
 ) -> Result<
     (
         Arc<BoundEntry>,
@@ -148,15 +150,27 @@ pub(in crate::gateway) fn prepare_responses(
     ApiError,
 > {
     use crate::{gateway::generation::history::Pending, protocol::openai::responses::managed};
-    let value = crate::protocol::json::decode(bytes).map_err(|_| ApiError::invalid())?;
-    let options = managed::Options::read(&value).map_err(|_| ApiError::invalid())?;
+    let value = crate::protocol::json::decode(bytes).map_err(|error| {
+        report.failure(
+            Some(crate::lowering::generation::ConversionBoundary::RequestDecode),
+            &crate::execution::AttemptError::Codec(error),
+        );
+        ApiError::invalid()
+    })?;
+    let options = managed::Options::read(&value).map_err(|error| {
+        report.failure(
+            Some(crate::lowering::generation::ConversionBoundary::RequestDecode),
+            &crate::execution::AttemptError::Codec(error),
+        );
+        ApiError::invalid()
+    })?;
     let previous = options
         .previous
         .as_ref()
         .map(|id| state.history.get(id, tokio::time::Instant::now()))
         .transpose()?;
     let mut input = None;
-    let (entry, request) = prepare_in(state, ClientProtocol::Responses, bytes, |entry| {
+    let (entry, request) = prepare_in(state, ClientProtocol::Responses, bytes, report, |entry| {
         let (request, _) = managed::decode(
             entry.client.as_openai()?.0,
             bytes,
@@ -174,11 +188,18 @@ fn prepare_in(
     state: &Runtime,
     family: crate::adapter::ClientProtocol,
     bytes: &[u8],
+    report: &crate::execution::report::Report,
     decode: impl FnOnce(&BoundEntry) -> Result<Request, crate::protocol::CodecError>,
 ) -> Result<(Arc<BoundEntry>, Request), ApiError> {
     // Only envelope identity is inspected here; semantic interpretation starts
     // after resolving the trusted Public Model/task. Duplicate keys remain errors.
-    let value = crate::protocol::json::decode(bytes).map_err(|_| ApiError::invalid())?;
+    let value = crate::protocol::json::decode(bytes).map_err(|error| {
+        report.failure(
+            Some(crate::lowering::generation::ConversionBoundary::RequestDecode),
+            &crate::execution::AttemptError::Codec(error),
+        );
+        ApiError::invalid()
+    })?;
     let model = value
         .get("model")
         .and_then(serde_json::Value::as_str)
@@ -191,8 +212,26 @@ fn prepare_in(
     if value.get("session_id").is_some() {
         return Err(ApiError::invalid());
     }
-    let mut request = decode(&entry).map_err(|_| ApiError::invalid())?;
-    crate::execution::replay::open_from_client(&mut request).map_err(|_| ApiError::invalid())?;
-    crate::execution::admit(&entry.public, &request).map_err(|_| ApiError::invalid())?;
+    let mut request = decode(&entry).map_err(|error| {
+        report.failure(
+            Some(crate::lowering::generation::ConversionBoundary::RequestDecode),
+            &crate::execution::AttemptError::Codec(error),
+        );
+        ApiError::invalid()
+    })?;
+    crate::execution::replay::open_from_client(&mut request).map_err(|error| {
+        report.failure(
+            Some(crate::lowering::generation::ConversionBoundary::RequestDecode),
+            &crate::execution::AttemptError::Codec(error),
+        );
+        ApiError::invalid()
+    })?;
+    crate::execution::admit(&entry.public, &request).map_err(|error| {
+        report.failure(
+            Some(crate::lowering::generation::ConversionBoundary::RequestProject),
+            &error,
+        );
+        ApiError::invalid()
+    })?;
     Ok((entry, request))
 }

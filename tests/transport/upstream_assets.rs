@@ -200,7 +200,7 @@ fn permissive_sdk_fixtures_do_not_override_event_grammar() {
             morphiecore::execution::AttemptError::Sse(
                 morphiecore::protocol::stream::SseError::Codec(
                     morphiecore::protocol::CodecError::Invalid(
-                        "Anthropic stream ordering or closure"
+                        morphiecore::protocol::failure::ShapeReason::InvalidValue
                     )
                 )
             )
@@ -220,7 +220,9 @@ fn permissive_sdk_fixtures_do_not_override_event_grammar() {
             error,
             morphiecore::execution::AttemptError::Sse(
                 morphiecore::protocol::stream::SseError::Codec(
-                    morphiecore::protocol::CodecError::Invalid("sequence")
+                    morphiecore::protocol::CodecError::Invalid(
+                        morphiecore::protocol::failure::ShapeReason::Sequence
+                    )
                 )
             )
         ),
@@ -490,7 +492,7 @@ fn google_protocol_errors_before_and_after_content_poison_the_attempt() {
                 }
                 let error = feed(&mut attempt, error.as_bytes(), chunk).unwrap_err();
                 assert!(
-                    matches!(error, AttemptError::Sse(SseError::Codec(CodecError::StreamFailure(code))) if code == status),
+                    matches!(error, AttemptError::Sse(SseError::Codec(CodecError::StreamFailure(morphiecore::protocol::failure::SourceFailureEvidence {status_hint:Some(code),..}))) if code.get() == status),
                     "{error:?}"
                 );
                 assert!(feed(&mut attempt, &bytes, chunk).is_err());

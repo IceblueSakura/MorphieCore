@@ -1,4 +1,9 @@
 //! Independent generateContent wire expectations: streamed intake and the next request.
+use morphiecore::protocol::{
+    CodecError as Failure,
+    failure::{CarrierReason as Carrier, ShapeReason as Shape},
+    stream::SseError as WireFailure,
+};
 use morphiecore::{
     adapter::Request,
     protocol::{
@@ -49,7 +54,7 @@ fn wire(frames: &[Value]) -> Vec<u8> {
         .collect::<String>()
         .into_bytes()
 }
-fn decode(bytes: &[u8]) -> Result<DecodedResponse, String> {
+fn decode(bytes: &[u8]) -> Result<DecodedResponse, WireFailure> {
     let mut d = GenerationSseDecoder::new(
         200,
         "text/event-stream",
@@ -60,10 +65,10 @@ fn decode(bytes: &[u8]) -> Result<DecodedResponse, String> {
     .unwrap();
     let mut offset = 0;
     while offset < bytes.len() {
-        let (n, _) = d.consume(&bytes[offset..]).map_err(|e| e.to_string())?;
+        let (n, _) = d.consume(&bytes[offset..])?;
         offset += n;
     }
-    d.finish().map_err(|e| e.to_string())
+    d.finish()
 }
 fn signature(item: &Item) -> Value {
     let Item::Reasoning(r) = item else {
@@ -124,11 +129,10 @@ fn audit_citation_reports_are_not_successfully_erased() {
     assert!(decode(&wire(&[value.clone()])).is_ok());
     value["candidates"][0]["citationMetadata"] = json!({"citationSources":[{
         "startIndex":0,"endIndex":1,"uri":"https://example.test/source","license":"MIT"}]});
-    assert!(
-        decode(&wire(&[value]))
-            .unwrap_err()
-            .contains("Gemini citationMetadata")
-    );
+    assert!(matches!(
+        decode(&wire(&[value])).unwrap_err(),
+        WireFailure::Codec(Failure::Unsupported(Carrier::CitationMetadata))
+    ));
 }
 
 #[test]
@@ -251,12 +255,10 @@ fn cross_format_reasoning_is_removed_before_grouping_but_partial_values_reject()
             );
             assert_eq!(request.items().len(), 3);
         } else {
-            assert!(
-                result
-                    .unwrap_err()
-                    .to_string()
-                    .contains("partial foreign reasoning")
-            );
+            assert!(matches!(
+                result.unwrap_err(),
+                Failure::Unsupported(Carrier::Reasoning)
+            ));
         }
     }
 }
@@ -699,25 +701,25 @@ fn candidate_reports_reject_unowned_or_malformed_fields() {
                 "retrievedUrl":"https://example.invalid/",
                 "urlRetrievalStatus":"URL_RETRIEVAL_STATUS_ERROR"
             }]}),
-            "urlContextMetadata",
+            Carrier::UrlContextMetadata,
         ),
-        ("avgLogprobs", json!(-0.25), "avgLogprobs"),
-        ("avgLogprobs", json!(0), "avgLogprobs"),
+        ("avgLogprobs", json!(-0.25), Carrier::MeanLogprob),
+        ("avgLogprobs", json!(0), Carrier::MeanLogprob),
         (
             "logprobsResult",
             json!({"logProbabilitySum":-0.25}),
-            "logProbabilitySum",
+            Carrier::SumLogprob,
         ),
         (
             "logprobsResult",
             json!({"logProbabilitySum":0}),
-            "logProbabilitySum",
+            Carrier::SumLogprob,
         ),
         (
             "logprobsResult",
             json!({"chosenCandidates":[
             {"token":"A","logProbability":-0.25,"tokenId":0}]}),
-            "tokenId",
+            Carrier::TokenId,
         ),
         (
             "logprobsResult",
@@ -725,14 +727,14 @@ fn candidate_reports_reject_unowned_or_malformed_fields() {
             {"token":"A","logProbability":-0.25}],
             "topCandidates":[{"candidates":[
                 {"token":"A","logProbability":-0.25,"tokenId":42}]}]}),
-            "tokenId",
+            Carrier::TokenId,
         ),
     ] {
         let mut changed = frame.clone();
         changed["candidates"][0][key] = value;
         let error = decode(&wire(&[changed])).unwrap_err();
         assert!(
-            error.contains("unsupported") && error.contains(field),
+            matches!(error,WireFailure::Codec(Failure::Unsupported(reason)) if reason==field),
             "{error}"
         );
     }
@@ -754,7 +756,9 @@ fn candidate_reports_reject_unowned_or_malformed_fields() {
     ] {
         let mut changed = frame.clone();
         changed["candidates"][0][key] = value;
-        assert!(decode(&wire(&[changed])).unwrap_err().contains("invalid"));
+        assert!(
+            matches!(decode(&wire(&[changed])).unwrap_err(),WireFailure::Codec(Failure::Invalid(reason)) if reason==match key {"finishMessage"=>Shape::TerminalExplanation,"avgLogprobs"=>Shape::Probabilities,_=>Shape::Metadata})
+        );
     }
     // Failure of a late report poisons intake; prior text cannot become a success.
     let mut decoder = GenerationSseDecoder::new(
@@ -779,13 +783,10 @@ fn candidate_reports_reject_unowned_or_malformed_fields() {
     );
     let mut late = frame;
     late["candidates"][0]["finishMessage"] = json!(false);
-    assert!(
-        decoder
-            .consume(&wire(&[late]))
-            .unwrap_err()
-            .to_string()
-            .contains("finishMessage")
-    );
+    assert!(matches!(
+        decoder.consume(&wire(&[late])).unwrap_err(),
+        WireFailure::Codec(Failure::Invalid(Shape::TerminalExplanation))
+    ));
     assert!(decoder.finish().is_err());
 }
 
@@ -831,22 +832,20 @@ fn service_reports_map_only_concrete_processing_classes_and_keep_strict_updates(
             .as_object_mut()
             .unwrap()
             .remove("serviceTier");
-        assert!(
-            decode(&wire(&[opening.clone(), erased]))
-                .unwrap_err()
-                .contains("reported service changed")
-        );
+        assert!(matches!(
+            decode(&wire(&[opening.clone(), erased])).unwrap_err(),
+            WireFailure::Codec(Failure::Invalid(Shape::Metadata))
+        ));
         let mut changed = frame;
         changed["usageMetadata"]["serviceTier"] = json!(if native == "standard" {
             "priority"
         } else {
             "standard"
         });
-        assert!(
-            decode(&wire(&[opening, changed]))
-                .unwrap_err()
-                .contains("reported service changed")
-        );
+        assert!(matches!(
+            decode(&wire(&[opening, changed])).unwrap_err(),
+            WireFailure::Codec(Failure::Invalid(Shape::Metadata))
+        ));
     }
     for invalid in [
         Value::Null,
@@ -915,30 +914,23 @@ fn candidate_finish_explanations_are_bounded_observations_with_real_finish_reaso
                 decoder
                     .consume(&wire(std::slice::from_ref(&frame)))
                     .unwrap();
-                assert!(
-                    decoder
-                        .consume(&wire(&[repeated]))
-                        .unwrap_err()
-                        .to_string()
-                        .contains("Gemini chunk after finish")
-                );
+                assert!(matches!(
+                    decoder.consume(&wire(&[repeated])).unwrap_err(),
+                    WireFailure::Codec(Failure::Invalid(Shape::AfterFinish))
+                ));
                 assert!(decoder.finish().is_err());
             }
         }
     }
     for (reason, message, expected) in [
-        (
-            None,
-            json!("explanation"),
-            "Gemini finishMessage without finishReason",
-        ),
-        (None, json!(""), "Gemini finishMessage without finishReason"),
-        (Some("STOP"), Value::Null, "finishMessage"),
-        (Some("STOP"), json!(false), "finishMessage"),
+        (None, json!("explanation"), Some(Shape::TerminalExplanation)),
+        (None, json!(""), Some(Shape::TerminalExplanation)),
+        (Some("STOP"), Value::Null, Some(Shape::TerminalExplanation)),
+        (Some("STOP"), json!(false), Some(Shape::TerminalExplanation)),
         (
             Some("STOP"),
             json!("x".repeat(MAX_TERMINAL_REPORT_BYTES)),
-            "limit",
+            None,
         ),
     ] {
         let mut frame = json!({"responseId":"r","modelVersion":"gemini-synthetic",
@@ -946,7 +938,25 @@ fn candidate_finish_explanations_are_bounded_observations_with_real_finish_reaso
         if let Some(reason) = reason {
             frame["candidates"][0]["finishReason"] = json!(reason);
         }
-        assert!(decode(&wire(&[frame])).unwrap_err().contains(expected));
+        {
+            let error = decode(&wire(&[frame])).unwrap_err();
+            match expected {
+                Some(reason) => assert!(
+                    matches!(error,WireFailure::Codec(Failure::Invalid(actual)) if actual==reason)
+                ),
+                None => assert!(
+                    matches!(
+                        error,
+                        WireFailure::Codec(Failure::Event(
+                            morphiecore::semantic::task::generation::EventError::Semantic(
+                                morphiecore::semantic::task::generation::GenerationError::Limit
+                            )
+                        ))
+                    ),
+                    "{error:?}"
+                ),
+            }
+        };
     }
 }
 
@@ -992,20 +1002,18 @@ fn optional_token_probability_is_not_a_reported_zero() {
     );
     sparse["candidates"][0]["logprobsResult"]["topCandidates"][0]["candidates"][2]["logProbability"] =
         json!(0);
-    assert!(
-        decode(&wire(&[sparse]))
-            .unwrap_err()
-            .contains("invalid Gemini logprobs")
-    );
+    assert!(matches!(
+        decode(&wire(&[sparse])).unwrap_err(),
+        WireFailure::Codec(Failure::Invalid(Shape::Probabilities))
+    ));
     for token in [
         json!({"token":"A"}),
         json!({"token":"A","logProbability":null}),
     ] {
-        assert!(
-            decode(&wire(&[frame(token)]))
-                .unwrap_err()
-                .contains("invalid Gemini logprobs")
-        );
+        assert!(matches!(
+            decode(&wire(&[frame(token)])).unwrap_err(),
+            WireFailure::Codec(Failure::Invalid(Shape::Probabilities))
+        ));
     }
     let decoded = decode(&wire(&[frame(json!({"token":"A","logProbability":0}))])).unwrap();
     let Item::Message(message) = &decoded.semantic.items()[0].1 else {
@@ -1185,7 +1193,7 @@ fn next_request_restores_signatures_on_their_parts_in_any_item_order() {
     assert!(matches!(
         encode_generation_request(&scalar, &observed.fidelity, &target(), None),
         Err(morphiecore::protocol::CodecError::Unsupported(reason))
-            if reason == "Gemini semantic carrier"
+            if reason == morphiecore::protocol::failure::CarrierReason::Unavailable
     ));
     let other = ReplayTarget::new("synthetic-google", "gemini-other").unwrap();
     assert!(encode_generation_request(&request, &observed.fidelity, &other, None).is_err());
@@ -1996,7 +2004,7 @@ fn image_sizes_remain_strict_in_user_and_tool_result_uses() {
                 assert_eq!(
                     interactions.unwrap_err(),
                     morphiecore::protocol::CodecError::Unsupported(
-                        "Interactions semantic carrier".into()
+                        morphiecore::protocol::failure::CarrierReason::Unavailable
                     )
                 );
             }

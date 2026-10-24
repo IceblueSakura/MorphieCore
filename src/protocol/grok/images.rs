@@ -13,7 +13,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 fn invalid() -> CodecError {
-    CodecError::Invalid("Grok image generation")
+    CodecError::Invalid(crate::protocol::failure::ShapeReason::InvalidValue)
 }
 
 /// Project only controls with an exact carrier. Resolution tiers and aspect

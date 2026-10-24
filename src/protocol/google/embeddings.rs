@@ -8,7 +8,7 @@ use crate::{
 };
 use serde_json::{Value, json};
 fn invalid() -> CodecError {
-    CodecError::Invalid("google embedding")
+    CodecError::Invalid(crate::protocol::failure::ShapeReason::InvalidValue)
 }
 
 pub fn encode_request(request: &TargetRequest, model: &str) -> Result<Value, CodecError> {

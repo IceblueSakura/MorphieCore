@@ -212,7 +212,9 @@ fn responses_tool_output_carries_files_and_needs_file_admission() {
         adapter()
             .decode_request(&serde_json::to_vec(&invalid).unwrap())
             .unwrap_err(),
-        morphiecore::protocol::CodecError::Invalid("prompt cache breakpoint")
+        morphiecore::protocol::CodecError::Invalid(
+            morphiecore::protocol::failure::ShapeReason::InvalidValue
+        )
     );
     let mut no_files = Contract::full();
     no_files.semantics.file_input = false;
@@ -308,17 +310,17 @@ fn request_lifetime_boundaries_have_independent_ir_and_reject_unrelated_ttls() {
         Messages::AdaptiveTextTools
             .encode_generation_request(&request, &Default::default(), &native)
             .unwrap_err(),
-        CodecError::Unsupported("native semantic carrier".into())
+        CodecError::Unsupported(morphiecore::protocol::failure::CarrierReason::Unavailable)
     );
     assert_eq!(
         generate_content::encode_generation_request(&request, &Default::default(), &native, None)
             .unwrap_err(),
-        CodecError::Unsupported("Gemini semantic carrier".into())
+        CodecError::Unsupported(morphiecore::protocol::failure::CarrierReason::Unavailable)
     );
     assert_eq!(
         interactions::encode_generation_request(&request, &Default::default(), &native)
             .unwrap_err(),
-        CodecError::Unsupported("Interactions semantic carrier".into())
+        CodecError::Unsupported(morphiecore::protocol::failure::CarrierReason::Unavailable)
     );
 
     let mut items = request.items().to_vec();
@@ -401,7 +403,7 @@ fn responses_instructions_reject_media_and_preserve_text() {
                         .as_bytes()
                 )
                 .unwrap_err(),
-            morphiecore::protocol::CodecError::Unsupported("instruction content".into())
+            morphiecore::protocol::CodecError::Unsupported(morphiecore::protocol::failure::CarrierReason::Unavailable)
         );
     let mut input = json!([
             {"role":"developer","content":[
@@ -414,7 +416,9 @@ fn responses_instructions_reject_media_and_preserve_text() {
                 &serde_json::to_vec(&json!({"model":"synthetic","input":input})).unwrap(),
             )
             .unwrap_err(),
-        morphiecore::protocol::CodecError::Unsupported("instruction content".into())
+        morphiecore::protocol::CodecError::Unsupported(
+            morphiecore::protocol::failure::CarrierReason::Unavailable
+        )
     );
     input[0]["content"] = json!("Follow the guide.");
     let decoded = adapter()

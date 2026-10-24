@@ -136,6 +136,11 @@ fn each_resolution_is_closed_phase_local_and_source_checked() {
         ),
         (json!({}), json!({}), json!("auto"), json!("default")),
     ] {
+        let expected = if opening != terminal {
+            morphiecore::protocol::failure::ShapeReason::SettingsConflict
+        } else {
+            morphiecore::protocol::failure::ShapeReason::Metadata
+        };
         let first = event("created", 0, opening, a);
         let last = event("completed", 1, terminal.clone(), b.clone());
         let mut decoder = adapter().event_decoder();
@@ -145,20 +150,18 @@ fn each_resolution_is_closed_phase_local_and_source_checked() {
         let mut strict =
             Adapter::new(Profile::Responses, Dialect::OpenRouter, None).event_decoder();
         strict.push(&first).unwrap();
-        assert!(matches!(
-            strict.push(&last),
-            Err(morphiecore::protocol::CodecError::Invalid(
-                "reported settings changed" | "service tier changed"
-            ))
-        ));
+        assert_eq!(
+            strict.push(&last).unwrap_err(),
+            morphiecore::protocol::CodecError::Invalid(expected)
+        );
         let mut same_phase = adapter().event_decoder();
         same_phase.push(&first).unwrap();
-        assert!(matches!(
-            same_phase.push(&event("in_progress", 1, terminal, b)),
-            Err(morphiecore::protocol::CodecError::Invalid(
-                "reported settings changed" | "service tier changed"
-            ))
-        ));
+        assert_eq!(
+            same_phase
+                .push(&event("in_progress", 1, terminal, b))
+                .unwrap_err(),
+            morphiecore::protocol::CodecError::Invalid(expected)
+        );
         assert!(same_phase.finish().is_err());
     }
     for (opening, terminal) in [
@@ -176,7 +179,7 @@ fn each_resolution_is_closed_phase_local_and_source_checked() {
         assert!(matches!(
             decoder.push(&event("completed", 1, terminal, json!("default"))),
             Err(morphiecore::protocol::CodecError::Invalid(
-                "reported settings changed"
+                morphiecore::protocol::failure::ShapeReason::SettingsConflict
             ))
         ));
     }
@@ -188,7 +191,7 @@ fn each_resolution_is_closed_phase_local_and_source_checked() {
         assert!(matches!(
             decoder.push(&event("completed", 1, json!({}), json!("default"))),
             Err(morphiecore::protocol::CodecError::Invalid(
-                "service tier changed"
+                morphiecore::protocol::failure::ShapeReason::Metadata
             ))
         ));
     }
@@ -217,7 +220,7 @@ fn each_resolution_is_closed_phase_local_and_source_checked() {
             assert!(matches!(
                 decoder.push(&next),
                 Err(morphiecore::protocol::CodecError::Invalid(
-                    "reported settings changed"
+                    morphiecore::protocol::failure::ShapeReason::SettingsConflict
                 ))
             ));
             assert!(decoder.finish().is_err());
@@ -315,7 +318,7 @@ fn independently_constructed_reports_use_phase_carriers_and_terminal_snapshots()
     assert_eq!(frames[0]["response"]["service_tier"], "default");
     encoder.finish().unwrap();
     assert!(
-        !encoder.projection().iter().any(|s| s.loss.is_some()),
+        !encoder.projection().iter().any(|s| s.change().is_loss()),
         "full SSE retains both observations"
     );
     let response = GenerationResponse::new(vec![], Outcome::Completed).unwrap();
@@ -334,10 +337,12 @@ fn independently_constructed_reports_use_phase_carriers_and_terminal_snapshots()
         target.metadata().context.reports,
         ResponseReports::phased(ReportPhase::Terminal, report(true))
     );
-    assert!(target.projection().iter().any(|s| {
-        s.loss
-            .is_some_and(|l| l.name() == "responses.terminal-report-snapshot.v1")
-    }));
+    assert!(
+        target
+            .projection()
+            .iter()
+            .any(|s| { s.rule() == "responses.terminal-report-snapshot.v1" })
+    );
     assert_eq!(original.context.reports, lifecycle());
     let mut strict = TargetCaps::full();
     strict.reported_facts = morphiecore::lowering::generation::ReportedFactPolicy::StrictComplete;

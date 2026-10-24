@@ -12,33 +12,13 @@ use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::collections::BTreeSet;
 
-/// Body-free receipts identify actual selected normalization/loss, not permission.
-pub struct NativeProjection {
-    pub value: Value,
-    pub normalized_arguments: Vec<ItemId>,
-    pub omitted_execution: Vec<ItemId>,
-    pub rules: Vec<RequestRule>,
-    pub control_losses: Vec<crate::lowering::generation::RequestControlLoss>,
-}
-impl std::fmt::Debug for NativeProjection {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("NativeProjection")
-            .field("body", &"[redacted]")
-            .field("normalized_arguments", &self.normalized_arguments)
-            .field("omitted_execution", &self.omitted_execution)
-            .field("rules", &self.rules)
-            .field("control_losses", &self.control_losses)
-            .finish()
-    }
-}
-
 impl Profile {
     pub fn encode_generation_request(
         self,
         request: &GenerationRequest,
         fidelity: &FidelityRecords,
         target: &ReplayTarget,
-    ) -> Result<NativeProjection, CodecError> {
+    ) -> Result<crate::lowering::generation::Conversion<Value>, CodecError> {
         self.encode_request_envelope(
             request,
             fidelity,
@@ -54,7 +34,7 @@ impl Profile {
         target: &ReplayTarget,
         policy: &Presence<crate::semantic::context::ServicePolicy>,
         limits: &crate::protocol::model_limits::ModelLimits,
-    ) -> Result<NativeProjection, CodecError> {
+    ) -> Result<crate::lowering::generation::Conversion<Value>, CodecError> {
         let (request, fidelity, transferred) = crate::protocol::native::native_reasoning_history(
             request,
             fidelity,
@@ -94,21 +74,31 @@ impl Profile {
                 .map(effort_level),
         )?;
         let value = self.encode_request(&wire)?;
-        Ok(NativeProjection {
-            value,
-            normalized_arguments: normalized,
-            omitted_execution: omitted,
-            rules: rules.into_iter().collect(),
-            control_losses: phase
-                .is_some()
-                .then(|| {
-                    crate::lowering::generation::RequestControlLoss::Projection(
-                        crate::protocol::phase::omission(RequestRule::OmitMessagePhase.name()),
-                    )
-                })
-                .into_iter()
-                .collect(),
-        })
+        let mut evidence: crate::lowering::generation::EvidenceDelta =
+            rules.into_iter().map(|r| r.effect(&request)).collect();
+        for owner in normalized {
+            evidence.push(
+                crate::lowering::generation::Effect::new(
+                    "messages.normalize-tool-arguments.v1",
+                    crate::lowering::generation::Field::ToolArguments,
+                    crate::lowering::generation::ConversionBoundary::RequestEncode,
+                    crate::lowering::generation::Change::Normalize,
+                )
+                .at(crate::lowering::generation::Owner::item(owner)),
+            );
+        }
+        for owner in omitted {
+            evidence.push(
+                crate::lowering::generation::Effect::new(
+                    "messages.omit-tool-execution.v1",
+                    crate::lowering::generation::Field::ToolExecution,
+                    crate::lowering::generation::ConversionBoundary::RequestProject,
+                    crate::lowering::generation::Change::Omit,
+                )
+                .at(crate::lowering::generation::Owner::item(owner)),
+            );
+        }
+        Ok(crate::lowering::generation::Conversion { value, evidence })
     }
     pub fn decode_generation_request(
         self,
@@ -119,14 +109,18 @@ impl Profile {
         let wire = self.decode_request(bytes)?;
         if !wire.service_policy.is_absent() || !wire.user_id.is_absent() {
             return Err(CodecError::Unsupported(
-                "execution policy requires request envelope".into(),
+                crate::protocol::failure::CarrierReason::Unavailable,
             ));
         }
         if wire.model != target.model() {
-            return Err(CodecError::Invalid("native model binding"));
+            return Err(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            ));
         }
         if wire.stream == Presence::Value(true) {
-            return Err(CodecError::Unsupported("native streaming mapping".into()));
+            return Err(CodecError::Unsupported(
+                crate::protocol::failure::CarrierReason::Unavailable,
+            ));
         }
         let mut intake = Intake::new(scope);
         let mut settings = GenerationSettings {
@@ -143,7 +137,9 @@ impl Profile {
             Presence::Value(WireText::Text(s)) => settings.instructions = Presence::Value(text(s)?),
             Presence::Value(WireText::Blocks(parts)) => {
                 if parts.is_empty() {
-                    return Err(CodecError::Unsupported("empty system block carrier".into()));
+                    return Err(CodecError::Unsupported(
+                        crate::protocol::failure::CarrierReason::Unavailable,
+                    ));
                 }
                 intake.items.push((
                     ItemId::scoped(scope, 1),
@@ -239,7 +235,11 @@ impl Profile {
             .with_message_envelopes(intake.groups)?;
         let mut fidelity = FidelityRecords::default();
         bind(&mut fidelity, semantic.items(), target)?;
-        Ok(DecodedRequest { semantic, fidelity })
+        Ok(DecodedRequest {
+            evidence: Default::default(),
+            semantic,
+            fidelity,
+        })
     }
 }
 
@@ -277,6 +277,57 @@ pub enum RequestRule {
     CollapseToolChanges,
 }
 impl RequestRule {
+    pub(crate) fn effect(self, request: &GenerationRequest) -> crate::lowering::generation::Effect {
+        use crate::lowering::generation::{Change, ConversionBoundary as B, Effect, Field, Owner};
+        let (field, change) = match self {
+            Self::CollapseToolChanges => (Field::Tools, Change::Omit),
+            Self::DefaultAutomaticCache => (
+                Field::Cache,
+                Change::Default(crate::lowering::generation::DefaultBasis::SelectedPolicy),
+            ),
+            Self::DefaultMaxTokens => (
+                Field::MaximumOutput,
+                Change::Default(crate::lowering::generation::DefaultBasis::SelectedPolicy),
+            ),
+            Self::DeveloperAsSystem => (Field::InstructionAuthority, Change::Approximate),
+            Self::FlattenMessageEffort => (Field::Effort, Change::Omit),
+            Self::Hint(hint) => return hint.effect(),
+            Self::OmitBlockBinding => (Field::Replay, Change::Omit),
+            Self::OmitMessagePhase => (Field::MessagePhase, Change::Omit),
+            Self::OmitPrediction => (Field::Prediction, Change::Omit),
+            Self::OmitSampling => (Field::Sampling, Change::Omit),
+            Self::OmitSchemaName => (Field::SchemaName, Change::Omit),
+            Self::OmitVerbosity => (Field::Verbosity, Change::Omit),
+            Self::ProjectCallIds => (Field::ToolCallIdentity, Change::Normalize),
+            Self::ReasoningAsText => (Field::ReportedReasoning, Change::Approximate),
+            Self::ReasoningPolicy(rule) => {
+                return Effect::new(
+                    rule,
+                    Field::ReasoningAllocation,
+                    B::RequestProject,
+                    Change::Approximate,
+                );
+            }
+            Self::SummarizeReasoning => (Field::ReasoningSummary, Change::Approximate),
+            Self::TransferVisibleHistory => (Field::Replay, Change::Omit),
+        };
+        match self {
+            Self::SummarizeReasoning => Effect::Summary {
+                rule: self.name().into(),
+                owner: Owner::Root,
+                input: request.reasoning().presentation.summary.clone(),
+                output: ReasoningDisplay::Summary,
+            },
+            Self::DeveloperAsSystem => Effect::Role {
+                rule: self.name().into(),
+                owner: Owner::Root,
+                input: InstructionAuthority::Developer,
+                output: InstructionAuthority::System,
+            },
+            _ => Effect::new(self.name(), field, B::RequestProject, change),
+        }
+    }
+
     pub const fn name(self) -> &'static str {
         match self {
             Self::OmitPrediction => "generation.omit-prediction.v1",
@@ -797,10 +848,9 @@ pub(in crate::protocol::anthropic::messages) fn project(
         model: target.model().into(),
         user_id: Presence::Absent,
         service_policy: Presence::Absent,
-        max_tokens: s
-            .controls
-            .max_output_tokens
-            .ok_or_else(|| CodecError::Unsupported("Messages missing output ceiling".into()))?,
+        max_tokens: s.controls.max_output_tokens.ok_or(CodecError::Unsupported(
+            crate::protocol::failure::CarrierReason::Unavailable,
+        ))?,
         stop_sequences: s
             .controls
             .stop_sequences

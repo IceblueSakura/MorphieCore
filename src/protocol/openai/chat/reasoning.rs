@@ -24,19 +24,23 @@ pub(in crate::protocol::openai) fn parse(
         return Ok(None);
     };
     if !a.rules.structured_chat_reasoning && !a.rules.unversioned_chat_reasoning_view {
-        return Err(CodecError::Unsupported("reasoning details".into()));
+        return Err(CodecError::Unsupported(
+            crate::protocol::failure::CarrierReason::Reasoning,
+        ));
     }
     if value.is_null() {
         return Ok(None);
     }
-    let values = value
-        .as_array()
-        .ok_or(CodecError::Invalid("reasoning details"))?;
+    let values = value.as_array().ok_or(CodecError::Invalid(
+        crate::protocol::failure::ShapeReason::InvalidValue,
+    ))?;
     if values.is_empty() {
         return Ok(None);
     }
     if values.len() > 2 {
-        return Err(CodecError::Unsupported("reasoning detail grouping".into()));
+        return Err(CodecError::Unsupported(
+            crate::protocol::failure::CarrierReason::Reasoning,
+        ));
     }
     let mut result = Details {
         part: None,
@@ -52,7 +56,9 @@ pub(in crate::protocol::openai) fn parse(
             && kind == "reasoning.text";
         if !readable_view && (!a.rules.structured_chat_reasoning || format != "openai-responses-v1")
         {
-            return Err(CodecError::Unsupported("reasoning format".into()));
+            return Err(CodecError::Unsupported(
+                crate::protocol::failure::CarrierReason::Reasoning,
+            ));
         }
         match kind {
             "reasoning.summary" | "reasoning.text" => {
@@ -72,7 +78,9 @@ pub(in crate::protocol::openai) fn parse(
                     || prior.is_some_and(|p| p != part_kind)
                     || o.get("index").and_then(Value::as_u64) != Some(base)
                 {
-                    return Err(CodecError::Invalid("reasoning detail order"));
+                    return Err(CodecError::Invalid(
+                        crate::protocol::failure::ShapeReason::InvalidValue,
+                    ));
                 }
                 let text = string(o, field)?;
                 if text.len() > MAX_TEXT_BYTES {
@@ -86,13 +94,19 @@ pub(in crate::protocol::openai) fn parse(
                 if result.responses_encrypted.is_some()
                     || o.get("index").and_then(Value::as_u64) != Some(expected)
                 {
-                    return Err(CodecError::Invalid("reasoning detail order"));
+                    return Err(CodecError::Invalid(
+                        crate::protocol::failure::ShapeReason::InvalidValue,
+                    ));
                 }
                 let id = text(string(o, "id")?, "reasoning identity", 256)?;
                 let data = text(string(o, "data")?, "encrypted reasoning", MAX_TEXT_BYTES)?;
                 result.responses_encrypted = Some((id.as_str().into(), data.as_str().into()));
             }
-            _ => return Err(CodecError::Unsupported("reasoning detail kind".into())),
+            _ => {
+                return Err(CodecError::Unsupported(
+                    crate::protocol::failure::CarrierReason::Reasoning,
+                ));
+            }
         }
     }
     for key in ["reasoning", "reasoning_content"] {
@@ -100,9 +114,13 @@ pub(in crate::protocol::openai) fn parse(
             .get(key)
             .filter(|v| !v.is_null() && v.as_str() != Some(""))
         {
-            let view = view.as_str().ok_or(CodecError::Invalid("reasoning view"))?;
+            let view = view.as_str().ok_or(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            ))?;
             if view != result.part.as_ref().map(|(_, s)| s.as_str()).unwrap_or("") {
-                return Err(CodecError::Invalid("reasoning view disagreement"));
+                return Err(CodecError::Invalid(
+                    crate::protocol::failure::ShapeReason::InvalidValue,
+                ));
             }
         }
     }
@@ -127,13 +145,19 @@ fn parse_message(
         return Ok(vec![]);
     };
     if !a.rules.structured_chat_reasoning && !a.rules.unversioned_chat_reasoning_view {
-        return Err(CodecError::Unsupported("reasoning details".into()));
+        return Err(CodecError::Unsupported(
+            crate::protocol::failure::CarrierReason::Reasoning,
+        ));
     }
     let values = match value {
         Value::Null => return Ok(vec![]),
         Value::Array(values) if values.is_empty() => return Ok(vec![]),
         Value::Array(values) => values,
-        _ => return Err(CodecError::Invalid("reasoning details")),
+        _ => {
+            return Err(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            ));
+        }
     };
     let client = direction.client();
     let mut groups: Vec<Group> = vec![];
@@ -149,12 +173,16 @@ fn parse_message(
             && !readable_view
             && (!a.rules.structured_chat_reasoning || format != "openai-responses-v1")
         {
-            return Err(CodecError::Unsupported("reasoning format".into()));
+            return Err(CodecError::Unsupported(
+                crate::protocol::failure::CarrierReason::Reasoning,
+            ));
         }
         if !o.get("index").map_or(client, |i| {
             i.as_u64().is_some_and(|i| client || i == position as u64)
         }) {
-            return Err(CodecError::Invalid("reasoning detail order"));
+            return Err(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            ));
         }
         if groups.last().is_none_or(|group| group.replay.is_some()) {
             groups.push(Group::default());
@@ -176,9 +204,9 @@ fn parse_message(
                 if !readable_view
                     && let Some(signature) = o.get("signature").filter(|v| !v.is_null())
                 {
-                    let signature = signature
-                        .as_str()
-                        .ok_or(CodecError::Invalid("reasoning signature"))?;
+                    let signature = signature.as_str().ok_or(CodecError::Invalid(
+                        crate::protocol::failure::ShapeReason::InvalidValue,
+                    ))?;
                     let signature = text(signature, "reasoning signature", MAX_TEXT_BYTES)?;
                     group.replay = Some((None, signature.as_str().into()));
                 }
@@ -189,7 +217,11 @@ fn parse_message(
                 let data = text(string(o, "data")?, "encrypted reasoning", MAX_TEXT_BYTES)?;
                 group.replay = Some((Some(id.as_str().into()), data.as_str().into()));
             }
-            _ => return Err(CodecError::Unsupported("reasoning detail kind".into())),
+            _ => {
+                return Err(CodecError::Unsupported(
+                    crate::protocol::failure::CarrierReason::Reasoning,
+                ));
+            }
         }
     }
     let view: String = groups
@@ -202,12 +234,13 @@ fn parse_message(
         if let Some(value) = m
             .get(key)
             .filter(|v| !v.is_null() && v.as_str() != Some(""))
-            && value
-                .as_str()
-                .ok_or(CodecError::Invalid("reasoning view"))?
-                != view
+            && value.as_str().ok_or(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            ))? != view
         {
-            return Err(CodecError::Invalid("reasoning view disagreement"));
+            return Err(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            ));
         }
     }
     Ok(groups)
@@ -229,7 +262,9 @@ pub(in crate::protocol::openai) fn decode_static(
         && m.contains_key("reasoning_content")
         && string(m, "role")? != "assistant"
     {
-        return Err(CodecError::Invalid("reasoning owner"));
+        return Err(CodecError::Invalid(
+            crate::protocol::failure::ShapeReason::InvalidValue,
+        ));
     }
     for (key, admitted) in [
         ("reasoning_content", a.rules.readable_reasoning),
@@ -241,7 +276,9 @@ pub(in crate::protocol::openai) fn decode_static(
     ] {
         if !admitted && let Some(value) = clean.shift_remove(key) {
             if b.direction.client() {
-                return Err(CodecError::Unsupported(key.into()));
+                return Err(CodecError::Unsupported(
+                    crate::protocol::failure::CarrierReason::UnknownField,
+                ));
             }
             b.direction
                 .fields(&Map::from_iter([(key.into(), value)]), &[])?;
@@ -252,7 +289,9 @@ pub(in crate::protocol::openai) fn decode_static(
     }
     let groups = parse_message(&clean, a, b.direction)?;
     if clean.contains_key("reasoning_details") && string(&clean, "role")? != "assistant" {
-        return Err(CodecError::Invalid("reasoning owner"));
+        return Err(CodecError::Invalid(
+            crate::protocol::failure::ShapeReason::InvalidValue,
+        ));
     }
     if !groups.is_empty() {
         clean.shift_remove("reasoning");

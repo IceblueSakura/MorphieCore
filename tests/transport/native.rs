@@ -237,7 +237,7 @@ mod native_bindings {
     #[test]
     fn output_defaults_are_candidate_local_and_preflight_matches_preparation() {
         use morphiecore::{
-            adapter::AdapterError,
+            adapter::ConversionFailure,
             execution::{AttemptError, plan::RejectionReason, prepare_with_rules},
             protocol::CodecError,
             semantic::task::generation::{
@@ -269,9 +269,12 @@ mod native_bindings {
         );
         assert!(matches!(
             prepare(&first, &provider(), &secret(), &request),
-            Err(AttemptError::Adapter(AdapterError::Codec(
-                CodecError::Semantic(GenerationError::InvalidControl)
-            )))
+            Err(AttemptError::Adapter(ConversionFailure {
+                cause: morphiecore::adapter::ConversionCause::Codec(CodecError::Semantic(
+                    GenerationError::InvalidControl
+                )),
+                ..
+            }))
         ));
         assert_eq!(request, before);
         representable(&second, &request).unwrap();
@@ -482,7 +485,7 @@ mod native_catalog {
     #[test]
     fn native_binding_rejects_unselected_default_strictness_but_preserves_plain_tools() {
         use morphiecore::{
-            adapter::AdapterError,
+            adapter::ConversionFailure,
             execution::AttemptError,
             lowering::generation::RepresentationError,
             protocol::openai::{Adapter, Dialect, Profile as Client},
@@ -506,9 +509,12 @@ mod native_catalog {
         );
         assert!(matches!(
             admit(topology.model(binding.model).unwrap(), &request),
-            Err(AttemptError::Adapter(AdapterError::Representation(
-                RepresentationError::Admission(GenerationFeature::ToolSchemaNormalization)
-            )))
+            Err(AttemptError::Adapter(ConversionFailure {
+                cause: morphiecore::adapter::ConversionCause::Representation(
+                    RepresentationError::Admission(GenerationFeature::ToolSchemaNormalization)
+                ),
+                ..
+            }))
         ));
         assert!(representable(&binding.endpoint(), &request).is_err());
         let mut settings = request.task.semantic.settings().clone();
@@ -544,9 +550,9 @@ mod native_catalog {
         assert_eq!(
             rules,
             [
-                "messages.omit-sampling.v1",
+                "messages.default-automatic-cache.v1",
                 "messages.developer-as-system.v1",
-                "messages.default-automatic-cache.v1"
+                "messages.omit-sampling.v1"
             ]
         );
         assert_eq!(request, original);
@@ -560,9 +566,12 @@ mod native_catalog {
         request.task.semantic = request.task.semantic.with_settings(settings).unwrap();
         assert!(matches!(
             admit(topology.model(binding.model).unwrap(), &request),
-            Err(AttemptError::Adapter(AdapterError::Representation(
-                RepresentationError::Admission(GenerationFeature::ExplicitCache)
-            )))
+            Err(AttemptError::Adapter(ConversionFailure {
+                cause: morphiecore::adapter::ConversionCause::Representation(
+                    RepresentationError::Admission(GenerationFeature::ExplicitCache)
+                ),
+                ..
+            }))
         ));
         // The native endpoint is opted in, but the mixed catalog public route is not.
         representable(&binding.endpoint(), &request).unwrap();

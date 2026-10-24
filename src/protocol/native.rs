@@ -41,7 +41,9 @@ impl ReplayTarget {
 }
 fn label(s: &str) -> Result<Text, CodecError> {
     if s.is_empty() || s.len() > 256 || s.chars().any(|c| c.is_control() || c.is_whitespace()) {
-        return Err(CodecError::Invalid("native target label"));
+        return Err(CodecError::Invalid(
+            crate::protocol::failure::ShapeReason::InvalidValue,
+        ));
     }
     Text::new(s, "native target label", 256).map_err(|_| CodecError::Limit)
 }
@@ -70,7 +72,9 @@ pub(crate) fn native_reasoning_history<'a>(
             && !formats.contains(&value.format())
         {
             if reasoning.status != ItemLifecycle::Completed || value.replay_token().is_none() {
-                return Err(CodecError::Unsupported("partial foreign reasoning".into()));
+                return Err(CodecError::Unsupported(
+                    crate::protocol::failure::CarrierReason::Reasoning,
+                ));
             }
             omitted.push(*id);
         }
@@ -112,7 +116,7 @@ pub(crate) fn native_reasoning_history<'a>(
                                 || value.replay_token().is_none()
                             {
                                 return Err(CodecError::Unsupported(
-                                    "partial foreign attachment".into(),
+                                    crate::protocol::failure::CarrierReason::Replay,
                                 ));
                             }
                             part.replay = None;
@@ -128,7 +132,7 @@ pub(crate) fn native_reasoning_history<'a>(
                         if call.status != ItemLifecycle::Completed || value.replay_token().is_none()
                         {
                             return Err(CodecError::Unsupported(
-                                "partial foreign attachment".into(),
+                                crate::protocol::failure::CarrierReason::Replay,
                             ));
                         }
                         call.replay = None;
@@ -202,7 +206,7 @@ pub(crate) fn group_client_history(
         .any(|g| g.members().is_empty())
     {
         return Err(CodecError::Unsupported(
-            "partial native message grouping".into(),
+            crate::protocol::failure::CarrierReason::Unavailable,
         ));
     }
     let positions: std::collections::BTreeMap<_, _> = request
@@ -215,14 +219,14 @@ pub(crate) fn group_client_history(
     for group in request.message_envelopes() {
         let mut member_position = None;
         for owner in group.members() {
-            let position = *positions
-                .get(owner)
-                .ok_or_else(|| CodecError::Unsupported("partial native message grouping".into()))?;
+            let position = *positions.get(owner).ok_or(CodecError::Unsupported(
+                crate::protocol::failure::CarrierReason::Unavailable,
+            ))?;
             if previous.is_some_and(|p| position <= p)
                 || member_position.is_some_and(|p| position != p + 1)
             {
                 return Err(CodecError::Unsupported(
-                    "partial native message grouping".into(),
+                    crate::protocol::failure::CarrierReason::Unavailable,
                 ));
             }
             previous = Some(position);
@@ -253,7 +257,11 @@ pub(crate) fn group_client_history(
             },
             Item::Reasoning(_) | Item::ToolCall(_) => MessageEnvelopeRole::Assistant,
             Item::ToolResult(_) => MessageEnvelopeRole::User,
-            _ => return Err(CodecError::Unsupported("native semantic carrier".into())),
+            _ => {
+                return Err(CodecError::Unsupported(
+                    crate::protocol::failure::CarrierReason::Unavailable,
+                ));
+            }
         };
         match groups.last_mut() {
             Some((last, members)) if *last == role && !boundary && !starts.contains(id) => {

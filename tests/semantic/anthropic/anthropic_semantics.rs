@@ -146,7 +146,7 @@ fn native_protected_dispatch_and_fallback_reports_reject_before_projection() {
         assert_eq!(
             p.decode_generation_response(wire.to_string().as_bytes(), LocalScope::ROOT, &target())
                 .unwrap_err(),
-            CodecError::Unsupported("Anthropic toolset identity".into())
+            CodecError::Unsupported(morphiecore::protocol::failure::CarrierReason::Tools)
         );
     }
     let mut refusal = json!({"id":"msg_refusal","type":"message","role":"assistant","model":"synthetic-model",
@@ -175,7 +175,11 @@ fn native_protected_dispatch_and_fallback_reports_reject_before_projection() {
                 &target()
             )
             .unwrap_err(),
-            CodecError::Unsupported(format!("Anthropic {field}"))
+            CodecError::Unsupported(if field == "fallback_has_prefill_claim" {
+                morphiecore::protocol::failure::CarrierReason::Unavailable
+            } else {
+                morphiecore::protocol::failure::CarrierReason::UnknownField
+            })
         );
     }
     // The pinned beta source explicitly uses null for unavailable facts.
@@ -192,21 +196,17 @@ fn native_protected_dispatch_and_fallback_reports_reject_before_projection() {
             explanation: Presence::Absent,
         })
     );
-    for (field, value, error) in [
-        ("fallback_credit_token", json!(false), "Anthropic string"),
-        ("recommended_model", json!({}), "Anthropic string"),
-        (
-            "fallback_has_prefill_claim",
-            json!("false"),
-            "Anthropic boolean",
-        ),
+    for (field, value) in [
+        ("fallback_credit_token", json!(false)),
+        ("recommended_model", json!({})),
+        ("fallback_has_prefill_claim", json!("false")),
     ] {
         refusal["stop_details"] = json!({"type":"refusal"});
         refusal["stop_details"][field] = value;
         assert_eq!(
             p.decode_response(refusal.to_string().as_bytes())
                 .unwrap_err(),
-            CodecError::Invalid(error)
+            CodecError::Invalid(morphiecore::protocol::failure::ShapeReason::InvalidValue)
         );
     }
 }
@@ -305,6 +305,7 @@ fn stable_refusal_details_have_independent_native_directions_and_guarded_deliver
         })
         .unwrap();
         let manual = DecodedResponse {
+            evidence: Default::default(),
             semantic,
             fidelity: Default::default(),
             metadata: ResponseMetadata {
@@ -366,9 +367,10 @@ fn stable_refusal_details_have_independent_native_directions_and_guarded_deliver
                 assert!(lowered.semantic().details().refusal.is_absent());
                 assert_eq!(report_only.details().refusal, expected);
                 assert_eq!(
-                    lowered.projection().iter().any(|v| v
-                        .loss
-                        .is_some_and(|r| r.name() == "openai.omit-explanatory-refusal-details.v1")),
+                    lowered
+                        .projection()
+                        .iter()
+                        .any(|v| v.rule() == "openai.omit-explanatory-refusal-details.v1"),
                     !expected.is_absent()
                 );
             }
@@ -377,25 +379,26 @@ fn stable_refusal_details_have_independent_native_directions_and_guarded_deliver
             assert!(!format!("{report:?}").contains("synthetic explanation"));
         }
     }
-    for (details, label) in [
-        (json!({"type":"other"}), "Anthropic stop details"),
-        (
-            json!({"type":"refusal","category":"unknown"}),
-            "Anthropic refusal category",
-        ),
-        (
-            json!({"type":"refusal","explanation":false}),
-            "Anthropic string",
-        ),
+    for (details, invalid_shape) in [
+        (json!({"type":"other"}), false),
+        (json!({"type":"refusal","category":"unknown"}), true),
+        (json!({"type":"refusal","explanation":false}), true),
     ] {
         let wire = json!({"id":"msg_refusal","type":"message","role":"assistant","model":"synthetic-model",
             "content":[],"stop_reason":"refusal","stop_sequence":null,"stop_details":details,
             "usage":{"input_tokens":11,"output_tokens":3}});
         let error = p.decode_response(wire.to_string().as_bytes()).unwrap_err();
-        assert!(
-            matches!(error, CodecError::Invalid(value) if value == label)
-                || matches!(error, CodecError::Unsupported(ref value) if value == label)
-        );
+        assert!(if invalid_shape {
+            matches!(
+                error,
+                CodecError::Invalid(morphiecore::protocol::failure::ShapeReason::InvalidValue)
+            )
+        } else {
+            matches!(
+                error,
+                CodecError::Unsupported(morphiecore::protocol::failure::CarrierReason::Unavailable)
+            )
+        });
     }
     let details = TerminalDetails {
         refusal: Presence::Value(RefusalDetails {
@@ -518,11 +521,12 @@ fn native_stop_reasons_have_independent_terminal_owners() {
         morphiecore::protocol::openai::TargetCaps::full(),
     )
     .unwrap();
-    assert!(projected.projection().iter().any(|stage| {
-        stage
-            .loss
-            .is_some_and(|rule| rule.name() == "responses.omit-completion-cause.v1")
-    }));
+    assert!(
+        projected
+            .projection()
+            .iter()
+            .any(|stage| { stage.rule() == "responses.omit-completion-cause.v1" })
+    );
     let responses = morphiecore::protocol::openai::responses::encode_response(&projected).unwrap();
     assert_eq!(responses["status"], "completed");
     assert!(responses["incomplete_details"].is_null());
@@ -534,11 +538,11 @@ fn native_stop_reasons_have_independent_terminal_owners() {
         morphiecore::protocol::openai::TargetCaps::full(),
     )
     .unwrap();
-    assert!(chat.projection().iter().any(|stage| {
-        stage
-            .loss
-            .is_some_and(|rule| rule.name() == "chat.coarsen-completion-cause.v1")
-    }));
+    assert!(
+        chat.projection()
+            .iter()
+            .any(|stage| { stage.rule() == "chat.coarsen-completion-cause.v1" })
+    );
     assert_eq!(
         morphiecore::protocol::openai::chat::encode_response(&chat).unwrap()["choices"][0]["finish_reason"],
         "stop"
@@ -585,12 +589,9 @@ fn native_stop_reasons_have_independent_terminal_owners() {
             morphiecore::protocol::openai::TargetCaps::full(),
         )
         .unwrap();
-        let named =
-            |stages: &[morphiecore::protocol::openai::lowering::projection::ProjectionStage]| {
-                stages
-                    .iter()
-                    .any(|stage| stage.loss.is_some_and(|loss| loss.name() == rule))
-            };
+        let named = |stages: &[morphiecore::lowering::generation::Effect]| {
+            stages.iter().any(|stage| stage.rule() == rule)
+        };
         assert!(named(projected.projection()), "{rule}");
         let events = [
             vec![
@@ -739,8 +740,15 @@ fn saved_observation_and_appended_error_encode_the_independent_native_history() 
             ])
         );
         assert_eq!(
-            encoded.omitted_execution,
-            vec![ItemId::scoped(LocalScope::new(3), 1)]
+            encoded
+                .evidence
+                .iter()
+                .filter(|e| e.rule() == "messages.omit-tool-execution.v1")
+                .map(|e| e.owner())
+                .collect::<Vec<_>>(),
+            vec![morphiecore::lowering::generation::Owner::item(
+                ItemId::scoped(LocalScope::new(3), 1)
+            )]
         );
         let intake = p
             .decode_generation_request(
@@ -784,7 +792,7 @@ fn automatic_cache_keeps_examples_context_and_deferred_definitions() {
     );
     let mut conflict = body.clone();
     conflict["cache_control"]["ttl"] = json!("5m");
-    let error = CodecError::Invalid("Anthropic automatic cache TTL conflict");
+    let error = CodecError::Invalid(morphiecore::protocol::failure::ShapeReason::InvalidValue);
     assert_eq!(
         p.decode_request(conflict.to_string().as_bytes()).err(),
         Some(error.clone())
@@ -937,7 +945,9 @@ fn ordered_system_blocks_and_disabled_controls_have_independent_semantic_owners(
         p.decode_request(conflict.to_string().as_bytes())
             .err()
             .unwrap(),
-        morphiecore::protocol::CodecError::Invalid("Anthropic automatic cache TTL conflict")
+        morphiecore::protocol::CodecError::Invalid(
+            morphiecore::protocol::failure::ShapeReason::InvalidValue
+        )
     );
     let mut full: Value = serde_json::from_slice(content_wire).unwrap();
     full["tools"] = json!([
@@ -1042,7 +1052,9 @@ fn ordered_system_blocks_and_disabled_controls_have_independent_semantic_owners(
     assert_eq!(encoded.value, empty_wire);
     let reject_empty_cache = |wire: &Value| {
         let bytes = wire.to_string();
-        let error = morphiecore::protocol::CodecError::Invalid("Anthropic empty text cache owner");
+        let error = morphiecore::protocol::CodecError::Invalid(
+            morphiecore::protocol::failure::ShapeReason::InvalidValue,
+        );
         assert_eq!(
             p.decode_request(bytes.as_bytes()).err(),
             Some(error.clone())
@@ -1092,13 +1104,14 @@ fn ordered_system_blocks_and_disabled_controls_have_independent_semantic_owners(
         p.encode_generation_request(&cached_edit, &Default::default(), &target())
             .err(),
         Some(morphiecore::protocol::CodecError::Invalid(
-            "Anthropic empty text cache owner"
+            morphiecore::protocol::failure::ShapeReason::InvalidValue
         ))
     );
     let mut automatic_conflict = empty_wire.clone();
     automatic_conflict["cache_control"]["ttl"] = json!("5m");
-    let conflict_error =
-        morphiecore::protocol::CodecError::Invalid("Anthropic automatic cache TTL conflict");
+    let conflict_error = morphiecore::protocol::CodecError::Invalid(
+        morphiecore::protocol::failure::ShapeReason::InvalidValue,
+    );
     assert_eq!(
         p.decode_request(automatic_conflict.to_string().as_bytes())
             .err(),
@@ -1347,7 +1360,7 @@ fn ordered_system_blocks_and_disabled_controls_have_independent_semantic_owners(
     let uncapped = decoded.semantic.clone().with_settings(settings).unwrap();
     assert!(
         matches!(p.encode_generation_request(&uncapped, &decoded.fidelity, &target()),
-        Err(morphiecore::protocol::CodecError::Unsupported(value)) if value == "Messages missing output ceiling")
+        Err(morphiecore::protocol::CodecError::Unsupported(value)) if value == morphiecore::protocol::failure::CarrierReason::Unavailable)
     );
     for max_tokens in [Value::Null, json!(0)] {
         let mut invalid: Value = serde_json::from_slice(raw).unwrap();

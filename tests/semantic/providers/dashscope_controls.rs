@@ -82,6 +82,7 @@ fn native_history_reading_has_independent_input_and_output_oracles() {
         .unwrap();
         let request = Request::from_generation(
             DecodedRequest {
+                evidence: Default::default(),
                 semantic,
                 fidelity: FidelityRecords::default(),
             },
@@ -159,6 +160,7 @@ fn native_static_reasoning_and_usage_have_independent_delivery_expectations() {
     }))
     .unwrap();
     let output = morphiecore::protocol::DecodedResponse {
+        evidence: Default::default(),
         semantic,
         fidelity: FidelityRecords::default(),
         metadata: metadata(),

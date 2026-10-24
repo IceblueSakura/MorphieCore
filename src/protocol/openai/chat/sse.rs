@@ -29,6 +29,9 @@ pub struct ChatSseDecoder {
     rejected: bool,
 }
 impl ChatSseDecoder {
+    pub(crate) fn take_intake_evidence(&mut self) -> crate::lowering::generation::EvidenceDelta {
+        self.codec.take_evidence()
+    }
     pub fn new(status: u16, content_type: &str, limits: SseLimits) -> Result<Self, SseError> {
         limits.validate()?;
         validate_http(status, content_type)?;
@@ -111,13 +114,15 @@ impl ChatSseDecoder {
             return Ok(events);
         }
         let mut payload = crate::protocol::json::decode(frame.data().as_bytes())?;
-        let object = payload
-            .as_object_mut()
-            .ok_or(CodecError::Invalid("Chat SSE payload"))?;
+        let object = payload.as_object_mut().ok_or(CodecError::Invalid(
+            crate::protocol::failure::ShapeReason::InvalidValue,
+        ))?;
         if let Some(padding) = object.remove("obfuscation") {
             let n = padding
                 .as_str()
-                .ok_or(CodecError::Invalid("obfuscation"))?
+                .ok_or(CodecError::Invalid(
+                    crate::protocol::failure::ShapeReason::InvalidValue,
+                ))?
                 .len();
             charge_padding(
                 &mut self.padding_bytes,
@@ -136,7 +141,9 @@ impl ChatSseDecoder {
         let result = (|| {
             self.framing.finish_strict()?;
             if !self.done {
-                return Err(SseError::Codec(CodecError::Invalid("EOF before Chat DONE")));
+                return Err(SseError::Codec(CodecError::Invalid(
+                    crate::protocol::failure::ShapeReason::InvalidValue,
+                )));
             }
             Ok(self.codec.finish()?)
         })();
@@ -154,6 +161,7 @@ impl ChatSseDecoder {
 }
 
 pub struct ChatSseEncoder {
+    notice: Option<crate::protocol::diagnostics::AdaptationNotice>,
     codec: EventEncoder,
     limits: SseLimits,
     options: StreamOptions,
@@ -165,9 +173,14 @@ pub struct ChatSseEncoder {
     rejected: bool,
 }
 impl ChatSseEncoder {
-    pub(crate) fn projection(
-        &self,
-    ) -> &[crate::protocol::openai::lowering::projection::ProjectionStage] {
+    pub(crate) fn set_notice(&mut self, notice: crate::protocol::diagnostics::AdaptationNotice) {
+        self.notice = Some(notice);
+    }
+    pub(crate) fn take_evidence(&mut self) -> crate::lowering::generation::EvidenceDelta {
+        self.codec.take_evidence()
+    }
+    #[cfg(test)]
+    pub(crate) fn projection(&self) -> &[crate::lowering::generation::Effect] {
         self.codec.projection()
     }
     /// Enabled obfuscation requires a caller-supplied seed; no random/credential source is used here.
@@ -181,7 +194,9 @@ impl ChatSseEncoder {
         limits.validate()?;
         options.validate().map_err(CodecError::from)?;
         if options.obfuscation() != matches!(padding, Obfuscation::Seeded(_)) {
-            return Err(SseError::Codec(CodecError::Invalid("Chat padding policy")));
+            return Err(SseError::Codec(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            )));
         }
         if metadata
             .created
@@ -189,9 +204,12 @@ impl ChatSseEncoder {
             .and_then(serde_json::Number::as_u64)
             .is_none()
         {
-            return Err(SseError::Codec(CodecError::Invalid("Chat created")));
+            return Err(SseError::Codec(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            )));
         }
         Ok(Self {
+            notice: None,
             codec: EventEncoder::new(Profile::Chat, metadata)?.with_contract(contract),
             limits,
             options,
@@ -230,8 +248,15 @@ impl ChatSseEncoder {
             // explicit completed view; neither path may replace a real terminal.
             // https://developers.openai.com/api/reference/resources/chat/completions
             let values = self.codec.encode(event, source)?;
+            let mut notice = if terminal { self.notice.take() } else { None };
+            if let Some(notice) = &mut notice {
+                notice.add_effects(self.codec.projection());
+            }
+            let final_json = values.iter().rposition(|value| {
+                !(value.get("usage").is_some_and(|u| !u.is_null()) && !self.options.usage())
+            });
             let mut frames = vec![];
-            for mut value in values {
+            for (index, mut value) in values.into_iter().enumerate() {
                 // Both standard empty-choice and repeated-finish adapters emit
                 // usage in a separate terminal tail. Honor the delivery option.
                 if value.get("usage").is_some_and(|v| !v.is_null()) && !self.options.usage() {
@@ -250,6 +275,26 @@ impl ChatSseEncoder {
                         &mut self.padding_bytes,
                         self.limits.max_obfuscation_bytes,
                     )?;
+                }
+                if final_json == Some(index)
+                    && let Some(notice) = &notice
+                {
+                    let reserve = if terminal {
+                        b"data: [DONE]\n\n".len()
+                    } else {
+                        0
+                    };
+                    let available = self
+                        .limits
+                        .max_event_bytes
+                        .min(
+                            self.limits
+                                .max_wire_bytes
+                                .saturating_sub(self.wire_bytes)
+                                .saturating_sub(reserve),
+                        )
+                        .saturating_sub(8);
+                    notice.attach(&mut value, available, false);
                 }
                 // Charge all frame budgets before allocating the serialized bytes.
                 let size = crate::semantic::value::json_size(
@@ -275,6 +320,33 @@ impl ChatSseEncoder {
         if result.is_err() {
             self.rejected = true;
         }
+        result
+    }
+    pub(crate) fn fail(&mut self, error: &serde_json::Value) -> Result<Bytes, SseError> {
+        if self.rejected || self.done {
+            return Err(SseError::Closed);
+        }
+        let result = (|| {
+            let mut value = error.clone();
+            if let Some(notice) = self.notice.take() {
+                notice.attach(
+                    &mut value,
+                    self.limits
+                        .max_event_bytes
+                        .min(self.limits.max_wire_bytes.saturating_sub(self.wire_bytes))
+                        .saturating_sub(8),
+                    false,
+                );
+            }
+            let size = crate::semantic::value::json_size(
+                &value,
+                self.limits.max_event_bytes.saturating_sub(8),
+            )
+            .map_err(|_| SseError::Limit)?;
+            self.charge(size + 8)?;
+            Ok(Bytes::from(format!("data: {value}\n\n")))
+        })();
+        self.rejected = true;
         result
     }
     fn charge(&mut self, frame_bytes: usize) -> Result<(), SseError> {

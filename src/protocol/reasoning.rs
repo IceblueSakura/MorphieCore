@@ -31,11 +31,15 @@ fn rank(level: EffortLevel) -> u8 {
 impl ThinkingBudgets {
     pub fn validate(&self) -> Result<(), CodecError> {
         if self.entries.is_empty() || self.entries.len() > 6 {
-            return Err(CodecError::Invalid("thinking preset"));
+            return Err(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            ));
         }
         for (index, (level, budget)) in self.entries.iter().enumerate() {
             if *budget == 0 || self.entries[..index].iter().any(|(old, _)| old == level) {
-                return Err(CodecError::Invalid("thinking preset"));
+                return Err(CodecError::Invalid(
+                    crate::protocol::failure::ShapeReason::InvalidValue,
+                ));
             }
         }
         Ok(())
@@ -46,12 +50,16 @@ impl ThinkingBudgets {
             .iter()
             .find(|(key, _)| *key == level)
             .map(|(_, budget)| *budget)
-            .ok_or_else(|| CodecError::Unsupported("unmapped thinking budget".into()))
+            .ok_or(CodecError::Unsupported(
+                crate::protocol::failure::CarrierReason::Reasoning,
+            ))
     }
     pub fn nearest(&self, budget: u64) -> Result<(EffortLevel, u64), CodecError> {
         self.validate()?;
         if budget == 0 {
-            return Err(CodecError::Invalid("positive thinking budget"));
+            return Err(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            ));
         }
         self.entries
             .iter()
@@ -59,7 +67,9 @@ impl ThinkingBudgets {
             .min_by_key(|(level, tokens)| {
                 (budget.abs_diff(*tokens), std::cmp::Reverse(rank(*level)))
             })
-            .ok_or(CodecError::Invalid("thinking preset"))
+            .ok_or(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            ))
     }
 }
 
@@ -90,7 +100,9 @@ pub struct ReasoningRequestPolicy {
 impl ReasoningRequestPolicy {
     pub fn validate(&self) -> Result<(), CodecError> {
         if self.rule.is_empty() || self.canonical_model.is_empty() {
-            return Err(CodecError::Invalid("reasoning policy identity"));
+            return Err(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            ));
         }
         match &self.conversion {
             ReasoningConversion::Scope { from, to, levels } => {
@@ -102,7 +114,9 @@ impl ReasoningRequestPolicy {
                         .enumerate()
                         .any(|(i, (key, _))| levels[..i].iter().any(|(k, _)| k == key))
                 {
-                    return Err(CodecError::Invalid("reasoning scope policy"));
+                    return Err(CodecError::Invalid(
+                        crate::protocol::failure::ShapeReason::InvalidValue,
+                    ));
                 }
             }
             ReasoningConversion::BudgetToEffort { table, .. }
@@ -133,7 +147,7 @@ impl ReasoningRequestPolicy {
         &self,
         source: &GenerationRequest,
         target: &GenerationRequest,
-    ) -> Result<crate::lowering::generation::RequestControlLoss, CodecError> {
+    ) -> Result<crate::lowering::generation::Effect, CodecError> {
         let preset_tokens = match &self.conversion {
             ReasoningConversion::BudgetToEffort { table, .. } => target
                 .settings()
@@ -144,11 +158,12 @@ impl ReasoningRequestPolicy {
             ReasoningConversion::EffortToBudget { .. } => target.reasoning().budget_tokens,
             _ => None,
         };
-        Ok(crate::lowering::generation::RequestControlLoss::Reasoning {
-            rule: self.rule,
+        Ok(crate::lowering::generation::Effect::Reasoning {
+            rule: crate::lowering::generation::RuleId::new(self.rule),
             input: crate::lowering::generation::ReasoningControls::request(source),
             output: crate::lowering::generation::ReasoningControls::request(target),
             preset_tokens,
+            owner: crate::lowering::generation::Owner::Root,
         })
     }
     pub fn project_request(
@@ -181,7 +196,7 @@ impl ReasoningRequestPolicy {
                 };
                 if projected.reasoning.budget_tokens.is_some() {
                     return Err(CodecError::Unsupported(
-                        "configuration budget carrier".into(),
+                        crate::protocol::failure::CarrierReason::Unavailable,
                     ));
                 }
                 let effort = projected.effort.value().copied();
@@ -213,9 +228,9 @@ impl ReasoningRequestPolicy {
                         .iter()
                         .find(|(key, _)| *key == control.level)
                         .map(|(_, to)| *to)
-                        .ok_or_else(|| {
-                            CodecError::Unsupported("unmapped reasoning scope".into())
-                        })?;
+                        .ok_or(CodecError::Unsupported(
+                            crate::protocol::failure::CarrierReason::Reasoning,
+                        ))?;
                     target.effort = Presence::Value(EffortControl { scope: *to, level });
                 }
             }
@@ -223,7 +238,7 @@ impl ReasoningRequestPolicy {
                 if let Some(budget) = source.reasoning.budget_tokens {
                     if !source.effort.is_absent() {
                         return Err(CodecError::Unsupported(
-                            "combined thinking allocation".into(),
+                            crate::protocol::failure::CarrierReason::Unavailable,
                         ));
                     }
                     let (level, _) = table.nearest(budget)?;
@@ -240,12 +255,16 @@ impl ReasoningRequestPolicy {
             ReasoningConversion::EffortToBudget { scope, table } => {
                 if let Some(control) = source.effort.value() {
                     if control.scope != *scope || source.reasoning.budget_tokens.is_some() {
-                        return Err(CodecError::Unsupported("thinking allocation scope".into()));
+                        return Err(CodecError::Unsupported(
+                            crate::protocol::failure::CarrierReason::Reasoning,
+                        ));
                     }
                     if !source.reasoning.mode.is_absent()
                         && source.reasoning.mode != Presence::Value(ReasoningMode::Budgeted)
                     {
-                        return Err(CodecError::Unsupported("thinking allocation mode".into()));
+                        return Err(CodecError::Unsupported(
+                            crate::protocol::failure::CarrierReason::Reasoning,
+                        ));
                     }
                     target.reasoning.presence = ReasoningPresence::Present;
                     target.reasoning.mode = Presence::Value(ReasoningMode::Budgeted);
@@ -283,12 +302,16 @@ pub struct ReasoningEffortMapping {
 impl ReasoningEffortMapping {
     pub fn validate(&self) -> Result<(), CodecError> {
         if self.canonical_model.is_empty() || self.rule.is_empty() {
-            return Err(CodecError::Invalid("reasoning mapping identity"));
+            return Err(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            ));
         }
         for entries in [self.encode, self.decode] {
             for (index, (from, _)) in entries.iter().enumerate() {
                 if entries[..index].iter().any(|(key, _)| key == from) {
-                    return Err(CodecError::Invalid("duplicate reasoning mapping"));
+                    return Err(CodecError::Invalid(
+                        crate::protocol::failure::ShapeReason::InvalidValue,
+                    ));
                 }
             }
         }
@@ -301,7 +324,9 @@ impl ReasoningEffortMapping {
                 .iter()
                 .any(|(from, _)| !self.native_levels.contains(from))
         {
-            return Err(CodecError::Invalid("unsupported native reasoning level"));
+            return Err(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            ));
         }
         Ok(())
     }
@@ -321,6 +346,8 @@ impl ReasoningEffortMapping {
             .iter()
             .find(|(from, _)| *from == level)
             .map(|(_, to)| *to)
-            .ok_or_else(|| CodecError::Unsupported("unmapped reasoning effort".into()))
+            .ok_or(CodecError::Unsupported(
+                crate::protocol::failure::CarrierReason::Reasoning,
+            ))
     }
 }

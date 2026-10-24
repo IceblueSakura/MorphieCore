@@ -99,7 +99,7 @@ fn stable_refusal_details_survive_sse_and_reject_repeated_policy_or_explanation_
             assert!(matches!(
                 result,
                 Err(SseError::Codec(CodecError::Invalid(
-                    "Anthropic refusal details changed"
+                    morphiecore::protocol::failure::ShapeReason::InvalidValue
                 )))
             ));
             assert!(decoder.finish().is_err());
@@ -171,22 +171,26 @@ fn protected_reports_and_toolset_identity_cannot_hide_in_native_sse() {
     let mut cases = vec![];
     let mut tool = frames()[10].clone();
     tool["content_block"]["toolset_name"] = json!("set");
-    cases.push((10, tool, "toolset identity"));
+    cases.push((
+        10,
+        tool,
+        morphiecore::protocol::failure::CarrierReason::Tools,
+    ));
     for (field, value, error) in [
         (
             "fallback_credit_token",
             json!("synthetic-credit"),
-            "fallback_credit_token",
+            morphiecore::protocol::failure::CarrierReason::UnknownField,
         ),
         (
             "recommended_model",
             json!("synthetic-fallback"),
-            "recommended_model",
+            morphiecore::protocol::failure::CarrierReason::UnknownField,
         ),
         (
             "fallback_has_prefill_claim",
             json!(false),
-            "fallback_has_prefill_claim",
+            morphiecore::protocol::failure::CarrierReason::Unavailable,
         ),
     ] {
         let mut details = json!({"type":"refusal","category":"cyber","explanation":"synthetic"});
@@ -201,8 +205,8 @@ fn protected_reports_and_toolset_identity_cannot_hide_in_native_sse() {
             "stop_sequence":null,"stop_details":details},"usage":{"output_tokens":9}});
         cases.push((15, closing, error));
     }
-    for (index, event, error) in cases {
-        let expected = CodecError::Unsupported(format!("Anthropic {error}"));
+    for (index, event, reason) in cases {
+        let expected = CodecError::Unsupported(reason);
         assert_eq!(
             p.decode_event(
                 event["type"].as_str().unwrap(),
@@ -454,7 +458,10 @@ fn scoped_accounting_preserves_opening_ttls_and_replaces_cumulative_tool_reports
                 StreamEvent::UsageReport(report) => Some(report.clone()),
                 _ => None,
             }));
-            let produced = delivery.encode_events(&attempt, &events).unwrap();
+            let produced = delivery
+                .encode_events(&attempt, &events)
+                .map(|batch| batch.into_bytes())
+                .unwrap();
             if !produced.is_empty() && delivery.lifecycle().may_retry_or_fallback() {
                 delivery.commit().unwrap();
             }
@@ -466,6 +473,7 @@ fn scoped_accounting_preserves_opening_ttls_and_replaces_cumulative_tool_reports
     output.extend(
         delivery
             .finish_stream(&attempt)
+            .map(|batch| batch.into_bytes())
             .unwrap()
             .into_iter()
             .flatten(),
@@ -679,7 +687,10 @@ fn native_events_deliver_both_clients_and_keep_terminal_behind_eof() {
                 while !rest.is_empty() {
                     let (used, events) = attempt.push(rest).unwrap();
                     rest = &rest[used..];
-                    let produced = delivery.encode_events(&attempt, &events).unwrap();
+                    let produced = delivery
+                        .encode_events(&attempt, &events)
+                        .map(|batch| batch.into_bytes())
+                        .unwrap();
                     if !produced.is_empty() && delivery.lifecycle().may_retry_or_fallback() {
                         delivery.commit().unwrap();
                     }
@@ -701,6 +712,7 @@ fn native_events_deliver_both_clients_and_keep_terminal_behind_eof() {
             output.extend(
                 delivery
                     .finish_stream(&attempt)
+                    .map(|batch| batch.into_bytes())
                     .unwrap()
                     .into_iter()
                     .flatten(),
@@ -815,7 +827,10 @@ fn native_events_deliver_both_clients_and_keep_terminal_behind_eof() {
     while !rest.is_empty() {
         let (used, events) = attempt.push(rest).unwrap();
         rest = &rest[used..];
-        let produced = delivery.encode_events(&attempt, &events).unwrap();
+        let produced = delivery
+            .encode_events(&attempt, &events)
+            .map(|batch| batch.into_bytes())
+            .unwrap();
         if !produced.is_empty() && delivery.lifecycle().may_retry_or_fallback() {
             delivery.commit().unwrap();
         }
@@ -826,6 +841,7 @@ fn native_events_deliver_both_clients_and_keep_terminal_behind_eof() {
     output.extend(
         delivery
             .finish_stream(&attempt)
+            .map(|batch| batch.into_bytes())
             .unwrap()
             .into_iter()
             .flatten(),
@@ -844,32 +860,27 @@ fn native_events_deliver_both_clients_and_keep_terminal_behind_eof() {
 
 #[test]
 fn input_transformations_are_validated_then_omitted_with_a_receipt() {
-    use morphiecore::protocol::{
-        anthropic::messages::GenerationSseDecoder, fidelity::Normalization,
-    };
     let target = ReplayTarget::new("synthetic-provider", "synthetic-model").unwrap();
-    let omitted = Normalization::Omitted {
-        rule: "messages.omit-input-transformations.v1",
-        field: "response.input_transformations",
-    };
+    let omitted = "messages.omit-input-transformations.v1";
     let entries = json!([{"type":"thinking_dropped","path":"messages.1.content.0"}]);
     let stream = |frames: &[Value]| {
-        let mut decoder = GenerationSseDecoder::new(
-            200,
-            "text/event-stream",
+        let mut decoder = morphiecore::execution::Attempt::new(
+            morphiecore::adapter::UpstreamAdapter::AnthropicMessages {
+                profile: Profile::AdaptiveTextTools,
+                target: target.clone(),
+            },
+            2 << 20,
             SseLimits::default(),
-            LocalScope::new(2),
-            target.clone(),
-        )
-        .unwrap();
+        );
+        decoder.begin(200, "text/event-stream").unwrap();
         let bytes = wire(frames);
         let mut rest = &bytes[..];
         while !rest.is_empty() {
-            let (used, _) = decoder.consume(rest).unwrap();
+            let (used, _) = decoder.push(rest).unwrap();
             rest = &rest[used..];
         }
         decoder.finish().unwrap();
-        decoder.fidelity().normalizations().contains(&omitted)
+        decoder.take_evidence().contains_rule(omitted)
     };
     assert!(!stream(&frames()));
     let mut native = frames();
@@ -882,13 +893,7 @@ fn input_transformations_are_validated_then_omitted_with_a_receipt() {
             &target,
         )
     };
-    assert!(
-        !decode(&expected())
-            .unwrap()
-            .fidelity
-            .normalizations()
-            .contains(&omitted)
-    );
+    assert!(!decode(&expected()).unwrap().evidence.contains_rule(omitted));
     // Unknown entry types are ignored, as documented; known ones stay strict.
     for (list, receipt) in [
         (entries, true),
@@ -899,10 +904,7 @@ fn input_transformations_are_validated_then_omitted_with_a_receipt() {
         let mut message = expected();
         message["input_transformations"] = list;
         let decoded = decode(&message).unwrap();
-        assert_eq!(
-            decoded.fidelity.normalizations().contains(&omitted),
-            receipt
-        );
+        assert_eq!(decoded.evidence.contains_rule(omitted), receipt);
     }
     for list in [
         json!([{"type":"thinking_dropped"}]),
@@ -960,7 +962,10 @@ fn eager_partial_arguments_keep_exact_bytes_only_on_incomplete_native_sse() {
                         .iter()
                         .any(|e| matches!(e, StreamEvent::Terminal { .. }))
                 );
-                let produced = delivery.encode_events(&attempt, &events).unwrap();
+                let produced = delivery
+                    .encode_events(&attempt, &events)
+                    .map(|batch| batch.into_bytes())
+                    .unwrap();
                 if !produced.is_empty() && delivery.lifecycle().may_retry_or_fallback() {
                     delivery.commit().unwrap();
                 }
@@ -989,6 +994,7 @@ fn eager_partial_arguments_keep_exact_bytes_only_on_incomplete_native_sse() {
         output.extend(
             delivery
                 .finish_stream(&attempt)
+                .map(|batch| batch.into_bytes())
                 .unwrap()
                 .into_iter()
                 .flatten(),

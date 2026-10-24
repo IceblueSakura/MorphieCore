@@ -4,35 +4,118 @@ use crate::{
     semantic::task::generation::*,
 };
 mod events;
-use crate::lowering::generation::LossEvidence;
+use crate::lowering::generation::Effect;
 pub(crate) use events::EventProjection;
 
-fn envelope_loss(profile: Profile, direction: &'static str) -> LossEvidence {
-    LossEvidence {
-        rule: match profile {
+fn envelope_loss(profile: Profile, direction: &'static str) -> Effect {
+    Effect::Field {
+        rule: crate::lowering::generation::RuleId::new(match profile {
             Profile::Responses => "responses.omit-message-envelopes.v1",
             Profile::Chat => "chat.regroup-native-message-envelopes.v1",
-        },
-        field: "generation.message_envelopes",
-        direction,
-        action: if profile == Profile::Responses {
+        }),
+        field: ("generation.message_envelopes").into(),
+        direction: (direction).into(),
+        action: (if profile == Profile::Responses {
             "omit"
         } else {
             "regroup"
-        },
+        })
+        .into(),
+        owner: crate::lowering::generation::Owner::Root,
     }
 }
 fn usage_loss(
     before: Option<Usage>,
     after: Option<Usage>,
     direction: &'static str,
-) -> Option<LossEvidence> {
-    (before != after).then_some(LossEvidence {
-        rule: "openai.native-usage-view.v1",
-        field: "generation.usage",
-        direction,
-        action: if after.is_some() { "project" } else { "omit" },
-    })
+) -> Vec<crate::lowering::generation::Effect> {
+    use crate::lowering::generation::{Change, Effect, Field};
+    if before == after {
+        return vec![];
+    }
+    let Some(after) = after else {
+        return vec![Effect::new(
+            "openai.omit-native-usage-view.v1",
+            Field::UsageReports,
+            direction.into(),
+            Change::Omit,
+        )];
+    };
+    let Some(before) = before else {
+        return vec![];
+    };
+    let mut effects = Vec::new();
+    for (field, input, output, relation_changed) in [
+        (
+            Field::InputTokens,
+            before.input_tokens,
+            after.input_tokens,
+            before.input_relation != after.input_relation,
+        ),
+        (
+            Field::OutputTokens,
+            before.output_tokens,
+            after.output_tokens,
+            before.output_relation != after.output_relation,
+        ),
+        (
+            Field::TotalTokens,
+            before.total_tokens,
+            after.total_tokens,
+            before.total_relation != after.total_relation,
+        ),
+        (
+            Field::CachedTokens,
+            before.cached_input_tokens,
+            after.cached_input_tokens,
+            false,
+        ),
+        (
+            Field::CacheWriteTokens,
+            before.input_cache_write_tokens,
+            after.input_cache_write_tokens,
+            false,
+        ),
+        (
+            Field::ReasoningTokens,
+            before.reasoning_tokens,
+            after.reasoning_tokens,
+            false,
+        ),
+        (
+            Field::InputTextTokens,
+            before.input_text_tokens,
+            after.input_text_tokens,
+            false,
+        ),
+        (
+            Field::InputImageTokens,
+            before.input_image_tokens,
+            after.input_image_tokens,
+            false,
+        ),
+        (
+            Field::InputAudioTokens,
+            before.input_audio_tokens,
+            after.input_audio_tokens,
+            false,
+        ),
+    ] {
+        if input != output || relation_changed {
+            let change = if output.is_none() {
+                Change::Omit
+            } else {
+                Change::Derive
+            };
+            effects.push(Effect::new(
+                "openai.native-usage-view.v1",
+                field,
+                direction.into(),
+                change,
+            ));
+        }
+    }
+    effects
 }
 
 fn client_usage(usage: Usage) -> Result<Option<Usage>, CodecError> {
@@ -69,7 +152,7 @@ fn client_usage(usage: Usage) -> Result<Option<Usage>, CodecError> {
 pub(crate) fn project(
     decoded: &mut DecodedResponse,
     profile: Profile,
-) -> Result<Vec<LossEvidence>, CodecError> {
+) -> Result<Vec<Effect>, CodecError> {
     let source = &decoded.semantic;
     let attached = source
         .items()
@@ -83,22 +166,30 @@ pub(crate) fn project(
                 .items()
                 .iter()
                 .any(|(_, item)| matches!(item, Item::ToolCall(_))) => {}
-        _ => return Err(CodecError::Unsupported("native progress projection".into())),
+        _ => {
+            return Err(CodecError::Unsupported(
+                crate::protocol::failure::CarrierReason::Unavailable,
+            ));
+        }
     }
     let mut items = source.items().to_vec();
     for (_, item) in &mut items {
         if let Item::ToolCall(call) = item {
             match &call.arguments {
                 ToolArguments::Structured(value) => {
-                    call.arguments = ToolArguments::Raw(
-                        serde_json::to_string(value.value())
-                            .map_err(|_| CodecError::Invalid("native tool arguments"))?,
-                    );
+                    call.arguments =
+                        ToolArguments::Raw(serde_json::to_string(value.value()).map_err(|_| {
+                            CodecError::Invalid(crate::protocol::failure::ShapeReason::InvalidValue)
+                        })?);
                 }
                 ToolArguments::Raw(raw)
                     if StructuredValue::from_bytes(raw.as_bytes())
                         .is_ok_and(|value| value.value().is_object()) => {}
-                _ => return Err(CodecError::Invalid("native tool arguments")),
+                _ => {
+                    return Err(CodecError::Invalid(
+                        crate::protocol::failure::ShapeReason::InvalidValue,
+                    ));
+                }
             }
         }
     }
@@ -140,7 +231,11 @@ pub(crate) fn project(
                     call.status = status;
                     calls.push((*id, Item::ToolCall(call)));
                 }
-                _ => return Err(CodecError::Unsupported("native block order on Chat".into())),
+                _ => {
+                    return Err(CodecError::Unsupported(
+                        crate::protocol::failure::CarrierReason::Unavailable,
+                    ));
+                }
             }
         }
         let owner = match owner {
@@ -167,12 +262,12 @@ pub(crate) fn project(
             for part in &parts {
                 let ContentPart::Text(value) = &part.content else {
                     return Err(CodecError::Unsupported(
-                        "native Chat text coalescing".into(),
+                        crate::protocol::failure::CarrierReason::Unavailable,
                     ));
                 };
                 if !value.is_plain() || part.cache.is_some() || part.replay.is_some() {
                     return Err(CodecError::Unsupported(
-                        "native Chat text coalescing".into(),
+                        crate::protocol::failure::CarrierReason::Unavailable,
                     ));
                 }
                 text.push_str(value.as_str());
@@ -211,7 +306,7 @@ pub(crate) fn project(
     }
     let mut losses = vec![];
     if source.usage_reports().has_unrepresented_details() {
-        losses.push(crate::protocol::usage::report_loss("response.encode"));
+        losses.push(crate::protocol::usage::report_loss("response.project"));
     }
     let coalesced = profile == Profile::Chat
         && !attached
@@ -225,12 +320,12 @@ pub(crate) fn project(
             .sum::<usize>()
             > 1;
     if coalesced || source.message_envelopes() != projected.message_envelopes() {
-        losses.push(envelope_loss(profile, "response.encode"));
+        losses.push(envelope_loss(profile, "response.project"));
     }
     losses.extend(usage_loss(
         source.usage(),
         projected.usage(),
-        "response.encode",
+        "response.project",
     ));
     decoded.semantic = projected;
     decoded.fidelity.retain_owners(decoded.semantic.items());
@@ -283,7 +378,7 @@ mod tests {
             assert!(
                 losses
                     .iter()
-                    .any(|r| r.rule == "generation.usage-report-view.v1")
+                    .any(|r| r.rule() == "generation.usage-report-view.v1")
             );
             let mut events = EventProjection::new(Profile::Responses);
             assert!(
@@ -294,9 +389,9 @@ mod tests {
             );
             assert!(
                 events
-                    .losses()
+                    .effects()
                     .iter()
-                    .any(|r| r.rule == "generation.usage-report-view.v1")
+                    .any(|r| r.rule() == "generation.usage-report-view.v1")
             );
             assert_eq!(source, before);
         }
@@ -399,15 +494,17 @@ mod tests {
             delivery.encode_json(&attempt).unwrap();
             assert!(
                 delivery
-                    .losses()
+                    .effects()
                     .iter()
-                    .any(|loss| loss.field == "generation.message_envelopes")
+                    .any(|loss| loss.field() == "generation.message_envelopes")
             );
             assert!(
                 delivery
-                    .losses()
+                    .effects()
                     .iter()
-                    .any(|loss| loss.field == "generation.usage")
+                    .any(|effect| effect.semantic_field()
+                        == crate::lowering::generation::Field::InputTokens
+                        && effect.change() == crate::lowering::generation::Change::Derive)
             );
             let mut pending = crate::execution::ResponseDelivery::new(
                 client_adapter.clone(),
@@ -475,8 +572,16 @@ mod tests {
             )));
             assert!(pending.lifecycle().may_retry_or_fallback());
             assert!(pending.commit().is_err(), "preparation is not rendering");
-            let mut frames = pending.encode_prepared(opened).unwrap();
-            frames.extend(pending.encode_prepared(arguments).unwrap());
+            let mut frames = pending
+                .encode_prepared(opened)
+                .map(|batch| batch.into_bytes())
+                .unwrap();
+            frames.extend(
+                pending
+                    .encode_prepared(arguments)
+                    .map(|batch| batch.into_bytes())
+                    .unwrap(),
+            );
             let text = String::from_utf8(frames.into_iter().flatten().collect()).unwrap();
             assert!(text.contains(r#"{\"n\":9007199254740993.125}"#));
             pending.cancel();
@@ -501,15 +606,19 @@ mod tests {
                 .unwrap();
             assert!(
                 encoder
-                    .losses()
+                    .effects()
                     .iter()
-                    .any(|loss| loss.field == "generation.message_envelopes"
-                        && loss.direction == "event.encode")
+                    .any(|loss| loss.field() == "generation.message_envelopes"
+                        && loss.direction() == "event.project")
             );
             assert!(
-                encoder.losses().iter().any(
-                    |loss| loss.field == "generation.usage" && loss.direction == "event.encode"
-                )
+                encoder
+                    .effects()
+                    .into_iter()
+                    .any(|loss| loss.semantic_field()
+                        == crate::lowering::generation::Field::InputTokens
+                        && loss.change() == crate::lowering::generation::Change::Derive
+                        && loss.direction() == "event.project")
             );
             encoder
                 .encode(&StreamEvent::Started, &source.fidelity)
@@ -539,7 +648,7 @@ mod tests {
                 failed
                     .project_native(&[StreamEvent::Usage(source.semantic.usage().unwrap())])
                     .unwrap();
-                let before = failed.losses();
+                let before = failed.effects();
                 assert!(
                     failed
                         .project_native(&[
@@ -563,7 +672,7 @@ mod tests {
                         ])
                         .is_err()
                 );
-                assert_eq!(failed.losses(), before);
+                assert_eq!(failed.effects(), before);
             }
         }
     }
@@ -625,15 +734,15 @@ mod tests {
             .unwrap();
         assert!(
             messages
-                .losses()
+                .effects()
                 .iter()
-                .any(|loss| loss.rule == "messages.refusal-as-text.v1")
+                .any(|loss| loss.rule() == "messages.refusal-as-text.v1")
         );
         assert!(
             messages
-                .losses()
+                .effects()
                 .iter()
-                .any(|loss| loss.rule == "messages.usage-view.v1")
+                .any(|loss| loss.rule() == "messages.usage-view.v1")
         );
         metadata
             .context

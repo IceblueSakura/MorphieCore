@@ -3,7 +3,7 @@
 mod facts;
 
 use morphiecore::{
-    adapter::{AdapterError, ClientAdapter, Request, UpstreamAdapter},
+    adapter::{ClientAdapter, ConversionFailure, Request, UpstreamAdapter},
     execution::{
         Attempt, ResponseDelivery,
         replay::{CLIENT_ORIGIN, open_from_client, seal_for_client},
@@ -108,7 +108,7 @@ impl Api {
             _ => "input",
         }
     }
-    fn encode(self, request: &Request) -> Result<(Value, Vec<String>), AdapterError> {
+    fn encode(self, request: &Request) -> Result<(Value, Vec<String>), ConversionFailure> {
         Ok(match self {
             Self::Chat | Self::Responses => {
                 let mut caps = TargetCaps::full();
@@ -126,7 +126,11 @@ impl Api {
                 .encode_request(request, &self.target())?;
                 (
                     p.value,
-                    p.rules.iter().map(|r| r.name().to_owned()).collect(),
+                    p.evidence
+                        .iter()
+                        .filter(|r| r.change().is_loss())
+                        .map(|r| r.rule().to_owned())
+                        .collect(),
                 )
             }
             Self::GenerateContent => {
@@ -579,13 +583,7 @@ fn interrupted_final_never_becomes_completed_or_replayable_before_eof() {
                 "{error:?}"
             ),
             _ => {
-                let expected = match api {
-                    Api::Chat => "EOF before Chat DONE",
-                    Api::Messages => "Anthropic stream ordering or closure",
-                    Api::GenerateContent => "Gemini stream without finish reason",
-                    Api::Interactions => "unfinished Interactions stream",
-                    Api::Responses => unreachable!(),
-                };
+                let expected = morphiecore::protocol::failure::ShapeReason::InvalidValue;
                 assert!(
                     matches!(error, AttemptError::Sse(SseError::Codec(CodecError::Invalid(label))) if label==expected),
                     "{error:?}"
@@ -668,7 +666,12 @@ fn edited_returned_reasoning_cannot_reuse_the_original_replay_authority() {
         assert!(
             matches!(
                 error,
-                AdapterError::Codec(CodecError::Invalid("native replay dependency"))
+                ConversionFailure {
+                    cause: morphiecore::adapter::ConversionCause::Codec(CodecError::Invalid(
+                        morphiecore::protocol::failure::ShapeReason::InvalidValue
+                    )),
+                    ..
+                }
             ),
             "{error:?}"
         );

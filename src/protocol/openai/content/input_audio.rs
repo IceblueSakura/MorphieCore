@@ -9,22 +9,26 @@ pub(in crate::protocol::openai) fn read(
     direction: DecodeDirection,
 ) -> Result<Resource, CodecError> {
     direction.fields(part, &["type", "input_audio"])?;
-    let audio = object(
-        part.get("input_audio")
-            .ok_or(CodecError::Invalid("input_audio"))?,
-    )?;
+    let audio = object(part.get("input_audio").ok_or(CodecError::Invalid(
+        crate::protocol::failure::ShapeReason::InvalidValue,
+    ))?)?;
     direction.fields(audio, &["data", "format"])?;
     let mime = match string(audio, "format")? {
         "wav" => "audio/wav",
         "mp3" => "audio/mpeg",
-        _ => return Err(CodecError::Unsupported("input audio format".into())),
+        _ => {
+            return Err(CodecError::Unsupported(
+                crate::protocol::failure::CarrierReason::Unavailable,
+            ));
+        }
     };
     let resource = Resource {
         description: ResourceDescription::Audio,
         location: ResourceLocation::Inline {
             media_type: Text::new(mime, "audio media type", 64).map_err(|_| CodecError::Limit)?,
-            data_base64: Text::new(string(audio, "data")?, "audio data", MAX_TEXT_BYTES)
-                .map_err(|_| CodecError::Invalid("audio data"))?,
+            data_base64: Text::new(string(audio, "data")?, "audio data", MAX_TEXT_BYTES).map_err(
+                |_| CodecError::Invalid(crate::protocol::failure::ShapeReason::InvalidValue),
+            )?,
         },
     };
     resource.validate()?;

@@ -29,11 +29,15 @@ pub(in crate::protocol::openai) fn check(
             && !cache.omits_day_retention(context))
         || !context.cache.prompt_cache_options.is_absent()
     {
-        return Err(CodecError::Unsupported("SIWC request controls".into()));
+        return Err(CodecError::Unsupported(
+            crate::protocol::failure::CarrierReason::Unavailable,
+        ));
     }
     for tool in request.task.semantic.tools() {
         if !matches!(tool, ToolDefinition::Namespace(_)) || !tool.dispatch_inactive() {
-            return Err(CodecError::Unsupported("SIWC grouped tools".into()));
+            return Err(CodecError::Unsupported(
+                crate::protocol::failure::CarrierReason::Tools,
+            ));
         }
     }
     for (_, item) in request.task.semantic.items() {
@@ -49,7 +53,9 @@ pub(in crate::protocol::openai) fn check(
             _ => false,
         };
         if unsupported {
-            return Err(CodecError::Unsupported("SIWC history".into()));
+            return Err(CodecError::Unsupported(
+                crate::protocol::failure::CarrierReason::Unavailable,
+            ));
         }
     }
     Ok(())

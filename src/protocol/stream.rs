@@ -43,7 +43,7 @@ pub(crate) fn validate_http(status: u16, content_type: &str) -> Result<(), SseEr
     }
     Ok(())
 }
-#[derive(Debug, thiserror::Error)]
+#[derive(Clone, Debug, thiserror::Error)]
 pub enum SseError {
     #[error("invalid SSE HTTP status or content type")]
     Http,

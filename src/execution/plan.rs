@@ -87,13 +87,13 @@ fn representable_for_client(
         return Err(RejectionReason::Streaming);
     }
     let value = endpoint.encode_request(request).map_err(|error| {
-        use crate::{adapter::AdapterError, lowering::generation::RepresentationError};
+        use crate::{adapter::ConversionFailure, lowering::generation::RepresentationError};
         match error {
-            AdapterError::Representation(RepresentationError::Admission(feature)) => {
+            ConversionFailure { cause: crate::adapter::ConversionCause::Representation(RepresentationError::Admission(feature)), .. } => {
                 RejectionReason::Semantic(feature)
             }
-            AdapterError::Representation(RepresentationError::ImageInput) => RejectionReason::Image,
-            AdapterError::Representation(RepresentationError::ReplayOrigin) => {
+            ConversionFailure { cause: crate::adapter::ConversionCause::Representation(RepresentationError::ImageInput), .. } => RejectionReason::Image,
+            ConversionFailure { cause: crate::adapter::ConversionCause::Representation(RepresentationError::ReplayOrigin), .. } => {
                 RejectionReason::ReplayScope
             }
             _ => RejectionReason::Representation,

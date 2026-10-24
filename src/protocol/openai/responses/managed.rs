@@ -38,12 +38,14 @@ pub(crate) fn read_storage(o: &Map<String, Value>) -> Result<Option<ResponseStor
     }
     let storage = ResponseStorage {
         store: read_presence(o, "store", |v| {
-            v.as_bool().ok_or(CodecError::Invalid("store"))
+            v.as_bool().ok_or(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            ))
         })?,
         previous_response_id: read_presence(o, "previous_response_id", |v| {
-            v.as_str()
-                .map(str::to_owned)
-                .ok_or(CodecError::Invalid("previous_response_id"))
+            v.as_str().map(str::to_owned).ok_or(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            ))
         })?,
     };
     storage.validate()?;
@@ -61,17 +63,21 @@ pub fn decode(
     }
     let mut value = crate::protocol::json::decode(bytes)?;
     let options = Options::read(&value)?;
-    let o = value
-        .as_object_mut()
-        .ok_or(CodecError::Invalid("request"))?;
+    let o = value.as_object_mut().ok_or(CodecError::Invalid(
+        crate::protocol::failure::ShapeReason::InvalidValue,
+    ))?;
     o.remove("previous_response_id");
     o.insert("store".into(), json!(false));
     if history.is_none() && options.previous.is_some() {
-        return Err(CodecError::Invalid("unresolved previous_response_id"));
+        return Err(CodecError::Invalid(
+            crate::protocol::failure::ShapeReason::InvalidValue,
+        ));
     }
     bounded(&value)?;
     let request = adapter.decode_client_history(
-        &serde_json::to_vec(&value).map_err(|_| CodecError::Invalid("request"))?,
+        &serde_json::to_vec(&value).map_err(|_| {
+            CodecError::Invalid(crate::protocol::failure::ShapeReason::InvalidValue)
+        })?,
         history,
     )?;
     request
@@ -130,7 +136,11 @@ pub fn validate_retrieve_query(query: Option<&str>) -> Result<(), CodecError> {
     for (name, value) in query_pairs(query)? {
         match (name.as_str(), value.as_str()) {
             ("stream", "false") | ("include[]", "reasoning.encrypted_content") => {}
-            _ => return Err(CodecError::Unsupported("response retrieval query".into())),
+            _ => {
+                return Err(CodecError::Unsupported(
+                    crate::protocol::failure::CarrierReason::Unavailable,
+                ));
+            }
         }
     }
     Ok(())
@@ -143,7 +153,9 @@ fn query_pairs(query: Option<&str>) -> Result<Vec<(String, String)>, CodecError>
     let mut pairs = vec![];
     for (key, value) in url::form_urlencoded::parse(query.as_bytes()) {
         if pairs.iter().any(|(old, _)| old == &key) {
-            return Err(CodecError::Invalid("duplicate query parameter"));
+            return Err(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            ));
         }
         pairs.push((key.into_owned(), value.into_owned()));
     }
@@ -160,22 +172,28 @@ pub fn input_items(
     for (key, value) in query_pairs(query)? {
         match key.as_str() {
             "limit" => {
-                limit = value
-                    .parse()
-                    .ok()
-                    .filter(|n| (1..=100).contains(n))
-                    .ok_or(CodecError::Invalid("limit"))?;
+                limit = value.parse().ok().filter(|n| (1..=100).contains(n)).ok_or(
+                    CodecError::Invalid(crate::protocol::failure::ShapeReason::InvalidValue),
+                )?;
             }
             "order" => {
                 ascending = match value.as_str() {
                     "asc" => true,
                     "desc" => false,
-                    _ => return Err(CodecError::Invalid("order")),
+                    _ => {
+                        return Err(CodecError::Invalid(
+                            crate::protocol::failure::ShapeReason::InvalidValue,
+                        ));
+                    }
                 }
             }
             "after" if !value.is_empty() && value.len() <= 256 => after = Some(value),
             "include[]" if value == "reasoning.encrypted_content" => {}
-            _ => return Err(CodecError::Unsupported("input items query".into())),
+            _ => {
+                return Err(CodecError::Unsupported(
+                    crate::protocol::failure::CarrierReason::Unavailable,
+                ));
+            }
         }
     }
     let mut items = super::items::encode_items(
@@ -221,7 +239,9 @@ pub fn input_items(
             items
                 .iter()
                 .position(|value| value["id"].as_str() == Some(&id))
-                .ok_or(CodecError::Invalid("after"))?
+                .ok_or(CodecError::Invalid(
+                    crate::protocol::failure::ShapeReason::InvalidValue,
+                ))?
                 + 1
         }
         None => 0,
@@ -375,7 +395,9 @@ mod tests {
                 br#"{"model":"m","input":"third"}"#,
                 Some((&stale_prefix, &empty)),
             ),
-            Err(CodecError::Invalid("part replay dependency"))
+            Err(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue
+            ))
         ));
         let (third, _) = decode(
             &adapter,
@@ -431,7 +453,9 @@ mod tests {
                 br#"{"model":"m","input":"again"}"#,
                 Some((&old.task, &edited)),
             ),
-            Err(CodecError::Invalid("part replay dependency"))
+            Err(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue
+            ))
         ));
     }
 

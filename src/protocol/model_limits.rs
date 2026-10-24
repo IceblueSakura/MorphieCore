@@ -22,7 +22,9 @@ impl ModelLimits {
                     .any(|(i, level)| levels[..i].contains(level))
         }) || self.maximum_output_tokens == Some(0)
         {
-            return Err(CodecError::Invalid("model value limits"));
+            return Err(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            ));
         }
         Ok(())
     }
@@ -39,7 +41,9 @@ impl ModelLimits {
             self.maximum_output_tokens
                 .is_some_and(|base| maximum > base)
         }) {
-            return Err(CodecError::Invalid("widened model value limits"));
+            return Err(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            ));
         }
         Ok(Self {
             allowed_effort: configured
@@ -78,13 +82,15 @@ impl ModelLimits {
             .is_some_and(|(value, maximum)| value > maximum)
         {
             return Err(CodecError::Unsupported(
-                "target maximum output tokens".into(),
+                crate::protocol::failure::CarrierReason::Unavailable,
             ));
         }
         if let Some(allowed) = &self.allowed_effort
             && efforts.into_iter().any(|effort| !allowed.contains(&effort))
         {
-            return Err(CodecError::Unsupported("target effort".into()));
+            return Err(CodecError::Unsupported(
+                crate::protocol::failure::CarrierReason::Unavailable,
+            ));
         }
         Ok(())
     }

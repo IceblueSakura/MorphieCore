@@ -1,7 +1,7 @@
 //! Bounded incremental SSE framing. Network chunks are neither UTF-8 nor event boundaries.
 //! CR, LF and CRLF are recognized without copying an entire untrusted chunk into a buffer.
 use thiserror::Error;
-#[derive(Debug, Error, Eq, PartialEq)]
+#[derive(Clone, Debug, Error, Eq, PartialEq)]
 pub enum SseDecodeError {
     #[error("SSE event exceeds the configured size limit")]
     EventTooLarge,

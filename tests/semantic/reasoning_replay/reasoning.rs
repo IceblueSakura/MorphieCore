@@ -57,7 +57,12 @@ fn typed_disabled_summary_is_valid_semantics_without_a_responses_carrier() {
         Contract::full(),
     )
     .unwrap();
-    assert!(target.projection().iter().any(|stage| stage.loss.is_some()));
+    assert!(
+        target
+            .projection()
+            .iter()
+            .any(|stage| stage.change().is_loss())
+    );
     assert_eq!(
         target
             .metadata()
@@ -313,9 +318,12 @@ fn configuration_update_is_an_ordered_effort_item_not_a_settings_patch() {
     limited.model_limits.allowed_effort = Some(vec![EffortLevel::Low].into());
     assert!(matches!(
         adapter.encode_request(&request, "m", &limited),
-        Err(morphiecore::adapter::AdapterError::Representation(
-            morphiecore::lowering::generation::RepresentationError::Controls
-        ))
+        Err(morphiecore::adapter::ConversionFailure {
+            cause: morphiecore::adapter::ConversionCause::Representation(
+                morphiecore::lowering::generation::RepresentationError::Controls
+            ),
+            ..
+        })
     ));
     limited.model_limits.allowed_effort = Some(vec![EffortLevel::High].into());
     assert_eq!(

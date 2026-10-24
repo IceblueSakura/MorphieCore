@@ -45,7 +45,7 @@ pub(super) fn error_status(kind: &str) -> u16 {
     }
 }
 fn invalid() -> SseError {
-    CodecError::Invalid("Anthropic stream ordering or closure").into()
+    CodecError::Invalid(crate::protocol::failure::ShapeReason::InvalidValue).into()
 }
 fn append(target: &mut String, value: &str) -> Result<(), SseError> {
     if target
@@ -133,8 +133,17 @@ impl MessageSseDecoder {
     fn event(&mut self, event: Event) -> Result<(), SseError> {
         match event {
             Event::Ping => {}
-            Event::Error { kind, .. } => {
-                return Err(CodecError::StreamFailure(error_status(&kind)).into());
+            Event::Error { kind, message } => {
+                return Err(CodecError::StreamFailure(
+                    crate::protocol::failure::SourceFailureEvidence::envelope(
+                        error_status(&kind),
+                        crate::protocol::failure::RecognitionBasis::EnvelopeType,
+                        None,
+                        Some(&kind),
+                        Some(&message),
+                    ),
+                )
+                .into());
             }
             Event::MessageStart(message) => {
                 if self.message.is_some() {
@@ -158,7 +167,10 @@ impl MessageSseDecoder {
                 if let Block::ToolUse { input, .. } = &block
                     && !input.value().as_object().is_some_and(|o| o.is_empty())
                 {
-                    return Err(CodecError::Invalid("Anthropic opening tool input").into());
+                    return Err(CodecError::Invalid(
+                        crate::protocol::failure::ShapeReason::InvalidValue,
+                    )
+                    .into());
                 }
                 self.charge(block.bytes(true)?)?;
                 let signature_started =
@@ -212,29 +224,39 @@ impl MessageSseDecoder {
                     match parse_json(json.as_bytes(), JsonLimits::STRUCTURED) {
                         Ok(value) => {
                             if !value.is_object() {
-                                return Err(
-                                    CodecError::Invalid("Anthropic final tool object").into()
-                                );
+                                return Err(CodecError::Invalid(
+                                    crate::protocol::failure::ShapeReason::InvalidValue,
+                                )
+                                .into());
                             }
                             *input = StructuredValue::new(value).map_err(CodecError::from)?;
                         }
-                        Err(crate::semantic::value::JsonError::Limit) => {
-                            return Err(SseError::Limit);
+                        Err(crate::semantic::value::JsonError::Limit(resource)) => {
+                            return Err(crate::protocol::CodecError::from(
+                                crate::semantic::value::JsonError::Limit(resource),
+                            )
+                            .into());
                         }
                         Err(crate::semantic::value::JsonError::Invalid) => {
                             if json.trim_start().chars().next().is_some_and(|c| c != '{') {
-                                return Err(
-                                    CodecError::Invalid("Anthropic final tool object").into()
-                                );
+                                return Err(CodecError::Invalid(
+                                    crate::protocol::failure::ShapeReason::InvalidValue,
+                                )
+                                .into());
                             }
                             crate::semantic::value::validate_json_prefix(
                                 json.as_bytes(),
                                 JsonLimits::STRUCTURED,
                             )
                             .map_err(|error| match error {
-                                crate::semantic::value::JsonError::Limit => SseError::Limit,
+                                crate::semantic::value::JsonError::Limit(resource) => {
+                                    SseError::Codec(crate::protocol::CodecError::from(
+                                        crate::semantic::value::JsonError::Limit(resource),
+                                    ))
+                                }
                                 crate::semantic::value::JsonError::Invalid => {
-                                    CodecError::Invalid("Anthropic final tool JSON").into()
+                                    CodecError::Invalid(crate::protocol::failure::ShapeReason::Json)
+                                        .into()
                                 }
                             })?;
                             let Block::ToolUse {
@@ -281,7 +303,10 @@ impl MessageSseDecoder {
                     if message.stop_details.value().is_some()
                         && message.stop_details != stop_details
                     {
-                        return Err(CodecError::Invalid("Anthropic refusal details changed").into());
+                        return Err(CodecError::Invalid(
+                            crate::protocol::failure::ShapeReason::InvalidValue,
+                        )
+                        .into());
                     }
                     message.stop_details = stop_details;
                 }

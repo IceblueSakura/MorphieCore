@@ -80,6 +80,7 @@ fn request(grouped: bool, stream: bool) -> Request {
     .unwrap();
     let mut request = Request::from_generation(
         DecodedRequest {
+            evidence: Default::default(),
             semantic,
             fidelity: FidelityRecords::default(),
         },
@@ -212,6 +213,7 @@ fn response(grouped: bool, streamed: bool) -> DecodedResponse {
     metadata.model = "fixture-model".into();
     metadata.created = Some(1.into());
     DecodedResponse {
+        evidence: Default::default(),
         semantic,
         fidelity,
         metadata,

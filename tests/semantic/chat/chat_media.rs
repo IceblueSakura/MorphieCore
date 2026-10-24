@@ -39,7 +39,7 @@ fn audit_responses_rejects_credential_owned_locators_even_with_a_public_source()
             mixed["input"][0]["content"][0]["file_id"] = locator;
             assert!(matches!(
                 adapter.decode_client_request(mixed.to_string().as_bytes()),
-                Err(CodecError::Unsupported(field)) if field == "Responses file_id"
+                Err(CodecError::Unsupported(field)) if matches!(field,morphiecore::protocol::failure::CarrierReason::Unavailable)
             ));
         }
     }

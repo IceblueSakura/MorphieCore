@@ -8,7 +8,11 @@ use serde_json::{Map, Value, json};
 
 fn string<'a>(o: &'a Map<String, Value>, key: &'static str) -> Result<Option<&'a str>, CodecError> {
     o.get(key)
-        .map(|v| v.as_str().ok_or(CodecError::Invalid(key)))
+        .map(|v| {
+            v.as_str().ok_or(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            ))
+        })
         .transpose()
 }
 fn category(value: &str) -> Result<SafetyCategory, CodecError> {
@@ -20,7 +24,11 @@ fn category(value: &str) -> Result<SafetyCategory, CodecError> {
         "HARM_CATEGORY_DANGEROUS_CONTENT" => SafetyCategory::DangerousContent,
         "HARM_CATEGORY_CIVIC_INTEGRITY" => SafetyCategory::CivicIntegrity,
         "HARM_CATEGORY_JAILBREAK" => SafetyCategory::Jailbreak,
-        _ => return Err(CodecError::Invalid("Gemini safety category")),
+        _ => {
+            return Err(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            ));
+        }
     })
 }
 pub(super) fn settings(values: &[SafetySetting]) -> Vec<Value> {
@@ -56,7 +64,11 @@ fn probability(value: &str) -> Result<SafetyProbability, CodecError> {
         "LOW" => SafetyProbability::Low,
         "MEDIUM" => SafetyProbability::Medium,
         "HIGH" => SafetyProbability::High,
-        _ => return Err(CodecError::Invalid("Gemini safety probability")),
+        _ => {
+            return Err(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            ));
+        }
     })
 }
 fn input_reason(value: &str) -> Result<SafetyBlockReason, CodecError> {
@@ -67,7 +79,11 @@ fn input_reason(value: &str) -> Result<SafetyBlockReason, CodecError> {
         "BLOCKLIST" => SafetyBlockReason::Blocklist,
         "PROHIBITED_CONTENT" => SafetyBlockReason::ProhibitedContent,
         "IMAGE_SAFETY" => SafetyBlockReason::ImageSafety,
-        _ => return Err(CodecError::Invalid("Gemini input block reason")),
+        _ => {
+            return Err(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            ));
+        }
     })
 }
 fn output_reason(value: &str) -> Option<SafetyBlockReason> {
@@ -91,7 +107,9 @@ pub(super) fn report(
         None => &[][..],
         Some(v) => v
             .as_array()
-            .ok_or(CodecError::Invalid("Gemini safety ratings"))?
+            .ok_or(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            ))?
             .as_slice(),
     };
     if values.len() > MAX_ITEMS {
@@ -100,9 +118,9 @@ pub(super) fn report(
     let ratings = values
         .iter()
         .map(|v| {
-            let rating = v
-                .as_object()
-                .ok_or(CodecError::Invalid("Gemini safety rating"))?;
+            let rating = v.as_object().ok_or(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            ))?;
             Ok(SafetyRating {
                 // Proto3 scalar defaults are source facts, not requested-policy inference.
                 // https://github.com/googleapis/googleapis/blob/8cc2927c2ea64e6876568683050deabf2b52ce56/google/ai/generativelanguage/v1beta/safety.proto
@@ -116,8 +134,9 @@ pub(super) fn report(
                     rating
                         .get("blocked")
                         .map(|v| {
-                            v.as_bool()
-                                .ok_or(CodecError::Invalid("Gemini safety blocked"))
+                            v.as_bool().ok_or(CodecError::Invalid(
+                                crate::protocol::failure::ShapeReason::InvalidValue,
+                            ))
                         })
                         .transpose()?
                         .unwrap_or(false),

@@ -88,7 +88,7 @@ fn messages_format_is_an_unnamed_strict_schema_with_native_and_openai_carriers()
     assert_eq!(wire["output_config"], json!({"format":format}));
     assert!(rules.contains(&"messages.omit-verbosity.v1"));
     use morphiecore::{
-        lowering::generation::RequestControlLoss,
+        lowering::generation::Effect,
         protocol::{anthropic, native::ReplayTarget},
         semantic::value::Presence,
     };
@@ -102,18 +102,27 @@ fn messages_format_is_an_unnamed_strict_schema_with_native_and_openai_carriers()
     let target = ReplayTarget::new("synthetic", "synthetic").unwrap();
     let projected = caps.encode_request(&source, &target).unwrap();
     assert_eq!(
-        projected.control_losses,
-        [RequestControlLoss::MessagesVerbosity {
-            input: Presence::Value(Verbosity::Low),
-            output: Presence::Absent,
-        }]
+        projected.evidence.iter().cloned().collect::<Vec<_>>(),
+        [
+            Effect::new(
+                "messages.omit-schema-name.v1",
+                morphiecore::lowering::generation::Field::SchemaName,
+                morphiecore::lowering::generation::ConversionBoundary::RequestProject,
+                morphiecore::lowering::generation::Change::Omit
+            ),
+            Effect::MessagesVerbosity {
+                input: Presence::Value(Verbosity::Low),
+                output: Presence::Absent,
+                owner: morphiecore::lowering::generation::Owner::Root,
+            }
+        ]
     );
-    let receipt = &projected.control_losses[0];
+    let receipt = &projected.evidence[1];
     assert_eq!(receipt.rule(), "messages.omit-verbosity.v1");
     assert_eq!(receipt.field(), "generation.text.verbosity");
     assert_eq!(
         (receipt.direction(), receipt.action()),
-        ("request.encode", "omit")
+        ("request.project", "omit")
     );
     let mut constrained = caps;
     constrained.semantics.structured_output = false;
@@ -156,9 +165,9 @@ fn unknown_and_natively_unrepresentable_formats_fail() {
     assert_eq!(
         rules,
         [
-            "messages.omit-schema-name.v1",
+            "messages.default-automatic-cache.v1",
             "messages.default-max-tokens.v1",
-            "messages.default-automatic-cache.v1"
+            "messages.omit-schema-name.v1"
         ]
     );
 }

@@ -17,11 +17,15 @@ pub struct GenerationSseDecoder {
     target: ReplayTarget,
     metadata: Option<ResponseMetadata>,
     fidelity: FidelityRecords,
+    evidence: crate::lowering::generation::EvidenceDelta,
     part_started: bool,
     json_delta: bool,
     rejected: bool,
 }
 impl GenerationSseDecoder {
+    pub(crate) fn take_intake_evidence(&mut self) -> crate::lowering::generation::EvidenceDelta {
+        std::mem::take(&mut self.evidence)
+    }
     pub fn new(
         status: u16,
         media: &str,
@@ -35,6 +39,7 @@ impl GenerationSseDecoder {
             target,
             metadata: None,
             fidelity: Default::default(),
+            evidence: Default::default(),
             part_started: false,
             json_delta: false,
             rejected: false,
@@ -74,7 +79,10 @@ impl GenerationSseDecoder {
         match event {
             Event::MessageStart(message) => {
                 if message.model != self.target.model() {
-                    return Err(CodecError::Invalid("native model binding").into());
+                    return Err(CodecError::Invalid(
+                        crate::protocol::failure::ShapeReason::InvalidValue,
+                    )
+                    .into());
                 }
                 let usage = crate::protocol::anthropic::messages::accounting::report(
                     &message.usage,
@@ -126,7 +134,12 @@ impl GenerationSseDecoder {
                         Some(PartKind::StructuredArguments),
                         String::new(),
                     ),
-                    _ => return Err(CodecError::Invalid("native output block").into()),
+                    _ => {
+                        return Err(CodecError::Invalid(
+                            crate::protocol::failure::ShapeReason::InvalidValue,
+                        )
+                        .into());
+                    }
                 };
                 out.push(StreamEvent::ItemStarted {
                     item,
@@ -182,7 +195,9 @@ impl GenerationSseDecoder {
                 let block = &self
                     .wire
                     .message()
-                    .ok_or(CodecError::Invalid("native stream"))?
+                    .ok_or(CodecError::Invalid(
+                        crate::protocol::failure::ShapeReason::InvalidValue,
+                    ))?
                     .content[index as usize];
                 let partial = matches!(block, Block::PartialToolUse { .. });
                 if matches!(block, Block::ToolUse { .. }) && !self.json_delta {
@@ -242,10 +257,9 @@ impl GenerationSseDecoder {
                 });
             }
             Event::MessageStop => {
-                let message = self
-                    .wire
-                    .message()
-                    .ok_or(CodecError::Invalid("native stream"))?;
+                let message = self.wire.message().ok_or(CodecError::Invalid(
+                    crate::protocol::failure::ShapeReason::InvalidValue,
+                ))?;
                 let members: Vec<_> = (0..message.content.len())
                     .map(|n| self.ids(n as u64).0)
                     .collect();
@@ -278,13 +292,13 @@ impl GenerationSseDecoder {
                 });
             }
             Event::MessageDelta { .. } => {
-                let message = self
-                    .wire
-                    .message()
-                    .ok_or(CodecError::Invalid("native stream"))?;
+                let message = self.wire.message().ok_or(CodecError::Invalid(
+                    crate::protocol::failure::ShapeReason::InvalidValue,
+                ))?;
                 if message.input_transformations {
-                    self.fidelity
-                        .record_omission(crate::protocol::fidelity::INPUT_TRANSFORMATIONS_OMISSION);
+                    self.evidence.record_input_transformations(
+                        crate::lowering::generation::ConversionBoundary::EventDecode,
+                    );
                 }
                 out.push(StreamEvent::UsageReport(
                     crate::protocol::anthropic::messages::accounting::report(
@@ -294,8 +308,17 @@ impl GenerationSseDecoder {
                 ));
             }
             Event::Ping => {}
-            Event::Error { kind, .. } => {
-                return Err(CodecError::StreamFailure(super::wire::error_status(&kind)).into());
+            Event::Error { kind, message } => {
+                return Err(CodecError::StreamFailure(
+                    crate::protocol::failure::SourceFailureEvidence::envelope(
+                        super::wire::error_status(&kind),
+                        crate::protocol::failure::RecognitionBasis::EnvelopeType,
+                        None,
+                        Some(&kind),
+                        Some(&message),
+                    ),
+                )
+                .into());
             }
         }
         Ok(out)

@@ -15,7 +15,7 @@ pub struct EventEncoder {
     target_locked: bool,
     sequence: u64,
     pub(super) chat_audio_pending: Vec<u8>,
-    pub(super) projection: Vec<projection::ProjectionStage>,
+    pub(super) projection: Vec<crate::lowering::generation::Effect>,
 }
 impl EventEncoder {
     pub fn new(profile: Profile, metadata: ResponseMetadata) -> Result<Self, CodecError> {
@@ -37,7 +37,9 @@ impl EventEncoder {
     /// Refresh reported settings/completion metadata without changing response identity.
     pub fn update_metadata(&mut self, metadata: ResponseMetadata) -> Result<(), CodecError> {
         if self.state.is_none() {
-            return Err(CodecError::Invalid("rejected stream"));
+            return Err(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            ));
         }
         let result = (|| {
             if self.state()?.terminal().is_some()
@@ -45,7 +47,9 @@ impl EventEncoder {
                 || self.metadata.model != metadata.model
                 || self.metadata.created != metadata.created
             {
-                return Err(CodecError::Invalid("metadata changed"));
+                return Err(CodecError::Invalid(
+                    crate::protocol::failure::ShapeReason::Metadata,
+                ));
             }
             metadata.validate()?;
             validate_metadata(self.profile, &metadata)?;
@@ -65,7 +69,9 @@ impl EventEncoder {
                         .reports
                         .at(crate::semantic::context::ReportPhase::Opening)
             {
-                return Err(CodecError::Invalid("emitted opening report changed"));
+                return Err(CodecError::Invalid(
+                    crate::protocol::failure::ShapeReason::InvalidValue,
+                ));
             }
             if self.profile == Profile::Chat && self.state()?.started() {
                 let old = &self.metadata.context;
@@ -73,7 +79,9 @@ impl EventEncoder {
                     && old.system_fingerprint != metadata.context.system_fingerprint
                 {
                     // Intake normalization is not permission to rewrite already emitted facts.
-                    return Err(CodecError::Invalid("bound Chat metadata changed"));
+                    return Err(CodecError::Invalid(
+                        crate::protocol::failure::ShapeReason::Metadata,
+                    ));
                 }
             }
             crate::protocol::reports::update(
@@ -103,7 +111,9 @@ impl EventEncoder {
         source: &FidelityRecords,
     ) -> Result<Vec<Value>, CodecError> {
         if self.state.is_none() {
-            return Err(CodecError::Invalid("rejected stream"));
+            return Err(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            ));
         }
         self.target_locked = true;
         let checked_projection = self.projection.len();
@@ -115,7 +125,9 @@ impl EventEncoder {
                 if self.contract.reported_facts
                     == crate::lowering::generation::ReportedFactPolicy::StrictComplete
                 {
-                    return Err(CodecError::Unsupported("required reported settings".into()));
+                    return Err(CodecError::Unsupported(
+                        crate::protocol::failure::CarrierReason::Unavailable,
+                    ));
                 }
                 self.record_loss(projection::LossRule::OmitChatReportedSettings);
             }
@@ -125,7 +137,10 @@ impl EventEncoder {
                 self.profile,
                 &self.contract,
             )
-            .map_err(|_| CodecError::Unsupported("event target representation".into()))?;
+            .map_err(|cause| CodecError::Representation {
+                boundary: crate::lowering::generation::ConversionBoundary::EventProject,
+                cause,
+            })?;
             if let StreamEvent::ItemStarted { item, .. } = event {
                 let id = source
                     .response_item_id(*item)
@@ -137,7 +152,9 @@ impl EventEncoder {
                     .iter()
                     .any(|old| self.fidelity.response_item_id(old.id) == Some(id.as_str()))
                 {
-                    return Err(CodecError::Invalid("duplicate target wire identity"));
+                    return Err(CodecError::Invalid(
+                        crate::protocol::failure::ShapeReason::InvalidValue,
+                    ));
                 }
                 self.fidelity.record_response_item_id(*item, &id)?;
             }
@@ -160,7 +177,9 @@ impl EventEncoder {
                 None
             };
             self.state = Some(reduce(
-                self.state.take().ok_or(CodecError::Invalid("state"))?,
+                self.state.take().ok_or(CodecError::Invalid(
+                    crate::protocol::failure::ShapeReason::InvalidValue,
+                ))?,
                 event.clone(),
             )?);
             self.fidelity
@@ -169,13 +188,17 @@ impl EventEncoder {
             match event {
                 StreamEvent::ItemStarted { item, .. } | StreamEvent::ItemFinished { item, .. } => {
                     sync_replays(
-                        self.state.as_ref().ok_or(CodecError::Invalid("state"))?,
+                        self.state.as_ref().ok_or(CodecError::Invalid(
+                            crate::protocol::failure::ShapeReason::InvalidValue,
+                        ))?,
                         &mut self.fidelity,
                         Some(*item),
                     )?
                 }
                 StreamEvent::Terminal { .. } => sync_replays(
-                    self.state.as_ref().ok_or(CodecError::Invalid("state"))?,
+                    self.state.as_ref().ok_or(CodecError::Invalid(
+                        crate::protocol::failure::ShapeReason::InvalidValue,
+                    ))?,
                     &mut self.fidelity,
                     None,
                 )?,
@@ -212,36 +235,39 @@ impl EventEncoder {
     }
     pub fn finish(&self) -> Result<(), CodecError> {
         if self.state.is_none() {
-            return Err(CodecError::Invalid("rejected stream"));
+            return Err(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            ));
         }
         end_of_stream(self.state()?)?;
         Ok(())
     }
     /// Successful prefixes remain evidence even when a later event is rejected.
-    pub fn projection(&self) -> &[projection::ProjectionStage] {
+    pub(crate) fn take_evidence(&mut self) -> crate::lowering::generation::EvidenceDelta {
+        std::mem::take(&mut self.projection).into_iter().collect()
+    }
+    pub fn projection(&self) -> &[crate::lowering::generation::Effect] {
         &self.projection
     }
     fn record_loss(&mut self, loss: projection::LossRule) {
         record_stages(
             &mut self.projection,
-            [projection::ProjectionStage::response(
-                self.profile,
-                self.contract.adaptation.profile_id,
-                Some(loss),
-            )],
+            [(loss).effect(crate::lowering::generation::ConversionBoundary::ResponseProject)],
         );
     }
     pub(super) fn state(&self) -> Result<&StreamState, CodecError> {
-        self.state.as_ref().ok_or(CodecError::Invalid("state"))
+        self.state.as_ref().ok_or(CodecError::Invalid(
+            crate::protocol::failure::ShapeReason::InvalidValue,
+        ))
     }
 }
 /// Event delivery re-labels every copied stage and keeps the first occurrence.
 fn record_stages(
-    projection: &mut Vec<projection::ProjectionStage>,
-    stages: impl IntoIterator<Item = projection::ProjectionStage>,
+    projection: &mut Vec<crate::lowering::generation::Effect>,
+    stages: impl IntoIterator<Item = crate::lowering::generation::Effect>,
 ) {
     for mut stage in stages {
-        stage.direction = projection::ProjectionDirection::Event;
+        stage = stage.with_boundary(crate::lowering::generation::ConversionBoundary::EventProject);
         if !projection.contains(&stage) {
             projection.push(stage);
         }
@@ -255,21 +281,24 @@ fn validate_metadata(profile: Profile, metadata: &ResponseMetadata) -> Result<()
         if let Some(settings) = &report.settings {
             settings.validate()?;
             if !settings.safety.is_empty() {
-                return Err(CodecError::Unsupported("reported safety settings".into()));
+                return Err(CodecError::Unsupported(
+                    crate::protocol::failure::CarrierReason::Safety,
+                ));
             }
         }
     }
     metadata.required_id()?;
-    let created = metadata
-        .created
-        .as_ref()
-        .ok_or(CodecError::Invalid("created time"))?;
+    let created = metadata.created.as_ref().ok_or(CodecError::Invalid(
+        crate::protocol::failure::ShapeReason::Metadata,
+    ))?;
     if profile == Profile::Chat {
         crate::protocol::reports::validate_single(&metadata.context.reports)?;
         crate::protocol::openai::chat::envelope::validate_context(&metadata.context.execution)?;
         if created.as_u64().is_none() || !metadata.context.execution.metadata.is_absent() {
             // Chat chunks have no metadata slot; never silently discard a static fact.
-            return Err(CodecError::Unsupported("Chat stream metadata".into()));
+            return Err(CodecError::Unsupported(
+                crate::protocol::failure::CarrierReason::Metadata,
+            ));
         }
     }
     Ok(())

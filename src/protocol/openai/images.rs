@@ -15,7 +15,7 @@ use crate::{
     semantic::context::{ClientIdentityHints, DeliveryIntent},
 };
 fn invalid() -> CodecError {
-    CodecError::Invalid("image generation")
+    CodecError::Invalid(crate::protocol::failure::ShapeReason::InvalidValue)
 }
 pub(crate) fn object<'a>(
     value: &'a Value,

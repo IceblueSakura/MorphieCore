@@ -15,7 +15,11 @@ pub(super) fn stops(
         Some(Value::String(text)) if string_allowed && text.is_empty() => return Ok(vec![]),
         Some(value @ Value::String(_)) if string_allowed => std::slice::from_ref(value),
         Some(Value::Array(values)) => values.as_slice(),
-        _ => return Err(CodecError::Invalid("stop sequences")),
+        _ => {
+            return Err(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            ));
+        }
     };
     if values.len() > max {
         return Err(CodecError::Limit);
@@ -24,11 +28,13 @@ pub(super) fn stops(
         .iter()
         .map(|value| {
             Text::new(
-                value.as_str().ok_or(CodecError::Invalid("stop sequence"))?,
+                value.as_str().ok_or(CodecError::Invalid(
+                    crate::protocol::failure::ShapeReason::InvalidValue,
+                ))?,
                 "stop sequence",
                 MAX_TEXT_BYTES,
             )
-            .map_err(|_| CodecError::Invalid("stop sequence"))
+            .map_err(|_| CodecError::Invalid(crate::protocol::failure::ShapeReason::InvalidValue))
         })
         .collect()
 }

@@ -14,6 +14,7 @@ use serde_json::json;
 fn response() -> DecodedResponse {
     // Orthogonal content/usage fixtures carry an explicit, representable terminal.
     DecodedResponse {
+        evidence: Default::default(),
         semantic: GenerationResponse::new(
             vec![(
                 ItemId::new(1),
@@ -151,13 +152,13 @@ fn nonnullable_top_level_controls_and_empty_ordinary_messages_reject_before_norm
         request[field] = json!(null);
         assert_eq!(
             decode_client_request(request.to_string().as_bytes()).unwrap_err(),
-            CodecError::Invalid("Anthropic null")
+            CodecError::Invalid(morphiecore::protocol::failure::ShapeReason::InvalidValue)
         );
         assert_eq!(
             profile
                 .decode_request(request.to_string().as_bytes())
                 .unwrap_err(),
-            CodecError::Invalid("Anthropic null")
+            CodecError::Invalid(morphiecore::protocol::failure::ShapeReason::InvalidValue)
         );
     }
     for content in [json!([]), json!(""), json!([{"type":"text","text":""}])] {
@@ -168,13 +169,13 @@ fn nonnullable_top_level_controls_and_empty_ordinary_messages_reject_before_norm
             {"role":"user","content":"B"}]);
         assert_eq!(
             decode_client_request(request.to_string().as_bytes()).unwrap_err(),
-            CodecError::Invalid("Anthropic empty message")
+            CodecError::Invalid(morphiecore::protocol::failure::ShapeReason::InvalidValue)
         );
         assert_eq!(
             profile
                 .decode_request(request.to_string().as_bytes())
                 .unwrap_err(),
-            CodecError::Invalid("Anthropic empty message")
+            CodecError::Invalid(morphiecore::protocol::failure::ShapeReason::InvalidValue)
         );
     }
     decode_client_request(baseline.to_string().as_bytes()).unwrap();
@@ -207,8 +208,14 @@ fn known_boolean_and_unresolved_configuration_nulls_cannot_disappear_at_intake()
             let decoded = decode_client_request(body.to_string().as_bytes());
             let native = profile.decode_request(body.to_string().as_bytes());
             if flag.as_ref().is_some_and(serde_json::Value::is_null) {
-                assert_eq!(decoded.unwrap_err(), CodecError::Invalid("Anthropic null"));
-                assert_eq!(native.unwrap_err(), CodecError::Invalid("Anthropic null"));
+                assert_eq!(
+                    decoded.unwrap_err(),
+                    CodecError::Invalid(morphiecore::protocol::failure::ShapeReason::InvalidValue)
+                );
+                assert_eq!(
+                    native.unwrap_err(),
+                    CodecError::Invalid(morphiecore::protocol::failure::ShapeReason::InvalidValue)
+                );
             } else {
                 let decoded = decoded.unwrap();
                 native.unwrap();
@@ -234,7 +241,8 @@ fn known_boolean_and_unresolved_configuration_nulls_cannot_disappear_at_intake()
     for field in ["effort", "format"] {
         let mut body = base.clone();
         body["output_config"] = json!({field:null});
-        let expected = CodecError::Unsupported("Anthropic output configuration null".into());
+        let expected =
+            CodecError::Unsupported(morphiecore::protocol::failure::CarrierReason::Unavailable);
         assert_eq!(
             decode_client_request(body.to_string().as_bytes()).unwrap_err(),
             expected
@@ -299,6 +307,7 @@ fn leading_instructions_compose_once_and_effort_boundaries_split_same_role_histo
         let semantic = GenerationRequest::from_settings(items, settings).unwrap();
         let request = morphiecore::adapter::Request::from_generation(
             morphiecore::protocol::DecodedRequest {
+                evidence: Default::default(),
                 semantic,
                 fidelity: Default::default(),
             },
@@ -320,7 +329,7 @@ fn leading_instructions_compose_once_and_effort_boundaries_split_same_role_histo
             projection.value["messages"],
             json!([{"role":"user","content":[{"type":"text","text":"go"}]}])
         );
-        assert!(projection.rules.is_empty());
+        assert!(projection.evidence.is_empty());
         assert_eq!(request, original);
     }
     let body = json!({"model":"m","max_tokens":32,"messages":[
@@ -337,14 +346,14 @@ fn leading_instructions_compose_once_and_effort_boundaries_split_same_role_histo
         {"role":"system","content":[],"output_config":{"effort":"low"}},
         {"role":"user","content":[{"type":"text","text":"second"}]}])
     );
-    assert!(projection.rules.is_empty());
+    assert!(projection.evidence.is_empty());
     caps.carriers.message_effort = false;
     let flattened = caps.encode_request(&request, &target).unwrap();
     assert_eq!(flattened.value["output_config"], json!({"effort":"low"}));
     assert!(
         flattened
-            .rules
-            .contains(&messages::RequestRule::FlattenMessageEffort)
+            .evidence
+            .contains_rule(messages::RequestRule::FlattenMessageEffort.name())
     );
     assert_eq!(request, original);
     let body = json!({"model":"m","max_tokens":32,"messages":[
@@ -393,9 +402,9 @@ fn leading_instructions_compose_once_and_effort_boundaries_split_same_role_histo
         ])
         .unwrap();
     assert!(matches!(caps.encode_request(&partial, &target),
-        Err(morphiecore::adapter::AdapterError::Codec(
-            morphiecore::protocol::CodecError::Unsupported(reason)))
-            if reason == "partial native message grouping"));
+        Err(morphiecore::adapter::ConversionFailure { cause: morphiecore::adapter::ConversionCause::Codec(
+            morphiecore::protocol::CodecError::Unsupported(reason)), .. })
+            if matches!(reason,morphiecore::protocol::failure::CarrierReason::Unavailable)));
 }
 
 #[test]
@@ -506,7 +515,7 @@ fn nullable_tool_defaults_normalize_without_disabling_eager_input_or_inventing_c
         let projection = profile
             .encode_generation_request(&request, &Default::default(), &target)
             .unwrap();
-        assert!(projection.rules.is_empty());
+        assert!(projection.evidence.is_empty());
         let mut expected = json!({"name":"lookup","input_schema":{"type":"object"}});
         if let Some(eager) = expected_eager {
             expected["eager_input_streaming"] = json!(eager);
@@ -676,8 +685,8 @@ fn messages_tool_examples_keep_order_presence_and_tool_change_owners() {
     caps.encode_request(&decoded, &target).unwrap();
     caps.carriers.tool_changes = false;
     assert!(matches!(caps.encode_request(&decoded, &target),
-        Err(morphiecore::adapter::AdapterError::Codec(CodecError::Unsupported(label)))
-            if label == "ordered tool input examples"));
+        Err(morphiecore::adapter::ConversionFailure { cause: morphiecore::adapter::ConversionCause::Codec(CodecError::Unsupported(label)), .. })
+            if matches!(label,morphiecore::protocol::failure::CarrierReason::Tools)));
     for (present, expected) in [(false, None), (true, Some(vec![]))] {
         let mut simple = body.clone();
         simple["messages"] = json!([{"role":"user","content":"go"}]);
@@ -761,7 +770,10 @@ fn messages_tool_examples_reject_nonobjects_and_account_for_resource_bounds() {
                 native_error
             );
             if value.is_null() {
-                assert_eq!(native_error, CodecError::Invalid("Anthropic null"));
+                assert_eq!(
+                    native_error,
+                    CodecError::Invalid(morphiecore::protocol::failure::ShapeReason::InvalidValue)
+                );
             }
         }
     }
@@ -858,7 +870,7 @@ fn messages_final_usage_requires_reported_counts_and_unambiguous_cache_categorie
     assert!(matches!(
         encode_client_response(&unknown, "m"),
         Err(morphiecore::protocol::CodecError::Unsupported(reason))
-            if reason == "Messages terminal"
+            if reason == morphiecore::protocol::failure::CarrierReason::Terminal
     ));
     let mut unknown_stream = ClientEventEncoder::new("r", "m");
     unknown_stream.encode(&StreamEvent::Usage(usage)).unwrap();
@@ -868,7 +880,7 @@ fn messages_final_usage_requires_reported_counts_and_unambiguous_cache_categorie
             details: TerminalDetails::default(),
         }),
         Err(morphiecore::protocol::CodecError::Unsupported(reason))
-            if reason == "Messages terminal"
+            if reason == morphiecore::protocol::failure::CarrierReason::Terminal
     ));
     unknown.semantic = unknown
         .semantic
@@ -891,7 +903,7 @@ fn messages_final_usage_requires_reported_counts_and_unambiguous_cache_categorie
     assert!(matches!(
         continuation_stream.encode(&terminal()),
         Err(morphiecore::protocol::CodecError::Unsupported(reason))
-            if reason == "Messages continuation"
+            if reason == morphiecore::protocol::failure::CarrierReason::Terminal
     ));
     assert_eq!(
         encode_client_response(&response, "m").unwrap()["usage"],
@@ -925,7 +937,7 @@ fn messages_final_usage_requires_reported_counts_and_unambiguous_cache_categorie
             .service_class = Presence::Value(class);
         assert!(matches!(encode_client_response(&wrong_service, "m"),
             Err(morphiecore::protocol::CodecError::Unsupported(reason))
-                if reason == "Messages reported service"));
+                if reason == morphiecore::protocol::failure::CarrierReason::Field(morphiecore::lowering::generation::Field::ServiceClass)));
     }
     for terminal_class in [
         Presence::Absent,
@@ -946,7 +958,7 @@ fn messages_final_usage_requires_reported_counts_and_unambiguous_cache_categorie
         assert!(matches!(
             encode_client_response(&phased, "m"),
             Err(morphiecore::protocol::CodecError::Invalid(
-                "service tier changed"
+                morphiecore::protocol::failure::ShapeReason::Metadata
             )) | Err(morphiecore::protocol::CodecError::Unsupported(_))
         ));
     }
@@ -1109,12 +1121,12 @@ fn messages_rejects_audio_in_static_output_and_each_event_shape() {
             .unwrap();
         assert_eq!(
             stream.encode(&event).unwrap_err(),
-            CodecError::Unsupported("Messages audio output".into()),
+            CodecError::Unsupported(morphiecore::protocol::failure::CarrierReason::Unavailable),
             "{event:?}"
         );
         assert_eq!(
             stream.encode(&StreamEvent::Started).unwrap_err(),
-            CodecError::Invalid("Messages stream closed")
+            CodecError::Invalid(morphiecore::protocol::failure::ShapeReason::InvalidValue)
         );
         assert!(stream.finish().is_err());
     }
@@ -1406,7 +1418,7 @@ fn messages_rejects_citations_in_static_output_and_each_event_shape() {
             .unwrap();
         assert_eq!(
             stream.encode(&event).unwrap_err(),
-            CodecError::Unsupported("Messages citations".into()),
+            CodecError::Unsupported(morphiecore::protocol::failure::CarrierReason::Unavailable),
             "{event:?}"
         );
     }
@@ -1476,7 +1488,16 @@ fn pi_haiku_profile_keeps_carriers_or_records_rules() {
     caps.semantics = anthropic::messages::Profile::AdaptiveTextTools.representation_contract();
     caps.carriers = anthropic::messages::Carriers::all();
     let exact = caps.encode_request(&decoded, &target).unwrap();
-    assert!(exact.rules.is_empty(), "{:?}", exact.rules);
+    assert_eq!(
+        exact.evidence.iter().cloned().collect::<Vec<_>>(),
+        [morphiecore::lowering::generation::Effect::new(
+            "messages.normalize-tool-arguments.v1",
+            morphiecore::lowering::generation::Field::ToolArguments,
+            morphiecore::lowering::generation::ConversionBoundary::RequestEncode,
+            morphiecore::lowering::generation::Change::Normalize
+        )
+        .at(morphiecore::lowering::generation::Owner::Item { scope: 0, index: 4 })]
+    );
     let wire = &exact.value;
     assert_eq!(wire["thinking"], body["thinking"]);
     assert_eq!(wire["tools"], body["tools"]);
@@ -1501,15 +1522,15 @@ fn pi_haiku_profile_keeps_carriers_or_records_rules() {
     limited.model_limits.allowed_effort = Some(vec![EffortLevel::High, EffortLevel::Medium].into());
     let before = decoded.clone();
     assert!(matches!(limited.encode_request(&decoded, &target),
-        Err(morphiecore::adapter::AdapterError::Codec(
-            morphiecore::protocol::CodecError::Unsupported(value))) if value == "target effort"));
+        Err(morphiecore::adapter::ConversionFailure { cause: morphiecore::adapter::ConversionCause::Codec(
+            morphiecore::protocol::CodecError::Unsupported(value)), .. }) if value == morphiecore::protocol::failure::CarrierReason::Unavailable));
     limited.carriers.message_effort = false;
     let flattened = limited.encode_request(&decoded, &target).unwrap();
     assert_eq!(flattened.value["output_config"], json!({"effort":"medium"}));
     assert!(
         flattened
-            .rules
-            .contains(&anthropic::messages::RequestRule::FlattenMessageEffort)
+            .evidence
+            .contains_rule(anthropic::messages::RequestRule::FlattenMessageEffort.name())
     );
     assert_eq!(decoded, before);
 
@@ -1517,10 +1538,11 @@ fn pi_haiku_profile_keeps_carriers_or_records_rules() {
     // effect for it, and the tool set is the final available one.
     caps.carriers = Default::default();
     let flat = caps.encode_request(&decoded, &target).unwrap();
-    let rules: Vec<_> = flat.rules.iter().map(|r| r.name()).collect();
+    let rules: Vec<_> = flat.evidence.iter().map(|r| r.rule()).collect();
     assert_eq!(
         rules,
         [
+            "messages.normalize-tool-arguments.v1",
             "messages.omit-block-binding.v1",
             "messages.flatten-message-effort.v1",
             "messages.collapse-tool-changes.v1"
@@ -1564,7 +1586,7 @@ fn pi_haiku_profile_keeps_carriers_or_records_rules() {
         json!({"prefix_mismatch_behavior":"error"})
     );
     // Tool-change blocks are system content only, and removal names a reference.
-    for (index, role, block, error) in [
+    for (index, role, block, _error) in [
         (
             5,
             "user",
@@ -1584,7 +1606,7 @@ fn pi_haiku_profile_keeps_carriers_or_records_rules() {
             json!({"role":role,"content":[{"type":"text","text":"x"},block]});
         assert_eq!(
             decode_client_request(misplaced.to_string().as_bytes()).unwrap_err(),
-            CodecError::Invalid(error)
+            CodecError::Invalid(morphiecore::protocol::failure::ShapeReason::InvalidValue)
         );
     }
     // Per-message effort belongs to system messages.
@@ -1592,7 +1614,9 @@ fn pi_haiku_profile_keeps_carriers_or_records_rules() {
     misplaced["messages"][0]["output_config"] = json!({"effort":"low"});
     assert!(matches!(
         decode_client_request(misplaced.to_string().as_bytes()),
-        Err(CodecError::Invalid("Anthropic message output_config"))
+        Err(CodecError::Invalid(
+            morphiecore::protocol::failure::ShapeReason::InvalidValue
+        ))
     ));
 }
 #[test]
@@ -1626,7 +1650,8 @@ fn protected_messages_controls_reject_at_their_owner_not_inside_business_data() 
         let mut active = body.clone();
         active["output_config"] = json!({"task_budget":budget});
         let bytes = active.to_string();
-        let expected = CodecError::Unsupported("Anthropic task budget".into());
+        let expected =
+            CodecError::Unsupported(morphiecore::protocol::failure::CarrierReason::Unavailable);
         assert_eq!(
             decode_client_request(bytes.as_bytes()).unwrap_err(),
             expected
@@ -1638,7 +1663,8 @@ fn protected_messages_controls_reject_at_their_owner_not_inside_business_data() 
             let mut active = body.clone();
             active["messages"][index]["content"][0]["toolset_name"] = namespace;
             let bytes = active.to_string();
-            let expected = CodecError::Unsupported("Anthropic toolset identity".into());
+            let expected =
+                CodecError::Unsupported(morphiecore::protocol::failure::CarrierReason::Tools);
             assert_eq!(
                 decode_client_request(bytes.as_bytes()).unwrap_err(),
                 expected
@@ -1719,7 +1745,7 @@ fn client_intake_carries_caps_and_rejects_active_fields_it_cannot_carry() {
             {"name":"lookup","input_schema":{"type":"object","additionalProperties":false},"strict":true}
         ])
     );
-    assert!(projected.rules.is_empty());
+    assert!(projected.evidence.is_empty());
     // pi's tool flags keep typed owners and reach the native wire unchanged.
     let mut flagged = strict.clone();
     flagged["tools"][0]["eager_input_streaming"] = json!(true);
@@ -1862,7 +1888,7 @@ fn client_intake_carries_caps_and_rejects_active_fields_it_cannot_carry() {
             .as_str(),
         "synthetic predicted output"
     );
-    assert!(decoded.task.fidelity.normalizations().is_empty());
+    assert!(decoded.task.evidence.is_empty());
     assert!(!format!("{:?}", decoded.task.fidelity).contains("synthetic predicted output"));
     let wire = chat
         .encode_request(

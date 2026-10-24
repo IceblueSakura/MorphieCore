@@ -178,6 +178,7 @@ fn ingress_unwraps_only_the_candidate_compatible_opaque_and_never_selects_a_targ
             &gate.state,
             ClientProtocol::Responses,
             body.to_string().as_bytes(),
+            &crate::execution::report::Report::default(),
         )
         .unwrap();
         let before = request.clone();
@@ -500,14 +501,15 @@ async fn identity_budget_and_scope_are_owned_by_trusted_ingress() {
             Some(200_000),
         ),
     ] {
-        let (_, request) = admission::prepare(&gate.state, ClientProtocol::Chat, wire).unwrap();
+        let (_, request) = admission::prepare(&gate.state, ClientProtocol::Chat, wire,&crate::execution::report::Report::default()).unwrap();
         assert_eq!(request.task.semantic.controls().max_output_tokens, cap);
     }
     assert_eq!(
         admission::prepare(
             &gate.state,
             ClientProtocol::Chat,
-            br#"{"model":"fixture-model","model":"missing","messages":[]}"#
+            br#"{"model":"fixture-model","model":"missing","messages":[]}"#,
+            &crate::execution::report::Report::default()
         )
         .err()
         .unwrap()
@@ -519,7 +521,8 @@ async fn identity_budget_and_scope_are_owned_by_trusted_ingress() {
         admission::prepare(
             &gate.state,
             ClientProtocol::Chat,
-            br#"{"model":"missing","messages":null}"#
+            br#"{"model":"missing","messages":null}"#,
+            &crate::execution::report::Report::default()
         )
         .err()
         .unwrap()
@@ -581,6 +584,7 @@ fn clients_only_resolve_public_labels_and_cannot_select_a_provider() {
             &gate.state,
             family(profile),
             &serde_json::to_vec(&original).unwrap(),
+            &crate::execution::report::Report::default(),
         )
         .unwrap();
         // Unregistered selectors are ignored by name and never reach the request.
@@ -598,6 +602,7 @@ fn clients_only_resolve_public_labels_and_cannot_select_a_provider() {
                 &gate.state,
                 family(profile),
                 &serde_json::to_vec(&wire).unwrap(),
+                &crate::execution::report::Report::default(),
             )
             .unwrap();
             assert_eq!(request.ignored_fields, [field]);
@@ -622,6 +627,7 @@ fn clients_only_resolve_public_labels_and_cannot_select_a_provider() {
             &gate.state,
             family(profile),
             &serde_json::to_vec(&nested).unwrap(),
+            &crate::execution::report::Report::default(),
         )
         .unwrap();
         assert_eq!(request.ignored_fields, ["x_trace"]);
@@ -630,7 +636,8 @@ fn clients_only_resolve_public_labels_and_cannot_select_a_provider() {
             admission::prepare(
                 &gate.state,
                 family(profile),
-                &serde_json::to_vec(&unknown_kind).unwrap()
+                &serde_json::to_vec(&unknown_kind).unwrap(),
+                &crate::execution::report::Report::default()
             )
             .is_err()
         );
@@ -640,7 +647,8 @@ fn clients_only_resolve_public_labels_and_cannot_select_a_provider() {
             admission::prepare(
                 &gate.state,
                 family(profile),
-                &serde_json::to_vec(&wire).unwrap()
+                &serde_json::to_vec(&wire).unwrap(),
+                &crate::execution::report::Report::default()
             )
             .err()
             .unwrap()

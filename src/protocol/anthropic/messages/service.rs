@@ -14,7 +14,11 @@ pub(super) fn read_policy(o: &Map<String, Value>) -> Result<Presence<ServicePoli
         Ok(match v.as_str() {
             Some("auto") => ServicePolicy::PreferCommittedCapacity,
             Some("standard_only") => ServicePolicy::StandardCapacityOnly,
-            _ => return Err(CodecError::Invalid("Messages service policy")),
+            _ => {
+                return Err(CodecError::Invalid(
+                    crate::protocol::failure::ShapeReason::InvalidValue,
+                ));
+            }
         })
     })?;
     nonnull(&policy)?;
@@ -24,7 +28,11 @@ pub(super) fn policy_wire(policy: ServicePolicy) -> Result<&'static str, CodecEr
     match policy {
         ServicePolicy::PreferCommittedCapacity => Ok("auto"),
         ServicePolicy::StandardCapacityOnly => Ok("standard_only"),
-        _ => Err(CodecError::Unsupported("Messages service policy".into())),
+        _ => Err(CodecError::Unsupported(
+            crate::protocol::failure::CarrierReason::Field(
+                crate::lowering::generation::Field::ServiceClass,
+            ),
+        )),
     }
 }
 pub(super) fn read_class(o: &Map<String, Value>) -> Result<Presence<ServiceClass>, CodecError> {
@@ -33,7 +41,11 @@ pub(super) fn read_class(o: &Map<String, Value>) -> Result<Presence<ServiceClass
             Some("standard") => ServiceClass::StandardCapacity,
             Some("priority") => ServiceClass::PriorityCapacity,
             Some("batch") => ServiceClass::BatchProcessing,
-            _ => return Err(CodecError::Invalid("Messages reported service")),
+            _ => {
+                return Err(CodecError::Invalid(
+                    crate::protocol::failure::ShapeReason::InvalidValue,
+                ));
+            }
         })
     })
 }
@@ -42,7 +54,11 @@ pub(super) fn class_wire(class: ServiceClass) -> Result<&'static str, CodecError
         ServiceClass::StandardCapacity => Ok("standard"),
         ServiceClass::PriorityCapacity => Ok("priority"),
         ServiceClass::BatchProcessing => Ok("batch"),
-        _ => Err(CodecError::Unsupported("Messages reported service".into())),
+        _ => Err(CodecError::Unsupported(
+            crate::protocol::failure::CarrierReason::Field(
+                crate::lowering::generation::Field::ServiceClass,
+            ),
+        )),
     }
 }
 pub(super) fn write_class(

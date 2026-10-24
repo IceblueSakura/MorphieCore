@@ -99,13 +99,6 @@ impl LossRule {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum ProjectionDirection {
-    Request,
-    Response,
-    Event,
-}
-
 /// This changes reported echoes only, never request admission or generated items.
 pub(crate) fn reported_settings(
     metadata: &mut crate::protocol::ResponseMetadata,
@@ -188,49 +181,20 @@ pub(crate) fn reported_settings(
     }
     Ok(changed.then_some(LossRule::OmitReportedReasoningControls))
 }
-/// Evidence describes a checked value, not authorization or issuer acceptance.
-/// Empty loss means exact for this stage, not that an earlier loss was undone.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ProjectionStage {
-    pub target: Profile,
-    pub profile_id: &'static str,
-    pub direction: ProjectionDirection,
-    pub revision: u32,
-    pub loss: Option<LossRule>,
-}
-impl ProjectionStage {
-    pub(crate) fn evidence(&self) -> Option<crate::lowering::generation::LossEvidence> {
-        let loss = self.loss?;
-        Some(crate::lowering::generation::LossEvidence {
-            rule: loss.name(),
-            field: loss.owner(),
-            direction: match self.direction {
-                ProjectionDirection::Request => "request.encode",
-                ProjectionDirection::Response => "response.encode",
-                ProjectionDirection::Event => "event.encode",
-            },
-            action: match loss {
-                LossRule::RegroupChatMessageItems => "regroup",
-                LossRule::CoarsenChatCompletionCause | LossRule::RecitationAsContentFilter => {
-                    "approximate"
-                }
-                LossRule::UsageReportView => "project",
-                _ => "omit",
-            },
-        })
-    }
-    pub(crate) fn response(
-        target: Profile,
-        profile_id: &'static str,
-        loss: Option<LossRule>,
-    ) -> Self {
-        Self {
-            target,
-            profile_id,
-            direction: ProjectionDirection::Response,
-            revision: 1,
-            loss,
-        }
+impl LossRule {
+    pub(crate) fn effect(
+        self,
+        boundary: crate::lowering::generation::ConversionBoundary,
+    ) -> crate::lowering::generation::Effect {
+        use crate::lowering::generation::{Change, Effect};
+        let change = match self {
+            Self::RegroupChatMessageItems
+            | Self::CoarsenChatCompletionCause
+            | Self::RecitationAsContentFilter
+            | Self::ContextWindowAsLength => Change::Approximate,
+            _ => Change::Omit,
+        };
+        Effect::new(self.name(), self.owner().into(), boundary, change)
     }
 }
 

@@ -184,9 +184,9 @@ fn scoped_session_and_standard_cache_key_remain_independent_on_both_wires() {
     )
     .unwrap();
     assert_eq!(native.value["metadata"]["user_id"], "synthetic-user");
-    assert!(!native.rules.contains(&RequestRule::Hint(
-        morphiecore::protocol::cache::HintRule::OmitIdentityHints
-    )));
+    assert!(!native.evidence.contains_rule(
+        RequestRule::Hint(morphiecore::protocol::cache::HintRule::OmitIdentityHints).name()
+    ));
     empty["prompt_cache_options"] = json!({"mode":"explicit"});
     let active = client(Profile::Chat)
         .decode_request(empty.to_string().as_bytes())

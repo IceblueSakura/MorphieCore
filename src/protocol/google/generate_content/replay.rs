@@ -17,7 +17,7 @@ impl Signed {
         value.to_string()
     }
     pub fn decode(value: &str) -> Result<Self, CodecError> {
-        let invalid = || CodecError::Invalid("Gemini signature payload");
+        let invalid = || CodecError::Invalid(crate::protocol::failure::ShapeReason::InvalidValue);
         let value = parse_json(value.as_bytes(), JsonLimits::STRUCTURED).map_err(|_| invalid())?;
         let fields: &Map<String, Value> = value.as_object().ok_or_else(invalid)?;
         if fields

@@ -1,7 +1,7 @@
 //! Attempt preparation and bounded intake. Wire projection belongs to adapters;
 //! transport I/O and downstream commit belong to their respective owners.
 use crate::{
-    adapter::{AdapterError, GenerationDecoder, Request, UpstreamAdapter},
+    adapter::{ConversionFailure, GenerationDecoder, Request, UpstreamAdapter},
     lowering::generation::RepresentationError,
     protocol::{
         CodecError, DecodedResponse, ResponseMetadata,
@@ -13,14 +13,18 @@ use crate::{
     topology::{Endpoint, PublicModel},
 };
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Clone, Debug, thiserror::Error)]
 pub enum AttemptError {
+    #[error("resource budget exceeded: {0:?}")]
+    Resource(crate::protocol::failure::Resource),
+    #[error("deadline elapsed: {0:?}")]
+    Deadline(DeadlineReason),
     #[error(transparent)]
     Representation(#[from] RepresentationError),
     #[error(transparent)]
     Codec(#[from] CodecError),
     #[error(transparent)]
-    Adapter(#[from] AdapterError),
+    Adapter(#[from] ConversionFailure),
     #[error(transparent)]
     Sse(#[from] SseError),
     #[error(transparent)]
@@ -30,20 +34,138 @@ pub enum AttemptError {
     #[error("transport failure")]
     Transport(ErrorClass),
     #[error("protocol boundary: {0}")]
-    Protocol(&'static str),
+    Protocol(ProtocolReason),
     #[error("bounded body or stream budget exceeded")]
     Limit,
     #[error("delivery mismatch: {0}")]
-    Delivery(&'static str),
+    Delivery(DeliveryReason),
 }
 impl AttemptError {
-    /// The HTTP status of an upstream error reported inside the stream.
-    pub fn stream_failure(&self) -> Option<u16> {
+    pub fn codec(&self) -> Option<&CodecError> {
         match self {
-            Self::Codec(CodecError::StreamFailure(status))
-            | Self::Sse(SseError::Codec(CodecError::StreamFailure(status))) => Some(*status),
+            Self::Codec(e)
+            | Self::Sse(SseError::Codec(e))
+            | Self::Adapter(ConversionFailure {
+                cause: crate::adapter::ConversionCause::Codec(e),
+                ..
+            }) => Some(e),
             _ => None,
         }
+    }
+    pub fn representation(&self) -> Option<&RepresentationError> {
+        match self {
+            Self::Representation(e)
+            | Self::Adapter(ConversionFailure {
+                cause: crate::adapter::ConversionCause::Representation(e),
+                ..
+            }) => Some(e),
+            _ => match self.codec() {
+                Some(CodecError::Representation { cause, .. }) => Some(cause),
+                _ => None,
+            },
+        }
+    }
+    pub fn locus(&self) -> Option<crate::lowering::generation::SemanticLocus> {
+        if let Self::Adapter(e) = self
+            && e.locus.is_some()
+        {
+            return e.locus;
+        }
+        match self.codec() {
+            Some(CodecError::Unsupported(crate::protocol::failure::CarrierReason::Field(
+                field,
+            ))) => Some(crate::lowering::generation::SemanticLocus {
+                field: *field,
+                owner: crate::lowering::generation::Owner::Root,
+            }),
+            _ => None,
+        }
+    }
+
+    pub fn boundary(&self) -> Option<crate::lowering::generation::ConversionBoundary> {
+        match self {
+            Self::Adapter(e) => e.boundary,
+            Self::Codec(CodecError::Representation { boundary, .. })
+            | Self::Sse(SseError::Codec(CodecError::Representation { boundary, .. })) => {
+                Some(*boundary)
+            }
+            _ => None,
+        }
+    }
+    pub fn source_failure(&self) -> Option<crate::protocol::failure::SourceFailureEvidence> {
+        match self {
+            Self::Codec(CodecError::StreamFailure(e))
+            | Self::Sse(SseError::Codec(CodecError::StreamFailure(e))) => Some(*e),
+            Self::Adapter(crate::adapter::ConversionFailure {
+                cause: crate::adapter::ConversionCause::Codec(CodecError::StreamFailure(e)),
+                ..
+            }) => Some(*e),
+            _ => None,
+        }
+    }
+    pub fn stream_failure(&self) -> Option<u16> {
+        self.source_failure()
+            .and_then(|e| e.status_hint.map(|h| h.get()))
+    }
+}
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DeadlineReason {
+    RequestBody,
+    Attempt,
+    Exchange,
+}
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ProtocolReason {
+    AttemptAlreadyBegan,
+    AttemptIsClosed,
+    AttemptNotFinished,
+    BodySerialization,
+    DeliveryClosed,
+    EmbeddingAdmission,
+    EmbeddingBindingMismatch,
+    EmbeddingSerialization,
+    Entropy,
+    GatewayClock,
+    ImageBindingMismatch,
+    ImageSerialization,
+    InvalidEndpoint,
+    MissingResponseFidelity,
+    MissingResponseMetadata,
+    ProviderEndpointMismatch,
+    PublicModelMismatch,
+    RejectedAttempt,
+    SpeechAdmission,
+    SpeechBindingMismatch,
+    SpeechSerialization,
+    TranscriptionBinding,
+    TranscriptionSerialization,
+    UndeclaredOperation,
+    UnexpectedResponseMediaType,
+}
+impl std::fmt::Display for ProtocolReason {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{self:?}")
+    }
+}
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DeliveryReason {
+    BodyConsumerClosed,
+    PendingContentNeedsDrain,
+    AttemptChanged,
+    DeliveryNotComplete,
+    EndpointCannotStream,
+    MissingDeliveryIdentity,
+    MissingStreamEncoder,
+    NoDeliverableOutput,
+    PaddingConsumed,
+    StreamAlreadyStarted,
+    TerminalProjectionSourceChanged,
+    TerminalRequiresValidatedUpstreamEOF,
+    UpstreamWasNotAStream,
+}
+impl std::fmt::Display for DeliveryReason {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{self:?}")
     }
 }
 
@@ -71,7 +193,9 @@ pub fn admit(
     request: &Request,
 ) -> Result<GenerationRequirements, AttemptError> {
     if public.id.as_str() != request.model {
-        return Err(AttemptError::Protocol("public model mismatch"));
+        return Err(AttemptError::Protocol(
+            crate::execution::attempt::ProtocolReason::PublicModelMismatch,
+        ));
     }
     request.check_context(public.standard_context)?;
     let mut contract = public.contract.clone();
@@ -87,19 +211,23 @@ pub(crate) fn operation_auth(
     endpoint: &Endpoint,
     provider: &ProviderDefinition,
 ) -> Result<crate::provider::AuthScheme, AttemptError> {
-    endpoint
-        .validate()
-        .map_err(|_| AttemptError::Protocol("invalid endpoint"))?;
+    endpoint.validate().map_err(|_| {
+        AttemptError::Protocol(crate::execution::attempt::ProtocolReason::InvalidEndpoint)
+    })?;
     let entry = provider
         .generation_entry(endpoint.protocol.operation())
-        .ok_or(AttemptError::Protocol("undeclared operation"))?;
+        .ok_or(AttemptError::Protocol(
+            crate::execution::attempt::ProtocolReason::UndeclaredOperation,
+        ))?;
     if provider.id != endpoint.provider
         || provider.origin != endpoint.target.origin
         || endpoint.declared_path(entry.path).as_ref().ok() != Some(&endpoint.target.path)
         || entry.auth.kind() != endpoint.execution.credential_kind
         || entry.auth.kind() != provider.auth.kind()
     {
-        return Err(AttemptError::Protocol("provider/endpoint mismatch"));
+        return Err(AttemptError::Protocol(
+            crate::execution::attempt::ProtocolReason::ProviderEndpointMismatch,
+        ));
     }
     Ok(entry.auth)
 }
@@ -120,31 +248,29 @@ pub fn prepare_with_rules(
     secret: &SecretMaterial,
     request: &Request,
 ) -> Result<(UpstreamRequest, Vec<&'static str>), AttemptError> {
-    prepare_with_evidence(endpoint, provider, secret, request)
-        .map(|(prepared, rules, _)| (prepared, rules))
+    prepare_with_evidence(endpoint, provider, secret, request).map(|projection| {
+        let rules = projection.evidence.rule_names();
+        (projection.value, rules)
+    })
 }
 pub(crate) fn prepare_with_evidence(
     endpoint: &Endpoint,
     provider: &ProviderDefinition,
     secret: &SecretMaterial,
     request: &Request,
-) -> Result<
-    (
-        UpstreamRequest,
-        Vec<&'static str>,
-        Vec<crate::lowering::generation::RequestControlLoss>,
-    ),
-    AttemptError,
-> {
+) -> Result<crate::lowering::generation::Conversion<UpstreamRequest>, AttemptError> {
     let auth = operation_auth(endpoint, provider)?;
     let streaming = request.delivery.streaming() || endpoint.representation.forced_stream();
     if streaming && !endpoint.execution.streaming {
-        return Err(AttemptError::Delivery("endpoint cannot stream"));
+        return Err(AttemptError::Delivery(
+            crate::execution::attempt::DeliveryReason::EndpointCannotStream,
+        ));
     }
     let projection = endpoint.encode_request_with_evidence(request)?;
     let value = projection.value;
-    let body =
-        serde_json::to_vec(&value).map_err(|_| AttemptError::Protocol("body serialization"))?;
+    let body = serde_json::to_vec(&value).map_err(|_| {
+        AttemptError::Protocol(crate::execution::attempt::ProtocolReason::BodySerialization)
+    })?;
     if body.len() > endpoint.execution.request_body_limit {
         return Err(AttemptError::Limit);
     }
@@ -161,8 +287,8 @@ pub(crate) fn prepare_with_evidence(
         ),
     ];
     safe_headers.extend(endpoint.request_headers(request, &value)?);
-    Ok((
-        UpstreamRequest {
+    Ok(crate::lowering::generation::Conversion {
+        value: UpstreamRequest {
             origin: endpoint.target.origin.as_str().into(),
             method: "POST",
             path: endpoint.request_path(),
@@ -170,9 +296,8 @@ pub(crate) fn prepare_with_evidence(
             auth_header: auth.auth_header(secret),
             body,
         },
-        projection.rules,
-        projection.controls,
-    ))
+        evidence: projection.evidence,
+    })
 }
 
 enum Intake {
@@ -202,6 +327,7 @@ impl Attempt {
 /// Holds bounded decoder state, not a replay log. A terminal is withheld until
 /// strict EOF validation so a truncated/trailing-invalid body cannot emit success.
 pub struct Attempt {
+    evidence: crate::lowering::generation::EvidenceDelta,
     identity: std::sync::Arc<()>,
     adapter: UpstreamAdapter,
     body_limit: usize,
@@ -233,6 +359,7 @@ impl Attempt {
     }
     pub fn new(adapter: impl Into<UpstreamAdapter>, body_limit: usize, limits: SseLimits) -> Self {
         Self {
+            evidence: Default::default(),
             identity: std::sync::Arc::new(()),
             adapter: adapter.into(),
             body_limit,
@@ -242,7 +369,9 @@ impl Attempt {
     }
     pub fn begin(&mut self, status: u16, content_type: &str) -> Result<(), AttemptError> {
         if !matches!(self.intake, Intake::Pending) {
-            return Err(AttemptError::Protocol("attempt already began"));
+            return Err(AttemptError::Protocol(
+                crate::execution::attempt::ProtocolReason::AttemptAlreadyBegan,
+            ));
         }
         let result = (|| {
             if let StatusClass::Failure(class) = classify_status(status) {
@@ -270,7 +399,9 @@ impl Attempt {
             {
                 Intake::Static(vec![])
             } else {
-                return Err(AttemptError::Protocol("unexpected response media type"));
+                return Err(AttemptError::Protocol(
+                    crate::execution::attempt::ProtocolReason::UnexpectedResponseMediaType,
+                ));
             };
             Ok(())
         })();
@@ -283,7 +414,9 @@ impl Attempt {
     /// awaits downstream readiness before invoking this again.
     pub fn push(&mut self, chunk: &[u8]) -> Result<(usize, Vec<StreamEvent>), AttemptError> {
         if matches!(self.intake, Intake::Rejected) {
-            return Err(AttemptError::Protocol("rejected attempt"));
+            return Err(AttemptError::Protocol(
+                crate::execution::attempt::ProtocolReason::RejectedAttempt,
+            ));
         }
         let result = (|| {
             let (n, events) = match &mut self.intake {
@@ -296,12 +429,17 @@ impl Attempt {
                 }
                 Intake::Stream { decoder, terminal } => {
                     let (n, mut events) = decoder.consume(chunk)?;
+                    self.evidence.extend(decoder.take_evidence());
                     if matches!(events.last(), Some(StreamEvent::Terminal { .. })) {
                         *terminal = events.pop();
                     }
                     (n, events)
                 }
-                _ => return Err(AttemptError::Protocol("attempt is closed")),
+                _ => {
+                    return Err(AttemptError::Protocol(
+                        crate::execution::attempt::ProtocolReason::AttemptIsClosed,
+                    ));
+                }
             };
             Ok((n, events))
         })();
@@ -309,6 +447,11 @@ impl Attempt {
             self.reject();
         }
         result
+    }
+    /// Drain effects from successfully returned source units, including EOF.
+    /// Rejection preserves any earlier undrained evidence, never a failed unit's delta.
+    pub fn take_evidence(&mut self) -> crate::lowering::generation::EvidenceDelta {
+        std::mem::take(&mut self.evidence)
     }
     pub(crate) fn identity(&self) -> &std::sync::Arc<()> {
         &self.identity
@@ -336,14 +479,20 @@ impl Attempt {
     }
     pub fn finish(&mut self) -> Result<&DecodedResponse, AttemptError> {
         if matches!(self.intake, Intake::Rejected) {
-            return Err(AttemptError::Protocol("rejected attempt"));
+            return Err(AttemptError::Protocol(
+                crate::execution::attempt::ProtocolReason::RejectedAttempt,
+            ));
         }
         if !matches!(self.intake, Intake::Finished { .. }) {
             let result = (|| -> Result<Intake, AttemptError> {
                 let (decoded, terminal) = match &mut self.intake {
                     Intake::Static(body) => (self.adapter.decode_response(body)?, None),
                     Intake::Stream { decoder, terminal } => (decoder.finish()?, terminal.take()),
-                    _ => return Err(AttemptError::Protocol("attempt is closed")),
+                    _ => {
+                        return Err(AttemptError::Protocol(
+                            crate::execution::attempt::ProtocolReason::AttemptIsClosed,
+                        ));
+                    }
                 };
                 Ok(Intake::Finished {
                     decoded: Box::new(decoded),
@@ -351,7 +500,10 @@ impl Attempt {
                 })
             })();
             match result {
-                Ok(finished) => {
+                Ok(mut finished) => {
+                    if let Intake::Finished { decoded, .. } = &mut finished {
+                        self.evidence.extend(std::mem::take(&mut decoded.evidence));
+                    }
                     self.intake = finished;
                 }
                 Err(error) => {
@@ -365,8 +517,12 @@ impl Attempt {
     pub fn response(&self) -> Result<&DecodedResponse, AttemptError> {
         match &self.intake {
             Intake::Finished { decoded, .. } => Ok(decoded),
-            Intake::Rejected => Err(AttemptError::Protocol("rejected attempt")),
-            _ => Err(AttemptError::Protocol("attempt not finished")),
+            Intake::Rejected => Err(AttemptError::Protocol(
+                crate::execution::attempt::ProtocolReason::RejectedAttempt,
+            )),
+            _ => Err(AttemptError::Protocol(
+                crate::execution::attempt::ProtocolReason::AttemptNotFinished,
+            )),
         }
     }
     pub(crate) fn terminal_event(&self) -> Result<&StreamEvent, AttemptError> {
@@ -376,7 +532,9 @@ impl Attempt {
                 terminal: Some(terminal),
                 ..
             } => Ok(terminal),
-            _ => Err(AttemptError::Delivery("upstream was not a stream")),
+            _ => Err(AttemptError::Delivery(
+                crate::execution::attempt::DeliveryReason::UpstreamWasNotAStream,
+            )),
         }
     }
     pub fn cancel(&mut self) {
@@ -438,8 +596,16 @@ mod identity_tests {
             )
         };
         let mut stream = delivery();
-        let mut frames = stream.encode_events(&attempt, &events).unwrap();
-        frames.extend(stream.finish_stream(&attempt).unwrap());
+        let mut frames = stream
+            .encode_events(&attempt, &events)
+            .map(|batch| batch.into_bytes())
+            .unwrap();
+        frames.extend(
+            stream
+                .finish_stream(&attempt)
+                .map(|batch| batch.into_bytes())
+                .unwrap(),
+        );
         let wire = String::from_utf8(frames.into_iter().flatten().collect()).unwrap();
         let responses: Vec<Value> = wire
             .lines()

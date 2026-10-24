@@ -12,6 +12,8 @@ pub mod openai;
 pub(crate) mod attribution;
 pub mod cache;
 mod decoded;
+pub(crate) mod diagnostics;
+pub mod failure;
 pub mod fidelity;
 mod generation_controls;
 pub mod model_limits;
@@ -41,10 +43,3 @@ pub use decoded::{
     CodecError, DecodedRequest, DecodedResponse, GenerationDelivery, ResponseMetadata,
     ResponseStorage,
 };
-
-/// One pure upstream encoding and its body-free adaptation receipts.
-pub(crate) struct RequestProjection {
-    pub value: serde_json::Value,
-    pub rules: Vec<&'static str>,
-    pub controls: Vec<crate::lowering::generation::RequestControlLoss>,
-}

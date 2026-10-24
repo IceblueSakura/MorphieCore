@@ -14,7 +14,9 @@ pub fn prepare(
         || provider.id != route.endpoint.provider
         || provider.origin != route.endpoint.target.origin
     {
-        return Err(AttemptError::Protocol("image binding mismatch"));
+        return Err(AttemptError::Protocol(
+            crate::execution::attempt::ProtocolReason::ImageBindingMismatch,
+        ));
     }
     let value = route
         .endpoint
@@ -34,7 +36,8 @@ pub fn prepare(
             .entry(crate::provider::ProviderOperation::Images)
             .map_or(provider.auth, |entry| entry.auth)
             .auth_header(secret),
-        body: serde_json::to_vec(&value)
-            .map_err(|_| AttemptError::Protocol("image serialization"))?,
+        body: serde_json::to_vec(&value).map_err(|_| {
+            AttemptError::Protocol(crate::execution::attempt::ProtocolReason::ImageSerialization)
+        })?,
     })
 }

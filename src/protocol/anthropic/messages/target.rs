@@ -1,7 +1,7 @@
 //! Native target projection and dialect policy; no OpenAI profile or wire switches.
-use super::{NativeProjection, Profile, RequestRule};
+use super::{Profile, RequestRule};
 use crate::{
-    adapter::{AdapterError, Request},
+    adapter::{ConversionFailure, Request},
     protocol::{
         CodecError,
         cache::CacheProjection,
@@ -99,7 +99,9 @@ impl TargetCaps {
                     .maximum_output_tokens
                     .is_some_and(|maximum| default > maximum)
         }) {
-            return Err(CodecError::Invalid("Messages default output tokens"));
+            return Err(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            ));
         }
         Ok(())
     }
@@ -108,7 +110,9 @@ impl TargetCaps {
         request.context.validate()?;
         request.delivery.validate()?;
         if request.service_policy == Presence::Null {
-            return Err(CodecError::Invalid("Messages service policy"));
+            return Err(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            ));
         }
         if let Some(policy) = request.service_policy.value() {
             super::service::policy_wire(*policy)?;
@@ -131,7 +135,9 @@ impl TargetCaps {
             || request.n.value().is_some_and(|n| *n != 1)
             || !go && request.cache_session.is_some()
         {
-            return Err(CodecError::Unsupported("native request context".into()));
+            return Err(CodecError::Unsupported(
+                crate::protocol::failure::CarrierReason::Unavailable,
+            ));
         }
         Ok(())
     }
@@ -140,229 +146,229 @@ impl TargetCaps {
         &self,
         request: &Request,
         target: &ReplayTarget,
-    ) -> Result<NativeProjection, AdapterError> {
-        self.validate()?;
-        request.task.semantic.validate().map_err(CodecError::from)?;
-        let mut projected = std::borrow::Cow::Borrowed(request);
-        let mut reasoning_rule = None;
-        let mut controls = vec![];
-        let sampling_loss = if self.sampling == SamplingPolicy::Fixed {
-            let settings = request.task.semantic.settings();
-            if settings.controls.top_k.is_some() {
-                return Err(CodecError::Unsupported("target top_k".into()).into());
+    ) -> Result<crate::lowering::generation::Conversion<serde_json::Value>, ConversionFailure> {
+        let result = (|| {
+            self.validate()?;
+            request.task.semantic.validate().map_err(CodecError::from)?;
+            let mut projected = std::borrow::Cow::Borrowed(request);
+            let mut reasoning_rule = None;
+            let mut controls = vec![];
+            let sampling_loss = if self.sampling == SamplingPolicy::Fixed {
+                let settings = request.task.semantic.settings();
+                if settings.controls.top_k.is_some() {
+                    return Err(CodecError::Unsupported(
+                        crate::protocol::failure::CarrierReason::Unavailable,
+                    )
+                    .into());
+                }
+                let values = (
+                    settings.controls.temperature().is_some(),
+                    settings.controls.top_p().is_some(),
+                );
+                if values.0 || values.1 {
+                    let mut settings = settings.clone();
+                    settings.controls = settings.controls.without_sampling();
+                    projected.to_mut().task.semantic = request
+                        .task
+                        .semantic
+                        .clone()
+                        .with_settings(settings)
+                        .map_err(CodecError::from)?;
+                    Some(values)
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+            if let Some(policy) = &self.reasoning_policy
+                && let Some(semantic) =
+                    policy.project_request(&projected.task.semantic, |settings| {
+                        use crate::{
+                            protocol::reasoning::ReasoningConversion, semantic::task::generation::*,
+                        };
+                        match policy.conversion {
+                            ReasoningConversion::BudgetToEffort { .. } => {
+                                self.manual_thinking
+                                    && self.semantics.reasoning
+                                    && settings.reasoning.budget_tokens.is_some_and(|budget| {
+                                        budget >= 1024
+                                            && settings
+                                                .controls
+                                                .max_output_tokens
+                                                .or(self.default_output_tokens)
+                                                .is_some_and(|ceiling| budget < ceiling)
+                                    })
+                                    && matches!(
+                                        settings.reasoning.mode,
+                                        Presence::Absent | Presence::Value(ReasoningMode::Budgeted)
+                                    )
+                            }
+                            _ => settings.effort.value().is_some_and(|effort| {
+                                self.semantics.response_effort
+                                    && effort.scope == EffortScope::Response
+                                    && super::request::native_effort(effort.level).is_ok()
+                                    && self.model_limits.check_values(None, [effort.level]).is_ok()
+                            }),
+                        }
+                    })?
+            {
+                controls.push(policy.receipt(&request.task.semantic, &semantic)?);
+                projected.to_mut().task.semantic = semantic;
+                reasoning_rule = Some(policy.rule);
             }
-            let values = (
-                settings.controls.temperature().is_some(),
-                settings.controls.top_p().is_some(),
-            );
-            if values.0 || values.1 {
-                let mut settings = settings.clone();
-                settings.controls = settings.controls.without_sampling();
-                projected.to_mut().task.semantic = request
+            let verbosity = request.task.semantic.text_options().verbosity.clone();
+            let loss = if verbosity.is_absent() {
+                None
+            } else {
+                let copy = projected.to_mut();
+                let mut settings = copy.task.semantic.settings().clone();
+                settings.text.verbosity = Presence::Absent;
+                if settings.text.format.is_absent() {
+                    settings.text.presence = Presence::Absent;
+                }
+                copy.task.semantic = copy
                     .task
                     .semantic
                     .clone()
                     .with_settings(settings)
                     .map_err(CodecError::from)?;
-                Some(values)
-            } else {
-                None
-            }
-        } else {
-            None
-        };
-        if let Some(policy) = &self.reasoning_policy
-            && let Some(semantic) =
-                policy.project_request(&projected.task.semantic, |settings| {
-                    use crate::{
-                        protocol::reasoning::ReasoningConversion, semantic::task::generation::*,
-                    };
-                    match policy.conversion {
-                        ReasoningConversion::BudgetToEffort { .. } => {
-                            self.manual_thinking
-                                && self.semantics.reasoning
-                                && settings.reasoning.budget_tokens.is_some_and(|budget| {
-                                    budget >= 1024
-                                        && settings
-                                            .controls
-                                            .max_output_tokens
-                                            .or(self.default_output_tokens)
-                                            .is_some_and(|ceiling| budget < ceiling)
-                                })
-                                && matches!(
-                                    settings.reasoning.mode,
-                                    Presence::Absent | Presence::Value(ReasoningMode::Budgeted)
-                                )
-                        }
-                        _ => settings.effort.value().is_some_and(|effort| {
-                            self.semantics.response_effort
-                                && effort.scope == EffortScope::Response
-                                && super::request::native_effort(effort.level).is_ok()
-                                && self.model_limits.check_values(None, [effort.level]).is_ok()
-                        }),
-                    }
-                })?
-        {
-            controls.push(policy.receipt(&request.task.semantic, &semantic)?);
-            projected.to_mut().task.semantic = semantic;
-            reasoning_rule = Some(policy.rule);
-        }
-        let verbosity = request.task.semantic.text_options().verbosity.clone();
-        let loss = if verbosity.is_absent() {
-            None
-        } else {
-            let copy = projected.to_mut();
-            let mut settings = copy.task.semantic.settings().clone();
-            settings.text.verbosity = Presence::Absent;
-            if settings.text.format.is_absent() {
-                settings.text.presence = Presence::Absent;
-            }
-            copy.task.semantic = copy
-                .task
-                .semantic
-                .clone()
-                .with_settings(settings)
-                .map_err(CodecError::from)?;
-            Some(
-                crate::lowering::generation::RequestControlLoss::MessagesVerbosity {
+                Some(crate::lowering::generation::Effect::MessagesVerbosity {
                     input: verbosity,
                     output: Presence::Absent,
-                },
-            )
-        };
-        let request = projected.as_ref();
-        if !self.manual_thinking && request.task.semantic.reasoning().budget_tokens.is_some() {
-            return Err(
-                CodecError::Unsupported("manual thinking unsupported by target".into()).into(),
-            );
-        }
-        let stripped = request.without_foreign_reasoning(Some(&target.origin()))?;
-        let foreign = stripped.is_some();
-        let request = stripped.as_ref().unwrap_or(request);
-        self.check_context(request)?;
-        request.check_semantic(&self.semantics)?;
-        let mut carrier_rules = std::collections::BTreeSet::new();
-        let carried =
-            super::carriers::project(&request.task.semantic, self.carriers, &mut carrier_rules)?
-                .map(|semantic| {
-                    let mut copy = request.clone();
-                    copy.task.semantic = semantic;
-                    copy
-                });
-        let request = carried.as_ref().unwrap_or(request);
-        request.check_semantic(&self.profile.representation_contract())?;
-        let mut semantic = group_client_history(&request.task.semantic, true)?;
-        let mut settings = semantic.settings().clone();
-        let default_output = settings.controls.max_output_tokens.is_none();
-        if default_output {
-            settings.controls.max_output_tokens =
-                Some(self.default_output_tokens.ok_or_else(|| {
-                    CodecError::Unsupported("Messages missing target output default".into())
-                })?);
-        }
-        let default_cache = settings.automatic_prefix_cache.is_none()
-            && !semantic
-                .items()
-                .iter()
-                .any(|(_, i)| i.has_cache_breakpoints())
-            && !semantic
-                .tools()
-                .iter()
-                .flat_map(|t| t.leaves())
-                .any(|t| matches!(t, ToolDefinition::Function(t) if t.cache.is_some()))
-            && self.automatic_cache_default.is_some();
-        if default_cache {
-            settings.automatic_prefix_cache = self.automatic_cache_default;
-        }
-        // Include selects the downstream opaque carrier, not a native control.
-        settings.reasoning = settings.reasoning.with_encrypted_output(false);
-        semantic = semantic.with_settings(settings).map_err(CodecError::from)?;
-        let mut projection = self.profile.encode_request_envelope(
-            &semantic,
-            &request.task.fidelity,
-            target,
-            &request.service_policy,
-            &self.model_limits,
-        )?;
-        if default_output {
-            projection.rules.push(RequestRule::DefaultMaxTokens);
-        }
-        if default_cache {
-            projection.rules.push(RequestRule::DefaultAutomaticCache);
-        }
-        let attribution = crate::protocol::attribution::project(
-            request,
-            crate::protocol::attribution::Carrier::Messages,
-        )?;
-        let identity = &attribution.identity.user;
-        crate::protocol::anthropic::messages::wire::request::validate_user_id(identity)?;
-        if !identity.is_absent() {
-            let mut metadata = serde_json::Map::new();
-            super::shape::put(&mut metadata, "user_id", identity, |value| {
-                serde_json::json!(value)
-            });
-            projection.value["metadata"] = metadata.into();
-        }
-        if sampling_loss.is_some() {
-            projection.rules.push(RequestRule::OmitSampling);
-        }
-        if !self.reasoning_as_text && projection.rules.contains(&RequestRule::ReasoningAsText) {
-            return Err(CodecError::Unsupported("reasoning as text disabled".into()).into());
-        }
-        if let Some(stream) = request.delivery.stream.value() {
-            projection.value["stream"] = serde_json::json!(stream);
-        }
-        if let Some(loss) = loss {
-            projection.control_losses.push(loss);
-            projection.rules.push(RequestRule::OmitVerbosity);
-        }
-        if let Some(rule) = reasoning_rule {
-            projection.rules.push(RequestRule::ReasoningPolicy(rule));
-        }
-        if foreign {
-            projection.rules.push(RequestRule::TransferVisibleHistory);
-        }
-        projection.rules.extend(carrier_rules);
-        projection.rules.extend(
-            self.cache
-                .losses(&request.context)
-                .into_iter()
-                .chain(attribution.losses)
-                .map(RequestRule::Hint),
-        );
-        projection.rules.sort();
-        projection.control_losses.extend(controls);
-        for rule in &projection.rules {
-            use crate::lowering::generation::RequestControlLoss as Loss;
-            use crate::semantic::task::generation::{InstructionAuthority, ReasoningDisplay};
-            let settings = request.task.semantic.settings();
-            match rule {
-                RequestRule::Hint(hint) => {
-                    projection
-                        .control_losses
-                        .extend(hint.evidence().map(Loss::Projection));
-                }
-                RequestRule::SummarizeReasoning => projection.control_losses.push(Loss::Summary {
-                    rule: rule.name(),
-                    input: settings.reasoning.presentation.summary.clone(),
-                    output: ReasoningDisplay::Summary,
-                }),
-                RequestRule::DeveloperAsSystem => projection.control_losses.push(Loss::Role {
-                    rule: rule.name(),
-                    input: InstructionAuthority::Developer,
-                    output: InstructionAuthority::System,
-                }),
-                RequestRule::OmitSampling => projection.control_losses.push(Loss::Sampling {
-                    rule: rule.name(),
-                    temperature: sampling_loss.is_some_and(|v| v.0),
-                    top_p: sampling_loss.is_some_and(|v| v.1),
-                    top_k: false,
-                }),
-                _ => {}
+                    owner: crate::lowering::generation::Owner::Root,
+                })
+            };
+            let request = projected.as_ref();
+            if !self.manual_thinking && request.task.semantic.reasoning().budget_tokens.is_some() {
+                return Err(CodecError::Unsupported(
+                    crate::protocol::failure::CarrierReason::Reasoning,
+                )
+                .into());
             }
-        }
-        super::shape::bounded(&projection.value)?;
-        Ok(projection)
+            let stripped = request.without_foreign_reasoning(Some(&target.origin()))?;
+            let foreign = stripped.is_some();
+            let request = stripped.as_ref().unwrap_or(request);
+            self.check_context(request)?;
+            request.check_semantic(&self.semantics)?;
+            let mut carrier_rules = std::collections::BTreeSet::new();
+            let carried = super::carriers::project(
+                &request.task.semantic,
+                self.carriers,
+                &mut carrier_rules,
+            )?
+            .map(|semantic| {
+                let mut copy = request.clone();
+                copy.task.semantic = semantic;
+                copy
+            });
+            let request = carried.as_ref().unwrap_or(request);
+            request.check_semantic(&self.profile.representation_contract())?;
+            let mut semantic = group_client_history(&request.task.semantic, true)?;
+            let mut settings = semantic.settings().clone();
+            let default_output = settings.controls.max_output_tokens.is_none();
+            if default_output {
+                settings.controls.max_output_tokens = Some(self.default_output_tokens.ok_or(
+                    CodecError::Unsupported(crate::protocol::failure::CarrierReason::Unavailable),
+                )?);
+            }
+            let default_cache = settings.automatic_prefix_cache.is_none()
+                && !semantic
+                    .items()
+                    .iter()
+                    .any(|(_, i)| i.has_cache_breakpoints())
+                && !semantic
+                    .tools()
+                    .iter()
+                    .flat_map(|t| t.leaves())
+                    .any(|t| matches!(t, ToolDefinition::Function(t) if t.cache.is_some()))
+                && self.automatic_cache_default.is_some();
+            if default_cache {
+                settings.automatic_prefix_cache = self.automatic_cache_default;
+            }
+            // Include selects the downstream opaque carrier, not a native control.
+            settings.reasoning = settings.reasoning.with_encrypted_output(false);
+            semantic = semantic.with_settings(settings).map_err(CodecError::from)?;
+            let mut projection = self.profile.encode_request_envelope(
+                &semantic,
+                &request.task.fidelity,
+                target,
+                &request.service_policy,
+                &self.model_limits,
+            )?;
+            let mut selected = Vec::new();
+            if default_output {
+                selected.push(RequestRule::DefaultMaxTokens);
+            }
+            if default_cache {
+                selected.push(RequestRule::DefaultAutomaticCache);
+            }
+            let attribution = crate::protocol::attribution::project(
+                request,
+                crate::protocol::attribution::Carrier::Messages,
+            )?;
+            let identity = &attribution.identity.user;
+            crate::protocol::anthropic::messages::wire::request::validate_user_id(identity)?;
+            if !identity.is_absent() {
+                let mut metadata = serde_json::Map::new();
+                super::shape::put(&mut metadata, "user_id", identity, |value| {
+                    serde_json::json!(value)
+                });
+                projection.value["metadata"] = metadata.into();
+            }
+            if sampling_loss.is_some() {
+                selected.push(RequestRule::OmitSampling);
+            }
+            if !self.reasoning_as_text
+                && projection
+                    .evidence
+                    .contains_rule(RequestRule::ReasoningAsText.name())
+            {
+                return Err(CodecError::Unsupported(
+                    crate::protocol::failure::CarrierReason::Reasoning,
+                )
+                .into());
+            }
+            if let Some(stream) = request.delivery.stream.value() {
+                projection.value["stream"] = serde_json::json!(stream);
+            }
+            if let Some(loss) = loss {
+                controls.push(loss);
+                selected.push(RequestRule::OmitVerbosity);
+            }
+            if let Some(rule) = reasoning_rule {
+                selected.push(RequestRule::ReasoningPolicy(rule));
+            }
+            if foreign {
+                selected.push(RequestRule::TransferVisibleHistory);
+            }
+            selected.extend(carrier_rules);
+            selected.extend(
+                self.cache
+                    .losses(&request.context)
+                    .into_iter()
+                    .chain(attribution.losses)
+                    .map(RequestRule::Hint),
+            );
+            selected.sort();
+            selected.dedup();
+            for effect in controls {
+                projection.evidence.prefer_summary(effect);
+            }
+            for rule in selected {
+                if !projection.evidence.contains_rule(rule.name()) {
+                    projection
+                        .evidence
+                        .push(rule.effect(&request.task.semantic));
+                }
+            }
+
+            super::shape::bounded(&projection.value)?;
+            Ok(projection)
+        })();
+        result.map_err(|error: crate::adapter::ConversionFailure| {
+            error.at(crate::lowering::generation::ConversionBoundary::RequestEncode)
+        })
     }
     /// Fixed headers plus the betas the encoded body actually uses.
     pub(crate) fn request_headers(

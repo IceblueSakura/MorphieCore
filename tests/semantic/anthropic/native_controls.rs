@@ -52,6 +52,7 @@ fn typed(budget: Option<u64>) -> Request {
     .unwrap();
     Request::from_generation(
         DecodedRequest {
+            evidence: Default::default(),
             semantic,
             fidelity: FidelityRecords::default(),
         },
@@ -142,12 +143,10 @@ fn configured_fallback_never_replaces_supported_native_allocation_or_visibility(
         json!({"type":"enabled","budget_tokens":1024,"display":"omitted"})
     );
     assert_eq!(result.value["output_config"]["effort"], "medium");
-    assert!(
-        result
-            .rules
-            .iter()
-            .all(|rule| !matches!(rule, anthropic::messages::RequestRule::ReasoningPolicy(_)))
-    );
+    assert!(result.evidence.iter().all(|rule| !matches!(
+        rule,
+        morphiecore::lowering::generation::Effect::Reasoning { .. }
+    )));
     assert_eq!(request, before);
     let mut settings = request.task.semantic.settings().clone();
     settings.reasoning.budget_tokens = None;
@@ -163,7 +162,7 @@ fn configured_fallback_never_replaces_supported_native_allocation_or_visibility(
 
 #[test]
 fn model_maximum_checks_inserted_default_without_replacing_explicit_caps() {
-    use morphiecore::adapter::AdapterError;
+    use morphiecore::adapter::ConversionFailure;
     assert_eq!(caps().default_output_tokens, None);
     let mut request = typed(None);
     let mut settings = request.task.semantic.settings().clone();
@@ -172,24 +171,27 @@ fn model_maximum_checks_inserted_default_without_replacing_explicit_caps() {
     let before = request.clone();
     let mut limited = caps();
     assert!(matches!(limited.encode_request(&request, &target()),
-        Err(AdapterError::Codec(CodecError::Unsupported(value)))
-            if value == "Messages missing target output default"));
+        Err(ConversionFailure { cause: morphiecore::adapter::ConversionCause::Codec(CodecError::Unsupported(value)), .. })
+            if value == morphiecore::protocol::failure::CarrierReason::Unavailable));
     limited.default_output_tokens = Some(32_000);
     limited.model_limits.maximum_output_tokens = Some(31_999);
     assert!(matches!(
         limited.encode_request(&request, &target()),
-        Err(AdapterError::Codec(CodecError::Invalid(
-            "Messages default output tokens"
-        )))
+        Err(ConversionFailure {
+            cause: morphiecore::adapter::ConversionCause::Codec(CodecError::Invalid(
+                morphiecore::protocol::failure::ShapeReason::InvalidValue
+            )),
+            ..
+        })
     ));
     limited.model_limits.maximum_output_tokens = Some(32_000);
     let projected = limited.encode_request(&request, &target()).unwrap();
     assert_eq!(projected.value["max_tokens"], 32_000);
     assert_eq!(
         projected
-            .rules
+            .evidence
             .iter()
-            .filter(|rule| **rule == anthropic::messages::RequestRule::DefaultMaxTokens)
+            .filter(|rule| rule.rule() == anthropic::messages::RequestRule::DefaultMaxTokens.name())
             .count(),
         1
     );
@@ -201,19 +203,22 @@ fn model_maximum_checks_inserted_default_without_replacing_explicit_caps() {
     assert_eq!(projected.value["max_tokens"], 4096);
     assert!(
         !projected
-            .rules
-            .contains(&anthropic::messages::RequestRule::DefaultMaxTokens)
+            .evidence
+            .contains_rule(anthropic::messages::RequestRule::DefaultMaxTokens.name())
     );
     limited.model_limits.maximum_output_tokens = Some(4095);
     assert!(matches!(limited.encode_request(&explicit, &target()),
-        Err(AdapterError::Codec(CodecError::Unsupported(value)))
-            if value == "target maximum output tokens"));
+        Err(ConversionFailure { cause: morphiecore::adapter::ConversionCause::Codec(CodecError::Unsupported(value)), .. })
+            if value == morphiecore::protocol::failure::CarrierReason::Unavailable));
     limited.default_output_tokens = Some(0);
     assert!(matches!(
         limited.encode_request(&explicit, &target()),
-        Err(AdapterError::Codec(CodecError::Invalid(
-            "Messages default output tokens"
-        )))
+        Err(ConversionFailure {
+            cause: morphiecore::adapter::ConversionCause::Codec(CodecError::Invalid(
+                morphiecore::protocol::failure::ShapeReason::InvalidValue
+            )),
+            ..
+        })
     ));
     limited.default_output_tokens = None;
     limited.model_limits.maximum_output_tokens = Some(4096);
@@ -222,13 +227,13 @@ fn model_maximum_checks_inserted_default_without_replacing_explicit_caps() {
         4096
     );
     assert!(matches!(limited.encode_request(&request, &target()),
-        Err(AdapterError::Codec(CodecError::Unsupported(value)))
-            if value == "Messages missing target output default"));
+        Err(ConversionFailure { cause: morphiecore::adapter::ConversionCause::Codec(CodecError::Unsupported(value)), .. })
+            if value == morphiecore::protocol::failure::CarrierReason::Unavailable));
 }
 #[test]
 fn output_defaults_check_budgets_after_selected_conversions() {
     use morphiecore::{
-        adapter::AdapterError,
+        adapter::ConversionFailure,
         protocol::reasoning::{ReasoningConversion, ReasoningRequestPolicy, SHARED_BUDGETS},
     };
     let mut request = typed(Some(2048));
@@ -240,7 +245,12 @@ fn output_defaults_check_budgets_after_selected_conversions() {
     target_caps.default_output_tokens = Some(2048);
     assert!(matches!(
         target_caps.encode_request(&request, &target()),
-        Err(AdapterError::Codec(CodecError::Invalid("thinking budget")))
+        Err(ConversionFailure {
+            cause: morphiecore::adapter::ConversionCause::Codec(CodecError::Invalid(
+                morphiecore::protocol::failure::ShapeReason::InvalidValue
+            )),
+            ..
+        })
     ));
     target_caps.default_output_tokens = Some(2049);
     let projected = target_caps.encode_request(&request, &target()).unwrap();
@@ -265,15 +275,15 @@ fn output_defaults_check_budgets_after_selected_conversions() {
     assert_eq!(projected.value["output_config"]["effort"], "low");
     assert_eq!(
         projected
-            .rules
+            .evidence
             .iter()
-            .filter(|r| **r == anthropic::messages::RequestRule::DefaultMaxTokens)
+            .filter(|r| r.rule() == anthropic::messages::RequestRule::DefaultMaxTokens.name())
             .count(),
         1
     );
     target_caps.model_limits.allowed_effort = Some(vec![EffortLevel::High].into());
     assert!(matches!(target_caps.encode_request(&request, &target()),
-        Err(AdapterError::Codec(CodecError::Unsupported(value))) if value == "target effort"));
+        Err(ConversionFailure { cause: morphiecore::adapter::ConversionCause::Codec(CodecError::Unsupported(value)), .. }) if value == morphiecore::protocol::failure::CarrierReason::Unavailable));
     assert_eq!(request, before);
 
     let mut settings = typed(None).task.semantic.settings().clone();
@@ -298,12 +308,10 @@ fn output_defaults_check_budgets_after_selected_conversions() {
     let exact = target_caps.encode_request(&qualitative, &target()).unwrap();
     assert_eq!(exact.value["output_config"]["effort"], "medium");
     assert!(exact.value["thinking"].get("budget_tokens").is_none());
-    assert!(
-        exact
-            .rules
-            .iter()
-            .all(|rule| !matches!(rule, anthropic::messages::RequestRule::ReasoningPolicy(_)))
-    );
+    assert!(exact.evidence.iter().all(|rule| !matches!(
+        rule,
+        morphiecore::lowering::generation::Effect::Reasoning { .. }
+    )));
     assert_eq!(qualitative, original);
     // Only the non-native reasoning-scoped effort needs the configured numeric fallback.
     let mut settings = qualitative.task.semantic.settings().clone();
@@ -320,7 +328,12 @@ fn output_defaults_check_budgets_after_selected_conversions() {
         };
     assert!(matches!(
         target_caps.encode_request(&qualitative, &target()),
-        Err(AdapterError::Codec(CodecError::Invalid("thinking budget")))
+        Err(ConversionFailure {
+            cause: morphiecore::adapter::ConversionCause::Codec(CodecError::Invalid(
+                morphiecore::protocol::failure::ShapeReason::InvalidValue
+            )),
+            ..
+        })
     ));
     target_caps.default_output_tokens = Some(4097);
     let projected = target_caps.encode_request(&qualitative, &target()).unwrap();
@@ -347,12 +360,10 @@ fn ordinary_budgets_preserve_numeric_intent_and_native_strict_relation() {
         json!({"type":"enabled","budget_tokens":1024})
     );
     assert_eq!(native.value["max_tokens"], 4096);
-    assert!(
-        native
-            .rules
-            .iter()
-            .all(|r| !matches!(r, anthropic::messages::RequestRule::ReasoningPolicy(_)))
-    );
+    assert!(native.evidence.iter().all(|r| !matches!(
+        r,
+        morphiecore::lowering::generation::Effect::Reasoning { .. }
+    )));
     assert_eq!(request, before);
     for (budget, cap) in [
         (1023, 4096),
@@ -365,7 +376,9 @@ fn ordinary_budgets_preserve_numeric_intent_and_native_strict_relation() {
         bad["max_tokens"] = json!(cap);
         assert!(matches!(
             anthropic::messages::client::decode_client_request(bad.to_string().as_bytes()),
-            Err(CodecError::Invalid("thinking budget"))
+            Err(CodecError::Invalid(
+                morphiecore::protocol::failure::ShapeReason::InvalidValue
+            ))
         ));
         assert!(
             Profile::AdaptiveTextTools
@@ -422,8 +435,8 @@ fn removed_sampling_has_no_native_carrier_but_selected_fixed_projection_remains(
     assert!(projected.value.get("top_p").is_none());
     assert!(
         projected
-            .rules
-            .contains(&anthropic::messages::RequestRule::OmitSampling)
+            .evidence
+            .contains_rule(anthropic::messages::RequestRule::OmitSampling.name())
     );
     assert_eq!(request.task.semantic.controls().temperature(), Some(0.25));
     assert_eq!(source.task.semantic.controls().top_k, Some(7));
@@ -450,9 +463,9 @@ fn native_identity_keeps_presence_and_bounds_with_selected_cross_projection() {
         assert_eq!(native.value["metadata"], json!({"user_id":value}));
         assert!(
             !native
-                .rules
+                .evidence
                 .iter()
-                .any(|r| r.name() == "generation.omit-identity-hints.v1")
+                .any(|r| r.rule() == "generation.omit-identity-hints.v1")
         );
         assert_eq!(request, before);
     }
@@ -484,14 +497,14 @@ fn native_identity_keeps_presence_and_bounds_with_selected_cross_projection() {
     assert_eq!(encoded.value["metadata"]["user_id"], "legacy");
     assert!(
         !encoded
-            .rules
+            .evidence
             .iter()
-            .any(|r| r.name() == "generation.omit-identity-hints.v1")
+            .any(|r| r.rule() == "generation.omit-identity-hints.v1")
     );
     assert!(
         encoded
-            .rules
+            .evidence
             .iter()
-            .any(|r| r.name() == "cache.omit-legacy-user-bucketing.v1")
+            .any(|r| r.rule() == "cache.omit-legacy-user-bucketing.v1")
     );
 }

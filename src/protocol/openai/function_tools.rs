@@ -9,30 +9,44 @@ fn dispatch(o: &Map<String, Value>) -> Result<ToolDispatch, CodecError> {
     let flag = |key| match o.get(key) {
         None | Some(Value::Bool(false)) => Ok(false),
         Some(Value::Bool(true)) => Ok(true),
-        _ => Err(CodecError::Invalid(key)),
+        _ => Err(CodecError::Invalid(
+            crate::protocol::failure::ShapeReason::InvalidValue,
+        )),
     };
     let allowed_callers = match o.get("allowed_callers") {
         None | Some(Value::Null) => None,
         Some(Value::Array(values)) if values == &vec![json!("direct")] => None,
         Some(Value::Array(values)) => {
             if values.is_empty() || values.len() > 2 {
-                return Err(CodecError::Invalid("allowed_callers"));
+                return Err(CodecError::Invalid(
+                    crate::protocol::failure::ShapeReason::InvalidValue,
+                ));
             }
             let mut callers = vec![];
             for value in values {
                 let mode = match value.as_str() {
                     Some("direct") => CallerMode::Direct,
                     Some("programmatic") => CallerMode::Programmatic,
-                    _ => return Err(CodecError::Invalid("allowed_callers")),
+                    _ => {
+                        return Err(CodecError::Invalid(
+                            crate::protocol::failure::ShapeReason::InvalidValue,
+                        ));
+                    }
                 };
                 if callers.contains(&mode) {
-                    return Err(CodecError::Invalid("allowed_callers"));
+                    return Err(CodecError::Invalid(
+                        crate::protocol::failure::ShapeReason::InvalidValue,
+                    ));
                 }
                 callers.push(mode);
             }
             Some(callers)
         }
-        _ => return Err(CodecError::Invalid("allowed_callers")),
+        _ => {
+            return Err(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            ));
+        }
     };
     Ok(ToolDispatch {
         async_call: flag("async")?,
@@ -73,17 +87,23 @@ pub(super) fn read_settings(
     // null never means "no tools".
     for key in ["tools", "tool_choice"] {
         if o.get(key).is_some_and(Value::is_null) {
-            return Err(CodecError::Invalid(key));
+            return Err(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            ));
         }
     }
     if profile == Profile::Chat && o.get("parallel_tool_calls").is_some_and(Value::is_null) {
-        return Err(CodecError::Invalid("parallel_tool_calls"));
+        return Err(CodecError::Invalid(
+            crate::protocol::failure::ShapeReason::InvalidValue,
+        ));
     }
     settings.tools = o
         .get("tools")
         .filter(|v| !v.is_null())
         .map(|v| {
-            let a = v.as_array().ok_or(CodecError::Invalid("tools"))?;
+            let a = v.as_array().ok_or(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            ))?;
             if a.len() > MAX_TOOLS {
                 return Err(CodecError::Limit);
             }
@@ -111,7 +131,9 @@ pub(super) fn read_tool(
         let tools = o
             .get("tools")
             .and_then(Value::as_array)
-            .ok_or(CodecError::Invalid("namespace tools"))?;
+            .ok_or(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            ))?;
         if tools.is_empty() || tools.len() > MAX_TOOLS {
             return Err(CodecError::Limit);
         }
@@ -119,7 +141,9 @@ pub(super) fn read_tool(
         for tool in tools {
             let tool = object(tool)?;
             if !matches!(string(tool, "type")?, "function" | "custom") {
-                return Err(CodecError::Unsupported("namespace leaf".into()));
+                return Err(CodecError::Unsupported(
+                    crate::protocol::failure::CarrierReason::Unavailable,
+                ));
             }
             leaves.push(read_tool(tool, profile, direction)?);
         }
@@ -133,7 +157,9 @@ pub(super) fn read_tool(
         let o = if profile == Profile::Chat {
             reject_chat_orchestration(o)?;
             direction.fields(o, &["type", "custom"])?;
-            let custom = object(o.get("custom").ok_or(CodecError::Invalid("custom tool"))?)?;
+            let custom = object(o.get("custom").ok_or(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            ))?)?;
             reject_chat_orchestration(custom)?;
             custom
         } else {
@@ -168,10 +194,9 @@ pub(super) fn read_tool(
                     "grammar" => {
                         let grammar = if profile == Profile::Chat {
                             direction.fields(f, &["type", "grammar"])?;
-                            let grammar = object(
-                                f.get("grammar")
-                                    .ok_or(CodecError::Invalid("custom grammar"))?,
-                            )?;
+                            let grammar = object(f.get("grammar").ok_or(CodecError::Invalid(
+                                crate::protocol::failure::ShapeReason::InvalidValue,
+                            ))?)?;
                             direction.fields(grammar, &["syntax", "definition"])?;
                             grammar
                         } else {
@@ -182,7 +207,11 @@ pub(super) fn read_tool(
                             syntax: match string(grammar, "syntax")? {
                                 "lark" => GrammarSyntax::Lark,
                                 "regex" => GrammarSyntax::Regex,
-                                _ => return Err(CodecError::Invalid("grammar syntax")),
+                                _ => {
+                                    return Err(CodecError::Invalid(
+                                        crate::protocol::failure::ShapeReason::InvalidValue,
+                                    ));
+                                }
                             },
                             definition: text(
                                 string(grammar, "definition")?,
@@ -191,7 +220,11 @@ pub(super) fn read_tool(
                             )?,
                         }
                     }
-                    _ => return Err(CodecError::Invalid("custom format")),
+                    _ => {
+                        return Err(CodecError::Invalid(
+                            crate::protocol::failure::ShapeReason::InvalidValue,
+                        ));
+                    }
                 })
             })
             .transpose()?;
@@ -207,12 +240,16 @@ pub(super) fn read_tool(
         }));
     }
     if string(o, "type")? != "function" {
-        return Err(CodecError::Unsupported("tool kind".into()));
+        return Err(CodecError::Unsupported(
+            crate::protocol::failure::CarrierReason::Tools,
+        ));
     }
     let f = if profile == Profile::Chat {
         reject_chat_orchestration(o)?;
         direction.fields(o, &["type", "function"])?;
-        object(o.get("function").ok_or(CodecError::Invalid("function"))?)?
+        object(o.get("function").ok_or(CodecError::Invalid(
+            crate::protocol::failure::ShapeReason::InvalidValue,
+        ))?)?
     } else {
         o
     };
@@ -280,11 +317,17 @@ fn reference(
         let (kind, field) = match string(o, "type")? {
             "function" => (ToolKind::Function, "function"),
             "custom" => (ToolKind::Custom, "custom"),
-            _ => return Err(CodecError::Unsupported("tool reference".into())),
+            _ => {
+                return Err(CodecError::Unsupported(
+                    crate::protocol::failure::CarrierReason::Tools,
+                ));
+            }
         };
         reject_chat_orchestration(o)?;
         direction.fields(o, &["type", field])?;
-        let f = object(o.get(field).ok_or(CodecError::Invalid("tool reference"))?)?;
+        let f = object(o.get(field).ok_or(CodecError::Invalid(
+            crate::protocol::failure::ShapeReason::InvalidValue,
+        ))?)?;
         reject_chat_orchestration(f)?;
         direction.fields(f, &["name"])?;
         return Ok(ToolReference {
@@ -298,7 +341,11 @@ fn reference(
         kind: match string(o, "type")? {
             "function" => ToolKind::Function,
             "custom" => ToolKind::Custom,
-            _ => return Err(CodecError::Unsupported("tool reference".into())),
+            _ => {
+                return Err(CodecError::Unsupported(
+                    crate::protocol::failure::CarrierReason::Tools,
+                ));
+            }
         },
         name: text(string(o, "name")?, "tool reference", 128)?,
         namespace: None,
@@ -313,16 +360,19 @@ fn read_choice(
         Some("auto") => ToolChoice::Auto,
         Some("none") => ToolChoice::None,
         Some("required") => ToolChoice::Required,
-        Some(_) => return Err(CodecError::Invalid("tool choice")),
+        Some(_) => {
+            return Err(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            ));
+        }
         None => {
             let o = object(v)?;
             if string(o, "type")? == "allowed_tools" {
                 let allowed = if profile == Profile::Chat {
                     direction.fields(o, &["type", "allowed_tools"])?;
-                    let allowed = object(
-                        o.get("allowed_tools")
-                            .ok_or(CodecError::Invalid("allowed tools"))?,
-                    )?;
+                    let allowed = object(o.get("allowed_tools").ok_or(CodecError::Invalid(
+                        crate::protocol::failure::ShapeReason::InvalidValue,
+                    ))?)?;
                     direction.fields(allowed, &["mode", "tools"])?;
                     allowed
                 } else {
@@ -332,12 +382,19 @@ fn read_choice(
                 let required = match string(allowed, "mode")? {
                     "auto" => false,
                     "required" => true,
-                    _ => return Err(CodecError::Invalid("allowed tools mode")),
+                    _ => {
+                        return Err(CodecError::Invalid(
+                            crate::protocol::failure::ShapeReason::InvalidValue,
+                        ));
+                    }
                 };
-                let a = allowed
-                    .get("tools")
-                    .and_then(Value::as_array)
-                    .ok_or(CodecError::Invalid("allowed tools"))?;
+                let a =
+                    allowed
+                        .get("tools")
+                        .and_then(Value::as_array)
+                        .ok_or(CodecError::Invalid(
+                            crate::protocol::failure::ShapeReason::InvalidValue,
+                        ))?;
                 if a.len() > MAX_TOOLS {
                     return Err(CodecError::Limit);
                 }
@@ -402,7 +459,9 @@ pub(super) fn write_settings(
 pub(super) fn write_tool(t: &ToolDefinition, profile: Profile) -> Result<Value, CodecError> {
     Ok(match t {
         ToolDefinition::Namespace(_) if profile == Profile::Chat => {
-            return Err(CodecError::Unsupported("tool namespace".into()));
+            return Err(CodecError::Unsupported(
+                crate::protocol::failure::CarrierReason::Tools,
+            ));
         }
         ToolDefinition::Namespace(group) => json!({
             "type":"namespace","name":group.name.as_str(),"description":group.description,
@@ -410,7 +469,9 @@ pub(super) fn write_tool(t: &ToolDefinition, profile: Profile) -> Result<Value, 
         }),
         ToolDefinition::Function(t) => {
             if t.input_examples.is_some() {
-                return Err(CodecError::Unsupported("tool input examples".into()));
+                return Err(CodecError::Unsupported(
+                    crate::protocol::failure::CarrierReason::Tools,
+                ));
             }
             let mut f = json!({"name":t.name.as_str()});
             if let Some(d) = &t.description {
@@ -492,11 +553,15 @@ pub(super) fn write_choice(c: &ToolChoice, profile: Profile) -> Result<Value, Co
         }
         ToolChoice::Custom(n) => json!({"type":"custom","name":n.as_str()}),
         ToolChoice::Qualified(_) => {
-            return Err(CodecError::Unsupported("qualified tool choice".into()));
+            return Err(CodecError::Unsupported(
+                crate::protocol::failure::CarrierReason::Tools,
+            ));
         }
         ToolChoice::Allowed { required, tools } => {
             if tools.iter().any(|r| r.namespace.is_some()) {
-                return Err(CodecError::Unsupported("qualified tool choice".into()));
+                return Err(CodecError::Unsupported(
+                    crate::protocol::failure::CarrierReason::Tools,
+                ));
             }
             let refs: Vec<_> = tools
                 .iter()

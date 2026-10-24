@@ -62,8 +62,8 @@ fn messages_only_controls_leave_chat_targets_by_named_rules() {
             "block_binding":{"prefix_mismatch_behavior":"error"}});
     let request = decode_client_request(body.to_string().as_bytes()).unwrap();
     assert!(matches!(endpoint.encode_request_with_rules(&request),
-            Err(morphiecore::adapter::AdapterError::Codec(CodecError::Unsupported(field)))
-                if field == "thinking.block_binding"));
+            Err(morphiecore::adapter::ConversionFailure { cause: morphiecore::adapter::ConversionCause::Codec(CodecError::Unsupported(field)), .. })
+                if matches!(field,morphiecore::protocol::failure::CarrierReason::Reasoning)));
 }
 #[test]
 fn unversioned_readable_views_are_closed_and_never_restore_deleted_reasoning() {

@@ -37,7 +37,8 @@ impl OpenItem {
     }
 }
 pub struct ClientEventEncoder {
-    losses: Vec<crate::lowering::generation::LossEvidence>,
+    notice: Option<crate::protocol::diagnostics::AdaptationNotice>,
+    losses: Vec<crate::lowering::generation::Effect>,
     id: String,
     model: String,
     started: bool,
@@ -78,8 +79,12 @@ fn frame(v: &Value) -> Bytes {
     Bytes::from(format!("event: {kind}\ndata: {v}\n\n"))
 }
 impl ClientEventEncoder {
+    pub(crate) fn set_notice(&mut self, notice: crate::protocol::diagnostics::AdaptationNotice) {
+        self.notice = Some(notice);
+    }
     pub fn new(id: &str, model: &str) -> Self {
         Self {
+            notice: None,
             losses: vec![],
             id: id.into(),
             model: model.into(),
@@ -130,7 +135,9 @@ impl ClientEventEncoder {
     ) -> Result<(), CodecError> {
         let result = (|| {
             if self.rejected || self.finished {
-                return Err(CodecError::Invalid("Messages stream closed"));
+                return Err(CodecError::Invalid(
+                    crate::protocol::failure::ShapeReason::InvalidValue,
+                ));
             }
             if let Some(value) = class.value() {
                 crate::protocol::anthropic::messages::service::class_wire(*value)?;
@@ -139,7 +146,9 @@ impl ClientEventEncoder {
                 && self.service_class != class
             {
                 return Err(CodecError::Unsupported(
-                    "Messages late service report".into(),
+                    crate::protocol::failure::CarrierReason::Field(
+                        crate::lowering::generation::Field::ServiceClass,
+                    ),
                 ));
             }
             self.service_class = class;
@@ -172,12 +181,13 @@ impl ClientEventEncoder {
         }
     }
     fn check_block_order(&mut self, item: ItemId) -> Result<(), CodecError> {
-        let order = *self
-            .owner_order
-            .get(&item)
-            .ok_or(CodecError::Invalid("Messages block owner"))?;
+        let order = *self.owner_order.get(&item).ok_or(CodecError::Invalid(
+            crate::protocol::failure::ShapeReason::InvalidValue,
+        ))?;
         if order < self.last_block_owner {
-            return Err(CodecError::Unsupported("Messages block order".into()));
+            return Err(CodecError::Unsupported(
+                crate::protocol::failure::CarrierReason::Unavailable,
+            ));
         }
         self.last_block_owner = order;
         Ok(())
@@ -209,7 +219,7 @@ impl ClientEventEncoder {
                         .and_then(|u| u.cache_creation.value())
                 {
                     return Err(CodecError::Unsupported(
-                        "Messages late cache breakdown".into(),
+                        crate::protocol::failure::CarrierReason::Usage,
                     ));
                 }
                 if let Some(opening) = &self.opening_usage
@@ -223,7 +233,7 @@ impl ClientEventEncoder {
                             && wire.server_tool_use.value().is_none())
                 {
                     return Err(CodecError::Unsupported(
-                        "Messages erased usage observation".into(),
+                        crate::protocol::failure::CarrierReason::Usage,
                     ));
                 }
             }
@@ -241,7 +251,9 @@ impl ClientEventEncoder {
             // Mandatory scalar completion cannot retract an optional observation
             // already retained by SDK accumulators, or resurrect an old checkpoint.
             if source.stage == UsageStage::Final && (!self.delivery_enabled || published_details) {
-                return Err(CodecError::Unsupported("Messages usage".into()));
+                return Err(CodecError::Unsupported(
+                    crate::protocol::failure::CarrierReason::Usage,
+                ));
             }
         }
         Ok(())
@@ -251,35 +263,50 @@ impl ClientEventEncoder {
     /// as ResponseDelivery does. This renderer is not source admission or a parser.
     pub fn encode(&mut self, event: &StreamEvent) -> Result<Vec<Bytes>, CodecError> {
         if self.finished || self.rejected {
-            return Err(CodecError::Invalid("Messages stream closed"));
+            return Err(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            ));
         }
-        let result = self.encode_open(event).and_then(|frames| {
-            for frame in &frames {
-                self.events = self.events.checked_add(1).ok_or(CodecError::Limit)?;
-                self.wire_bytes = self
-                    .wire_bytes
-                    .checked_add(frame.len())
-                    .ok_or(CodecError::Limit)?;
-                if frame.len() > self.limits.max_event_bytes
-                    || self.events > self.limits.max_events
-                    || self.wire_bytes > self.limits.max_wire_bytes
-                {
-                    return Err(CodecError::Limit);
-                }
-            }
-            Ok(frames)
-        });
+        let checkpoint = self.losses.len();
+        let result = self
+            .encode_open(event)
+            .and_then(|frames| self.check_frames(frames));
         if result.is_err() {
+            self.losses.truncate(checkpoint);
             self.reject();
         }
         result
+    }
+    fn check_frames(&mut self, frames: Vec<Bytes>) -> Result<Vec<Bytes>, CodecError> {
+        use crate::protocol::failure::Resource;
+        for frame in &frames {
+            self.events = self
+                .events
+                .checked_add(1)
+                .ok_or(CodecError::Resource(Resource::Events))?;
+            self.wire_bytes = self
+                .wire_bytes
+                .checked_add(frame.len())
+                .ok_or(CodecError::Resource(Resource::Bytes))?;
+            if self.events > self.limits.max_events {
+                return Err(CodecError::Resource(Resource::Events));
+            }
+            if frame.len() > self.limits.max_event_bytes
+                || self.wire_bytes > self.limits.max_wire_bytes
+            {
+                return Err(CodecError::Resource(Resource::Bytes));
+            }
+        }
+        Ok(frames)
     }
     fn encode_open(&mut self, event: &StreamEvent) -> Result<Vec<Bytes>, CodecError> {
         if matches!(
             event,
             StreamEvent::PartInterrupted { .. } | StreamEvent::CompactionProgress { .. }
         ) {
-            return Err(CodecError::Unsupported("Messages event carrier".into()));
+            return Err(CodecError::Unsupported(
+                crate::protocol::failure::CarrierReason::Unavailable,
+            ));
         }
         let mut out = vec![];
         match event {
@@ -287,14 +314,18 @@ impl ClientEventEncoder {
             StreamEvent::Started => self.seen_start = true,
             StreamEvent::ItemStarted { item, kind, replay } => {
                 if replay.is_some() && matches!(kind, ItemKind::ToolCall { .. }) {
-                    return Err(CodecError::Unsupported("Messages replay attachment".into()));
+                    return Err(CodecError::Unsupported(
+                        crate::protocol::failure::CarrierReason::Replay,
+                    ));
                 }
                 if self.owner_order.len() >= crate::semantic::task::generation::MAX_ITEMS {
                     return Err(CodecError::Limit);
                 }
                 let order = self.owner_order.len();
                 if self.owner_order.insert(*item, order).is_some() {
-                    return Err(CodecError::Invalid("duplicate Messages owner"));
+                    return Err(CodecError::Invalid(
+                        crate::protocol::failure::ShapeReason::InvalidValue,
+                    ));
                 }
                 self.start(&mut out);
                 let block = match kind {
@@ -311,7 +342,9 @@ impl ClientEventEncoder {
                         ..
                     } => {
                         if !context.is_direct() || context.alias_domain.is_some() {
-                            return Err(CodecError::Unsupported("Messages call context".into()));
+                            return Err(CodecError::Unsupported(
+                                crate::protocol::failure::CarrierReason::Unavailable,
+                            ));
                         }
                         self.check_block_order(*item)?;
                         self.calls = true;
@@ -330,7 +363,11 @@ impl ClientEventEncoder {
                             ),
                         }
                     }
-                    _ => return Err(CodecError::Unsupported("Messages stream item".into())),
+                    _ => {
+                        return Err(CodecError::Unsupported(
+                            crate::protocol::failure::CarrierReason::Unavailable,
+                        ));
+                    }
                 };
                 self.open.insert(*item, block);
             }
@@ -362,17 +399,25 @@ impl ClientEventEncoder {
                 let index = self
                     .text_parts
                     .remove(&(*item, *part))
-                    .ok_or(CodecError::Invalid("Messages text part"))?;
+                    .ok_or(CodecError::Invalid(
+                        crate::protocol::failure::ShapeReason::InvalidValue,
+                    ))?;
                 out.push(frame(&json!({"type":"content_block_stop","index":index})));
             }
             StreamEvent::Delta { logprobs, .. } if !logprobs.is_empty() => {
-                return Err(CodecError::Unsupported("Messages probabilities".into()));
+                return Err(CodecError::Unsupported(
+                    crate::protocol::failure::CarrierReason::Unavailable,
+                ));
             }
             StreamEvent::LogprobsSnapshot { .. } => {
-                return Err(CodecError::Unsupported("Messages probabilities".into()));
+                return Err(CodecError::Unsupported(
+                    crate::protocol::failure::CarrierReason::Unavailable,
+                ));
             }
             StreamEvent::TextMetadata { logprobs, .. } if !logprobs.is_absent() => {
-                return Err(CodecError::Unsupported("Messages probabilities".into()));
+                return Err(CodecError::Unsupported(
+                    crate::protocol::failure::CarrierReason::Unavailable,
+                ));
             }
             StreamEvent::Delta {
                 item,
@@ -386,16 +431,17 @@ impl ClientEventEncoder {
                 ) {
                     self.check_block_order(*item)?;
                 }
-                let block = self
-                    .open
-                    .get_mut(item)
-                    .ok_or(CodecError::Invalid("Messages block"))?;
+                let block = self.open.get_mut(item).ok_or(CodecError::Invalid(
+                    crate::protocol::failure::ShapeReason::InvalidValue,
+                ))?;
                 let (index, delta) = match block {
                     OpenItem::Text => (
                         *self
                             .text_parts
                             .get(&(*item, *part))
-                            .ok_or(CodecError::Invalid("Messages text part"))?,
+                            .ok_or(CodecError::Invalid(
+                                crate::protocol::failure::ShapeReason::InvalidValue,
+                            ))?,
                         json!({"type":"text_delta","text":fragment}),
                     ),
                     OpenItem::Thinking { index, .. } => (
@@ -444,21 +490,22 @@ impl ClientEventEncoder {
                 replay,
                 status,
             } => {
-                let block = self
-                    .open
-                    .remove(item)
-                    .ok_or(CodecError::Invalid("Messages block"))?;
+                let block = self.open.remove(item).ok_or(CodecError::Invalid(
+                    crate::protocol::failure::ShapeReason::InvalidValue,
+                ))?;
                 let (index, signature) = match block {
                     OpenItem::Text => {
                         if self.text_parts.keys().any(|(owner, _)| owner == item) {
-                            return Err(CodecError::Invalid("Messages open text part"));
+                            return Err(CodecError::Invalid(
+                                crate::protocol::failure::ShapeReason::InvalidValue,
+                            ));
                         }
                         return Ok(out);
                     }
                     OpenItem::ToolUse { index, .. } => {
                         if replay.is_some() {
                             return Err(CodecError::Unsupported(
-                                "Messages replay attachment".into(),
+                                crate::protocol::failure::CarrierReason::Replay,
                             ));
                         }
                         if *status == crate::semantic::task::generation::ItemLifecycle::Incomplete {
@@ -496,24 +543,34 @@ impl ClientEventEncoder {
                 out.push(frame(&json!({"type":"content_block_stop","index":index})));
             }
             StreamEvent::AnnotationAdded { .. } => {
-                return Err(CodecError::Unsupported("Messages citations".into()));
+                return Err(CodecError::Unsupported(
+                    crate::protocol::failure::CarrierReason::Unavailable,
+                ));
             }
             StreamEvent::TextMetadata { annotations, .. } if !annotations.is_empty() => {
-                return Err(CodecError::Unsupported("Messages citations".into()));
+                return Err(CodecError::Unsupported(
+                    crate::protocol::failure::CarrierReason::Unavailable,
+                ));
             }
             StreamEvent::PartStarted {
                 kind: PartKind::Audio,
                 ..
             }
             | StreamEvent::AudioDelta { .. } => {
-                return Err(CodecError::Unsupported("Messages audio output".into()));
+                return Err(CodecError::Unsupported(
+                    crate::protocol::failure::CarrierReason::Unavailable,
+                ));
             }
             StreamEvent::SafetyReport(_) => {
                 self.reject();
-                return Err(CodecError::Unsupported("Messages safety report".into()));
+                return Err(CodecError::Unsupported(
+                    crate::protocol::failure::CarrierReason::Safety,
+                ));
             }
             StreamEvent::PartReplay { .. } => {
-                return Err(CodecError::Unsupported("Messages replay attachment".into()));
+                return Err(CodecError::Unsupported(
+                    crate::protocol::failure::CarrierReason::Replay,
+                ));
             }
             StreamEvent::Usage(usage) => {
                 self.report(&UsageReport::operation(*usage), &mut out)?;
@@ -526,7 +583,7 @@ impl ClientEventEncoder {
                 if self.incomplete_calls && (*terminal != StreamTerminal::Incomplete
                     || details.incomplete != Some(crate::semantic::task::generation::IncompleteReason::MaxOutputTokens))
                 {
-                    return Err(CodecError::Unsupported("Messages partial tool terminal".into()));
+                    return Err(CodecError::Unsupported(crate::protocol::failure::CarrierReason::Terminal));
                 }
                 self.start(&mut out);
                 let outcome = match terminal {
@@ -574,7 +631,11 @@ impl ClientEventEncoder {
                         wire = Some(completed);
                     }
                 }
-                let mut usage = wire.ok_or(CodecError::Invalid("Messages usage"))?.wire();
+                let mut usage = wire
+                    .ok_or(CodecError::Invalid(
+                        crate::protocol::failure::ShapeReason::Usage,
+                    ))?
+                    .wire();
                 // TTL detail has only an opening carrier in the pinned delta schema.
                 usage
                     .as_object_mut()
@@ -587,8 +648,25 @@ impl ClientEventEncoder {
                     event["delta"].as_object_mut().expect("message delta"),
                     &details.refusal,
                 );
+                let stop = frame(&json!({"type":"message_stop"}));
+                if let Some(mut notice) = self.notice.take() {
+                    notice.add_effects(&self.losses);
+                    let pending = out.iter().map(Bytes::len).sum::<usize>();
+                    let available = self
+                        .limits
+                        .max_event_bytes
+                        .min(
+                            self.limits
+                                .max_wire_bytes
+                                .saturating_sub(self.wire_bytes)
+                                .saturating_sub(pending)
+                                .saturating_sub(stop.len()),
+                        )
+                        .saturating_sub("message_delta".len() + 16);
+                    notice.attach(&mut event, available, false);
+                }
                 out.push(frame(&event));
-                out.push(frame(&json!({"type":"message_stop"})));
+                out.push(stop);
                 self.finished = true;
             }
             _ => {}
@@ -600,16 +678,46 @@ impl ClientEventEncoder {
         if self.finished && !self.rejected {
             Ok(())
         } else {
-            Err(CodecError::Invalid("Messages stream unfinished"))
+            Err(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            ))
         }
     }
-    pub(crate) fn losses(&self) -> &[crate::lowering::generation::LossEvidence] {
+    pub(crate) fn take_evidence(&mut self) -> crate::lowering::generation::EvidenceDelta {
+        std::mem::take(&mut self.losses).into_iter().collect()
+    }
+    #[cfg(test)]
+    pub(crate) fn losses(&self) -> &[crate::lowering::generation::Effect] {
         &self.losses
     }
     /// End the stream with Anthropic's `error` event (`{"type":"error","error":…}`).
-    pub fn fail(&mut self, error: &Value) -> Vec<Bytes> {
+    pub fn fail(&mut self, error: &Value) -> Result<Vec<Bytes>, CodecError> {
+        if self.finished || self.rejected {
+            return Err(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            ));
+        }
         self.finished = true;
-        vec![frame(error)]
+        let mut value = error.clone();
+        if value.get("type").and_then(Value::as_str) != Some("error") {
+            self.rejected = true;
+            return Err(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            ));
+        }
+        if let Some(notice) = self.notice.take() {
+            notice.attach(
+                &mut value,
+                self.limits
+                    .max_event_bytes
+                    .min(self.limits.max_wire_bytes.saturating_sub(self.wire_bytes))
+                    .saturating_sub("error".len() + 16),
+                false,
+            );
+        }
+        let result = self.check_frames(vec![frame(&value)]);
+        self.rejected = true;
+        result
     }
 }
 
@@ -678,7 +786,9 @@ mod tests {
             }
             assert_eq!(
                 encoder.encode(events.last().unwrap()),
-                Err(CodecError::Unsupported("Messages block order".into())),
+                Err(CodecError::Unsupported(
+                    crate::protocol::failure::CarrierReason::Unavailable
+                )),
             );
             assert!(encoder.encode(&StreamEvent::Started).is_err());
             assert!(encoder.finish().is_err());

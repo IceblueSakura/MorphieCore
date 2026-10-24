@@ -36,10 +36,13 @@ async fn flush_pending(
     trace: &mut Trace,
 ) -> Result<(), ApiError> {
     let frames = delivery.flush_pending().map_err(|error| {
-        trace.projection_error(&error);
+        trace.projection_error(
+            crate::lowering::generation::ConversionBoundary::EventEncode,
+            &error,
+        );
         ApiError::upstream()
     })?;
-    trace.delivery_losses(delivery.losses());
+
     send_frames(lane, delivery, frames, trace).await
 }
 #[allow(clippy::too_many_arguments)]
@@ -67,7 +70,8 @@ async fn produce(
         )
     });
     let started = tokio::time::Instant::now();
-    let mut held: Option<Vec<Bytes>> = (stream && hold).then(Vec::new);
+    let mut held: Option<Vec<crate::execution::report::EncodedBatch>> =
+        (stream && hold).then(Vec::new);
     let mut used_bytes = 0usize;
     loop {
         let deadline = delivery
@@ -80,7 +84,7 @@ async fn produce(
             biased;
             _ = tokio::time::sleep_until(started + HOLD_TIME), if held.is_some() => {
                 if let Some(buffer) = held.take() {
-                    send_frames(lane, delivery, buffer, trace).await?;
+                    for batch in buffer {send_frames(lane, delivery, batch, trace).await?;}
                 }
                 continue;
             }
@@ -94,11 +98,9 @@ async fn produce(
                 continue;
             }
             chunk = upstream.chunk() => chunk.map_err(|e| {
-                ApiError::transport(if e.is_timeout() {
-                    crate::provider::ErrorClass::Timeout
-                } else {
-                    crate::provider::ErrorClass::Upstream
-                })
+                let class=if e.is_timeout(){crate::provider::ErrorClass::Timeout}else{crate::provider::ErrorClass::Upstream};
+                trace.report.failure(None,&crate::execution::AttemptError::Transport(class));
+                ApiError::transport(class)
             })?,
         };
         lane.state
@@ -112,6 +114,12 @@ async fn produce(
         }
         used_bytes = used_bytes.saturating_add(chunk.len());
         if used_bytes > limit {
+            trace.report.failure(
+                None,
+                &crate::execution::AttemptError::Resource(
+                    crate::protocol::failure::Resource::Bytes,
+                ),
+            );
             return Err(ApiError::upstream());
         }
         let mut rest = chunk.as_ref();
@@ -146,15 +154,23 @@ async fn produce(
                             failure.body()
                         };
                         let frames = delivery.fail_stream(&body);
-                        trace.delivery_losses(delivery.losses());
-                        let frames = frames.map_err(|_| failure)?;
-                        for frame in frames {
-                            crate::gateway::body::send_frame(lane, frame, trace).await?;
-                        }
+
+                        let frames = frames.map_err(|error| {
+                            trace.projection_error(
+                                crate::lowering::generation::ConversionBoundary::EventEncode,
+                                &error,
+                            );
+                            failure
+                        })?;
+                        crate::gateway::body::send_error_frames(lane, frames, trace).await?;
                     }
                     return Err(failure);
                 }
             };
+            trace.report.accept(
+                crate::execution::report::View::SourceIntake,
+                attempt.take_evidence(),
+            );
             trace.events(&events);
             trace.ignored_events(attempt.ignored_events());
             trace.reported_settings(
@@ -173,29 +189,45 @@ async fn produce(
                     flush_pending(lane, delivery, trace).await?;
                 }
                 let batches = delivery.queue_events(attempt, &events, std::time::Instant::now());
-                trace.delivery_losses(delivery.losses());
+
                 let batches = batches.map_err(|error| {
-                    trace.projection_error(&error);
+                    trace.projection_error(
+                        crate::lowering::generation::ConversionBoundary::EventProject,
+                        &error,
+                    );
                     ApiError::upstream()
                 })?;
                 // Handoff each drained run before encoding a following barrier:
                 // a later target error must not erase validated pending content.
                 for batch in batches {
                     let frames = delivery.encode_prepared(batch);
-                    trace.delivery_losses(delivery.losses());
+
                     let frames = frames.map_err(|error| {
-                        trace.projection_error(&error);
+                        trace.projection_error(
+                            crate::lowering::generation::ConversionBoundary::EventEncode,
+                            &error,
+                        );
                         ApiError::upstream()
                     })?;
+                    if frames.is_empty() {
+                        continue;
+                    }
                     if let Some(buffer) = held.as_mut()
                         && events.iter().all(lifecycle_only)
-                        && buffer.iter().chain(&frames).map(Bytes::len).sum::<usize>() <= HOLD_BYTES
+                        && buffer
+                            .iter()
+                            .map(crate::execution::report::EncodedBatch::byte_len)
+                            .sum::<usize>()
+                            + frames.byte_len()
+                            <= HOLD_BYTES
                         && started.elapsed() < HOLD_TIME
                     {
-                        buffer.extend(frames);
+                        buffer.push(frames);
                     } else {
                         if let Some(buffer) = held.take() {
-                            send_frames(lane, delivery, buffer, trace).await?;
+                            for batch in buffer {
+                                send_frames(lane, delivery, batch, trace).await?;
+                            }
                         }
                         send_frames(lane, delivery, frames, trace).await?;
                     }
@@ -215,6 +247,27 @@ async fn produce(
         trace.decode_error(&error);
         ApiError::transport(crate::provider::ErrorClass::Upstream)
     })?;
+    trace.report.accept(
+        crate::execution::report::View::SourceIntake,
+        attempt.take_evidence(),
+    );
+    trace.report.update(|a| {
+        a.source_eof = true;
+        a.task_outcome = attempt.response().ok().map(|r| match r.semantic.outcome() {
+            crate::semantic::task::generation::Outcome::Completed => {
+                crate::execution::report::TaskOutcome::Completed
+            }
+            crate::semantic::task::generation::Outcome::Incomplete => {
+                crate::execution::report::TaskOutcome::Incomplete
+            }
+            crate::semantic::task::generation::Outcome::Failed => {
+                crate::execution::report::TaskOutcome::Failed
+            }
+            crate::semantic::task::generation::Outcome::Cancelled => {
+                crate::execution::report::TaskOutcome::Cancelled
+            }
+        });
+    });
     trace.reported_settings(
         attempt
             .metadata()
@@ -227,9 +280,12 @@ async fn produce(
     }
     let (frames, json_snapshot) = if stream {
         let frames = delivery.finish_stream(attempt);
-        trace.delivery_losses(delivery.losses());
+
         let frames = frames.map_err(|error| {
-            trace.projection_error(&error);
+            trace.projection_error(
+                crate::lowering::generation::ConversionBoundary::EventEncode,
+                &error,
+            );
             ApiError::upstream()
         })?;
         (frames, None)
@@ -238,30 +294,31 @@ async fn produce(
             trace.reported_usage(usage);
         }
         let snapshot = delivery.encode_json_snapshot(attempt);
-        trace.delivery_losses(delivery.losses());
-        let (response, bytes) = snapshot.map_err(|error| {
-            trace.projection_error(&error);
+
+        let (response, batch) = snapshot.map_err(|error| {
+            trace.projection_error(
+                crate::lowering::generation::ConversionBoundary::ResponseEncode,
+                &error,
+            );
             ApiError::upstream()
         })?;
-        if bytes.len() > limit {
-            return Err(ApiError::upstream());
-        }
-        let body = Bytes::from(bytes);
         let snapshot = history
             .filter(|h| h.input.is_some())
-            .map(|_| (response, body.clone()));
-        (vec![body], snapshot)
+            .map(|_| (response, batch.frames()[0].clone()));
+        (batch, snapshot)
     };
-    trace.delivery_losses(delivery.losses());
+
     if let Some(buffer) = held.take() {
-        send_frames(lane, delivery, buffer, trace).await?;
+        for batch in buffer {
+            send_frames(lane, delivery, batch, trace).await?;
+        }
     }
     let reservation = if let Some(history) = history.filter(|h| h.input.is_some()) {
         let (response, body) = match json_snapshot {
             Some(snapshot) => snapshot,
             None => {
                 let snapshot = delivery.snapshot(attempt);
-                trace.delivery_losses(delivery.losses());
+
                 let (response, body) = snapshot.map_err(|_| ApiError::upstream())?;
                 (response, Bytes::from(body))
             }
@@ -280,7 +337,10 @@ async fn produce(
     Ok(())
 }
 /// Error bodies are read for classification only, within the attempt deadline.
-async fn error_body(mut upstream: reqwest::Response, trace: &Trace) -> Vec<u8> {
+async fn error_body(
+    mut upstream: reqwest::Response,
+    trace: &Trace,
+) -> (Vec<u8>, crate::protocol::failure::Observation) {
     const LIMIT: usize = 16 << 10;
     let content_type = upstream
         .headers()
@@ -304,11 +364,11 @@ async fn error_body(mut upstream: reqwest::Response, trace: &Trace) -> Vec<u8> {
                 if json && let Some(capture) = &mut capture {
                     capture.feed(&body);
                 }
-                return body;
+                return (body, crate::protocol::failure::Observation::Interrupted);
             }
         };
         if body.len() + chunk.len() > LIMIT {
-            return vec![];
+            return (vec![], crate::protocol::failure::Observation::OverLimit);
         }
         if !json && let Some(capture) = &mut capture {
             capture.feed(&chunk);
@@ -321,7 +381,7 @@ async fn error_body(mut upstream: reqwest::Response, trace: &Trace) -> Vec<u8> {
         }
         capture.finish();
     }
-    body
+    (body, crate::protocol::failure::Observation::Complete)
 }
 #[allow(clippy::too_many_arguments)]
 pub(in crate::gateway) async fn produce_candidate(
@@ -347,6 +407,21 @@ pub(in crate::gateway) async fn produce_candidate(
         );
     }
     if !(200..300).contains(&status) {
+        let class = match crate::provider::classify_status(status) {
+            crate::provider::StatusClass::Failure(c) => c,
+            _ => unreachable!(),
+        };
+        trace.report.failure(
+            None,
+            &crate::execution::AttemptError::Status { status, class },
+        );
+        trace
+            .report
+            .source_failure(crate::protocol::failure::SourceFailureEvidence::http(
+                status,
+                b"",
+                crate::protocol::failure::Observation::IntentionallyUnread,
+            ));
         if !(400..600).contains(&status) {
             return Err(ApiError::status(status));
         }
@@ -361,7 +436,21 @@ pub(in crate::gateway) async fn produce_candidate(
         lane.state
             .waiting_upstream
             .store(true, std::sync::atomic::Ordering::Release);
-        let body = error_body(upstream, trace).await;
+        trace
+            .report
+            .source_failure(crate::protocol::failure::SourceFailureEvidence::http(
+                status,
+                b"",
+                crate::protocol::failure::Observation::Pending,
+            ));
+        let (body, observation) = error_body(upstream, trace).await;
+        trace
+            .report
+            .source_failure(crate::protocol::failure::SourceFailureEvidence::http(
+                status,
+                &body,
+                observation,
+            ));
         lane.state
             .waiting_upstream
             .store(false, std::sync::atomic::Ordering::Release);
@@ -369,7 +458,16 @@ pub(in crate::gateway) async fn produce_candidate(
     }
     // A 2xx that is not an API reply (an HTML page, a missing or foreign type)
     // fails over like a 5xx.
-    let not_api = || ApiError::transport(crate::provider::ErrorClass::Upstream);
+    let report = trace.report.clone();
+    let not_api = || {
+        report.failure(
+            None,
+            &crate::execution::AttemptError::Protocol(
+                crate::execution::attempt::ProtocolReason::UnexpectedResponseMediaType,
+            ),
+        );
+        ApiError::transport(crate::provider::ErrorClass::Upstream)
+    };
     let mut content_types = upstream.headers().get_all("content-type").iter();
     let content_type = match (content_types.next(), content_types.next()) {
         // Only true absence may use the trusted SSE-only contract.
@@ -408,9 +506,10 @@ pub(in crate::gateway) async fn produce_candidate(
         .adapter()
         .map_err(|_| ApiError::upstream())?;
     let mut attempt = Attempt::new(adapter, limit, sse);
-    attempt
-        .begin(status, content_type)
-        .map_err(|_| ApiError::upstream())?;
+    attempt.begin(status, content_type).map_err(|error| {
+        trace.decode_error(&error);
+        ApiError::upstream()
+    })?;
     let options = request
         .delivery
         .options
@@ -436,6 +535,7 @@ pub(in crate::gateway) async fn produce_candidate(
         options,
         padding,
     )
+    .with_report(trace.report.clone())
     .with_request(&candidate.endpoint, request)
     .with_coalescing(stream.then_some(limits.delta_coalescing).flatten());
     if let Some(history) = history {
@@ -461,10 +561,11 @@ pub(in crate::gateway) async fn produce_candidate(
         *lane.state.failure_head.lock().expect("upstream failure") = Some(error);
     }
     trace.coalescing_peak(delivery.coalescing_peak_bytes());
-    trace.delivery_losses(delivery.losses());
+
     if result.is_err() {
         // An unpublished failed attempt must not acquire commitment by flushing.
         if stream
+            && delivery.has_open_pending()
             && lane
                 .state
                 .published

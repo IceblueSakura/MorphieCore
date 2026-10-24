@@ -57,7 +57,8 @@ fn public_chat_no_longer_accepts_provider_session_body() {
             admission::prepare(
                 &gate.state,
                 ClientProtocol::Chat,
-                body.to_string().as_bytes()
+                body.to_string().as_bytes(),
+                &crate::execution::report::Report::default()
             )
             .err()
             .unwrap()

@@ -16,10 +16,13 @@ pub fn prepare(
         || provider.origin != route.endpoint.target.origin
         || route.endpoint.execution.streaming != route.endpoint.profile.upstream_sse()
     {
-        return Err(AttemptError::Protocol("speech binding mismatch"));
+        return Err(AttemptError::Protocol(
+            crate::execution::attempt::ProtocolReason::SpeechBindingMismatch,
+        ));
     }
-    crate::lowering::speech::check_request(&request.task, &route.endpoint.capabilities)
-        .map_err(|_| AttemptError::Protocol("speech admission"))?;
+    crate::lowering::speech::check_request(&request.task, &route.endpoint.capabilities).map_err(
+        |_| AttemptError::Protocol(crate::execution::attempt::ProtocolReason::SpeechAdmission),
+    )?;
     let value = route
         .endpoint
         .profile
@@ -44,7 +47,8 @@ pub fn prepare(
             .entry(crate::provider::ProviderOperation::Speech)
             .map_or(provider.auth, |entry| entry.auth)
             .auth_header(secret),
-        body: serde_json::to_vec(&value)
-            .map_err(|_| AttemptError::Protocol("speech serialization"))?,
+        body: serde_json::to_vec(&value).map_err(|_| {
+            AttemptError::Protocol(crate::execution::attempt::ProtocolReason::SpeechSerialization)
+        })?,
     })
 }

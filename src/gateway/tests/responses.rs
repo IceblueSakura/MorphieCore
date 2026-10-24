@@ -180,10 +180,15 @@ async fn stored_json_and_sse_support_tool_continuation_retrieval_and_independent
             .all(|v| v["id"] == child)
     );
     assert_eq!(terminal["previous_response_id"], parent);
-    assert_eq!(
-        value(send(&gate, "GET", &format!("/v1/responses/{child}"), Value::Null).await).await,
-        *terminal
-    );
+    let mut retrieved =
+        value(send(&gate, "GET", &format!("/v1/responses/{child}"), Value::Null).await).await;
+    let mut standard_terminal = terminal.clone();
+    retrieved.as_object_mut().unwrap().remove("morphiecore");
+    standard_terminal
+        .as_object_mut()
+        .unwrap()
+        .remove("morphiecore");
+    assert_eq!(retrieved, standard_terminal);
     let page = value(
         send(
             &gate,

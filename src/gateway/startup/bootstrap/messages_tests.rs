@@ -2,7 +2,7 @@
 use super::test_support::{Fixture, selected_models, service};
 use super::*;
 use crate::{
-    adapter::{AdapterError, ClientAdapter, ClientProtocol},
+    adapter::{ClientAdapter, ClientProtocol, ConversionFailure},
     execution::{AttemptError, admit, plan::representable, prepare},
     lowering::generation::RepresentationError,
     semantic::task::generation::{GenerationFeature, Item, PrefixCacheBoundary, PrefixCacheTtl},
@@ -64,12 +64,14 @@ fn native_response_binding_activates_only_when_listed() {
         &boot.gateway.state,
         ClientProtocol::Messages,
         body,
+        &crate::execution::report::Report::default(),
     )
     .unwrap();
     let (entry, mut request) = crate::gateway::ingress::admission::prepare(
         &mixed.gateway.state,
         ClientProtocol::Messages,
         body,
+        &crate::execution::report::Report::default(),
     )
     .unwrap();
     assert_eq!(request, native_request);
@@ -138,6 +140,7 @@ fn configured_messages_adaptive_forced_tools_keep_strictness_and_effort() {
             &boot.gateway.state,
             ClientProtocol::Messages,
             body.to_string().as_bytes(),
+            &crate::execution::report::Report::default(),
         )
         .unwrap();
         request.conversation =
@@ -165,6 +168,7 @@ fn configured_messages_adaptive_forced_tools_keep_strictness_and_effort() {
             &boot.gateway.state,
             ClientProtocol::Messages,
             unsupported.to_string().as_bytes(),
+            &crate::execution::report::Report::default(),
         )
         .unwrap();
         rejected.conversation = request.conversation.clone();
@@ -175,8 +179,11 @@ fn configured_messages_adaptive_forced_tools_keep_strictness_and_effort() {
             &rejected,
         )
         .unwrap_err();
-        assert!(matches!(error, AttemptError::Adapter(AdapterError::Codec(
-            crate::protocol::CodecError::Unsupported(ref reason))) if reason == "Anthropic strict tool schema"));
+        assert!(
+            matches!(error, AttemptError::Adapter(ConversionFailure { cause: crate::adapter::ConversionCause::Codec(
+            crate::protocol::CodecError::Unsupported(reason)), .. }) if reason == crate::protocol::failure::CarrierReason::Schema),
+            "{error:?}"
+        );
     }
     body.as_object_mut().unwrap().remove("tools");
     body.as_object_mut().unwrap().remove("tool_choice");
@@ -187,6 +194,7 @@ fn configured_messages_adaptive_forced_tools_keep_strictness_and_effort() {
         &boot.gateway.state,
         ClientProtocol::Messages,
         body.to_string().as_bytes(),
+        &crate::execution::report::Report::default(),
     )
     .unwrap();
     request.conversation =
@@ -283,8 +291,8 @@ fn messages_output_defaults_inherit_override_or_clear_without_widening_maxima() 
             assert!(representable(&candidate.endpoint, &request).is_err());
             assert!(
                 matches!(prepare(&candidate.endpoint, &candidate.provider, &secret, &request),
-                Err(AttemptError::Adapter(AdapterError::Codec(crate::protocol::CodecError::Unsupported(value))))
-                    if value == "Messages missing target output default")
+                Err(AttemptError::Adapter(ConversionFailure { cause: crate::adapter::ConversionCause::Codec(crate::protocol::CodecError::Unsupported(value)), .. }))
+                    if value == crate::protocol::failure::CarrierReason::Unavailable)
             );
         }
         assert_eq!(request, before);
@@ -434,9 +442,12 @@ async fn configured_messages_cache_admission_requires_all_native_candidates() {
         if !admitted {
             assert!(matches!(
                 admit(&entry.public, &request),
-                Err(AttemptError::Adapter(AdapterError::Representation(
-                    RepresentationError::Admission(GenerationFeature::ExplicitCache)
-                )))
+                Err(AttemptError::Adapter(ConversionFailure {
+                    cause: crate::adapter::ConversionCause::Representation(
+                        RepresentationError::Admission(GenerationFeature::ExplicitCache)
+                    ),
+                    ..
+                }))
             ));
             // pi's agent profile follows the same all-native rule.
             let strict = json!({"model":"claude-haiku-5-5","max_tokens":64,
@@ -448,15 +459,19 @@ async fn configured_messages_cache_admission_requires_all_native_candidates() {
                 .unwrap();
             assert!(matches!(
                 admit(&entry.public, &strict),
-                Err(AttemptError::Adapter(AdapterError::Representation(
-                    RepresentationError::Admission(GenerationFeature::StrictTools)
-                )))
+                Err(AttemptError::Adapter(ConversionFailure {
+                    cause: crate::adapter::ConversionCause::Representation(
+                        RepresentationError::Admission(GenerationFeature::StrictTools)
+                    ),
+                    ..
+                }))
             ));
             assert!(
                 crate::gateway::ingress::admission::prepare(
                     state,
                     ClientProtocol::Messages,
-                    &serde_json::to_vec(&input).unwrap()
+                    &serde_json::to_vec(&input).unwrap(),
+                    &crate::execution::report::Report::default()
                 )
                 .is_err()
             );
@@ -469,6 +484,7 @@ async fn configured_messages_cache_admission_requires_all_native_candidates() {
                 state,
                 ClientProtocol::Messages,
                 &serde_json::to_vec(&body).unwrap(),
+                &crate::execution::report::Report::default(),
             )
             .unwrap();
             assert_eq!(
@@ -589,6 +605,7 @@ fn native_response_admit_strict_changed_tools_and_message_effort() {
         state,
         ClientProtocol::Messages,
         &serde_json::to_vec(&rich).unwrap(),
+        &crate::execution::report::Report::default(),
     )
     .unwrap();
     request.conversation =
@@ -717,13 +734,14 @@ async fn configured_messages_input_features_require_every_native_candidate() {
                 .unwrap();
             if !admitted {
                 assert!(matches!(admit(&entry.public, &decoded),
-                    Err(AttemptError::Adapter(AdapterError::Representation(
-                        RepresentationError::Admission(found)))) if found == *feature));
+                    Err(AttemptError::Adapter(ConversionFailure { cause: crate::adapter::ConversionCause::Representation(
+                        RepresentationError::Admission(found)), .. })) if found == *feature));
                 assert!(
                     crate::gateway::ingress::admission::prepare(
                         state,
                         ClientProtocol::Messages,
-                        &serde_json::to_vec(input).unwrap()
+                        &serde_json::to_vec(input).unwrap(),
+                        &crate::execution::report::Report::default()
                     )
                     .is_err()
                 );
@@ -733,6 +751,7 @@ async fn configured_messages_input_features_require_every_native_candidate() {
                 state,
                 ClientProtocol::Messages,
                 &serde_json::to_vec(input).unwrap(),
+                &crate::execution::report::Report::default(),
             )
             .unwrap();
             request.conversation = Some(

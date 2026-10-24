@@ -33,7 +33,9 @@ impl EventDecoder {
             ],
         )?;
         if string(o, "object")? != "chat.completion.chunk" {
-            return Err(CodecError::Invalid("chunk object"));
+            return Err(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::Object,
+            ));
         }
         let mut out = vec![];
         if self.metadata.is_none() {
@@ -43,13 +45,17 @@ impl EventDecoder {
         let choices = o
             .get("choices")
             .and_then(Value::as_array)
-            .ok_or(CodecError::Invalid("choices"))?;
+            .ok_or(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::Choices,
+            ))?;
         if self.chat.pending.is_some() {
             self.chat_usage_tail(choices, o, &mut out)?;
             return Ok(out);
         }
         if choices.len() != 1 {
-            return Err(CodecError::Unsupported("candidate count".into()));
+            return Err(CodecError::Unsupported(
+                crate::protocol::failure::CarrierReason::Unavailable,
+            ));
         }
         let choice = object(&choices[0])?;
         DecodeDirection::Upstream
@@ -63,16 +69,24 @@ impl EventDecoder {
                 .filter(|v| !v.is_null())
                 .is_none()
         {
-            return Err(CodecError::Invalid("early usage"));
+            return Err(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::EarlyUsage,
+            ));
         }
         if choice.get("index").and_then(Value::as_u64) != Some(0) {
-            return Err(CodecError::Unsupported("candidate".into()));
+            return Err(CodecError::Unsupported(
+                crate::protocol::failure::CarrierReason::Unavailable,
+            ));
         }
         let probabilities = crate::protocol::openai::chat::logprobs::read(choice.get("logprobs"))?;
-        let delta = object(choice.get("delta").ok_or(CodecError::Invalid("delta"))?)?;
+        let delta = object(choice.get("delta").ok_or(CodecError::Invalid(
+            crate::protocol::failure::ShapeReason::Delta,
+        ))?)?;
         reject_chat_orchestration(delta)?;
         if delta.get("function_call").is_some_and(|v| !v.is_null()) {
-            return Err(CodecError::Unsupported("legacy function_call".into()));
+            return Err(CodecError::Unsupported(
+                crate::protocol::failure::CarrierReason::Unavailable,
+            ));
         }
         DecodeDirection::Upstream.fields(
             delta,
@@ -90,7 +104,9 @@ impl EventDecoder {
         if let Some(role) = delta.get("role").filter(|v| !v.is_null())
             && role.as_str() != Some("assistant")
         {
-            return Err(CodecError::Invalid("role"));
+            return Err(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::Delta,
+            ));
         }
         self.chat_reasoning_delta(delta, &mut out)?;
         self.chat_message_parts(delta, &mut out)?;
@@ -111,7 +127,9 @@ impl EventDecoder {
     ) -> Result<(), CodecError> {
         if !choices.is_empty() {
             if !self.adaptation.rules.repeated_finish_usage || choices.len() != 1 {
-                return Err(CodecError::Invalid("chunk after finish"));
+                return Err(CodecError::Invalid(
+                    crate::protocol::failure::ShapeReason::AfterFinish,
+                ));
             }
             let choice = object(&choices[0])?;
             DecodeDirection::Upstream
@@ -121,9 +139,13 @@ impl EventDecoder {
                     != self.chat.finish_reason.as_deref()
                 || choice.get("logprobs").is_some_and(|v| !v.is_null())
             {
-                return Err(CodecError::Invalid("repeated finish"));
+                return Err(CodecError::Invalid(
+                    crate::protocol::failure::ShapeReason::AfterFinish,
+                ));
             }
-            let delta = object(choice.get("delta").ok_or(CodecError::Invalid("delta"))?)?;
+            let delta = object(choice.get("delta").ok_or(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::Delta,
+            ))?)?;
             reject_chat_orchestration(delta)?;
             DecodeDirection::Upstream.fields(delta, &["role", "content"])?;
             // Explicit, not via `fields`: upstream decoding ignores unknown keys, but
@@ -132,7 +154,9 @@ impl EventDecoder {
                 .iter()
                 .any(|key| delta.get(*key).is_some_and(|v| !v.is_null()))
             {
-                return Err(CodecError::Invalid("content after finish"));
+                return Err(CodecError::Invalid(
+                    crate::protocol::failure::ShapeReason::AfterFinish,
+                ));
             }
             if [
                 (
@@ -149,7 +173,9 @@ impl EventDecoder {
             .into_iter()
             .any(|(key, admitted)| admitted && delta.get(key).is_some_and(|v| !v.is_null()))
             {
-                return Err(CodecError::Invalid("content after finish"));
+                return Err(CodecError::Invalid(
+                    crate::protocol::failure::ShapeReason::AfterFinish,
+                ));
             }
             if delta
                 .get("role")
@@ -158,16 +184,21 @@ impl EventDecoder {
                     .get("content")
                     .is_some_and(|v| !v.is_null() && v.as_str() != Some(""))
             {
-                return Err(CodecError::Invalid("content after finish"));
+                return Err(CodecError::Invalid(
+                    crate::protocol::failure::ShapeReason::AfterFinish,
+                ));
             }
         }
         let usage = crate::protocol::openai::accounting::usage(
             chunk.get("usage"),
             Profile::Chat,
             &self.adaptation,
-            &mut self.fidelity,
+            &mut self.evidence,
+            crate::lowering::generation::ConversionBoundary::EventDecode,
         )?
-        .ok_or(CodecError::Invalid("usage tail"))?;
+        .ok_or(CodecError::Invalid(
+            crate::protocol::failure::ShapeReason::UsageTail,
+        ))?;
         self.emit(StreamEvent::Usage(usage), out)?;
         Ok(())
     }
@@ -209,7 +240,11 @@ impl EventDecoder {
             delta
                 .get("reasoning_content")
                 .filter(|v| !v.is_null())
-                .map(|v| v.as_str().ok_or(CodecError::Invalid("reasoning delta")))
+                .map(|v| {
+                    v.as_str().ok_or(CodecError::Invalid(
+                        crate::protocol::failure::ShapeReason::InvalidValue,
+                    ))
+                })
                 .transpose()?
         } else {
             None
@@ -226,7 +261,11 @@ impl EventDecoder {
                 .map(|p| (p.id, p.kind))
             {
                 Some((part, old)) if old == kind => part,
-                Some(_) => return Err(CodecError::Unsupported("mixed Chat reasoning".into())),
+                Some(_) => {
+                    return Err(CodecError::Unsupported(
+                        crate::protocol::failure::CarrierReason::Reasoning,
+                    ));
+                }
                 None => {
                     let part = self.allocate_part()?;
                     self.emit(StreamEvent::PartStarted { item, part, kind }, out)?;
@@ -311,7 +350,9 @@ impl EventDecoder {
         let owner = self.chat.owner;
         for (key, kind) in [("content", PartKind::Text), ("refusal", PartKind::Refusal)] {
             if let Some(v) = delta.get(key).filter(|v| !v.is_null()) {
-                let fragment = v.as_str().ok_or(CodecError::Invalid("text delta"))?;
+                let fragment = v.as_str().ok_or(CodecError::Invalid(
+                    crate::protocol::failure::ShapeReason::InvalidValue,
+                ))?;
                 if fragment.is_empty() && self.chat.owner.is_none() {
                     // An opening empty fragment defers the carrier message so
                     // readable reasoning keeps its static order ahead of it.
@@ -320,7 +361,9 @@ impl EventDecoder {
                     }
                     continue;
                 }
-                let item = owner.ok_or(CodecError::Invalid("message owner"))?;
+                let item = owner.ok_or(CodecError::Invalid(
+                    crate::protocol::failure::ShapeReason::InvalidValue,
+                ))?;
                 let existing = self
                     .state()?
                     .item(item)?
@@ -337,12 +380,14 @@ impl EventDecoder {
                         .any(|p| p.kind == PartKind::Audio)
                 {
                     return Err(CodecError::Unsupported(
-                        "late text or refusal after audio".into(),
+                        crate::protocol::failure::CarrierReason::Unavailable,
                     ));
                 }
                 let part = if let Some((part, old_kind)) = existing {
                     if kind != old_kind {
-                        return Err(CodecError::Unsupported("mixed Chat text/refusal".into()));
+                        return Err(CodecError::Unsupported(
+                            crate::protocol::failure::CarrierReason::Unavailable,
+                        ));
                     }
                     part
                 } else {
@@ -377,7 +422,9 @@ impl EventDecoder {
         out: &mut Vec<StreamEvent>,
     ) -> Result<(), CodecError> {
         if let Some(audio) = delta.get("audio").filter(|v| !v.is_null()) {
-            let item = self.chat.owner.ok_or(CodecError::Invalid("audio owner"))?;
+            let item = self.chat.owner.ok_or(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            ))?;
             if self
                 .state()?
                 .item(item)?
@@ -385,7 +432,9 @@ impl EventDecoder {
                 .iter()
                 .any(|p| p.kind == PartKind::Refusal)
             {
-                return Err(CodecError::Invalid("audio with refusal"));
+                return Err(CodecError::Invalid(
+                    crate::protocol::failure::ShapeReason::InvalidValue,
+                ));
             }
             let existing = self
                 .state()?
@@ -440,14 +489,18 @@ impl EventDecoder {
             });
             let (item, part) = if let Some((item, part, old_kind)) = existing {
                 if kind != old_kind {
-                    return Err(CodecError::Invalid("probability owner"));
+                    return Err(CodecError::Invalid(
+                        crate::protocol::failure::ShapeReason::InvalidValue,
+                    ));
                 }
                 (item, part)
             } else {
                 if delta.get(key).and_then(Value::as_str).is_none()
                     && self.chat.pending_part != Some(kind)
                 {
-                    return Err(CodecError::Invalid("probability owner"));
+                    return Err(CodecError::Invalid(
+                        crate::protocol::failure::ShapeReason::InvalidValue,
+                    ));
                 }
                 let item = self.chat_message_owner(out)?;
                 let part = self.allocate_part()?;
@@ -487,18 +540,26 @@ impl EventDecoder {
         out: &mut Vec<StreamEvent>,
     ) -> Result<(), CodecError> {
         if let Some(calls) = delta.get("tool_calls").filter(|v| !v.is_null()) {
-            for call in calls.as_array().ok_or(CodecError::Invalid("tool calls"))? {
+            for call in calls.as_array().ok_or(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            ))? {
                 let call = object(call)?;
                 reject_chat_orchestration(call)?;
                 if call.contains_key("custom") {
-                    return Err(CodecError::Unsupported("Chat custom tool streaming".into()));
+                    return Err(CodecError::Unsupported(
+                        crate::protocol::failure::CarrierReason::Tools,
+                    ));
                 }
                 DecodeDirection::Upstream.fields(call, &["index", "id", "type", "function"])?;
                 let n = index(call, "index")?;
                 match call.get("type") {
                     None | Some(Value::Null) => {}
                     Some(Value::String(kind)) if kind == "function" => {}
-                    _ => return Err(CodecError::Unsupported("tool kind".into())),
+                    _ => {
+                        return Err(CodecError::Unsupported(
+                            crate::protocol::failure::CarrierReason::Tools,
+                        ));
+                    }
                 }
                 let empty = Map::new();
                 let f = match call.get("function") {
@@ -536,22 +597,24 @@ impl EventDecoder {
                     self.chat.calls.push(item);
                     item
                 } else {
-                    *self
-                        .chat
-                        .calls
-                        .get(n)
-                        .ok_or(CodecError::Invalid("tool index"))?
+                    *self.chat.calls.get(n).ok_or(CodecError::Invalid(
+                        crate::protocol::failure::ShapeReason::InvalidValue,
+                    ))?
                 };
                 let ItemKind::ToolCall { call_id, name, .. } = &self.state()?.item(item)?.kind
                 else {
-                    return Err(CodecError::Invalid("call"));
+                    return Err(CodecError::Invalid(
+                        crate::protocol::failure::ShapeReason::InvalidValue,
+                    ));
                 };
                 // Continuation chunks reuse null for already-announced identity;
                 // only conflicting non-null values are rejected.
                 let same_identity = |value: Option<&Value>, expected: &str| match value {
                     None | Some(Value::Null) => Ok(()),
                     Some(Value::String(s)) if s == expected => Ok(()),
-                    _ => Err(CodecError::Invalid("call identity")),
+                    _ => Err(CodecError::Invalid(
+                        crate::protocol::failure::ShapeReason::CallIdentity,
+                    )),
                 };
                 // Only this named continuation sentinel denotes an omitted ID.
                 // Initial/unknown-index calls still require their own identity.
@@ -563,7 +626,9 @@ impl EventDecoder {
                 }
                 same_identity(f.get("name"), name.as_str())?;
                 if let Some(v) = f.get("arguments").filter(|v| !v.is_null()) {
-                    let fragment = v.as_str().ok_or(CodecError::Invalid("arguments"))?;
+                    let fragment = v.as_str().ok_or(CodecError::Invalid(
+                        crate::protocol::failure::ShapeReason::InvalidValue,
+                    ))?;
                     let part = self.state()?.item(item)?.parts[0].id;
                     self.emit(
                         StreamEvent::Delta {
@@ -607,7 +672,11 @@ impl EventDecoder {
             Some("stop") => StreamTerminal::Completed,
             Some("tool_calls") if !self.chat.calls.is_empty() => StreamTerminal::Completed,
             Some("length" | "content_filter") => StreamTerminal::Incomplete,
-            _ => return Err(CodecError::Unsupported("finish reason".into())),
+            _ => {
+                return Err(CodecError::Unsupported(
+                    crate::protocol::failure::CarrierReason::Unavailable,
+                ));
+            }
         };
         let items = self.state()?.items().to_vec();
         for item in items {
@@ -626,7 +695,9 @@ impl EventDecoder {
                     let StreamPartValue::Audio(audio) =
                         self.state()?.part(item.id, part.id)?.value()
                     else {
-                        return Err(CodecError::Invalid("audio value"));
+                        return Err(CodecError::Invalid(
+                            crate::protocol::failure::ShapeReason::InvalidValue,
+                        ));
                     };
                     let content = ContentPart::Audio(audio.clone());
                     self.fidelity
@@ -662,7 +733,9 @@ impl EventDecoder {
                 .iter()
                 .any(|p| p.kind == PartKind::Refusal)
             {
-                return Err(CodecError::Invalid("refusal with tool calls"));
+                return Err(CodecError::Invalid(
+                    crate::protocol::failure::ShapeReason::InvalidValue,
+                ));
             }
             let mut members = vec![owner];
             members.extend(&self.chat.calls);
@@ -700,9 +773,12 @@ impl EventDecoder {
                 Some(value),
                 Profile::Chat,
                 &self.adaptation,
-                &mut self.fidelity,
+                &mut self.evidence,
+                crate::lowering::generation::ConversionBoundary::EventDecode,
             )?
-            .ok_or(CodecError::Invalid("usage tail"))?;
+            .ok_or(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::UsageTail,
+            ))?;
             self.emit(StreamEvent::Usage(usage), out)?;
         }
         Ok(())
@@ -727,7 +803,9 @@ impl EventDecoder {
 
     fn reasoning_owner(&mut self, out: &mut Vec<StreamEvent>) -> Result<ItemId, CodecError> {
         if self.chat.owner.is_some() {
-            return Err(CodecError::Unsupported("late Chat reasoning owner".into()));
+            return Err(CodecError::Unsupported(
+                crate::protocol::failure::CarrierReason::Reasoning,
+            ));
         }
         if let Some(item) = self.chat.reasoning {
             return Ok(item);

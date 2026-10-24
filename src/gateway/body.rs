@@ -31,6 +31,7 @@ use tokio::{
 pub(super) struct Chunk {
     bytes: Bytes,
     ack: oneshot::Sender<()>,
+    evidence_ack: Option<crate::execution::report::FrameAck>,
     audio_content_type: Option<&'static str>,
     history: Option<crate::gateway::generation::history::Reservation>,
 }
@@ -89,7 +90,11 @@ impl Stream for Output {
         match item {
             Poll::Pending => Poll::Pending,
             Poll::Ready(Some(Message::Chunk(chunk))) => {
-                if chunk.ack.send(()).is_err() {
+                let accepted = match chunk.evidence_ack {
+                    Some(evidence) => evidence.acknowledge(|| chunk.ack.send(()).is_ok()),
+                    None => chunk.ack.send(()).is_ok(),
+                };
+                if !accepted {
                     self.ended = true;
                     Poll::Ready(Some(Err(std::io::Error::other("delivery cancelled"))))
                 } else {
@@ -126,13 +131,22 @@ pub(super) struct Lane<'a> {
 pub(super) async fn send_frames(
     lane: &Lane<'_>,
     delivery: &mut ResponseDelivery,
-    frames: Vec<Bytes>,
+    frames: crate::execution::report::EncodedBatch,
     trace: &mut Trace,
 ) -> Result<(), ApiError> {
-    for bytes in frames {
-        send_frame(lane, bytes, trace).await?;
-        // Only HTTP body handoff acknowledges commit; queueing cannot do so.
+    for (bytes, evidence_ack) in frames.into_acknowledged_frames() {
+        send_chunk(lane, bytes, None, None, evidence_ack, trace).await?;
         delivery.commit().map_err(|_| ApiError::upstream())?;
+    }
+    Ok(())
+}
+pub(super) async fn send_error_frames(
+    lane: &Lane<'_>,
+    frames: crate::execution::report::EncodedBatch,
+    trace: &mut Trace,
+) -> Result<(), ApiError> {
+    for (bytes, evidence_ack) in frames.into_acknowledged_frames() {
+        send_chunk(lane, bytes, None, None, evidence_ack, trace).await?;
     }
     Ok(())
 }
@@ -141,19 +155,29 @@ pub(super) async fn send_frame(
     bytes: Bytes,
     trace: &mut Trace,
 ) -> Result<(), ApiError> {
-    send_chunk(lane, bytes, None, None, trace).await
+    send_chunk(lane, bytes, None, None, None, trace).await
 }
 pub(super) async fn send_final_frames(
     lane: &Lane<'_>,
     delivery: &mut ResponseDelivery,
-    mut frames: Vec<Bytes>,
+    frames: crate::execution::report::EncodedBatch,
     history: Option<crate::gateway::generation::history::Reservation>,
     trace: &mut Trace,
 ) -> Result<(), ApiError> {
-    let last = frames.pop().ok_or_else(ApiError::upstream)?;
-    send_frames(lane, delivery, frames, trace).await?;
-    send_chunk(lane, last, None, history, trace).await?;
-    delivery.commit().map_err(|_| ApiError::upstream())?;
+    let mut frames = frames.into_acknowledged_frames().peekable();
+    if frames.peek().is_none() {
+        return Err(ApiError::upstream());
+    }
+    let mut history = history;
+    while let Some((bytes, evidence_ack)) = frames.next() {
+        let final_history = if frames.peek().is_none() {
+            history.take()
+        } else {
+            None
+        };
+        send_chunk(lane, bytes, None, final_history, evidence_ack, trace).await?;
+        delivery.commit().map_err(|_| ApiError::upstream())?;
+    }
     Ok(())
 }
 pub(super) async fn send_audio(
@@ -162,13 +186,22 @@ pub(super) async fn send_audio(
     trace: &mut Trace,
 ) -> Result<(), ApiError> {
     let content_type = crate::protocol::openai::speech::response_content_type(&audio);
-    send_chunk(lane, audio.into_data(), Some(content_type), None, trace).await
+    send_chunk(
+        lane,
+        audio.into_data(),
+        Some(content_type),
+        None,
+        None,
+        trace,
+    )
+    .await
 }
 async fn send_chunk(
     lane: &Lane<'_>,
     bytes: Bytes,
     audio_content_type: Option<&'static str>,
     history: Option<crate::gateway::generation::history::Reservation>,
+    evidence_ack: Option<crate::execution::report::FrameAck>,
     trace: &mut Trace,
 ) -> Result<(), ApiError> {
     trace.stage(Stage::Delivery);
@@ -177,16 +210,34 @@ async fn send_chunk(
     let (ack, seen) = oneshot::channel();
     // Publication freezes advancement; acknowledgement alone proves body handoff.
     lane.state.published.store(true, Ordering::Release);
+    trace.report.update(|a| a.published = true);
     lane.tx
         .send(Message::Chunk(Chunk {
             bytes,
             ack,
+            evidence_ack,
             audio_content_type,
             history,
         }))
         .await
-        .map_err(|_| ApiError::upstream())?;
-    seen.await.map_err(|_| ApiError::upstream())?;
+        .map_err(|_| {
+            trace.report.failure(
+                None,
+                &crate::execution::AttemptError::Delivery(
+                    crate::execution::attempt::DeliveryReason::BodyConsumerClosed,
+                ),
+            );
+            ApiError::upstream()
+        })?;
+    seen.await.map_err(|_| {
+        trace.report.failure(
+            None,
+            &crate::execution::AttemptError::Delivery(
+                crate::execution::attempt::DeliveryReason::BodyConsumerClosed,
+            ),
+        );
+        ApiError::upstream()
+    })?;
     trace.handed_off(size);
     Ok(())
 }
@@ -373,11 +424,11 @@ pub(super) async fn respond_producer(
         let result = tokio::select! {
             biased;
             _=shutdown.cancelled()=>Err(ApiError::shutdown()),
-            _=tx.closed()=>Err(ApiError::upstream()),
+            _=tx.closed()=>{trace.report.failure(None,&crate::execution::AttemptError::Delivery(crate::execution::attempt::DeliveryReason::BodyConsumerClosed));Err(ApiError::upstream())},
             result=producer.produce(&limits,deadline,&tx,&worker_state,&mut trace)=>result,
             // Generation's own attempt deadline must record upstream evidence
             // before the outer safety deadline cancels its recovery lease.
-            _=tokio::time::sleep_until(deadline)=>Err(ApiError::timeout()),
+            _=tokio::time::sleep_until(deadline)=>{trace.report.failure(None,&crate::execution::AttemptError::Deadline(crate::execution::attempt::DeadlineReason::Exchange));Err(ApiError::timeout())},
         };
         match result {
             Ok(()) => {

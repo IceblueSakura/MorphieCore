@@ -2,7 +2,7 @@
 use crate::protocol::CodecError;
 use serde_json::{Map, Value};
 fn invalid() -> CodecError {
-    CodecError::Invalid("embedding")
+    CodecError::Invalid(crate::protocol::failure::ShapeReason::InvalidValue)
 }
 pub(crate) fn required<'a>(
     map: &'a Map<String, Value>,

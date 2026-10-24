@@ -6,10 +6,10 @@ use crate::{
 use std::collections::BTreeMap;
 
 fn order() -> CodecError {
-    CodecError::Unsupported("native block order on Chat".into())
+    CodecError::Unsupported(crate::protocol::failure::CarrierReason::Unavailable)
 }
 pub(crate) struct EventProjection {
-    losses: Vec<crate::lowering::generation::LossEvidence>,
+    losses: Vec<crate::lowering::generation::Effect>,
     profile: Profile,
     phase_only: bool,
     phase_seen: bool,
@@ -29,6 +29,9 @@ pub(crate) struct EventProjection {
     scope: LocalScope,
 }
 impl EventProjection {
+    pub(crate) fn take_evidence(&mut self) -> Vec<crate::lowering::generation::Effect> {
+        std::mem::take(&mut self.losses)
+    }
     pub(crate) fn new(profile: Profile) -> Self {
         Self {
             losses: vec![],
@@ -48,7 +51,8 @@ impl EventProjection {
             scope: LocalScope::new(2),
         }
     }
-    pub(crate) fn losses(&self) -> &[crate::lowering::generation::LossEvidence] {
+    #[cfg(test)]
+    pub(crate) fn effects(&self) -> &[crate::lowering::generation::Effect] {
         &self.losses
     }
     pub(crate) fn for_phase() -> Self {
@@ -60,7 +64,7 @@ impl EventProjection {
     pub(crate) fn needs_source_check(&self) -> bool {
         self.phase_only && !self.phase_seen
     }
-    fn record(&mut self, loss: crate::lowering::generation::LossEvidence) {
+    fn record(&mut self, loss: crate::lowering::generation::Effect) {
         if !self.losses.contains(&loss) {
             self.losses.push(loss);
         }
@@ -77,7 +81,7 @@ impl EventProjection {
         // Native block IDs are 1..=MAX_ITEMS. This is only a target carrier.
         let owner = ItemId::scoped(self.scope, MAX_ITEMS as u64 + 1);
         self.message = Some(owner);
-        self.record(super::envelope_loss(self.profile, "event.encode"));
+        self.record(super::envelope_loss(self.profile, "event.project"));
         out.push(StreamEvent::ItemStarted {
             item: owner,
             kind: ItemKind::Message { phase: None },
@@ -114,7 +118,7 @@ impl EventProjection {
                     self.text_metadata = true;
                     if self.text_parts > 1 {
                         return Err(CodecError::Unsupported(
-                            "native Chat text coalescing".into(),
+                            crate::protocol::failure::CarrierReason::Unavailable,
                         ));
                     }
                 }
@@ -133,20 +137,23 @@ impl EventProjection {
                                     self.phase_seen |= phase.is_some();
                                     if phase.take().is_some() {
                                         self.record(crate::protocol::phase::delivery_omission(
-                                            "event.encode",
+                                            "event.project",
                                         ));
                                     }
                                 }
                                 if !self.calls.is_empty() {
                                     return Err(CodecError::Unsupported(
-                                        "native block order on Chat".into(),
+                                        crate::protocol::failure::CarrierReason::Unavailable,
                                     ));
                                 }
                                 let owner = *self.message.get_or_insert(*item);
                                 self.text_owners.insert(*item, owner);
                                 self.close_later(owner);
                                 if owner != *item {
-                                    self.record(super::envelope_loss(self.profile, "event.encode"));
+                                    self.record(super::envelope_loss(
+                                        self.profile,
+                                        "event.project",
+                                    ));
                                     continue;
                                 }
                             }
@@ -174,10 +181,10 @@ impl EventProjection {
                                     || old_kind != PartKind::Text
                                 {
                                     return Err(CodecError::Unsupported(
-                                        "native Chat text coalescing".into(),
+                                        crate::protocol::failure::CarrierReason::Unavailable,
                                     ));
                                 }
-                                self.record(super::envelope_loss(self.profile, "event.encode"));
+                                self.record(super::envelope_loss(self.profile, "event.project"));
                                 continue;
                             }
                             self.text_part = Some((*part, *kind));
@@ -199,7 +206,9 @@ impl EventProjection {
                         if !annotations.is_empty() || !logprobs.is_absent() {
                             *part = self
                                 .text_part
-                                .ok_or(CodecError::Invalid("native text owner"))?
+                                .ok_or(CodecError::Invalid(
+                                    crate::protocol::failure::ShapeReason::InvalidValue,
+                                ))?
                                 .0;
                             *item = self.text_owners[item];
                             self.text_metadata_end = Some(event);
@@ -215,7 +224,9 @@ impl EventProjection {
                         if self.text_owners.contains_key(item) {
                             *part = self
                                 .text_part
-                                .ok_or(CodecError::Invalid("native text owner"))?
+                                .ok_or(CodecError::Invalid(
+                                    crate::protocol::failure::ShapeReason::InvalidValue,
+                                ))?
                                 .0;
                         }
                         *item = self.text_owners.get(item).copied().unwrap_or(*item);
@@ -227,9 +238,7 @@ impl EventProjection {
                     }
                     StreamEvent::Usage(usage) if !self.phase_only => {
                         let projected = super::client_usage(*usage)?;
-                        if let Some(loss) =
-                            super::usage_loss(Some(*usage), projected, "event.encode")
-                        {
+                        for loss in super::usage_loss(Some(*usage), projected, "event.project") {
                             self.record(loss);
                         }
                         let Some(projected) = projected else {
@@ -240,7 +249,7 @@ impl EventProjection {
                     StreamEvent::UsageReport(report) if !self.phase_only => {
                         report.validate()?;
                         if report.has_unrepresented_details() {
-                            self.record(crate::protocol::usage::report_loss("event.encode"));
+                            self.record(crate::protocol::usage::report_loss("event.project"));
                         }
                         if report.scope != UsageScope::Operation
                             || report.stage != UsageStage::Final
@@ -251,9 +260,7 @@ impl EventProjection {
                             continue;
                         };
                         let projected = super::client_usage(source)?;
-                        if let Some(loss) =
-                            super::usage_loss(Some(source), projected, "event.encode")
-                        {
+                        for loss in super::usage_loss(Some(source), projected, "event.project") {
                             self.record(loss);
                         }
                         let Some(usage) = projected else {
@@ -268,7 +275,7 @@ impl EventProjection {
                             .chain(self.calls.iter().copied())
                             .collect();
                         if self.profile == Profile::Responses || envelope.members() != members {
-                            self.record(super::envelope_loss(self.profile, "event.encode"));
+                            self.record(super::envelope_loss(self.profile, "event.project"));
                         }
                         continue;
                     }

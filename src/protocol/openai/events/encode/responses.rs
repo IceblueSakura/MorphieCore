@@ -8,7 +8,9 @@ impl EventEncoder {
             .items()
             .iter()
             .position(|i| i.id == id)
-            .ok_or(CodecError::Invalid("item identity"))
+            .ok_or(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            ))
     }
     fn part_index(&self, item: ItemId, part: PartId) -> Result<usize, CodecError> {
         let kind = self.state()?.part(item, part)?.kind;
@@ -18,14 +20,18 @@ impl EventEncoder {
             .iter()
             .filter(|p| (p.kind == PartKind::Summary) == (kind == PartKind::Summary))
             .position(|p| p.id == part)
-            .ok_or(CodecError::Invalid("part identity"))
+            .ok_or(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            ))
     }
     fn coordinates(&self, item: ItemId, part: PartId) -> Result<Value, CodecError> {
         let kind = self.state()?.part(item, part)?.kind;
         let id = self
             .fidelity
             .response_item_id(item)
-            .ok_or(CodecError::Invalid("wire identity"))?;
+            .ok_or(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            ))?;
         let mut v = json!({"output_index": self.index(item)?, "item_id": id});
         if !matches!(
             kind,
@@ -44,11 +50,9 @@ impl EventEncoder {
         status: &str,
         output: Vec<Value>,
     ) -> Result<Value, CodecError> {
-        let created = self
-            .metadata
-            .created
-            .as_ref()
-            .ok_or(CodecError::Invalid("created time"))?;
+        let created = self.metadata.created.as_ref().ok_or(CodecError::Invalid(
+            crate::protocol::failure::ShapeReason::Metadata,
+        ))?;
         let mut v = json!({
             "id": self.metadata.id,
             "object": "response",
@@ -59,13 +63,16 @@ impl EventEncoder {
         });
         let mut delivered = self.metadata.clone();
         crate::protocol::reports::opening_view(&mut delivered.context.reports)?;
-        let loss = projection::reported_settings(&mut delivered, self.profile)
-            .map_err(|_| CodecError::Unsupported("reported settings".into()))?;
+        let loss = projection::reported_settings(&mut delivered, self.profile).map_err(|_| {
+            CodecError::Unsupported(crate::protocol::failure::CarrierReason::Unavailable)
+        })?;
         if loss.is_some()
             && self.contract.reported_facts
                 == crate::lowering::generation::ReportedFactPolicy::StrictComplete
         {
-            return Err(CodecError::Unsupported("required reported settings".into()));
+            return Err(CodecError::Unsupported(
+                crate::protocol::failure::CarrierReason::Unavailable,
+            ));
         }
         let fingerprint = if !delivered.context.system_fingerprint.is_absent() {
             delivered.context.system_fingerprint = crate::semantic::value::Presence::Absent;
@@ -86,7 +93,9 @@ impl EventEncoder {
     pub(super) fn responses(&mut self, event: &StreamEvent) -> Result<Vec<Value>, CodecError> {
         let result = match event {
             StreamEvent::AudioDelta { .. } => {
-                return Err(CodecError::Unsupported("Responses audio carrier".into()));
+                return Err(CodecError::Unsupported(
+                    crate::protocol::failure::CarrierReason::Unavailable,
+                ));
             }
             StreamEvent::Queued => {
                 vec![json!({"type":"response.queued","response":self.envelope("queued",vec![])?})]
@@ -105,7 +114,9 @@ impl EventEncoder {
                 let id = self
                     .fidelity
                     .response_item_id(*item)
-                    .ok_or(CodecError::Invalid("wire identity"))?;
+                    .ok_or(CodecError::Invalid(
+                        crate::protocol::failure::ShapeReason::InvalidValue,
+                    ))?;
                 let mut v = match kind {
                     ItemKind::Message { phase } => {
                         let mut v = json!({
@@ -179,7 +190,7 @@ impl EventEncoder {
                     }
                     ItemKind::ProviderTool(_) | ItemKind::ProviderResult { .. } => {
                         return Err(CodecError::Unsupported(
-                            "Provider observation carrier".into(),
+                            crate::protocol::failure::CarrierReason::Unavailable,
                         ));
                     }
                     ItemKind::ToolCall {
@@ -302,8 +313,9 @@ impl EventEncoder {
                     });
                     v["part"] = if p.kind == PartKind::Text {
                         let text = crate::semantic::value::Text::allowing_empty(
-                            p.text()
-                                .ok_or(CodecError::Unsupported("structured arguments".into()))?,
+                            p.text().ok_or(CodecError::Unsupported(
+                                crate::protocol::failure::CarrierReason::Unavailable,
+                            ))?,
                             "text",
                             MAX_TEXT_BYTES,
                         )
@@ -316,8 +328,9 @@ impl EventEncoder {
                     } else {
                         part_wire(
                             p.kind,
-                            p.text()
-                                .ok_or(CodecError::Unsupported("structured arguments".into()))?,
+                            p.text().ok_or(CodecError::Unsupported(
+                                crate::protocol::failure::CarrierReason::Unavailable,
+                            ))?,
                         )
                     };
                     if matches!(event, StreamEvent::PartInterrupted { .. }) {
@@ -329,7 +342,7 @@ impl EventEncoder {
             StreamEvent::CompactionProgress { item } => vec![json!({
                 "type":"response.compaction.compacting",
                 "output_index":self.index(*item)?,
-                "item_id":self.fidelity.response_item_id(*item).ok_or(CodecError::Invalid("compaction identity"))?,
+                "item_id":self.fidelity.response_item_id(*item).ok_or(CodecError::Invalid(crate::protocol::failure::ShapeReason::InvalidValue))?,
             })],
             StreamEvent::ItemFinished { item, .. } => vec![json!({
                 "type": "response.output_item.done",
@@ -342,7 +355,9 @@ impl EventEncoder {
                 annotation,
             } => {
                 if annotation.value().kind == CitationKind::ArtifactReference {
-                    return Err(CodecError::Unsupported("file_path annotation event".into()));
+                    return Err(CodecError::Unsupported(
+                        crate::protocol::failure::CarrierReason::Unavailable,
+                    ));
                 }
                 let mut v = self.coordinates(*item, *part)?;
                 v["type"] = json!("response.output_text.annotation.added");
@@ -362,13 +377,19 @@ impl EventEncoder {
             | StreamEvent::Usage(_)
             | StreamEvent::UsageReport(_) => vec![],
             StreamEvent::PartReplay { .. } => {
-                return Err(CodecError::Unsupported("owned replay attachment".into()));
+                return Err(CodecError::Unsupported(
+                    crate::protocol::failure::CarrierReason::Replay,
+                ));
             }
             StreamEvent::SafetyReport(_) => {
-                return Err(CodecError::Unsupported("safety report".into()));
+                return Err(CodecError::Unsupported(
+                    crate::protocol::failure::CarrierReason::Safety,
+                ));
             }
             StreamEvent::Progress(_) => {
-                return Err(CodecError::Unsupported("interaction progress".into()));
+                return Err(CodecError::Unsupported(
+                    crate::protocol::failure::CarrierReason::Unavailable,
+                ));
             }
             StreamEvent::Terminal {
                 terminal: StreamTerminal::Error,
@@ -381,11 +402,13 @@ impl EventEncoder {
                     .is_some_and(|e| e.original_type.is_some())
                 {
                     return Err(CodecError::Unsupported(
-                        "original error type on standalone error event".into(),
+                        crate::protocol::failure::CarrierReason::Unavailable,
                     ));
                 }
                 if !v.is_object() {
-                    return Err(CodecError::Invalid("error details"));
+                    return Err(CodecError::Invalid(
+                        crate::protocol::failure::ShapeReason::InvalidValue,
+                    ));
                 }
                 v["type"] = json!("error");
                 vec![v]
@@ -414,14 +437,18 @@ impl EventEncoder {
                     Profile::Responses,
                     self.contract.clone(),
                 )
-                .map_err(|_| CodecError::Unsupported("terminal representation".into()))?;
+                .map_err(|_| {
+                    CodecError::Unsupported(crate::protocol::failure::CarrierReason::Terminal)
+                })?;
                 let v = crate::protocol::openai::responses::encode_response(&target)?;
                 let kind = match terminal {
                     StreamTerminal::Completed => "response.completed",
                     StreamTerminal::Incomplete => "response.incomplete",
                     StreamTerminal::Failed => "response.failed",
                     StreamTerminal::Cancelled => {
-                        return Err(CodecError::Unsupported("cancelled event".into()));
+                        return Err(CodecError::Unsupported(
+                            crate::protocol::failure::CarrierReason::Unavailable,
+                        ));
                     }
                     StreamTerminal::Error => unreachable!(),
                 };

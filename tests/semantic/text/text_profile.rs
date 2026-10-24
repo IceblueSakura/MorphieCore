@@ -61,19 +61,19 @@ fn audit_protected_response_details_and_access_policy_are_not_ignored() {
         body["error"]["misalignment"] = details;
         assert!(
             matches!(adapter.decode_response(body.to_string().as_bytes()),
-                Err(CodecError::Unsupported(field)) if field == "Responses misalignment details")
+                Err(CodecError::Unsupported(field)) if matches!(field,morphiecore::protocol::failure::CarrierReason::Unavailable))
         );
     }
     let body = json!({"model":"m","input":"go","access_programs":{"cyber":"standard"}});
     assert!(
         matches!(adapter.decode_client_request(body.to_string().as_bytes()),
-            Err(CodecError::Unsupported(field)) if field == "Responses access_programs")
+            Err(CodecError::Unsupported(field)) if matches!(field,morphiecore::protocol::failure::CarrierReason::Unavailable))
     );
     let mut reported = wire::response(2);
     reported["access_programs"] = json!({"cyber":"standard"});
     assert!(
         matches!(adapter.decode_response(reported.to_string().as_bytes()),
-            Err(CodecError::Unsupported(field)) if field == "Responses access_programs")
+            Err(CodecError::Unsupported(field)) if matches!(field,morphiecore::protocol::failure::CarrierReason::Unavailable))
     );
     for late in [false, true] {
         let mut values = wire::events(2);
@@ -88,7 +88,9 @@ fn audit_protected_response_details_and_access_policy_are_not_ignored() {
                         .iter()
                         .any(|e| matches!(e, StreamEvent::Terminal { .. }))
                 ),
-                Err(CodecError::Unsupported(field)) if field == "Responses access_programs" => {
+                Err(CodecError::Unsupported(
+                    morphiecore::protocol::failure::CarrierReason::Unavailable,
+                )) => {
                     rejected = true;
                     break;
                 }
@@ -261,7 +263,9 @@ fn request_formats_reject_known_nulls_without_rejecting_nullable_reports() {
                 if description.as_ref().is_some_and(Value::is_null) {
                     assert_eq!(
                         decode(&body).unwrap_err(),
-                        CodecError::Invalid("description")
+                        CodecError::Invalid(
+                            morphiecore::protocol::failure::ShapeReason::InvalidValue
+                        )
                     );
                 } else {
                     let decoded = decode(&body).unwrap();
@@ -307,7 +311,9 @@ fn instruction_status_is_checked_in_history_and_reported_echoes() {
             {"type":"input_image","image_url":"https://example.test/image.png"}]}]);
     assert_eq!(
         envelope::decode_response(&response).unwrap_err(),
-        morphiecore::protocol::CodecError::Unsupported("instruction content".into())
+        morphiecore::protocol::CodecError::Unsupported(
+            morphiecore::protocol::failure::CarrierReason::Unavailable
+        )
     );
     for role in ["system", "developer"] {
         for status in [
@@ -528,13 +534,20 @@ fn custom_tools_and_text_array_results_are_not_function_arguments() {
     forced.adaptation.rules.responses_forced_stream = true;
     let mut json_request = request.clone();
     json_request.delivery.stream = Presence::Value(false);
-    assert!(
+    assert!(matches!(
         forced
             .encode_request_with_rules(&json_request, "m", &contract())
-            .unwrap_err()
-            .to_string()
-            .contains("Chat custom tool streaming")
-    );
+            .unwrap_err(),
+        morphiecore::adapter::ConversionFailure {
+            boundary: Some(morphiecore::lowering::generation::ConversionBoundary::RequestEncode),
+            cause: morphiecore::adapter::ConversionCause::Codec(
+                morphiecore::protocol::CodecError::Unsupported(
+                    morphiecore::protocol::failure::CarrierReason::Tools
+                )
+            ),
+            ..
+        }
+    ));
     streaming["tool_choice"] = json!("none");
     let disabled = adapter
         .decode_request(streaming.to_string().as_bytes())
@@ -650,7 +663,7 @@ fn reported_text_container_presence_is_not_request_intent() {
             projected
                 .projection()
                 .iter()
-                .all(|stage| stage.loss.is_none())
+                .all(|stage| !stage.change().is_loss())
         );
         let mut encoder = EventEncoder::new(Profile::Responses, metadata).unwrap();
         for event in [
@@ -671,11 +684,15 @@ fn reported_text_container_presence_is_not_request_intent() {
     let request = json!({"model":"m","input":"go","text":null});
     assert!(matches!(
         adapter.decode_client_request(request.to_string().as_bytes()),
-        Err(CodecError::Invalid("text"))
+        Err(CodecError::Invalid(
+            morphiecore::protocol::failure::ShapeReason::InvalidValue
+        ))
     ));
     assert!(matches!(
         responses::decode_generation(&json!({"input":"go","text":null})),
-        Err(CodecError::Invalid("text"))
+        Err(CodecError::Invalid(
+            morphiecore::protocol::failure::ShapeReason::InvalidValue
+        ))
     ));
     let request = responses::decode_generation(&json!({"input":"go"}))
         .unwrap()

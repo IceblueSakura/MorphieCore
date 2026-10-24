@@ -10,7 +10,7 @@ pub(super) fn decode_details(o: &Map<String, Value>) -> Result<TerminalDetails, 
             let e = object(v)?;
             if e.get("misalignment").is_some_and(|v| !v.is_null()) {
                 return Err(CodecError::Unsupported(
-                    "Responses misalignment details".into(),
+                    crate::protocol::failure::CarrierReason::Unavailable,
                 ));
             }
             DecodeDirection::Upstream.fields(e, &["code", "message", "param", "type"])?;
@@ -20,8 +20,9 @@ pub(super) fn decode_details(o: &Map<String, Value>) -> Result<TerminalDetails, 
                     .filter(|v| !v.is_null())
                     .map(|v| {
                         crate::semantic::value::Text::allowing_empty(
-                            v.as_str()
-                                .ok_or(CodecError::Invalid("original error type"))?,
+                            v.as_str().ok_or(CodecError::Invalid(
+                                crate::protocol::failure::ShapeReason::InvalidValue,
+                            ))?,
                             "original error type",
                             256,
                         )
@@ -33,7 +34,9 @@ pub(super) fn decode_details(o: &Map<String, Value>) -> Result<TerminalDetails, 
                     .filter(|v| !v.is_null())
                     .map(|v| {
                         text(
-                            v.as_str().ok_or(CodecError::Invalid("error code"))?,
+                            v.as_str().ok_or(CodecError::Invalid(
+                                crate::protocol::failure::ShapeReason::InvalidValue,
+                            ))?,
                             "error code",
                             128,
                         )
@@ -50,7 +53,9 @@ pub(super) fn decode_details(o: &Map<String, Value>) -> Result<TerminalDetails, 
                     .filter(|v| !v.is_null())
                     .map(|v| {
                         text(
-                            v.as_str().ok_or(CodecError::Invalid("param"))?,
+                            v.as_str().ok_or(CodecError::Invalid(
+                                crate::protocol::failure::ShapeReason::InvalidValue,
+                            ))?,
                             "param",
                             256,
                         )
@@ -101,7 +106,9 @@ pub(super) fn chat_finish(response: &GenerationResponse) -> Result<&'static str,
             Outcome::Incomplete,
             Some(IncompleteReason::ContentFilter | IncompleteReason::Recitation),
         ) => Ok("content_filter"),
-        _ => Err(CodecError::Unsupported("Chat terminal".into())),
+        _ => Err(CodecError::Unsupported(
+            crate::protocol::failure::CarrierReason::Terminal,
+        )),
     }
 }
 /// Whether Chat has a finish reason for this incomplete state, exactly or under a
@@ -132,7 +139,9 @@ pub(super) fn terminal_losses(
         .value()
         .is_some_and(|report| report.category.value().is_some())
     {
-        return Err(CodecError::Unsupported("refusal policy category".into()));
+        return Err(CodecError::Unsupported(
+            crate::protocol::failure::CarrierReason::Unavailable,
+        ));
     }
     if !details.refusal.is_absent() {
         losses.push(LossRule::OmitExplanatoryRefusalDetails);

@@ -257,9 +257,12 @@ async fn stored_and_stateless_tool_history_agree_in_json_and_sse() {
                         .await
                         .unwrap();
                     assert_eq!(retrieved.status(), 200);
+                    let mut retrieved = retrieved.json::<Value>().await.unwrap();
+                    let mut terminal = response.clone();
+                    retrieved.as_object_mut().unwrap().remove("morphiecore");
+                    terminal.as_object_mut().unwrap().remove("morphiecore");
                     assert_eq!(
-                        retrieved.json::<Value>().await.unwrap(),
-                        response,
+                        retrieved, terminal,
                         "GET retains the delivered terminal view"
                     );
                 }

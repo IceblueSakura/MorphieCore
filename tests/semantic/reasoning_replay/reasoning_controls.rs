@@ -243,7 +243,10 @@ fn requests_reject_unselected_controls_while_incidental_reports_project() {
                 lower_response(&response, &fidelity, &metadata, profile, TargetCaps::full())
                     .unwrap();
             assert_eq!(
-                target.projection().iter().any(|stage| stage.loss.is_some()),
+                target
+                    .projection()
+                    .iter()
+                    .any(|stage| stage.change().is_loss()),
                 !exact
             );
             assert_eq!(
@@ -321,7 +324,7 @@ fn requests_reject_unselected_controls_while_incidental_reports_project() {
                 encoder
                     .projection()
                     .iter()
-                    .any(|stage| stage.loss.is_some()),
+                    .any(|stage| stage.change().is_loss()),
                 !exact
             );
         }

@@ -144,7 +144,7 @@ fn client_text_history_shorthand_does_not_relax_annotations() {
     use morphiecore::{
         protocol::{
             CodecError,
-            fidelity::{FidelityRecords, Normalization},
+            fidelity::FidelityRecords,
             openai::{TargetCaps, lowering::lower_request},
         },
         semantic::{task::generation::*, value::Text},
@@ -173,8 +173,8 @@ fn client_text_history_shorthand_does_not_relax_annotations() {
     .unwrap();
     assert_eq!(decoded.task.semantic, expected);
     assert_eq!(
-        decoded.task.fidelity.normalizations(),
-        &std::collections::BTreeSet::from([Normalization::HistoryAnnotationsDefault])
+        decoded.task.evidence.rule_names(),
+        vec!["responses.default-history-annotations.v1"]
     );
     // Independently constructed IR emits the official array, not the shorthand.
     let fidelity = FidelityRecords::default();
@@ -187,7 +187,9 @@ fn client_text_history_shorthand_does_not_relax_annotations() {
     );
     assert!(matches!(
         a.decode_request(history.to_string().as_bytes()),
-        Err(CodecError::Invalid("annotations"))
+        Err(CodecError::Invalid(
+            morphiecore::protocol::failure::ShapeReason::InvalidValue
+        ))
     ));
     for invalid in [
         Value::Null,
@@ -205,7 +207,7 @@ fn client_text_history_shorthand_does_not_relax_annotations() {
     let cited = a
         .decode_client_request(history.to_string().as_bytes())
         .unwrap();
-    assert!(cited.task.fidelity.normalizations().is_empty());
+    assert!(cited.task.evidence.is_empty());
     assert_eq!(
         a.encode_request(&cited, "m", &TargetCaps::full()).unwrap()["input"][0]["content"][0]["annotations"],
         history["input"][0]["content"][0]["annotations"]
@@ -217,7 +219,9 @@ fn client_text_history_shorthand_does_not_relax_annotations() {
         .remove("annotations");
     assert!(matches!(
         a.decode_response(upstream.to_string().as_bytes()),
-        Err(CodecError::Invalid("annotations"))
+        Err(CodecError::Invalid(
+            morphiecore::protocol::failure::ShapeReason::InvalidValue
+        ))
     ));
 }
 

@@ -1,5 +1,5 @@
 //! Generation input, protocol provenance, context validation and replay isolation.
-use super::{AdapterError, ClientProtocol};
+use super::{ClientProtocol, ConversionFailure};
 use crate::{
     lowering::generation::RepresentationError,
     protocol::{CodecError, DecodedRequest},
@@ -34,7 +34,9 @@ impl Request {
             || model.len() > 256
             || model.chars().any(|c| c.is_control() || c.is_whitespace())
         {
-            return Err(CodecError::Invalid("model label"));
+            return Err(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            ));
         }
         Ok(Self {
             task,
@@ -53,13 +55,14 @@ impl Request {
     pub fn check_semantic(
         &self,
         contract: &crate::semantic::task::generation::GenerationSemanticContract,
-    ) -> Result<crate::semantic::task::generation::GenerationRequirements, AdapterError> {
+    ) -> Result<crate::semantic::task::generation::GenerationRequirements, ConversionFailure> {
         self.task.semantic.validate().map_err(CodecError::from)?;
-        contract
-            .check(&self.task.semantic)
-            .map_err(|e| RepresentationError::Admission(e).into())
+        contract.check(&self.task.semantic).map_err(|e| {
+            ConversionFailure::from(RepresentationError::Admission(e))
+                .at(crate::lowering::generation::ConversionBoundary::RequestProject)
+        })
     }
-    pub fn check_context(&self, standard_context: bool) -> Result<(), AdapterError> {
+    pub fn check_context(&self, standard_context: bool) -> Result<(), ConversionFailure> {
         self.check_grouping()?;
         self.context.validate().map_err(CodecError::from)?;
         self.delivery.validate().map_err(CodecError::from)?;
@@ -74,7 +77,9 @@ impl Request {
     }
     pub(crate) fn check_grouping(&self) -> Result<(), CodecError> {
         if self.conversation.is_some() && self.cache_session.is_some() {
-            return Err(CodecError::Invalid("ambiguous request grouping"));
+            return Err(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            ));
         }
         Ok(())
     }
@@ -96,7 +101,7 @@ impl Request {
                 && !fidelity.compaction_matches(*id, value, target)
             {
                 return Err(CodecError::Unsupported(
-                    "incompatible compaction replay".into(),
+                    crate::protocol::failure::CarrierReason::Replay,
                 ));
             }
         }
@@ -118,15 +123,17 @@ impl Request {
                 Item::Message(message) => {
                     for part in &message.parts {
                         if let Some(value) = &part.replay {
-                            let origin = fidelity
-                                .part_replay_origin(*id, part.id)
-                                .ok_or(CodecError::Invalid("unbound part replay"))?;
+                            let origin = fidelity.part_replay_origin(*id, part.id).ok_or(
+                                CodecError::Invalid(
+                                    crate::protocol::failure::ShapeReason::InvalidValue,
+                                ),
+                            )?;
                             if Some(origin) != target {
                                 if message.status != ItemLifecycle::Completed
                                     || value.replay_token().is_none()
                                 {
                                     return Err(CodecError::Unsupported(
-                                        "partial foreign attachment".into(),
+                                        crate::protocol::failure::CarrierReason::Replay,
                                     ));
                                 }
                                 foreign_parts.push((*id, part.id));
@@ -136,15 +143,15 @@ impl Request {
                 }
                 Item::ToolCall(call) => {
                     if let Some(value) = &call.replay {
-                        let origin = fidelity
-                            .replay_origin(*id)
-                            .ok_or(CodecError::Invalid("unbound call replay"))?;
+                        let origin = fidelity.replay_origin(*id).ok_or(CodecError::Invalid(
+                            crate::protocol::failure::ShapeReason::InvalidValue,
+                        ))?;
                         if Some(origin) != target {
                             if call.status != ItemLifecycle::Completed
                                 || value.replay_token().is_none()
                             {
                                 return Err(CodecError::Unsupported(
-                                    "partial foreign attachment".into(),
+                                    crate::protocol::failure::CarrierReason::Replay,
                                 ));
                             }
                             foreign_calls.push(*id);
@@ -162,7 +169,9 @@ impl Request {
                 && matches!(item, Item::Reasoning(r) if r.status != ItemLifecycle::Completed
                     || r.replay.as_ref().is_some_and(|v| v.replay_token().is_none()))
         }) {
-            return Err(CodecError::Unsupported("partial foreign reasoning".into()));
+            return Err(CodecError::Unsupported(
+                crate::protocol::failure::CarrierReason::Reasoning,
+            ));
         }
         let mut copy = self.clone();
         // Responses item IDs can be paired with discarded reasoning. Forget only
@@ -192,7 +201,7 @@ impl Request {
                         && fidelity.response_item_id(*id).is_some()
                 }) {
                     return Err(CodecError::Unsupported(
-                        "mixed replay call dependencies".into(),
+                        crate::protocol::failure::CarrierReason::Replay,
                     ));
                 }
                 for (id, item) in run {

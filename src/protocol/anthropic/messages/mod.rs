@@ -22,7 +22,7 @@ mod terminal;
 pub mod wire;
 use crate::protocol::CodecError;
 pub use media::{Media, ResultBlock, ResultContent, Source};
-pub use request::{NativeProjection, RequestRule};
+pub use request::RequestRule;
 use serde_json::Value;
 pub use wire::*;
 
@@ -107,7 +107,7 @@ impl Profile {
         request.validate()?;
         if !strict_schema::admits_request(request) {
             return Err(CodecError::Unsupported(
-                "Anthropic strict tool schema".into(),
+                crate::protocol::failure::CarrierReason::Schema,
             ));
         }
         let wire = request.wire();
@@ -125,7 +125,7 @@ impl Profile {
             .any(|b| matches!(b, Block::PartialToolUse { .. }))
         {
             return Err(CodecError::Unsupported(
-                "partial tool input has no JSON carrier".into(),
+                crate::protocol::failure::CarrierReason::Unavailable,
             ));
         }
         let wire = message.wire();
@@ -136,7 +136,9 @@ impl Profile {
     pub fn decode_event(self, name: &str, bytes: &[u8]) -> Result<Event, CodecError> {
         let value = shape::parse(bytes)?;
         if value.get("type").and_then(Value::as_str) != Some(name) {
-            return Err(CodecError::Invalid("Anthropic event type"));
+            return Err(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            ));
         }
         Event::read(&value)
     }

@@ -11,10 +11,9 @@ pub(in crate::protocol::openai) fn read(
     direction: DecodeDirection,
 ) -> Result<Resource, CodecError> {
     direction.fields(part, &["type", "video_url"])?;
-    let video = object(
-        part.get("video_url")
-            .ok_or(CodecError::Invalid("video_url"))?,
-    )?;
+    let video = object(part.get("video_url").ok_or(CodecError::Invalid(
+        crate::protocol::failure::ShapeReason::InvalidValue,
+    ))?)?;
     direction.fields(video, &["url"])?;
     resource(string(video, "url")?)
 }
@@ -32,9 +31,9 @@ fn resource(raw: &str) -> Result<Resource, CodecError> {
     }
     let location = match raw.strip_prefix("data:") {
         Some(data) => {
-            let (media_type, data) = data
-                .split_once(";base64,")
-                .ok_or(CodecError::Invalid("video data URL"))?;
+            let (media_type, data) = data.split_once(";base64,").ok_or(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            ))?;
             ResourceLocation::Inline {
                 media_type: text(
                     media_type,

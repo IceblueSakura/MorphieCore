@@ -42,16 +42,23 @@ impl UpstreamAdapter {
             | Self::GoogleInteractions { .. } => Err(CodecError::ProfileMismatch),
         }
     }
-    pub fn decode_response(&self, bytes: &[u8]) -> Result<DecodedResponse, CodecError> {
-        match self {
+    pub fn decode_response(
+        &self,
+        bytes: &[u8],
+    ) -> Result<DecodedResponse, super::ConversionFailure> {
+        let result = match self {
             Self::OpenAi(adapter) => adapter.decode_response(bytes),
             Self::AnthropicMessages { profile, target } => {
                 profile.decode_generation_response(bytes, NATIVE_SCOPE, target)
             }
-            Self::GoogleGenerateContent { .. } | Self::GoogleInteractions { .. } => {
-                Err(CodecError::Unsupported("Google intake requires SSE".into()))
-            }
-        }
+            Self::GoogleGenerateContent { .. } | Self::GoogleInteractions { .. } => Err(
+                CodecError::Unsupported(crate::protocol::failure::CarrierReason::Unavailable),
+            ),
+        };
+        result.map_err(|error: CodecError| {
+            super::ConversionFailure::from(error)
+                .at(crate::lowering::generation::ConversionBoundary::ResponseDecode)
+        })
     }
     pub(crate) fn is_native(&self) -> bool {
         !matches!(self, Self::OpenAi(_))
@@ -134,6 +141,15 @@ pub(crate) enum GenerationDecoder {
     Interactions(crate::protocol::google::interactions::GenerationSseDecoder),
 }
 impl GenerationDecoder {
+    pub(crate) fn take_evidence(&mut self) -> crate::lowering::generation::EvidenceDelta {
+        match self {
+            Self::Responses(d) => d.take_intake_evidence(),
+            Self::Chat(d) => d.take_intake_evidence(),
+            Self::Messages { decoder, .. } => decoder.take_intake_evidence(),
+            Self::Google(_) | Self::Interactions(_) => Default::default(),
+        }
+    }
+
     pub(crate) fn consume(&mut self, bytes: &[u8]) -> Result<(usize, Vec<StreamEvent>), SseError> {
         match self {
             Self::Responses(d) => d.consume(bytes),
@@ -181,7 +197,12 @@ impl GenerationDecoder {
                 decoder,
                 profile,
                 target,
-            } => Ok(profile.decode_generation_message(decoder.finish()?, NATIVE_SCOPE, target)?),
+            } => {
+                let mut response =
+                    profile.decode_generation_message(decoder.finish()?, NATIVE_SCOPE, target)?;
+                response.evidence = decoder.take_intake_evidence();
+                Ok(response)
+            }
             Self::Google(d) => d.finish(),
             Self::Interactions(d) => d.finish(),
         }

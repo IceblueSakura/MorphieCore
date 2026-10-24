@@ -62,7 +62,9 @@ impl TextContent {
                         let o = closed(v, &["type", "text", "citations", "cache_control"])?;
                         uncited(o)?;
                         if required(o, "type")?.as_str() != Some("text") {
-                            return Err(CodecError::Unsupported("Anthropic text content".into()));
+                            return Err(CodecError::Unsupported(
+                                crate::protocol::failure::CarrierReason::Unavailable,
+                            ));
                         }
                         string(required(o, "text")?)
                     })
@@ -117,7 +119,9 @@ impl Role {
             Some("user") => Ok(Self::User),
             Some("assistant") => Ok(Self::Assistant),
             Some("system") => Ok(Self::System),
-            _ => Err(CodecError::Invalid("Anthropic role")),
+            _ => Err(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            )),
         }
     }
     pub(in crate::protocol::anthropic::messages) fn wire(self) -> &'static str {
@@ -144,7 +148,9 @@ pub(in crate::protocol::anthropic::messages) fn validate_system_placement(
         let before = start.checked_sub(1).map(|i| messages[i].0);
         let after = messages.get(end).map(|m| m.0);
         if before != Some(Role::User) || after.is_some_and(|r| r != Role::Assistant) {
-            return Err(CodecError::Invalid("Anthropic system message placement"));
+            return Err(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            ));
         }
     }
     Ok(())
@@ -193,10 +199,14 @@ impl InputMessage {
             MessageContent::Blocks(a) => input_block_bytes(self.role, a, false)?,
         };
         if self.effort.is_some() && self.role != Role::System {
-            return Err(CodecError::Invalid("Anthropic message output_config"));
+            return Err(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            ));
         }
         if !has_content && self.effort.is_none() {
-            return Err(CodecError::Invalid("Anthropic empty message"));
+            return Err(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            ));
         }
         Ok(bytes)
     }
@@ -231,7 +241,9 @@ pub(in crate::protocol::anthropic::messages) fn input_block_bytes(
                     Block::Thinking { .. } | Block::RedactedThinking(_)
                 )
         {
-            return Err(CodecError::Invalid("Anthropic block role"));
+            return Err(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            ));
         }
         // Public history may carry visible reasoning from a non-native target;
         // native replay still requires a completed signature.
@@ -277,7 +289,7 @@ impl ToolTarget {
                 "definition",
             )?)?)),
             _ => Err(CodecError::Unsupported(
-                "Anthropic tool change target".into(),
+                crate::protocol::failure::CarrierReason::Unavailable,
             )),
         }
     }
@@ -327,12 +339,18 @@ impl Tool {
         match o.get("type") {
             None | Some(Value::Null) => {}
             Some(Value::String(kind)) if kind == "custom" => {}
-            _ => return Err(CodecError::Unsupported("Anthropic tool type".into())),
+            _ => {
+                return Err(CodecError::Unsupported(
+                    crate::protocol::failure::CarrierReason::Tools,
+                ));
+            }
         }
         if let Some(callers) = o.get("allowed_callers")
             && callers != &json!(["direct"])
         {
-            return Err(CodecError::Unsupported("Anthropic tool dispatch".into()));
+            return Err(CodecError::Unsupported(
+                crate::protocol::failure::CarrierReason::Tools,
+            ));
         }
         let defer = presence(o, "defer_loading", boolean)?;
         nonnull(&defer)?;
@@ -341,15 +359,17 @@ impl Tool {
             description: presence(o, "description", string)?,
             input_schema: required(o, "input_schema")?.clone().into(),
             input_examples: presence(o, "input_examples", |v| {
-                let values = v
-                    .as_array()
-                    .ok_or(CodecError::Invalid("Anthropic input examples"))?;
+                let values = v.as_array().ok_or(CodecError::Invalid(
+                    crate::protocol::failure::ShapeReason::InvalidValue,
+                ))?;
                 count(values.len())?;
                 values
                     .iter()
                     .map(|v| {
                         if !v.is_object() {
-                            return Err(CodecError::Invalid("Anthropic input example"));
+                            return Err(CodecError::Invalid(
+                                crate::protocol::failure::ShapeReason::InvalidValue,
+                            ));
                         }
                         Ok(StructuredValue::new(v.clone())?)
                     })
@@ -370,17 +390,23 @@ impl Tool {
         // default (not explicit false). Both already map through Presence::value.
         // A deferred definition cannot carry a breakpoint.
         if self.defer_loading && self.cache_control.value().is_some() {
-            return Err(CodecError::Invalid("Anthropic deferred tool cache"));
+            return Err(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            ));
         }
         if self.input_schema.root().get("type").and_then(Value::as_str) != Some("object") {
-            return Err(CodecError::Unsupported("Anthropic object schema".into()));
+            return Err(CodecError::Unsupported(
+                crate::protocol::failure::CarrierReason::Unavailable,
+            ));
         }
         let mut bytes = self.input_schema.validate()?;
         if let Some(examples) = self.input_examples.value() {
             count(examples.len())?;
             for example in examples {
                 if !example.value().is_object() {
-                    return Err(CodecError::Invalid("Anthropic input example"));
+                    return Err(CodecError::Invalid(
+                        crate::protocol::failure::ShapeReason::InvalidValue,
+                    ));
                 }
                 charge(&mut bytes, example.bytes()?)?;
             }
@@ -450,10 +476,16 @@ impl ToolChoice {
             Some("auto") => Selection::Auto,
             Some("none") => Selection::None,
             Some("any") => Selection::Any,
-            _ => return Err(CodecError::Unsupported("Anthropic tool choice".into())),
+            _ => {
+                return Err(CodecError::Unsupported(
+                    crate::protocol::failure::CarrierReason::Tools,
+                ));
+            }
         };
         if !matches!(selection, Selection::Tool(_)) && o.contains_key("name") {
-            return Err(CodecError::Invalid("Anthropic tool choice name"));
+            return Err(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            ));
         }
         let choice = Self {
             selection,
@@ -465,7 +497,9 @@ impl ToolChoice {
     fn validate(&self) -> Result<(), CodecError> {
         nonnull(&self.disable_parallel_tool_use)?;
         if self.selection == Selection::None && !self.disable_parallel_tool_use.is_absent() {
-            return Err(CodecError::Invalid("Anthropic none parallel control"));
+            return Err(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            ));
         }
         Ok(())
     }
@@ -495,7 +529,9 @@ impl Display {
         match v.as_str() {
             Some("summarized") => Ok(Self::Summarized),
             Some("omitted") => Ok(Self::Omitted),
-            _ => Err(CodecError::Invalid("Anthropic display")),
+            _ => Err(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            )),
         }
     }
 }
@@ -530,7 +566,9 @@ impl PrefixMismatch {
             Some(v) => match v.as_str() {
                 Some("error") => Ok(Some(Self::Error)),
                 Some("drop_block") => Ok(Some(Self::DropBlock)),
-                _ => Err(CodecError::Invalid("thinking.block_binding")),
+                _ => Err(CodecError::Invalid(
+                    crate::protocol::failure::ShapeReason::InvalidValue,
+                )),
             },
         }
     }
@@ -567,7 +605,9 @@ impl Thinking {
                     display,
                 })
             }
-            _ => Err(CodecError::Unsupported("Anthropic thinking mode".into())),
+            _ => Err(CodecError::Unsupported(
+                crate::protocol::failure::CarrierReason::Reasoning,
+            )),
         }
     }
     fn wire(&self) -> Value {
@@ -627,7 +667,9 @@ impl Effort {
             Some("high") => Ok(Self::High),
             Some("xhigh") => Ok(Self::XHigh),
             Some("max") => Ok(Self::Max),
-            _ => Err(CodecError::Unsupported("Anthropic effort".into())),
+            _ => Err(CodecError::Unsupported(
+                crate::protocol::failure::CarrierReason::Unavailable,
+            )),
         }
     }
     fn wire(self) -> Value {
@@ -653,14 +695,18 @@ impl OutputConfig {
         let o = closed(v, &["effort", "format", "task_budget"])?;
         // Nullable request syntax does not establish null/omission equivalence.
         if o.contains_key("task_budget") {
-            return Err(CodecError::Unsupported("Anthropic task budget".into()));
+            return Err(CodecError::Unsupported(
+                crate::protocol::failure::CarrierReason::Unavailable,
+            ));
         }
         let config = Self {
             effort: presence(o, "effort", Effort::read)?,
             format: presence(o, "format", |v| {
                 let o = closed(v, &["type", "schema"])?;
                 if required(o, "type")?.as_str() != Some("json_schema") {
-                    return Err(CodecError::Unsupported("Anthropic output format".into()));
+                    return Err(CodecError::Unsupported(
+                        crate::protocol::failure::CarrierReason::Unavailable,
+                    ));
                 }
                 let schema = SchemaDocument::from(required(o, "schema")?.clone());
                 schema.validate()?;
@@ -669,7 +715,7 @@ impl OutputConfig {
         };
         if config.effort == Presence::Null || config.format == Presence::Null {
             return Err(CodecError::Unsupported(
-                "Anthropic output configuration null".into(),
+                crate::protocol::failure::CarrierReason::Unavailable,
             ));
         }
         Ok(config)
@@ -699,13 +745,17 @@ impl CacheControl {
     ) -> Result<PrefixCacheTtl, CodecError> {
         let o = closed(v, &["type", "ttl"])?;
         if required(o, "type")?.as_str() != Some("ephemeral") {
-            return Err(CodecError::Unsupported("Anthropic cache type".into()));
+            return Err(CodecError::Unsupported(
+                crate::protocol::failure::CarrierReason::Unavailable,
+            ));
         }
         match o.get("ttl") {
             None => Ok(PrefixCacheTtl::FiveMinutes),
             Some(Value::String(ttl)) if ttl == "5m" => Ok(PrefixCacheTtl::FiveMinutes),
             Some(Value::String(ttl)) if ttl == "1h" => Ok(PrefixCacheTtl::OneHour),
-            _ => Err(CodecError::Invalid("Anthropic cache TTL")),
+            _ => Err(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            )),
         }
     }
     fn breakpoint_wire(ttl: &PrefixCacheTtl) -> Value {
@@ -740,7 +790,9 @@ pub(crate) fn text_cache_eligible(
     cache: Option<PrefixCacheTtl>,
 ) -> Result<bool, CodecError> {
     if text.is_empty() && cache.is_some() {
-        return Err(CodecError::Invalid("Anthropic empty text cache owner"));
+        return Err(CodecError::Invalid(
+            crate::protocol::failure::ShapeReason::InvalidValue,
+        ));
     }
     Ok(!text.is_empty())
 }
@@ -758,7 +810,9 @@ pub(in crate::protocol::anthropic::messages) fn validate_cache_breakpoints(
         match ttl {
             PrefixCacheTtl::FiveMinutes => short = true,
             PrefixCacheTtl::OneHour if short => {
-                return Err(CodecError::Invalid("Anthropic cache TTL order"));
+                return Err(CodecError::Invalid(
+                    crate::protocol::failure::ShapeReason::InvalidValue,
+                ));
             }
             PrefixCacheTtl::OneHour => {}
         }
@@ -781,7 +835,7 @@ pub(in crate::protocol::anthropic::messages) fn validate_automatic_cache(
         match last_cache {
             Some(Some(last)) if last != ttl => {
                 return Err(CodecError::Invalid(
-                    "Anthropic automatic cache TTL conflict",
+                    crate::protocol::failure::ShapeReason::InvalidValue,
                 ));
             }
             Some(None) => breakpoints.push(ttl),
@@ -869,7 +923,9 @@ impl Request {
             crate::protocol::anthropic::messages::service::policy_wire(*policy)?;
         }
         if self.max_tokens == 0 {
-            return Err(CodecError::Invalid("Anthropic max_tokens"));
+            return Err(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            ));
         }
         validate_user_id(&self.user_id)?;
         if let Presence::Value(Thinking::Enabled {
@@ -879,7 +935,9 @@ impl Request {
         {
             nonnull(display)?;
             if *budget_tokens < 1024 || *budget_tokens >= self.max_tokens {
-                return Err(CodecError::Invalid("thinking budget"));
+                return Err(CodecError::Invalid(
+                    crate::protocol::failure::ShapeReason::InvalidValue,
+                ));
             }
         }
         count(self.messages.len())?;
@@ -901,7 +959,9 @@ impl Request {
                 .map(|m| m.0)
                 != Some(Role::User)
         {
-            return Err(CodecError::Invalid("Anthropic user boundary"));
+            return Err(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            ));
         }
         validate_system_placement(&roles)?;
         nonnull(&self.system)?;
@@ -964,7 +1024,9 @@ impl Request {
                             && let Some(ttl) = tool.cache_control.value()
                         {
                             if block.cache.is_some() {
-                                return Err(CodecError::Invalid("Anthropic tool change cache"));
+                                return Err(CodecError::Invalid(
+                                    crate::protocol::failure::ShapeReason::InvalidValue,
+                                ));
                             }
                             breakpoints.push(*ttl);
                             last_cache = Some(Some(*ttl));
@@ -993,7 +1055,9 @@ impl Request {
         count(self.stop_sequences.len())?;
         for stop in &self.stop_sequences {
             if stop.is_empty() {
-                return Err(CodecError::Invalid("Anthropic stop sequence"));
+                return Err(CodecError::Invalid(
+                    crate::protocol::failure::ShapeReason::InvalidValue,
+                ));
             }
             charge(&mut bytes, text(stop)?)?;
         }
@@ -1012,7 +1076,9 @@ impl Request {
                 charge(&mut bytes, tool.bytes()?)?;
                 node_charge(&mut nodes, tool.nodes()?)?;
                 if !names.insert(tool.name.as_str()) {
-                    return Err(CodecError::Invalid("Anthropic duplicate tool"));
+                    return Err(CodecError::Invalid(
+                        crate::protocol::failure::ShapeReason::InvalidValue,
+                    ));
                 }
             }
         }
@@ -1028,12 +1094,16 @@ impl Request {
             choice.validate()?;
             match &choice.selection {
                 Selection::Any if names.is_empty() => {
-                    return Err(CodecError::Invalid("Anthropic required tools"));
+                    return Err(CodecError::Invalid(
+                        crate::protocol::failure::ShapeReason::InvalidValue,
+                    ));
                 }
                 Selection::Tool(s) => {
                     name(s, 128)?;
                     if !names.contains(s.as_str()) {
-                        return Err(CodecError::Invalid("Anthropic selected tool"));
+                        return Err(CodecError::Invalid(
+                            crate::protocol::failure::ShapeReason::InvalidValue,
+                        ));
                     }
                 }
                 _ => {}
@@ -1051,7 +1121,9 @@ impl Request {
                 && turn[0].role != Role::User
                 && (turn[0].role != Role::System || turn.iter().any(|m| m.carries_content()))
             {
-                return Err(CodecError::Invalid("Anthropic pending results"));
+                return Err(CodecError::Invalid(
+                    crate::protocol::failure::ShapeReason::InvalidValue,
+                ));
             }
             let mut results = BTreeSet::new();
             let mut saw_text = false;
@@ -1083,7 +1155,9 @@ impl Request {
                         match block {
                             Block::ToolUse { id, .. } => {
                                 if !seen.insert(id.as_str()) {
-                                    return Err(CodecError::Invalid("Anthropic duplicate call"));
+                                    return Err(CodecError::Invalid(
+                                        crate::protocol::failure::ShapeReason::CallIdentity,
+                                    ));
                                 }
                                 pending.insert(id.as_str());
                             }
@@ -1092,7 +1166,9 @@ impl Request {
                                     || !pending.contains(tool_use_id.as_str())
                                     || !results.insert(tool_use_id.as_str())
                                 {
-                                    return Err(CodecError::Invalid("Anthropic result reference"));
+                                    return Err(CodecError::Invalid(
+                                        crate::protocol::failure::ShapeReason::InvalidValue,
+                                    ));
                                 }
                             }
                             _ => {
@@ -1106,13 +1182,17 @@ impl Request {
             }
             if turn[0].role == Role::User {
                 if results != pending {
-                    return Err(CodecError::Invalid("Anthropic pending results"));
+                    return Err(CodecError::Invalid(
+                        crate::protocol::failure::ShapeReason::InvalidValue,
+                    ));
                 }
                 pending.clear();
             }
         }
         if !pending.is_empty() {
-            return Err(CodecError::Invalid("Anthropic pending results"));
+            return Err(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            ));
         }
         Ok(())
     }
@@ -1157,7 +1237,9 @@ pub(in crate::protocol::anthropic::messages) fn reject_removed_fields(
     // Removed controls are known fields, not ignorable extensions, including null.
     for key in ["temperature", "top_p", "top_k"] {
         if o.contains_key(key) {
-            return Err(CodecError::Unsupported(key.into()));
+            return Err(CodecError::Unsupported(
+                crate::protocol::failure::CarrierReason::UnknownField,
+            ));
         }
     }
     Ok(())

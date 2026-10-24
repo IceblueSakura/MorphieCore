@@ -1,7 +1,7 @@
 //! Target capabilities and binding admission for `generateContent`.
 use super::{RequestRule, request::encode_with_identity};
 use crate::{
-    adapter::{AdapterError, Request},
+    adapter::{ConversionFailure, Request},
     protocol::{
         CodecError,
         cache::CacheProjection,
@@ -129,7 +129,9 @@ impl TargetCaps {
             || request.delivery.stream == Presence::Null
             || request.n.value().is_some_and(|n| *n != 1)
         {
-            return Err(CodecError::Unsupported("Gemini request context".into()));
+            return Err(CodecError::Unsupported(
+                crate::protocol::failure::CarrierReason::Unavailable,
+            ));
         }
         Ok(request.cache_session.is_some())
     }
@@ -138,160 +140,180 @@ impl TargetCaps {
         &self,
         request: &Request,
         target: &ReplayTarget,
-    ) -> Result<crate::protocol::RequestProjection, AdapterError> {
-        use crate::lowering::generation::RequestControlLoss as Loss;
-        let mut projected = std::borrow::Cow::Borrowed(request);
-        let mut reasoning_rule = None;
-        let mut controls = vec![];
-        let sampling = super::super::sampling::project(
-            &request.task.semantic,
-            self.sampling,
-            RequestRule::OmitSampling.name(),
-        )?;
-        let omitted_sampling = sampling.is_some();
-        if let Some((semantic, loss)) = sampling {
-            projected.to_mut().task.semantic = semantic;
-            controls.push(loss);
-        }
-        if let Some(policy) = &self.reasoning_policy
-            && policy.applies_to(&projected.task.semantic)
-            && let Some(semantic) =
-                policy.project_request(&projected.task.semantic, |settings| {
-                    use crate::{
-                        protocol::reasoning::ReasoningConversion, semantic::task::generation::*,
-                    };
-                    match policy.conversion {
-                        ReasoningConversion::BudgetToEffort { .. } => {
-                            self.admits_budget()
-                                && settings.effort.is_absent()
-                                && settings
-                                    .reasoning
-                                    .budget_tokens
-                                    .is_some_and(|b| b <= i32::MAX as u64)
-                        }
-                        _ => {
-                            settings.reasoning.budget_tokens.is_none()
-                                && settings.effort.value().is_some_and(|effort| {
-                                    effort.scope == EffortScope::Reasoning
-                                        && matches!(
-                                            effort.level,
-                                            EffortLevel::Minimal
-                                                | EffortLevel::Low
-                                                | EffortLevel::Medium
-                                                | EffortLevel::High
-                                        )
-                                        && self
-                                            .model_limits
-                                            .check_values(None, [effort.level])
-                                            .is_ok()
-                                })
-                        }
-                    }
-                })?
-        {
-            controls.push(policy.receipt(&request.task.semantic, &semantic)?);
-            projected.to_mut().task.semantic = semantic;
-            reasoning_rule = Some(policy.rule);
-        }
-        let request = projected.as_ref();
-        if request.task.semantic.reasoning().budget_tokens.is_some() && !self.admits_budget() {
-            return Err(CodecError::Unsupported("undeclared model thinking budget".into()).into());
-        }
-        let stripped = request.without_foreign_reasoning(Some(&target.origin()))?;
-        let foreign = stripped.is_some();
-        let request = stripped.as_ref().unwrap_or(request);
-        let cache_key = self.check_context(request)?;
-        let mut admission = request.clone();
-        let mut settings = admission.task.semantic.settings().clone();
-        settings.text.verbosity = Presence::Absent;
-        if settings.text.format.is_absent() {
-            settings.text.presence = Presence::Absent;
-        }
-        admission.task.semantic = admission
-            .task
-            .semantic
-            .with_settings(settings)
-            .map_err(CodecError::from)?;
-        admission.check_semantic(&self.semantics)?;
-        admission.check_semantic(&representation_contract())?;
-        let semantic = &request.task.semantic;
-        let mut settings = semantic.settings().clone();
-        // Include selects the downstream opaque carrier, not a native control.
-        settings.reasoning = settings.reasoning.with_encrypted_output(false);
-        let semantic = semantic
-            .clone()
-            .with_settings(settings)
-            .map_err(CodecError::from)?;
-        self.model_limits.check_request(&semantic)?;
-        let attribution = crate::protocol::attribution::project(
-            request,
-            crate::protocol::attribution::Carrier::GoogleLabels,
-        )?;
-        let (wire, mut rules) = encode_with_identity(
-            &semantic,
-            &request.task.fidelity,
-            target,
-            self.resource_time,
-            &attribution.identity,
-        )?;
-        if !self.reasoning_as_text && rules.contains(&RequestRule::ReasoningAsText) {
-            return Err(CodecError::Unsupported("reasoning as text disabled".into()).into());
-        }
-        if foreign {
-            rules.push(RequestRule::TransferVisibleHistory);
-        }
-        if omitted_sampling {
-            rules.push(RequestRule::OmitSampling);
-        }
-        if cache_key {
-            rules.push(RequestRule::OmitCacheKey);
-        }
-        rules.extend(
-            self.cache
-                .losses(&request.context)
-                .into_iter()
-                .chain(attribution.losses)
-                .map(RequestRule::Hint),
-        );
-        rules.sort();
-        rules.dedup();
-        for rule in &rules {
-            use crate::semantic::task::generation::{InstructionAuthority, ReasoningDisplay};
-            match rule {
-                RequestRule::Hint(hint) => controls.extend(hint.evidence().map(Loss::Projection)),
-                RequestRule::OmitMessagePhase => controls.push(Loss::Projection(
-                    crate::protocol::phase::omission(rule.name()),
-                )),
-                RequestRule::OmitVerbosity => controls.push(Loss::Verbosity {
-                    rule: rule.name(),
-                    input: request.task.semantic.text_options().verbosity.clone(),
-                    output: Presence::Absent,
-                }),
-                RequestRule::SummarizeReasoning => controls.push(Loss::Summary {
-                    rule: rule.name(),
-                    input: request
-                        .task
-                        .semantic
-                        .reasoning()
-                        .presentation
-                        .summary
-                        .clone(),
-                    output: ReasoningDisplay::Summary,
-                }),
-                RequestRule::DeveloperAsSystem => controls.push(Loss::Role {
-                    rule: rule.name(),
-                    input: InstructionAuthority::Developer,
-                    output: InstructionAuthority::System,
-                }),
-                _ => {}
+    ) -> Result<crate::lowering::generation::Conversion<serde_json::Value>, ConversionFailure> {
+        let result = (|| {
+            use crate::lowering::generation::Effect as Loss;
+            let mut projected = std::borrow::Cow::Borrowed(request);
+            let mut reasoning_rule = None;
+            let mut controls = vec![];
+            let sampling = super::super::sampling::project(
+                &request.task.semantic,
+                self.sampling,
+                RequestRule::OmitSampling.name(),
+            )?;
+            let omitted_sampling = sampling.is_some();
+            if let Some((semantic, loss)) = sampling {
+                projected.to_mut().task.semantic = semantic;
+                controls.push(loss);
             }
-        }
-        let mut rules: Vec<_> = rules.iter().map(|r| r.name()).collect();
-        rules.extend(reasoning_rule);
-        Ok(crate::protocol::RequestProjection {
-            value: wire,
-            rules,
-            controls,
+            if let Some(policy) = &self.reasoning_policy
+                && policy.applies_to(&projected.task.semantic)
+                && let Some(semantic) =
+                    policy.project_request(&projected.task.semantic, |settings| {
+                        use crate::{
+                            protocol::reasoning::ReasoningConversion, semantic::task::generation::*,
+                        };
+                        match policy.conversion {
+                            ReasoningConversion::BudgetToEffort { .. } => {
+                                self.admits_budget()
+                                    && settings.effort.is_absent()
+                                    && settings
+                                        .reasoning
+                                        .budget_tokens
+                                        .is_some_and(|b| b <= i32::MAX as u64)
+                            }
+                            _ => {
+                                settings.reasoning.budget_tokens.is_none()
+                                    && settings.effort.value().is_some_and(|effort| {
+                                        effort.scope == EffortScope::Reasoning
+                                            && matches!(
+                                                effort.level,
+                                                EffortLevel::Minimal
+                                                    | EffortLevel::Low
+                                                    | EffortLevel::Medium
+                                                    | EffortLevel::High
+                                            )
+                                            && self
+                                                .model_limits
+                                                .check_values(None, [effort.level])
+                                                .is_ok()
+                                    })
+                            }
+                        }
+                    })?
+            {
+                controls.push(policy.receipt(&request.task.semantic, &semantic)?);
+                projected.to_mut().task.semantic = semantic;
+                reasoning_rule = Some(policy.rule);
+            }
+            let request = projected.as_ref();
+            if request.task.semantic.reasoning().budget_tokens.is_some() && !self.admits_budget() {
+                return Err(CodecError::Unsupported(
+                    crate::protocol::failure::CarrierReason::Reasoning,
+                )
+                .into());
+            }
+            let stripped = request.without_foreign_reasoning(Some(&target.origin()))?;
+            let foreign = stripped.is_some();
+            let request = stripped.as_ref().unwrap_or(request);
+            let cache_key = self.check_context(request)?;
+            let mut admission = request.clone();
+            let mut settings = admission.task.semantic.settings().clone();
+            settings.text.verbosity = Presence::Absent;
+            if settings.text.format.is_absent() {
+                settings.text.presence = Presence::Absent;
+            }
+            admission.task.semantic = admission
+                .task
+                .semantic
+                .with_settings(settings)
+                .map_err(CodecError::from)?;
+            admission.check_semantic(&self.semantics)?;
+            admission.check_semantic(&representation_contract())?;
+            let semantic = &request.task.semantic;
+            let mut settings = semantic.settings().clone();
+            // Include selects the downstream opaque carrier, not a native control.
+            settings.reasoning = settings.reasoning.with_encrypted_output(false);
+            let semantic = semantic
+                .clone()
+                .with_settings(settings)
+                .map_err(CodecError::from)?;
+            self.model_limits.check_request(&semantic)?;
+            let attribution = crate::protocol::attribution::project(
+                request,
+                crate::protocol::attribution::Carrier::GoogleLabels,
+            )?;
+            let (wire, mut rules) = encode_with_identity(
+                &semantic,
+                &request.task.fidelity,
+                target,
+                self.resource_time,
+                &attribution.identity,
+            )?;
+            if !self.reasoning_as_text && rules.contains(&RequestRule::ReasoningAsText) {
+                return Err(CodecError::Unsupported(
+                    crate::protocol::failure::CarrierReason::Reasoning,
+                )
+                .into());
+            }
+            if foreign {
+                rules.push(RequestRule::TransferVisibleHistory);
+            }
+            if omitted_sampling {
+                rules.push(RequestRule::OmitSampling);
+            }
+            if cache_key {
+                rules.push(RequestRule::OmitCacheKey);
+            }
+            rules.extend(
+                self.cache
+                    .losses(&request.context)
+                    .into_iter()
+                    .chain(attribution.losses)
+                    .map(RequestRule::Hint),
+            );
+            rules.sort();
+            rules.dedup();
+            for rule in &rules {
+                use crate::semantic::task::generation::{InstructionAuthority, ReasoningDisplay};
+                match rule {
+                    RequestRule::Hint(hint) => controls.extend(hint.evidence()),
+                    RequestRule::OmitMessagePhase => {
+                        controls.push(crate::protocol::phase::omission(rule.name()))
+                    }
+                    RequestRule::OmitVerbosity => controls.push(Loss::Verbosity {
+                        rule: crate::lowering::generation::RuleId::new(rule.name()),
+                        input: request.task.semantic.text_options().verbosity.clone(),
+                        output: Presence::Absent,
+                        owner: crate::lowering::generation::Owner::Root,
+                    }),
+                    RequestRule::SummarizeReasoning => controls.push(Loss::Summary {
+                        rule: crate::lowering::generation::RuleId::new(rule.name()),
+                        input: request
+                            .task
+                            .semantic
+                            .reasoning()
+                            .presentation
+                            .summary
+                            .clone(),
+                        output: ReasoningDisplay::Summary,
+                        owner: crate::lowering::generation::Owner::Root,
+                    }),
+                    RequestRule::DeveloperAsSystem => controls.push(Loss::Role {
+                        rule: crate::lowering::generation::RuleId::new(rule.name()),
+                        input: InstructionAuthority::Developer,
+                        output: InstructionAuthority::System,
+                        owner: crate::lowering::generation::Owner::Root,
+                    }),
+                    _ => {}
+                }
+            }
+            let mut evidence: crate::lowering::generation::EvidenceDelta =
+                controls.into_iter().collect();
+            for rule in rules {
+                if !evidence.contains_rule(rule.name()) {
+                    evidence.push(rule.effect(&request.task.semantic));
+                }
+            }
+            // A reasoning policy already supplied the rich, checked control receipt above.
+            let _ = reasoning_rule;
+            Ok(crate::lowering::generation::Conversion {
+                value: wire,
+                evidence,
+            })
+        })();
+        result.map_err(|error: crate::adapter::ConversionFailure| {
+            error.at(crate::lowering::generation::ConversionBoundary::RequestEncode)
         })
     }
     pub(crate) fn request_headers(&self) -> Vec<(String, String)> {

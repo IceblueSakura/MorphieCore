@@ -1,6 +1,6 @@
 //! Trusted model/API sampling policy; never inferred from request model labels.
 use crate::{
-    lowering::generation::RequestControlLoss, protocol::CodecError,
+    lowering::generation::Effect, protocol::CodecError,
     semantic::task::generation::GenerationRequest,
 };
 
@@ -17,7 +17,7 @@ pub(super) fn project(
     request: &GenerationRequest,
     policy: SamplingPolicy,
     rule: &'static str,
-) -> Result<Option<(GenerationRequest, RequestControlLoss)>, CodecError> {
+) -> Result<Option<(GenerationRequest, Effect)>, CodecError> {
     request.validate()?;
     let controls = request.controls();
     let (temperature, top_p, top_k) = (
@@ -29,18 +29,21 @@ pub(super) fn project(
         return Ok(None);
     }
     if policy == SamplingPolicy::Reject {
-        return Err(CodecError::Unsupported("Google sampling controls".into()));
+        return Err(CodecError::Unsupported(
+            crate::protocol::failure::CarrierReason::Unavailable,
+        ));
     }
     let mut settings = request.settings().clone();
     settings.controls = settings.controls.without_sampling();
     settings.controls.top_k = None;
     Ok(Some((
         request.clone().with_settings(settings)?,
-        RequestControlLoss::Sampling {
-            rule,
+        Effect::Sampling {
+            rule: crate::lowering::generation::RuleId::new(rule),
             temperature,
             top_p,
             top_k,
+            owner: crate::lowering::generation::Owner::Root,
         },
     )))
 }
@@ -68,11 +71,12 @@ mod tests {
             .unwrap();
         assert_eq!(
             loss,
-            RequestControlLoss::Sampling {
-                rule: "fixture.omit-sampling",
+            Effect::Sampling {
+                rule: crate::lowering::generation::RuleId::new("fixture.omit-sampling"),
                 temperature: false,
                 top_p: false,
                 top_k: true,
+                owner: crate::lowering::generation::Owner::Root,
             }
         );
         assert_eq!(projected.controls().top_k, None);

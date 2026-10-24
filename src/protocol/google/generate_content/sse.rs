@@ -47,26 +47,27 @@ pub struct GenerationSseDecoder {
     closed: bool,
     rejected: bool,
 }
-pub(super) fn invalid(what: &'static str) -> SseError {
-    CodecError::Invalid(what).into()
+pub(super) fn invalid(reason: crate::protocol::failure::ShapeReason) -> SseError {
+    CodecError::Invalid(reason).into()
 }
-fn unsupported(what: &str) -> SseError {
-    CodecError::Unsupported(format!("Gemini {what}")).into()
+fn unsupported(reason: crate::protocol::failure::CarrierReason) -> SseError {
+    CodecError::Unsupported(reason).into()
 }
 fn text(value: &str) -> Result<Text, SseError> {
     Text::allowing_empty(value, "Gemini text", MAX_TEXT_BYTES).map_err(|_| SseError::Limit)
 }
 pub(super) fn object<'a>(
     v: &'a Value,
-    what: &'static str,
+    _what: &'static str,
 ) -> Result<&'a Map<String, Value>, SseError> {
-    v.as_object().ok_or_else(|| invalid(what))
+    v.as_object()
+        .ok_or_else(|| invalid(crate::protocol::failure::ShapeReason::Object))
 }
 fn string<'a>(o: &'a Map<String, Value>, key: &'static str) -> Result<Option<&'a str>, SseError> {
     match o.get(key) {
         None => Ok(None),
         Some(Value::String(s)) => Ok(Some(s)),
-        Some(_) => Err(invalid(key)),
+        Some(_) => Err(invalid(crate::protocol::failure::ShapeReason::InvalidValue)),
     }
 }
 /// Stops that end the turn honestly; the rest are failures of this attempt.
@@ -82,9 +83,24 @@ fn finish_reason(reason: &str) -> Result<Option<IncompleteReason>, SseError> {
         | "IMAGE_PROHIBITED_CONTENT" => Some(IncompleteReason::ContentFilter),
         "RECITATION" | "IMAGE_RECITATION" => Some(IncompleteReason::Recitation),
         // The request lacked a signature the gateway should have restored.
-        "MISSING_THOUGHT_SIGNATURE" => return Err(CodecError::StreamFailure(400).into()),
-        "PUP_LIMITED_DISABLED" => return Err(CodecError::StreamFailure(403).into()),
-        _ => return Err(CodecError::StreamFailure(500).into()),
+        "MISSING_THOUGHT_SIGNATURE" => {
+            return Err(CodecError::StreamFailure(
+                crate::protocol::failure::SourceFailureEvidence::stream(400, b""),
+            )
+            .into());
+        }
+        "PUP_LIMITED_DISABLED" => {
+            return Err(CodecError::StreamFailure(
+                crate::protocol::failure::SourceFailureEvidence::stream(403, b""),
+            )
+            .into());
+        }
+        _ => {
+            return Err(CodecError::StreamFailure(
+                crate::protocol::failure::SourceFailureEvidence::stream(500, b""),
+            )
+            .into());
+        }
     })
 }
 impl GenerationSseDecoder {
@@ -143,8 +159,15 @@ impl GenerationSseDecoder {
                 }
                 let value = parse_json(frame.data().as_bytes(), JsonLimits::ENVELOPE).map_err(
                     |e| match e {
-                        crate::semantic::value::JsonError::Limit => SseError::Limit,
-                        crate::semantic::value::JsonError::Invalid => invalid("Gemini JSON"),
+                        crate::semantic::value::JsonError::Limit(resource) => {
+                            crate::protocol::CodecError::from(
+                                crate::semantic::value::JsonError::Limit(resource),
+                            )
+                            .into()
+                        }
+                        crate::semantic::value::JsonError::Invalid => {
+                            invalid(crate::protocol::failure::ShapeReason::Json)
+                        }
                     },
                 )?;
                 self.chunk(&value, &mut out)?;
@@ -180,10 +203,19 @@ impl GenerationSseDecoder {
                 .and_then(|c| u16::try_from(c).ok())
                 .filter(|c| (400..600).contains(c))
                 .unwrap_or(500);
-            return Err(CodecError::StreamFailure(code).into());
+            return Err(CodecError::StreamFailure(
+                crate::protocol::failure::SourceFailureEvidence::envelope(
+                    code,
+                    crate::protocol::failure::RecognitionBasis::EnvelopeCode,
+                    None,
+                    error.get("status").and_then(Value::as_str),
+                    error.get("message").and_then(Value::as_str),
+                ),
+            )
+            .into());
         }
         if self.finished {
-            return Err(invalid("Gemini chunk after finish"));
+            return Err(invalid(crate::protocol::failure::ShapeReason::AfterFinish));
         }
         let id = string(o, "responseId")?;
         let model = string(o, "modelVersion")?;
@@ -191,14 +223,19 @@ impl GenerationSseDecoder {
             if id.is_some_and(|id| Some(id) != metadata.id.as_deref())
                 || model.is_some_and(|model| model != metadata.model)
             {
-                return Err(invalid("Gemini response identity changed"));
+                return Err(invalid(crate::protocol::failure::ShapeReason::Identity));
             }
         } else {
             let metadata = ResponseMetadata {
                 delivery: None,
                 storage: None,
-                id: Some(id.ok_or_else(|| invalid("responseId"))?.into()),
-                model: model.ok_or_else(|| invalid("modelVersion"))?.into(),
+                id: Some(
+                    id.ok_or_else(|| invalid(crate::protocol::failure::ShapeReason::InvalidValue))?
+                        .into(),
+                ),
+                model: model
+                    .ok_or_else(|| invalid(crate::protocol::failure::ShapeReason::InvalidValue))?
+                    .into(),
                 created: None,
                 context: Default::default(),
                 instruction_fidelity: Default::default(),
@@ -231,7 +268,7 @@ impl GenerationSseDecoder {
                     || o.get("candidates")
                         .is_some_and(|v| !v.as_array().is_some_and(Vec::is_empty)))
             {
-                return Err(invalid("blocked prompt with candidates"));
+                return Err(invalid(crate::protocol::failure::ShapeReason::InvalidValue));
             }
             self.emit(StreamEvent::SafetyReport(report), out)?;
             if blocked {
@@ -240,18 +277,24 @@ impl GenerationSseDecoder {
         }
         let candidates = match o.get("candidates") {
             None => return Ok(()),
-            Some(v) => v.as_array().ok_or_else(|| invalid("candidates"))?,
+            Some(v) => v
+                .as_array()
+                .ok_or_else(|| invalid(crate::protocol::failure::ShapeReason::InvalidValue))?,
         };
         let candidate = match candidates.as_slice() {
             [] => return Ok(()),
             [one] => object(one, "candidate")?,
-            _ => return Err(unsupported("candidate count")),
+            _ => {
+                return Err(unsupported(
+                    crate::protocol::failure::CarrierReason::Unavailable,
+                ));
+            }
         };
         if candidate
             .get("index")
             .is_some_and(|i| i.as_u64() != Some(0))
         {
-            return Err(invalid("candidate index"));
+            return Err(invalid(crate::protocol::failure::ShapeReason::InvalidValue));
         }
         if let Some(metadata) = candidate.get("citationMetadata").filter(|v| !v.is_null()) {
             let metadata = object(metadata, "citationMetadata")?;
@@ -259,29 +302,42 @@ impl GenerationSseDecoder {
                 .get("citationSources")
                 .is_some_and(|v| v.as_array().is_none_or(|sources| !sources.is_empty()))
             {
-                return Err(unsupported("citationMetadata"));
+                return Err(unsupported(
+                    crate::protocol::failure::CarrierReason::CitationMetadata,
+                ));
             }
         }
         if candidate
             .get("groundingMetadata")
             .is_some_and(|v| !v.is_null())
         {
-            return Err(unsupported("groundingMetadata"));
+            return Err(unsupported(
+                crate::protocol::failure::CarrierReason::CitationMetadata,
+            ));
         }
         if let Some(metadata) = candidate.get("urlContextMetadata").filter(|v| !v.is_null()) {
-            let metadata = object(metadata, "urlContextMetadata")?;
+            let metadata = object(metadata, "urlContextMetadata")
+                .map_err(|_| invalid(crate::protocol::failure::ShapeReason::Metadata))?;
             if let Some(entries) = metadata.get("urlMetadata") {
-                let entries = entries.as_array().ok_or_else(|| invalid("urlMetadata"))?;
+                let entries = entries
+                    .as_array()
+                    .ok_or_else(|| invalid(crate::protocol::failure::ShapeReason::Metadata))?;
                 if !entries.is_empty() {
-                    return Err(unsupported("urlContextMetadata"));
+                    return Err(unsupported(
+                        crate::protocol::failure::CarrierReason::UrlContextMetadata,
+                    ));
                 }
             }
         }
         let reason = string(candidate, "finishReason")?;
-        let explanation = match string(candidate, "finishMessage")? {
+        let explanation = match string(candidate, "finishMessage")
+            .map_err(|_| invalid(crate::protocol::failure::ShapeReason::TerminalExplanation))?
+        {
             None => Presence::Absent,
             Some(_) if reason.is_none() => {
-                return Err(invalid("Gemini finishMessage without finishReason"));
+                return Err(invalid(
+                    crate::protocol::failure::ShapeReason::TerminalExplanation,
+                ));
             }
             Some(message) => Presence::Value(TerminalExplanation {
                 text: Text::allowing_empty(
@@ -299,23 +355,29 @@ impl GenerationSseDecoder {
             .unwrap_or_default();
         if let Some(value) = candidate.get("avgLogprobs") {
             if !value.as_f64().is_some_and(|n| n.is_finite() && n <= 0.0) {
-                return Err(invalid("avgLogprobs"));
+                return Err(invalid(
+                    crate::protocol::failure::ShapeReason::Probabilities,
+                ));
             }
-            return Err(unsupported("avgLogprobs"));
+            return Err(unsupported(
+                crate::protocol::failure::CarrierReason::MeanLogprob,
+            ));
         }
         if !probabilities.is_empty() {
             let parts = candidate
                 .get("content")
                 .and_then(|content| content.get("parts"))
                 .and_then(Value::as_array)
-                .ok_or_else(|| unsupported("logprob owner"))?;
+                .ok_or_else(|| unsupported(crate::protocol::failure::CarrierReason::Unavailable))?;
             let [part] = parts.as_slice() else {
-                return Err(unsupported("logprob owner"));
+                return Err(unsupported(
+                    crate::protocol::failure::CarrierReason::Unavailable,
+                ));
             };
             let part = object(part, "part")?;
             let fragment = string(part, "text")?
                 .filter(|text| !text.is_empty())
-                .ok_or_else(|| unsupported("logprob owner"))?;
+                .ok_or_else(|| unsupported(crate::protocol::failure::CarrierReason::Unavailable))?;
             // Only chunk-local, unambiguous text reports are selected. Do not
             // guess whether a mixed or cumulative report belongs to this delta.
             if part
@@ -327,18 +389,20 @@ impl GenerationSseDecoder {
                     .collect::<String>()
                     != fragment
             {
-                return Err(unsupported("logprob alignment"));
+                return Err(unsupported(
+                    crate::protocol::failure::CarrierReason::Unavailable,
+                ));
             }
         }
         if let Some(content) = candidate.get("content") {
             let content = object(content, "content")?;
             if string(content, "role")?.is_some_and(|r| r != "model") {
-                return Err(invalid("content role"));
+                return Err(invalid(crate::protocol::failure::ShapeReason::InvalidValue));
             }
             if let Some(parts) = content.get("parts") {
                 for (index, part) in parts
                     .as_array()
-                    .ok_or_else(|| invalid("parts"))?
+                    .ok_or_else(|| invalid(crate::protocol::failure::ShapeReason::InvalidValue))?
                     .iter()
                     .enumerate()
                 {
@@ -380,17 +444,19 @@ impl GenerationSseDecoder {
             "executableCode",
             "codeExecutionResult",
         ];
-        if let Some(key) = UNMODELED.iter().find(|k| p.contains_key(**k)) {
-            return Err(unsupported(&format!("part {key}")));
+        if UNMODELED.iter().any(|key| p.contains_key(*key)) {
+            return Err(unsupported(
+                crate::protocol::failure::CarrierReason::Unavailable,
+            ));
         }
         let signature = match string(p, "thoughtSignature")? {
-            Some("") => return Err(invalid("thoughtSignature")),
+            Some("") => return Err(invalid(crate::protocol::failure::ShapeReason::Signature)),
             other => other.map(str::to_owned),
         };
         let thought = match p.get("thought") {
             None => false,
             Some(Value::Bool(b)) => *b,
-            Some(_) => return Err(invalid("thought")),
+            Some(_) => return Err(invalid(crate::protocol::failure::ShapeReason::InvalidValue)),
         };
         match (string(p, "text")?, p.get("functionCall")) {
             (Some(fragment), None) if thought => {
@@ -484,17 +550,19 @@ impl GenerationSseDecoder {
                 // Gemini 3 always returns call IDs; the gateway mints none.
                 let id = string(call, "id")?
                     .filter(|id| !id.is_empty())
-                    .ok_or_else(|| invalid("functionCall.id"))?;
+                    .ok_or_else(|| invalid(crate::protocol::failure::ShapeReason::InvalidValue))?;
                 let name = string(call, "name")?
                     .filter(|n| !n.is_empty())
-                    .ok_or_else(|| invalid("functionCall.name"))?;
+                    .ok_or_else(|| invalid(crate::protocol::failure::ShapeReason::InvalidValue))?;
                 let args = match call.get("args") {
                     None => Value::Object(Map::new()),
                     Some(v @ Value::Object(_)) => v.clone(),
-                    Some(_) => return Err(invalid("functionCall.args")),
+                    Some(_) => {
+                        return Err(invalid(crate::protocol::failure::ShapeReason::InvalidValue));
+                    }
                 };
                 if self.calls.iter().any(|c| c == id) {
-                    return Err(invalid("duplicate Gemini call"));
+                    return Err(invalid(crate::protocol::failure::ShapeReason::CallIdentity));
                 }
                 self.calls.push(id.into());
                 let replay = if let Some(signature) = signature {
@@ -523,8 +591,8 @@ impl GenerationSseDecoder {
                     },
                     out,
                 )?;
-                let arguments =
-                    serde_json::to_string(&args).map_err(|_| invalid("functionCall.args"))?;
+                let arguments = serde_json::to_string(&args)
+                    .map_err(|_| invalid(crate::protocol::failure::ShapeReason::InvalidValue))?;
                 for event in [
                     StreamEvent::PartStarted {
                         item,
@@ -554,14 +622,14 @@ impl GenerationSseDecoder {
                         .and_then(|i| i.snapshot())
                         .map_err(CodecError::from)?
                     else {
-                        return Err(invalid("Gemini call replay owner"));
+                        return Err(invalid(crate::protocol::failure::ShapeReason::InvalidValue));
                     };
                     self.fidelity
                         .record_call_replay(item, &call, Some(self.target.origin()))?;
                 }
                 Ok(())
             }
-            _ => Err(invalid("Gemini part data")),
+            _ => Err(invalid(crate::protocol::failure::ShapeReason::InvalidValue)),
         }
     }
     fn delta(
@@ -574,7 +642,10 @@ impl GenerationSseDecoder {
         if fragment.is_empty() {
             return Ok(());
         }
-        let open = self.open.as_mut().ok_or_else(|| invalid("Gemini part"))?;
+        let open = self
+            .open
+            .as_mut()
+            .ok_or_else(|| invalid(crate::protocol::failure::ShapeReason::InvalidValue))?;
         let (item, part) = (open.item, open.part);
         let start = !open.part_started;
         open.part_started = true;
@@ -619,7 +690,7 @@ impl GenerationSseDecoder {
             .and_then(|i| i.snapshot())
             .map_err(CodecError::from)?
         else {
-            return Err(invalid("Gemini reasoning owner"));
+            return Err(invalid(crate::protocol::failure::ShapeReason::InvalidValue));
         };
         self.fidelity
             .record_replay(item, &reasoning, Some(self.target.origin()))?;
@@ -685,7 +756,7 @@ impl GenerationSseDecoder {
                 .and_then(|i| i.snapshot())
                 .map_err(CodecError::from)?
             else {
-                return Err(invalid("Gemini text replay owner"));
+                return Err(invalid(crate::protocol::failure::ShapeReason::InvalidValue));
             };
             self.fidelity.record_part_replay(
                 open.item,
@@ -754,15 +825,16 @@ impl GenerationSseDecoder {
         let result = (|| {
             self.framing.finish_strict()?;
             if !self.finished {
-                return Err(invalid("Gemini stream without finish reason"));
+                return Err(invalid(crate::protocol::failure::ShapeReason::InvalidValue));
             }
             Ok(DecodedResponse {
+                evidence: Default::default(),
                 semantic: materialize(&self.state).map_err(CodecError::from)?,
                 fidelity: self.fidelity.clone(),
                 metadata: self
                     .metadata
                     .clone()
-                    .ok_or_else(|| invalid("Gemini metadata"))?,
+                    .ok_or_else(|| invalid(crate::protocol::failure::ShapeReason::InvalidValue))?,
             })
         })();
         if result.is_err() {

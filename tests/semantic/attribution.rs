@@ -25,7 +25,7 @@ fn source(profile: Profile, fields: Value) -> Result<Request, morphiecore::proto
     Adapter::new(profile, Dialect::Standard, None)
         .decode_client_request(wire.to_string().as_bytes())
 }
-fn messages(request: &Request) -> morphiecore::protocol::anthropic::messages::NativeProjection {
+fn messages(request: &Request) -> morphiecore::lowering::generation::Conversion<serde_json::Value> {
     MessagesCaps::new(
         MessagesProfile::AdaptiveTextTools,
         MessagesDialect::Standard,
@@ -164,7 +164,7 @@ fn single_carriers_preserve_priority_presence_and_separate_legacy_cache_loss() {
                 .and_then(|m| m.get("user_id")),
             selected.as_ref()
         );
-        let rules: Vec<_> = projected.rules.iter().map(|r| r.name()).collect();
+        let rules: Vec<_> = projected.evidence.iter().map(|r| r.rule()).collect();
         assert_eq!(
             rules.contains(&"generation.omit-identity-hints.v1"),
             lost_identity
@@ -200,7 +200,7 @@ fn single_carriers_preserve_priority_presence_and_separate_legacy_cache_loss() {
     .unwrap();
     let projected = messages(&request);
     assert_eq!(projected.value["metadata"]["user_id"], "usr_b");
-    let rules: Vec<_> = projected.rules.iter().map(|r| r.name()).collect();
+    let rules: Vec<_> = projected.evidence.iter().map(|r| r.rule()).collect();
     for rule in [
         "generation.omit-identity-hints.v1",
         "cache.omit-legacy-user-bucketing.v1",
@@ -208,8 +208,15 @@ fn single_carriers_preserve_priority_presence_and_separate_legacy_cache_loss() {
     ] {
         assert_eq!(rules.iter().filter(|r| **r == rule).count(), 1);
     }
-    let evidence = format!("{:?}", projected.control_losses);
-    assert!(evidence.contains("cache.legacy_user_bucketing"));
+    let evidence = format!("{:?}", projected.evidence);
+    assert!(
+        projected
+            .evidence
+            .iter()
+            .any(|e| e.rule() == "cache.omit-legacy-user-bucketing.v1"
+                && e.semantic_field() == morphiecore::lowering::generation::Field::IdentityBucket
+                && e.change() == morphiecore::lowering::generation::Change::Omit)
+    );
     for private in ["usr_b", "legacy_a", "template_c"] {
         assert!(!evidence.contains(private));
     }

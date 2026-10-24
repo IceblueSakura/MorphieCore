@@ -30,7 +30,9 @@ impl Delivery {
     }
     pub fn validate(&self) -> Result<(), CodecError> {
         if self.options.value().is_some() && !self.streaming() {
-            return Err(CodecError::Invalid("stream_options without streaming"));
+            return Err(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            ));
         }
         Ok(())
     }
@@ -92,10 +94,14 @@ pub(in crate::protocol::openai) fn decode_request_with_history(
         model: string(o, "model")?.into(),
         delivery: Delivery {
             stream: read_presence(o, "stream", |v| {
-                v.as_bool().ok_or(CodecError::Invalid("stream"))
+                v.as_bool().ok_or(CodecError::Invalid(
+                    crate::protocol::failure::ShapeReason::InvalidValue,
+                ))
             })?,
             options: read_presence(o, "stream_options", |v| {
-                serde_json::from_value(v.clone()).map_err(|_| CodecError::Invalid("stream_options"))
+                serde_json::from_value(v.clone()).map_err(|_| {
+                    CodecError::Invalid(crate::protocol::failure::ShapeReason::InvalidValue)
+                })
             })?,
         },
         execution: ExecutionHints::read(o, Profile::Responses, direction)?,
@@ -172,7 +178,9 @@ impl ResponseContext {
                     || storage.previous_response_id.value().is_some()
             })
         {
-            return Err(CodecError::Unsupported("upstream response state".into()));
+            return Err(CodecError::Unsupported(
+                crate::protocol::failure::CarrierReason::Unavailable,
+            ));
         }
         let execution = o
             .iter()
@@ -220,8 +228,9 @@ impl ResponseContext {
             execution: ExecutionHints::read(&execution, Profile::Responses, direction)?,
             completed_at: read_presence(o, "completed_at", timestamp)?,
             cache_diagnostics: read_presence(o, "prompt_cache_diagnostics", |v| {
-                serde_json::from_value(v.clone())
-                    .map_err(|_| CodecError::Invalid("cache diagnostics"))
+                serde_json::from_value(v.clone()).map_err(|_| {
+                    CodecError::Invalid(crate::protocol::failure::ShapeReason::InvalidValue)
+                })
             })?,
             // Responses wire has no `system_fingerprint` position; the field is
             // Chat-only and rejected on Responses bodies by `response_fields`.
@@ -348,7 +357,9 @@ pub(crate) fn validate_response_snapshot_with(
     for item in o
         .get("output")
         .and_then(Value::as_array)
-        .ok_or(CodecError::Invalid("output"))?
+        .ok_or(CodecError::Invalid(
+            crate::protocol::failure::ShapeReason::InvalidValue,
+        ))?
     {
         validate_item_snapshot(item)?;
     }
@@ -369,7 +380,9 @@ pub(in crate::protocol::openai) fn validate_stream_payload_with(
         .and_then(Value::as_u64)
         .is_none()
     {
-        return Err(CodecError::Invalid("sequence"));
+        return Err(CodecError::Invalid(
+            crate::protocol::failure::ShapeReason::Sequence,
+        ));
     }
     if let Some(response) = v.get("response") {
         validate_response_snapshot_with(response, adaptation, direction)?;
@@ -383,7 +396,9 @@ pub(in crate::protocol::openai) fn validate_stream_payload_with(
     if v.get("type").and_then(Value::as_str) == Some("response.output_text.annotation.added")
         && v.pointer("/annotation/type").and_then(Value::as_str) == Some("file_path")
     {
-        return Err(CodecError::Unsupported("file_path annotation event".into()));
+        return Err(CodecError::Unsupported(
+            crate::protocol::failure::CarrierReason::Unavailable,
+        ));
     }
     Ok(())
 }
@@ -393,13 +408,17 @@ pub(in crate::protocol::openai) fn validate_item_snapshot(v: &Value) -> Result<(
         // Full wire snapshots report identity/lifecycle; only task codecs allow defaults.
         text(string(o, "id")?, "wire item id", 256)?;
         if string(o, "role")? != "assistant" || !o.contains_key("status") {
-            return Err(CodecError::Invalid("output message headers"));
+            return Err(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            ));
         }
         crate::protocol::openai::responses::items::status(o, ItemLifecycle::Completed)?;
         let parts = o
             .get("content")
             .and_then(Value::as_array)
-            .ok_or(CodecError::Invalid("output content"))?;
+            .ok_or(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            ))?;
         for p in parts {
             validate_part_snapshot(p)?;
         }
@@ -413,7 +432,9 @@ pub(in crate::protocol::openai) fn validate_part_snapshot(v: &Value) -> Result<(
     if v.get("type").and_then(Value::as_str) == Some("output_text") {
         let annotations = v.get("annotations").filter(|a| !a.is_null());
         if !annotations.is_some_and(Value::is_array) {
-            return Err(CodecError::Invalid("annotations"));
+            return Err(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            ));
         }
     }
     if v.get("type").and_then(Value::as_str) == Some("output_text")
@@ -426,7 +447,9 @@ pub(in crate::protocol::openai) fn validate_part_snapshot(v: &Value) -> Result<(
                         .any(|p| p.token.is_none() || p.logprob.is_none() || p.bytes.is_none())
                 })
             {
-                return Err(CodecError::Invalid("incomplete static logprobs"));
+                return Err(CodecError::Invalid(
+                    crate::protocol::failure::ShapeReason::InvalidValue,
+                ));
             }
         }
     }

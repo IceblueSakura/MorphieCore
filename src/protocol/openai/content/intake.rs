@@ -13,6 +13,7 @@ pub(in crate::protocol::openai) struct Items<'a> {
     pub resources: ResourceTable,
     pub message_owners: Vec<(ItemId, ItemId)>,
     pub fidelity: FidelityRecords,
+    pub evidence: crate::lowering::generation::EvidenceDelta,
     scope: LocalScope,
     next_item: u64,
     next_part: u64,
@@ -97,8 +98,12 @@ impl<'a> Items<'a> {
     }
     pub fn record_id(&mut self, id: ItemId, o: &Map<String, Value>) -> Result<(), CodecError> {
         if let Some(v) = o.get("id") {
-            self.fidelity
-                .record_response_item_id(id, v.as_str().ok_or(CodecError::Invalid("item id"))?)?;
+            self.fidelity.record_response_item_id(
+                id,
+                v.as_str().ok_or(CodecError::Invalid(
+                    crate::protocol::failure::ShapeReason::Identity,
+                ))?,
+            )?;
         }
         Ok(())
     }

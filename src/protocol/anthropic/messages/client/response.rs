@@ -16,7 +16,9 @@ pub fn encode_client_response(
         .iter()
         .any(|(_, item)| item.has_replay_attachment())
     {
-        return Err(CodecError::Unsupported("Messages replay attachment".into()));
+        return Err(CodecError::Unsupported(
+            crate::protocol::failure::CarrierReason::Replay,
+        ));
     }
     if !semantic.safety_reports().is_empty()
         || response
@@ -26,7 +28,9 @@ pub fn encode_client_response(
             .iter()
             .any(|r| r.settings.as_ref().is_some_and(|s| !s.safety.is_empty()))
     {
-        return Err(CodecError::Unsupported("Messages safety report".into()));
+        return Err(CodecError::Unsupported(
+            crate::protocol::failure::CarrierReason::Safety,
+        ));
     }
     let mut content = vec![];
     let mut calls = false;
@@ -49,30 +53,38 @@ pub fn encode_client_response(
             }
             Item::Message(m) if m.role == MessageRole::Assistant => {
                 if m.phase.is_some() {
-                    return Err(CodecError::Unsupported("Messages phase".into()));
+                    return Err(CodecError::Unsupported(
+                        crate::protocol::failure::CarrierReason::Unavailable,
+                    ));
                 }
                 for part in &m.parts {
                     match &part.content {
                         ContentPart::Text(t) => {
                             if !t.logprobs().is_absent() {
                                 return Err(CodecError::Unsupported(
-                                    "Messages probabilities".into(),
+                                    crate::protocol::failure::CarrierReason::Unavailable,
                                 ));
                             }
                             if !t.annotations().is_empty() {
-                                return Err(CodecError::Unsupported("Messages citations".into()));
+                                return Err(CodecError::Unsupported(
+                                    crate::protocol::failure::CarrierReason::Unavailable,
+                                ));
                             }
                             content.push(json!({"type":"text","text":t.as_str()}))
                         }
                         ContentPart::Refusal(t) => {
                             if !t.logprobs().is_absent() {
                                 return Err(CodecError::Unsupported(
-                                    "Messages probabilities".into(),
+                                    crate::protocol::failure::CarrierReason::Unavailable,
                                 ));
                             }
                             content.push(json!({"type":"text","text":t.as_str()}))
                         }
-                        _ => return Err(CodecError::Unsupported("Messages content".into())),
+                        _ => {
+                            return Err(CodecError::Unsupported(
+                                crate::protocol::failure::CarrierReason::Unavailable,
+                            ));
+                        }
                     }
                 }
             }
@@ -82,7 +94,11 @@ pub fn encode_client_response(
                 content.push(json!({"type":"tool_use","id":call.call_id.as_str(),
                     "name":call.name.as_str(),"input":input}));
             }
-            _ => return Err(CodecError::Unsupported("Messages item".into())),
+            _ => {
+                return Err(CodecError::Unsupported(
+                    crate::protocol::failure::CarrierReason::Unavailable,
+                ));
+            }
         }
     }
     let (stop_reason, stop_sequence) = wire::terminal::encode(

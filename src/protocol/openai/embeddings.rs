@@ -10,7 +10,7 @@ use crate::{
 use base64::{Engine, engine::general_purpose::STANDARD};
 use serde_json::{Value, json};
 fn invalid() -> CodecError {
-    CodecError::Invalid("embedding")
+    CodecError::Invalid(crate::protocol::failure::ShapeReason::InvalidValue)
 }
 
 enum Inputs {

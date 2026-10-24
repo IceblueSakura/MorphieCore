@@ -79,17 +79,19 @@ fn canonical_report_events_reach_terminal_carriers_without_rewriting_source_fact
             assert_eq!(usage["input_tokens"], 10);
             assert_eq!(usage["input_tokens_details"]["cached_tokens"], 0);
             assert!(usage["input_tokens_details"].get("image_tokens").is_none());
-            assert!(encoder.projection().iter().any(|stage| {
-                stage
-                    .loss
-                    .is_some_and(|loss| loss.name() == "responses.omit-input-image-tokens.v1")
-            }));
+            assert!(
+                encoder
+                    .projection()
+                    .iter()
+                    .any(|stage| { stage.rule() == "responses.omit-input-image-tokens.v1" })
+            );
         }
-        assert!(!encoder.projection().iter().any(|stage| {
-            stage
-                .loss
-                .is_some_and(|loss| loss.name() == "generation.usage-report-view.v1")
-        }));
+        assert!(
+            !encoder
+                .projection()
+                .iter()
+                .any(|stage| { stage.rule() == "generation.usage-report-view.v1" })
+        );
         assert_eq!(report, original);
     }
 }
@@ -102,11 +104,12 @@ fn canonical_modalities_use_exact_chat_carriers_without_report_loss() {
     let meta = metadata();
     let target =
         lower_response(&source, &fidelity, &meta, Profile::Chat, Contract::full()).unwrap();
-    assert!(!target.projection().iter().any(|stage| {
-        stage
-            .loss
-            .is_some_and(|loss| loss.name() == "generation.usage-report-view.v1")
-    }));
+    assert!(
+        !target
+            .projection()
+            .iter()
+            .any(|stage| { stage.rule() == "generation.usage-report-view.v1" })
+    );
     let wire = chat::encode_response(&target).unwrap();
     assert_eq!(wire["usage"]["prompt_tokens_details"]["image_tokens"], 7);
     assert_eq!(
@@ -159,9 +162,7 @@ fn responses_fingerprint_projection_is_explicit_and_keeps_source_metadata() {
             projected
                 .projection()
                 .iter()
-                .filter(|s| s
-                    .loss
-                    .is_some_and(|rule| rule.name() == "responses.omit-system-fingerprint.v1"))
+                .filter(|s| s.rule() == "responses.omit-system-fingerprint.v1")
                 .count(),
             usize::from(!fingerprint.is_absent())
         );
@@ -191,7 +192,7 @@ fn responses_fingerprint_projection_is_explicit_and_keeps_source_metadata() {
             encoder
                 .projection()
                 .iter()
-                .filter(|stage| stage.loss.is_some())
+                .filter(|stage| stage.change().is_loss())
                 .count(),
             usize::from(!fingerprint.is_absent())
         );
@@ -204,7 +205,7 @@ fn responses_fingerprint_projection_is_explicit_and_keeps_source_metadata() {
             failed
                 .projection()
                 .iter()
-                .filter(|stage| stage.loss.is_some())
+                .filter(|stage| stage.change().is_loss())
                 .count(),
             usize::from(!fingerprint.is_absent())
         );
@@ -222,7 +223,7 @@ fn responses_fingerprint_projection_is_explicit_and_keeps_source_metadata() {
             encoder
                 .projection()
                 .iter()
-                .filter(|s| s.loss.is_some())
+                .filter(|s| s.change().is_loss())
                 .count(),
             usize::from(!fingerprint.is_absent())
         );

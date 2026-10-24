@@ -1,6 +1,6 @@
 //! Google label admission agrees between preflight and prepared wire bytes.
 use morphiecore::{
-    adapter::AdapterError,
+    adapter::ConversionFailure,
     execution::{
         AttemptError,
         plan::{RejectionReason, representable},
@@ -60,15 +60,21 @@ fn google_safety_labels_are_bounded_unicode_without_repair_or_fallback() {
             );
             assert!(matches!(
                 endpoint.encode_request(&request),
-                Err(AdapterError::Codec(CodecError::Invalid(
-                    "Google safety label"
-                )))
+                Err(ConversionFailure {
+                    cause: morphiecore::adapter::ConversionCause::Codec(CodecError::Invalid(
+                        morphiecore::protocol::failure::ShapeReason::InvalidValue
+                    )),
+                    ..
+                })
             ));
             assert!(matches!(
                 prepared,
-                Err(AttemptError::Adapter(AdapterError::Codec(
-                    CodecError::Invalid("Google safety label")
-                )))
+                Err(AttemptError::Adapter(ConversionFailure {
+                    cause: morphiecore::adapter::ConversionCause::Codec(CodecError::Invalid(
+                        morphiecore::protocol::failure::ShapeReason::InvalidValue
+                    )),
+                    ..
+                }))
             ));
         }
         assert_eq!(request, before);

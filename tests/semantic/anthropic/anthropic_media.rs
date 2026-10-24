@@ -246,7 +246,7 @@ fn document_context_preserves_per_use_presence_in_messages_and_tool_history() {
             .encode_generation_request(&request, &Default::default(), &target())
             .unwrap();
         assert_eq!(output.value["messages"], expected, "presence {index}");
-        assert!(output.rules.is_empty());
+        assert!(output.evidence.is_empty());
         let mut input = morphiecore::protocol::anthropic::messages::client::decode_client_request(
             wire.to_string().as_bytes(),
         )
@@ -406,7 +406,7 @@ fn images_and_documents_map_to_inert_resources_and_back() {
         .encode_generation_request(semantic, &Default::default(), &target())
         .unwrap();
     assert_eq!(encoded.value["messages"], messages());
-    assert!(encoded.rules.is_empty());
+    assert!(encoded.evidence.is_empty());
 
     // Same identities, different directives: old fidelity must not restore "error".
     let mut items = semantic.items().to_vec();
@@ -647,13 +647,13 @@ fn image_transformation_known_fields_are_strict_and_defaults_are_equivalent() {
         let raw = wire(json!({"oversized_image":oversized}));
         assert_eq!(
             decode_client_request(raw.to_string().as_bytes()).unwrap_err(),
-            CodecError::Invalid("Anthropic oversized_image")
+            CodecError::Invalid(morphiecore::protocol::failure::ShapeReason::InvalidValue)
         );
         assert_eq!(
             Profile::AdaptiveTextTools
                 .decode_request(raw.to_string().as_bytes())
                 .unwrap_err(),
-            CodecError::Invalid("Anthropic oversized_image")
+            CodecError::Invalid(morphiecore::protocol::failure::ShapeReason::InvalidValue)
         );
     }
 }
@@ -727,8 +727,8 @@ fn unrepresentable_sources_and_uncalibrated_options_fail_without_losing_filename
     assert_eq!(
         rules,
         [
-            "messages.default-max-tokens.v1",
-            "messages.default-automatic-cache.v1"
+            "messages.default-automatic-cache.v1",
+            "messages.default-max-tokens.v1"
         ]
     );
     // A later developer message becomes a mid-conversation system message on the
@@ -781,7 +781,7 @@ fn unrepresentable_sources_and_uncalibrated_options_fail_without_losing_filename
                     .as_bytes(),
                 )
                 .unwrap_err(),
-            morphiecore::protocol::CodecError::Unsupported("instruction content".into())
+            morphiecore::protocol::CodecError::Unsupported(morphiecore::protocol::failure::CarrierReason::Unavailable)
         );
     // `downsize` is the default; `error` survives only on a Messages target.
     let messages = |oversized: &str| {

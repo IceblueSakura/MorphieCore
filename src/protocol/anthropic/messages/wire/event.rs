@@ -24,13 +24,19 @@ impl Delta {
         let kind = v
             .get("type")
             .and_then(Value::as_str)
-            .ok_or(CodecError::Invalid("Anthropic delta type"))?;
+            .ok_or(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            ))?;
         let (key, constructor): (&str, fn(String) -> Self) = match kind {
             "text_delta" => ("text", Self::Text),
             "thinking_delta" => ("thinking", Self::Thinking),
             "signature_delta" => ("signature", Self::Signature),
             "input_json_delta" => ("partial_json", Self::InputJson),
-            _ => return Err(CodecError::Unsupported("Anthropic delta type".into())),
+            _ => {
+                return Err(CodecError::Unsupported(
+                    crate::protocol::failure::CarrierReason::Unavailable,
+                ));
+            }
         };
         let o = object(v)?;
         Ok(constructor(string(required(
@@ -107,9 +113,13 @@ impl Event {
         let kind = v
             .get("type")
             .and_then(Value::as_str)
-            .ok_or(CodecError::Invalid("Anthropic event type"))?;
+            .ok_or(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            ))?;
         if !Self::KNOWN.contains(&kind) {
-            return Err(CodecError::Unsupported("Anthropic event type".into()));
+            return Err(CodecError::Unsupported(
+                crate::protocol::failure::CarrierReason::Unavailable,
+            ));
         }
         let o = object(v)?;
         let e = match kind {
@@ -155,7 +165,9 @@ impl Event {
             Self::BlockStart { index, block } => {
                 Self::index(*index)?;
                 if !block.permits(Role::Assistant) {
-                    return Err(CodecError::Invalid("Anthropic start block"));
+                    return Err(CodecError::Invalid(
+                        crate::protocol::failure::ShapeReason::InvalidValue,
+                    ));
                 }
                 block.bytes(true)?;
             }
@@ -177,26 +189,30 @@ impl Event {
                         .value()
                         .is_some_and(|reason| *reason != StopReason::Refusal)
                     {
-                        return Err(CodecError::Invalid("Anthropic refusal detail stop"));
+                        return Err(CodecError::Invalid(
+                            crate::protocol::failure::ShapeReason::InvalidValue,
+                        ));
                     }
                 }
                 usage.validate()?;
                 if !usage.cache_creation.is_absent() {
                     return Err(CodecError::Unsupported(
-                        "Messages delta cache breakdown".into(),
+                        crate::protocol::failure::CarrierReason::Unavailable,
                     ));
                 }
                 // The pinned MessageDeltaUsage has no service-tier carrier.
                 // https://github.com/anthropics/anthropic-sdk-python/blob/b4b7916deaf4e5570cd627b1ae7ee4394a4de39f/src/anthropic/types/message_delta_usage.py
                 if !usage.service_class.is_absent() {
                     return Err(CodecError::Unsupported(
-                        "Messages delta service report".into(),
+                        crate::protocol::failure::CarrierReason::Unavailable,
                     ));
                 }
                 if stop_sequence.value().is_some()
                     != (*stop_reason == Presence::Value(StopReason::StopSequence))
                 {
-                    return Err(CodecError::Invalid("Anthropic stop_sequence"));
+                    return Err(CodecError::Invalid(
+                        crate::protocol::failure::ShapeReason::InvalidValue,
+                    ));
                 }
                 if let Presence::Value(s) = stop_sequence {
                     text(s)?;

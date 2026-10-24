@@ -51,14 +51,14 @@ pub struct RequestRepresentation<'a> {
     pub(crate) semantic: std::borrow::Cow<'a, GenerationRequest>,
     pub(crate) fidelity: &'a FidelityRecords,
     pub(crate) profile: Profile,
-    pub(crate) projection: Vec<crate::protocol::openai::lowering::projection::ProjectionStage>,
+    pub(crate) projection: Vec<crate::lowering::generation::Effect>,
 }
 impl RequestRepresentation<'_> {
     /// Final candidate-local value; a changed input or target needs fresh lowering.
     pub fn semantic(&self) -> &GenerationRequest {
         &self.semantic
     }
-    pub fn projection(&self) -> &[crate::protocol::openai::lowering::projection::ProjectionStage] {
+    pub fn projection(&self) -> &[crate::lowering::generation::Effect] {
         &self.projection
     }
     pub fn profile(&self) -> Profile {
@@ -74,7 +74,8 @@ pub struct ResponseRepresentation<'a> {
     pub(crate) fidelity: &'a FidelityRecords,
     pub(crate) metadata: std::borrow::Cow<'a, ResponseMetadata>,
     pub(crate) profile: Profile,
-    pub(crate) projection: Vec<crate::protocol::openai::lowering::projection::ProjectionStage>,
+    pub(crate) projection: Vec<crate::lowering::generation::Effect>,
+    pub(crate) projection_steps: usize,
 }
 impl ResponseRepresentation<'_> {
     pub fn semantic(&self) -> &GenerationResponse {
@@ -83,7 +84,7 @@ impl ResponseRepresentation<'_> {
     pub fn metadata(&self) -> &ResponseMetadata {
         &self.metadata
     }
-    pub fn projection(&self) -> &[crate::protocol::openai::lowering::projection::ProjectionStage] {
+    pub fn projection(&self) -> &[crate::lowering::generation::Effect] {
         &self.projection
     }
     pub fn requirements(
@@ -101,7 +102,7 @@ impl ResponseRepresentation<'_> {
         use crate::protocol::openai::lowering::{
             self as generation, projection::MAX_PROJECTION_STAGES,
         };
-        if self.projection.len() >= MAX_PROJECTION_STAGES {
+        if self.projection_steps >= MAX_PROJECTION_STAGES {
             return Err(generation::RepresentationError::ProjectionLimit);
         }
         let mut next = generation::lower_response(
@@ -111,9 +112,10 @@ impl ResponseRepresentation<'_> {
             profile,
             contract,
         )?;
-        if self.projection.len().saturating_add(next.projection.len()) > MAX_PROJECTION_STAGES {
+        if self.projection_steps.saturating_add(next.projection_steps) > MAX_PROJECTION_STAGES {
             return Err(generation::RepresentationError::ProjectionLimit);
         }
+        next.projection_steps += self.projection_steps;
         let mut stages = self.projection.clone();
         stages.append(&mut next.projection);
         next.projection = stages;

@@ -11,7 +11,7 @@ pub(in crate::protocol::anthropic::messages) use encode::item_blocks;
 
 /// An IR shape Messages has no carrier for; the caller names the owning rule.
 pub(in crate::protocol::anthropic::messages) fn unsupported() -> CodecError {
-    CodecError::Unsupported("native semantic carrier".into())
+    CodecError::Unsupported(crate::protocol::failure::CarrierReason::Unavailable)
 }
 
 /// Native boundaries own their TTL; a request-lifetime boundary cannot be guessed.

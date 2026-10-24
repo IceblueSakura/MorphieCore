@@ -84,8 +84,8 @@ fn unresolved_file_citation_positions_reject_events_and_final_part_snapshots() {
                     }
                     Err(error) => {
                         assert!(
-                            matches!(error, SseError::Codec(CodecError::Unsupported(ref label))
-                            if label == "file_citation insertion units")
+                            matches!(error, SseError::Codec(CodecError::Unsupported(label))
+                            if matches!(label,morphiecore::protocol::failure::CarrierReason::Unavailable))
                         );
                         rejected = true;
                         break;
@@ -138,7 +138,7 @@ fn audit_repeated_citations_ignore_extensions_but_reject_changed_evidence() {
                     }
                     Err(e) => {
                         assert!(changed, "{e}");
-                        assert!(e.to_string().contains("annotation snapshot"));
+                        assert!(matches!(e,morphiecore::protocol::stream::SseError::Codec(morphiecore::protocol::CodecError::Invalid(morphiecore::protocol::failure::ShapeReason::SnapshotAnnotations))),"{e:?}");
                         rejected = true;
                         break 'chunks;
                     }
@@ -220,9 +220,7 @@ fn opaque_replay_cannot_be_promoted_by_missing_done_conflicting_terminal_or_eof(
                                 assert!(matches!(
                                     error,
                                     morphiecore::protocol::stream::SseError::Codec(
-                                        morphiecore::protocol::CodecError::Invalid(
-                                            "terminal snapshot replay changed"
-                                        )
+                                        morphiecore::protocol::CodecError::Invalid(morphiecore::protocol::failure::ShapeReason::SnapshotReplayChanged)
                                     )
                                 ));
                             }

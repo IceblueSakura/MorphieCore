@@ -5,8 +5,8 @@ use crate::{
 };
 use serde_json::{Map, Value};
 
-fn invalid(what: &'static str) -> SseError {
-    CodecError::Invalid(what).into()
+fn invalid(_what: &'static str) -> SseError {
+    CodecError::Invalid(crate::protocol::failure::ShapeReason::Usage).into()
 }
 fn object<'a>(value: &'a Value, what: &'static str) -> Result<&'a Map<String, Value>, SseError> {
     value.as_object().ok_or_else(|| invalid(what))

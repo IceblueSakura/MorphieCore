@@ -21,7 +21,9 @@ pub(super) fn seed<'a>(
         output.semantic.outcome(),
         Outcome::Completed | Outcome::Incomplete
     ) {
-        return Err(CodecError::Invalid("non-replayable response"));
+        return Err(CodecError::Invalid(
+            crate::protocol::failure::ShapeReason::InvalidValue,
+        ));
     }
     output
         .fidelity
@@ -144,9 +146,9 @@ pub(super) fn seed<'a>(
                 if let ProviderOperation::Reference(ProviderOperationReference::Local(id)) =
                     &mut value.operation
                 {
-                    *id = *owners
-                        .get(id)
-                        .ok_or(CodecError::Invalid("history operation reference"))?;
+                    *id = *owners.get(id).ok_or(CodecError::Invalid(
+                        crate::protocol::failure::ShapeReason::InvalidValue,
+                    ))?;
                 }
                 if let Some(output) = &mut value.output {
                     remap_output(output, &parts, &resources);

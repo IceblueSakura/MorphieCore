@@ -41,7 +41,9 @@ pub(super) fn put_presence<T>(
     }
 }
 pub(super) fn object(v: &Value) -> Result<&Map<String, Value>, CodecError> {
-    v.as_object().ok_or(CodecError::Invalid("object"))
+    v.as_object().ok_or(CodecError::Invalid(
+        crate::protocol::failure::ShapeReason::Object,
+    ))
 }
 /// Operation-local parsing policy. Payload contents never select this direction.
 #[derive(Clone, Copy, Debug, Default)]
@@ -94,8 +96,10 @@ impl IgnoredFields {
 }
 /// Closed request shape; shared readers use their explicitly supplied direction.
 pub(super) fn fields(o: &Map<String, Value>, allowed: &[&str]) -> Result<(), CodecError> {
-    if let Some(key) = o.keys().find(|key| !allowed.contains(&key.as_str())) {
-        return Err(CodecError::Unsupported(key.clone()));
+    if let Some(_key) = o.keys().find(|key| !allowed.contains(&key.as_str())) {
+        return Err(CodecError::Unsupported(
+            crate::protocol::failure::CarrierReason::UnknownField,
+        ));
     }
     Ok(())
 }
@@ -105,18 +109,24 @@ pub(super) fn fields(o: &Map<String, Value>, allowed: &[&str]) -> Result<(), Cod
 /// never becomes IR state, is never emitted, and an unparseable body cannot carry a
 /// non-null view.
 pub(super) fn admit_parsed(
-    key: &'static str,
+    _key: &'static str,
     parsed: Option<&Value>,
     raw: Option<&str>,
 ) -> Result<(), CodecError> {
     match (parsed, raw) {
         (None | Some(Value::Null), _) => Ok(()),
-        (Some(_), None) => Err(CodecError::Invalid(key)),
+        (Some(_), None) => Err(CodecError::Invalid(
+            crate::protocol::failure::ShapeReason::InvalidValue,
+        )),
         (Some(v), Some(raw)) => {
-            let expected: Value = crate::semantic::value::parse_json_view(raw.as_bytes())
-                .map_err(|_| CodecError::Invalid(key))?;
+            let expected: Value =
+                crate::semantic::value::parse_json_view(raw.as_bytes()).map_err(|_| {
+                    CodecError::Invalid(crate::protocol::failure::ShapeReason::InvalidValue)
+                })?;
             if *v != expected {
-                return Err(CodecError::Invalid(key));
+                return Err(CodecError::Invalid(
+                    crate::protocol::failure::ShapeReason::InvalidValue,
+                ));
             }
             Ok(())
         }
@@ -128,10 +138,13 @@ pub(super) fn string<'a>(
 ) -> Result<&'a str, CodecError> {
     o.get(key)
         .and_then(Value::as_str)
-        .ok_or(CodecError::Invalid(key))
+        .ok_or(CodecError::Invalid(
+            crate::protocol::failure::ShapeReason::InvalidValue,
+        ))
 }
 pub(super) fn text(value: &str, kind: &'static str, max: usize) -> Result<Text, CodecError> {
-    Text::new(value, kind, max).map_err(|_| CodecError::Invalid(kind))
+    Text::new(value, kind, max)
+        .map_err(|_| CodecError::Invalid(crate::protocol::failure::ShapeReason::InvalidValue))
 }
 pub(super) fn nullable_bool(
     o: &Map<String, Value>,
@@ -139,7 +152,11 @@ pub(super) fn nullable_bool(
 ) -> Result<Option<bool>, CodecError> {
     o.get(key)
         .filter(|v| !v.is_null())
-        .map(|v| v.as_bool().ok_or(CodecError::Invalid(key)))
+        .map(|v| {
+            v.as_bool().ok_or(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            ))
+        })
         .transpose()
 }
 pub(super) fn raw_string(o: &Map<String, Value>, key: &'static str) -> Result<String, CodecError> {
@@ -157,7 +174,9 @@ pub(super) fn accept_status(o: &Map<String, Value>, expected: &str) -> Result<()
         actual.is_none() || actual == Some(expected)
     };
     if !allowed {
-        return Err(CodecError::Unsupported("non-completed item".into()));
+        return Err(CodecError::Unsupported(
+            crate::protocol::failure::CarrierReason::Unavailable,
+        ));
     }
     Ok(())
 }

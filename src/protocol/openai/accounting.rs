@@ -8,7 +8,8 @@ pub(super) fn usage(
     value: Option<&Value>,
     profile: Profile,
     adaptation: &crate::protocol::openai::dialect::adaptation::Adaptation,
-    fidelity: &mut crate::protocol::fidelity::FidelityRecords,
+    evidence: &mut crate::lowering::generation::EvidenceDelta,
+    boundary: crate::lowering::generation::ConversionBoundary,
 ) -> Result<Option<Usage>, CodecError> {
     let Some(value) = value.filter(|value| !value.is_null()) else {
         return Ok(None);
@@ -96,18 +97,18 @@ pub(super) fn usage(
         let reported = if value.is_null() {
             None
         } else {
-            Some(
-                value
-                    .as_u64()
-                    .ok_or(CodecError::Invalid("reasoning usage alias"))?,
-            )
+            Some(value.as_u64().ok_or(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::Usage,
+            ))?)
         };
         if parsed
             .reasoning_tokens
             .zip(reported)
             .is_some_and(|(left, right)| left != right)
         {
-            return Err(CodecError::Invalid("reasoning usage alias conflict"));
+            return Err(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::Usage,
+            ));
         }
         parsed.reasoning_tokens = parsed.reasoning_tokens.or(reported);
     }
@@ -116,31 +117,39 @@ pub(super) fn usage(
     // `cached_input_tokens` and validate both aliases against the reported
     // totals: no count is lost, none is estimated, and disagreement is rejected.
     if cache_aliases && let Some(hit) = usage.get("prompt_cache_hit_tokens") {
-        let hit = hit.as_u64().ok_or(CodecError::Invalid("usage detail"))?;
+        let hit = hit.as_u64().ok_or(CodecError::Invalid(
+            crate::protocol::failure::ShapeReason::Usage,
+        ))?;
         if parsed
             .cached_input_tokens
             .is_some_and(|cached| cached != hit)
         {
-            return Err(CodecError::Invalid("usage alias"));
+            return Err(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::Usage,
+            ));
         }
         parsed.cached_input_tokens = Some(hit);
     }
     if cache_aliases && let Some(miss) = usage.get("prompt_cache_miss_tokens") {
-        let miss = miss.as_u64().ok_or(CodecError::Invalid("usage detail"))?;
-        let cached = parsed.cached_input_tokens.ok_or_else(|| {
-            CodecError::Unsupported("cache-miss usage without a cache-hit count".into())
-        })?;
+        let miss = miss.as_u64().ok_or(CodecError::Invalid(
+            crate::protocol::failure::ShapeReason::Usage,
+        ))?;
+        let cached = parsed.cached_input_tokens.ok_or(CodecError::Unsupported(
+            crate::protocol::failure::CarrierReason::Usage,
+        ))?;
         if parsed
             .input_tokens
             .and_then(|input| input.checked_sub(cached))
             != Some(miss)
         {
-            return Err(CodecError::Invalid("usage alias"));
+            return Err(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::Usage,
+            ));
         }
     }
     if parsed.input_cache_write_tokens.is_none() && adaptation.rules.default_cache_write {
         parsed.input_cache_write_tokens = Some(0);
-        fidelity.record_cache_write_default(adaptation.profile_id);
+        evidence.record_cache_write_default(adaptation.profile_id, boundary);
     }
     if parsed
         .input_tokens
@@ -148,14 +157,18 @@ pub(super) fn usage(
         .and_then(|(input, output)| input.checked_add(output))
         != parsed.total_tokens
     {
-        return Err(CodecError::Invalid("usage total"));
+        return Err(CodecError::Invalid(
+            crate::protocol::failure::ShapeReason::Usage,
+        ));
     }
     Ok(Some(parsed))
 }
 fn count(o: &Map<String, Value>, key: &'static str) -> Result<u64, CodecError> {
     o.get(key)
         .and_then(Value::as_u64)
-        .ok_or(CodecError::Invalid(key))
+        .ok_or(CodecError::Invalid(
+            crate::protocol::failure::ShapeReason::Usage,
+        ))
 }
 fn detail(
     o: &Map<String, Value>,
@@ -195,9 +208,9 @@ fn detail(
             DecodeDirection::Upstream.fields(details, allowed)?;
             match details.get(field) {
                 None | Some(Value::Null) => Ok(None),
-                Some(value) => Ok(Some(
-                    value.as_u64().ok_or(CodecError::Invalid("usage detail"))?,
-                )),
+                Some(value) => Ok(Some(value.as_u64().ok_or(CodecError::Invalid(
+                    crate::protocol::failure::ShapeReason::Usage,
+                ))?)),
             }
         }
     }

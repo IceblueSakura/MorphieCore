@@ -26,7 +26,7 @@ fn strict_tool_schemas_admit_only_the_native_subset_and_budget() {
     let tool = |schema: Value| json!({"name":"lookup","input_schema":schema,"strict":true});
     let object = |properties: Value, required: Vec<String>| json!({"type":"object","properties":properties,"required":required,"additionalProperties":false});
     let admitted = |result: Result<Value, CodecError>| result.is_ok();
-    let rejected = |result: Result<Value, CodecError>| matches!(result, Err(CodecError::Unsupported(r)) if r == "Anthropic strict tool schema");
+    let rejected = |result: Result<Value, CodecError>| matches!(result, Err(CodecError::Unsupported(r)) if matches!(r,morphiecore::protocol::failure::CarrierReason::Schema));
     let rich = object(
         json!({
             "email":{"type":["string","null"],"format":"email"},
@@ -124,7 +124,9 @@ fn audit_consecutive_messages_share_tool_turn_validation_without_reordering() {
     missing["messages"].as_array_mut().unwrap().remove(4);
     assert!(matches!(
         p.decode_request(missing.to_string().as_bytes()),
-        Err(CodecError::Invalid("Anthropic pending results"))
+        Err(CodecError::Invalid(
+            morphiecore::protocol::failure::ShapeReason::InvalidValue
+        ))
     ));
     body["messages"][3]["content"]
         .as_array_mut()
@@ -132,7 +134,9 @@ fn audit_consecutive_messages_share_tool_turn_validation_without_reordering() {
         .push(json!({"type":"text","text":"Too early."}));
     assert!(matches!(
         p.decode_request(body.to_string().as_bytes()),
-        Err(CodecError::Invalid("Anthropic result reference"))
+        Err(CodecError::Invalid(
+            morphiecore::protocol::failure::ShapeReason::InvalidValue
+        ))
     ));
 }
 #[test]
@@ -149,7 +153,7 @@ fn audit_protected_client_controls_are_not_discarded() {
         let mut body = base.clone();
         body[key] = value;
         assert!(matches!(decode_client_request(body.to_string().as_bytes()),
-                Err(CodecError::Unsupported(field)) if field == key));
+                Err(CodecError::Unsupported(field)) if field == morphiecore::protocol::failure::CarrierReason::UnknownField));
     }
     let mut body = base;
     body["thinking"] = json!({"type":"adaptive"});
@@ -171,13 +175,15 @@ fn audit_protected_client_controls_are_not_discarded() {
         body["thinking"]["block_binding"] = binding;
         let decoded = decode_client_request(body.to_string().as_bytes()).unwrap();
         assert_eq!(decoded.task.semantic.reasoning().replay_mismatch, expected);
-        assert!(decoded.task.fidelity.normalizations().is_empty());
+        assert!(decoded.task.evidence.is_empty());
     }
     assert_eq!(plain.task.semantic.reasoning().replay_mismatch, None);
     body["thinking"]["block_binding"] = json!({"prefix_mismatch_behavior":"ignore"});
     assert!(matches!(
         decode_client_request(body.to_string().as_bytes()),
-        Err(CodecError::Invalid("thinking.block_binding"))
+        Err(CodecError::Invalid(
+            morphiecore::protocol::failure::ShapeReason::InvalidValue
+        ))
     ));
     // The check exists only for adaptive thinking.
     body["max_tokens"] = json!(4096);
@@ -185,7 +191,9 @@ fn audit_protected_client_controls_are_not_discarded() {
             "block_binding":{"prefix_mismatch_behavior":"drop_block"}});
     assert!(matches!(
         decode_client_request(body.to_string().as_bytes()),
-        Err(CodecError::Invalid("thinking.block_binding"))
+        Err(CodecError::Invalid(
+            morphiecore::protocol::failure::ShapeReason::InvalidValue
+        ))
     ));
 }
 fn message() -> Value {

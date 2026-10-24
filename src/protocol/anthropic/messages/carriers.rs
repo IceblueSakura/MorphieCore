@@ -42,7 +42,9 @@ pub(super) fn project(
             }
             // Explicit enforcement is not the account default everywhere.
             Some(ReplayMismatch::Reject) => {
-                return Err(CodecError::Unsupported("thinking.block_binding".into()));
+                return Err(CodecError::Unsupported(
+                    crate::protocol::failure::CarrierReason::Reasoning,
+                ));
             }
             None => {}
         }
@@ -55,7 +57,7 @@ pub(super) fn project(
     if !carriers.tool_changes && items.iter().any(|(_, i)| matches!(i, Item::ToolChange(_))) {
         if GenerationRequirements::derive(request).tool_examples {
             return Err(CodecError::Unsupported(
-                "ordered tool input examples".into(),
+                crate::protocol::failure::CarrierReason::Tools,
             ));
         }
         settings.tools = Some(collapse_tools(request.tools(), &items)?);
@@ -94,7 +96,11 @@ fn flatten_effort(
                         activation: None,
                         effort: Some(effort),
                     } if effort.scope == EffortScope::Response => *effort,
-                    _ => return Err(CodecError::Unsupported("configuration update".into())),
+                    _ => {
+                        return Err(CodecError::Unsupported(
+                            crate::protocol::failure::CarrierReason::Unavailable,
+                        ));
+                    }
                 };
                 if user_turn == Some(true) {
                     active = Presence::Value(effort);
@@ -146,7 +152,11 @@ fn collapse_tools(
             (ToolChangeAction::AddDefinition(tool), None) => {
                 tools.push((ToolDefinition::Function((**tool).clone()), true));
             }
-            (_, None) => return Err(CodecError::Invalid("tool change reference")),
+            (_, None) => {
+                return Err(CodecError::Invalid(
+                    crate::protocol::failure::ShapeReason::InvalidValue,
+                ));
+            }
         }
     }
     Ok(tools

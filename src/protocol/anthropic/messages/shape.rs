@@ -10,8 +10,8 @@ use serde_json::{Map, Value};
 
 pub(super) fn parse(bytes: &[u8]) -> Result<Value, CodecError> {
     parse_json(bytes, JsonLimits::ENVELOPE).map_err(|e| match e {
-        JsonError::Invalid => CodecError::Invalid("JSON"),
-        JsonError::Limit => CodecError::Limit,
+        JsonError::Invalid => CodecError::Invalid(crate::protocol::failure::ShapeReason::Json),
+        JsonError::Limit(resource) => CodecError::from(JsonError::Limit(resource)),
     })
 }
 pub(super) fn bounded(value: &Value) -> Result<(), CodecError> {
@@ -21,7 +21,9 @@ pub(super) fn bounded(value: &Value) -> Result<(), CodecError> {
 }
 /// Upstream shape: unknown keys are ignored so new Provider fields cannot fail a response.
 pub(super) fn object(v: &Value) -> Result<&Map<String, Value>, CodecError> {
-    v.as_object().ok_or(CodecError::Invalid("Anthropic object"))
+    v.as_object().ok_or(CodecError::Invalid(
+        crate::protocol::failure::ShapeReason::InvalidValue,
+    ))
 }
 /// Request shape: unmodeled keys are rejected so no request control is silently dropped.
 pub(super) fn closed<'a>(
@@ -30,7 +32,9 @@ pub(super) fn closed<'a>(
 ) -> Result<&'a Map<String, Value>, CodecError> {
     let o = object(v)?;
     if o.keys().any(|k| !allowed.contains(&k.as_str())) {
-        return Err(CodecError::Unsupported("Anthropic field".into()));
+        return Err(CodecError::Unsupported(
+            crate::protocol::failure::CarrierReason::Unavailable,
+        ));
     }
     Ok(o)
 }
@@ -39,17 +43,23 @@ pub(super) fn uncited(o: &Map<String, Value>) -> Result<(), CodecError> {
     match o.get("citations") {
         None | Some(Value::Null) => Ok(()),
         Some(Value::Array(a)) if a.is_empty() => Ok(()),
-        Some(_) => Err(CodecError::Unsupported("Anthropic citations".into())),
+        Some(_) => Err(CodecError::Unsupported(
+            crate::protocol::failure::CarrierReason::Unavailable,
+        )),
     }
 }
 pub(super) fn required<'a>(
     o: &'a Map<String, Value>,
     key: &'static str,
 ) -> Result<&'a Value, CodecError> {
-    o.get(key).ok_or(CodecError::Invalid(key))
+    o.get(key).ok_or(CodecError::Invalid(
+        crate::protocol::failure::ShapeReason::InvalidValue,
+    ))
 }
 pub(super) fn string(v: &Value) -> Result<String, CodecError> {
-    let s = v.as_str().ok_or(CodecError::Invalid("Anthropic string"))?;
+    let s = v.as_str().ok_or(CodecError::Invalid(
+        crate::protocol::failure::ShapeReason::InvalidValue,
+    ))?;
     text(s)?;
     Ok(s.into())
 }
@@ -61,7 +71,9 @@ pub(super) fn text(s: &str) -> Result<usize, CodecError> {
 }
 pub(super) fn label(s: &str) -> Result<(), CodecError> {
     if s.is_empty() || s.len() > 256 || s.chars().any(|c| c.is_control() || c.is_whitespace()) {
-        return Err(CodecError::Invalid("Anthropic label"));
+        return Err(CodecError::Invalid(
+            crate::protocol::failure::ShapeReason::InvalidValue,
+        ));
     }
     Ok(())
 }
@@ -72,18 +84,26 @@ pub(super) fn name(s: &str, limit: usize) -> Result<(), CodecError> {
             .bytes()
             .all(|c| c.is_ascii_alphanumeric() || matches!(c, b'_' | b'-'))
     {
-        return Err(CodecError::Invalid("Anthropic name or call id"));
+        return Err(CodecError::Invalid(
+            crate::protocol::failure::ShapeReason::InvalidValue,
+        ));
     }
     Ok(())
 }
 pub(super) fn uint(v: &Value) -> Result<u64, CodecError> {
-    v.as_u64().ok_or(CodecError::Invalid("Anthropic counter"))
+    v.as_u64().ok_or(CodecError::Invalid(
+        crate::protocol::failure::ShapeReason::InvalidValue,
+    ))
 }
 pub(super) fn boolean(v: &Value) -> Result<bool, CodecError> {
-    v.as_bool().ok_or(CodecError::Invalid("Anthropic boolean"))
+    v.as_bool().ok_or(CodecError::Invalid(
+        crate::protocol::failure::ShapeReason::InvalidValue,
+    ))
 }
 pub(super) fn list(v: &Value) -> Result<&[Value], CodecError> {
-    let a = v.as_array().ok_or(CodecError::Invalid("Anthropic array"))?;
+    let a = v.as_array().ok_or(CodecError::Invalid(
+        crate::protocol::failure::ShapeReason::InvalidValue,
+    ))?;
     if a.len() > MAX_ITEMS {
         return Err(CodecError::Limit);
     }
@@ -118,7 +138,9 @@ pub(super) fn put<T>(
 }
 pub(super) fn nonnull<T>(p: &Presence<T>) -> Result<(), CodecError> {
     if matches!(p, Presence::Null) {
-        return Err(CodecError::Invalid("Anthropic null"));
+        return Err(CodecError::Invalid(
+            crate::protocol::failure::ShapeReason::InvalidValue,
+        ));
     }
     Ok(())
 }

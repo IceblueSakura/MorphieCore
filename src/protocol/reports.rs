@@ -37,7 +37,9 @@ pub(super) fn relation(reports: &ResponseReports, resolution: bool) -> Result<()
             }
         }
         if &allowed != after {
-            return Err(CodecError::Invalid("reported settings changed"));
+            return Err(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::SettingsConflict,
+            ));
         }
     }
     let before = &opening.service_class;
@@ -49,7 +51,9 @@ pub(super) fn relation(reports: &ResponseReports, resolution: bool) -> Result<()
             && *before == Presence::Value(ServiceClass::ConfiguredProcessing)
             && *after == Presence::Value(ServiceClass::StandardProcessing))
     {
-        return Err(CodecError::Invalid("service tier changed"));
+        return Err(CodecError::Invalid(
+            crate::protocol::failure::ShapeReason::Metadata,
+        ));
     }
     Ok(())
 }
@@ -67,19 +71,23 @@ pub(super) fn observe(
             terminal: next_terminal,
         } = &mut next
         else {
-            return Err(CodecError::Invalid("report lifecycle changed"));
+            return Err(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            ));
         };
         if next_opening.is_some() && terminal.is_some() {
-            return Err(CodecError::Invalid("report phase regressed"));
+            return Err(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            ));
         }
         for (old, new) in [(opening, next_opening), (terminal, next_terminal)] {
             if let (Some(old), Some(new)) = (old, new.as_ref())
                 && old != new
             {
                 return Err(CodecError::Invalid(if old.settings != new.settings {
-                    "reported settings changed"
+                    crate::protocol::failure::ShapeReason::SettingsConflict
                 } else {
-                    "service tier changed"
+                    crate::protocol::failure::ShapeReason::Metadata
                 }));
             }
             if new.is_none() {
@@ -106,15 +114,23 @@ pub(super) fn update(previous: &ResponseReports, next: &ResponseReports) -> Resu
             if opening.is_some() && opening != new_opening
                 || terminal.is_some() && terminal != new_terminal
             {
-                return Err(CodecError::Invalid("reported observation changed"));
+                return Err(CodecError::Invalid(
+                    crate::protocol::failure::ShapeReason::InvalidValue,
+                ));
             }
         }
         (ResponseReports::Single(old), ResponseReports::Single(new)) => {
             if !old.service_class.is_absent() && old.service_class != new.service_class {
-                return Err(CodecError::Invalid("reported service changed"));
+                return Err(CodecError::Invalid(
+                    crate::protocol::failure::ShapeReason::Metadata,
+                ));
             }
         }
-        _ => return Err(CodecError::Invalid("report lifecycle changed")),
+        _ => {
+            return Err(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            ));
+        }
     }
     Ok(())
 }
@@ -125,7 +141,9 @@ pub(crate) fn terminal_view(reports: &mut ResponseReports) -> Result<bool, Codec
     relation(reports, true)?;
     if let ResponseReports::Lifecycle { opening, terminal } = reports {
         if terminal.is_none() {
-            return Err(CodecError::Invalid("terminal report missing"));
+            return Err(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            ));
         }
         return Ok(opening.take().is_some());
     }
@@ -149,7 +167,9 @@ pub(crate) fn validate_single(reports: &ResponseReports) -> Result<(), CodecErro
     } = reports
         && opening.service_class != terminal.service_class
     {
-        return Err(CodecError::Unsupported("lifecycle service reports".into()));
+        return Err(CodecError::Unsupported(
+            crate::protocol::failure::CarrierReason::Unavailable,
+        ));
     }
     Ok(())
 }

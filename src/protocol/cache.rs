@@ -62,19 +62,24 @@ impl HintRule {
             Self::OmitLegacyUserBucketing => "cache.omit-legacy-user-bucketing.v1",
         }
     }
-    pub(crate) fn evidence(self) -> Option<crate::lowering::generation::LossEvidence> {
-        let field = match self {
-            Self::OmitDayRetention => "cache.prompt_cache_retention",
-            Self::OmitIdentityHints => "identity",
-            Self::OmitLegacyUserBucketing => "cache.legacy_user_bucketing",
-            _ => return None,
+    pub(crate) fn effect(self) -> crate::lowering::generation::Effect {
+        use crate::lowering::generation::{Change, ConversionBoundary, Effect, Field};
+        let (field, change) = match self {
+            Self::OmitIdentityHints => (Field::Identity, Change::Omit),
+            Self::OmitLegacyUserBucketing => (Field::IdentityBucket, Change::Omit),
+            Self::OmitInactiveOptions => (Field::CacheOptions, Change::Normalize),
+            Self::OmitKey => (Field::CacheKey, Change::Omit),
+            Self::OmitDayRetention => (Field::CacheRetention, Change::Omit),
         };
-        Some(crate::lowering::generation::LossEvidence {
-            rule: self.name(),
+        Effect::new(
+            self.name(),
             field,
-            direction: "request.encode",
-            action: "omit",
-        })
+            ConversionBoundary::RequestProject,
+            change,
+        )
+    }
+    pub(crate) fn evidence(self) -> Option<crate::lowering::generation::Effect> {
+        Some(self.effect())
     }
 }
 impl CacheProjection {
@@ -131,12 +136,16 @@ impl CacheProjection {
         context.cache.validate()?;
         // Shared hints also hold nullable reports; target projection admits requests only.
         if context.cache.prompt_cache_options == Presence::Null {
-            return Err(CodecError::Invalid("cache options"));
+            return Err(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            ));
         }
         // Never erase in_memory or infer a default storage policy from automatic caching.
         if !self.retention && !context.cache.prompt_cache_retention.is_absent() {
             if !self.omits_day_retention(context) {
-                return Err(CodecError::Unsupported("cache retention".into()));
+                return Err(CodecError::Unsupported(
+                    crate::protocol::failure::CarrierReason::Unavailable,
+                ));
             }
             context.cache.prompt_cache_retention = Presence::Absent;
         }
@@ -154,7 +163,9 @@ impl CacheProjection {
                     options != &crate::semantic::context::CacheOptions::default()
                 })
         {
-            return Err(CodecError::Unsupported("cache options".into()));
+            return Err(CodecError::Unsupported(
+                crate::protocol::failure::CarrierReason::Unavailable,
+            ));
         }
         if !self.options {
             context.cache.prompt_cache_options = Presence::Absent;
@@ -188,7 +199,9 @@ impl CacheProjection {
         inferred: Option<InferredAffinity>,
     ) -> Result<String, CodecError> {
         if !self.session_id {
-            return Err(CodecError::Unsupported("Go session carrier".into()));
+            return Err(CodecError::Unsupported(
+                crate::protocol::failure::CarrierReason::Unavailable,
+            ));
         }
         match (conversation, session) {
             (Some(group), None) if !group.is_conversation_scoped() && inferred.is_some() => {
@@ -200,7 +213,9 @@ impl CacheProjection {
             }
             (Some(group), None) => Ok(affinity_key(group, b"MorphieCore.go-session.v1\0")),
             (None, Some(session)) => Ok(session.header_value()?.into()),
-            _ => Err(CodecError::Invalid("request grouping")),
+            _ => Err(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            )),
         }
     }
 }
@@ -215,18 +230,22 @@ impl std::fmt::Debug for CacheSession {
 impl CacheSession {
     pub fn new(value: &str) -> Result<Self, CodecError> {
         if value.chars().count() > 256 || value.chars().any(char::is_control) {
-            return Err(CodecError::Invalid("session_id"));
+            return Err(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            ));
         }
-        Ok(Self(
-            Text::new(value, "session_id", 1024).map_err(|_| CodecError::Invalid("session_id"))?,
-        ))
+        Ok(Self(Text::new(value, "session_id", 1024).map_err(
+            |_| CodecError::Invalid(crate::protocol::failure::ShapeReason::InvalidValue),
+        )?))
     }
     pub fn as_str(&self) -> &str {
         self.0.as_str()
     }
     pub(crate) fn header_value(&self) -> Result<&str, CodecError> {
         if !self.as_str().is_ascii() {
-            return Err(CodecError::Invalid("session header"));
+            return Err(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            ));
         }
         Ok(self.as_str())
     }

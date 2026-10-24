@@ -22,7 +22,9 @@ fn index(o: &Map<String, Value>, key: &'static str) -> Result<usize, CodecError>
         .and_then(Value::as_u64)
         .filter(|n| *n < MAX_ITEMS as u64)
         .map(|n| n as usize)
-        .ok_or(CodecError::Invalid(key))
+        .ok_or(CodecError::Invalid(
+            crate::protocol::failure::ShapeReason::InvalidValue,
+        ))
 }
 fn sync_replays(
     state: &StreamState,
@@ -35,10 +37,9 @@ fn sync_replays(
         .filter(|i| owner.is_none_or(|id| i.id == id))
     {
         if matches!(item.kind, ItemKind::Compaction) {
-            let replay = item
-                .replay
-                .as_ref()
-                .ok_or(CodecError::Invalid("compaction content"))?;
+            let replay = item.replay.as_ref().ok_or(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            ))?;
             fidelity.record_compaction(item.id, &replay.value, replay.origin.clone())?;
         } else if matches!(item.kind, ItemKind::Reasoning) {
             if let Some(replay) = &item.replay {

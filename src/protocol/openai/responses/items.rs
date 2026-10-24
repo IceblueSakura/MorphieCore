@@ -14,8 +14,10 @@ pub(in crate::protocol::openai) fn read_phase(
         Some(Value::String(s)) => s
             .parse::<Phase>()
             .map(Some)
-            .map_err(|_| CodecError::Invalid("phase")),
-        _ => Err(CodecError::Invalid("phase")),
+            .map_err(|_| CodecError::Invalid(crate::protocol::failure::ShapeReason::InvalidValue)),
+        _ => Err(CodecError::Invalid(
+            crate::protocol::failure::ShapeReason::InvalidValue,
+        )),
     }
 }
 pub(in crate::protocol::openai) fn status(
@@ -28,9 +30,13 @@ pub(in crate::protocol::openai) fn status(
             "completed" => Ok(ItemLifecycle::Completed),
             "incomplete" => Ok(ItemLifecycle::Incomplete),
             "in_progress" => Ok(ItemLifecycle::InProgress),
-            _ => Err(CodecError::Invalid("item status")),
+            _ => Err(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::Item,
+            )),
         },
-        _ => Err(CodecError::Invalid("item status")),
+        _ => Err(CodecError::Invalid(
+            crate::protocol::failure::ShapeReason::Item,
+        )),
     }
 }
 pub(in crate::protocol::openai) fn status_label(s: ItemLifecycle) -> &'static str {
@@ -48,12 +54,20 @@ pub(in crate::protocol::openai) fn call_context(
         None | Some(Value::Null) => None,
         Some(Value::String(s)) if s.is_empty() => None,
         Some(Value::String(s)) => Some(text(s, "tool namespace", 128)?),
-        _ => return Err(CodecError::Invalid("tool namespace")),
+        _ => {
+            return Err(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            ));
+        }
     };
     let async_call = match o.get("async") {
         None | Some(Value::Null) | Some(Value::Bool(false)) => false,
         Some(Value::Bool(true)) => true,
-        _ => return Err(CodecError::Invalid("async")),
+        _ => {
+            return Err(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            ));
+        }
     };
     let caller = match o.get("caller") {
         None | Some(Value::Null) => None,
@@ -63,14 +77,20 @@ pub(in crate::protocol::openai) fn call_context(
             match string(caller, "type")? {
                 "direct" => {
                     if caller.contains_key("caller_id") {
-                        return Err(CodecError::Invalid("caller"));
+                        return Err(CodecError::Invalid(
+                            crate::protocol::failure::ShapeReason::InvalidValue,
+                        ));
                     }
                     None
                 }
                 "program" => Some(CallOrigin::Program {
                     caller_id: text(string(caller, "caller_id")?, "caller id", 256)?,
                 }),
-                _ => return Err(CodecError::Unsupported("caller".into())),
+                _ => {
+                    return Err(CodecError::Unsupported(
+                        crate::protocol::failure::CarrierReason::Unavailable,
+                    ));
+                }
             }
         }
     };
@@ -105,7 +125,9 @@ fn output(b: &mut Items, v: &Value, response: bool) -> Result<ToolOutput, CodecE
         }
         return Ok(ToolOutput::Text(s.into()));
     }
-    let a = v.as_array().ok_or(CodecError::Invalid("tool output"))?;
+    let a = v.as_array().ok_or(CodecError::Invalid(
+        crate::protocol::failure::ShapeReason::InvalidValue,
+    ))?;
     Ok(ToolOutput::Parts(input_parts(b, a, response)?))
 }
 /// Text and media input content of tool results.
@@ -157,7 +179,11 @@ fn input_parts(
                     crate::protocol::openai::content::video::read_responses(o, direction)?;
                 (b.part_id()?, InputPart::Resource(b.resource(resource)?))
             }
-            _ => return Err(CodecError::Unsupported("input content part".into())),
+            _ => {
+                return Err(CodecError::Unsupported(
+                    crate::protocol::failure::CarrierReason::Unavailable,
+                ));
+            }
         };
         let mut part = Part::new(part.0, part.1);
         part.cache = read_breakpoint(o, response)?;
@@ -188,7 +214,9 @@ fn read_breakpoint(
         {
             Ok(Some(PrefixCacheBoundary::RequestLifetime))
         }
-        _ => Err(CodecError::Invalid("prompt cache breakpoint")),
+        _ => Err(CodecError::Invalid(
+            crate::protocol::failure::ShapeReason::InvalidValue,
+        )),
     }
 }
 fn input_part(text: &str, cache: Option<PrefixCacheBoundary>) -> Value {
@@ -206,17 +234,17 @@ pub(in crate::protocol::openai) fn configuration_update(
     match o.get("reasoning") {
         None => Ok(ConfigurationUpdate::default()),
         Some(Value::Null) if response => Ok(ConfigurationUpdate::default()),
-        Some(Value::Null) => Err(CodecError::Invalid("configuration reasoning")),
+        Some(Value::Null) => Err(CodecError::Invalid(
+            crate::protocol::failure::ShapeReason::InvalidValue,
+        )),
         Some(value) => {
             let reasoning = object(value)?;
             direction.fields(reasoning, &["effort"])?;
             match reasoning.get("effort") {
                 None | Some(Value::Null) => Ok(ConfigurationUpdate::default()),
-                Some(value) => crate::protocol::openai::reasoning::effort(
-                    value
-                        .as_str()
-                        .ok_or(CodecError::Invalid("configuration effort"))?,
-                ),
+                Some(value) => crate::protocol::openai::reasoning::effort(value.as_str().ok_or(
+                    CodecError::Invalid(crate::protocol::failure::ShapeReason::InvalidValue),
+                )?),
             }
         }
     }
@@ -245,12 +273,22 @@ pub(in crate::protocol::openai) fn tool_result(
     let optional = |key, limit| {
         o.get(key)
             .filter(|v| !v.is_null())
-            .map(|v| text(v.as_str().ok_or(CodecError::Invalid(key))?, key, limit))
+            .map(|v| {
+                text(
+                    v.as_str().ok_or(CodecError::Invalid(
+                        crate::protocol::failure::ShapeReason::InvalidValue,
+                    ))?,
+                    key,
+                    limit,
+                )
+            })
             .transpose()
     };
     let call_id = optional("call_id", 256)?;
     if (!response || custom) && call_id.is_none() {
-        return Err(CodecError::Invalid("tool result call id"));
+        return Err(CodecError::Invalid(
+            crate::protocol::failure::ShapeReason::InvalidValue,
+        ));
     }
     if response {
         text(string(o, "id")?, "result id", 256)?;
@@ -262,7 +300,9 @@ pub(in crate::protocol::openai) fn tool_result(
         name: optional("name", 128)?,
         output: output(
             b,
-            o.get("output").ok_or(CodecError::Invalid("tool output"))?,
+            o.get("output").ok_or(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            ))?,
             response,
         )?,
         status: if o.contains_key("status") {
@@ -307,12 +347,18 @@ pub(in crate::protocol::openai) fn decode_items(
                 .and_then(Value::as_str)
                 .is_some_and(crate::protocol::replay_projection::is_marker)
         {
-            return Err(CodecError::Unsupported("legacy Responses manifest".into()));
+            return Err(CodecError::Unsupported(
+                crate::protocol::failure::CarrierReason::Replay,
+            ));
         }
         let id = b.id()?;
         let typ = o
             .get("type")
-            .map(|v| v.as_str().ok_or(CodecError::Invalid("item type")))
+            .map(|v| {
+                v.as_str().ok_or(CodecError::Invalid(
+                    crate::protocol::failure::ShapeReason::InvalidValue,
+                ))
+            })
             .transpose()?;
         let item = match typ {
             Some("function_call") => Item::ToolCall(tool_call(
@@ -359,7 +405,9 @@ pub(in crate::protocol::openai) fn decode_items(
                     .get("id")
                     .is_some_and(|v| !v.is_null() && v.as_str().is_none())
                 {
-                    return Err(CodecError::Invalid("configuration update id"));
+                    return Err(CodecError::Invalid(
+                        crate::protocol::failure::ShapeReason::InvalidValue,
+                    ));
                 }
                 Item::ConfigurationUpdate(configuration_update(o, response, direction)?)
             }
@@ -393,7 +441,11 @@ pub(in crate::protocol::openai) fn decode_items(
                     status: match string(o, "status")? {
                         "completed" => ItemLifecycle::Completed,
                         "incomplete" => ItemLifecycle::Incomplete,
-                        _ => return Err(CodecError::Invalid("program output status")),
+                        _ => {
+                            return Err(CodecError::Invalid(
+                                crate::protocol::failure::ShapeReason::InvalidValue,
+                            ));
+                        }
                     },
                 })
             }
@@ -421,13 +473,19 @@ pub(in crate::protocol::openai) fn decode_items(
                 let role = string(o, "role")?;
                 if o.contains_key("phase") && role != "assistant" {
                     // The standard labels assistant messages only.
-                    return Err(CodecError::Invalid("phase"));
+                    return Err(CodecError::Invalid(
+                        crate::protocol::failure::ShapeReason::InvalidValue,
+                    ));
                 }
                 let phase = read_phase(o)?;
-                let content = o.get("content").ok_or(CodecError::Invalid("content"))?;
+                let content = o.get("content").ok_or(CodecError::Invalid(
+                    crate::protocol::failure::ShapeReason::InvalidValue,
+                ))?;
                 let values = if let Some(s) = content.as_str() {
                     if response {
-                        return Err(CodecError::Invalid("output content"));
+                        return Err(CodecError::Invalid(
+                            crate::protocol::failure::ShapeReason::InvalidValue,
+                        ));
                     }
                     vec![if role == "assistant" {
                         // Shorthand has no annotation slot; the typed part still requires the array.
@@ -438,7 +496,9 @@ pub(in crate::protocol::openai) fn decode_items(
                 } else {
                     content
                         .as_array()
-                        .ok_or(CodecError::Invalid("content parts"))?
+                        .ok_or(CodecError::Invalid(
+                            crate::protocol::failure::ShapeReason::InvalidValue,
+                        ))?
                         .clone()
                 };
                 if values.len() > MAX_ITEMS {
@@ -450,7 +510,9 @@ pub(in crate::protocol::openai) fn decode_items(
                         .any(|p| p.get("parsed").is_some_and(|v| !v.is_null()))
                 {
                     // The pinned SDK never derives a parsed view from commentary text.
-                    return Err(CodecError::Invalid("parsed"));
+                    return Err(CodecError::Invalid(
+                        crate::protocol::failure::ShapeReason::InvalidValue,
+                    ));
                 }
                 if role == "system" || role == "developer" {
                     // Omitted and explicit completed stay without a lifecycle field.
@@ -461,7 +523,9 @@ pub(in crate::protocol::openai) fn decode_items(
                     for value in &values {
                         let part = object(value)?;
                         if string(part, "type")? != "input_text" {
-                            return Err(CodecError::Unsupported("instruction content".into()));
+                            return Err(CodecError::Unsupported(
+                                crate::protocol::failure::CarrierReason::Unavailable,
+                            ));
                         }
                         direction.fields(part, &["type", "text", "prompt_cache_breakpoint"])?;
                         let id = b.part_id()?;
@@ -492,7 +556,11 @@ pub(in crate::protocol::openai) fn decode_items(
                     let role = match role {
                         "user" => MessageRole::User,
                         "assistant" => MessageRole::Assistant,
-                        _ => return Err(CodecError::Unsupported("message role".into())),
+                        _ => {
+                            return Err(CodecError::Unsupported(
+                                crate::protocol::failure::CarrierReason::Unavailable,
+                            ));
+                        }
                     };
                     let mut parts = vec![];
                     for v in &values {
@@ -548,7 +616,11 @@ pub(in crate::protocol::openai) fn decode_items(
                             "output_text" if role == MessageRole::Assistant => ContentPart::Text(
                                 crate::protocol::openai::content::text::read(p, !response, b)?,
                             ),
-                            _ => return Err(CodecError::Unsupported("content part".into())),
+                            _ => {
+                                return Err(CodecError::Unsupported(
+                                    crate::protocol::failure::CarrierReason::Unavailable,
+                                ));
+                            }
                         };
                         let part_id = b.part_id()?;
                         let cache = match kind {
@@ -557,7 +629,7 @@ pub(in crate::protocol::openai) fn decode_items(
                             "input_text" if role == MessageRole::Assistant => {
                                 if p.contains_key("prompt_cache_breakpoint") {
                                     return Err(CodecError::Unsupported(
-                                        "assistant input_text breakpoint".into(),
+                                        crate::protocol::failure::CarrierReason::Unavailable,
                                     ));
                                 }
                                 None
@@ -576,7 +648,9 @@ pub(in crate::protocol::openai) fn decode_items(
                     let status = status(o, ItemLifecycle::Completed)?;
                     if response && item_status == "completed" && status != ItemLifecycle::Completed
                     {
-                        return Err(CodecError::Invalid("completed item"));
+                        return Err(CodecError::Invalid(
+                            crate::protocol::failure::ShapeReason::InvalidValue,
+                        ));
                     }
                     Item::Message(Message {
                         participant: None,
@@ -587,7 +661,11 @@ pub(in crate::protocol::openai) fn decode_items(
                     })
                 }
             }
-            _ => return Err(CodecError::Unsupported("Responses item kind".into())),
+            _ => {
+                return Err(CodecError::Unsupported(
+                    crate::protocol::failure::CarrierReason::Unavailable,
+                ));
+            }
         };
         // Function/custom and compaction IDs are optional/nullable in input; required IDs have
         // already been validated by their owning branch or complete boundary.
@@ -672,7 +750,9 @@ pub(in crate::protocol::openai) fn encode_items(
     resources: &ResourceTable,
 ) -> Result<Vec<Value>, CodecError> {
     if items.iter().any(|(_, i)| i.participant().is_some()) {
-        return Err(CodecError::Unsupported("participant carrier".into()));
+        return Err(CodecError::Unsupported(
+            crate::protocol::failure::CarrierReason::Unavailable,
+        ));
     }
     let mut out = vec![];
     for (id, item) in items {

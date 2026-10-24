@@ -30,7 +30,9 @@ impl Profile {
     ) -> Result<DecodedResponse, CodecError> {
         wire.validate(false)?;
         if wire.model != target.model() {
-            return Err(CodecError::Invalid("native model binding"));
+            return Err(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            ));
         }
         let mut intake = Intake::new(scope);
         intake.message(Role::Assistant, &wire.content)?;
@@ -44,10 +46,14 @@ impl Profile {
             .with_usage_reports(reports)?;
         let mut fidelity = FidelityRecords::default();
         bind(&mut fidelity, semantic.items(), target)?;
+        let mut evidence = crate::lowering::generation::EvidenceDelta::default();
         if wire.input_transformations {
-            fidelity.record_omission(crate::protocol::fidelity::INPUT_TRANSFORMATIONS_OMISSION);
+            evidence.record_input_transformations(
+                crate::lowering::generation::ConversionBoundary::ResponseDecode,
+            );
         }
         Ok(DecodedResponse {
+            evidence,
             semantic,
             fidelity,
             metadata: wire.reported_metadata()?,

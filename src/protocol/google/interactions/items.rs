@@ -70,7 +70,9 @@ pub(super) fn steps(
                         .filter(|v| v.format() == ReplayFormat::GoogleInteractionsV1Thought);
                     let Some(value) = own else {
                         if r.replay.is_some() {
-                            return Err(CodecError::Invalid("Interactions replay format"));
+                            return Err(CodecError::Invalid(
+                                crate::protocol::failure::ShapeReason::InvalidValue,
+                            ));
                         }
                         if !content.is_empty() {
                             rules.insert(RequestRule::ReasoningAsText);
@@ -79,7 +81,9 @@ pub(super) fn steps(
                         continue;
                     };
                     if !fidelity.replay_matches_request(*id, r, Some(&target.origin()), request) {
-                        return Err(CodecError::Invalid("Interactions replay dependency"));
+                        return Err(CodecError::Invalid(
+                            crate::protocol::failure::ShapeReason::InvalidValue,
+                        ));
                     }
                     let value = super::replay::Signed::decode(
                         value.replay_token().ok_or_else(unsupported)?,
@@ -103,10 +107,10 @@ pub(super) fn steps(
                     }
                     let args = match &c.arguments {
                         ToolArguments::Structured(v) => v.value().clone(),
-                        ToolArguments::Raw(s) => {
-                            parse_json(s.as_bytes(), JsonLimits::STRUCTURED)
-                                .map_err(|_| CodecError::Invalid("Interactions arguments"))?
-                        }
+                        ToolArguments::Raw(s) => parse_json(s.as_bytes(), JsonLimits::STRUCTURED)
+                            .map_err(|_| {
+                            CodecError::Invalid(crate::protocol::failure::ShapeReason::InvalidValue)
+                        })?,
                         _ => return Err(unsupported()),
                     };
                     if !args.is_object() {
@@ -118,7 +122,9 @@ pub(super) fn steps(
                         if value.format() != ReplayFormat::GoogleInteractionsV1FunctionCall
                             || !fidelity.call_replay_matches(*id, c, Some(&target.origin()))
                         {
-                            return Err(CodecError::Invalid("Interactions call replay dependency"));
+                            return Err(CodecError::Invalid(
+                                crate::protocol::failure::ShapeReason::InvalidValue,
+                            ));
                         }
                         let signed = super::replay::Signed::decode(
                             value.replay_token().ok_or_else(unsupported)?,
@@ -165,7 +171,9 @@ pub(super) fn steps(
                             }
                             _ => None,
                         })
-                        .ok_or(CodecError::Invalid("Interactions result without call"))?;
+                        .ok_or(CodecError::Invalid(
+                            crate::protocol::failure::ShapeReason::InvalidValue,
+                        ))?;
                     let mut step = json!({"type":"function_result","call_id":r.required_call_id()?,
                         "name":name,"result":result});
                     if let Some(error) = r.is_error {

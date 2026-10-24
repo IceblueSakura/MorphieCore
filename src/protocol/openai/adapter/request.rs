@@ -1,5 +1,5 @@
 //! OpenAI request envelopes, controls and header projection.
-use crate::protocol::openai::adapter::{Adapter, AdapterError, Request};
+use crate::protocol::openai::adapter::{Adapter, ConversionFailure, Request};
 use crate::{
     lowering::generation::RepresentationError,
     protocol::openai::{
@@ -27,7 +27,9 @@ fn with_effort_mapping<'a>(
         profile,
         native_thinking,
     ) {
-        return Err(CodecError::Unsupported("reasoning controls".into()));
+        return Err(CodecError::Unsupported(
+            crate::protocol::failure::CarrierReason::Reasoning,
+        ));
     }
     let mut items = Cow::Borrowed(request.task.semantic.items());
     for (index, (_, item)) in request.task.semantic.items().iter().enumerate() {
@@ -43,7 +45,9 @@ fn with_effort_mapping<'a>(
     let mut settings = request.task.semantic.settings().clone();
     if let Some(control) = settings.effort.value() {
         if control.scope != mapping.scope {
-            return Err(CodecError::Unsupported("reasoning mapping scope".into()));
+            return Err(CodecError::Unsupported(
+                crate::protocol::failure::CarrierReason::Reasoning,
+            ));
         }
         let mapped = mapping.encode(control.level)?;
         settings.effort = Presence::Value(crate::semantic::task::generation::EffortControl {
@@ -190,11 +194,13 @@ impl Adapter {
             && direction.client()
             && !self.adaptation.rules.thinking_controls
             && let Some(o) = value.as_object()
-            && let Some(key) = ["enable_thinking", "thinking_budget", "top_k"]
+            && let Some(_key) = ["enable_thinking", "thinking_budget", "top_k"]
                 .into_iter()
                 .find(|key| o.contains_key(*key))
         {
-            return Err(CodecError::Unsupported(key.into()));
+            return Err(CodecError::Unsupported(
+                crate::protocol::failure::CarrierReason::UnknownField,
+            ));
         }
         let mut native_controls = serde_json::Map::new();
         if self.adaptation.rules.thinking_controls {
@@ -216,10 +222,14 @@ impl Adapter {
             .and_then(|o| o.shift_remove("session_id"))
         {
             if !self.adaptation.cache.session_id {
-                return Err(CodecError::Unsupported("session_id".into()));
+                return Err(CodecError::Unsupported(
+                    crate::protocol::failure::CarrierReason::Unavailable,
+                ));
             }
             Some(crate::protocol::cache::CacheSession::new(
-                session.as_str().ok_or(CodecError::Invalid("session_id"))?,
+                session.as_str().ok_or(CodecError::Invalid(
+                    crate::protocol::failure::ShapeReason::InvalidValue,
+                ))?,
             )?)
         } else {
             None
@@ -297,10 +307,15 @@ impl Adapter {
                             scope: control.scope,
                             level,
                         });
-                    request.task.fidelity.record_effort_mapping(
+                    request.task.evidence.record_effort_mapping(
                         mapping.rule,
-                        control.level.into(),
-                        level.into(),
+                        control,
+                        crate::semantic::task::generation::EffortControl {
+                            scope: control.scope,
+                            level,
+                        },
+                        crate::lowering::generation::ConversionBoundary::RequestDecode,
+                        crate::lowering::generation::Owner::Root,
                     );
                 }
             }
@@ -382,7 +397,7 @@ impl Adapter {
         request: &Request,
         model: &str,
         contract: &TargetCaps,
-    ) -> Result<Value, AdapterError> {
+    ) -> Result<Value, ConversionFailure> {
         self.encode_request_with_rules(request, model, contract)
             .map(|(value, _)| value)
     }
@@ -392,88 +407,104 @@ impl Adapter {
         request: &Request,
         model: &str,
         contract: &TargetCaps,
-    ) -> Result<(Value, Vec<&'static str>), AdapterError> {
+    ) -> Result<(Value, Vec<&'static str>), ConversionFailure> {
         self.encode_request_with_evidence(request, model, contract)
-            .map(|projection| (projection.value, projection.rules))
+            .map(|projection| {
+                let rules = projection.evidence.rule_names();
+                (projection.value, rules)
+            })
     }
     pub(crate) fn encode_request_with_evidence(
         &self,
         request: &Request,
         model: &str,
         contract: &TargetCaps,
-    ) -> Result<crate::protocol::RequestProjection, AdapterError> {
-        use crate::lowering::generation::RequestControlLoss;
-        if self.adaptation.rules.bailian_requests
-            && self.adaptation.effort_mapping.is_none()
-            && let Some(mapping) = openai::dialect::bailian::effort_mapping(model, self.protocol)
-        {
-            let mut bound = self.clone();
-            bound.adaptation.effort_mapping = Some(mapping);
-            return bound.encode_request_with_evidence(request, model, contract);
-        }
-        // Compatibility and carrier support are separate: a same-issuer value
-        // without a target carrier must fail lowering, not disappear silently.
-        let issuer = contract
-            .replay_origin
-            .as_ref()
-            .or(self.adaptation.scope.as_ref());
-        let stripped = request.without_foreign_reasoning(issuer)?;
-        let mut rules = vec![];
-        let mut controls = vec![];
-        if stripped.is_some() {
-            let chat = self.protocol == Profile::Chat;
-            rules.push(if chat {
-                "chat.transfer-visible-history.v1"
-            } else {
-                "responses.transfer-visible-history.v1"
-            });
-        }
-        let mut projected = stripped.map_or(Cow::Borrowed(request), Cow::Owned);
-        if self.adaptation.reasoning_policy.is_some() && self.adaptation.effort_mapping.is_some() {
-            return Err(CodecError::Invalid("overlapping reasoning policies").into());
-        }
-        if let Some(policy) = &self.adaptation.reasoning_policy
-            && let Some(semantic) =
-                policy.project_request(&projected.task.semantic, |settings| {
-                    use crate::{
-                        protocol::reasoning::ReasoningConversion, semantic::task::generation::*,
-                    };
-                    match policy.conversion {
-                        ReasoningConversion::BudgetToEffort { .. } => {
-                            self.protocol == Profile::Chat
-                                && self.adaptation.rules.thinking_controls
+    ) -> Result<crate::lowering::generation::Conversion<serde_json::Value>, ConversionFailure> {
+        let result = (|| {
+            use crate::lowering::generation::Effect;
+            if self.adaptation.rules.bailian_requests
+                && self.adaptation.effort_mapping.is_none()
+                && let Some(mapping) =
+                    openai::dialect::bailian::effort_mapping(model, self.protocol)
+            {
+                let mut bound = self.clone();
+                bound.adaptation.effort_mapping = Some(mapping);
+                return bound.encode_request_with_evidence(request, model, contract);
+            }
+            // Compatibility and carrier support are separate: a same-issuer value
+            // without a target carrier must fail lowering, not disappear silently.
+            let issuer = contract
+                .replay_origin
+                .as_ref()
+                .or(self.adaptation.scope.as_ref());
+            let stripped = request.without_foreign_reasoning(issuer)?;
+
+            let mut controls = vec![];
+            if stripped.is_some() {
+                let chat = self.protocol == Profile::Chat;
+                controls.push(crate::lowering::generation::Effect::new(
+                    if chat {
+                        "chat.transfer-visible-history.v1"
+                    } else {
+                        "responses.transfer-visible-history.v1"
+                    },
+                    crate::lowering::generation::Field::Replay,
+                    crate::lowering::generation::ConversionBoundary::RequestProject,
+                    crate::lowering::generation::Change::Omit,
+                ));
+            }
+            let mut projected = stripped.map_or(Cow::Borrowed(request), Cow::Owned);
+            if self.adaptation.reasoning_policy.is_some()
+                && self.adaptation.effort_mapping.is_some()
+            {
+                return Err(CodecError::Invalid(
+                    crate::protocol::failure::ShapeReason::InvalidValue,
+                )
+                .into());
+            }
+            if let Some(policy) = &self.adaptation.reasoning_policy
+                && let Some(semantic) =
+                    policy.project_request(&projected.task.semantic, |settings| {
+                        use crate::{
+                            protocol::reasoning::ReasoningConversion, semantic::task::generation::*,
+                        };
+                        match policy.conversion {
+                            ReasoningConversion::BudgetToEffort { .. } => {
+                                self.protocol == Profile::Chat
+                                    && self.adaptation.rules.thinking_controls
+                            }
+                            _ => {
+                                contract.semantics.reasoning
+                                    && !self.adaptation.rules.reject_reasoning_controls
+                                    && settings.effort.value().is_some_and(|effort| {
+                                        effort.scope == EffortScope::Reasoning
+                                            && contract
+                                                .model_limits
+                                                .check_values(None, [effort.level])
+                                                .is_ok()
+                                    })
+                            }
                         }
-                        _ => {
-                            contract.semantics.reasoning
-                                && !self.adaptation.rules.reject_reasoning_controls
-                                && settings.effort.value().is_some_and(|effort| {
-                                    effort.scope == EffortScope::Reasoning
-                                        && contract
-                                            .model_limits
-                                            .check_values(None, [effort.level])
-                                            .is_ok()
-                                })
-                        }
-                    }
-                })?
-        {
-            controls.push(policy.receipt(&projected.task.semantic, &semantic)?);
-            projected.to_mut().task.semantic = semantic;
-            rules.push(policy.rule);
-        }
-        let request = projected.as_ref();
-        if self.protocol == Profile::Chat
-            && self.adaptation.rules.chat_system_instructions
-            && request.task.semantic.instructions().value().is_some()
-        {
-            rules.push("chat.instructions-as-system.v1");
-            controls.push(RequestControlLoss::Role {
-                rule: "chat.instructions-as-system.v1",
-                input: crate::semantic::task::generation::InstructionAuthority::Developer,
-                output: crate::semantic::task::generation::InstructionAuthority::System,
-            });
-        }
-        if self.adaptation.rules.reject_disabled_reasoning
+                    })?
+            {
+                controls.push(policy.receipt(&projected.task.semantic, &semantic)?);
+                projected.to_mut().task.semantic = semantic;
+            }
+            let request = projected.as_ref();
+            if self.protocol == Profile::Chat
+                && self.adaptation.rules.chat_system_instructions
+                && request.task.semantic.instructions().value().is_some()
+            {
+                controls.push(Effect::Role {
+                    rule: crate::lowering::generation::RuleId::new(
+                        "chat.instructions-as-system.v1",
+                    ),
+                    input: crate::semantic::task::generation::InstructionAuthority::Developer,
+                    output: crate::semantic::task::generation::InstructionAuthority::System,
+                    owner: crate::lowering::generation::Owner::Root,
+                });
+            }
+            if self.adaptation.rules.reject_disabled_reasoning
             && (request.task.semantic.reasoning().activation.value()
                 == Some(&crate::semantic::task::generation::ReasoningActivation::Disabled)
                 || request.task.semantic.items().iter().any(|(_, item)| matches!(
@@ -481,276 +512,294 @@ impl Adapter {
                         if update.activation == Some(crate::semantic::task::generation::ReasoningActivation::Disabled)
                 )))
         {
-            return Err(CodecError::Unsupported("reasoning activation".into()).into());
+            return Err(CodecError::Unsupported(crate::protocol::failure::CarrierReason::Reasoning).into());
         }
-        if self.adaptation.rules.bailian_requests {
-            openai::dialect::bailian::check(request, self.protocol, model)?;
-        }
-        if openai::dialect::bailian::extended(
-            request.task.semantic.settings(),
-            self.protocol,
-            self.adaptation.rules.thinking_controls,
-        ) {
-            return Err(CodecError::Unsupported("reasoning controls".into()).into());
-        }
-        if let Some(mapping) = self.adaptation.effort_mapping {
-            let input =
-                crate::lowering::generation::ReasoningControls::request(&projected.task.semantic);
-            let changed;
-            (projected, changed) = with_effort_mapping(
-                projected,
-                mapping,
+            if self.adaptation.rules.bailian_requests {
+                openai::dialect::bailian::check(request, self.protocol, model)?;
+            }
+            if openai::dialect::bailian::extended(
+                request.task.semantic.settings(),
                 self.protocol,
                 self.adaptation.rules.thinking_controls,
-            )?;
-            if changed {
-                controls.push(RequestControlLoss::Reasoning {
-                    rule: mapping.rule,
-                    input,
-                    output: crate::lowering::generation::ReasoningControls::request(
-                        &projected.task.semantic,
-                    ),
-                    preset_tokens: None,
-                });
-                rules.push(mapping.rule);
+            ) {
+                return Err(CodecError::Unsupported(
+                    crate::protocol::failure::CarrierReason::Reasoning,
+                )
+                .into());
             }
-        }
-        let request = projected.as_ref();
-        if self.adaptation.rules.omit_image_detail
-            && request
-                .task
-                .semantic
-                .items()
-                .iter()
-                .flat_map(|(_, item)| item.resource_uses())
-                .any(|resource| {
-                    matches!(
-                        resource.description,
-                        crate::semantic::task::generation::ResourceDescription::Image {
-                            detail: Some(_),
-                            ..
-                        }
-                    )
-                })
-        {
-            return Err(
-                CodecError::Unsupported("image detail without target policy".into()).into(),
-            );
-        }
-        let (projected, changed) = with_schema_name(projected)?;
-        if changed {
-            rules.push("openai.default-schema-name.v1");
-        }
-        // Without a native flag, preserve the failure distinction in model-visible text.
-        // Keep source values, execution facts and every native candidate unchanged.
-        let (projected, changed) = with_tool_error_status(projected)?;
-        if changed {
-            rules.push("openai.wrap-tool-result-errors.v1");
-            controls.push(RequestControlLoss::Projection(
-                crate::lowering::generation::LossEvidence {
-                    rule: "openai.wrap-tool-result-errors.v1",
-                    field: "generation.tool_results.is_error",
-                    direction: "request.encode",
-                    action: "wrap",
-                },
-            ));
-        }
-        let request = projected.as_ref();
-        request.check_context(contract.standard_context)?;
-        let contract = self.contract(contract);
-        if self.adaptation.rules.responses_siwc {
-            if self.protocol != Profile::Responses {
-                return Err(CodecError::ProfileMismatch.into());
-            }
-            openai::responses::dialect::siwc::check(request, contract.cache)?;
-        }
-        if request.delivery.streaming()
-            && request
-                .task
-                .semantic
-                .settings()
-                .audio
-                .value()
-                .is_some_and(|a| a.format != crate::semantic::task::generation::AudioFormat::Pcm16)
-        {
-            return Err(CodecError::Unsupported("streaming audio requires pcm16".into()).into());
-        }
-        let custom_output = match request.task.semantic.tool_choice() {
-            Some(ToolChoice::None | ToolChoice::Specific(_)) => false,
-            Some(ToolChoice::Allowed { tools, .. }) => {
-                tools.iter().any(|tool| tool.kind == ToolKind::Custom)
-            }
-            _ => true,
-        };
-        if self.protocol == Profile::Chat
-            && (request.delivery.streaming() || contract.adaptation.rules.responses_forced_stream)
-            && custom_output
-            && request
-                .task
-                .semantic
-                .tools()
-                .iter()
-                .flat_map(ToolDefinition::leaves)
-                .any(|tool| matches!(tool, ToolDefinition::Custom(_)))
-        {
-            return Err(CodecError::Unsupported("Chat custom tool streaming".into()).into());
-        }
-        let mut context = request.context.clone();
-        contract.cache.project_request(
-            &mut context,
-            request.conversation.as_ref(),
-            request.inferred_affinity,
-        )?;
-        rules.extend(
-            contract
-                .cache
-                .losses(&request.context)
-                .into_iter()
-                .map(|r| r.name()),
-        );
-        controls.extend(
-            contract
-                .cache
-                .losses(&request.context)
-                .into_iter()
-                .filter_map(|r| r.evidence())
-                .map(crate::lowering::generation::RequestControlLoss::Projection),
-        );
-        use crate::protocol::attribution::{self, Carrier};
-        // SIWC has no identity carrier whatever the configured contract says.
-        let identity = attribution::project(
-            request,
-            if contract.identity_hints && !self.adaptation.rules.responses_siwc {
-                Carrier::OpenAi
-            } else {
-                Carrier::None
-            },
-        )?;
-        context.identity = identity.identity;
-        for rule in identity.losses {
-            rules.push(rule.name());
-            controls.extend(rule.evidence().map(RequestControlLoss::Projection));
-        }
-        if request.cache_session.is_some() && !contract.cache.session_id {
-            return Err(CodecError::Unsupported("session_id".into()).into());
-        }
-        // Candidate preflight uses this same encoder, so invalid header carriers cannot reach I/O.
-        self.request_headers(request, contract.cache)?;
-        if self.adaptation.rules.reject_reasoning_controls
-            && (request.task.semantic.reasoning().presence()
-                == crate::semantic::task::generation::ReasoningPresence::Present
-                || request.task.semantic.reasoning().encrypted_output()
-                || !request.task.semantic.settings().effort.is_absent())
-        {
-            return Err(CodecError::Unsupported("reasoning controls".into()).into());
-        }
-        if self.protocol == Profile::Chat && !context.max_tool_calls.is_absent() {
-            return Err(RepresentationError::UnmigratedSemantic.into());
-        }
-        let target = lower_request(
-            &request.task.semantic,
-            &request.task.fidelity,
-            self.protocol,
-            contract,
-        )?;
-        for evidence in target
-            .projection()
-            .iter()
-            .filter_map(|stage| stage.evidence())
-        {
-            if !rules.contains(&evidence.rule) {
-                rules.push(evidence.rule);
-            }
-            controls.push(crate::lowering::generation::RequestControlLoss::Projection(
-                evidence,
-            ));
-        }
-        let mut value = match self.protocol {
-            Profile::Chat => {
-                let mut options = request.delivery.options.clone();
-                // Cross-protocol delivery still needs actual upstream usage; request
-                // its wire report rather than synthesizing any counters.
-                if request.source != Some(self.protocol.into()) && request.delivery.streaming() {
-                    let mut common = options.value().cloned().unwrap_or_default();
-                    common.include_usage = Presence::Value(true);
-                    options = Presence::Value(common);
+            if let Some(mapping) = self.adaptation.effort_mapping {
+                let input = crate::lowering::generation::ReasoningControls::request(
+                    &projected.task.semantic,
+                );
+                let changed;
+                (projected, changed) = with_effort_mapping(
+                    projected,
+                    mapping,
+                    self.protocol,
+                    self.adaptation.rules.thinking_controls,
+                )?;
+                if changed {
+                    controls.push(Effect::Reasoning {
+                        rule: crate::lowering::generation::RuleId::new(mapping.rule),
+                        input,
+                        output: crate::lowering::generation::ReasoningControls::request(
+                            &projected.task.semantic,
+                        ),
+                        preset_tokens: None,
+                        owner: crate::lowering::generation::Owner::Root,
+                    });
                 }
-                chat_envelope::encode_request(
-                    &target,
-                    &chat_envelope::RequestContext {
-                        model: model.into(),
-                        n: if request.source == Some(self.protocol.into()) {
-                            request.n.clone()
-                        } else {
-                            Presence::Absent
-                        },
-                        stream: request.delivery.stream.clone(),
-                        stream_options: options,
-                        cache: context.cache,
-                        identity: context.identity,
-                        metadata: context.metadata,
-                        service_policy: request.service_policy.clone(),
-                    },
-                )?
             }
-            Profile::Responses => {
-                let options = match &request.delivery.options {
-                    Presence::Absent => Presence::Absent,
-                    Presence::Null => Presence::Null,
-                    Presence::Value(value) => Presence::Value(envelope::StreamOptions {
-                        include_obfuscation: value.include_obfuscation.clone(),
-                    }),
-                };
-                envelope::encode_request(
-                    &target,
-                    &envelope::RequestContext {
-                        model: model.into(),
-                        execution: context,
-                        service_policy: request.service_policy.clone(),
-                        delivery: envelope::Delivery {
+            let request = projected.as_ref();
+            if self.adaptation.rules.omit_image_detail
+                && request
+                    .task
+                    .semantic
+                    .items()
+                    .iter()
+                    .flat_map(|(_, item)| item.resource_uses())
+                    .any(|resource| {
+                        matches!(
+                            resource.description,
+                            crate::semantic::task::generation::ResourceDescription::Image {
+                                detail: Some(_),
+                                ..
+                            }
+                        )
+                    })
+            {
+                return Err(CodecError::Unsupported(
+                    crate::protocol::failure::CarrierReason::Unavailable,
+                )
+                .into());
+            }
+            let (projected, changed) = with_schema_name(projected)?;
+            if changed {
+                controls.push(crate::lowering::generation::Effect::new(
+                    "openai.default-schema-name.v1",
+                    crate::lowering::generation::Field::SchemaName,
+                    crate::lowering::generation::ConversionBoundary::RequestProject,
+                    crate::lowering::generation::Change::Default(
+                        crate::lowering::generation::DefaultBasis::SelectedPolicy,
+                    ),
+                ));
+            }
+            // Without a native flag, preserve the failure distinction in model-visible text.
+            // Keep source values, execution facts and every native candidate unchanged.
+            let (projected, changed) = with_tool_error_status(projected)?;
+            if changed {
+                controls.push(crate::lowering::generation::Effect::Field {
+                    rule: crate::lowering::generation::RuleId::new(
+                        "openai.wrap-tool-result-errors.v1",
+                    ),
+                    field: ("generation.tool_results.is_error").into(),
+                    direction: ("request.encode").into(),
+                    action: ("wrap").into(),
+                    owner: crate::lowering::generation::Owner::Root,
+                });
+            }
+            let request = projected.as_ref();
+            request.check_context(contract.standard_context)?;
+            let contract = self.contract(contract);
+            if self.adaptation.rules.responses_siwc {
+                if self.protocol != Profile::Responses {
+                    return Err(CodecError::ProfileMismatch.into());
+                }
+                openai::responses::dialect::siwc::check(request, contract.cache)?;
+            }
+            if request.delivery.streaming()
+                && request
+                    .task
+                    .semantic
+                    .settings()
+                    .audio
+                    .value()
+                    .is_some_and(|a| {
+                        a.format != crate::semantic::task::generation::AudioFormat::Pcm16
+                    })
+            {
+                return Err(CodecError::Unsupported(
+                    crate::protocol::failure::CarrierReason::Unavailable,
+                )
+                .into());
+            }
+            let custom_output = match request.task.semantic.tool_choice() {
+                Some(ToolChoice::None | ToolChoice::Specific(_)) => false,
+                Some(ToolChoice::Allowed { tools, .. }) => {
+                    tools.iter().any(|tool| tool.kind == ToolKind::Custom)
+                }
+                _ => true,
+            };
+            if self.protocol == Profile::Chat
+                && (request.delivery.streaming()
+                    || contract.adaptation.rules.responses_forced_stream)
+                && custom_output
+                && request
+                    .task
+                    .semantic
+                    .tools()
+                    .iter()
+                    .flat_map(ToolDefinition::leaves)
+                    .any(|tool| matches!(tool, ToolDefinition::Custom(_)))
+            {
+                return Err(CodecError::Unsupported(
+                    crate::protocol::failure::CarrierReason::Tools,
+                )
+                .into());
+            }
+            let mut context = request.context.clone();
+            contract.cache.project_request(
+                &mut context,
+                request.conversation.as_ref(),
+                request.inferred_affinity,
+            )?;
+
+            controls.extend(
+                contract
+                    .cache
+                    .losses(&request.context)
+                    .into_iter()
+                    .filter_map(|r| r.evidence()),
+            );
+            use crate::protocol::attribution::{self, Carrier};
+            // SIWC has no identity carrier whatever the configured contract says.
+            let identity = attribution::project(
+                request,
+                if contract.identity_hints && !self.adaptation.rules.responses_siwc {
+                    Carrier::OpenAi
+                } else {
+                    Carrier::None
+                },
+            )?;
+            context.identity = identity.identity;
+            for rule in identity.losses {
+                controls.extend(rule.evidence());
+            }
+            if request.cache_session.is_some() && !contract.cache.session_id {
+                return Err(CodecError::Unsupported(
+                    crate::protocol::failure::CarrierReason::Unavailable,
+                )
+                .into());
+            }
+            // Candidate preflight uses this same encoder, so invalid header carriers cannot reach I/O.
+            self.request_headers(request, contract.cache)?;
+            if self.adaptation.rules.reject_reasoning_controls
+                && (request.task.semantic.reasoning().presence()
+                    == crate::semantic::task::generation::ReasoningPresence::Present
+                    || request.task.semantic.reasoning().encrypted_output()
+                    || !request.task.semantic.settings().effort.is_absent())
+            {
+                return Err(CodecError::Unsupported(
+                    crate::protocol::failure::CarrierReason::Reasoning,
+                )
+                .into());
+            }
+            if self.protocol == Profile::Chat && !context.max_tool_calls.is_absent() {
+                return Err(RepresentationError::UnmigratedSemantic.into());
+            }
+            let target = lower_request(
+                &request.task.semantic,
+                &request.task.fidelity,
+                self.protocol,
+                contract,
+            )
+            .map_err(|error| {
+                crate::adapter::ConversionFailure::from(error)
+                    .at(crate::lowering::generation::ConversionBoundary::RequestProject)
+            })?;
+            for evidence in target.projection().iter().cloned() {
+                controls.push(evidence);
+            }
+            let mut value = match self.protocol {
+                Profile::Chat => {
+                    let mut options = request.delivery.options.clone();
+                    // Cross-protocol delivery still needs actual upstream usage; request
+                    // its wire report rather than synthesizing any counters.
+                    if request.source != Some(self.protocol.into()) && request.delivery.streaming()
+                    {
+                        let mut common = options.value().cloned().unwrap_or_default();
+                        common.include_usage = Presence::Value(true);
+                        options = Presence::Value(common);
+                    }
+                    chat_envelope::encode_request(
+                        &target,
+                        &chat_envelope::RequestContext {
+                            model: model.into(),
+                            n: if request.source == Some(self.protocol.into()) {
+                                request.n.clone()
+                            } else {
+                                Presence::Absent
+                            },
                             stream: request.delivery.stream.clone(),
-                            options,
+                            stream_options: options,
+                            cache: context.cache,
+                            identity: context.identity,
+                            metadata: context.metadata,
+                            service_policy: request.service_policy.clone(),
                         },
-                    },
-                )?
+                    )?
+                }
+                Profile::Responses => {
+                    let options = match &request.delivery.options {
+                        Presence::Absent => Presence::Absent,
+                        Presence::Null => Presence::Null,
+                        Presence::Value(value) => Presence::Value(envelope::StreamOptions {
+                            include_obfuscation: value.include_obfuscation.clone(),
+                        }),
+                    };
+                    envelope::encode_request(
+                        &target,
+                        &envelope::RequestContext {
+                            model: model.into(),
+                            execution: context,
+                            service_policy: request.service_policy.clone(),
+                            delivery: envelope::Delivery {
+                                stream: request.delivery.stream.clone(),
+                                options,
+                            },
+                        },
+                    )?
+                }
+            };
+            if self.adaptation.rules.responses_forced_stream {
+                if self.protocol != Profile::Responses {
+                    return Err(CodecError::ProfileMismatch.into());
+                }
+                value["stream"] = Value::Bool(true);
+                // Empty instructions carry no new task instruction; never substitute a prompt.
+                if !self.adaptation.rules.responses_siwc && value.get("instructions").is_none() {
+                    value["instructions"] = Value::String(String::new());
+                }
             }
-        };
-        if self.adaptation.rules.responses_forced_stream {
-            if self.protocol != Profile::Responses {
-                return Err(CodecError::ProfileMismatch.into());
+            if self.protocol == Profile::Chat
+                && self.adaptation.rules.reasoning_alias
+                && let Some(messages) = value.get_mut("messages").and_then(Value::as_array_mut)
+            {
+                for message in messages {
+                    openai::dialect::adapter_shapes::encode_message(message);
+                }
             }
-            value["stream"] = Value::Bool(true);
-            // Empty instructions carry no new task instruction; never substitute a prompt.
-            if !self.adaptation.rules.responses_siwc && value.get("instructions").is_none() {
-                value["instructions"] = Value::String(String::new());
+            if let Some(session) = &request.cache_session
+                && !self.adaptation.rules.opencode_go_headers
+            {
+                value["session_id"] = serde_json::json!(session.as_str());
             }
-        }
-        if self.protocol == Profile::Chat
-            && self.adaptation.rules.reasoning_alias
-            && let Some(messages) = value.get_mut("messages").and_then(Value::as_array_mut)
-        {
-            for message in messages {
-                openai::dialect::adapter_shapes::encode_message(message);
+            if self.adaptation.rules.require_parameters {
+                // Fixed adapter policy, not a user-controlled routing extension.
+                value["provider"] = serde_json::json!({"require_parameters": true});
             }
-        }
-        if let Some(session) = &request.cache_session
-            && !self.adaptation.rules.opencode_go_headers
-        {
-            value["session_id"] = serde_json::json!(session.as_str());
-        }
-        if self.adaptation.rules.require_parameters {
-            // Fixed adapter policy, not a user-controlled routing extension.
-            value["provider"] = serde_json::json!({"require_parameters": true});
-        }
-        crate::semantic::value::json_size(
-            &value,
-            crate::semantic::task::generation::MAX_TOTAL_BYTES,
-        )
-        .map_err(|_| CodecError::Limit)?;
-        Ok(crate::protocol::RequestProjection {
-            value,
-            rules,
-            controls,
+            crate::semantic::value::json_size(
+                &value,
+                crate::semantic::task::generation::MAX_TOTAL_BYTES,
+            )
+            .map_err(|_| CodecError::Limit)?;
+            Ok(crate::lowering::generation::Conversion {
+                value,
+                evidence: controls.into_iter().collect(),
+            })
+        })();
+        result.map_err(|error: crate::adapter::ConversionFailure| {
+            error.at(crate::lowering::generation::ConversionBoundary::RequestEncode)
         })
     }
 }
@@ -759,7 +808,7 @@ impl Request {
     pub fn check(
         &self,
         contract: &TargetCaps,
-    ) -> Result<crate::semantic::task::generation::GenerationRequirements, AdapterError> {
+    ) -> Result<crate::semantic::task::generation::GenerationRequirements, ConversionFailure> {
         self.check_context(contract.standard_context)?;
         Ok(crate::protocol::openai::lowering::check(
             &self.task.semantic,
@@ -855,11 +904,15 @@ mod tests {
                 let projected = target
                     .encode_request_with_evidence(&source, "m", &TargetCaps::full())
                     .unwrap();
-                assert!(projected.rules.contains(&"openai.default-schema-name.v1"));
+                assert!(
+                    projected
+                        .evidence
+                        .contains_rule("openai.default-schema-name.v1")
+                );
                 assert_eq!(
                     projected
-                        .rules
-                        .contains(&"openai.wrap-tool-result-errors.v1"),
+                        .evidence
+                        .contains_rule("openai.wrap-tool-result-errors.v1"),
                     marker.is_some()
                 );
                 let content = marker.map_or_else(
@@ -893,9 +946,12 @@ mod tests {
                 caps.standard_context = false;
                 assert!(matches!(
                     target.encode_request(&invalid, "m", &caps),
-                    Err(AdapterError::Representation(
-                        RepresentationError::UnmigratedSemantic
-                    ))
+                    Err(ConversionFailure {
+                        cause: crate::adapter::ConversionCause::Representation(
+                            RepresentationError::UnmigratedSemantic
+                        ),
+                        ..
+                    })
                 ));
                 assert_eq!(invalid, before);
             }
@@ -985,9 +1041,9 @@ mod tests {
             .encode_request_with_evidence(&extended, "selected-slug", &approved)
             .unwrap();
         assert!(projected.value.get("prompt_cache_retention").is_none());
-        assert!(projected.controls.iter().any(|loss| matches!(loss,
-            crate::lowering::generation::RequestControlLoss::Projection(e)
-                if e.rule == "cache.omit-day-retention.v1" && e.field == "cache.prompt_cache_retention"
+        assert!(projected.evidence.iter().any(|loss| matches!(loss,
+            e
+                if e.rule() == "cache.omit-day-retention.v1" && e.semantic_field() == crate::lowering::generation::Field::CacheRetention
         )));
         assert_eq!(extended, before);
         // The exception does not move SIWC validation after the generic empty-options loss.

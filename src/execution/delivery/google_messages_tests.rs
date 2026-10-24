@@ -108,7 +108,13 @@ fn feed(
             );
             rest = &rest[used..];
             if stream {
-                output.extend(delivery.encode_events(attempt, &events).unwrap().concat());
+                output.extend(
+                    delivery
+                        .encode_events(attempt, &events)
+                        .map(|batch| batch.into_bytes())
+                        .unwrap()
+                        .concat(),
+                );
             }
         }
     }
@@ -174,19 +180,21 @@ fn stateless_clients_reject_hidden_signatures_without_fabricated_reasoning() {
                     attempt.finish().unwrap();
                     let original = attempt.response().unwrap().clone();
                     let error = if stream {
-                        delivery.encode_events(&attempt, &all_events).unwrap_err()
+                        delivery
+                            .encode_events(&attempt, &all_events)
+                            .map(|batch| batch.into_bytes())
+                            .unwrap_err()
                     } else {
                         delivery.encode_json(&attempt).unwrap_err()
                     };
                     assert!(
-                        error.to_string().contains(
-                            if client.protocol() == crate::adapter::ClientProtocol::Messages {
-                                "Messages replay attachment"
-                            } else {
-                                "Chat replay attachment"
-                            }
+                        matches!(
+                            error.codec(),
+                            Some(crate::protocol::CodecError::Unsupported(
+                                crate::protocol::failure::CarrierReason::Replay
+                            ))
                         ),
-                        "{error}"
+                        "{error:?}"
                     );
                     assert_eq!(attempt.response().unwrap(), &original);
                     assert!(delivery.encode_json(&attempt).is_err());
@@ -204,7 +212,9 @@ fn stateless_clients_reject_hidden_signatures_without_fabricated_reasoning() {
                 .to_string().as_bytes()).unwrap_err();
         assert_eq!(
             error,
-            crate::protocol::CodecError::Unsupported("legacy Messages manifest".into())
+            crate::protocol::CodecError::Unsupported(
+                crate::protocol::failure::CarrierReason::Replay
+            )
         );
     }
 }
@@ -233,7 +243,13 @@ fn google_messages_terminals_keep_source_facts_and_ordered_calls() {
                     }
                 );
                 let (stop, ids) = if stream {
-                    wire.extend(delivery.finish_stream(&attempt).unwrap().concat());
+                    wire.extend(
+                        delivery
+                            .finish_stream(&attempt)
+                            .map(|batch| batch.into_bytes())
+                            .unwrap()
+                            .concat(),
+                    );
                     let wire = String::from_utf8(wire).unwrap();
                     let events: Vec<Value> = wire
                         .lines()
@@ -266,7 +282,10 @@ fn google_messages_terminals_keep_source_facts_and_ordered_calls() {
                             .collect::<Vec<_>>(),
                     )
                 } else {
-                    let (retained, bytes) = delivery.encode_json_snapshot(&attempt).unwrap();
+                    let (retained, bytes) = delivery
+                        .encode_json_snapshot(&attempt)
+                        .map(|(response, batch)| (response, batch.into_bytes().concat()))
+                        .unwrap();
                     let value: Value = serde_json::from_slice(&bytes).unwrap();
                     assert_eq!(
                         retained.semantic.details().completion,
@@ -306,19 +325,19 @@ fn google_messages_terminals_keep_source_facts_and_ordered_calls() {
                     })
                 };
                 let losses: Vec<_> = delivery
-                    .losses()
-                    .iter()
-                    .filter(|l| l.field == "generation.completion_cause")
+                    .effects()
+                    .into_iter()
+                    .filter(|l| l.field() == "generation.completion_cause")
                     .collect();
                 assert_eq!(losses.len(), usize::from(rule.is_some()));
                 if let Some(rule) = rule {
-                    assert_eq!(losses[0].rule, rule);
+                    assert_eq!(losses[0].rule(), rule);
                     assert_eq!(
-                        losses[0].direction,
+                        losses[0].direction(),
                         if stream {
-                            "event.encode"
+                            "event.project"
                         } else {
-                            "response.encode"
+                            "response.project"
                         }
                     );
                 }
@@ -383,7 +402,13 @@ fn google_finish_explanation_omission_keeps_incomplete_source_and_requires_recei
                 Presence::Value(_)
             ));
             if stream {
-                output.extend(delivery.finish_stream(&attempt).unwrap().concat());
+                output.extend(
+                    delivery
+                        .finish_stream(&attempt)
+                        .map(|batch| batch.into_bytes())
+                        .unwrap()
+                        .concat(),
+                );
                 let body = String::from_utf8_lossy(&output);
                 assert!(body.contains(match client.protocol() {
                     ClientProtocol::Messages => "\"stop_reason\":\"max_tokens\"",
@@ -392,7 +417,10 @@ fn google_finish_explanation_omission_keeps_incomplete_source_and_requires_recei
                 }));
                 assert!(!body.contains("event: response.completed"));
             } else {
-                let (retained, bytes) = delivery.encode_json_snapshot(&attempt).unwrap();
+                let (retained, bytes) = delivery
+                    .encode_json_snapshot(&attempt)
+                    .map(|(response, batch)| (response, batch.into_bytes().concat()))
+                    .unwrap();
                 assert!(retained.semantic.details().explanation.is_absent());
                 let value: Value = serde_json::from_slice(&bytes).unwrap();
                 match client.protocol() {
@@ -411,20 +439,24 @@ fn google_finish_explanation_omission_keeps_incomplete_source_and_requires_recei
                 "openai.omit-terminal-explanation.v1"
             };
             let reports: Vec<_> = delivery
-                .losses()
-                .iter()
-                .filter(|l| l.rule == rule)
+                .effects()
+                .into_iter()
+                .filter(|l| l.rule() == rule)
                 .collect();
             assert_eq!(reports.len(), 1);
             assert_eq!(
-                reports[0].direction,
+                reports[0].direction(),
                 if stream {
-                    "event.encode"
+                    if client.protocol() == ClientProtocol::Messages {
+                        "event.encode"
+                    } else {
+                        "event.project"
+                    }
                 } else {
-                    "response.encode"
+                    "response.project"
                 }
             );
-            assert_eq!(reports[0].action, "omit");
+            assert_eq!(reports[0].action(), "omit");
             if stream {
                 let (retained, _) = delivery.snapshot(&attempt).unwrap();
                 assert!(retained.semantic.details().explanation.is_absent());
@@ -471,7 +503,13 @@ fn google_service_reports_keep_processing_meaning_in_clients_and_reject_capacity
                 source.finish().unwrap();
                 let original = source.response().unwrap().clone();
                 if stream {
-                    body.extend(client.finish_stream(&source).unwrap().concat());
+                    body.extend(
+                        client
+                            .finish_stream(&source)
+                            .map(|batch| batch.into_bytes())
+                            .unwrap()
+                            .concat(),
+                    );
                     assert!(
                         String::from_utf8_lossy(&body).contains("\"service_tier\":\"priority\"")
                     );
@@ -485,22 +523,37 @@ fn google_service_reports_keep_processing_meaning_in_clients_and_reject_capacity
                     &Presence::Value(crate::semantic::context::ServiceClass::PriorityProcessing)
                 );
                 let mut incompatible = delivery(&endpoint, &request);
+                let error = incompatible.encode_json(&source).unwrap_err();
                 assert!(
-                    incompatible
-                        .encode_json(&source)
-                        .unwrap_err()
-                        .to_string()
-                        .contains("Messages reported service")
+                    matches!(
+                        error.codec(),
+                        Some(crate::protocol::CodecError::Unsupported(
+                            crate::protocol::failure::CarrierReason::Field(
+                                crate::lowering::generation::Field::ServiceClass
+                            )
+                        ))
+                    ),
+                    "{error:?}"
                 );
                 let mut incompatible = delivery(&endpoint, &request);
+                let error = incompatible.finish_stream(&source).unwrap_err();
+                assert!(
+                    matches!(
+                        error.codec(),
+                        Some(crate::protocol::CodecError::Unsupported(
+                            crate::protocol::failure::CarrierReason::Field(
+                                crate::lowering::generation::Field::ServiceClass
+                            )
+                        ))
+                    ),
+                    "{error:?}"
+                );
                 assert!(
                     incompatible
                         .finish_stream(&source)
-                        .unwrap_err()
-                        .to_string()
-                        .contains("Messages reported service")
+                        .map(|batch| batch.into_bytes())
+                        .is_err()
                 );
-                assert!(incompatible.finish_stream(&source).is_err());
                 assert_eq!(source.response().unwrap(), &original);
             }
         }
@@ -540,7 +593,9 @@ fn google_messages_projection_requires_context_and_never_repairs_failure() {
         let (other, _, _) = fixture(!interactions, false);
         assert!(matches!(
             delivery(&other, &request).encode_json(&attempt),
-            Err(AttemptError::Delivery("terminal projection source changed"))
+            Err(AttemptError::Delivery(
+                crate::execution::attempt::DeliveryReason::TerminalProjectionSourceChanged
+            ))
         ));
         for guard in ["unbound", "stops", "disabled"] {
             let mut selected = endpoint.clone();
@@ -576,12 +631,16 @@ fn google_messages_projection_requires_context_and_never_repairs_failure() {
                 delivery(&selected, &request)
             };
             assert!(d.messages_terminal.is_none());
-            let error = d.encode_json(&attempt).unwrap_err().to_string();
-            assert!(error.contains(if interactions {
-                "Messages terminal"
-            } else {
-                "Messages completion cause"
-            }));
+            let error = d.encode_json(&attempt).unwrap_err();
+            assert!(
+                matches!(
+                    error.codec(),
+                    Some(crate::protocol::CodecError::Unsupported(
+                        crate::protocol::failure::CarrierReason::Terminal
+                    ))
+                ),
+                "{error:?}"
+            );
         }
         // Knowing an outcome, or having calls, never turns an unspecified failure into success.
         let mut incomplete = attempt
@@ -636,9 +695,9 @@ fn google_messages_projection_requires_context_and_never_repairs_failure() {
             let value: Value = serde_json::from_slice(&d.encode_json(&attempt).unwrap()).unwrap();
             assert_eq!(value["stop_reason"], "max_tokens");
             assert!(
-                !d.losses()
+                !d.effects()
                     .iter()
-                    .any(|l| l.field == "generation.completion_cause")
+                    .any(|l| l.field() == "generation.completion_cause")
             );
         }
     }
@@ -652,7 +711,11 @@ fn google_messages_projection_requires_context_and_never_repairs_failure() {
             attempt.finish().unwrap();
             d.cancel();
         }
-        assert!(d.finish_stream(&attempt).is_err());
+        assert!(
+            d.finish_stream(&attempt)
+                .map(|batch| batch.into_bytes())
+                .is_err()
+        );
     }
     let (endpoint, request, mut frames) = fixture(true, false);
     frames.last_mut().unwrap()["interaction"]["usage"]
@@ -670,9 +733,7 @@ fn google_messages_projection_requires_context_and_never_repairs_failure() {
     assert_eq!(value["usage"]["output_tokens"], 5);
     assert!(value["usage"].get("cache_read_input_tokens").is_none());
     assert_eq!(attempt.response().unwrap(), &source);
-    assert!(
-        d.losses()
-            .iter()
-            .any(|loss| loss.rule == "generation.complete-delivery-usage.v1")
-    );
+    assert!(d.effects().iter().any(|effect| effect.semantic_field()
+        == crate::lowering::generation::Field::InputTokens
+        && effect.change() == crate::lowering::generation::Change::Estimate));
 }

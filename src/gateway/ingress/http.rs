@@ -175,11 +175,12 @@ pub(in crate::gateway) async fn handle(
     protocol: ClientProtocol,
     request: Request,
 ) -> Result<Response, ApiError> {
-    let mut trace = Trace::new(state.diagnostics.as_ref());
+    let mut trace = Trace::generation(state.diagnostics.as_ref());
     trace.capture = request
         .extensions()
         .get::<crate::gateway::capture::Exchange>()
         .cloned();
+    let admission:Result<_,ApiError>=async {
     let permit = admission::acquire_permit(&state)?;
     admission::headers(request.headers(), state.limits.request_bytes)?;
     if protocol == ClientProtocol::Messages {
@@ -188,21 +189,32 @@ pub(in crate::gateway) async fn handle(
     let conversation = admission::conversation(request.headers())?;
     let bytes = tokio::select! {
         biased;
-        _=state.shutdown.cancelled()=>return Err(ApiError::shutdown()),
-        result=tokio::time::timeout(state.limits.body_timeout,admission::collect(request.into_body(),state.limits.request_bytes))=>result.map_err(|_|ApiError::new(StatusCode::REQUEST_TIMEOUT,"request_timeout"))??,
+        _=state.shutdown.cancelled()=>{trace.outcome(crate::gateway::diagnostics::Outcome::Shutdown);return Err(ApiError::shutdown());},
+        result=tokio::time::timeout(state.limits.body_timeout,admission::collect(request.into_body(),state.limits.request_bytes))=>result.map_err(|_|{trace.report.failure(None,&crate::execution::AttemptError::Deadline(crate::execution::attempt::DeadlineReason::RequestBody));trace.outcome(crate::gateway::diagnostics::Outcome::Timeout);ApiError::new(StatusCode::REQUEST_TIMEOUT,"request_timeout")})??,
     };
-    let (entry, mut semantic, history) = match protocol {
+    let (entry, semantic, history) = match protocol {
         ClientProtocol::Responses => {
-            let (entry, request, history) = admission::prepare_responses(&state, &bytes)?;
+            let (entry, request, history) = admission::prepare_responses(&state, &bytes,&trace.report)?;
             (entry, request, Some(Box::new(history)))
         }
         protocol => {
-            let (entry, request) = admission::prepare(&state, protocol, &bytes)?;
+            let (entry, request) = admission::prepare(&state, protocol, &bytes,&trace.report)?;
             (entry, request, None)
         }
     };
+        Ok((permit,conversation,entry,semantic,history))
+    }.await;
+    let (permit, conversation, entry, mut semantic, history) = match admission {
+        Ok(admitted) => admitted,
+        Err(error) => {
+            trace
+                .report
+                .public_failure(error.code, error.status.as_u16());
+            return Err(error);
+        }
+    };
     semantic.conversation = Some(conversation);
-    trace.request_intake(&semantic.task.fidelity);
+    trace.request_intake(std::mem::take(&mut semantic.task.evidence));
     trace.ignored_fields(std::mem::take(&mut semantic.ignored_fields));
     let timeout = entry
         .policy

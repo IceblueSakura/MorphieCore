@@ -70,7 +70,10 @@ fn consume(
     while !remaining.is_empty() {
         let (n, events) = attempt.push(remaining)?;
         assert!(n > 0);
-        for frame in output.encode_events(attempt, &events)? {
+        for frame in output
+            .encode_events(attempt, &events)
+            .map(|batch| batch.into_bytes())?
+        {
             wire.extend_from_slice(&frame);
         }
         remaining = &remaining[n..];
@@ -89,7 +92,10 @@ fn incremental_chain_emits_before_terminal_and_does_not_commit_by_encoding() {
             n < body.len(),
             "one push must not drain the upstream stream"
         );
-        let first = output.encode_events(&intake, &events).unwrap();
+        let first = output
+            .encode_events(&intake, &events)
+            .map(|batch| batch.into_bytes())
+            .unwrap();
         assert!(
             !first.is_empty(),
             "first downstream frame precedes upstream terminal"
@@ -106,10 +112,22 @@ fn incremental_chain_emits_before_terminal_and_does_not_commit_by_encoding() {
         assert!(output.complete(&intake).is_err());
         intake.finish().unwrap();
         let before_terminal = encoded.len();
-        encoded.extend(output.finish_stream(&intake).unwrap().into_iter().flatten());
+        encoded.extend(
+            output
+                .finish_stream(&intake)
+                .map(|batch| batch.into_bytes())
+                .unwrap()
+                .into_iter()
+                .flatten(),
+        );
         assert!(encoded.len() > before_terminal);
         output.complete(&intake).unwrap();
-        assert!(output.finish_stream(&intake).is_err());
+        assert!(
+            output
+                .finish_stream(&intake)
+                .map(|batch| batch.into_bytes())
+                .is_err()
+        );
         let decoded = match profile {
             Profile::Chat => {
                 let mut decoder =
@@ -143,16 +161,22 @@ fn incremental_chain_emits_before_terminal_and_does_not_commit_by_encoding() {
         assert_eq!(intake.fidelity(), Some(&observed.fidelity));
         assert!(matches!(
             intake.begin(200, "text/event-stream"),
-            Err(AttemptError::Protocol("attempt already began"))
+            Err(AttemptError::Protocol(
+                morphiecore::execution::attempt::ProtocolReason::AttemptAlreadyBegan
+            ))
         ));
         assert_eq!(intake.response().unwrap(), &observed);
         assert!(matches!(
             intake.push(b""),
-            Err(AttemptError::Protocol("attempt is closed"))
+            Err(AttemptError::Protocol(
+                morphiecore::execution::attempt::ProtocolReason::AttemptIsClosed
+            ))
         ));
         assert!(matches!(
             intake.finish(),
-            Err(AttemptError::Protocol("rejected attempt"))
+            Err(AttemptError::Protocol(
+                morphiecore::execution::attempt::ProtocolReason::RejectedAttempt
+            ))
         ));
         assert!(intake.response().is_err());
         assert!(intake.metadata().is_none());
@@ -177,7 +201,9 @@ fn static_intake_finish_is_idempotent_and_cancellation_discards_the_result() {
     assert!(intake.fidelity().is_none());
     assert!(matches!(
         intake.finish(),
-        Err(AttemptError::Protocol("rejected attempt"))
+        Err(AttemptError::Protocol(
+            morphiecore::execution::attempt::ProtocolReason::RejectedAttempt
+        ))
     ));
 }
 
@@ -189,13 +215,21 @@ fn delivery_cannot_switch_attempts_even_when_wire_identity_matches() {
     first.begin(200, "text/event-stream").unwrap();
     let (_, events) = first.push(&body).unwrap();
     let mut output = delivery(standard(profile), Contract::full());
-    output.encode_events(&first, &events).unwrap();
+    output
+        .encode_events(&first, &events)
+        .map(|batch| batch.into_bytes())
+        .unwrap();
     output.commit().unwrap();
     let mut second = Attempt::new(standard(profile), 4096, SseLimits::default());
     second.begin(200, "text/event-stream").unwrap();
     let (used, _) = second.push(&body).unwrap();
     let (_, events) = second.push(&body[used..]).unwrap();
-    assert!(output.encode_events(&second, &events).is_err());
+    assert!(
+        output
+            .encode_events(&second, &events)
+            .map(|batch| batch.into_bytes())
+            .is_err()
+    );
     assert!(!output.lifecycle().may_retry_or_fallback());
 }
 
@@ -226,6 +260,7 @@ fn terminal_is_withheld_on_truncated_eof_or_trailing_invalid_data() {
                         encoded.extend(
                             output
                                 .encode_events(&intake, &events)
+                                .map(|batch| batch.into_bytes())
                                 .unwrap()
                                 .into_iter()
                                 .flatten(),
@@ -242,7 +277,12 @@ fn terminal_is_withheld_on_truncated_eof_or_trailing_invalid_data() {
                 }
             }
             assert!(rejected || intake.finish().is_err());
-            assert!(output.finish_stream(&intake).is_err());
+            assert!(
+                output
+                    .finish_stream(&intake)
+                    .map(|batch| batch.into_bytes())
+                    .is_err()
+            );
             assert!(!output.lifecycle().may_retry_or_fallback());
             assert!(
                 !String::from_utf8(encoded)
@@ -291,7 +331,12 @@ fn strict_completeness_can_fail_late_without_fabricating_a_terminal() {
     assert!(!encoded.is_empty());
     output.commit().unwrap();
     intake.finish().unwrap();
-    assert!(output.finish_stream(&intake).is_err());
+    assert!(
+        output
+            .finish_stream(&intake)
+            .map(|batch| batch.into_bytes())
+            .is_err()
+    );
     assert!(!output.lifecycle().may_retry_or_fallback());
     let mut intake = Attempt::new(standard(Profile::Chat), 4096, SseLimits::default());
     let mut output = ResponseDelivery::new(
@@ -315,7 +360,12 @@ fn strict_completeness_can_fail_late_without_fabricating_a_terminal() {
     assert!(!encoded.is_empty());
     output.commit().unwrap();
     intake.finish().unwrap();
-    assert!(output.finish_stream(&intake).is_err());
+    assert!(
+        output
+            .finish_stream(&intake)
+            .map(|batch| batch.into_bytes())
+            .is_err()
+    );
     assert!(output.complete(&intake).is_err());
     assert!(
         !encoded
@@ -401,7 +451,14 @@ fn streaming_carrier_seals_opaque_for_both_downstream_protocols() {
         assert!(!bytes.is_empty());
         output.commit().unwrap();
         intake.finish().unwrap();
-        bytes.extend(output.finish_stream(&intake).unwrap().into_iter().flatten());
+        bytes.extend(
+            output
+                .finish_stream(&intake)
+                .map(|batch| batch.into_bytes())
+                .unwrap()
+                .into_iter()
+                .flatten(),
+        );
         output.complete(&intake).unwrap();
         let text = String::from_utf8(bytes).unwrap();
         assert!(!text.contains("synthetic-stream-token"));
@@ -458,7 +515,10 @@ fn cancellation_closes_intake_and_delivery_without_success() {
         let mut output = delivery(standard(profile), Contract::full());
         intake.begin(200, "text/event-stream").unwrap();
         let (_, events) = intake.push(&bytes(profile)).unwrap();
-        output.encode_events(&intake, &events).unwrap();
+        output
+            .encode_events(&intake, &events)
+            .map(|batch| batch.into_bytes())
+            .unwrap();
         output.commit().unwrap();
         intake.cancel();
         output.cancel();
@@ -466,7 +526,12 @@ fn cancellation_closes_intake_and_delivery_without_success() {
         assert!(intake.response().is_err());
         assert!(intake.metadata().is_none());
         assert!(intake.fidelity().is_none());
-        assert!(output.finish_stream(&intake).is_err());
+        assert!(
+            output
+                .finish_stream(&intake)
+                .map(|batch| batch.into_bytes())
+                .is_err()
+        );
         assert!(!output.lifecycle().may_retry_or_fallback());
     }
 }

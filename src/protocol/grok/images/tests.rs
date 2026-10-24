@@ -190,7 +190,7 @@ fn invalid_known_fields_and_nonfinal_artifacts_reject() {
     assert!(decode(json!({"data":vec![json!({"b64_json":"AQ=="});11]})).is_err());
     assert_eq!(
         decode_response(br#"{"data":[{"b64_json":"AQ==","b64_json":"Ag=="}]}"#).unwrap_err(),
-        CodecError::Invalid("JSON")
+        CodecError::Invalid(crate::protocol::failure::ShapeReason::Json)
     );
     for usage in [
         json!({"cost_in_usd_ticks":-1}),

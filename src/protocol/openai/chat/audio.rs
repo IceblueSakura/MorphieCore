@@ -9,16 +9,24 @@ pub(in crate::protocol::openai) fn settings(
     direction: DecodeDirection<'_>,
 ) -> Result<(), CodecError> {
     s.output_modalities = read_presence(o, "modalities", |v| {
-        let v = v.as_array().ok_or(CodecError::Invalid("modalities"))?;
+        let v = v.as_array().ok_or(CodecError::Invalid(
+            crate::protocol::failure::ShapeReason::InvalidValue,
+        ))?;
         if v.len() > 2 {
             return Err(CodecError::Limit);
         }
         v.iter()
             .map(|v| {
                 v.as_str()
-                    .ok_or(CodecError::Invalid("modality"))?
+                    .ok_or(CodecError::Invalid(
+                        crate::protocol::failure::ShapeReason::InvalidValue,
+                    ))?
                     .parse()
-                    .map_err(|_| CodecError::Unsupported("output modality".into()))
+                    .map_err(|_| {
+                        CodecError::Unsupported(
+                            crate::protocol::failure::CarrierReason::Unavailable,
+                        )
+                    })
             })
             .collect()
     })?;
@@ -26,9 +34,9 @@ pub(in crate::protocol::openai) fn settings(
         let o = object(v)?;
         direction.fields(o, &["format", "voice"])?;
         Ok(AudioOutputOptions {
-            format: string(o, "format")?
-                .parse()
-                .map_err(|_| CodecError::Unsupported("audio format".into()))?,
+            format: string(o, "format")?.parse().map_err(|_| {
+                CodecError::Unsupported(crate::protocol::failure::CarrierReason::Unavailable)
+            })?,
             voice: text(string(o, "voice")?, "voice", 128)?,
         })
     })?;
@@ -67,7 +75,9 @@ pub(in crate::protocol::openai) fn read(
         Some(
             o.get("expires_at")
                 .and_then(Value::as_u64)
-                .ok_or(CodecError::Invalid("audio expiry"))?,
+                .ok_or(CodecError::Invalid(
+                    crate::protocol::failure::ShapeReason::InvalidValue,
+                ))?,
         ),
     )?;
     Ok(ContentPart::Audio(GeneratedAudio::new(
@@ -88,17 +98,23 @@ impl ChunkBytes {
     fn push(&mut self, fragment: &str) -> Result<Vec<u8>, CodecError> {
         use base64::Engine;
         if self.padded || !fragment.is_ascii() || fragment.len() > MAX_TEXT_BYTES {
-            return Err(CodecError::Invalid("audio base64 fragment"));
+            return Err(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            ));
         }
         self.pending.push_str(fragment);
         let complete = self.pending.len() / 4 * 4;
         let tail = self.pending.split_off(complete);
         let bytes = base64::engine::general_purpose::STANDARD
             .decode(&self.pending)
-            .map_err(|_| CodecError::Invalid("audio base64 fragment"))?;
+            .map_err(|_| {
+                CodecError::Invalid(crate::protocol::failure::ShapeReason::InvalidValue)
+            })?;
         self.padded = self.pending.contains('=');
         if self.padded && !tail.is_empty() {
-            return Err(CodecError::Invalid("audio padding"));
+            return Err(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            ));
         }
         self.pending = tail;
         Ok(bytes)
@@ -113,13 +129,17 @@ pub(in crate::protocol::openai) fn read_update(
     let mut update = AudioUpdate::default();
     if let Some(id) = o.get("id") {
         update.id = Some(text(
-            id.as_str().ok_or(CodecError::Invalid("audio id"))?,
+            id.as_str().ok_or(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            ))?,
             "audio id",
             256,
         )?);
     }
     if let Some(data) = o.get("data") {
-        let data = data.as_str().ok_or(CodecError::Invalid("audio data"))?;
+        let data = data.as_str().ok_or(CodecError::Invalid(
+            crate::protocol::failure::ShapeReason::InvalidValue,
+        ))?;
         if data.len() > MAX_TEXT_BYTES {
             return Err(CodecError::Limit);
         }
@@ -128,9 +148,9 @@ pub(in crate::protocol::openai) fn read_update(
     if let Some(transcript) = o.get("transcript") {
         update.transcript = Some(
             Text::allowing_empty(
-                transcript
-                    .as_str()
-                    .ok_or(CodecError::Invalid("transcript"))?,
+                transcript.as_str().ok_or(CodecError::Invalid(
+                    crate::protocol::failure::ShapeReason::InvalidValue,
+                ))?,
                 "transcript",
                 MAX_TEXT_BYTES,
             )
@@ -139,9 +159,13 @@ pub(in crate::protocol::openai) fn read_update(
     }
     if let Some(expiry) = o.get("expires_at") {
         if o.len() != 1 || !bytes.pending.is_empty() {
-            return Err(CodecError::Invalid("audio completion marker"));
+            return Err(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            ));
         }
-        update.expires_at = Some(expiry.as_u64().ok_or(CodecError::Invalid("audio expiry"))?);
+        update.expires_at = Some(expiry.as_u64().ok_or(CodecError::Invalid(
+            crate::protocol::failure::ShapeReason::InvalidValue,
+        ))?);
     }
     Ok(update)
 }

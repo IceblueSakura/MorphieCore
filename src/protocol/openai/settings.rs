@@ -28,7 +28,9 @@ pub(super) fn read(
 ) -> Result<GenerationSettings, CodecError> {
     let instructions = read_presence(o, "instructions", |v| {
         Text::allowing_empty(
-            v.as_str().ok_or(CodecError::Invalid("instructions"))?,
+            v.as_str().ok_or(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            ))?,
             "instructions",
             MAX_TEXT_BYTES,
         )
@@ -41,9 +43,9 @@ pub(super) fn read(
     };
     reasoning::request(o, reported, direction, &mut s)?;
     if let Some(v) = o.get("top_p").filter(|v| !v.is_null()) {
-        s.controls = s
-            .controls
-            .with_top_p(v.as_f64().ok_or(CodecError::Invalid("top_p"))?)?;
+        s.controls = s.controls.with_top_p(v.as_f64().ok_or(CodecError::Invalid(
+            crate::protocol::failure::ShapeReason::InvalidValue,
+        ))?)?;
     }
     s.controls.top_logprobs = o
         .get("top_logprobs")
@@ -52,7 +54,9 @@ pub(super) fn read(
             v.as_u64()
                 .filter(|n| *n <= 20)
                 .map(|n| n as u8)
-                .ok_or(CodecError::Invalid("top_logprobs"))
+                .ok_or(CodecError::Invalid(
+                    crate::protocol::failure::ShapeReason::InvalidValue,
+                ))
         })
         .transpose()?;
     if o.get("include")
@@ -67,18 +71,24 @@ pub(super) fn read(
         .map(|v| match v.as_str() {
             Some("auto") => Ok(Truncation::Auto),
             Some("disabled") => Ok(Truncation::Disabled),
-            _ => Err(CodecError::Invalid("truncation")),
+            _ => Err(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            )),
         })
         .transpose()?;
     if o.get("text").is_some_and(Value::is_null) && !reported {
         // The pinned create type is non-nullable; an explicit null is not "no text".
-        return Err(CodecError::Invalid("text"));
+        return Err(CodecError::Invalid(
+            crate::protocol::failure::ShapeReason::InvalidValue,
+        ));
     }
     s.text.presence = read_presence(o, "text", |t| {
         let t = object(t)?;
         direction.fields(t, &["format", "verbosity"])?;
         if !reported && t.get("format").is_some_and(Value::is_null) {
-            return Err(CodecError::Invalid("text.format"));
+            return Err(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            ));
         }
         s.text.format = read_presence(t, "format", |v| read_format(v, reported, direction))?;
         s.text.verbosity = read_presence(t, "verbosity", verbosity)?;
@@ -107,7 +117,11 @@ pub(super) fn read_format(
             direction.fields(o, &["type", "name", "description", "schema", "strict"])?;
             read_schema_body(o, reported)?
         }
-        _ => return Err(CodecError::Unsupported("text format".into())),
+        _ => {
+            return Err(CodecError::Unsupported(
+                crate::protocol::failure::CarrierReason::Unavailable,
+            ));
+        }
     })
 }
 /// Shared json_schema body fields; each protocol shell owns its wrapper and key set.
@@ -116,7 +130,9 @@ pub(super) fn read_schema_body(
     reported: bool,
 ) -> Result<OutputConstraint, CodecError> {
     if !reported && o.get("description").is_some_and(Value::is_null) {
-        return Err(CodecError::Invalid("description"));
+        return Err(CodecError::Invalid(
+            crate::protocol::failure::ShapeReason::InvalidValue,
+        ));
     }
     Ok(OutputConstraint::JsonSchema {
         name: Some(text(string(o, "name")?, "schema name", 64)?),
@@ -125,7 +141,9 @@ pub(super) fn read_schema_body(
             .filter(|v| !v.is_null())
             .map(|v| {
                 Text::allowing_empty(
-                    v.as_str().ok_or(CodecError::Invalid("description"))?,
+                    v.as_str().ok_or(CodecError::Invalid(
+                        crate::protocol::failure::ShapeReason::InvalidValue,
+                    ))?,
                     "description",
                     MAX_TEXT_BYTES,
                 )
@@ -135,12 +153,18 @@ pub(super) fn read_schema_body(
         schema: o
             .get("schema")
             .cloned()
-            .ok_or(CodecError::Invalid("schema"))?
+            .ok_or(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            ))?
             .into(),
         strict: o
             .get("strict")
             .filter(|v| !v.is_null())
-            .map(|v| v.as_bool().ok_or(CodecError::Invalid("strict")))
+            .map(|v| {
+                v.as_bool().ok_or(CodecError::Invalid(
+                    crate::protocol::failure::ShapeReason::InvalidValue,
+                ))
+            })
             .transpose()?,
     })
 }
@@ -154,7 +178,9 @@ pub(super) fn write_schema_body(
 ) -> Result<(), CodecError> {
     schema.validate()?;
     // OpenAI requires the name; an unnamed source schema needs the adapter's named rule.
-    let name = name.ok_or_else(|| CodecError::Unsupported("unnamed JSON schema".into()))?;
+    let name = name.ok_or(CodecError::Unsupported(
+        crate::protocol::failure::CarrierReason::Unavailable,
+    ))?;
     o.insert("name".into(), json!(name.as_str()));
     if let Some(d) = description {
         o.insert("description".into(), json!(d.as_str()));
@@ -185,7 +211,7 @@ pub(super) fn write_format(f: &OutputConstraint) -> Result<Value, CodecError> {
 pub(super) fn write(s: &GenerationSettings, o: &mut Map<String, Value>) -> Result<(), CodecError> {
     if s.controls.has_extended_controls() || s.automatic_prefix_cache.is_some() {
         return Err(CodecError::Unsupported(
-            "Responses generation controls".into(),
+            crate::protocol::failure::CarrierReason::Unavailable,
         ));
     }
     put_presence(o, "instructions", &s.instructions, |t| json!(t.as_str()));
@@ -243,7 +269,9 @@ pub(super) fn verbosity(v: &Value) -> Result<Verbosity, CodecError> {
         Some("low") => Ok(Verbosity::Low),
         Some("medium") => Ok(Verbosity::Medium),
         Some("high") => Ok(Verbosity::High),
-        _ => Err(CodecError::Invalid("verbosity")),
+        _ => Err(CodecError::Invalid(
+            crate::protocol::failure::ShapeReason::InvalidValue,
+        )),
     }
 }
 
@@ -256,13 +284,15 @@ pub(super) fn controls(
         .get(key)
         .filter(|v| !v.is_null())
         .map(|v| {
-            v.as_u64()
-                .filter(|n| *n > 0)
-                .ok_or(CodecError::Invalid(key))
+            v.as_u64().filter(|n| *n > 0).ok_or(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            ))
         })
         .transpose()?;
     if let Some(t) = o.get("temperature").filter(|v| !v.is_null()) {
-        c = c.with_temperature(t.as_f64().ok_or(CodecError::Invalid("temperature"))?)?;
+        c = c.with_temperature(t.as_f64().ok_or(CodecError::Invalid(
+            crate::protocol::failure::ShapeReason::InvalidValue,
+        ))?)?;
     }
     Ok(c)
 }

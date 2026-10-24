@@ -32,7 +32,9 @@ impl StopReason {
             Some("stop_sequence") => Ok(Self::StopSequence),
             Some("model_context_window_exceeded") => Ok(Self::ModelContextWindowExceeded),
             Some("refusal") => Ok(Self::Refusal),
-            _ => Err(CodecError::Unsupported("Anthropic stop reason".into())),
+            _ => Err(CodecError::Unsupported(
+                crate::protocol::failure::CarrierReason::Unavailable,
+            )),
         }
     }
     pub(in crate::protocol::anthropic::messages) fn wire(self) -> &'static str {
@@ -174,9 +176,9 @@ pub(crate) fn input_transformations(
     let Some(list) = o.get("input_transformations").filter(|v| !v.is_null()) else {
         return Ok(false);
     };
-    let list = list
-        .as_array()
-        .ok_or(CodecError::Invalid("Anthropic input_transformations"))?;
+    let list = list.as_array().ok_or(CodecError::Invalid(
+        crate::protocol::failure::ShapeReason::InvalidValue,
+    ))?;
     count(list.len())?;
     for entry in list {
         let entry = object(entry)?;
@@ -205,7 +207,9 @@ impl Message {
         if required(o, "type")?.as_str() != Some("message")
             || required(o, "role")?.as_str() != Some("assistant")
         {
-            return Err(CodecError::Invalid("Anthropic message envelope"));
+            return Err(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            ));
         }
         let m = Self {
             id: string(required(o, "id")?)?,
@@ -235,20 +239,28 @@ impl Message {
         if !matches!(self.usage.input_tokens, Presence::Value(_))
             || self.stop_sequence.value().is_some() != matched
         {
-            return Err(CodecError::Invalid("Anthropic message reports"));
+            return Err(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            ));
         }
         if opening {
             if self.stop_reason != Presence::Null || !self.content.is_empty() {
-                return Err(CodecError::Invalid("Anthropic message start"));
+                return Err(CodecError::Invalid(
+                    crate::protocol::failure::ShapeReason::InvalidValue,
+                ));
             }
         } else if !matches!(self.stop_reason, Presence::Value(_)) {
-            return Err(CodecError::Invalid("Anthropic final stop"));
+            return Err(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            ));
         }
         let mut bytes = self.id.len() + self.model.len();
         if let Some(details) = self.stop_details.value() {
             details.validate()?;
             if !opening && self.stop_reason != Presence::Value(StopReason::Refusal) {
-                return Err(CodecError::Invalid("Anthropic refusal detail stop"));
+                return Err(CodecError::Invalid(
+                    crate::protocol::failure::ShapeReason::InvalidValue,
+                ));
             }
             charge(&mut bytes, details.bytes())?;
         }
@@ -260,17 +272,23 @@ impl Message {
         for block in &self.content {
             let partial = matches!(block, Block::PartialToolUse { .. });
             if partial && self.stop_reason != Presence::Value(StopReason::MaxTokens) {
-                return Err(CodecError::Invalid("Anthropic partial tool terminal"));
+                return Err(CodecError::Invalid(
+                    crate::protocol::failure::ShapeReason::InvalidValue,
+                ));
             }
             if !block.permits(Role::Assistant) && !partial {
-                return Err(CodecError::Invalid("Anthropic output block"));
+                return Err(CodecError::Invalid(
+                    crate::protocol::failure::ShapeReason::InvalidValue,
+                ));
             }
             charge(&mut bytes, block.bytes(false)?)?;
             node_charge(&mut nodes, block.nodes()?)?;
             if let Block::ToolUse { id, .. } | Block::PartialToolUse { id, .. } = block
                 && !calls.insert(id)
             {
-                return Err(CodecError::Invalid("Anthropic duplicate call"));
+                return Err(CodecError::Invalid(
+                    crate::protocol::failure::ShapeReason::InvalidValue,
+                ));
             }
         }
         if !opening
@@ -278,7 +296,9 @@ impl Message {
                 || matched && !calls.is_empty()
                 || self.stop_reason == Presence::Value(StopReason::EndTurn) && !calls.is_empty())
         {
-            return Err(CodecError::Invalid("Anthropic stop/call combination"));
+            return Err(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            ));
         }
         Ok(())
     }
@@ -301,7 +321,9 @@ pub(in crate::protocol::anthropic::messages) fn read_refusal(
     presence(o, "stop_details", |value| {
         let fields = object(value)?;
         if required(fields, "type")?.as_str() != Some("refusal") {
-            return Err(CodecError::Unsupported("Anthropic stop details".into()));
+            return Err(CodecError::Unsupported(
+                crate::protocol::failure::CarrierReason::Unavailable,
+            ));
         }
         let result = RefusalDetails {
             category: presence(fields, "category", |value| {
@@ -311,7 +333,11 @@ pub(in crate::protocol::anthropic::messages) fn read_refusal(
                     Some("frontier_llm") => RefusalCategory::FrontierModelDevelopment,
                     Some("reasoning_extraction") => RefusalCategory::ReasoningExtraction,
                     Some("general_harms") => RefusalCategory::GeneralHarms,
-                    _ => return Err(CodecError::Invalid("Anthropic refusal category")),
+                    _ => {
+                        return Err(CodecError::Invalid(
+                            crate::protocol::failure::ShapeReason::InvalidValue,
+                        ));
+                    }
                 })
             })?,
             explanation: presence(fields, "explanation", |value| {
@@ -364,12 +390,14 @@ pub(in crate::protocol::anthropic::messages) fn reject_fallback_reports(
         .is_some()
     {
         return Err(CodecError::Unsupported(
-            "Anthropic fallback_has_prefill_claim".into(),
+            crate::protocol::failure::CarrierReason::Unavailable,
         ));
     }
     for key in ["fallback_credit_token", "recommended_model"] {
         if presence(details, key, string)?.value().is_some() {
-            return Err(CodecError::Unsupported(format!("Anthropic {key}")));
+            return Err(CodecError::Unsupported(
+                crate::protocol::failure::CarrierReason::UnknownField,
+            ));
         }
     }
     Ok(())

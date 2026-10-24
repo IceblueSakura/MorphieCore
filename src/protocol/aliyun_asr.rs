@@ -10,7 +10,7 @@ use crate::{
 use base64::{Engine, engine::general_purpose::STANDARD};
 use serde_json::{Map, Value, json};
 fn invalid() -> CodecError {
-    CodecError::Invalid("native transcription")
+    CodecError::Invalid(crate::protocol::failure::ShapeReason::InvalidValue)
 }
 fn object<'a>(v: &'a Value, keys: &[&str]) -> Result<&'a Map<String, Value>, CodecError> {
     let m = v.as_object().ok_or_else(invalid)?;
@@ -46,7 +46,9 @@ pub fn encode_request(request: &Request, model: &str) -> Result<Value, CodecErro
         ]
         .contains(&s.as_str())
     }) {
-        return Err(CodecError::Unsupported("transcription language".into()));
+        return Err(CodecError::Unsupported(
+            crate::protocol::failure::CarrierReason::Unavailable,
+        ));
     }
     let (format, mime) = match request.task.audio.format() {
         InputFormat::Wav => ("wav", "audio/wav"),

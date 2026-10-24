@@ -34,7 +34,11 @@ fn incomplete_frames(parts: Value) -> Vec<u8> {
     }
     out.into_bytes()
 }
-fn deliver(bytes: &[u8], profile: Profile, stream: bool) -> Result<Value, String> {
+fn deliver(
+    bytes: &[u8],
+    profile: Profile,
+    stream: bool,
+) -> Result<Value, morphiecore::execution::AttemptError> {
     let target = ReplayTarget::new("synthetic-google", "gemini-synthetic").unwrap();
     let mut attempt = Attempt::new(
         UpstreamAdapter::GoogleGenerateContent { target },
@@ -58,27 +62,27 @@ fn deliver(bytes: &[u8], profile: Profile, stream: bool) -> Result<Value, String
     let mut output = vec![];
     let mut rest = bytes;
     while !rest.is_empty() {
-        let (used, events) = attempt.push(rest).map_err(|e| e.to_string())?;
+        let (used, events) = attempt.push(rest)?;
         rest = &rest[used..];
         if stream {
             let produced = delivery
                 .encode_events(&attempt, &events)
-                .map_err(|e| e.to_string())?;
+                .map(|batch| batch.into_bytes())?;
             if !produced.is_empty() && delivery.lifecycle().may_retry_or_fallback() {
                 delivery.commit().unwrap();
             }
             output.extend(produced.into_iter().flatten());
         }
     }
-    attempt.finish().map_err(|e| e.to_string())?;
+    attempt.finish()?;
     if !stream {
-        let body = delivery.encode_json(&attempt).map_err(|e| e.to_string())?;
+        let body = delivery.encode_json(&attempt)?;
         return Ok(serde_json::from_slice(&body).unwrap());
     }
     output.extend(
         delivery
             .finish_stream(&attempt)
-            .map_err(|e| e.to_string())?
+            .map(|batch| batch.into_bytes())?
             .into_iter()
             .flatten(),
     );
@@ -89,11 +93,14 @@ fn deliver(bytes: &[u8], profile: Profile, stream: bool) -> Result<Value, String
 fn signed_text_and_partial_outputs_keep_replay_and_terminal_contracts() {
     let empty = incomplete_frames(json!([{"text":"","thoughtSignature":"U0lH"}]));
     for stream in [false, true] {
-        assert!(
+        assert!(matches!(
             deliver(&empty, Profile::Responses, stream)
                 .unwrap_err()
-                .contains("stateless Responses replay attachment")
-        );
+                .codec(),
+            Some(morphiecore::protocol::CodecError::Unsupported(
+                morphiecore::protocol::failure::CarrierReason::Replay
+            ))
+        ));
     }
     let target = ReplayTarget::new("synthetic-google", "gemini-synthetic").unwrap();
     let mut attempt = Attempt::new(

@@ -16,6 +16,7 @@ pub mod images;
 pub mod lifecycle;
 pub mod plan;
 pub mod replay;
+pub mod report;
 pub mod speech;
 pub mod transcription;
 

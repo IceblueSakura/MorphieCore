@@ -5,10 +5,9 @@ use crate::{protocol::CodecError, semantic::task::generation::*};
 pub(super) fn decode(
     message: &super::Message,
 ) -> Result<(Outcome, InteractionProgress, TerminalDetails), CodecError> {
-    let stop = *message
-        .stop_reason
-        .value()
-        .ok_or(CodecError::Invalid("native stop"))?;
+    let stop = *message.stop_reason.value().ok_or(CodecError::Invalid(
+        crate::protocol::failure::ShapeReason::InvalidValue,
+    ))?;
     let (outcome, progress, mut details) = match stop {
         super::StopReason::EndTurn | super::StopReason::StopSequence => (
             Outcome::Completed,
@@ -54,10 +53,9 @@ pub(super) fn decode(
     details.completion = match stop {
         super::StopReason::EndTurn => Some(CompletionCause::Natural),
         super::StopReason::StopSequence => Some(CompletionCause::StopSequence(text(
-            message
-                .stop_sequence
-                .value()
-                .ok_or(CodecError::Invalid("native stop sequence"))?,
+            message.stop_sequence.value().ok_or(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            ))?,
         )?)),
         _ => None,
     };
@@ -74,11 +72,13 @@ pub(super) fn encode(
     details.validate(outcome)?;
     if !details.explanation.is_absent() {
         return Err(CodecError::Unsupported(
-            "Messages terminal explanation".into(),
+            crate::protocol::failure::CarrierReason::Unavailable,
         ));
     }
     if progress == InteractionProgress::NeedsContinuation {
-        return Err(CodecError::Unsupported("Messages continuation".into()));
+        return Err(CodecError::Unsupported(
+            crate::protocol::failure::CarrierReason::Terminal,
+        ));
     }
     if let Some(cause) = &details.completion {
         return match (cause, progress, calls) {
@@ -88,7 +88,9 @@ pub(super) fn encode(
             (CompletionCause::StopSequence(text), InteractionProgress::TurnFinished, false) => {
                 Ok((super::StopReason::StopSequence, Some(text.as_str())))
             }
-            _ => Err(CodecError::Unsupported("Messages completion cause".into())),
+            _ => Err(CodecError::Unsupported(
+                crate::protocol::failure::CarrierReason::Terminal,
+            )),
         };
     }
     let stop_reason = match (outcome, progress, calls, &details.incomplete) {
@@ -118,7 +120,11 @@ pub(super) fn encode(
             _,
             Some(IncompleteReason::ContentFilter),
         ) => super::StopReason::Refusal,
-        _ => return Err(CodecError::Unsupported("Messages terminal".into())),
+        _ => {
+            return Err(CodecError::Unsupported(
+                crate::protocol::failure::CarrierReason::Terminal,
+            ));
+        }
     };
     Ok((stop_reason, None))
 }

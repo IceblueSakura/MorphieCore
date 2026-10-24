@@ -34,7 +34,7 @@ pub const FORMATS: &[AudioEncoding] = &[
 ];
 
 fn invalid() -> CodecError {
-    CodecError::Invalid("MiMo audio")
+    CodecError::Invalid(crate::protocol::failure::ShapeReason::InvalidValue)
 }
 
 pub fn encode_speech(
@@ -47,13 +47,19 @@ pub fn encode_speech(
     }
     let task = &request.task;
     if task.speed.is_some() || !VOICES.contains(&task.voice()) {
-        return Err(CodecError::Unsupported("MiMo speech controls".into()));
+        return Err(CodecError::Unsupported(
+            crate::protocol::failure::CarrierReason::Unavailable,
+        ));
     }
     let format = match task.requested_format() {
         AudioEncoding::Mp3 => "mp3",
         AudioEncoding::Wav => "wav",
         AudioEncoding::PcmS16Le24KhzMono => "pcm16",
-        _ => return Err(CodecError::Unsupported("MiMo speech format".into())),
+        _ => {
+            return Err(CodecError::Unsupported(
+                crate::protocol::failure::CarrierReason::Unavailable,
+            ));
+        }
     };
     let mut messages = Vec::new();
     if let Some(instructions) = &task.instructions {
@@ -85,7 +91,7 @@ pub fn encode_transcription(
         .is_some_and(|v| !["zh", "en"].contains(&v))
     {
         return Err(CodecError::Unsupported(
-            "MiMo transcription language".into(),
+            crate::protocol::failure::CarrierReason::Unavailable,
         ));
     }
     let (format, mime) = match request.task.audio.format() {
@@ -196,7 +202,9 @@ pub fn decode_speech(bytes: &[u8], task: &SpeechRequest) -> Result<SpeechResult,
     }
     let audio = message.audio.ok_or_else(invalid)?;
     if audio.transcript.is_some() {
-        return Err(CodecError::Unsupported("MiMo audio transcript".into()));
+        return Err(CodecError::Unsupported(
+            crate::protocol::failure::CarrierReason::Unavailable,
+        ));
     }
     let data = STANDARD.decode(audio.data).map_err(|_| invalid())?;
     let artifact =

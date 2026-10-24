@@ -52,7 +52,7 @@ impl Media {
         // Citations still need their own source/quote owners.
         if o.get("citations").is_some_and(|v| !v.is_null()) {
             return Err(CodecError::Unsupported(
-                "Anthropic document citations".into(),
+                crate::protocol::failure::CarrierReason::Unavailable,
             ));
         }
         let source = object(required(o, "source")?)?;
@@ -65,11 +65,17 @@ impl Media {
             Some("url") => Source::Url(field("url")?),
             Some("text") if kind == "document" => {
                 if field("media_type")? != PLAIN_TEXT {
-                    return Err(CodecError::Invalid("Anthropic text document type"));
+                    return Err(CodecError::Invalid(
+                        crate::protocol::failure::ShapeReason::InvalidValue,
+                    ));
                 }
                 Source::Text(field("data")?)
             }
-            _ => return Err(CodecError::Unsupported("Anthropic media source".into())),
+            _ => {
+                return Err(CodecError::Unsupported(
+                    crate::protocol::failure::CarrierReason::Unavailable,
+                ));
+            }
         };
         let media = match kind {
             "image" => Self::Image {
@@ -81,7 +87,11 @@ impl Media {
                         Some(v) => match v.as_str() {
                             Some("downsize") => false,
                             Some("error") => true,
-                            _ => return Err(CodecError::Invalid("Anthropic oversized_image")),
+                            _ => {
+                                return Err(CodecError::Invalid(
+                                    crate::protocol::failure::ShapeReason::InvalidValue,
+                                ));
+                            }
                         },
                     },
                 },
@@ -107,19 +117,21 @@ impl Media {
             Self::Image {
                 source: Source::Base64 { media_type, .. },
                 ..
-            } if !IMAGE_TYPES.contains(&&**media_type) => {
-                Err(CodecError::Unsupported("Anthropic image type".into()))
-            }
+            } if !IMAGE_TYPES.contains(&&**media_type) => Err(CodecError::Unsupported(
+                crate::protocol::failure::CarrierReason::Unavailable,
+            )),
             Self::Document {
                 source: Source::Base64 { media_type, .. },
                 ..
-            } if media_type != PDF => {
-                Err(CodecError::Unsupported("Anthropic document type".into()))
-            }
+            } if media_type != PDF => Err(CodecError::Unsupported(
+                crate::protocol::failure::CarrierReason::Unavailable,
+            )),
             Self::Image {
                 source: Source::Text(_),
                 ..
-            } => Err(CodecError::Invalid("Anthropic image source")),
+            } => Err(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            )),
             _ => Ok(()),
         }
     }
@@ -239,7 +251,8 @@ impl Media {
     }
     /// The native carrier for one IR resource; uncalibrated detail cannot disappear.
     pub(super) fn from_resource(resource: ResourceView<'_>) -> Result<Self, CodecError> {
-        let unsupported = || CodecError::Unsupported("Anthropic media".into());
+        let unsupported =
+            || CodecError::Unsupported(crate::protocol::failure::CarrierReason::Unavailable);
         if match resource.description {
             ResourceDescription::Image { detail, .. } => detail.is_some(),
             ResourceDescription::File(file) => file.detail.is_some(),
@@ -263,11 +276,9 @@ impl Media {
                     data: data_base64.as_str().into(),
                 },
                 (ResourceKind::File, PLAIN_TEXT) => Source::Text(
-                    String::from_utf8(
-                        STANDARD
-                            .decode(data_base64.as_str())
-                            .map_err(|_| CodecError::Invalid("text document data"))?,
-                    )
+                    String::from_utf8(STANDARD.decode(data_base64.as_str()).map_err(|_| {
+                        CodecError::Invalid(crate::protocol::failure::ShapeReason::InvalidValue)
+                    })?)
                     .map_err(|_| unsupported())?,
                 ),
                 _ => return Err(unsupported()),
@@ -338,7 +349,7 @@ impl ResultContent {
                             Ok(ResultBlock::Media(Media::read(kind, v)?))
                         }
                         _ => Err(CodecError::Unsupported(
-                            "Anthropic tool result content".into(),
+                            crate::protocol::failure::CarrierReason::Unavailable,
                         )),
                     })
                 })

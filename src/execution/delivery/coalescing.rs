@@ -34,6 +34,7 @@ struct PendingText {
     deadline: Instant,
     bytes: usize,
     encoded_text: usize,
+    evidence: crate::lowering::generation::EvidenceDelta,
 }
 pub(super) fn escaped_bytes(text: &str) -> usize {
     text.bytes()
@@ -165,6 +166,7 @@ impl Coalescer {
             }],
             context: p.context,
             barrier: false,
+            evidence: p.evidence,
         })
     }
     pub(super) fn close(&mut self) {
@@ -239,6 +241,7 @@ impl Coalescer {
             pending.fragment.reserve_exact(fragment.len());
             pending.fragment.push_str(fragment);
             pending.bytes += added;
+            pending.evidence.extend(batch.evidence);
             pending.encoded_text += encoded;
             self.peak_bytes = self.peak_bytes.max(pending.bytes);
             return ready;
@@ -260,6 +263,7 @@ impl Coalescer {
                 part,
                 fragment,
                 context: batch.context,
+                evidence: batch.evidence,
                 bytes,
                 encoded_text: encoded,
                 deadline: now + Duration::from_millis(self.policy.max_delay_ms),

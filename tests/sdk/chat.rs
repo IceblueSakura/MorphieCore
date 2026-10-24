@@ -229,7 +229,7 @@ pub(super) async fn handle(
             projected
                 .projection()
                 .iter()
-                .all(|stage| stage.loss.is_none())
+                .all(|stage| !stage.change().is_loss())
         );
         let out = envelope::encode_response(&projected).unwrap();
         assert_eq!(d.semantic.usage(), Some(source_usage));

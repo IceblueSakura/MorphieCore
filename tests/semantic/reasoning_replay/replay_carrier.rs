@@ -195,13 +195,20 @@ fn tool_turn_transfer_keeps_real_results_and_forgets_paired_wire_ids_only() {
         .unwrap();
     items.insert(2, (owner, Item::Reasoning(compatible)));
     mixed.task.semantic = mixed.task.semantic.with_items(items).unwrap();
-    assert!(
+    assert!(matches!(
         upstream("other/model-b")
             .encode_request(&mixed, "model-b", &contract("other/model-b"))
-            .unwrap_err()
-            .to_string()
-            .contains("mixed replay call dependencies")
-    );
+            .unwrap_err(),
+        morphiecore::adapter::ConversionFailure {
+            boundary: Some(morphiecore::lowering::generation::ConversionBoundary::RequestEncode),
+            cause: morphiecore::adapter::ConversionCause::Codec(
+                morphiecore::protocol::CodecError::Unsupported(
+                    morphiecore::protocol::failure::CarrierReason::Replay
+                )
+            ),
+            ..
+        }
+    ));
     assert_eq!(
         native["input"][1]["encrypted_content"],
         "synthetic-final-token"

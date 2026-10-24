@@ -815,7 +815,7 @@ Chat omits incidental settings echoes because its response has no settings carri
 
 #### Domain evidence interface
 
-**Internal implementation target, refined on 2026-10-24.** This specifies the next evidence/failure migration under the accepted reporting direction, not current Rust APIs, a public diagnostic schema, new conversion permission or production telemetry activation. The shape below is schematic; concrete enum cases enter with their responsible conversion, not through a speculative all-protocol catalogue.
+**Internal interface selected and implemented on 2026-10-24.** `lowering::generation` owns `Conversion<T>`, `EvidenceDelta` and the single `Effect` enum. `execution::report` owns bounded request/attempt observations and checked-batch associations; codecs retain no mutable execution report. This is not a public diagnostic schema, new conversion permission or production telemetry activation. The logical shape below is schematic: effects use specific enum variants rather than optional payload bags.
 
 ```text
 Conversion<T> {
@@ -830,17 +830,17 @@ EvidenceDelta {
 Effect {
     rule: RuleId,
     boundary: ConversionBoundary,
-    locus: SemanticLocus,
+    locus: closed Field plus typed Owner,
     change: Change,
     summary: optional typed SafeSummary
 }
 ```
 
-`RuleId` is a versioned compile-time identifier with no runtime registration or duplicate revision field. `SemanticLocus` combines a closed field category with an optional typed local owner: request/response root, item, part, tool-definition ordinal or usage scope/counter. Reuse semantic IDs and accounting enums; do not accept arbitrary JSON pointers, schema keys, tool names, wire IDs or strings from input. A locus describes the affected source owner, not a generated wire alias; target-only fields use the explicitly identified delivery view. One-to-many transformations may report a bounded set/range or a counted aggregate, never silently substitute one unrelated owner.
+`RuleId` is a versioned compile-time identifier with no runtime registration or duplicate revision field. An effect's logical locus combines `Field` with `Owner`: root, scoped item/part, tool-definition ordinal or usage scope/counter. Reuse semantic IDs and accounting enums; do not accept arbitrary JSON pointers, schema keys, tool names, wire IDs or strings from input. A locus describes the affected source owner, not a generated wire alias; target-only fields use the explicitly identified delivery view. One-to-many transformations may report a bounded set/range or a counted aggregate, never silently substitute one unrelated owner.
 
 Boundaries are closed request/response/event decode, project and encode operations. The pure producer stamps the boundary where meaning changed; an outer serialization check cannot relabel a projection as an intake effect. The execution wrapper supplies the attempt binding, view and checked unit, not fields in the semantic IR. Views distinguish request intake, source response intake, upstream request, downstream JSON, downstream SSE and retained JSON. Static rules/profile declarations stay in protocol owners; the report references their stable IDs without becoming a rule registry or an executor.
 
-| Interface owner | Target responsibility |
+| Interface owner | Responsibility |
 |---|---|
 | `lowering::generation` shared vocabulary | Pure conversion result/delta, field/locus, change/method and boundary types; no execution, Provider or telemetry dependency |
 | Protocol codecs/lowering | Construct effects and typed leaf failures at the responsible transformation; no mutable report, I/O or publication state |
@@ -863,13 +863,17 @@ Use enum variants carrying their necessary basis/method, rather than independent
 
 One transformation can produce several effects. Exact input/cache arithmetic may derive an aggregate while separately omitting source breakdown/provenance; these must not become one generic usage loss. Change kind is not severity: exact normalization/derivation are not warnings, and recording an omission or estimate grants no authority to discard protected meaning. Retain source reports in `UsageReports`/response context and delivery values in `GenerationDelivery`; evidence explains the difference without a second writable value/provenance store.
 
-Replace parallel `RequestControlLoss`, rule-name lists, `LossEvidence`, adapter-specific omission lists and audit-only fidelity normalizations with this single returned delta as each path migrates. Human-readable names and log/wire codes are projections, not separately maintained receipts. Replay bindings, native identity/dependency proof and genuine source reports stay in their current owners. History retention or client echo must not reapply old diagnostic effects as new authoritative source observations.
+The returned delta replaces parallel `RequestControlLoss`, request rule-name lists, `LossEvidence`, `ProjectionStage`, adapter-specific omission lists and audit-only fidelity normalizations. Human-readable names and log/wire codes are projections, not separately maintained receipts. Replay bindings, native identity/dependency proof and genuine source reports stay in their current owners. History retention or client echo must not reapply old diagnostic effects as new authoritative source observations.
+
+`Change::Default(DefaultBasis)` distinguishes source-contract defaults from selected-policy insertions. Completion's `UsageMethod` names each exact arithmetic, selected estimate or required-counter completion independently; one estimated counter does not label the whole usage record as estimated. Existing profile defaults remain explicitly selected policy, not newly observed native fields.
 
 Accepted request-intake evidence is request-owned with its original boundary, view and checked-unit identity, not assigned to the first candidate. Preparation can reference it but cannot re-emit or recount it for every attempt, rebind it to the upstream-request view, or discard it when preparation fails. Only newly produced candidate/request-encoding effects remain provisional until that preparation succeeds. Source-response intake similarly stays attempt-owned and is not recounted for every downstream or retained view.
 
 Effects aggregate only within their request/attempt, boundary, view, rule, locus, change/basis and safe-summary identity. Counts describe checked conversion occurrences, not tokens or distinct model facts. Emit deltas once and consume the returned unit once; do not repeatedly scan cumulative encoder lists. Preserve separate checked, no-carrier and handoff counts when aggregating. Coalescing repeated deltas must not cause unbounded per-event state or merge different owners/methods.
 
 Both entry count and retained bytes, including indexes and safe summaries, have a finite optional allowance in the responsible request/attempt/delivery resource envelope. Exhaust that allowance by truncating diagnostics, not by rejecting otherwise valid business data or allocating without bounds. A saturated optional evidence delta returns the business value plus explicit omitted-count/coverage state, not a fabricated lossless result. Reserve failure/terminal summaries outside the optional effect-entry allowance. Coverage is `assessed-within-declared-boundary`, `partial` or `unassessed`, independently of truncation; assessed coverage means the selected fields/rules at that boundary, not complete official-protocol conformance. Empty or truncated evidence proves neither native support nor losslessness. Export loss remains a separate telemetry property.
+
+Current allowances are 64 entries/16 KiB per delta or report evidence owner and 32 live batch associations per attempt. Association saturation loses detailed attribution, never mandatory body acknowledgments. Request and attempt results, semantic task outcome, source classification, public code/status and observed routing policy remain separate fields; successful recovery leaves no failed-attempt cause on the successful request.
 
 #### Atomic evidence and output batches
 
@@ -917,7 +921,7 @@ Keep semantic failed/refused/incomplete/cancelled outcomes in `GenerationRespons
 ```text
 ConversionFailure {
     boundary: ConversionBoundary,
-    locus: optional SemanticLocus,
+    locus: optional Field,
     cause: Codec(CodecError) | Representation(RepresentationError)
 }
 SourceFailureEvidence {
@@ -932,6 +936,8 @@ Evolve the current adapter error boundary into the contextual `ConversionFailure
 
 Retain `GenerationError`, `EventError`, `ContextError` and `RepresentationError` leaf identities. Replace Generation's string-only invalid/unsupported labels with closed shape/relationship/carrier reasons and a safe locus; distinguish bounded resource failures such as depth/nodes, bytes, events and projection limits. Execution-only `Protocol`/`Delivery` labels likewise become closed reasons. Add variants at migrated responsible sites, not a speculative generic error catalogue or an arbitrary context stack. Unknown names/values and raw parse text never become diagnostic labels.
 
+`CodecError::Representation` preserves its original typed representation cause and responsible boundary until adaptation wraps it in `ConversionFailure`. `JsonError::Limit(JsonResource)` preserves bytes/depth/nodes through codec translation. Execution distinguishes request-body, attempt and outer-exchange deadlines and records body-consumer closure separately from source failure. Body-free failure serialization is an allowlisted projection; the internal report retains the typed cause rather than its rendered label.
+
 Replace `StreamFailure(u16)` with `SourceFailureEvidence`. Share the existing source-failure vocabulary and pure classifiers between protocol error-envelope decoding and HTTP-error intake; do not duplicate it in the report. Raw bounded error bytes remain ephemeral classifier/capture input. Actual HTTP status belongs to the execution response head, separately from an SSE code/type or a protocol's suggested status mapping. `ProtocolStatusHint` is constructed only by the responsible protocol mapping and retains distinctions needed by existing policy, including hints that share an overloaded classification; it is not an arbitrary source-supplied integer or a second observed response head. In particular, an error event inside HTTP 200 is not an observed HTTP 429/400. Record incomplete or deliberately unread error-body evidence independently of recognition: a complete unknown envelope remains unrecognized; a status-only classification may be known even when its body was not read.
 
 Execution derives its existing fallback/health decision and the public error presentation from typed facts before rendering. Preserve `ErrorClass`, status/authentication precedence, credential scopes and no-replay rules. Diagnostics are not retry authority. Richer SSE classification does not silently enable new advancement, health or public-error behavior: preserve the current policy decision during migration and select any behavioral correction separately. For example, HTTP 429 quota evidence currently survives a body classifier, whereas a status-only SSE path cannot distinguish quota from throttling; the new interface retains that distinction without itself approving a different recovery policy.
@@ -942,11 +948,13 @@ Keep each failed attempt's original cause even if a later attempt succeeds. With
 
 The capability snapshot describes supported request domains, delivery and history contracts, not unions of candidate feature bits or model-effective guarantees. Unlisted cases remain unassessed. Keep `/v1/models` standard and hide credentials, deployment origins and private candidate identities.
 
-**Actual-loss reporting was selected on 2026-10-23; unified ownership and publication were deferred by the user on 2026-10-24.** The subsequent [internal-interface refinement](#domain-evidence-interface) resumes design, not runtime report/publication implementation or a new text/SSE acceptance requirement; [Roadmap](roadmap.md#observability-follow-up) owns the next slice. Preserve existing loss/source/safety assertions without building a temporary evidence framework. The target design supersedes the internal-only P7 policy and reports successful non-rejection losses briefly through a semantically suitable official field, otherwise an explicit namespaced extension. Error, stop, refusal, annotation, safety and usage fields are not generic warning containers. Standard fields retain their official meaning; an extension cannot establish full conformance merely because an SDK tolerates it.
+**Actual-loss reporting was selected on 2026-10-23; the subsequent 2026-10-24 module selection resumes unified ownership and publication.** The [domain interface](#domain-evidence-interface) supplies independent log and wire projections. `AdaptationNotice` is a bounded optional `morphiecore` field, not serialization of the internal report or a stable public schema. It admits at most 16 entries/2048 bytes, reports omitted coverage and preserves standard output when the optional notice exceeds the complete payload budget. JSON attaches it only after checked serialization; SSE uses existing final Chat JSON, Responses terminal-response and Messages `message_delta` carriers, never an invented event. Retained JSON is a separate checked view, not required diagnostic parity with SSE. A terminal notice cannot certify its own eventual handoff. Error, stop, refusal, annotation, safety and usage fields are not generic warning containers. Standard fields retain their official meaning; an extension cannot establish full conformance merely because an SDK tolerates it.
 
 **Safe-to-ignore diagnostics selected on 2026-10-24.** MorphieCore may expose additional namespaced response fields for a future deployer-owned Agent Runtime to display or analyze. With those fields ignored or removed, the supported standard SDK Agent loop must still preserve content, tool calls/results, failure and terminal meaning, and promised continuation. Clients need not parse, display, aggregate, retain or return the extensions. SDK acceptance, raw-event visibility and final-object retention are different properties; none implies the others. This is an official-protocol baseline with optional diagnostics, not a claim that every closed-schema consumer accepts extra fields.
 
 Expose selected diagnostic views, not serialized internal objects: actual losses and estimates, supplementary error context, public routing-policy labels and observed routing outcomes are eligible. Keep configured policy separate from what actually happened; enabled failover is not evidence of a failover. Routing observations remain execution-owned and do not change candidate selection, affinity or health policy. Do not expose credentials, private origins/configuration, candidate identities, business values or internal Provider/model rule names. Use deliberately selected fields and bounded values, not an arbitrary passthrough bag.
+
+The current notice aggregates closed field, local owner, boundary and change categories with occurrence counts. Internal rule/method IDs stay in the body-free log projection, not the wire summary; aggregation therefore does not imply one particular internal method. Wire field organization remains unselected beyond this safe subset.
 
 One bounded execution-owned adaptation report is authoritative. Pure codecs return immutable evidence; commit it only after the responsible transformation and serialization checks succeed. Distinguish prepared, sent and delivered effects. A response reports its producing attempt, not rejected/abandoned candidates; valid published prefixes survive later failure. Diagnostics and JSON/SSE/stored retrieval project this report rather than maintaining separate mutable ledgers.
 
@@ -1376,6 +1384,7 @@ The 2026-10-23 standards reset supersedes conflicting historical conversion, pub
 
 | Decision | Consequence |
 |---|---|
+| Unified Generation evidence (2026-10-24) | One pure typed effect delta, contextual typed failures and an execution-owned bounded report replace parallel audit ledgers. Checked conversion, publication and body handoff remain distinct. Logs and optional wire views project the same evidence independently of telemetry availability; no retry/health/no-replay change or production exporter activation |
 | Standards reset and breaking redesign (2026-10-23) | User accepted semantic-union IR with unique ownership, exact-first ordered fallback, official public protocol baselines, actual-loss reporting and review of all prior conversions. Pin current stable dependencies and release sources before implementation; old mapping outputs are not regression authority. Reuse upstream standard-based tests in the integrated redesign gate, preserving independent safety invariants |
 | Standard classified stream errors (2026-10-24) | User selected standard Responses `error` events for gateway-classified failures, preserving exact codes without inventing model-reported `response.failed` objects. Supersedes the former Codex-only failure shape; pre-frame and published failures retain separate ordering, bounds and SDK checks |
 | Native-only continuation delivery (2026-10-24) | User selected genuine native replay carriers and typed gateway-managed Responses continuation instead of fabricated manifest reasoning/thinking owners. Unrepresentable stateless signed text/call paths reject; no new continuation extension or client-retention assumption is selected. Historical Google cross-protocol stateless acceptance does not certify the replacement |

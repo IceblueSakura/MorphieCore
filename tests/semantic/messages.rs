@@ -144,7 +144,9 @@ mod message_envelopes {
             refused
                 .push(&chunk(json!({}), json!("tool_calls")))
                 .unwrap_err(),
-            morphiecore::protocol::CodecError::Invalid("refusal with tool calls")
+            morphiecore::protocol::CodecError::Invalid(
+                morphiecore::protocol::failure::ShapeReason::InvalidValue
+            )
         );
         let mut encoder = EventEncoder::new(Profile::Responses, source.metadata.clone()).unwrap();
         let mut wire = vec![];
@@ -170,7 +172,7 @@ mod message_envelopes {
             encoder
                 .projection()
                 .iter()
-                .any(|stage| stage.loss.is_some())
+                .any(|stage| stage.change().is_loss())
         );
         // The decoder groups the calls with an envelope event that both profiles carry.
         assert!(
@@ -386,8 +388,8 @@ mod phase {
         .unwrap();
         assert!(
             messages
-                .rules
-                .contains(&anthropic::messages::RequestRule::OmitMessagePhase)
+                .evidence
+                .contains_rule(anthropic::messages::RequestRule::OmitMessagePhase.name())
         );
         assert_eq!(
             messages.value["messages"][1]["content"],

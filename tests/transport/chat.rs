@@ -144,7 +144,7 @@ fn chat_rejects_uncarried_cache_boundaries_before_client_field_filtering() {
             let baseline = adapter.decode_client_request(source.to_string().as_bytes());
             if dialect == Dialect::Bailian && role == "developer" {
                 assert!(
-                    matches!(baseline,Err(CodecError::Unsupported(field)) if field=="Bailian Chat controls")
+                    matches!(baseline,Err(CodecError::Unsupported(field)) if field == morphiecore::protocol::failure::CarrierReason::Unavailable)
                 );
             } else {
                 baseline.unwrap();
@@ -160,7 +160,7 @@ fn chat_rejects_uncarried_cache_boundaries_before_client_field_filtering() {
                         matches!(
                             result,
                             Err(CodecError::Unsupported(field))
-                                if field == "Chat prompt_cache_breakpoint"
+                                if field == morphiecore::protocol::failure::CarrierReason::Unavailable
                         ),
                         "{dialect:?} {role}"
                     );
@@ -190,7 +190,7 @@ fn chat_static_and_streamed_moderation_reports_cannot_disappear() {
         source["moderation"] = report.clone();
         assert!(matches!(
             adapter.decode_response(source.to_string().as_bytes()),
-            Err(CodecError::Unsupported(field)) if field == "active moderation report"
+            Err(CodecError::Unsupported(field)) if matches!(field,morphiecore::protocol::failure::CarrierReason::Unavailable)
         ));
 
         let opening = json!({"id":"synthetic-response","object":"chat.completion.chunk","created":1,
@@ -242,7 +242,7 @@ fn chat_static_and_streamed_moderation_reports_cannot_disappear() {
             assert!(matches!(
                 d.consume(&frame(&moderated)),
                 Err(SseError::Codec(CodecError::Unsupported(field)))
-                    if field == "active moderation report"
+                    if matches!(field,morphiecore::protocol::failure::CarrierReason::Unavailable)
             ));
             assert!(matches!(
                 d.consume(b"data: [DONE]\n\n"),
@@ -286,7 +286,7 @@ fn complete_chat_envelope_separates_delivery_and_rejects_unsupported_admission()
     assert!(matches!(
         client.decode_client_request(moderated.to_string().as_bytes()),
         Err(morphiecore::protocol::CodecError::Unsupported(reason))
-            if reason == "Chat moderation"
+            if reason == morphiecore::protocol::failure::CarrierReason::Unavailable
     ));
     let projected = responses::encode_generation(
         &lower_request(
@@ -647,7 +647,7 @@ fn dashscope_reasoning_cannot_resume_after_text_or_call_publication() {
         consume(&mut d, &frame(&chunk(visible)), 1);
         assert!(
             matches!(d.consume(&frame(&chunk(json!({"reasoning_content":"late"})))),
-            Err(SseError::Codec(CodecError::Unsupported(field))) if field=="late Chat reasoning owner")
+            Err(SseError::Codec(CodecError::Unsupported(field))) if matches!(field,morphiecore::protocol::failure::CarrierReason::Reasoning))
         );
         assert!(matches!(
             d.consume(b"data: [DONE]\n\n"),

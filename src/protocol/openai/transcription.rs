@@ -13,7 +13,7 @@ pub fn project_result(result: &RecognitionResult) -> Result<Projection, CodecErr
     result
         .report()
         .validate(result.text())
-        .map_err(|_| CodecError::Invalid("transcription report"))?;
+        .map_err(|_| CodecError::Invalid(crate::protocol::failure::ShapeReason::InvalidValue))?;
     let mut body = json!({"text":result.text()});
     if let Some(seconds) = result.report().processed_seconds {
         body["usage"] = json!({"type":"duration","seconds":seconds});

@@ -15,7 +15,11 @@ fn coalesce_events(
 ) -> Result<Vec<Bytes>, AttemptError> {
     let mut frames = vec![];
     for batch in delivery.queue_events(attempt, events, now)? {
-        frames.extend(delivery.encode_prepared(batch)?);
+        frames.extend(
+            delivery
+                .encode_prepared(batch)
+                .map(|batch| batch.into_bytes())?,
+        );
     }
     Ok(frames)
 }
@@ -43,20 +47,28 @@ fn finalized_json_still_needs_handoff_and_cannot_resume_after_rejection() {
         assert_eq!(delivery.snapshot(&attempt).unwrap().1, body);
         assert!(matches!(
             delivery.complete(&attempt),
-            Err(AttemptError::Delivery("delivery not complete"))
+            Err(AttemptError::Delivery(
+                crate::execution::attempt::DeliveryReason::DeliveryNotComplete
+            ))
         ));
         if reject {
             assert!(matches!(
                 delivery.encode_json(&attempt),
-                Err(AttemptError::Protocol("delivery closed"))
+                Err(AttemptError::Protocol(
+                    crate::execution::attempt::ProtocolReason::DeliveryClosed
+                ))
             ));
             assert!(matches!(
                 delivery.commit(),
-                Err(AttemptError::Delivery("no deliverable output"))
+                Err(AttemptError::Delivery(
+                    crate::execution::attempt::DeliveryReason::NoDeliverableOutput
+                ))
             ));
             assert!(matches!(
                 delivery.complete(&attempt),
-                Err(AttemptError::Delivery("delivery not complete"))
+                Err(AttemptError::Delivery(
+                    crate::execution::attempt::DeliveryReason::DeliveryNotComplete
+                ))
             ));
         } else {
             delivery.commit().unwrap();
@@ -100,7 +112,10 @@ fn prepared_batches_keep_the_metadata_snapshot_from_their_intake() {
         batches.push(delivery.prepare_events(&attempt, &events).unwrap().unwrap());
     }
     for (index, batch) in batches.into_iter().enumerate() {
-        let frames = delivery.encode_prepared(batch).unwrap();
+        let frames = delivery
+            .encode_prepared(batch)
+            .map(|batch| batch.into_bytes())
+            .unwrap();
         let wire = String::from_utf8(frames.into_iter().flatten().collect()).unwrap();
         let values: Vec<Value> = wire
             .lines()
@@ -178,6 +193,7 @@ fn lifecycle_reports_freeze_opening_batches_and_charge_both_observations() {
     );
     let wire: Vec<_> = delivery
         .encode_prepared(prepared)
+        .map(|batch| batch.into_bytes())
         .unwrap()
         .into_iter()
         .flatten()
@@ -191,7 +207,10 @@ fn lifecycle_reports_freeze_opening_batches_and_charge_both_observations() {
     )
     .unwrap();
     assert_eq!(opening["response"]["service_tier"], "auto");
-    let frames = delivery.finish_stream(&attempt).unwrap();
+    let frames = delivery
+        .finish_stream(&attempt)
+        .map(|batch| batch.into_bytes())
+        .unwrap();
     let wire: Vec<_> = frames.into_iter().flatten().collect();
     let terminal: Value = serde_json::from_str(
         std::str::from_utf8(&wire)
@@ -235,9 +254,12 @@ fn classified_failure_after_opening_has_no_invented_terminal_reports() {
     let (_, events) = attempt
         .push(format!("data: {opening}\n\n").as_bytes())
         .unwrap();
-    failure_delivery.encode_events(&attempt, &events).unwrap();
+    failure_delivery
+        .encode_events(&attempt, &events)
+        .map(|batch| batch.into_bytes())
+        .unwrap();
     let frames = failure_delivery.fail_stream(&json!({"error":{
-        "code":"context_length_exceeded","type":"invalid_request_error","message":"Context limit"}})).unwrap();
+        "code":"context_length_exceeded","type":"invalid_request_error","message":"Context limit"}})).map(|batch|batch.into_bytes()).unwrap();
     let bytes: Vec<_> = frames.into_iter().flatten().collect();
     let value: Value = serde_json::from_str(
         std::str::from_utf8(&bytes)
@@ -252,7 +274,12 @@ fn classified_failure_after_opening_has_no_invented_terminal_reports() {
     assert_eq!(value["code"], "context_length_exceeded");
     assert_eq!(value["message"], "Context limit");
     assert!(value.get("response").is_none());
-    assert!(failure_delivery.fail_stream(&json!({"error":{}})).is_err());
+    assert!(
+        failure_delivery
+            .fail_stream(&json!({"error":{}}))
+            .map(|batch| batch.into_bytes())
+            .is_err()
+    );
 }
 
 #[test]
@@ -275,7 +302,10 @@ fn classified_response_errors_obey_remaining_budgets_and_poison_failed_delivery(
             let (_, events) = attempt.push(br#"data: {"type":"response.created","sequence_number":0,"response":{"id":"r","object":"response","created_at":1,"model":"m","status":"in_progress","output":[]}}
 
 "#).unwrap();
-            delivery.encode_events(&attempt, &events).unwrap()
+            delivery
+                .encode_events(&attempt, &events)
+                .map(|batch| batch.into_bytes())
+                .unwrap()
         } else {
             vec![]
         };
@@ -289,6 +319,7 @@ fn classified_response_errors_obey_remaining_budgets_and_poison_failed_delivery(
         let (_, mut reference, prefix_bytes) = make(SseLimits::default(), started);
         let error_bytes: usize = reference
             .fail_stream(&error)
+            .map(|batch| batch.into_bytes())
             .unwrap()
             .iter()
             .map(Bytes::len)
@@ -309,8 +340,20 @@ fn classified_response_errors_obey_remaining_budgets_and_poison_failed_delivery(
             },
         ] {
             let (_, mut delivery, _) = make(limits, started);
-            assert!(delivery.fail_stream(&error).is_ok(), "exact fit");
-            assert!(delivery.fail_stream(&error).is_err(), "closed");
+            assert!(
+                delivery
+                    .fail_stream(&error)
+                    .map(|batch| batch.into_bytes())
+                    .is_ok(),
+                "exact fit"
+            );
+            assert!(
+                delivery
+                    .fail_stream(&error)
+                    .map(|batch| batch.into_bytes())
+                    .is_err(),
+                "closed"
+            );
         }
         let mut exceeded = vec![
             SseLimits {
@@ -330,18 +373,31 @@ fn classified_response_errors_obey_remaining_budgets_and_poison_failed_delivery(
         }
         for limits in exceeded {
             let (attempt, mut delivery, _) = make(limits, started);
-            assert!(delivery.fail_stream(&error).is_err(), "budget must reject");
+            assert!(
+                delivery
+                    .fail_stream(&error)
+                    .map(|batch| batch.into_bytes())
+                    .is_err(),
+                "budget must reject"
+            );
             assert!(
                 delivery
                     .fail_stream(&json!({"error":{"message":"small"}}))
+                    .map(|batch| batch.into_bytes())
                     .is_err()
             );
             assert!(
                 delivery
                     .encode_events(&attempt, &[StreamEvent::Started])
+                    .map(|batch| batch.into_bytes())
                     .is_err()
             );
-            assert!(delivery.finish_stream(&attempt).is_err());
+            assert!(
+                delivery
+                    .finish_stream(&attempt)
+                    .map(|batch| batch.into_bytes())
+                    .is_err()
+            );
             assert!(delivery.commit().is_err());
         }
     }
@@ -416,7 +472,12 @@ fn coalescing_preserves_first_content_barriers_and_attempt_isolation() {
             output.extend(frames);
         }
         assert!(delivery.coalescing_peak_bytes() <= policy.max_pending_bytes);
-        output.extend(delivery.flush_pending().unwrap());
+        output.extend(
+            delivery
+                .flush_pending()
+                .map(|batch| batch.into_bytes())
+                .unwrap(),
+        );
         assert!(delivery.flush_deadline().is_none());
         let wire = String::from_utf8(output.into_iter().flatten().collect()).unwrap();
         let fragments: Vec<String> = wire
@@ -502,10 +563,20 @@ fn coalescing_preserves_first_content_barriers_and_attempt_isolation() {
 "#,
             ).unwrap();
             assert!(coalesce_events(&mut delivery, &other, &events, now).is_err());
-            assert!(delivery.flush_pending().is_err());
+            assert!(
+                delivery
+                    .flush_pending()
+                    .map(|batch| batch.into_bytes())
+                    .is_err()
+            );
         }
         delivery.cancel();
-        assert!(delivery.flush_pending().is_err());
+        assert!(
+            delivery
+                .flush_pending()
+                .map(|batch| batch.into_bytes())
+                .is_err()
+        );
     }
 }
 
@@ -557,7 +628,12 @@ fn coalescing_respects_escaped_frame_and_pending_memory_limits() {
                 .unwrap();
             output.extend(coalesce_events(&mut delivery, &attempt, &events, now).unwrap());
         }
-        output.extend(delivery.flush_pending().unwrap());
+        output.extend(
+            delivery
+                .flush_pending()
+                .map(|batch| batch.into_bytes())
+                .unwrap(),
+        );
         assert!(output.iter().all(|frame| frame.len() <= 8192));
         assert!(delivery.coalescing_peak_bytes() <= policy.max_pending_bytes);
         if max_pending_bytes == 1024 {
@@ -633,12 +709,17 @@ fn assessment_only_safety_reports_are_omitted_and_blocking_reports_reject() {
         let body = if stream {
             delivery
                 .encode_events(&attempt, &events)
+                .map(|batch| batch.into_bytes())
                 .and_then(|frames| {
                     delivery.commit()?;
                     attempt.finish()?;
                     Ok(frames
                         .into_iter()
-                        .chain(delivery.finish_stream(&attempt)?)
+                        .chain(
+                            delivery
+                                .finish_stream(&attempt)
+                                .map(|batch| batch.into_bytes())?,
+                        )
                         .collect::<Vec<_>>()
                         .concat())
                 })
@@ -646,7 +727,7 @@ fn assessment_only_safety_reports_are_omitted_and_blocking_reports_reject() {
             attempt.finish().unwrap();
             delivery.encode_json(&attempt)
         };
-        (body, delivery.losses().to_vec())
+        (body, delivery.effects().to_vec())
     };
     for protocol in [
         ClientProtocol::Chat,
@@ -663,8 +744,8 @@ fn assessment_only_safety_reports_are_omitted_and_blocking_reports_reject() {
             assert!(
                 losses
                     .iter()
-                    .any(|loss| loss.rule == "generation.omit-safety-assessment.v1"
-                        && loss.field == "response.safety_reports"),
+                    .any(|loss| loss.rule() == "generation.omit-safety-assessment.v1"
+                        && loss.field() == "response.safety_reports"),
                 "{protocol:?} {stream}"
             );
             // Only the block flag differs from the delivered case above.

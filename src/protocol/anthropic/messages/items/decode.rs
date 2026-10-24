@@ -43,7 +43,9 @@ impl Intake {
         parts: &[crate::protocol::anthropic::messages::CacheMarked<String>],
     ) -> Result<(), CodecError> {
         if parts.is_empty() {
-            return Err(CodecError::Invalid("Anthropic empty system message"));
+            return Err(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            ));
         }
         if self.items.len() >= MAX_ITEMS {
             return Err(CodecError::Limit);
@@ -93,7 +95,9 @@ impl Intake {
         effort: Option<crate::protocol::anthropic::messages::Effort>,
     ) -> Result<(), CodecError> {
         if blocks.is_empty() && effort.is_none() {
-            return Err(CodecError::Invalid("Anthropic empty system message"));
+            return Err(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            ));
         }
         let mut text_run = vec![];
         for block in blocks {
@@ -112,7 +116,11 @@ impl Intake {
                     crate::protocol::anthropic::messages::ToolTarget::Definition(tool),
                 ) => ToolChangeAction::AddDefinition(Box::new(function_tool(tool)?)),
                 Block::ToolRemoval(name) => ToolChangeAction::Remove(text(name)?),
-                _ => return Err(CodecError::Invalid("Anthropic block role")),
+                _ => {
+                    return Err(CodecError::Invalid(
+                        crate::protocol::failure::ShapeReason::InvalidValue,
+                    ));
+                }
             };
             if !text_run.is_empty() {
                 self.instruction(&std::mem::take(&mut text_run))?;
@@ -145,7 +153,9 @@ impl Intake {
             || !block.permits(role)
                 && !(role == Role::Assistant && matches!(block, Block::PartialToolUse { .. }))
         {
-            return Err(CodecError::Invalid("Anthropic block role"));
+            return Err(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            ));
         }
         if self.items.len() >= MAX_ITEMS {
             return Err(CodecError::Limit);
@@ -233,7 +243,9 @@ impl Intake {
                 context: Default::default(),
             }),
             Block::ToolAddition(_) | Block::ToolRemoval(_) => {
-                return Err(CodecError::Invalid("Anthropic block role"));
+                return Err(CodecError::Invalid(
+                    crate::protocol::failure::ShapeReason::InvalidValue,
+                ));
             }
             Block::ToolResult {
                 tool_use_id,
@@ -304,7 +316,9 @@ impl Intake {
                 Item::ToolCall(c) => c.cache = block.cache,
                 Item::ToolResult(r) => r.cache = block.cache,
                 _ if block.cache.is_some() => {
-                    return Err(CodecError::Unsupported("Anthropic cache owner".into()));
+                    return Err(CodecError::Unsupported(
+                        crate::protocol::failure::CarrierReason::Unavailable,
+                    ));
                 }
                 _ => {}
             }
@@ -428,7 +442,9 @@ pub(in crate::protocol::anthropic::messages) fn validate_cache(
                     _ => None,
                 };
                 if change.cache.is_some() && definition.is_some() {
-                    return Err(CodecError::Invalid("Anthropic tool change cache"));
+                    return Err(CodecError::Invalid(
+                        crate::protocol::failure::ShapeReason::InvalidValue,
+                    ));
                 }
                 let cache = change.cache.or(definition);
                 markers.extend(cache);

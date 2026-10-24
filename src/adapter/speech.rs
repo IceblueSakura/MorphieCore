@@ -34,22 +34,24 @@ impl Profile {
     ) -> Result<Option<crate::semantic::value::AudioEncoding>, crate::protocol::CodecError> {
         if self.upstream_sse() {
             return Err(crate::protocol::CodecError::Invalid(
-                "native speech delivery",
+                crate::protocol::failure::ShapeReason::InvalidValue,
             ));
         }
         if self == Self::OpenRouterMp3 {
             crate::protocol::openrouter_speech::validate_task(task)?;
         }
         if self == Self::Xiaomi {
-            let mime: mime::Mime = content_type
-                .parse()
-                .map_err(|_| crate::protocol::CodecError::Invalid("speech JSON"))?;
+            let mime: mime::Mime = content_type.parse().map_err(|_| {
+                crate::protocol::CodecError::Invalid(crate::protocol::failure::ShapeReason::Json)
+            })?;
             if mime.essence_str() != "application/json"
                 || mime
                     .params()
                     .any(|(k, v)| k != mime::CHARSET || v != mime::UTF_8)
             {
-                return Err(crate::protocol::CodecError::Invalid("speech JSON"));
+                return Err(crate::protocol::CodecError::Invalid(
+                    crate::protocol::failure::ShapeReason::Json,
+                ));
             }
             return Ok(Some(task.requested_format()));
         }

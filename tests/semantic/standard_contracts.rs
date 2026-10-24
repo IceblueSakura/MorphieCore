@@ -25,10 +25,12 @@ fn public_chat_profiles_keep_controls_and_returned_reasoning_explicit() {
             for value in [Value::Null, json!(false), json!(32)] {
                 let mut body = base.clone();
                 body[field] = value;
-                assert!(
-                    matches!(codec.decode_client_request(body.to_string().as_bytes()),
-                    Err(morphiecore::protocol::CodecError::Unsupported(key)) if key == field)
-                );
+                assert!(matches!(
+                    codec.decode_client_request(body.to_string().as_bytes()),
+                    Err(morphiecore::protocol::CodecError::Unsupported(
+                        morphiecore::protocol::failure::CarrierReason::UnknownField
+                    ))
+                ));
             }
         }
         let mut body = base.clone();
@@ -105,7 +107,7 @@ fn prediction_survives_same_protocol_projection() {
             .as_str(),
         "hello"
     );
-    assert!(request.task.fidelity.normalizations().is_empty());
+    assert!(request.task.evidence.is_empty());
     let original = request.clone();
     let output = adapter
         .encode_request(&request, "public", &TargetCaps::full())
@@ -216,7 +218,9 @@ fn named_chat_participant_survives_same_protocol_projection() {
             adapter
                 .decode_client_request(bad.to_string().as_bytes())
                 .unwrap_err(),
-            morphiecore::protocol::CodecError::Invalid("message name")
+            morphiecore::protocol::CodecError::Invalid(
+                morphiecore::protocol::failure::ShapeReason::InvalidValue
+            )
         );
     }
 }
@@ -398,7 +402,9 @@ fn messages_rejects_removed_sampling_even_at_defaults() {
             let mut wire = baseline.clone();
             wire[field] = value;
             let bytes = wire.to_string();
-            let expected = CodecError::Unsupported(field.into());
+            let expected = CodecError::Unsupported(
+                morphiecore::protocol::failure::CarrierReason::UnknownField,
+            );
             assert_eq!(
                 decode_client_request(bytes.as_bytes()).unwrap_err(),
                 expected
@@ -434,7 +440,7 @@ fn messages_accepts_direct_only_function_tools() {
         encoded.value["tools"],
         json!([{"name":"read","input_schema":{"type":"object","properties":{}}}])
     );
-    assert!(encoded.rules.is_empty());
+    assert!(encoded.evidence.is_empty());
     // Both root tools and by-value additions use the same validated reader.
     for inline in [false, true] {
         let mut body = wire.clone();
@@ -468,7 +474,9 @@ fn messages_accepts_direct_only_function_tools() {
             tool["allowed_callers"] = value;
             assert_eq!(
                 decode_client_request(bad.to_string().as_bytes()).unwrap_err(),
-                morphiecore::protocol::CodecError::Unsupported("Anthropic tool dispatch".into())
+                morphiecore::protocol::CodecError::Unsupported(
+                    morphiecore::protocol::failure::CarrierReason::Tools
+                )
             );
         }
         let mut bad = body.clone();
@@ -480,7 +488,9 @@ fn messages_accepts_direct_only_function_tools() {
         tool["type"] = json!("code_execution_20260521");
         assert_eq!(
             decode_client_request(bad.to_string().as_bytes()).unwrap_err(),
-            morphiecore::protocol::CodecError::Unsupported("Anthropic tool type".into())
+            morphiecore::protocol::CodecError::Unsupported(
+                morphiecore::protocol::failure::CarrierReason::Tools
+            )
         );
     }
 }

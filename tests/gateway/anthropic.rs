@@ -707,13 +707,14 @@ async fn json_and_stream_clients_replay_native_thinking_and_tools() {
         if stream {
             assert_eq!(status, 200);
             assert!(wire.contains("partial") && !wire.contains("message_stop"));
-            let last: Value = serde_json::from_str(
+            let mut last: Value = serde_json::from_str(
                 wire.lines()
                     .filter_map(|l| l.strip_prefix("data: "))
                     .next_back()
                     .unwrap(),
             )
             .unwrap();
+            last.as_object_mut().unwrap().remove("morphiecore");
             assert_eq!(
                 last,
                 json!({"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}})
@@ -795,7 +796,28 @@ async fn json_and_stream_clients_replay_native_thinking_and_tools() {
                 }
                 assert_eq!(status, 200, "{profile:?} {prompt}");
                 assert!(!wire.contains("[DONE]") && !wire.contains("response.completed"));
-                assert_eq!(wire.contains("partial"), prompt == "overloaded");
+                let standard: Vec<Value> = wire
+                    .lines()
+                    .filter_map(|line| line.strip_prefix("data: "))
+                    .filter_map(|line| serde_json::from_str::<Value>(line).ok())
+                    .map(|mut packet| {
+                        if let Some(root) = packet.as_object_mut() {
+                            root.remove("morphiecore");
+                        }
+                        if let Some(response) =
+                            packet.get_mut("response").and_then(Value::as_object_mut)
+                        {
+                            response.remove("morphiecore");
+                        }
+                        packet
+                    })
+                    .collect();
+                assert_eq!(
+                    serde_json::to_string(&standard)
+                        .unwrap()
+                        .contains("partial"),
+                    prompt == "overloaded"
+                );
                 let last: Value = serde_json::from_str(
                     wire.lines()
                         .filter_map(|l| l.strip_prefix("data: "))
@@ -817,9 +839,33 @@ async fn json_and_stream_clients_replay_native_thinking_and_tools() {
     assert_eq!(seen.lock().unwrap().len(), 44);
     diagnostic_owner.flush_diagnostics().await;
     let records = std::fs::read_to_string(diagnostics).unwrap();
-    assert!(
-        records.contains(r#""request_rules":["cache.omit-key.v1","messages.omit-sampling.v1","messages.default-automatic-cache.v1"]"#)
-    );
+    let reports: Vec<Value> = records
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    assert!(reports.iter().any(|record| {
+        record["generation"]["attempts"]
+            .as_array()
+            .is_some_and(|attempts| {
+                attempts.iter().any(|attempt| {
+                    attempt["evidence"]["entries"]
+                        .as_array()
+                        .is_some_and(|entries| {
+                            [
+                                "cache.omit-key.v1",
+                                "messages.omit-sampling.v1",
+                                "messages.default-automatic-cache.v1",
+                            ]
+                            .iter()
+                            .all(|rule| {
+                                entries.iter().any(|entry| {
+                                    entry["view"] == "upstream_request" && entry["rule"] == *rule
+                                })
+                            })
+                        })
+                })
+            })
+    }));
     assert!(records.contains(r#""ignored_request_field_count":1"#));
     assert!(!records.contains("client_metadata"));
     // Native adaptive intent stays adaptive, without a numeric-budget approximation.
