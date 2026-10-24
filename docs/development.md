@@ -150,6 +150,8 @@ Upstream implementation-specific assertions require adaptation, not blind adopti
 | Connected protocol boundary | Separate [SDK loopback gate](#sdk-loopback-gate); mark disconnected boundaries blocked, not passed |
 | Actual client or Provider behavior | Separately scoped [online acceptance](#online-acceptance); no inference from offline success |
 
+For [safe-to-ignore diagnostic extensions](architecture.md#public-capability-and-adaptation-notice), follow the [current scheduling exception](roadmap.md#standards-reset-and-redesign): do not add dedicated field, aggregation, JSON/SSE/retrieval parity, SDK-retention or display tests now. Their organization and test construction await the deployer's final production-preparation decision. Continue the existing standard Agent-loop and safety checks for implementation slices; this exception neither certifies extension behavior nor removes existing regressions or tests for authoritative execution evidence.
+
 ### Offline baseline
 
 Run affected targets first, then the full baseline:
