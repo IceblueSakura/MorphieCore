@@ -132,7 +132,7 @@ impl EventProjection {
                                 if self.phase_only {
                                     self.phase_seen |= phase.is_some();
                                     if phase.take().is_some() {
-                                        self.record(crate::protocol::phase::carried(
+                                        self.record(crate::protocol::phase::delivery_omission(
                                             "event.encode",
                                         ));
                                     }

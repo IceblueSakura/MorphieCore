@@ -2,16 +2,10 @@
 use crate::google_tool_fixture as fixture;
 use morphiecore::protocol::openai::Profile;
 use serde_json::{Value, json};
-use std::collections::BTreeMap;
 
-async fn complete(client: &reqwest::Client, base: &str, profile: Profile, body: &Value) -> Value {
-    let path = if profile == Profile::Chat {
-        "chat/completions"
-    } else {
-        "responses"
-    };
+async fn complete(client: &reqwest::Client, base: &str, body: &Value) -> Value {
     let response = client
-        .post(format!("{base}/{path}"))
+        .post(format!("{base}/responses"))
         .bearer_auth(fixture::KEY)
         .json(body)
         .send()
@@ -23,114 +17,54 @@ async fn complete(client: &reqwest::Client, base: &str, profile: Profile, body: 
     }
     let wire = response.text().await.unwrap();
     let mut terminal = None;
-    let mut usage = Value::Null;
-    let mut done = 0;
-    let mut message = json!({"role":"assistant","content":null});
-    let mut calls = BTreeMap::<u64, Value>::new();
-    let mut reasoning = BTreeMap::<u64, Value>::new();
-    for line in wire.lines().filter_map(|line| line.strip_prefix("data: ")) {
-        if line == "[DONE]" {
-            done += 1;
-            continue;
-        }
+    for line in wire.lines().filter_map(|l| l.strip_prefix("data: ")) {
         let event: Value = serde_json::from_str(line).unwrap();
-        if profile == Profile::Responses {
-            assert!(!matches!(
-                event["type"].as_str(),
-                Some("error" | "response.failed" | "response.incomplete")
-            ));
-            if event["type"] == "response.completed" {
-                assert!(terminal.replace(event["response"].clone()).is_none());
-            }
-            continue;
-        }
-        if let Some(value) = event.get("usage").filter(|value| !value.is_null()) {
-            usage = value.clone();
-        }
-        for choice in event["choices"].as_array().unwrap() {
-            let delta = &choice["delta"];
-            for key in ["content", "reasoning_content"] {
-                if let Some(text) = delta[key].as_str() {
-                    message[key] = json!(format!(
-                        "{}{text}",
-                        message[key].as_str().unwrap_or_default()
-                    ));
-                }
-            }
-            if let Some(details) = delta["reasoning_details"].as_array() {
-                for detail in details {
-                    let index = detail["index"].as_u64().unwrap_or_else(|| {
-                        reasoning.last_key_value().map_or(0, |(index, _)| index + 1)
-                    });
-                    let entry = reasoning.entry(index).or_insert_with(|| json!({}));
-                    for (key, value) in detail.as_object().unwrap() {
-                        if matches!(key.as_str(), "text" | "summary" | "data") {
-                            entry[key] = json!(format!(
-                                "{}{}",
-                                entry[key].as_str().unwrap_or_default(),
-                                value.as_str().unwrap()
-                            ));
-                        } else if let Some(previous) = entry.get(key) {
-                            assert_eq!(previous, value);
-                        } else {
-                            entry[key] = value.clone();
-                        }
-                    }
-                }
-            }
-            if let Some(parts) = delta["tool_calls"].as_array() {
-                for part in parts {
-                    let call = calls.entry(part["index"].as_u64().unwrap()).or_insert_with(
-                        || json!({"type":"function","function":{"name":"","arguments":""}}),
-                    );
-                    if let Some(id) = part.get("id") {
-                        call["id"] = id.clone();
-                    }
-                    for key in ["name", "arguments"] {
-                        if let Some(text) = part["function"][key].as_str() {
-                            call["function"][key] =
-                                json!(format!("{}{text}", call["function"][key].as_str().unwrap()));
-                        }
-                    }
-                }
-            }
-            if choice["finish_reason"].is_string() {
-                assert!(terminal.replace(choice["finish_reason"].clone()).is_none());
-            }
+        assert!(!matches!(
+            event["type"].as_str(),
+            Some("error" | "response.failed" | "response.incomplete")
+        ));
+        if event["type"] == "response.completed" {
+            assert!(terminal.replace(event["response"].clone()).is_none());
         }
     }
-    if profile == Profile::Responses {
-        return terminal.unwrap();
-    }
-    assert_eq!(done, 1);
-    if !reasoning.is_empty() {
-        message["reasoning_details"] = json!(reasoning.into_values().collect::<Vec<_>>());
-    }
-    if !calls.is_empty() {
-        message["tool_calls"] = json!(calls.into_values().collect::<Vec<_>>());
-    }
-    json!({"choices":[{"message":message,"finish_reason":terminal.unwrap()}],"usage":usage})
+    terminal.unwrap()
 }
 
-async fn exercise_messages(api: fixture::Api) {
+async fn exercise_rejected(api: fixture::Api, messages: bool) {
     let client = reqwest::Client::builder()
         .no_proxy()
         .timeout(std::time::Duration::from_secs(5))
         .build()
         .unwrap();
     for stream in [false, true] {
-        let fixture = fixture::start_messages(api).await;
-        let mut response = client
-            .post(format!("{}/messages", fixture.base))
-            .bearer_auth(fixture::KEY)
-            .header("anthropic-version", "2026-10-21")
-            .json(
-                &json!({"model":"gemini-3.8-flash","max_tokens":256,"stream":stream,
+        let fixture = if messages {
+            fixture::start_messages(api).await
+        } else {
+            fixture::start(Profile::Chat, api).await
+        };
+        let (path, body) = if messages {
+            (
+                "messages",
+                json!({"model":"gemini-3.8-flash","max_tokens":256,"stream":stream,
                 "thinking":{"type":"adaptive"},"output_config":{"effort":"low"},
                 "tools":[{"name":"read","input_schema":{"type":"object","properties":{
                     "path":{"type":"string"}},"required":["path"]}}],
                 "messages":[{"role":"user","content":"Read."}]}),
             )
+        } else {
+            (
+                "chat/completions",
+                json!({"model":"gemini-3.8-flash","max_completion_tokens":256,"stream":stream,
+                "reasoning_effort":"low","messages":[{"role":"user","content":"Read."}],
+                "tools":[{"type":"function","function":{"name":"read","strict":false,"parameters":{
+                    "type":"object","properties":{"path":{"type":"string"}},"required":["path"]}}}]}),
+            )
+        };
+        let mut response = client
+            .post(format!("{}/{path}", fixture.base))
+            .bearer_auth(fixture::KEY)
+            .header("anthropic-version", "2026-10-21")
+            .json(&body)
             .send()
             .await
             .unwrap();
@@ -144,14 +78,20 @@ async fn exercise_messages(api: fixture::Api) {
                 }
             };
             let wire = String::from_utf8(bytes).unwrap();
-            assert!(aborted || wire.contains("event: error\n"));
+            assert!(aborted || wire.contains("\"error\""));
+            assert!(!wire.contains("[DONE]"));
+            assert!(!wire.contains("\"finish_reason\":\""));
             assert!(!wire.contains("event: message_stop\n"));
             assert!(!wire.contains("mca1."));
         } else {
             assert_eq!(response.status(), 502);
             let error: Value = response.json().await.unwrap();
-            assert_eq!(error["type"], "error");
-            assert_eq!(error["error"]["type"], "api_error");
+            if messages {
+                assert_eq!(error["type"], "error");
+                assert_eq!(error["error"]["type"], "api_error");
+            } else {
+                assert_eq!(error["error"]["code"], "upstream_error");
+            }
         }
         assert_eq!(
             fixture.seen.lock().unwrap().len(),
@@ -161,33 +101,28 @@ async fn exercise_messages(api: fixture::Api) {
     }
 }
 async fn exercise(api: fixture::Api) {
-    exercise_messages(api).await;
+    exercise_rejected(api, true).await;
+    exercise_rejected(api, false).await;
     let client = reqwest::Client::builder()
         .no_proxy()
         .timeout(std::time::Duration::from_secs(5))
         .build()
         .unwrap();
-    for profile in [Profile::Chat, Profile::Responses] {
+    {
+        let profile = Profile::Responses;
         for stream in [false, true] {
             let fixture = fixture::start(profile, api).await;
             let function = json!({"name":"read","strict":false,"parameters":{
                 "type":"object","properties":{"path":{"type":"string"}},"required":["path"]}});
-            let mut body = if profile == Profile::Chat {
-                json!({"model":"gemini-3.8-flash","messages":[{"role":"user","content":"Read."}],
-                    "max_completion_tokens":256,"reasoning_effort":"low",
-                    "tools":[{"type":"function","function":function}],"stream":stream})
-            } else {
+            let mut body = {
                 let mut tool = function;
                 tool["type"] = json!("function");
                 json!({"model":"gemini-3.8-flash","input":[{"role":"user","content":"Read."}],
                     "store":true,"max_output_tokens":256,"reasoning":{"effort":"low","summary":"auto"},
                     "include":["reasoning.encrypted_content"],"tools":[tool],"stream":stream})
             };
-            if stream && profile == Profile::Chat {
-                body["stream_options"] = json!({"include_usage":true});
-            }
             for turn in 1..=4 {
-                let response = complete(&client, &fixture.base, profile, &body).await;
+                let response = complete(&client, &fixture.base, &body).await;
                 if api == fixture::Api::GenerateContent {
                     assert_eq!(response["usage"]["total_tokens"], 15);
                 } else {
@@ -198,47 +133,7 @@ async fn exercise(api: fixture::Api) {
                         if turn <= 3 { 17 } else { 15 }
                     );
                 }
-                if profile == Profile::Chat {
-                    // STOP stays stop; Interactions explicitly requires tool results.
-                    let reason = if api == fixture::Api::Interactions && turn <= 2 {
-                        "tool_calls"
-                    } else {
-                        "stop"
-                    };
-                    assert_eq!(response["choices"][0]["finish_reason"], reason);
-                    let message = response["choices"][0]["message"].clone();
-                    if turn <= 2 {
-                        let call = &message["tool_calls"][0];
-                        assert_eq!(message["tool_calls"].as_array().unwrap().len(), 1);
-                        assert_eq!(call["id"], format!("c{turn}"));
-                        assert_eq!(call["function"]["name"], "read");
-                        let arguments: Value =
-                            serde_json::from_str(call["function"]["arguments"].as_str().unwrap())
-                                .unwrap();
-                        assert_eq!(
-                            arguments,
-                            json!({"path":if turn == 1 {"missing"} else {"found"}})
-                        );
-                        body["messages"].as_array_mut().unwrap().extend([
-                            message,
-                            json!({"role":"tool","tool_call_id":format!("c{turn}"),
-                                "content":if turn == 1 {fixture::ERROR} else {fixture::RESULT}}),
-                        ]);
-                    } else {
-                        assert_eq!(
-                            message["content"],
-                            if turn == 3 {
-                                fixture::RESULT
-                            } else {
-                                "continued"
-                            }
-                        );
-                        body["messages"]
-                            .as_array_mut()
-                            .unwrap()
-                            .extend([message, json!({"role":"user","content":"Continue."})]);
-                    }
-                } else {
+                {
                     assert_eq!(response["status"], "completed");
                     let output = response["output"].as_array().unwrap();
                     if turn <= 2 {

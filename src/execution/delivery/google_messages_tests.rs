@@ -116,53 +116,78 @@ fn feed(
 }
 
 #[test]
-fn messages_reject_hidden_signatures_without_fabricated_thinking() {
-    for interactions in [false, true] {
-        for calls in [false, true] {
-            // Interactions ordinary text has no selected signature carrier.
-            if interactions && !calls {
-                continue;
-            }
-            for stream in [false, true] {
-                let (endpoint, request, mut frames) = fixture(interactions, calls);
-                if interactions {
-                    frames[1]["step"]["signature"] = json!("synthetic-call");
-                } else {
-                    frames[0]["candidates"][0]["content"]["parts"][0]["thoughtSignature"] =
-                        json!("U0lH");
+fn stateless_clients_reject_hidden_signatures_without_fabricated_reasoning() {
+    use crate::protocol::openai::{Adapter, Dialect, Profile, TargetCaps};
+    for client in [
+        ClientAdapter::Messages,
+        ClientAdapter::openai(
+            Adapter::new(Profile::Chat, Dialect::Standard, None),
+            TargetCaps::full(),
+        ),
+    ] {
+        for interactions in [false, true] {
+            for calls in [false, true] {
+                // Interactions ordinary text has no selected signature carrier.
+                if interactions && !calls {
+                    continue;
                 }
-                let mut attempt =
-                    Attempt::new(endpoint.adapter().unwrap(), 65536, Default::default());
-                attempt.begin(200, "text/event-stream").unwrap();
-                let mut delivery = delivery(&endpoint, &request);
-                let mut all_events = vec![];
-                for frame in &frames {
-                    let wire = if interactions {
-                        format!(
-                            "event: {}\ndata: {frame}\n\n",
-                            frame["event_type"].as_str().unwrap()
-                        )
+                for stream in [false, true] {
+                    let (endpoint, request, mut frames) = fixture(interactions, calls);
+                    if interactions {
+                        frames[1]["step"]["signature"] = json!("synthetic-call");
                     } else {
-                        format!("data: {frame}\n\n")
+                        frames[0]["candidates"][0]["content"]["parts"][0]["thoughtSignature"] =
+                            json!("U0lH");
+                    }
+                    let mut attempt =
+                        Attempt::new(endpoint.adapter().unwrap(), 65536, Default::default());
+                    attempt.begin(200, "text/event-stream").unwrap();
+                    let mut delivery = ResponseDelivery::new(
+                        client.clone(),
+                        "public",
+                        Default::default(),
+                        crate::semantic::context::StreamOptions {
+                            include_obfuscation: crate::semantic::value::Presence::Value(false),
+                            ..Default::default()
+                        },
+                        Obfuscation::Disabled,
+                    )
+                    .with_request(&endpoint, &request);
+                    let mut all_events = vec![];
+                    for frame in &frames {
+                        let wire = if interactions {
+                            format!(
+                                "event: {}\ndata: {frame}\n\n",
+                                frame["event_type"].as_str().unwrap()
+                            )
+                        } else {
+                            format!("data: {frame}\n\n")
+                        };
+                        let (n, events) = attempt.push(wire.as_bytes()).unwrap();
+                        assert_eq!(n, wire.len());
+                        all_events.extend(events);
+                    }
+                    attempt.finish().unwrap();
+                    let original = attempt.response().unwrap().clone();
+                    let error = if stream {
+                        delivery.encode_events(&attempt, &all_events).unwrap_err()
+                    } else {
+                        delivery.encode_json(&attempt).unwrap_err()
                     };
-                    let (n, events) = attempt.push(wire.as_bytes()).unwrap();
-                    assert_eq!(n, wire.len());
-                    all_events.extend(events);
+                    assert!(
+                        error.to_string().contains(
+                            if client.protocol() == crate::adapter::ClientProtocol::Messages {
+                                "Messages replay attachment"
+                            } else {
+                                "Chat replay attachment"
+                            }
+                        ),
+                        "{error}"
+                    );
+                    assert_eq!(attempt.response().unwrap(), &original);
+                    assert!(delivery.encode_json(&attempt).is_err());
+                    assert!(delivery.commit().is_err());
                 }
-                attempt.finish().unwrap();
-                let original = attempt.response().unwrap().clone();
-                let error = if stream {
-                    delivery.encode_events(&attempt, &all_events).unwrap_err()
-                } else {
-                    delivery.encode_json(&attempt).unwrap_err()
-                };
-                assert!(
-                    error.to_string().contains("Messages replay attachment"),
-                    "{error}"
-                );
-                assert_eq!(attempt.response().unwrap(), &original);
-                assert!(delivery.encode_json(&attempt).is_err());
-                assert!(delivery.commit().is_err());
             }
         }
     }

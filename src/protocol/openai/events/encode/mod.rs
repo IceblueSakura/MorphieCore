@@ -14,7 +14,6 @@ pub struct EventEncoder {
     pub(super) contract: TargetCaps,
     target_locked: bool,
     sequence: u64,
-    pub(super) attachment: Option<crate::protocol::attachments::Carrier>,
     pub(super) chat_audio_pending: Vec<u8>,
     pub(super) projection: Vec<projection::ProjectionStage>,
 }
@@ -31,27 +30,9 @@ impl EventEncoder {
             contract: TargetCaps::full(),
             target_locked: false,
             sequence: 0,
-            attachment: None,
             chat_audio_pending: Vec::new(),
             projection: Vec::new(),
         })
-    }
-    pub(crate) fn set_attachment(
-        &mut self,
-        value: crate::protocol::attachments::Carrier,
-    ) -> Result<(), CodecError> {
-        if self.profile == Profile::Responses {
-            return Err(CodecError::Unsupported("Responses manifest carrier".into()));
-        }
-        crate::protocol::attachments::check_chat_support(
-            self.profile,
-            self.contract.adaptation.rules.structured_chat_reasoning,
-        )?;
-        if self.state.is_none() || self.state()?.terminal().is_some() || self.attachment.is_some() {
-            return Err(CodecError::Invalid("attachment carrier"));
-        }
-        self.attachment = Some(value);
-        Ok(())
     }
     /// Refresh reported settings/completion metadata without changing response identity.
     pub fn update_metadata(&mut self, metadata: ResponseMetadata) -> Result<(), CodecError> {

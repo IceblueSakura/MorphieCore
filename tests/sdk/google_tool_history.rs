@@ -5,7 +5,8 @@ use std::time::Duration;
 
 async fn exercise(api: fixture::Api, api_name: &str) {
     for (profile, name, count) in [
-        (Profile::Chat, "chat", 8),
+        (Profile::Chat, "chat-json", 1),
+        (Profile::Chat, "chat-sse", 1),
         (Profile::Responses, "responses", 8),
         (Profile::Chat, "messages-json", 1),
         (Profile::Chat, "messages-sse", 1),
@@ -37,14 +38,14 @@ async fn exercise(api: fixture::Api, api_name: &str) {
         assert_eq!(report["requests"], count);
         assert_eq!(report["http_requests"], count);
         assert_eq!(
-            report[if messages {
+            report[if name != "responses" {
                 "unrepresentable_signature_rejected"
             } else {
                 "tool_correction_and_final_history"
             }],
             true
         );
-        if !messages {
+        if name == "responses" {
             assert_eq!(report["deliveries"], 2);
         }
         assert_eq!(report["upstream"], api_name);

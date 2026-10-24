@@ -16,15 +16,6 @@ pub(crate) fn omission(rule: &'static str) -> LossEvidence {
     }
 }
 
-pub(crate) fn carried(direction: &'static str) -> LossEvidence {
-    LossEvidence {
-        rule: "generation.return-message-phase.v1",
-        field: "generation.message.phase",
-        direction,
-        action: "carry",
-    }
-}
-
 pub(crate) fn delivery_omission(direction: &'static str) -> LossEvidence {
     LossEvidence {
         rule: "generation.omit-delivery-message-phase.v1",

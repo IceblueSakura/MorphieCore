@@ -29,7 +29,7 @@ fn stream_body(wire: &str, profile: Profile) -> Value {
     assert!(!wire.contains("synthetic-native-signature") && !wire.contains("synthetic-redacted"));
     let client = morphiecore::protocol::openai::Adapter::new(
         profile,
-        morphiecore::protocol::openai::Dialect::MorphieCore,
+        morphiecore::protocol::openai::Dialect::Standard,
         Some(morphiecore::execution::replay::CLIENT_ORIGIN.clone()),
     );
     let mut decoder = client.event_decoder();
@@ -451,6 +451,7 @@ async fn json_and_stream_clients_replay_native_thinking_and_tools() {
             if stream && !responses {
                 input["stream_options"] = json!({"include_usage":true,"include_obfuscation":false});
             }
+            let count_before = seen.lock().unwrap().len();
             let result = client
                 .post(format!("{base}{path}"))
                 .bearer_auth("synthetic-client-identity-00000001")
@@ -459,52 +460,70 @@ async fn json_and_stream_clients_replay_native_thinking_and_tools() {
                 .send()
                 .await
                 .unwrap();
-            let status = result.status();
-            let body: Value = client_body(result, profile, stream).await;
-            if status != 200 {
-                diagnostic_owner.flush_diagnostics().await;
-                panic!(
-                    "{profile:?}: {body}; {}",
-                    std::fs::read_to_string(diagnostics).unwrap()
-                );
-            }
-            assert_eq!(body["model"], binding.model);
-            assert!(
-                body[if responses { "created_at" } else { "created" }]
-                    .as_u64()
-                    .is_some()
-            );
-            assert_eq!(
-                body["usage"][if responses {
-                    "input_tokens"
+            if !responses {
+                let mut result = result;
+                let published = stream && result.status() == 200;
+                if published {
+                    let mut bytes = vec![];
+                    let aborted = loop {
+                        match result.chunk().await {
+                            Ok(Some(chunk)) => bytes.extend_from_slice(&chunk),
+                            Ok(None) => break false,
+                            Err(_) => break true,
+                        }
+                    };
+                    let wire = String::from_utf8(bytes).unwrap();
+                    assert!(aborted || wire.contains("\"error\""));
+                    assert!(!wire.contains("[DONE]"));
+                    assert!(!wire.contains("\"finish_reason\":\""));
+                    assert!(!wire.contains("reasoning_details"));
+                    assert!(!wire.contains("synthetic-native-signature"));
                 } else {
-                    "prompt_tokens"
-                }],
-                16
-            );
-            assert_eq!(body["usage"]["total_tokens"], 23);
-            assert!(!body.to_string().contains("synthetic-native-signature"));
-            assert!(!body.to_string().contains("synthetic-redacted"));
-            let token = if responses {
-                &body["output"][0]["encrypted_content"]
+                    assert_eq!(result.status(), 502);
+                    let error: Value = result.json().await.unwrap();
+                    assert_eq!(error["error"]["code"], "upstream_error");
+                }
+                let attempts = seen.lock().unwrap().len() - count_before;
+                if published {
+                    assert_eq!(attempts, 1, "published failures must not replay");
+                } else {
+                    assert!((1..=2).contains(&attempts));
+                }
+                tokio::time::pause();
+                tokio::time::advance(Duration::from_secs(60)).await;
+                tokio::time::resume();
             } else {
-                &body["choices"][0]["message"]["reasoning_details"][1]["data"]
-            };
-            let (issuer, format, payload) = replay_envelope::open(token.as_str().unwrap()).unwrap();
-            assert_eq!(issuer, replay_origin);
-            assert_eq!(
+                assert_eq!(seen.lock().unwrap().len(), count_before + 1);
+                let status = result.status();
+                let body: Value = client_body(result, profile, stream).await;
+                if status != 200 {
+                    diagnostic_owner.flush_diagnostics().await;
+                    panic!(
+                        "{profile:?}: {body}; {}",
+                        std::fs::read_to_string(diagnostics).unwrap()
+                    );
+                }
+                assert_eq!(body["model"], binding.model);
+                assert!(body["created_at"].as_u64().is_some());
+                assert_eq!(body["usage"]["input_tokens"], 16);
+                assert_eq!(body["usage"]["total_tokens"], 23);
+                assert!(!body.to_string().contains("synthetic-native-signature"));
+                assert!(!body.to_string().contains("synthetic-redacted"));
+                let token = &body["output"][0]["encrypted_content"];
+                let (issuer, format, payload) =
+                    replay_envelope::open(token.as_str().unwrap()).unwrap();
+                assert_eq!(issuer, replay_origin);
+                assert_eq!(
                 format,
                 morphiecore::semantic::task::generation::ReplayFormat::AnthropicMessagesThinking
             );
-            assert_eq!(payload.as_str(), "synthetic-native-signature");
-            let redacted = if responses {
-                &body["output"][1]["encrypted_content"]
-            } else {
-                &body["choices"][0]["message"]["reasoning_details"][2]["data"]
-            };
-            let (_, format, payload) = replay_envelope::open(redacted.as_str().unwrap()).unwrap();
-            assert_eq!(format,morphiecore::semantic::task::generation::ReplayFormat::AnthropicMessagesRedactedThinking);
-            assert_eq!(payload.as_str(), "synthetic-redacted");
+                assert_eq!(payload.as_str(), "synthetic-native-signature");
+                let redacted = &body["output"][1]["encrypted_content"];
+                let (_, format, payload) =
+                    replay_envelope::open(redacted.as_str().unwrap()).unwrap();
+                assert_eq!(format,morphiecore::semantic::task::generation::ReplayFormat::AnthropicMessagesRedactedThinking);
+                assert_eq!(payload.as_str(), "synthetic-redacted");
+            }
             if stream {
                 continue;
             }
@@ -578,7 +597,6 @@ async fn json_and_stream_clients_replay_native_thinking_and_tools() {
             }
         }
     }
-    assert_eq!(seen.lock().unwrap().len(), 20);
     // A Messages client keeps four explicit owners across a tool round with thinking replay.
     for stream in [false, true] {
         let mut input = json!({"model":binding.model,"max_tokens":64,"stream":stream,

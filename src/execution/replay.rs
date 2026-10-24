@@ -237,7 +237,7 @@ pub fn open_from_client(request: &mut Request) -> Result<(), CodecError> {
             }
             Item::Reasoning(reasoning) => {
                 if let Some(value) = &reasoning.replay {
-                    if crate::protocol::attachments::is_marker(value.as_str()) {
+                    if crate::protocol::replay_projection::is_marker(value.as_str()) {
                         return Err(CodecError::Invalid("unrestored attachment carrier"));
                     }
                     reasoning.replay = match replay_envelope::open(value.as_str()) {

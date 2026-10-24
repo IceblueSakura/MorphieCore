@@ -305,7 +305,7 @@ pub(in crate::protocol::openai) fn decode_items(
             && o.get("type").and_then(Value::as_str) == Some("reasoning")
             && o.get("encrypted_content")
                 .and_then(Value::as_str)
-                .is_some_and(crate::protocol::attachments::is_marker)
+                .is_some_and(crate::protocol::replay_projection::is_marker)
         {
             return Err(CodecError::Unsupported("legacy Responses manifest".into()));
         }

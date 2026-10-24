@@ -13,7 +13,6 @@ pub(in crate::protocol::openai) struct Items<'a> {
     pub resources: ResourceTable,
     pub message_owners: Vec<(ItemId, ItemId)>,
     pub fidelity: FidelityRecords,
-    pub attachments: Vec<crate::protocol::attachments::Marker>,
     scope: LocalScope,
     next_item: u64,
     next_part: u64,

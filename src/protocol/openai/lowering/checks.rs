@@ -165,7 +165,7 @@ pub(super) fn represent_reasoning(
     if has_reasoning_items
         && profile != Profile::Responses
         && !(profile == Profile::Chat
-            && (chat_reasoning_shape(items)
+            && (adaptation.rules.readable_reasoning && chat_reasoning_shape(items)
                 || structured_chat && structured_chat_reasoning_shape(items)))
     {
         return Err(RepresentationError::Reasoning);

@@ -383,8 +383,7 @@ impl<'a> Entry<'a> {
             vec![]
         };
         let native_phase = protocol == ClientProtocol::Responses;
-        let phase_carrier = entry.client.check_phase_carrier().is_ok();
-        if protocol == ClientProtocol::Messages {
+        if !native_phase {
             let mut case = Case::new(
                 "generation.message.phase",
                 "assistant_commentary_or_final_answer",
@@ -400,29 +399,13 @@ impl<'a> Entry<'a> {
         } else {
             delivery.push(Case::new(
                 "generation.message.phase",
-                if native_phase {
-                    "assistant_commentary_or_final_answer"
-                } else {
-                    "assistant_text_phase_via_bounded_manifest"
-                },
-                if phase_carrier {
-                    Treatment::Faithful
-                } else {
-                    Treatment::Rejected
-                },
+                "assistant_commentary_or_final_answer",
+                Treatment::Faithful,
             ));
             history.push(Case::new(
                 "generation.message.phase",
-                if native_phase {
-                    "returned_native_assistant_phase"
-                } else {
-                    "unchanged_returned_phase_manifest"
-                },
-                if phase_carrier {
-                    Treatment::Faithful
-                } else {
-                    Treatment::Rejected
-                },
+                "returned_native_assistant_phase",
+                Treatment::Faithful,
             ));
         }
         Self {

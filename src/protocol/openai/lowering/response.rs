@@ -162,7 +162,6 @@ pub fn lower_response<'a>(
         profile,
         adaptation: c.adaptation,
         projection,
-        attachment: None,
     })
 }
 

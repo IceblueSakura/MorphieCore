@@ -166,20 +166,6 @@ impl EventEncoder {
         .map_err(|_| CodecError::Unsupported("Chat terminal".into()))?;
         let finish = crate::protocol::openai::terminal::chat_finish(&response)?;
         let mut chunks = vec![];
-        // The owned replay manifest precedes the finishing chunk of its message.
-        if let Some(carrier) = self.attachment.take() {
-            let mut detail = crate::protocol::attachments::chat_detail(carrier.as_str());
-            // SDK list-delta accumulation needs a new slot after native reasoning.
-            let index: usize = self
-                .state()?
-                .items()
-                .iter()
-                .filter(|item| matches!(item.kind, ItemKind::Reasoning))
-                .map(|item| item.parts.len() + usize::from(item.replay.is_some()))
-                .sum();
-            detail["index"] = json!(index);
-            chunks.push(self.chunk(json!({ "reasoning_details": [detail] }), Value::Null));
-        }
         chunks.push(self.chunk(json!({}), json!(finish)));
         if let Some(usage) = self
             .metadata

@@ -2,8 +2,8 @@
 use super::RESULT;
 use serde_json::{Value, json};
 
-pub fn snapshot(turn: usize) -> Value {
-    json!({"id":format!("chat-{turn}"),"object":"chat.completion","created":1,
+pub fn snapshot(turn: usize, reasoning: bool) -> Value {
+    let mut body = json!({"id":format!("chat-{turn}"),"object":"chat.completion","created":1,
             "model":"qwen3.8-flash","choices":[{"index":0,
                 "message":if turn == 1 { json!({"role":"assistant","content":null,
                     "reasoning_content":"Plan 🧪","tool_calls":[{"id":"call-lookup","type":"function",
@@ -11,10 +11,17 @@ pub fn snapshot(turn: usize) -> Value {
                 else {json!({"role":"assistant","reasoning_content":"Check","content":"cedar-71"})},
                 "finish_reason":if turn == 1 {"tool_calls"}else{"stop"}}],
             "usage":{"prompt_tokens":11,"completion_tokens":7,"total_tokens":18,
-                "completion_tokens_details":{"reasoning_tokens":2}}})
+                "completion_tokens_details":{"reasoning_tokens":2}}});
+    if !reasoning {
+        body["choices"][0]["message"]
+            .as_object_mut()
+            .unwrap()
+            .remove("reasoning_content");
+    }
+    body
 }
-pub fn events(turn: usize) -> Vec<Value> {
-    let full = snapshot(turn);
+pub fn events(turn: usize, reasoning: bool) -> Vec<Value> {
+    let full = snapshot(turn, reasoning);
     let chunk = |delta: Value, finish: Value| {
         json!({"id":full["id"],"object":"chat.completion.chunk",
         "created":1,"model":full["model"],"choices":[{"index":0,"delta":delta,"finish_reason":finish}]})
@@ -47,6 +54,9 @@ pub fn events(turn: usize) -> Vec<Value> {
         json!({"id":full["id"],"object":"chat.completion.chunk","created":1,
         "model":full["model"],"choices":[],"usage":full["usage"]}),
     );
+    if !reasoning {
+        events.retain(|e| e["choices"][0]["delta"].get("reasoning_content").is_none());
+    }
     events
 }
 
@@ -87,7 +97,7 @@ pub fn assert_request(body: &Value) -> usize {
     );
     if turn >= 2 {
         let assistant = &history[1];
-        assert_eq!(assistant["reasoning_content"], "Plan 🧪");
+        assert!(assistant.get("reasoning_content").is_none());
         assert_eq!(assistant["tool_calls"].as_array().unwrap().len(), 1);
         assert_eq!(
             assistant["tool_calls"][0],
@@ -99,7 +109,7 @@ pub fn assert_request(body: &Value) -> usize {
     }
     if turn == 3 {
         assert_eq!(history[3]["content"], "cedar-71");
-        assert_eq!(history[3]["reasoning_content"], "Check");
+        assert!(history[3].get("reasoning_content").is_none());
     }
     turn
 }

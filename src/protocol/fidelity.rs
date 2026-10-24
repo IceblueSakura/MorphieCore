@@ -52,11 +52,6 @@ pub enum Normalization {
         field: &'static str,
     },
 }
-/// A returned replay manifest no longer matched its visible history.
-pub(crate) const REPLAY_MANIFEST_OMISSION: Normalization = Normalization::Omitted {
-    rule: "generation.omit-unmatched-replay-manifest.v1",
-    field: "generation.replay.attachments",
-};
 /// Messages reports of upstream input changes; their paths index the upstream request.
 pub(crate) const INPUT_TRANSFORMATIONS_OMISSION: Normalization = Normalization::Omitted {
     rule: "messages.omit-input-transformations.v1",

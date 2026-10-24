@@ -1,4 +1,4 @@
-"""Pinned Chat SDK: readable reasoning, tool-error feedback and final history via the Router."""
+"""Pinned Chat SDK: tool-error feedback and final history via the Router."""
 import json
 import sys
 import openai
@@ -17,9 +17,8 @@ def chat_completion(client, params, stream):
     if not stream:
         value = client.chat.completions.create(**params).model_dump(exclude_unset=True)
         return value
-    message = {"role": "assistant", "content": "", "reasoning_content": ""}
+    message = {"role": "assistant", "content": ""}
     calls = {}
-    details = {}
     finish = None
     usage = None
     with client.chat.completions.create(**params, stream=True,
@@ -29,19 +28,9 @@ def chat_completion(client, params, stream):
                 usage = event.usage.model_dump(exclude_unset=True)
             for choice in event.choices:
                 delta = choice.delta.model_dump(exclude_unset=True)
-                # These are actual SDK-returned dialect fields, not invented history.
-                for key in ("content", "reasoning_content"):
+                for key in ("content",):
                     if delta.get(key):
                         message[key] += delta[key]
-                for part in delta.get("reasoning_details") or []:
-                    owner = ("index", part["index"]) if "index" in part else ("id", part["id"])
-                    detail = details.setdefault(owner, {})
-                    for key, value in part.items():
-                        if key in ("text", "summary"):
-                            detail[key] = detail.get(key, "") + value
-                        else:
-                            check(key not in detail or detail[key] == value)
-                            detail[key] = value
                 for part in delta.get("tool_calls") or []:
                     call = calls.setdefault(part["index"], {
                         "type": "function", "function": {"name": "", "arguments": ""}})
@@ -55,8 +44,6 @@ def chat_completion(client, params, stream):
     check(finish is not None)
     if calls:
         message["tool_calls"] = [calls[k] for k in sorted(calls)]
-    if details:
-        message["reasoning_details"] = list(details.values())
     return {"choices": [{"message": message, "finish_reason": finish}], "usage": usage}
 
 
@@ -70,7 +57,7 @@ def run(base, recovery_stream=None):
     deliveries = (False, True) if recovery_stream is None else (recovery_stream == "sse",)
     with httpx.Client(trust_env=False, event_hooks={"request": [transmissions.append]}) as http, \
             openai.OpenAI(base_url=base, api_key=KEY, max_retries=0, timeout=5.0,
-                          http_client=http) as client:
+                          http_client=http, _strict_response_validation=True) as client:
         for stream in deliveries:
             params = dict(model="qwen3.8-flash", tools=[{"type": "function", "function": function}],
                           messages=[{"role": "user", "content": "lookup"}],
@@ -83,7 +70,7 @@ def run(base, recovery_stream=None):
                 choice = result["choices"][0]
                 check(choice["finish_reason"] == ("tool_calls" if turn == 1 else "stop"))
                 message = choice["message"]
-                check(message["reasoning_content"] == ("Plan 🧪" if turn == 1 else "Check"))
+                check("reasoning_content" not in message and "reasoning_details" not in message)
                 params["messages"].append(message)
                 if turn == 1:
                     call, = message["tool_calls"]

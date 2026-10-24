@@ -71,9 +71,10 @@ async fn models_list_and_retrieve_use_the_same_standard_public_object() {
         "domain":"ambiguous_stop_without_tool_continuation","treatment":"faithful"
     });
     let phase = json!({"feature":"generation.message.phase",
-        "domain":"assistant_text_phase_via_bounded_manifest","treatment":"faithful"});
+        "domain":"assistant_commentary_or_final_answer","treatment":"approved_adaptation",
+        "rules":["generation.omit-delivery-message-phase.v1"]});
     let phase_history = json!({"feature":"generation.message.phase",
-        "domain":"unchanged_returned_phase_manifest","treatment":"faithful"});
+        "domain":"returned_assistant_phase","treatment":"rejected"});
     let usage = json!({"feature":"response.delivery.usage",
         "domain":"reported_then_derived_then_estimated","treatment":"approved_adaptation",
         "rules":["generation.complete-delivery-usage.v1"]});

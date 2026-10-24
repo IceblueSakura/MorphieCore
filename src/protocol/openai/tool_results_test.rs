@@ -141,7 +141,6 @@ fn static_codecs_reject_new_domains_even_for_forged_target_handles() {
                 metadata: std::borrow::Cow::Borrowed(&metadata),
                 profile,
                 adaptation: Default::default(),
-                attachment: None,
             };
             let result = match profile {
                 Profile::Chat => crate::protocol::openai::chat::encode_response(&forged),

@@ -57,7 +57,7 @@ async fn history_case(profile: Profile, recovery_stream: Option<bool>) {
 
 #[tokio::test]
 #[ignore = "requires pinned OpenAI SDK; synthetic DashScope Chat JSON/SSE tool history"]
-async fn chat_tool_result_and_reasoning_history() {
+async fn chat_tool_result_and_final_history() {
     history_case(Profile::Chat, None).await;
 }
 

@@ -393,7 +393,7 @@ pub fn decode_client_request(bytes: &[u8]) -> Result<Request, CodecError> {
         };
         if parsed.iter().any(|block| match &block.content {
             Block::Thinking { signature, .. } | Block::RedactedThinking(signature) => {
-                crate::protocol::attachments::is_marker(signature)
+                crate::protocol::replay_projection::is_marker(signature)
             }
             _ => false,
         }) {

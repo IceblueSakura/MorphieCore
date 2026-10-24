@@ -75,8 +75,6 @@ pub struct ResponseRepresentation<'a> {
     pub(crate) metadata: std::borrow::Cow<'a, ResponseMetadata>,
     pub(crate) profile: Profile,
     pub(crate) projection: Vec<crate::protocol::openai::lowering::projection::ProjectionStage>,
-    /// Owned replay manifest emitted by this client encoder, never a later body patch.
-    pub(crate) attachment: Option<crate::protocol::attachments::Carrier>,
 }
 impl ResponseRepresentation<'_> {
     pub fn semantic(&self) -> &GenerationResponse {

@@ -140,9 +140,6 @@ pub fn encode(target: &ResponseRepresentation<'_>) -> Result<Value, CodecError> 
         true,
         target.semantic.resources(),
     )?;
-    if target.attachment.is_some() {
-        return Err(CodecError::Unsupported("Responses manifest carrier".into()));
-    }
     let m = &target.metadata;
     let created = m
         .created

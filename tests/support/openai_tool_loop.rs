@@ -56,15 +56,15 @@ impl Drop for Fixture {
         }
     }
 }
-fn snapshot(profile: Profile, turn: usize) -> Value {
+fn snapshot(profile: Profile, turn: usize, reasoning: bool) -> Value {
     match profile {
-        Profile::Chat => chat::snapshot(turn),
+        Profile::Chat => chat::snapshot(turn, reasoning),
         Profile::Responses => responses::snapshot(turn),
     }
 }
-fn events(profile: Profile, turn: usize) -> Vec<Value> {
+fn events(profile: Profile, turn: usize, reasoning: bool) -> Vec<Value> {
     match profile {
-        Profile::Chat => chat::events(turn),
+        Profile::Chat => chat::events(turn, reasoning),
         Profile::Responses => responses::events(turn),
     }
 }
@@ -111,10 +111,11 @@ async fn answer(
     {
         return failure;
     }
+    let reasoning = history[0]["content"] == "reasoning";
     let stream = body["stream"] == true;
     let bytes = if stream {
         let mut bytes = Vec::new();
-        for event in events(profile, turn) {
+        for event in events(profile, turn, reasoning) {
             let mode = history[0]["content"]
                 .as_str()
                 .or_else(|| history[0]["content"][0]["text"].as_str())
@@ -132,7 +133,7 @@ async fn answer(
         }
         bytes
     } else {
-        serde_json::to_vec(&snapshot(profile, turn)).unwrap()
+        serde_json::to_vec(&snapshot(profile, turn, reasoning)).unwrap()
     };
     let mode = history[0]["content"]
         .as_str()

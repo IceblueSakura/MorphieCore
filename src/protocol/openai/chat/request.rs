@@ -94,22 +94,7 @@ pub(crate) fn decode_generation_with(
         None
     };
     for message in messages {
-        let start = b.items.len();
-        let mut value = message.clone();
-        let marker = if matches!(direction, DecodeDirection::Client(_)) {
-            crate::protocol::attachments::take_chat(&mut value)
-        } else {
-            None
-        };
-        decode_whole(&mut b, object(&value)?, adaptation, MessageSide::History)?;
-        if let Some(marker) = marker {
-            b.attachments
-                .push(crate::protocol::attachments::Marker::bounded(
-                    marker,
-                    start,
-                    b.items.len(),
-                ));
-        }
+        decode_whole(&mut b, object(message)?, adaptation, MessageSide::History)?;
     }
     let mut controls = controls(o, "max_completion_tokens")?;
     controls.stop_sequences = crate::protocol::generation_controls::stops(o.get("stop"), true, 4)?;
@@ -191,13 +176,7 @@ pub(crate) fn decode_generation_with(
         }
     }
     crate::protocol::openai::chat::audio::settings(o, &mut settings, direction)?;
-    let mut groups = owners::envelopes(&b.message_owners)?;
-    crate::protocol::attachments::restore(
-        &mut b.items,
-        &mut groups,
-        &mut b.fidelity,
-        std::mem::take(&mut b.attachments),
-    )?;
+    let groups = owners::envelopes(&b.message_owners)?;
     let r = GenerationRequest::from_resources(b.items, settings, b.resources)?
         .with_message_envelopes(groups)?;
     Ok(DecodedRequest {

@@ -174,21 +174,6 @@ pub fn encode(target: &ResponseRepresentation<'_>) -> Result<Value, CodecError> 
     let message = messages
         .first_mut()
         .ok_or(CodecError::Invalid("empty Chat candidate"))?;
-    if let Some(carrier) = &target.attachment {
-        crate::protocol::attachments::check_chat_support(
-            Profile::Chat,
-            target.adaptation.rules.structured_chat_reasoning,
-        )?;
-        let details = message
-            .as_object_mut()
-            .ok_or(CodecError::Invalid("Chat message"))?
-            .entry("reasoning_details")
-            .or_insert_with(|| json!([]));
-        details
-            .as_array_mut()
-            .ok_or(CodecError::Invalid("Chat reasoning details"))?
-            .push(crate::protocol::attachments::chat_detail(carrier.as_str()));
-    }
     let m = &target.metadata;
     let created = m
         .created
