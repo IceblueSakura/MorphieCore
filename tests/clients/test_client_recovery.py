@@ -41,7 +41,7 @@ class ClientRecoveryOracles(unittest.TestCase):
         version, gateway = MagicMock(), MagicMock()
         for child in (version, gateway):
             child.__enter__.return_value = child
-        version.wait.return_value = drivers.CLIENT_VERSIONS["pi"].encode()
+        version.wait.return_value = b"1.4.0"
         gateway.first_line = queue.Queue()
         gateway.first_line.put(b"MorphieCore listening on http://127.0.0.1:1\n")
         with tempfile.TemporaryDirectory() as directory:
@@ -59,11 +59,11 @@ class ClientRecoveryOracles(unittest.TestCase):
                     recovery.main()
             self.assertEqual(output.getvalue(), "")
 
-    def test_installed_clients_require_the_selected_stable_release(self):
-        pi = drivers.CLIENT_VERSIONS["pi"]
-        opencode = drivers.CLIENT_VERSIONS["opencode"]
+    def test_installed_versions_are_recorded_independently_of_source_pins(self):
+        pi = "1.4.0"
+        opencode = "2.0.32"
         for case, versions in [
-            ("pi-chat", [pi, pi + "+local"]),
+            ("pi-chat", [pi, pi + "+local", "1.5.0"]),
             ("pi-messages", [pi]),
             ("opencode-chat", [opencode, "opencode v" + opencode,
                                "opencode v" + opencode + "+local"]),
@@ -72,13 +72,13 @@ class ClientRecoveryOracles(unittest.TestCase):
                 with self.subTest(case=case, version=version):
                     drivers.check_client_version(case, version)
         for case, versions in [
-            ("pi-chat", ["0.99.0", pi + "-dev.1", "1", "1.x", pi + "\nextra"]),
-            ("opencode-chat", ["opencode v1.0.0", opencode + "-dev.1",
+            ("pi-chat", [pi + "-dev.1", "1", "1.x", pi + "\nextra"]),
+            ("opencode-chat", [opencode + "-dev.1",
                                "opencode v2", "unknown", ""]),
         ]:
             for version in versions:
                 with self.subTest(case=case, version=version), self.assertRaisesRegex(
-                    RuntimeError, "^unpinned_client_release$"
+                    RuntimeError, "^invalid_client_version$"
                 ):
                     drivers.check_client_version(case, version)
 

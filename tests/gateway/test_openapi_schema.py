@@ -63,9 +63,14 @@ class OpenApiSchemaTests(unittest.TestCase):
                 self.assertFalse(validator(name).is_valid({**body, "enable_thinking": value}))
             self.assertFalse(validator(name).is_valid({**body, "extra_body": {}}))
             self.assertFalse(validator(name).is_valid({**body, "parameters": {"max_tokens": 64}}))
-        for field in ("enable_thinking", "thinking_budget", "preserve_thinking"):
-            self.assertNotIn(field, SCHEMAS["ChatRequest"]["properties"])
-        validator("ChatRequest").validate({**chat, "reasoning_effort": "low", "top_k": 40})
+        for field in ("enable_thinking", "thinking_budget", "top_k"):
+            for value in (None, False, True, 32):
+                self.assertFalse(validator("ChatRequest").is_valid({**chat, field: value}))
+        for value in (False, True):
+            validator("ChatRequest").validate({**chat, "preserve_thinking": value})
+        for value in (None, 1, "true"):
+            self.assertFalse(validator("ChatRequest").is_valid({**chat, "preserve_thinking": value}))
+        validator("ChatRequest").validate({**chat, "reasoning_effort": "low"})
         for patch in ({"reasoning_effort": "invalid"}, {"top_k": 0},
                       {"top_k": 101}, {"top_k": 1.5}, {"extra_body": {}},
                       {"parameters": {"max_tokens": 64}}):

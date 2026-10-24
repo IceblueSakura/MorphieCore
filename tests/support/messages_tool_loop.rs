@@ -250,6 +250,7 @@ async fn start_with_recovery(recover: bool) -> Fixture {
         topology,
         TaskEntries {
             generation: vec![Entry {
+                chat_profile: Default::default(),
                 model: binding.model.into(),
                 protocol: Profile::Chat,
                 endpoint: binding.endpoint().id,

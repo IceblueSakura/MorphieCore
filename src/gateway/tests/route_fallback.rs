@@ -261,6 +261,7 @@ async fn ordered_route_only_falls_back_before_visible_delivery() {
                 generation: ["b", "a"]
                     .into_iter()
                     .map(|id| Entry {
+                        chat_profile: Default::default(),
                         model: "public".into(),
                         protocol: Profile::Responses,
                         endpoint: EndpointId::new(id).unwrap(),
@@ -429,6 +430,7 @@ async fn recovery_ownership_spans_final_handoff_and_distinguishes_deadlines() {
         super::topology::topology_at(&origin),
         TaskEntries {
             generation: vec![Entry {
+                chat_profile: Default::default(),
                 model: "fixture-model".into(),
                 protocol: Profile::Chat,
                 endpoint: EndpointId::new("fixture-chat").unwrap(),

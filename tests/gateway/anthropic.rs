@@ -342,6 +342,7 @@ async fn native_fixture() -> NativeFixture {
                 .into_iter()
                 .flat_map(|protocol| {
                     endpoint_ids.iter().map(move |endpoint| Entry {
+                        chat_profile: Default::default(),
                         model: binding.model.into(),
                         protocol,
                         endpoint: endpoint.clone(),

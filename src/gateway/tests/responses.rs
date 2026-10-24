@@ -26,6 +26,7 @@ fn gateway(origin: &str) -> Gateway {
         super::topology::topology_at(origin),
         crate::gateway::TaskEntries {
             generation: vec![Entry {
+                chat_profile: Default::default(),
                 model: "fixture-model".into(),
                 protocol: Profile::Responses,
                 endpoint: EndpointId::new("fixture-responses").unwrap(),

@@ -15,6 +15,78 @@ fn messages() -> Value {
 }
 
 #[test]
+fn public_chat_profiles_keep_controls_and_returned_reasoning_explicit() {
+    let standard = adapter(Profile::Chat);
+    let readable = Adapter::new(Profile::Chat, Dialect::ChatReasoning, None);
+    let base = json!({"model":"public","messages":[{"role":"user","content":"go"}],
+        "reasoning_effort":"low"});
+    for codec in [&standard, &readable] {
+        for field in ["enable_thinking", "thinking_budget", "top_k"] {
+            for value in [Value::Null, json!(false), json!(32)] {
+                let mut body = base.clone();
+                body[field] = value;
+                assert!(
+                    matches!(codec.decode_client_request(body.to_string().as_bytes()),
+                    Err(morphiecore::protocol::CodecError::Unsupported(key)) if key == field)
+                );
+            }
+        }
+        let mut body = base.clone();
+        body["unknown_extension"] = json!({"reasoning_content":"not history"});
+        // Tool schema properties are not protocol controls.
+        body["tools"] = json!([{"type":"function","function":{"name":"inspect",
+            "parameters":{"type":"object","properties":{"enable_thinking":{"type":"boolean"}}},
+            "strict":false}}]);
+        codec
+            .decode_client_request(body.to_string().as_bytes())
+            .unwrap();
+    }
+    let mut body = base.clone();
+    body["preserve_thinking"] = json!(false);
+    assert!(
+        standard
+            .decode_client_request(body.to_string().as_bytes())
+            .is_err()
+    );
+    let decoded = readable
+        .decode_client_request(body.to_string().as_bytes())
+        .unwrap();
+    assert_eq!(
+        decoded.task.semantic.reasoning().read_history,
+        morphiecore::semantic::value::Presence::Value(false)
+    );
+    body["messages"] = json!([
+        {"role":"assistant","content":"answer","reasoning_content":"Plan 🧪"},
+        {"role":"user","content":"next"}]);
+    let decoded = readable
+        .decode_client_request(body.to_string().as_bytes())
+        .unwrap();
+    let [(_, Item::Reasoning(reasoning)), ..] = decoded.task.semantic.items() else {
+        panic!("missing reasoning owner");
+    };
+    assert_eq!(reasoning.parts.len(), 1);
+    assert!(
+        matches!(&reasoning.parts[0].1, ReasoningContent::Text(text) if text.as_str() == "Plan 🧪")
+    );
+    assert!(reasoning.replay.is_none());
+    for field in ["reasoning", "reasoning_details"] {
+        body["messages"][0][field] = Value::Null;
+        assert!(
+            readable
+                .decode_client_request(body.to_string().as_bytes())
+                .is_err()
+        );
+        body["messages"][0].as_object_mut().unwrap().remove(field);
+    }
+    body.as_object_mut().unwrap().remove("preserve_thinking");
+    assert!(
+        standard
+            .decode_client_request(body.to_string().as_bytes())
+            .is_err()
+    );
+}
+
+#[test]
 fn prediction_survives_same_protocol_projection() {
     let adapter = adapter(Profile::Chat);
     let wire = json!({"model":"public", "messages":[{"role":"user","content":"Edit"}],

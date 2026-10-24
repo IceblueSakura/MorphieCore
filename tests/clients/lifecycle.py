@@ -337,6 +337,7 @@ def main():
             "models_file": "models.json", "concurrency": 1,
             "exchange_timeout_ms": 30000, "diagnostics": "diagnostics.jsonl"})
         private_json(root / "models.json", {"models": {model: {"max_attempts": 2,
+            "chat_profile": "standard" if state.native else "readable_reasoning",
             "total_timeout_ms": 25000, "candidates": [{"binding": binding,
                 "base_url": upstream + "/v1", "attempt_timeout_ms": 20000}]}}})
         gateway = stack.enter_context(Child([gateway_binary, "--config", str(root / "gateway.json"),

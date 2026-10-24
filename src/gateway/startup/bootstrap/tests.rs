@@ -6,6 +6,61 @@ use crate::adapter::ClientProtocol;
 use crate::gateway::family;
 
 #[test]
+fn readable_chat_profile_is_explicit_and_does_not_widen_other_protocols() {
+    for selected in [None, Some("standard"), Some("readable_reasoning")] {
+        let mut models = selected_models(&["qwen3.8-flash"], &["aliyun-dashscope-cn"]);
+        if let Some(selected) = selected {
+            models["models"]["qwen3.8-flash"]["chat_profile"] = serde_json::json!(selected);
+        }
+        let boot = Fixture::new(
+            service(),
+            models,
+            &[(
+                "aliyun-dashscope-cn",
+                "aliyun-dashscope-cn-api-key",
+                "synthetic",
+            )],
+        )
+        .unwrap();
+        let chat = &boot.gateway.state.entries[&(ClientProtocol::Chat, "qwen3.8-flash".into())];
+        let (adapter, _) = chat.client.as_openai().unwrap();
+        assert_eq!(
+            adapter.adaptation.rules.readable_reasoning,
+            selected == Some("readable_reasoning")
+        );
+        assert!(!adapter.adaptation.rules.thinking_controls);
+        assert!(!adapter.adaptation.rules.structured_chat_reasoning);
+        assert!(!adapter.adaptation.rules.chat_video_url);
+        let responses =
+            &boot.gateway.state.entries[&(ClientProtocol::Responses, "qwen3.8-flash".into())];
+        assert_eq!(
+            responses
+                .client
+                .as_openai()
+                .unwrap()
+                .0
+                .adaptation
+                .profile_id,
+            "standard-v1"
+        );
+    }
+    let mut models = selected_models(&["qwen3.8-flash"], &["aliyun-dashscope-cn"]);
+    models["models"]["qwen3.8-flash"]["chat_profile"] = serde_json::json!("provider");
+    assert!(
+        Fixture::new(
+            service(),
+            models,
+            &[(
+                "aliyun-dashscope-cn",
+                "aliyun-dashscope-cn-api-key",
+                "synthetic"
+            )]
+        )
+        .is_err()
+    );
+}
+
+#[test]
 fn shared_provider_credentials_keep_model_and_protocol_targets_distinct() {
     let boot = Fixture::new(
         service(),

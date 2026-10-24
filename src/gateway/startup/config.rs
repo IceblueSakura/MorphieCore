@@ -13,10 +13,27 @@ use sha2::{Digest, Sha256};
 use std::{collections::BTreeMap, sync::Arc, time::Duration};
 use tokio::sync::Semaphore;
 use tokio_util::sync::CancellationToken;
+/// Trusted public-model contract; independent of upstream dialects.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ChatProfile {
+    #[default]
+    Standard,
+    ReadableReasoning,
+}
+impl ChatProfile {
+    fn dialect(self) -> Dialect {
+        match self {
+            Self::Standard => Dialect::Standard,
+            Self::ReadableReasoning => Dialect::ChatReasoning,
+        }
+    }
+}
 #[derive(Clone, Debug)]
 pub struct Entry {
     pub model: String,
     pub protocol: Profile,
+    pub chat_profile: ChatProfile,
     pub endpoint: EndpointId,
 }
 #[derive(Clone, Debug)]
@@ -227,6 +244,9 @@ impl Gateway {
         let mut bound: BTreeMap<(crate::adapter::ClientProtocol, String), BoundEntry> =
             BTreeMap::new();
         for entry in entries {
+            if entry.protocol != Profile::Chat && entry.chat_profile != ChatProfile::Standard {
+                return Err(StartupError::Binding);
+            }
             let public = topology
                 .model(&entry.model)
                 .ok_or(StartupError::Binding)?
@@ -309,16 +329,20 @@ impl Gateway {
                         caps.replay_origin = Some(scope.clone());
                     }
                 }
+                let dialect = entry.chat_profile.dialect();
+                if let Some(previous) = bound.get(&(family(entry.protocol), entry.model.clone()))
+                    && matches!(&previous.client, crate::adapter::ClientAdapter::OpenAi { adapter, .. }
+                        if adapter.adaptation.profile_id != Adapter::new(entry.protocol, dialect, None).adaptation.profile_id)
+                {
+                    return Err(StartupError::Binding);
+                }
                 let group = bound
                     .entry((family(entry.protocol), entry.model.clone()))
                     .or_insert_with(|| {
                         // Provider dialects never authorize private public-API carriers.
                         let client_scope = crate::execution::replay::CLIENT_ORIGIN.clone();
-                        let client = Adapter::new(
-                            entry.protocol,
-                            Dialect::Standard,
-                            Some(client_scope.clone()),
-                        );
+                        let client =
+                            Adapter::new(entry.protocol, dialect, Some(client_scope.clone()));
                         // Model input admission must not filter facts reported on the client wire
                         // (e.g. empty logprobs or defaults a model cannot accept as controls).
                         let downstream = TargetCaps {

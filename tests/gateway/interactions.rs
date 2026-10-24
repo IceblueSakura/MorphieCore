@@ -159,6 +159,7 @@ async fn stateless_json_and_sse_replay_signatures_and_cancel_upstream() {
         morphiecore::gateway::TaskEntries {
             generation: [Profile::Chat, Profile::Responses]
                 .map(|protocol| Entry {
+                    chat_profile: Default::default(),
                     model: binding.model.into(),
                     protocol,
                     endpoint: endpoint.id.clone(),

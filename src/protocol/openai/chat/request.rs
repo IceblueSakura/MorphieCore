@@ -169,10 +169,7 @@ pub(crate) fn decode_generation_with(
                     .ok_or(CodecError::Invalid("preserve_thinking"))?,
             );
         } else {
-            direction.fields(
-                &Map::from_iter([("preserve_thinking".into(), value.clone())]),
-                &[],
-            )?;
+            return Err(CodecError::Unsupported("preserve_thinking".into()));
         }
     }
     crate::protocol::openai::chat::audio::settings(o, &mut settings, direction)?;

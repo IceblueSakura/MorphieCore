@@ -259,6 +259,7 @@ Replace the placeholders with a registered public label, one of its catalog endp
 |---|---|---|
 | File | `implicit_cache_affinity` | Best-effort prefix affinity; default `true` |
 | Model | `candidates` | Nonempty ordered array of existing bindings for this public model |
+| Model | `chat_profile` | `standard` (default) or `readable_reasoning`; selects the downstream Chat contract for all candidates, never an upstream dialect. Responses/Messages remain unchanged; invalid on frozen tasks |
 | Model | `max_attempts` | Optional total attempt ceiling, including the first attempt; range 1–64, otherwise the route default |
 | Model | `total_timeout_ms` | Optional exchange deadline after request intake; bounded by the service ceiling |
 | Model | `thinking_tokens` | Optional six-level numeric table shared by this model's candidates |
@@ -448,7 +449,11 @@ Instruction content is plain text only: request-wide instructions, Messages `sys
 
 Later system or developer instructions keep their position. Chat and Responses targets carry them natively; Messages uses mid-conversation system messages subject to native placement rules; Google targets reject them.
 
-Standard Chat has no private reasoning/replay carrier. Standard `reasoning_effort` controls computation, not reasoning-text visibility; usage reasoning counters do not imply readable output. The separately selected [readable Chat profile](architecture.md#chat-reasoning-extensions) is pending implementation and client acceptance. Do not send `reasoning_details` expecting opaque continuation on Standard Chat. Native Responses/Messages clients must return their supported reasoning carriers unchanged; see [Reasoning replay](architecture.md#reasoning-replay).
+Standard Chat has no private reasoning/replay carrier. Standard `reasoning_effort` controls computation, not reasoning-text visibility; usage reasoning counters do not imply readable output. Standard rejects `preserve_thinking` and assistant `reasoning_content`/`reasoning`/`reasoning_details`. Both profiles reject private `enable_thinking`/`thinking_budget`/`top_k`; use supported standard effort controls. Other unknown fields retain the documented ignore policy.
+
+For the selected [readable Chat profile](architecture.md#chat-reasoning-extensions), put `"chat_profile":"readable_reasoning"` on the public model beside `candidates`. Clients must accumulate and return assistant `reasoning_content` unchanged, including tool-call and final-answer turns. Optional boolean `preserve_thinking` controls historical reasoning consumption independently of activation; target support remains separate. The profile has no `reasoning` alias, `reasoning_details`, summary-kind or opaque replay carrier. It is not official OpenAI Chat; JSON/SSE SDK acceptance does not imply every Agent retains its semantic extension. Native Responses/Messages clients must return their supported reasoning carriers unchanged; see [Reasoning replay](architecture.md#reasoning-replay).
+
+Selected Qwen3.8 Chat bindings with thinking active/default require `readable_reasoning`; Standard requests reject before dispatch. Explicit `reasoning_effort:"none"` is admitted only when the target supports its thinking-off projection. This changes computation; the gateway never inserts it to hide reasoning. Unknown output shapes still face runtime representability checks.
 
 Responses assistant-history `output_text` may omit `annotations` under the [selected input shorthand](architecture.md#client-responses-history-shorthand). The gateway inserts an empty list with a named diagnostic receipt; explicit null or malformed annotations still reject, and supplied citations must be preserved. This does not relax upstream response validation or restore citations discarded by a client.
 

@@ -189,6 +189,7 @@ async fn start_with(profile: Profile, api: Api, messages: bool) -> Fixture {
         topology,
         TaskEntries {
             generation: vec![Entry {
+                chat_profile: Default::default(),
                 model: binding.model.into(),
                 protocol: profile,
                 endpoint: endpoint.id,

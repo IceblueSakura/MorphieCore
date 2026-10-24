@@ -124,6 +124,10 @@ fn stateless_clients_reject_hidden_signatures_without_fabricated_reasoning() {
             Adapter::new(Profile::Chat, Dialect::Standard, None),
             TargetCaps::full(),
         ),
+        ClientAdapter::openai(
+            Adapter::new(Profile::Chat, Dialect::ChatReasoning, None),
+            TargetCaps::full(),
+        ),
     ] {
         for interactions in [false, true] {
             for calls in [false, true] {

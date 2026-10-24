@@ -74,6 +74,13 @@ pub fn representable(
     endpoint: &Endpoint,
     request: &crate::adapter::Request,
 ) -> Result<(), RejectionReason> {
+    representable_for_client(endpoint, request, None)
+}
+fn representable_for_client(
+    endpoint: &Endpoint,
+    request: &crate::adapter::Request,
+    client: Option<&crate::adapter::ClientAdapter>,
+) -> Result<(), RejectionReason> {
     if (request.delivery.streaming() || endpoint.representation.forced_stream())
         && !endpoint.execution.streaming
     {
@@ -92,6 +99,16 @@ pub fn representable(
             _ => RejectionReason::Representation,
         }
     })?;
+    if let Some(crate::adapter::ClientAdapter::OpenAi { adapter, .. }) = client
+        && adapter.protocol == crate::protocol::openai::Profile::Chat
+        && !adapter.adaptation.rules.readable_reasoning
+        && endpoint.protocol == crate::topology::ProtocolProfile::OpenAiChat
+        && let crate::lowering::target::TargetCaps::OpenAi(caps) = &endpoint.representation
+        && caps.chat_thinking_output
+        && value.get("enable_thinking") != Some(&serde_json::Value::Bool(false))
+    {
+        return Err(RejectionReason::Representation);
+    }
     crate::semantic::value::json_size(&value, endpoint.execution.request_body_limit)
         .map_err(|_| RejectionReason::BodyLimit)?;
     Ok(())
@@ -102,6 +119,14 @@ pub fn select_candidates<'a>(
     policy: CandidatePolicy,
     endpoints: impl IntoIterator<Item = &'a Endpoint>,
 ) -> Result<CandidateSelection, PlanError> {
+    select_candidates_for_client(request, policy, endpoints, None)
+}
+pub(crate) fn select_candidates_for_client<'a>(
+    request: &crate::adapter::Request,
+    policy: CandidatePolicy,
+    endpoints: impl IntoIterator<Item = &'a Endpoint>,
+    client: Option<&crate::adapter::ClientAdapter>,
+) -> Result<CandidateSelection, PlanError> {
     let mut selected = CandidateSelection {
         candidates: vec![],
         rejections: vec![],
@@ -110,7 +135,7 @@ pub fn select_candidates<'a>(
         if index >= MAX_CANDIDATES {
             return Err(PlanError::CandidateLimit);
         }
-        match representable(endpoint, request) {
+        match representable_for_client(endpoint, request, client) {
             Ok(()) => selected.candidates.push(CandidatePlan {
                 ordinal: index,
                 endpoint_id: endpoint.id.clone(),
@@ -201,6 +226,77 @@ impl ExecutionPlan {
 mod tests {
     use super::*;
     use crate::topology::catalog::default_topology;
+
+    #[test]
+    fn downstream_reasoning_requirements_filter_without_disabling_or_reordering() {
+        use crate::adapter::ClientAdapter;
+        use crate::protocol::openai::{Adapter, Dialect, Profile, TargetCaps};
+        let topology = default_topology().unwrap();
+        let endpoint = topology
+            .endpoint(&EndpointId::new("dashscope-flash-chat").unwrap())
+            .unwrap();
+        let standard = Adapter::new(Profile::Chat, Dialect::Standard, None);
+        let plain = ClientAdapter::openai(standard.clone(), TargetCaps::full());
+        let readable = ClientAdapter::openai(
+            Adapter::new(Profile::Chat, Dialect::ChatReasoning, None),
+            TargetCaps::full(),
+        );
+        let mut unknown = endpoint.clone();
+        unknown.id = EndpointId::new("unspecified-output").unwrap();
+        unknown
+            .representation
+            .openai_mut()
+            .unwrap()
+            .chat_thinking_output = false;
+        let request = standard
+            .decode_client_request(
+                br#"{"model":"qwen3.8-flash",
+            "messages":[{"role":"user","content":"go"}],"reasoning_effort":"low"}"#,
+            )
+            .unwrap();
+        let original = request.clone();
+        let selected = select_candidates_for_client(
+            &request,
+            CandidatePolicy::SkipUnrepresentable,
+            [endpoint, &unknown],
+            Some(&plain),
+        )
+        .unwrap();
+        assert_eq!(selected.candidates[0].ordinal, 1);
+        assert_eq!(selected.rejections[0].endpoint_id, endpoint.id);
+        assert!(
+            select_candidates_for_client(
+                &request,
+                CandidatePolicy::RequireAll,
+                [endpoint, &unknown],
+                Some(&plain)
+            )
+            .is_err()
+        );
+        assert_eq!(
+            select_candidates_for_client(
+                &request,
+                CandidatePolicy::RequireAll,
+                [endpoint, &unknown],
+                Some(&readable)
+            )
+            .unwrap()
+            .candidates
+            .len(),
+            2
+        );
+        assert_eq!(request, original);
+        let off = standard
+            .decode_client_request(
+                br#"{"model":"qwen3.8-flash",
+            "messages":[{"role":"user","content":"go"}],"reasoning_effort":"none"}"#,
+            )
+            .unwrap();
+        let wire = endpoint.encode_request(&off).unwrap();
+        assert_eq!(wire["enable_thinking"], false);
+        select_candidates_for_client(&off, CandidatePolicy::RequireAll, [endpoint], Some(&plain))
+            .unwrap();
+    }
 
     #[test]
     fn unknown_labels_never_plan() {

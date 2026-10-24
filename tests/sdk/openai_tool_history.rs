@@ -62,6 +62,27 @@ async fn chat_tool_result_and_final_history() {
 }
 
 #[tokio::test]
+#[ignore = "requires pinned OpenAI SDK; opt-in readable reasoning accumulator and history"]
+async fn chat_readable_reasoning_tool_history() {
+    let fixture = fixture::start_readable().await;
+    let home = tempfile::tempdir().unwrap();
+    let mut command = super::isolated_sdk_python(home.path());
+    command.args(["tests/sdk/chat_tool_history.py", &fixture.base, "reasoning"]);
+    let output = super::child_process::run(&mut command, b"", Duration::from_secs(30), 64 << 10)
+        .await
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(report["requests"], 6);
+    assert_eq!(report["three_turn_history"], true);
+    assert_eq!(fixture.seen.lock().unwrap().len(), 6);
+}
+
+#[tokio::test]
 #[ignore = "requires pinned OpenAI SDK; synthetic Responses JSON/SSE stored/stateless history"]
 async fn responses_stored_and_stateless_history() {
     history_case(Profile::Responses, None).await;

@@ -38,10 +38,11 @@ impl BoundEntry {
         &self,
         request: &crate::adapter::Request,
     ) -> Result<Vec<Arc<BoundCandidate>>, ApiError> {
-        let selected = crate::execution::plan::select_candidates(
+        let selected = crate::execution::plan::select_candidates_for_client(
             request,
             self.policy.candidates,
             self.candidates.iter().map(|c| &c.endpoint),
+            Some(&self.client),
         )
         .map_err(|_| ApiError::invalid())?;
         Ok(selected

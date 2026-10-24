@@ -28,7 +28,7 @@ Resolved on **2026-10-23**. [tests/upstream/sources.lock.json](../tests/upstream
 | Anthropic Python / TypeScript | 2.1.0 / 1.1.0; API migration target `2026-10-21` |
 | Google Gen AI Python / JavaScript | 2.33.0 / 2.31.0; keep v1/v1beta contracts distinct |
 | Vercel | `ai` 7.0.150; OpenAI 4.0.101, Anthropic 4.0.87, Google 4.0.104; package release tags, not monorepo HEAD |
-| pi / OpenCode | earendil-works/pi 1.4.0 / OpenCode 1.19.4; isolated client acceptance remains pending |
+| pi / OpenCode | earendil-works/pi 1.4.0 / OpenCode 1.19.4 reference sources; actual Agent acceptance uses current host-installed versions independently |
 | EventSource Parser | 4.1.2 |
 | WPT / Google protobufs | Immutable source snapshots; these sources have no selected package release |
 | Codex | 0.164.0 reference source only; no additional client activation |

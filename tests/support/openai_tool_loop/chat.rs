@@ -31,7 +31,11 @@ pub fn events(turn: usize, reasoning: bool) -> Vec<Value> {
     let mut events = vec![
         chunk(json!({"role":"assistant"}), Value::Null),
         chunk(
-            json!({"reasoning_content":if turn==1{"Plan 🧪"}else{"Check"}}),
+            json!({"reasoning_content":if turn==1{"Plan "}else{"Ch"}}),
+            Value::Null,
+        ),
+        chunk(
+            json!({"reasoning_content":if turn==1{"🧪"}else{"eck"}}),
             Value::Null,
         ),
     ];
@@ -108,9 +112,9 @@ pub fn assert_request(body: &Value) -> usize {
     );
     if turn >= 2 {
         let assistant = &history[1];
-        assert!(assistant.get("reasoning_content").is_none());
+        let reasoning = history[0]["content"] == "reasoning";
         let mut expected = vec![
-            json!({"role":"user","content":"lookup"}),
+            history[0].clone(),
             json!({"role":"assistant","content":null,"tool_calls":[
                 {"id":"call-lookup","type":"function","function":{"name":"lookup","arguments":"{ \"key\": \"A\" }"}},
                 {"id":"call-second","type":"function","function":{"name":"lookup","arguments":"{\"key\":\"B\"}"}}
@@ -122,11 +126,17 @@ pub fn assert_request(body: &Value) -> usize {
         // valid observations; neither may change the calls or surrounding history.
         assert!(assistant["content"].is_null() || assistant["content"] == "");
         expected[1]["content"] = assistant["content"].clone();
+        if reasoning {
+            expected[1]["reasoning_content"] = json!("Plan 🧪");
+        }
         if turn == 3 {
             expected.extend([
                 json!({"role":"assistant","content":"cedar-71"}),
                 json!({"role":"user","content":"next"}),
             ]);
+            if reasoning {
+                expected[4]["reasoning_content"] = json!("Check");
+            }
         }
         assert_eq!(history, &expected, "complete Chat continuation turn {turn}");
     }

@@ -215,21 +215,25 @@ fn bound_gateway(origin: &str, limits: Limits, embeddings: bool) -> Gateway {
     .unwrap();
     let entries = vec![
         Entry {
+            chat_profile: Default::default(),
             model: "public-model".into(),
             protocol: Profile::Chat,
             endpoint: EndpointId::new("chat").unwrap(),
         },
         Entry {
+            chat_profile: Default::default(),
             model: "public-model".into(),
             protocol: Profile::Responses,
             endpoint: EndpointId::new("responses").unwrap(),
         },
         Entry {
+            chat_profile: Default::default(),
             model: "cross-model".into(),
             protocol: Profile::Responses,
             endpoint: EndpointId::new("chat").unwrap(),
         },
         Entry {
+            chat_profile: Default::default(),
             model: "cross-model".into(),
             protocol: Profile::Chat,
             endpoint: EndpointId::new("responses").unwrap(),
@@ -237,6 +241,7 @@ fn bound_gateway(origin: &str, limits: Limits, embeddings: bool) -> Gateway {
     ];
     let mut entries = entries;
     entries.push(Entry {
+        chat_profile: Default::default(),
         model: "no-files-model".into(),
         protocol: Profile::Responses,
         endpoint: EndpointId::new("responses").unwrap(),

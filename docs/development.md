@@ -157,6 +157,8 @@ The full offline baseline, 15 connected SDK scenarios, 20 imported assets and up
 
 Unified reports/provenance and diagnostic-extension tests are [deferred](roadmap.md#standards-reset-and-redesign); existing loss/source-fact assertions remain. Missing native Google downstream/static directions, overlapping Messages blocks, broad Provider dialects, excluded official features, the six deferred findings and latest-candidate behavior are not certified. Browser reconnection/WPT execution, the complete Vercel runtime and installed-client/real-Provider acceptance are not inferred from this gate.
 
+The subsequent 2026-10-24 readable Chat slice adds `chat_profile: readable_reasoning`, with separate Standard intake/rejection and declared-output preflight checks. `chat_tool_history::readable_reasoning_survives_tool_feedback_and_next_turn` verifies two-call JSON/SSE and complete next-turn arrays; `openai_tool_history::chat_readable_reasoning_tool_history` adds the sixteenth connected SDK scenario using the pinned strict OpenAI accumulator, including fragmented Unicode reasoning. Native hidden signatures still reject without fabricated owners. These semantic-extension checks are not optional diagnostic tests or installed-Agent/Provider acceptance.
+
 ## Verification gates
 
 | Change or claim | Procedure |
@@ -342,7 +344,7 @@ Source-derived expectations are not fresh acceptance. Record exclusions, includi
 
 #### Initial production-profile baseline
 
-The declarations and successful runs below are historical, not acceptance of the current standard-delivery redesign. The current bounded reacceptance selects pi 1.4.0 and OpenCode 1.19.4 from the source lock, readable Chat reasoning on `dashscope-flash-chat`, native pi Messages on `opencode-go-haiku-messages`, and separate Standard Chat controls. The [contract-closure gate](roadmap.md#standards-reset-and-redesign) must pass first. OpenCode 1.19.4 needs its release-specific `@ai-sdk/openai-compatible` configuration and explicit `interleaved.field: reasoning_content`; do not reuse the historical 2.0.32 invocation as proof. No installed-client or real-Provider reacceptance is asserted yet.
+The declarations and successful runs below are historical, not acceptance of the current standard-delivery redesign. On 2026-10-24 the user selected the current host-installed pi 1.4.0 and OpenCode 2.0.32 for reacceptance, not older OpenCode source-lock binaries. Test-owned isolated configuration selects readable Chat reasoning on `dashscope-flash-chat`, native pi Messages on `opencode-go-haiku-messages`, and separate Standard Chat controls. The [contract-closure gate](roadmap.md#standards-reset-and-redesign) must pass first. Protocol source pins remain independent reference evidence; no installed-client or real-Provider reacceptance is asserted yet.
 
 Use the existing `dashscope-flash-chat` and `opencode-go-haiku-messages` bindings for the three recovery profiles below. Production initially promises a single candidate per route; the synthetic two-key recovery pool is not real failover acceptance. The drivers' explicit compat/config values are authoritative; do not substitute client defaults.
 
@@ -371,7 +373,7 @@ MORPHIECORE_OPENCODE_BIN=/absolute/path/to/unwrapped/opencode \
   --ignored --test-threads=1 --nocapture
 ```
 
-Python 3 from the development environment needs only its standard library; `MORPHIECORE_CLIENT_PYTHON` optionally selects it. The harness requires the exact stable pi/OpenCode release selected in [the source lock](../tests/upstream/sources.lock.json), permitting only build metadata suffixes. This supersedes the former major-only policy. Do not downgrade/upgrade host installations: use explicitly supplied isolated release binaries and record their full versions. Legacy driver scenarios require release-specific revalidation; a version match alone is not acceptance.
+Python 3 from the development environment needs only its standard library; `MORPHIECORE_CLIENT_PYTHON` optionally selects it. Always use the host's current installed pi, OpenCode and other Agents, not binaries installed to match protocol source pins. The harness validates and reports actual version strings without requiring source-lock equality. Use safe unwrapped launchers with isolated test state; do not downgrade, replace or reconfigure host installations. Record full actual versions and revalidate changed client behavior; a version string alone is not acceptance.
 
 Each of the three serial cases (pi Chat, pi native Messages, OpenCode Chat) fixes four client Generation requests and five upstream attempts: initial `read` on the primary, unpublished `503` on tool feedback, the same feedback completed by the secondary, an independent conversation recovering the primary, then original-session continuation on the secondary. Wire caps are 2048 tokens; candidate/route/exchange deadlines are 3/8/10 seconds, with a 120-second driver bound. The transparent admission forwarder counts client POSTs independently, rejects duplicates/excess requests and never rewrites payloads or session headers. pi retries are disabled; OpenCode's zero extra transmissions are observed, not inferred from an unsupported retry setting.
 

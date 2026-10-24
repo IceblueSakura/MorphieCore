@@ -360,6 +360,7 @@ async fn cli_diagnostics_rotate_recover_and_refuse_unowned_files_before_listenin
             .bearer_auth(support::CLIENT_KEY)
             .header("x-private-business", "synthetic-arbitrary-header-marker")
             .json(&json!({"model":"qwen3.8-flash","max_completion_tokens":32,
+                "reasoning_effort":"none",
                 "messages":[{"role":"user","content":"synthetic-private-prompt-marker"}]}))
             .send()
             .await

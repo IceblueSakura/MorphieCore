@@ -147,6 +147,14 @@ pub(super) fn represent_reasoning(
     let has_reasoning_items = items
         .iter()
         .any(|(_, item)| matches!(item, Item::Reasoning(_)));
+    if adaptation.rules.readable_reasoning_text_only
+        && items.iter().any(|(_, item)| matches!(item,
+            Item::Reasoning(reasoning) if reasoning.replay.is_some()
+                || reasoning.parts.iter().any(|(_, part)| !matches!(part, ReasoningContent::Text(_)))
+        ))
+    {
+        return Err(RepresentationError::Reasoning);
+    }
     let native_budget = request
         && adaptation.rules.thinking_controls
         && controls.budget_tokens.is_some()

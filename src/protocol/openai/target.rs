@@ -6,6 +6,9 @@ use crate::{
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TargetCaps {
     pub adaptation: crate::protocol::openai::dialect::adaptation::Adaptation,
+    /// Selected Bailian Chat bindings require a reasoning-capable client while
+    /// thinking is active or uses its enabled default. Not parser capability.
+    pub chat_thinking_output: bool,
     /// Permit the named projection of foreign readable reasoning into assistant text.
     pub reasoning_as_text: bool,
     pub replay_origin: Option<crate::semantic::value::ReplayOrigin>,
@@ -30,6 +33,7 @@ impl TargetCaps {
     pub fn full() -> Self {
         Self {
             adaptation: Default::default(),
+            chat_thinking_output: false,
             reasoning_as_text: false,
             replay_origin: None,
             resource_time: None,

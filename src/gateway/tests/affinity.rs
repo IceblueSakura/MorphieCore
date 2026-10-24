@@ -195,6 +195,7 @@ fn gateway(origin: &str, profile: Profile, dialect: Dialect) -> Gateway {
         topology,
         crate::gateway::TaskEntries {
             generation: vec![Entry {
+                chat_profile: Default::default(),
                 model: "public".into(),
                 protocol: profile,
                 endpoint: EndpointId::new("endpoint").unwrap(),

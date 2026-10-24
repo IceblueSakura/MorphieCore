@@ -1,6 +1,7 @@
 //! Explicit deployment parameters over existing catalog bindings.
 use super::config::{
-    EmbeddingEntry, Entry, ImageEntry, SpeechEntry, StartupError, TaskEntries, TranscriptionEntry,
+    ChatProfile, EmbeddingEntry, Entry, ImageEntry, SpeechEntry, StartupError, TaskEntries,
+    TranscriptionEntry,
 };
 use crate::{
     credential::CredentialManager,
@@ -37,6 +38,7 @@ pub(super) struct Model {
     max_attempts: Option<usize>,
     total_timeout_ms: Option<u64>,
     thinking_tokens: Option<ThinkingTokens>,
+    chat_profile: Option<ChatProfile>,
 }
 
 #[derive(Deserialize)]
@@ -151,6 +153,7 @@ impl Models {
                     || config.max_attempts.is_some()
                     || config.total_timeout_ms.is_some()
                     || config.thinking_tokens.is_some()
+                    || config.chat_profile.is_some()
                 {
                     return Err(invalid());
                 }
@@ -336,6 +339,11 @@ impl Models {
                     .extend([Profile::Chat, Profile::Responses].map(|protocol| Entry {
                         model: label.clone(),
                         protocol,
+                        chat_profile: if protocol == Profile::Chat {
+                            config.chat_profile.unwrap_or_default()
+                        } else {
+                            ChatProfile::Standard
+                        },
                         endpoint: endpoint.id.clone(),
                     }));
                 endpoints.push((endpoint, provider));

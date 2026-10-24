@@ -186,6 +186,16 @@ impl Adapter {
         )>,
     ) -> Result<Request, CodecError> {
         let mut value = crate::protocol::json::decode(bytes)?;
+        if self.protocol == Profile::Chat
+            && direction.client()
+            && !self.adaptation.rules.thinking_controls
+            && let Some(o) = value.as_object()
+            && let Some(key) = ["enable_thinking", "thinking_budget", "top_k"]
+                .into_iter()
+                .find(|key| o.contains_key(*key))
+        {
+            return Err(CodecError::Unsupported(key.into()));
+        }
         let mut native_controls = serde_json::Map::new();
         if self.adaptation.rules.thinking_controls {
             openai::dialect::bailian::source(

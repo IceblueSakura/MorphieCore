@@ -47,6 +47,8 @@ pub struct WireRules {
     pub responses_unreported_text_logprobs: bool,
     /// Assistant reasoning text has its own typed owner before its Chat carrier.
     pub readable_reasoning: bool,
+    /// Readable client extension has no summary-kind or opaque replay position.
+    pub readable_reasoning_text_only: bool,
     /// DashScope's explicit historical reasoning consumption switch.
     pub chat_preserve_thinking: bool,
     /// Exact enable_thinking, Chat thinking_budget and positive top_k carriers.

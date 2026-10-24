@@ -225,6 +225,12 @@ pub(in crate::protocol::openai) fn decode_static(
     a: &Adaptation,
 ) -> Result<Map<String, Value>, CodecError> {
     let mut clean = m.clone();
+    if a.rules.readable_reasoning_text_only
+        && m.contains_key("reasoning_content")
+        && string(m, "role")? != "assistant"
+    {
+        return Err(CodecError::Invalid("reasoning owner"));
+    }
     for (key, admitted) in [
         ("reasoning_content", a.rules.readable_reasoning),
         ("reasoning", a.rules.accept_reasoning_alias),
@@ -234,6 +240,9 @@ pub(in crate::protocol::openai) fn decode_static(
         ),
     ] {
         if !admitted && let Some(value) = clean.shift_remove(key) {
+            if b.direction.client() {
+                return Err(CodecError::Unsupported(key.into()));
+            }
             b.direction
                 .fields(&Map::from_iter([(key.into(), value)]), &[])?;
         }

@@ -7,7 +7,7 @@ use axum::{
     Json, Router, body::Body, extract::State, http::HeaderMap, response::Response, routing::post,
 };
 use morphiecore::{
-    gateway::{Entry, Gateway, Limits, TaskEntries},
+    gateway::{ChatProfile, Entry, Gateway, Limits, TaskEntries},
     protocol::openai::Profile,
     provider::{SecretMaterial, TrustedOrigin},
     topology::{self, catalog},
@@ -187,14 +187,36 @@ async fn answer(
         .unwrap()
 }
 pub async fn start(profile: Profile, fallback: bool) -> Fixture {
-    start_with_recovery(profile, fallback, false).await
+    start_with_recovery(profile, fallback, false, ChatProfile::Standard, false).await
 }
 
 pub async fn start_recovery() -> Fixture {
-    start_with_recovery(Profile::Chat, false, true).await
+    start_with_recovery(Profile::Chat, false, true, ChatProfile::Standard, false).await
 }
 
-async fn start_with_recovery(profile: Profile, fallback: bool, recover: bool) -> Fixture {
+pub async fn start_readable() -> Fixture {
+    start_with_recovery(
+        Profile::Chat,
+        false,
+        false,
+        ChatProfile::ReadableReasoning,
+        true,
+    )
+    .await
+}
+
+#[allow(dead_code)] // Only the Router target exercises pre-dispatch rejection.
+pub async fn start_standard_thinking() -> Fixture {
+    start_with_recovery(Profile::Chat, false, false, ChatProfile::Standard, true).await
+}
+
+async fn start_with_recovery(
+    profile: Profile,
+    fallback: bool,
+    recover: bool,
+    chat_profile: ChatProfile,
+    declared_thinking: bool,
+) -> Fixture {
     let seen = Arc::new(Mutex::new(Vec::new()));
     let control = Arc::new(Control::default());
     let recovery = recover.then(|| Arc::new(crate::credential_recovery::Recovery::default()));
@@ -226,6 +248,13 @@ async fn start_with_recovery(profile: Profile, fallback: bool, recover: bool) ->
     let mut provider = catalog.endpoint_provider(&endpoint).unwrap().clone();
     provider.origin = origin.clone();
     endpoint.target.origin = origin.clone();
+    // The generic synthetic fixture can return either shape, independently of
+    // the real binding's declared thinking-output contract.
+    endpoint
+        .representation
+        .openai_mut()
+        .unwrap()
+        .chat_thinking_output = declared_thinking;
     let public = catalog.model(label).unwrap().clone();
     let mut route = catalog.route(&public.route).unwrap().clone();
     route.endpoints = vec![endpoint.id.clone()];
@@ -240,6 +269,7 @@ async fn start_with_recovery(profile: Profile, fallback: bool, recover: bool) ->
         route.policy.max_attempts = 2;
         route.policy.fallback = topology::FallbackPolicy::BeforeCommit;
         entries.push(Entry {
+            chat_profile,
             model: label.into(),
             protocol: profile,
             endpoint: secondary.id.clone(),
@@ -256,6 +286,7 @@ async fn start_with_recovery(profile: Profile, fallback: bool, recover: bool) ->
         contract: public.contract.clone(),
     };
     entries.push(Entry {
+        chat_profile,
         model: label.into(),
         protocol: profile,
         endpoint: endpoint.id.clone(),

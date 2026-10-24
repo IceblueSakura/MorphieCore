@@ -40,6 +40,12 @@ async fn request(client: &reqwest::Client, base: &str, body: &Value, session: &s
                     message["content"] =
                         json!(format!("{}{text}", message["content"].as_str().unwrap()));
                 }
+                if let Some(text) = delta["reasoning_content"].as_str() {
+                    message["reasoning_content"] = json!(format!(
+                        "{}{text}",
+                        message["reasoning_content"].as_str().unwrap_or("")
+                    ));
+                }
                 if let Some(values) = delta["tool_calls"].as_array() {
                     for value in values {
                         let call = calls
@@ -109,6 +115,55 @@ fn input(stream: bool) -> Value {
         body["stream_options"] = json!({"include_usage":true});
     }
     body
+}
+
+#[tokio::test]
+async fn readable_reasoning_survives_tool_feedback_and_next_turn() {
+    let client = reqwest::Client::builder().no_proxy().build().unwrap();
+    for stream in [false, true] {
+        let fixture = fixture::start_readable().await;
+        let mut body = input(stream);
+        body["messages"][0]["content"] = json!("reasoning");
+        body["preserve_thinking"] = json!(true);
+        for turn in 1..=3 {
+            let result = request(&client, &fixture.base, &body, "readable").await;
+            let message = result["choices"][0]["message"].clone();
+            assert_eq!(
+                message["reasoning_content"],
+                if turn == 1 { "Plan 🧪" } else { "Check" }
+            );
+            assert!(message.get("reasoning_details").is_none());
+            assert!(!message.to_string().contains("mca1."));
+            let history = body["messages"].as_array_mut().unwrap();
+            history.push(message);
+            if turn == 1 {
+                history.extend([
+                    json!({"role":"tool","tool_call_id":"call-second","content":"second-result"}),
+                    json!({"role":"tool","tool_call_id":"call-lookup","content":fixture::RESULT}),
+                ]);
+            } else {
+                history.push(json!({"role":"user","content":"next"}));
+            }
+        }
+        let seen = fixture.seen.lock().unwrap();
+        assert_eq!(seen.len(), 3);
+        assert!(seen.iter().all(|body| body["preserve_thinking"] == true));
+    }
+}
+
+#[tokio::test]
+async fn standard_chat_rejects_declared_thinking_before_dispatch() {
+    let fixture = fixture::start_standard_thinking().await;
+    let client = reqwest::Client::builder().no_proxy().build().unwrap();
+    let response = client
+        .post(format!("{}/chat/completions", fixture.base))
+        .bearer_auth(fixture::CLIENT_KEY)
+        .json(&input(false))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 400);
+    assert!(fixture.seen.lock().unwrap().is_empty());
 }
 
 #[tokio::test]

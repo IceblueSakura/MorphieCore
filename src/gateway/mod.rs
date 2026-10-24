@@ -21,7 +21,7 @@ pub use capture::{CaptureConfig, CaptureStatus, Selection as CaptureSelection};
 use error::ApiError;
 use runtime::{BoundCandidate, BoundEntry, MESSAGES_FAMILY, Runtime, family};
 pub use startup::config::{
-    EmbeddingEntry, Entry, ImageEntry, Limits, SpeechEntry, StartupError, TaskEntries,
+    ChatProfile, EmbeddingEntry, Entry, ImageEntry, Limits, SpeechEntry, StartupError, TaskEntries,
     TranscriptionEntry,
 };
 pub use startup::credentials::Credentials;
