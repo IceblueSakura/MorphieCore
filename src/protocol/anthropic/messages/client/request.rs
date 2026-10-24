@@ -329,7 +329,6 @@ pub fn decode_client_request(bytes: &[u8]) -> Result<Request, CodecError> {
         .as_array()
         .ok_or(CodecError::Invalid("messages"))?;
     let mut roles = Vec::with_capacity(messages.len());
-    let mut attachments = vec![];
     for message in messages {
         let mut message = message.clone();
         // Turn-scoped clearing changes the model contract.
@@ -392,40 +391,21 @@ pub fn decode_client_request(bytes: &[u8]) -> Result<Request, CodecError> {
                 .map(|v| wire::request::CacheMarked::read(v, Block::read))
                 .collect::<Result<_, _>>()?
         };
-        let start = intake.items.len();
-        let mut marker = None;
-        let mut content = Vec::new();
-        for block in parsed {
-            if let Some(carried) = crate::protocol::attachments::messages_marker(&block.content) {
-                use crate::protocol::attachments::Carried;
-                marker = Some(
-                    if role != Role::Assistant || marker.is_some() || block.cache.is_some() {
-                        Carried::Unusable
-                    } else {
-                        carried
-                    },
-                );
-            } else {
-                content.push(block);
+        if parsed.iter().any(|block| match &block.content {
+            Block::Thinking { signature, .. } | Block::RedactedThinking(signature) => {
+                crate::protocol::attachments::is_marker(signature)
             }
+            _ => false,
+        }) {
+            return Err(CodecError::Unsupported("legacy Messages manifest".into()));
         }
-        // A carrier-only assistant message has no visible content of its own.
-        if marker.is_none() || role != Role::Assistant || !content.is_empty() {
-            intake.request_message(role, &content)?;
-        }
-        if let Some(marker) = marker {
-            attachments.push(crate::protocol::attachments::Marker::bounded(
-                marker,
-                start,
-                intake.items.len(),
-            ));
-        }
+        intake.request_message(role, &parsed)?;
     }
     wire::request::validate_system_placement(&roles)?;
     // Messages turns are not kept as envelopes: each target regroups items its own
     // way (native by role, Chat by assistant text and calls).
     // Calls carry their input as raw JSON text, as every client protocol's calls do.
-    let mut items = intake
+    let items = intake
         .items
         .into_iter()
         .map(|(id, mut item)| {
@@ -444,10 +424,7 @@ pub fn decode_client_request(bytes: &[u8]) -> Result<Request, CodecError> {
         })
         .collect();
     let mut fidelity = FidelityRecords::default();
-    let mut groups = vec![];
-    crate::protocol::attachments::restore(&mut items, &mut groups, &mut fidelity, attachments)?;
-    let semantic = GenerationRequest::from_resources(items, settings, intake.resources)?
-        .with_message_envelopes(groups)?;
+    let semantic = GenerationRequest::from_resources(items, settings, intake.resources)?;
     crate::protocol::anthropic::messages::items::validate_cache(&semantic)?;
     fidelity.bind_replay_origin(&crate::execution::replay::CLIENT_ORIGIN)?;
     let mut request = Request::from_generation(DecodedRequest { semantic, fidelity }, &model)?;

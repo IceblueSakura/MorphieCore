@@ -10,4 +10,3 @@ pub(crate) use projection::{
 };
 pub use request::decode_client_request;
 pub use response::encode_client_response;
-pub(crate) use response::encode_client_response_with;

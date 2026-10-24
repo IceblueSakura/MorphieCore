@@ -47,7 +47,7 @@ impl ClientAdapter {
         &self,
         response: &crate::semantic::task::generation::GenerationResponse,
     ) -> bool {
-        self.protocol() != ClientProtocol::Responses
+        self.protocol() == ClientProtocol::Chat
             && (response
                 .items()
                 .iter()
@@ -151,6 +151,17 @@ impl ClientAdapter {
             .items()
             .iter()
             .any(|(_, item)| item.has_replay_attachment());
+        if self.protocol() == ClientProtocol::Messages {
+            if hidden {
+                return Err(CodecError::Unsupported("Messages replay attachment".into()).into());
+            }
+            if crate::protocol::phase::has_phase(decoded.semantic.items()) {
+                let wire = crate::protocol::attachments::strip(&decoded, true)?;
+                let (projected, value, mut losses) = self.encode_snapshot(wire, None)?;
+                losses.push(crate::protocol::phase::delivery_omission("response.encode"));
+                return Ok((projected, value, losses));
+            }
+        }
         if self.protocol() == ClientProtocol::Responses && hidden {
             if !managed {
                 return Err(CodecError::Unsupported(
@@ -264,10 +275,9 @@ impl ClientAdapter {
                 if usage != decoded.semantic.usage() {
                     losses.push(crate::protocol::anthropic::messages::client::usage_loss());
                 }
-                crate::protocol::anthropic::messages::client::encode_client_response_with(
+                crate::protocol::anthropic::messages::client::encode_client_response(
                     &decoded,
                     &decoded.metadata.model,
-                    attachment.as_ref(),
                 )?
             }
             Self::OpenAi { adapter, contract } => {
@@ -480,7 +490,9 @@ impl ClientEncoder {
             Encoder::Responses(_) => {
                 Err(CodecError::Unsupported("Responses manifest carrier".into()).into())
             }
-            Encoder::Messages(encoder) => Ok(encoder.set_attachment(value)?),
+            Encoder::Messages(_) => {
+                Err(CodecError::Unsupported("Messages manifest carrier".into()).into())
+            }
         }
     }
     pub(crate) fn project_native(
@@ -570,7 +582,11 @@ impl ClientEncoder {
                 replay: replay.clone(),
             };
             let frames = self.encode(&wire, fidelity)?;
-            let loss = crate::protocol::phase::carried("event.encode");
+            let loss = if matches!(self.encoder, Encoder::Messages(_)) {
+                crate::protocol::phase::delivery_omission("event.encode")
+            } else {
+                crate::protocol::phase::carried("event.encode")
+            };
             if !self.losses.contains(&loss) {
                 self.losses.push(loss);
             }

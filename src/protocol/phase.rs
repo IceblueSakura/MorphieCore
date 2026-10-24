@@ -25,6 +25,15 @@ pub(crate) fn carried(direction: &'static str) -> LossEvidence {
     }
 }
 
+pub(crate) fn delivery_omission(direction: &'static str) -> LossEvidence {
+    LossEvidence {
+        rule: "generation.omit-delivery-message-phase.v1",
+        field: "generation.message.phase",
+        direction,
+        action: "omit",
+    }
+}
+
 /// A target with no phase carrier receives visible history, not equivalent continuation.
 /// Reconstruct a private representation; ordinary edits under an existing ID stay protected.
 pub(crate) fn omit_request(

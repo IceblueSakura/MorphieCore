@@ -30,7 +30,7 @@ fn fixture(interactions: bool, calls: bool) -> (Endpoint, crate::adapter::Reques
                 let id = format!("c{index}");
                 frames.extend([
                     json!({"event_type":"step.start","index":index,"step":{"type":"function_call",
-                        "id":id,"name":"read","arguments":{},"signature":format!("synthetic-call-{index}")}}),
+                        "id":id,"name":"read","arguments":{}}}),
                     json!({"event_type":"step.delta","index":index,"delta":{"type":"arguments_delta",
                         "arguments":format!("{{\"path\":\"{index}\"}}")}}),
                     json!({"event_type":"step.stop","index":index}),
@@ -50,11 +50,11 @@ fn fixture(interactions: bool, calls: bool) -> (Endpoint, crate::adapter::Reques
     } else {
         let parts = if calls {
             json!([
-                {"functionCall":{"id":"c0","name":"read","args":{"path":"0"}},"thoughtSignature":"U0lHLTE="},
-                {"functionCall":{"id":"c1","name":"read","args":{"path":"1"}},"thoughtSignature":"U0lHLTI="}
+                {"functionCall":{"id":"c0","name":"read","args":{"path":"0"}}},
+                {"functionCall":{"id":"c1","name":"read","args":{"path":"1"}}}
             ])
         } else {
-            json!([{"text":"answer","thoughtSignature":"U0lH"}])
+            json!([{"text":"answer"}])
         };
         frames.push(json!({"responseId":"r","modelVersion":binding.model,
             "candidates":[{"index":0,"content":{"role":"model","parts":parts},"finishReason":"STOP"}],
@@ -113,6 +113,71 @@ fn feed(
         }
     }
     output
+}
+
+#[test]
+fn messages_reject_hidden_signatures_without_fabricated_thinking() {
+    for interactions in [false, true] {
+        for calls in [false, true] {
+            // Interactions ordinary text has no selected signature carrier.
+            if interactions && !calls {
+                continue;
+            }
+            for stream in [false, true] {
+                let (endpoint, request, mut frames) = fixture(interactions, calls);
+                if interactions {
+                    frames[1]["step"]["signature"] = json!("synthetic-call");
+                } else {
+                    frames[0]["candidates"][0]["content"]["parts"][0]["thoughtSignature"] =
+                        json!("U0lH");
+                }
+                let mut attempt =
+                    Attempt::new(endpoint.adapter().unwrap(), 65536, Default::default());
+                attempt.begin(200, "text/event-stream").unwrap();
+                let mut delivery = delivery(&endpoint, &request);
+                let mut all_events = vec![];
+                for frame in &frames {
+                    let wire = if interactions {
+                        format!(
+                            "event: {}\ndata: {frame}\n\n",
+                            frame["event_type"].as_str().unwrap()
+                        )
+                    } else {
+                        format!("data: {frame}\n\n")
+                    };
+                    let (n, events) = attempt.push(wire.as_bytes()).unwrap();
+                    assert_eq!(n, wire.len());
+                    all_events.extend(events);
+                }
+                attempt.finish().unwrap();
+                let original = attempt.response().unwrap().clone();
+                let error = if stream {
+                    delivery.encode_events(&attempt, &all_events).unwrap_err()
+                } else {
+                    delivery.encode_json(&attempt).unwrap_err()
+                };
+                assert!(
+                    error.to_string().contains("Messages replay attachment"),
+                    "{error}"
+                );
+                assert_eq!(attempt.response().unwrap(), &original);
+                assert!(delivery.encode_json(&attempt).is_err());
+                assert!(delivery.commit().is_err());
+            }
+        }
+    }
+    for content in [
+        json!({"type":"thinking","thinking":"","signature":"mca1.synthetic"}),
+        json!({"type":"redacted_thinking","data":"mca1.synthetic"}),
+    ] {
+        let error = ClientAdapter::Messages.decode_client_request(
+            json!({"model":"public","max_tokens":32,"messages":[{"role":"assistant","content":[content]}]})
+                .to_string().as_bytes()).unwrap_err();
+        assert_eq!(
+            error,
+            crate::protocol::CodecError::Unsupported("legacy Messages manifest".into())
+        );
+    }
 }
 
 #[test]

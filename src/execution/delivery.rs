@@ -517,7 +517,7 @@ impl ResponseDelivery {
                     .check_chat_source(&self.client_view(attempt)?.0)?;
             }
             let mut frames = self.flush_pending()?;
-            if self.client.protocol() == ClientProtocol::Responses
+            if self.client.protocol() != ClientProtocol::Chat
                 && !self.managed_responses()
                 && attempt
                     .response()?
@@ -527,11 +527,16 @@ impl ResponseDelivery {
                     .any(|(_, item)| item.has_replay_attachment())
             {
                 return Err(CodecError::Unsupported(
-                    "stateless Responses replay attachment".into(),
+                    if self.is_messages() {
+                        "Messages replay attachment"
+                    } else {
+                        "stateless Responses replay attachment"
+                    }
+                    .into(),
                 )
                 .into());
             }
-            // Remaining Chat/Messages manifests use the EOF-validated materialization.
+            // The remaining Chat manifest uses the EOF-validated materialization.
             if self.client.needs_attachment(&attempt.response()?.semantic)
                 // The streamed events already recorded their own projection losses.
                 && let Some(packet) = crate::protocol::attachments::Packet::from_response(
@@ -632,7 +637,7 @@ impl ResponseDelivery {
         }) {
             self.client.check_phase_carrier()?;
         }
-        if self.client.protocol() == ClientProtocol::Responses
+        if self.client.protocol() != ClientProtocol::Chat
             && !managed
             && events.iter().any(|event| match event {
                 StreamEvent::PartReplay { .. } => true,
@@ -649,9 +654,15 @@ impl ResponseDelivery {
                 _ => false,
             })
         {
-            return Err(
-                CodecError::Unsupported("stateless Responses replay attachment".into()).into(),
-            );
+            return Err(CodecError::Unsupported(
+                if self.client.protocol() == ClientProtocol::Messages {
+                    "Messages replay attachment"
+                } else {
+                    "stateless Responses replay attachment"
+                }
+                .into(),
+            )
+            .into());
         }
         let wire_events: Vec<_> = events
             .iter()

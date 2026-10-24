@@ -120,109 +120,46 @@ async fn exercise_messages(api: fixture::Api) {
         .unwrap();
     for stream in [false, true] {
         let fixture = fixture::start_messages(api).await;
-        let capabilities: Value = client
-            .get(format!("{}/morphiecore/capabilities", fixture.base))
+        let mut response = client
+            .post(format!("{}/messages", fixture.base))
             .bearer_auth(fixture::KEY)
+            .header("anthropic-version", "2026-10-21")
+            .json(
+                &json!({"model":"gemini-3.8-flash","max_tokens":256,"stream":stream,
+                "thinking":{"type":"adaptive"},"output_config":{"effort":"low"},
+                "tools":[{"name":"read","input_schema":{"type":"object","properties":{
+                    "path":{"type":"string"}},"required":["path"]}}],
+                "messages":[{"role":"user","content":"Read."}]}),
+            )
             .send()
             .await
-            .unwrap()
-            .json()
-            .await
             .unwrap();
-        let messages = capabilities["data"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .find(|v| v["protocol"] == "messages")
-            .unwrap();
-        let (domain, rules) = if api == fixture::Api::GenerateContent {
-            (
-                "generate_content_stop_without_configured_sequences",
-                json!([
-                    "messages.google-tool-stop.v1",
-                    "messages.google-stop-without-sequences.v1"
-                ]),
-            )
+        if stream && response.status() == 200 {
+            let mut bytes = vec![];
+            let aborted = loop {
+                match response.chunk().await {
+                    Ok(Some(chunk)) => bytes.extend_from_slice(&chunk),
+                    Ok(None) => break false,
+                    Err(_) => break true,
+                }
+            };
+            let wire = String::from_utf8(bytes).unwrap();
+            assert!(aborted || wire.contains("event: error\n"));
+            assert!(!wire.contains("event: message_stop\n"));
+            assert!(!wire.contains("mca1."));
         } else {
-            (
-                "interactions_completed_without_configured_sequences",
-                json!(["messages.interactions-completed-as-end-turn.v1"]),
-            )
-        };
-        assert!(messages["delivery"].as_array().unwrap().contains(&json!({
-            "feature":"generation.completion_cause","domain":domain,
-            "treatment":"approved_adaptation","rules":rules})));
-        let mut body = json!({"model":"gemini-3.8-flash","max_tokens":256,"stream":stream,
-            "thinking":{"type":"adaptive"},"output_config":{"effort":"low"},
-            "tools":[{"name":"read","input_schema":{"type":"object","properties":{
-                "path":{"type":"string"}},"required":["path"]}}],
-            "messages":[{"role":"user","content":"Read."}]});
-        for turn in 1..=4 {
-            let response = client
-                .post(format!("{}/messages", fixture.base))
-                .bearer_auth(fixture::KEY)
-                .header("anthropic-version", "2026-10-21")
-                .json(&body)
-                .send()
-                .await
-                .unwrap();
-            assert_eq!(response.status(), 200);
-            let response: Value = if stream {
-                let wire = response.text().await.unwrap();
-                assert_eq!(wire.matches("event: message_stop\n").count(), 1);
-                assert_eq!(wire.matches("event: message_delta\n").count(), 1);
-                crate::messages_stream::messages_stream_body(&wire)
-            } else {
-                response.json().await.unwrap()
-            };
-            assert_eq!(
-                response["stop_reason"],
-                if turn <= 2 { "tool_use" } else { "end_turn" }
-            );
-            if api == fixture::Api::Interactions && turn == 4 {
-                assert!(response["usage"]["input_tokens"].as_u64().unwrap() > 0);
-                assert_eq!(response["usage"]["output_tokens"], 3); // ceil(len("continued") / 4)
-            } else {
-                assert_eq!(response["usage"]["input_tokens"], 10);
-                assert_eq!(response["usage"]["output_tokens"], 5);
-            }
-            let content = response["content"].as_array().unwrap();
-            let calls: Vec<_> = content.iter().filter(|c| c["type"] == "tool_use").collect();
-            let next = if turn <= 2 {
-                assert_eq!(calls.len(), 1);
-                assert_eq!(calls[0]["id"], format!("c{turn}"));
-                assert_eq!(calls[0]["name"], "read");
-                assert_eq!(
-                    calls[0]["input"],
-                    json!({"path":if turn == 1 {"missing"} else {"found"}})
-                );
-                assert!(content.iter().any(|p| {
-                    p["signature"]
-                        .as_str()
-                        .is_some_and(|s| s.starts_with("mca"))
-                }));
-                json!({"role":"user","content":[{"type":"tool_result","tool_use_id":format!("c{turn}"),
-                    "is_error":turn == 1,"content":if turn == 1 {fixture::ERROR} else {fixture::RESULT}}]})
-            } else {
-                assert!(calls.is_empty());
-                assert!(content.iter().any(|p| p["type"] == "text"
-                    && p["text"]
-                        == if turn == 3 {
-                            fixture::RESULT
-                        } else {
-                            "continued"
-                        }));
-                json!({"role":"user","content":"Continue."})
-            };
-            body["messages"]
-                .as_array_mut()
-                .unwrap()
-                .extend([json!({"role":"assistant","content":content}), next]);
+            assert_eq!(response.status(), 502);
+            let error: Value = response.json().await.unwrap();
+            assert_eq!(error["type"], "error");
+            assert_eq!(error["error"]["type"], "api_error");
         }
-        assert_eq!(fixture.seen.lock().unwrap().len(), 4);
+        assert_eq!(
+            fixture.seen.lock().unwrap().len(),
+            1,
+            "unrepresentable call signatures cannot be retried or silently discarded"
+        );
     }
 }
-
 async fn exercise(api: fixture::Api) {
     exercise_messages(api).await;
     let client = reqwest::Client::builder()

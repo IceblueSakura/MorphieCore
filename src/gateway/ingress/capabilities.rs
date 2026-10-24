@@ -384,32 +384,47 @@ impl<'a> Entry<'a> {
         };
         let native_phase = protocol == ClientProtocol::Responses;
         let phase_carrier = entry.client.check_phase_carrier().is_ok();
-        delivery.push(Case::new(
-            "generation.message.phase",
-            if native_phase {
-                "assistant_commentary_or_final_answer"
-            } else {
-                "assistant_text_phase_via_bounded_manifest"
-            },
-            if phase_carrier {
-                Treatment::Faithful
-            } else {
-                Treatment::Rejected
-            },
-        ));
-        history.push(Case::new(
-            "generation.message.phase",
-            if native_phase {
-                "returned_native_assistant_phase"
-            } else {
-                "unchanged_returned_phase_manifest"
-            },
-            if phase_carrier {
-                Treatment::Faithful
-            } else {
-                Treatment::Rejected
-            },
-        ));
+        if protocol == ClientProtocol::Messages {
+            let mut case = Case::new(
+                "generation.message.phase",
+                "assistant_commentary_or_final_answer",
+                Treatment::ApprovedAdaptation,
+            );
+            case.rules.push("generation.omit-delivery-message-phase.v1");
+            delivery.push(case);
+            history.push(Case::new(
+                "generation.message.phase",
+                "returned_assistant_phase",
+                Treatment::Rejected,
+            ));
+        } else {
+            delivery.push(Case::new(
+                "generation.message.phase",
+                if native_phase {
+                    "assistant_commentary_or_final_answer"
+                } else {
+                    "assistant_text_phase_via_bounded_manifest"
+                },
+                if phase_carrier {
+                    Treatment::Faithful
+                } else {
+                    Treatment::Rejected
+                },
+            ));
+            history.push(Case::new(
+                "generation.message.phase",
+                if native_phase {
+                    "returned_native_assistant_phase"
+                } else {
+                    "unchanged_returned_phase_manifest"
+                },
+                if phase_carrier {
+                    Treatment::Faithful
+                } else {
+                    Treatment::Rejected
+                },
+            ));
+        }
         Self {
             model: entry.public.id.as_str(),
             protocol: match protocol {

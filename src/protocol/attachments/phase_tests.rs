@@ -76,7 +76,13 @@ fn phase_only_manifest_preserves_boundaries_and_native_responses_stay_exact() {
     ] {
         let client = client(protocol);
         let (retained, body, losses) = client.snapshot_with_evidence(source.clone()).unwrap();
-        assert_eq!(retained.semantic.items(), source.semantic.items());
+        if protocol != ClientProtocol::Messages {
+            assert_eq!(retained.semantic.items(), source.semantic.items());
+        } else {
+            assert!(!crate::protocol::phase::has_phase(
+                retained.semantic.items()
+            ));
+        }
         if protocol == ClientProtocol::Responses {
             assert_eq!(body["output"][2]["phase"], "commentary");
             assert_eq!(body["output"][3]["phase"], "final_answer");
@@ -86,6 +92,17 @@ fn phase_only_manifest_preserves_boundaries_and_native_responses_stay_exact() {
                     .iter()
                     .any(|e| e.rule == "generation.return-message-phase.v1")
             );
+        } else if protocol == ClientProtocol::Messages {
+            assert_eq!(
+                body["content"],
+                json!([
+                    {"type":"text","text":"prefix"}, {"type":"text","text":"another"},
+                    {"type":"text","text":"checking"}, {"type":"text","text":"done"},
+                ])
+            );
+            assert!(losses.iter().any(
+                |e| e.rule == "generation.omit-delivery-message-phase.v1" && e.action == "omit"
+            ));
         } else {
             assert!(marker(&body, protocol).starts_with(PREFIX));
             assert!(
@@ -108,16 +125,21 @@ fn phase_only_manifest_preserves_boundaries_and_native_responses_stay_exact() {
                 _ => None,
             })
             .collect();
-        assert_eq!(
-            phases,
-            [
-                None,
-                None,
-                Some(Phase::Commentary),
-                Some(Phase::FinalAnswer)
-            ]
-        );
-        if protocol != ClientProtocol::Responses {
+        if protocol == ClientProtocol::Messages {
+            assert!(!phases.is_empty());
+            assert!(phases.iter().all(Option::is_none));
+        } else {
+            assert_eq!(
+                phases,
+                [
+                    None,
+                    None,
+                    Some(Phase::Commentary),
+                    Some(Phase::FinalAnswer)
+                ]
+            );
+        }
+        if protocol == ClientProtocol::Chat {
             match protocol {
                 ClientProtocol::Chat => request["messages"][1]["content"] = json!("changed"),
                 ClientProtocol::Messages => {
@@ -272,6 +294,17 @@ fn phase_stream_preserves_return_carrier_at_eof_without_changing_terminal_policy
                 assert!(!text.contains(PREFIX));
                 assert!(text.contains("\"phase\":\"commentary\""));
                 assert!(text.contains("response.incomplete"));
+            } else if protocol == ClientProtocol::Messages {
+                assert!(!text.contains(PREFIX));
+                assert!(!text.contains("\"type\":\"thinking\""));
+                assert!(text.contains("\"stop_reason\":\"max_tokens\""));
+                assert!(
+                    delivery
+                        .losses()
+                        .iter()
+                        .any(|e| e.rule == "generation.omit-delivery-message-phase.v1"
+                            && e.action == "omit")
+                );
             } else {
                 assert_eq!(text.matches(marker(&expected, protocol)).count(), 1);
                 assert!(

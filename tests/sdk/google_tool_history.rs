@@ -4,12 +4,14 @@ use morphiecore::protocol::openai::Profile;
 use std::time::Duration;
 
 async fn exercise(api: fixture::Api, api_name: &str) {
-    for (profile, name) in [
-        (Profile::Chat, "chat"),
-        (Profile::Responses, "responses"),
-        (Profile::Chat, "messages"),
+    for (profile, name, count) in [
+        (Profile::Chat, "chat", 8),
+        (Profile::Responses, "responses", 8),
+        (Profile::Chat, "messages-json", 1),
+        (Profile::Chat, "messages-sse", 1),
     ] {
-        let fixture = if name == "messages" {
+        let messages = name.starts_with("messages-");
+        let fixture = if messages {
             fixture::start_messages(api).await
         } else {
             fixture::start(profile, api).await
@@ -32,12 +34,21 @@ async fn exercise(api: fixture::Api, api_name: &str) {
             String::from_utf8_lossy(&output.stderr)
         );
         let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-        assert_eq!(report["requests"], 8);
-        assert_eq!(report["http_requests"], 8);
-        assert_eq!(report["deliveries"], 2);
-        assert_eq!(report["tool_correction_and_final_history"], true);
+        assert_eq!(report["requests"], count);
+        assert_eq!(report["http_requests"], count);
+        assert_eq!(
+            report[if messages {
+                "unrepresentable_signature_rejected"
+            } else {
+                "tool_correction_and_final_history"
+            }],
+            true
+        );
+        if !messages {
+            assert_eq!(report["deliveries"], 2);
+        }
         assert_eq!(report["upstream"], api_name);
-        assert_eq!(fixture.seen.lock().unwrap().len(), 8);
+        assert_eq!(fixture.seen.lock().unwrap().len(), count);
         fixture.gateway.flush_diagnostics().await;
     }
 }

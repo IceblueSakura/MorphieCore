@@ -186,33 +186,32 @@ fn stream_delivery(protocol: ClientProtocol) -> (Attempt, ResponseDelivery) {
 fn client_carriers_restore_distinct_equal_text_owners_and_calls() {
     let (source, _) = source();
     assert_eq!(source.semantic.items().len(), 4);
-    for protocol in [ClientProtocol::Chat, ClientProtocol::Messages] {
-        let client = client(protocol);
-        let (retained, body) = delivered(&client, &source);
-        assert_eq!(retained.semantic.items().len(), 4);
-        assert!(marker(&body, protocol).starts_with(PREFIX));
-        let request = returned(protocol, &body);
-        let mut decoded = client
-            .decode_client_request(request.to_string().as_bytes())
-            .unwrap();
-        open_from_client(&mut decoded).unwrap();
-        let (wire, _) = encode_generation_request(
-            &decoded.task.semantic,
-            &decoded.task.fidelity,
-            &target(),
-            None,
-        )
+    let protocol = ClientProtocol::Chat;
+    let client = client(protocol);
+    let (retained, body) = delivered(&client, &source);
+    assert_eq!(retained.semantic.items().len(), 4);
+    assert!(marker(&body, protocol).starts_with(PREFIX));
+    let request = returned(protocol, &body);
+    let mut decoded = client
+        .decode_client_request(request.to_string().as_bytes())
         .unwrap();
-        assert_eq!(
-            wire["contents"][1]["parts"],
-            expected_parts(),
-            "{protocol:?}"
-        );
-        assert_eq!(
-            wire["contents"][2]["parts"],
-            json!([{"functionResponse":{"id":"c","name":"lookup","response":{"output":"ok"}}}])
-        );
-    }
+    open_from_client(&mut decoded).unwrap();
+    let (wire, _) = encode_generation_request(
+        &decoded.task.semantic,
+        &decoded.task.fidelity,
+        &target(),
+        None,
+    )
+    .unwrap();
+    assert_eq!(
+        wire["contents"][1]["parts"],
+        expected_parts(),
+        "{protocol:?}"
+    );
+    assert_eq!(
+        wire["contents"][2]["parts"],
+        json!([{"functionResponse":{"id":"c","name":"lookup","response":{"output":"ok"}}}])
+    );
 }
 /// Client edits make the carrier unusable. Visible history still proceeds; only the
 /// replay it carried is dropped, and the receipt records that omission.
@@ -265,98 +264,90 @@ fn assert_unsigned_history(request: &crate::adapter::Request, context: &str) {
 #[test]
 fn changed_visible_history_drops_its_carrier_but_keeps_the_request() {
     let (source, _) = source();
-    for protocol in [ClientProtocol::Chat, ClientProtocol::Messages] {
-        let client = client(protocol);
-        let (_, body) = delivered(&client, &source);
-        let request = returned(protocol, &body);
-        let mut changed = request.clone();
-        match protocol {
-            ClientProtocol::Chat => changed["messages"][1]["content"] = json!("OKchanged"),
-            ClientProtocol::Responses => {
-                changed["input"][2]["content"][0]["text"] = json!("OKchanged")
-            }
-            ClientProtocol::Messages => {
-                changed["messages"][1]["content"][1]["text"] = json!("OKchanged")
-            }
+    let protocol = ClientProtocol::Chat;
+    let client = client(protocol);
+    let (_, body) = delivered(&client, &source);
+    let request = returned(protocol, &body);
+    let mut changed = request.clone();
+    match protocol {
+        ClientProtocol::Chat => changed["messages"][1]["content"] = json!("OKchanged"),
+        ClientProtocol::Responses => changed["input"][2]["content"][0]["text"] = json!("OKchanged"),
+        ClientProtocol::Messages => {
+            changed["messages"][1]["content"][1]["text"] = json!("OKchanged")
         }
-        let context = format!("{protocol:?} text");
-        assert_unsigned_history(&assert_dropped(&client, &changed, &context), &context);
-        let mut changed = request.clone();
-        match protocol {
-            ClientProtocol::Chat => {
-                changed["messages"][1]["tool_calls"][0]["function"]["arguments"] =
-                    json!("{\"n\":9007199254740992}")
-            }
-            ClientProtocol::Responses => {
-                changed["input"][3]["arguments"] = json!("{\"n\":9007199254740992}")
-            }
-            ClientProtocol::Messages => {
-                changed["messages"][1]["content"][2]["input"]["n"] = json!(9007199254740992u64)
-            }
-        }
-        let context = format!("{protocol:?} arguments");
-        assert_unsigned_history(&assert_dropped(&client, &changed, &context), &context);
     }
+    let context = format!("{protocol:?} text");
+    assert_unsigned_history(&assert_dropped(&client, &changed, &context), &context);
+    let mut changed = request.clone();
+    match protocol {
+        ClientProtocol::Chat => {
+            changed["messages"][1]["tool_calls"][0]["function"]["arguments"] =
+                json!("{\"n\":9007199254740992}")
+        }
+        ClientProtocol::Responses => {
+            changed["input"][3]["arguments"] = json!("{\"n\":9007199254740992}")
+        }
+        ClientProtocol::Messages => {
+            changed["messages"][1]["content"][2]["input"]["n"] = json!(9007199254740992u64)
+        }
+    }
+    let context = format!("{protocol:?} arguments");
+    assert_unsigned_history(&assert_dropped(&client, &changed, &context), &context);
 }
 #[test]
 fn stream_carrier_is_published_only_with_the_eof_gated_terminal() {
     let (source, _) = source();
-    for protocol in [ClientProtocol::Chat, ClientProtocol::Messages] {
-        let client = client(protocol);
-        let (_, body) = delivered(&client, &source);
-        let (mut attempt, mut delivery) = stream_delivery(protocol);
-        let wire = source_wire(9007199254740993);
-        let (n, events) = attempt.push(wire.as_bytes()).unwrap();
-        assert_eq!(n, wire.len());
-        assert!(
-            events
-                .iter()
-                .all(|event| !matches!(event, StreamEvent::Terminal { .. }))
-        );
-        let mut bytes = delivery.encode_events(&attempt, &events).unwrap().concat();
-        assert!(!String::from_utf8_lossy(&bytes).contains(PREFIX));
-        assert!(matches!(
-            attempt.terminal_event(),
-            Err(AttemptError::Protocol("attempt not finished"))
-        ));
-        delivery.commit().unwrap();
-        attempt.finish().unwrap();
-        bytes.extend(delivery.finish_stream(&attempt).unwrap().concat());
-        // JSON and SSE record the same applied losses, including grouping that the
-        // carrier restores only on return.
-        let (mut json_attempt, mut json_delivery) = stream_delivery(protocol);
-        json_attempt.push(wire.as_bytes()).unwrap();
-        json_attempt.finish().unwrap();
-        json_delivery.encode_json(&json_attempt).unwrap();
-        let receipts = |losses: &[crate::lowering::generation::LossEvidence]| {
-            losses
-                .iter()
-                .map(|loss| (loss.rule, loss.field))
-                .collect::<std::collections::BTreeSet<_>>()
-        };
-        assert_eq!(
-            receipts(json_delivery.losses()),
-            receipts(delivery.losses()),
-            "{protocol:?}"
-        );
-        assert!(
-            receipts(delivery.losses())
-                .iter()
-                .any(|(_, field)| *field == "generation.usage.reports"),
-            "{protocol:?}"
-        );
-        let text = String::from_utf8(bytes).unwrap();
-        let count = text.matches(marker(&body, protocol)).count();
-        assert_eq!(count, 1, "{protocol:?}");
-    }
+    let protocol = ClientProtocol::Chat;
+    let client = client(protocol);
+    let (_, body) = delivered(&client, &source);
+    let (mut attempt, mut delivery) = stream_delivery(protocol);
+    let wire = source_wire(9007199254740993);
+    let (n, events) = attempt.push(wire.as_bytes()).unwrap();
+    assert_eq!(n, wire.len());
+    assert!(
+        events
+            .iter()
+            .all(|event| !matches!(event, StreamEvent::Terminal { .. }))
+    );
+    let mut bytes = delivery.encode_events(&attempt, &events).unwrap().concat();
+    assert!(!String::from_utf8_lossy(&bytes).contains(PREFIX));
+    assert!(matches!(
+        attempt.terminal_event(),
+        Err(AttemptError::Protocol("attempt not finished"))
+    ));
+    delivery.commit().unwrap();
+    attempt.finish().unwrap();
+    bytes.extend(delivery.finish_stream(&attempt).unwrap().concat());
+    // JSON and SSE record the same applied losses, including grouping that the
+    // carrier restores only on return.
+    let (mut json_attempt, mut json_delivery) = stream_delivery(protocol);
+    json_attempt.push(wire.as_bytes()).unwrap();
+    json_attempt.finish().unwrap();
+    json_delivery.encode_json(&json_attempt).unwrap();
+    let receipts = |losses: &[crate::lowering::generation::LossEvidence]| {
+        losses
+            .iter()
+            .map(|loss| (loss.rule, loss.field))
+            .collect::<std::collections::BTreeSet<_>>()
+    };
+    assert_eq!(
+        receipts(json_delivery.losses()),
+        receipts(delivery.losses()),
+        "{protocol:?}"
+    );
+    assert!(
+        receipts(delivery.losses())
+            .iter()
+            .any(|(_, field)| *field == "generation.usage.reports"),
+        "{protocol:?}"
+    );
+    let text = String::from_utf8(bytes).unwrap();
+    let count = text.matches(marker(&body, protocol)).count();
+    assert_eq!(count, 1, "{protocol:?}");
 }
 #[test]
 fn premature_or_truncated_eof_never_publishes_the_carrier() {
-    for protocol in [
-        ClientProtocol::Chat,
-        ClientProtocol::Responses,
-        ClientProtocol::Messages,
-    ] {
+    for protocol in [ClientProtocol::Chat, ClientProtocol::Responses] {
         for truncated in [false, true] {
             let (mut attempt, mut delivery) = stream_delivery(protocol);
             if protocol == ClientProtocol::Responses {
@@ -415,10 +406,6 @@ fn client_carriers_have_independent_wire_shapes() {
             "format":"openai-responses-v1",
             "data":"mca1.synthetic"
         })
-    );
-    assert_eq!(
-        messages_block("mca1.synthetic"),
-        json!({"type":"thinking","thinking":"","signature":"mca1.synthetic"})
     );
     // Without readable reasoning, Chat delivery still owns the details carrier.
     let (source, _) = decode_source_wire(&source_wire_case(7, true));
@@ -488,7 +475,7 @@ fn pinned_pi_owned_replay() {
     let pi_source = std::path::PathBuf::from(
         std::env::var("MORPHIECORE_PI_SOURCE").expect("set MORPHIECORE_PI_SOURCE"),
     );
-    let protocols = [ClientProtocol::Chat, ClientProtocol::Messages];
+    let protocols = [ClientProtocol::Chat];
     let mut fixtures = vec![];
     for (number, empty) in [(7, false), (9007199254740993, false), (7, true)] {
         for protocol in protocols {
@@ -987,8 +974,8 @@ fn unsupported_chat_carrier_is_rejected_by_static_and_stream_delivery() {
 #[test]
 fn independent_empty_carriers_rebuild_once_and_share_aggregate_budgets() {
     let (source, _) = decode_source_wire(&source_wire_case(7, true));
-    let (_, body) = delivered(&client(ClientProtocol::Messages), &source);
-    let token = marker(&body, ClientProtocol::Messages);
+    let (_, body) = delivered(&client(ClientProtocol::Chat), &source);
+    let token = marker(&body, ClientProtocol::Chat);
     let mut items = vec![];
     let mut markers = vec![];
     for n in 1..=4096 {

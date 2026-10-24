@@ -53,24 +53,6 @@ pub(crate) fn take_chat(message: &mut Value) -> Option<Carried> {
         Carried::Unusable
     })
 }
-pub(crate) fn messages_marker(
-    block: &crate::protocol::anthropic::messages::Block,
-) -> Option<Carried> {
-    match block {
-        crate::protocol::anthropic::messages::Block::Thinking {
-            thinking,
-            signature,
-        } if is_marker(signature) => Some(if thinking.is_empty() {
-            Carried::Manifest(signature.clone())
-        } else {
-            Carried::Unusable
-        }),
-        crate::protocol::anthropic::messages::Block::RedactedThinking(data) if is_marker(data) => {
-            Some(Carried::Unusable)
-        }
-        _ => None,
-    }
-}
 fn carrier_id(token: &str) -> String {
     format!("rs_mca_{}", &digest(&[token])[..32])
 }
@@ -81,7 +63,4 @@ pub(crate) fn chat_detail(token: &str) -> Value {
         "format": "openai-responses-v1",
         "data": token,
     })
-}
-pub(crate) fn messages_block(token: &str) -> Value {
-    json!({"type": "thinking", "thinking": "", "signature": token})
 }

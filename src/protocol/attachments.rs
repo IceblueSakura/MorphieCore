@@ -2,9 +2,7 @@
 //! The manifest stores boundaries and dependencies, never replacement business content.
 mod carriers;
 mod restore;
-pub(crate) use carriers::{
-    Carried, chat_detail, check_chat_support, is_marker, messages_block, messages_marker, take_chat,
-};
+pub(crate) use carriers::{Carried, chat_detail, check_chat_support, is_marker, take_chat};
 #[cfg(test)]
 use restore::{Ids, restore_marker};
 pub(crate) use restore::{Marker, restore};
@@ -436,7 +434,7 @@ pub(crate) fn strip(
     Ok(copy)
 }
 /// Only the wire view drops attachments. Execution must either retain typed managed
-/// Responses history or provide the remaining legacy Chat/Messages return carrier.
+/// Responses history or provide the remaining legacy Chat return carrier.
 pub(crate) fn wire_event(event: &StreamEvent, source: &FidelityRecords) -> Option<StreamEvent> {
     if matches!(event, StreamEvent::PartReplay { .. }) {
         return None;

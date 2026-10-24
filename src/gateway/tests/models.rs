@@ -104,8 +104,10 @@ async fn models_list_and_retrieve_use_the_same_standard_public_object() {
                         {"feature":"generation.completion_cause",
                             "domain":"ambiguous_stop_without_tool_continuation",
                             "treatment":"rejected"},
-                        phase
-                    ],"history":[phase_history]}
+                        {"feature":"generation.message.phase","domain":"assistant_commentary_or_final_answer",
+                            "treatment":"approved_adaptation","rules":["generation.omit-delivery-message-phase.v1"]}
+                    ],"history":[{"feature":"generation.message.phase","domain":"returned_assistant_phase",
+                        "treatment":"rejected"}]}
             ]
         })
     );
