@@ -14,12 +14,7 @@ pub(in crate::protocol::anthropic::messages) fn item_blocks(
     normalized: &mut Vec<ItemId>,
     omitted: &mut Vec<ItemId>,
 ) -> Result<Vec<Block>, CodecError> {
-    let media = |part: PartId, resource: &ResourceUse| {
-        Media::from_resource(
-            resource.media(request.resources())?,
-            fidelity.strict_image_size(part),
-        )
-    };
+    let media = |resource: &ResourceUse| Media::from_resource(resource.media(request.resources())?);
     Ok(match item {
         Item::Message(m) => {
             if m.status != ItemLifecycle::Completed || m.phase.is_some() {
@@ -30,7 +25,7 @@ pub(in crate::protocol::anthropic::messages) fn item_blocks(
                 .map(|p| match &p.content {
                     ContentPart::Text(t) if t.is_plain() => Ok(Block::Text(t.as_str().into())),
                     ContentPart::Resource(r) if m.role == MessageRole::User => {
-                        Ok(Block::Media(media(p.id, r)?))
+                        Ok(Block::Media(media(r)?))
                     }
                     _ => Err(unsupported()),
                 })
@@ -117,9 +112,7 @@ pub(in crate::protocol::anthropic::messages) fn item_blocks(
                                 cache: part.cache,
                                 content: match &part.content {
                                     InputPart::Text(t) => ResultBlock::Text(t.as_str().into()),
-                                    InputPart::Resource(r) => {
-                                        ResultBlock::Media(media(part.id, r)?)
-                                    }
+                                    InputPart::Resource(r) => ResultBlock::Media(media(r)?),
                                 },
                             })
                         })

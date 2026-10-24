@@ -3,7 +3,10 @@ use morphiecore::semantic::task::generation::*;
 pub fn image(id: u64) -> ResourceUse {
     ResourceUse {
         id: ResourceId::new(id),
-        description: ResourceDescription::Image { detail: None },
+        description: ResourceDescription::Image {
+            detail: None,
+            size_policy: ImageSizePolicy::AllowDownsize,
+        },
     }
 }
 pub fn replace(table: &ResourceTable, id: ResourceId, body: Resource) -> ResourceTable {

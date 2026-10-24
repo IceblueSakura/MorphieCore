@@ -34,7 +34,7 @@ pub enum Source {
 #[derive(Clone, Eq, PartialEq)]
 pub enum Media {
     /// `reject_oversized` is `transformations.oversized_image: "error"`; the
-    /// default `downsize` has no record.
+    /// default `downsize` permits resizing without requesting it.
     Image {
         source: Source,
         reject_oversized: bool,
@@ -77,7 +77,7 @@ impl Media {
                 reject_oversized: match o.get("transformations") {
                     None | Some(Value::Null) => false,
                     Some(t) => match object(t)?.get("oversized_image") {
-                        None | Some(Value::Null) => false,
+                        None => false,
                         Some(v) => match v.as_str() {
                             Some("downsize") => false,
                             Some("error") => true,
@@ -179,7 +179,20 @@ impl Media {
         let text =
             |s: &str, kind| Text::new(s, kind, MAX_TEXT_BYTES).map_err(|_| CodecError::Limit);
         let (source, description) = match self {
-            Self::Image { source, .. } => (source, ResourceDescription::Image { detail: None }),
+            Self::Image {
+                source,
+                reject_oversized,
+            } => (
+                source,
+                ResourceDescription::Image {
+                    detail: None,
+                    size_policy: if *reject_oversized {
+                        ImageSizePolicy::RejectOversized
+                    } else {
+                        ImageSizePolicy::AllowDownsize
+                    },
+                },
+            ),
             Self::Document {
                 source,
                 title,
@@ -225,13 +238,10 @@ impl Media {
         Ok(resource)
     }
     /// The native carrier for one IR resource; uncalibrated detail cannot disappear.
-    pub(super) fn from_resource(
-        resource: ResourceView<'_>,
-        reject_oversized: bool,
-    ) -> Result<Self, CodecError> {
+    pub(super) fn from_resource(resource: ResourceView<'_>) -> Result<Self, CodecError> {
         let unsupported = || CodecError::Unsupported("Anthropic media".into());
         if match resource.description {
-            ResourceDescription::Image { detail } => detail.is_some(),
+            ResourceDescription::Image { detail, .. } => detail.is_some(),
             ResourceDescription::File(file) => file.detail.is_some(),
             _ => false,
         } {
@@ -267,7 +277,13 @@ impl Media {
         let media = match resource.kind() {
             ResourceKind::Image => Self::Image {
                 source,
-                reject_oversized,
+                reject_oversized: matches!(
+                    resource.description,
+                    ResourceDescription::Image {
+                        size_policy: ImageSizePolicy::RejectOversized,
+                        ..
+                    }
+                ),
             },
             ResourceKind::File => Self::Document {
                 source,

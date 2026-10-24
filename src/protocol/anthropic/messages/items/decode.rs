@@ -15,8 +15,6 @@ pub(in crate::protocol::anthropic::messages) struct Intake {
     pub(in crate::protocol::anthropic::messages) items: Vec<(ItemId, Item)>,
     pub(in crate::protocol::anthropic::messages) groups: Vec<MessageEnvelope>,
     pub(in crate::protocol::anthropic::messages) resources: ResourceTable,
-    /// Parts whose image rejects downsizing; the caller records them as fidelity.
-    pub(in crate::protocol::anthropic::messages) strict_images: Vec<PartId>,
 }
 impl Intake {
     pub(in crate::protocol::anthropic::messages) fn new(scope: LocalScope) -> Self {
@@ -25,23 +23,12 @@ impl Intake {
             items: vec![],
             groups: vec![],
             resources: ResourceTable::default(),
-            strict_images: vec![],
         }
     }
     pub(in crate::protocol::anthropic::messages) fn resource(
         &mut self,
-        part: PartId,
         media: &Media,
     ) -> Result<ResourceUse, CodecError> {
-        if matches!(
-            media,
-            Media::Image {
-                reject_oversized: true,
-                ..
-            }
-        ) {
-            self.strict_images.push(part);
-        }
         let resource = media.resource()?;
         let id = ResourceId::scoped(self.scope, self.resources.len() as u64 + 1);
         self.resources = std::mem::take(&mut self.resources).insert(id, resource.location)?;
@@ -185,7 +172,7 @@ impl Intake {
                 parts: vec![Part {
                     replay: None,
                     id: part,
-                    content: ContentPart::Resource(self.resource(part, media)?),
+                    content: ContentPart::Resource(self.resource(media)?),
                     cache: None,
                 }],
                 status: ItemLifecycle::Completed,
@@ -271,7 +258,7 @@ impl Intake {
                                         content: match &block.content {
                                             ResultBlock::Text(s) => InputPart::Text(text(s)?),
                                             ResultBlock::Media(m) => {
-                                                InputPart::Resource(self.resource(part, m)?)
+                                                InputPart::Resource(self.resource(m)?)
                                             }
                                         },
                                     })

@@ -163,7 +163,7 @@ pub fn lower_request<'a>(
     c.images
         .check(r)
         .map_err(|_| RepresentationError::ImageInput)?;
-    if fidelity.has_strict_image_sizes(r.items()) {
+    if crate::protocol::image_constraints::rejects_downsize(r.items()) {
         return Err(RepresentationError::ImageInput);
     }
     c.files

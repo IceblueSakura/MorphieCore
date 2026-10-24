@@ -57,7 +57,7 @@ pub use request::{
 pub use requirements::{GenerationRequirements, GenerationResponseRequirements};
 pub use resources::table::{ResourceDependency, ResourceId, ResourceTable, ResourceUse};
 pub use resources::{
-    FileDescription, FileDetail, ImageDetail, ImageFormat, MAX_FILE_DECODED_BYTES,
+    FileDescription, FileDetail, ImageDetail, ImageFormat, ImageSizePolicy, MAX_FILE_DECODED_BYTES,
     MAX_FILE_NAME_BYTES, MAX_IMAGE_DECODED_BYTES, MAX_RESOURCE_MEDIA_TYPE_BYTES,
     MAX_RESOURCE_URL_BYTES, MAX_TOTAL_FILE_DECODED_BYTES, Resource, ResourceDescription,
     ResourceKind, ResourceLocation, ResourceView,

@@ -4,6 +4,7 @@ import sys
 from urllib.parse import urlsplit
 
 import anthropic
+from anthropic.types import ImageBlockParam
 import httpx2 as httpx
 from sdk_support import require_sdk
 
@@ -23,10 +24,15 @@ with httpx.Client(trust_env=False, timeout=10) as http:
                 "type": "object", "properties": {"n": {"type": "integer"}}
             }, "input_examples": [{"n": 9007199254740993}, {"n": 7}]}],
         )
+        image: ImageBlockParam = {
+            "type": "image", "source": {"type": "url", "url": "https://example.invalid/a.png"},
+            "transformations": {"oversized_image": "error"},
+        }
         history = [{"role": "user", "content": [
             {"type": "text", "text": "go"},
             {"type": "document", "source": {"type": "text", "media_type": "text/plain",
                 "data": "synthetic notes"}, "context": "summary-only"},
+            image,
         ]}]
         first = client.messages.create(**shared, messages=history)
         assert first.stop_reason == "tool_use"
@@ -35,7 +41,8 @@ with httpx.Client(trust_env=False, timeout=10) as http:
         assert first.content[0].input == {"n": 7}
         history += [
             {"role": "assistant", "content": [block.model_dump(exclude_none=True) for block in first.content]},
-            {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "call_sdk", "content": "found", "is_error": False}]},
+            {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "call_sdk",
+                "content": [{"type": "text", "text": "found"}, image], "is_error": False}]},
         ]
         for partial, messages in [(False, history), (True, [{"role": "user", "content": "go"}])]:
             fragments = []

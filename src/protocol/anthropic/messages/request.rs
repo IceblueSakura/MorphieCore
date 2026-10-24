@@ -245,9 +245,6 @@ impl Profile {
             .with_message_envelopes(intake.groups)?;
         let mut fidelity = FidelityRecords::default();
         bind(&mut fidelity, semantic.items(), target)?;
-        for part in intake.strict_images {
-            fidelity.record_strict_image_size(part)?;
-        }
         Ok(DecodedRequest { semantic, fidelity })
     }
 }

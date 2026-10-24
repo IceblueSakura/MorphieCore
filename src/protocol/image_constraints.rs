@@ -1,8 +1,27 @@
 //! Value-sensitive target restrictions, independent of the model's vision semantics.
 use crate::semantic::task::generation::{
-    GenerationRequest, ImageDetail, ImageFormat, MAX_IMAGE_DECODED_BYTES, ResourceKind,
-    ResourceLocation,
+    GenerationRequest, ImageDetail, ImageFormat, ImageSizePolicy, InputPart, Item, ItemId,
+    MAX_IMAGE_DECODED_BYTES, ResourceDescription, ResourceKind, ResourceLocation, ToolOutput,
 };
+/// Targets without an exact size-policy carrier must reject this guarantee.
+pub(crate) fn rejects_downsize(items: &[(ItemId, Item)]) -> bool {
+    let strict = |description: &ResourceDescription| {
+        matches!(
+            description,
+            ResourceDescription::Image {
+                size_policy: ImageSizePolicy::RejectOversized,
+                ..
+            }
+        )
+    };
+    items.iter().any(|(_, item)| {
+        item.resource_uses().any(|r| strict(&r.description))
+            || matches!(item, Item::ProviderTool(observed)
+                if matches!(&observed.output, Some(ToolOutput::Parts(parts))
+                    if parts.iter().any(|p|
+                        matches!(&p.content, InputPart::Resource(r) if strict(&r.description)))))
+    })
+}
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ImageConstraints {
     pub urls: bool,
@@ -88,5 +107,51 @@ impl ImageConstraints {
             check(resource.media(request.resources())?)?;
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::semantic::{task::generation::*, value::Text};
+
+    #[test]
+    fn size_policy_checks_provider_output_uses_without_part_id_sidecars() {
+        let text = |s: &str| Text::new(s, "fixture", 256).unwrap();
+        let observation = |size_policy| {
+            Item::ProviderTool(ProviderToolObservation {
+                source: NativeAliasDomain {
+                    source: text("synthetic"),
+                    scope: LocalScope::ROOT,
+                },
+                operation: ProviderOperation::Reported {
+                    tool: text("search"),
+                    alias: None,
+                    requester: ProviderRequester::Unreported,
+                    action: None,
+                },
+                progress: None,
+                execution: None,
+                artifact_status: Some(ItemLifecycle::Completed),
+                output: Some(ToolOutput::Parts(vec![Part::new(
+                    PartId::new(1),
+                    InputPart::Resource(ResourceUse {
+                        id: ResourceId::new(1),
+                        description: ResourceDescription::Image {
+                            detail: None,
+                            size_policy,
+                        },
+                    }),
+                )])),
+            })
+        };
+        assert!(!rejects_downsize(&[(
+            ItemId::new(1),
+            observation(ImageSizePolicy::AllowDownsize)
+        )]));
+        assert!(rejects_downsize(&[(
+            ItemId::new(1),
+            observation(ImageSizePolicy::RejectOversized)
+        )]));
     }
 }

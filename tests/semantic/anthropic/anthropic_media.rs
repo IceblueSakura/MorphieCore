@@ -344,6 +344,20 @@ fn images_and_documents_map_to_inert_resources_and_back() {
     };
     assert_eq!(inputs.len(), 4);
     assert_eq!(inputs[0].kind(), ResourceKind::Image);
+    assert_eq!(
+        inputs[0].description,
+        &ResourceDescription::Image {
+            detail: None,
+            size_policy: ImageSizePolicy::RejectOversized,
+        }
+    );
+    assert_eq!(
+        inputs[1].description,
+        &ResourceDescription::Image {
+            detail: None,
+            size_policy: ImageSizePolicy::AllowDownsize,
+        }
+    );
     assert!(inline("image/png", "AQID"));
     assert!(
         matches!(inputs[1].location, ResourceLocation::Url(u) if u.as_str() == "https://example.invalid/a.jpg")
@@ -367,11 +381,278 @@ fn images_and_documents_map_to_inert_resources_and_back() {
         panic!("tool image")
     };
     assert_eq!(view(semantic, shot).kind(), ResourceKind::Image);
+    assert_eq!(
+        shot.description,
+        ResourceDescription::Image {
+            detail: None,
+            size_policy: ImageSizePolicy::RejectOversized,
+        }
+    );
+    // Client intake must retain the same per-use guarantee, including tool results.
+    let client = morphiecore::protocol::anthropic::messages::client::decode_client_request(
+        raw.to_string().as_bytes(),
+    )
+    .unwrap();
+    let policies = |r: &GenerationRequest| {
+        r.items()
+            .iter()
+            .flat_map(|(_, item)| item.resource_uses())
+            .map(|r| r.description.clone())
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(policies(&client.task.semantic), policies(semantic));
     let encoded = p
-        .encode_generation_request(semantic, &decoded.fidelity, &target())
+        .encode_generation_request(semantic, &Default::default(), &target())
         .unwrap();
     assert_eq!(encoded.value["messages"], messages());
     assert!(encoded.rules.is_empty());
+
+    // Same identities, different directives: old fidelity must not restore "error".
+    let mut items = semantic.items().to_vec();
+    for (_, item) in &mut items {
+        let change = |r: &mut ResourceUse| {
+            if let ResourceDescription::Image { size_policy, .. } = &mut r.description {
+                *size_policy = ImageSizePolicy::AllowDownsize;
+            }
+        };
+        match item {
+            Item::Message(m) => {
+                for part in &mut m.parts {
+                    if let ContentPart::Resource(r) = &mut part.content {
+                        change(r);
+                    }
+                }
+            }
+            Item::ToolResult(r) => {
+                if let ToolOutput::Parts(parts) = &mut r.output {
+                    for part in parts {
+                        if let InputPart::Resource(r) = &mut part.content {
+                            change(r);
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    let edited = semantic.clone().with_items(items).unwrap();
+    let encoded = p
+        .encode_generation_request(&edited, &decoded.fidelity, &target())
+        .unwrap();
+    let mut expected = messages();
+    expected[0]["content"][0]
+        .as_object_mut()
+        .unwrap()
+        .remove("transformations");
+    expected[2]["content"][0]["content"][1]
+        .as_object_mut()
+        .unwrap()
+        .remove("transformations");
+    assert_eq!(encoded.value["messages"], expected);
+    assert_eq!(policies(semantic), policies(&client.task.semantic));
+}
+
+#[test]
+fn image_size_policy_belongs_to_each_use_not_the_resource_or_fidelity() {
+    use morphiecore::protocol::openai::{Profile as OpenAI, TargetCaps, lowering};
+    use morphiecore::semantic::value::Text;
+    let id = ResourceId::new(1);
+    let image = |part, size_policy| {
+        Part::new(
+            PartId::new(part),
+            ContentPart::Resource(ResourceUse {
+                id,
+                description: ResourceDescription::Image {
+                    detail: None,
+                    size_policy,
+                },
+            }),
+        )
+    };
+    let mut controls = GenerationControls::default();
+    controls.max_output_tokens = Some(32);
+    let envelope = |id, role| {
+        MessageEnvelope::new(
+            GroupId::new(LocalScope::ROOT, id),
+            role,
+            vec![ItemId::new(id)],
+        )
+        .unwrap()
+    };
+    let request = GenerationRequest::from_resources(
+        vec![(
+            ItemId::new(1),
+            Item::Message(Message {
+                role: MessageRole::User,
+                status: ItemLifecycle::Completed,
+                phase: None,
+                parts: vec![
+                    image(1, ImageSizePolicy::AllowDownsize),
+                    image(2, ImageSizePolicy::RejectOversized),
+                ],
+            }),
+        )],
+        GenerationSettings {
+            controls,
+            ..Default::default()
+        },
+        ResourceTable::new(vec![(
+            id,
+            ResourceLocation::Url(
+                Text::new("https://example.invalid/a.png", "image", 256).unwrap(),
+            ),
+        )])
+        .unwrap(),
+    )
+    .unwrap()
+    .with_message_envelopes(vec![envelope(1, MessageEnvelopeRole::User)])
+    .unwrap();
+    // Independent IR -> wire oracle, without decoding the expected request first.
+    let encoded = Profile::AdaptiveTextTools
+        .encode_generation_request(&request, &Default::default(), &target())
+        .unwrap();
+    assert_eq!(
+        encoded.value["messages"],
+        json!([{"role":"user","content":[
+            {"type":"image","source":{"type":"url","url":"https://example.invalid/a.png"}},
+            {"type":"image","source":{"type":"url","url":"https://example.invalid/a.png"},
+                "transformations":{"oversized_image":"error"}}
+        ]}])
+    );
+    assert_eq!(request.resources().len(), 1);
+    let text = |s: &str| Text::new(s, "fixture", 256).unwrap();
+    let tool_history = GenerationRequest::from_resources(
+        vec![
+            (
+                ItemId::new(1),
+                Item::Message(Message {
+                    role: MessageRole::User,
+                    status: ItemLifecycle::Completed,
+                    phase: None,
+                    parts: vec![Part::new(
+                        PartId::new(1),
+                        ContentPart::Text(text("go").into()),
+                    )],
+                }),
+            ),
+            (
+                ItemId::new(2),
+                Item::ToolCall(ToolCall {
+                    call_id: text("c"),
+                    name: text("shot"),
+                    arguments: ToolArguments::Structured(StructuredValue::new(json!({})).unwrap()),
+                    status: ItemLifecycle::Completed,
+                    context: Default::default(),
+                    replay: None,
+                    cache: None,
+                }),
+            ),
+            (
+                ItemId::new(3),
+                Item::ToolResult(ToolResult {
+                    call_id: Some(text("c")),
+                    name: None,
+                    output: ToolOutput::Parts(vec![Part::new(
+                        PartId::new(2),
+                        InputPart::Resource(ResourceUse {
+                            id,
+                            description: ResourceDescription::Image {
+                                detail: None,
+                                size_policy: ImageSizePolicy::RejectOversized,
+                            },
+                        }),
+                    )]),
+                    is_error: None,
+                    execution: None,
+                    status: None,
+                    context: Default::default(),
+                    cache: None,
+                }),
+            ),
+        ],
+        request.settings().clone(),
+        request.resources().clone(),
+    )
+    .unwrap()
+    .with_message_envelopes(vec![
+        envelope(1, MessageEnvelopeRole::User),
+        envelope(2, MessageEnvelopeRole::Assistant),
+        envelope(3, MessageEnvelopeRole::User),
+    ])
+    .unwrap();
+    let encoded = Profile::AdaptiveTextTools
+        .encode_generation_request(&tool_history, &Default::default(), &target())
+        .unwrap();
+    assert_eq!(
+        encoded.value["messages"],
+        json!([
+            {"role":"user","content":[{"type":"text","text":"go"}]},
+            {"role":"assistant","content":[{"type":"tool_use","id":"c","name":"shot","input":{}}]},
+            {"role":"user","content":[{"type":"tool_result","tool_use_id":"c","content":[
+                {"type":"image","source":{"type":"url","url":"https://example.invalid/a.png"},
+                    "transformations":{"oversized_image":"error"}}]}]}
+        ])
+    );
+    for request in [request, tool_history] {
+        // Exercise size-policy rejection independently of native envelope grouping.
+        let request = request.with_message_envelopes(vec![]).unwrap();
+        let original = request.clone();
+        for profile in [OpenAI::Chat, OpenAI::Responses] {
+            assert_eq!(
+                lowering::lower_request(&request, &Default::default(), profile, TargetCaps::full())
+                    .err(),
+                Some(lowering::RepresentationError::ImageInput),
+                "{profile:?}"
+            );
+        }
+        assert_eq!(request, original);
+    }
+}
+
+#[test]
+fn image_transformation_known_fields_are_strict_and_defaults_are_equivalent() {
+    // Pinned ImageBlockParam permits null transformations, but
+    // ImageTransformationsParam.oversized_image is a non-null literal.
+    // Source: docs/refs/2026-10-23-stable-protocol-contracts.md#anthropic-api-2026-10-21.
+    use morphiecore::protocol::{CodecError, anthropic::messages::client::decode_client_request};
+    let wire = |transformations| {
+        json!({"model":"m","max_tokens":8,"messages":[{"role":"user","content":[
+            {"type":"image","source":{"type":"url","url":"https://example.invalid/a.png"},
+                "transformations":transformations}]}]})
+    };
+    for transformations in [
+        Value::Null,
+        json!({}),
+        json!({"oversized_image":"downsize"}),
+        json!({"future_option":true}),
+    ] {
+        let request = decode_client_request(wire(transformations).to_string().as_bytes()).unwrap();
+        let resource = request.task.semantic.items()[0]
+            .1
+            .resource_uses()
+            .next()
+            .unwrap();
+        assert_eq!(
+            resource.description,
+            ResourceDescription::Image {
+                detail: None,
+                size_policy: ImageSizePolicy::AllowDownsize,
+            }
+        );
+    }
+    for oversized in [Value::Null, json!(false), json!("resize")] {
+        let raw = wire(json!({"oversized_image":oversized}));
+        assert_eq!(
+            decode_client_request(raw.to_string().as_bytes()).unwrap_err(),
+            CodecError::Invalid("Anthropic oversized_image")
+        );
+        assert_eq!(
+            Profile::AdaptiveTextTools
+                .decode_request(raw.to_string().as_bytes())
+                .unwrap_err(),
+            CodecError::Invalid("Anthropic oversized_image")
+        );
+    }
 }
 
 #[test]

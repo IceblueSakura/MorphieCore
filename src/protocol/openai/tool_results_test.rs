@@ -156,7 +156,10 @@ fn request_codecs_enforce_result_carriers_before_rendering() {
                 PartId::new(1),
                 InputPart::Resource(ResourceUse {
                     id: ResourceId::new(1),
-                    description: ResourceDescription::Image { detail: None },
+                    description: ResourceDescription::Image {
+                        detail: None,
+                        size_policy: ImageSizePolicy::AllowDownsize,
+                    },
                 }),
             )]),
             None,

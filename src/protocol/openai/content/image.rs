@@ -74,6 +74,7 @@ pub(in crate::protocol::openai) fn read(
         location,
         description: ResourceDescription::Image {
             detail: image_detail,
+            size_policy: ImageSizePolicy::AllowDownsize,
         },
     };
     resource.validate()?;

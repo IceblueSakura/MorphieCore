@@ -29,14 +29,20 @@ fn provider_resource_declarations_materialize_once_and_cannot_arrive_after_closu
                 PartId::new(1),
                 InputPart::Resource(ResourceUse {
                     id,
-                    description: ResourceDescription::Image { detail: None },
+                    description: ResourceDescription::Image {
+                        detail: None,
+                        size_policy: ImageSizePolicy::AllowDownsize,
+                    },
                 }),
             ),
             Part::new(
                 PartId::new(2),
                 InputPart::Resource(ResourceUse {
                     id,
-                    description: ResourceDescription::Image { detail: None },
+                    description: ResourceDescription::Image {
+                        detail: None,
+                        size_policy: ImageSizePolicy::AllowDownsize,
+                    },
                 }),
             ),
         ])),
@@ -117,7 +123,10 @@ fn resource_edits_preserve_original_usage_and_do_not_report_new_measurements() {
                     PartId::new(1),
                     InputPart::Resource(ResourceUse {
                         id,
-                        description: ResourceDescription::Image { detail: None },
+                        description: ResourceDescription::Image {
+                            detail: None,
+                            size_policy: ImageSizePolicy::AllowDownsize,
+                        },
                     }),
                 )])),
             }),
@@ -141,7 +150,10 @@ fn resource_edits_preserve_original_usage_and_do_not_report_new_measurements() {
                         PartId::new(1),
                         ContentPart::Resource(ResourceUse {
                             id,
-                            description: ResourceDescription::Image { detail: None },
+                            description: ResourceDescription::Image {
+                                detail: None,
+                                size_policy: ImageSizePolicy::AllowDownsize,
+                            },
                         }),
                     )],
                 }),

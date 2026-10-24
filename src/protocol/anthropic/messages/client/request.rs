@@ -474,9 +474,6 @@ pub fn decode_client_request(bytes: &[u8]) -> Result<Request, CodecError> {
         .with_message_envelopes(groups)?;
     crate::protocol::anthropic::messages::items::validate_cache(&semantic)?;
     fidelity.bind_replay_origin(&crate::execution::replay::CLIENT_ORIGIN)?;
-    for part in intake.strict_images {
-        fidelity.record_strict_image_size(part)?;
-    }
     let mut request = Request::from_generation(DecodedRequest { semantic, fidelity }, &model)?;
     request.context.identity.user = wire::request::read_user_id(&o)?;
     request.service_policy = service::read_policy(&o)?;

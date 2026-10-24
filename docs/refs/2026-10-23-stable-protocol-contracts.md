@@ -21,6 +21,10 @@ Sources: [migration guide](https://platform.claude.com/docs/en/api/migration-202
 
 The gateway currently sends the older upstream version. Installing new SDKs and updating a loopback harness do not migrate its protocol admission, encoders or native binding acceptance.
 
+**Image-size policy recheck, 2026-10-24:** the pinned Python SDK's [ImageBlockParam](https://github.com/anthropics/anthropic-sdk-python/blob/9313f13a5a643ceed10fafba6785eab8e04b6e6e/src/anthropic/types/image_block_param.py) declares optional, nullable `transformations`. [ImageTransformationsParam](https://github.com/anthropics/anthropic-sdk-python/blob/9313f13a5a643ceed10fafba6785eab8e04b6e6e/src/anthropic/types/image_transformations_param.py) declares optional, **non-null** `oversized_image: Literal["downsize", "error"]`. Its documentation makes omitted keys/empty objects equivalent to default downsizing, while `"error"` prevents silent scaling by rejecting an oversized image. This is a per-image-use guarantee, not image detail or a declared pixel limit.
+
+The imported Anthropic streaming fixtures have no image-transformation cases. Source-backed local directional assertions in `anthropic::anthropic_media` cover that gap, including independent shared-resource uses, fresh/stale fidelity, edits and strict known-field intake. The existing pinned-SDK `messages_loop.py` consumer now sends the typed image carrier in user content and tool-result history; its Rust boundary checks both semantic policy and exact native fields. Google user/tool-result projection checks retain rejection of the guarantee. These checks do not establish real image dimensions, model resizing behavior, current-version HTTP migration or live Provider acceptance.
+
 ## OpenAI Responses strictness
 
 Source: [function calling](https://developers.openai.com/api/docs/guides/function-calling#strict-mode).

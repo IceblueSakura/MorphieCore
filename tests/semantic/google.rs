@@ -1780,7 +1780,10 @@ fn tool_result_parts_preserve_order_boundaries_and_repeated_resources() {
     let resource = || {
         InputPart::Resource(ResourceUse {
             id: ResourceId::new(1),
-            description: ResourceDescription::Image { detail: None },
+            description: ResourceDescription::Image {
+                detail: None,
+                size_policy: ImageSizePolicy::AllowDownsize,
+            },
         })
     };
     let parts = vec![
@@ -1864,24 +1867,60 @@ fn tool_result_parts_preserve_order_boundaries_and_repeated_resources() {
 }
 
 #[test]
-fn image_sizes_remain_strict() {
-    let messages = |oversized: &str| {
-        let raw = json!({"model":"gemini","max_tokens":8,"messages":[{"role":"user","content":[
-            {"type":"image","source":{"type":"base64","media_type":"image/png","data":"AQID"},
-                "transformations":{"oversized_image":oversized}}]}]});
+fn image_sizes_remain_strict_in_user_and_tool_result_uses() {
+    let messages = |oversized: &str, tool: bool| {
+        let image = json!({"type":"image","source":{"type":"base64","media_type":"image/png","data":"AQID"},
+            "transformations":{"oversized_image":oversized}});
+        let history = if tool {
+            json!([
+                {"role":"assistant","content":[{"type":"tool_use","id":"c","name":"shot","input":{}}]},
+                {"role":"user","content":[{"type":"tool_result","tool_use_id":"c","content":[image]}]}
+            ])
+        } else {
+            json!([{"role":"user","content":[image]}])
+        };
+        let raw = json!({"model":"gemini","max_tokens":8,"messages":history});
         morphiecore::protocol::anthropic::messages::client::decode_client_request(
             raw.to_string().as_bytes(),
         )
         .unwrap()
     };
-    for (request, ok) in [(messages("downsize"), true), (messages("error"), false)] {
-        let result = encode_generation_request(
-            &request.task.semantic,
-            &request.task.fidelity,
-            &target(),
-            None,
-        );
-        assert_eq!(result.is_ok(), ok);
+    for tool in [false, true] {
+        for oversized in ["downsize", "error"] {
+            let request = messages(oversized, tool);
+            let original = request.clone();
+            // Fresh fidelity cannot erase an image-use guarantee.
+            let generate = encode_generation_request(
+                &request.task.semantic,
+                &Default::default(),
+                &target(),
+                None,
+            );
+            let interactions =
+                morphiecore::protocol::google::interactions::encode_generation_request(
+                    &request.task.semantic,
+                    &Default::default(),
+                    &target(),
+                );
+            if oversized == "downsize" {
+                generate.unwrap();
+                interactions.unwrap();
+            } else {
+                assert_eq!(
+                    generate.unwrap_err(),
+                    morphiecore::protocol::CodecError::Unsupported(
+                        "Gemini semantic carrier".into()
+                    )
+                );
+                assert_eq!(
+                    interactions.unwrap_err(),
+                    morphiecore::protocol::CodecError::Unsupported(
+                        "Interactions semantic carrier".into()
+                    )
+                );
+            }
+            assert_eq!(request, original);
+        }
     }
 }
 

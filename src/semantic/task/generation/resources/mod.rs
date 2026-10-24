@@ -24,6 +24,14 @@ impl ImageDetail {
         self.into()
     }
 }
+/// Whether an input image may be resized to fit the target's size limit.
+/// This is a per-use guarantee, not a request to resize or a pixel dimension.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum ImageSizePolicy {
+    #[default]
+    AllowDownsize,
+    RejectOversized,
+}
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ResourceKind {
     Image,
@@ -71,7 +79,10 @@ impl std::fmt::Debug for FileDescription {
 }
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ResourceDescription {
-    Image { detail: Option<ImageDetail> },
+    Image {
+        detail: Option<ImageDetail>,
+        size_policy: ImageSizePolicy,
+    },
     Audio,
     Video,
     File(FileDescription),
@@ -156,7 +167,7 @@ impl ResourceView<'_> {
     }
     pub fn image_detail(&self) -> Option<ImageDetail> {
         match self.description {
-            ResourceDescription::Image { detail } => *detail,
+            ResourceDescription::Image { detail, .. } => *detail,
             _ => None,
         }
     }
@@ -179,7 +190,7 @@ impl ResourceView<'_> {
     /// This proves representation, not format validity, dimensions or model acceptance.
     pub fn validate(&self) -> Result<usize, GenerationError> {
         let description_bytes = match &self.description {
-            ResourceDescription::Image { detail } => detail.map_or(0, |d| d.label().len()),
+            ResourceDescription::Image { detail, .. } => detail.map_or(0, |d| d.label().len()) + 1,
             ResourceDescription::Audio | ResourceDescription::Video => 0,
             ResourceDescription::File(file) => {
                 let filename_bytes = file.filename.as_ref().map_or(0, |n| n.as_str().len());

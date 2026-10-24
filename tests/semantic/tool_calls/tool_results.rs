@@ -77,7 +77,10 @@ fn request_with_execution(
 fn image(url: &str) -> Resource {
     Resource {
         location: ResourceLocation::Url(text(url)),
-        description: ResourceDescription::Image { detail: None },
+        description: ResourceDescription::Image {
+            detail: None,
+            size_policy: ImageSizePolicy::AllowDownsize,
+        },
     }
 }
 fn media(url: &str) -> Payload {

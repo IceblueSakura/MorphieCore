@@ -109,8 +109,6 @@ pub struct FidelityRecords {
     response_item_ids: BTreeMap<ItemId, Text>,
     reported_creators: BTreeMap<ItemId, CreatorBinding>,
     cache_breakpoints: std::collections::BTreeSet<PartId>,
-    /// Messages images that must fail rather than be downsized when oversized.
-    strict_image_sizes: std::collections::BTreeSet<PartId>,
     input_text_forms: std::collections::BTreeSet<PartId>,
     item_replay: BTreeMap<ItemId, ReplayBinding>,
     part_replay: BTreeMap<(ItemId, PartId), ReplayBinding>,
@@ -134,10 +132,7 @@ impl FidelityRecords {
                 .values()
                 .map(|id| 1024 + id.as_str().len())
                 .sum::<usize>()
-            + (self.cache_breakpoints.len()
-                + self.strict_image_sizes.len()
-                + self.input_text_forms.len())
-                * 512
+            + (self.cache_breakpoints.len() + self.input_text_forms.len()) * 512
             + (self.item_replay.len() + self.part_replay.len() + self.audio.len()) * 2048
             + self
                 .cached_context
@@ -261,22 +256,6 @@ impl FidelityRecords {
     pub fn cache_breakpoint(&self, owner: PartId) -> bool {
         self.cache_breakpoints.contains(&owner)
     }
-    pub fn record_strict_image_size(&mut self, owner: PartId) -> Result<(), CodecError> {
-        if self.strict_image_sizes.len() >= MAX_ITEMS {
-            return Err(CodecError::Limit);
-        }
-        self.strict_image_sizes.insert(owner);
-        Ok(())
-    }
-    pub fn strict_image_size(&self, owner: PartId) -> bool {
-        self.strict_image_sizes.contains(&owner)
-    }
-    /// Targets without a size-policy carrier must reject, not downsize.
-    pub fn has_strict_image_sizes(&self, items: &[(ItemId, Item)]) -> bool {
-        self.strict_image_sizes
-            .iter()
-            .any(|owner| part_exists(items, *owner))
-    }
     pub fn record_response_item_id(
         &mut self,
         owner: ItemId,
@@ -380,8 +359,6 @@ impl FidelityRecords {
             }
         }
         self.cache_breakpoints.retain(|owner| parts.contains(owner));
-        self.strict_image_sizes
-            .retain(|owner| parts.contains(owner));
         self.input_text_forms.retain(|owner| parts.contains(owner));
         self.audio.retain(|owner, _| parts.contains(owner));
         self.response_item_ids
@@ -415,21 +392,4 @@ fn message_parts(
                 .map(move |(ordinal, part)| ((id, part.id), (message.status, ordinal, part)))
         })
         .collect()
-}
-fn part_exists(items: &[(ItemId, Item)], owner: PartId) -> bool {
-    let listed = |ids: &mut dyn Iterator<Item = PartId>| ids.take(MAX_ITEMS).any(|id| id == owner);
-    items.iter().take(MAX_ITEMS).any(|(_, item)| {
-        let output = match item {
-            Item::Instruction(value) => return listed(&mut value.parts.iter().map(|p| p.id)),
-            Item::Message(value) => return listed(&mut value.parts.iter().map(|p| p.id)),
-            Item::Reasoning(value) => return listed(&mut value.parts.iter().map(|(id, _)| *id)),
-            Item::ToolResult(value) | Item::CustomResult(value) => Some(&value.output),
-            Item::ProviderTool(value) => value.output.as_ref(),
-            _ => None,
-        };
-        match output {
-            Some(ToolOutput::Parts(parts)) => listed(&mut parts.iter().map(|p| p.id)),
-            _ => false,
-        }
-    })
 }

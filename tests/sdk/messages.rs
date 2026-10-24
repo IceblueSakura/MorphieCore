@@ -91,6 +91,11 @@ async fn handle(
             json!({"type":"document","source":{"type":"text","media_type":"text/plain",
                 "data":"synthetic notes"},"context":"summary-only"})
         );
+        assert_eq!(
+            native.value["messages"][0]["content"][2],
+            json!({"type":"image","source":{"type":"url","url":"https://example.invalid/a.png"},
+                "transformations":{"oversized_image":"error"}})
+        );
     }
     if turn == 1 || turn == 4 {
         let mut wire = json!({"id":"msg1","type":"message","role":"assistant","model":"fixture-model",
@@ -116,8 +121,19 @@ async fn handle(
         assert!(request.task.semantic.items().iter().any(
             |(_, item)| matches!(item,Item::ToolResult(r)
             if r.required_call_id().ok()==Some("call_sdk") && r.is_error==Some(false)
-                && matches!(&r.output,ToolOutput::Text(text) if text=="found"))
+                && matches!(&r.output,ToolOutput::Parts(parts)
+                    if matches!(&parts[0].content, InputPart::Text(text) if text.as_str()=="found")
+                        && matches!(&parts[1].content, InputPart::Resource(r)
+                            if matches!(r.description, ResourceDescription::Image {
+                                size_policy: ImageSizePolicy::RejectOversized, ..
+                            }))))
         ));
+        assert_eq!(
+            native.value["messages"][2]["content"][0]["content"],
+            json!([{"type":"text","text":"found"},
+                {"type":"image","source":{"type":"url","url":"https://example.invalid/a.png"},
+                    "transformations":{"oversized_image":"error"}}])
+        );
     }
     let mut frames = vec![
         json!({"type":"message_start","message":{"id":"msg2","type":"message","role":"assistant","model":"fixture-model",

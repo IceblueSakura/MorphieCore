@@ -492,7 +492,8 @@ impl Adapter {
                     matches!(
                         resource.description,
                         crate::semantic::task::generation::ResourceDescription::Image {
-                            detail: Some(_)
+                            detail: Some(_),
+                            ..
                         }
                     )
                 })
