@@ -448,7 +448,7 @@ Instruction content is plain text only: request-wide instructions, Messages `sys
 
 Later system or developer instructions keep their position. Chat and Responses targets carry them natively; Messages uses mid-conversation system messages subject to native placement rules; Google targets reject them.
 
-Return reasoning carriers unchanged in later history. Chat clients must preserve `reasoning_details`, not just readable text. See [Reasoning replay](architecture.md#reasoning-replay).
+Standard Chat has no private reasoning/replay carrier. Standard `reasoning_effort` controls computation, not reasoning-text visibility; usage reasoning counters do not imply readable output. The separately selected [readable Chat profile](architecture.md#chat-reasoning-extensions) is pending implementation and client acceptance. Do not send `reasoning_details` expecting opaque continuation on Standard Chat. Native Responses/Messages clients must return their supported reasoning carriers unchanged; see [Reasoning replay](architecture.md#reasoning-replay).
 
 Responses assistant-history `output_text` may omit `annotations` under the [selected input shorthand](architecture.md#client-responses-history-shorthand). The gateway inserts an empty list with a named diagnostic receipt; explicit null or malformed annotations still reject, and supplied citations must be preserved. This does not relax upstream response validation or restore citations discarded by a client.
 

@@ -342,6 +342,8 @@ Source-derived expectations are not fresh acceptance. Record exclusions, includi
 
 #### Initial production-profile baseline
 
+The declarations and successful runs below are historical, not acceptance of the current standard-delivery redesign. The current bounded reacceptance selects pi 1.4.0 and OpenCode 1.19.4 from the source lock, readable Chat reasoning on `dashscope-flash-chat`, native pi Messages on `opencode-go-haiku-messages`, and separate Standard Chat controls. The [contract-closure gate](roadmap.md#standards-reset-and-redesign) must pass first. OpenCode 1.19.4 needs its release-specific `@ai-sdk/openai-compatible` configuration and explicit `interleaved.field: reasoning_content`; do not reuse the historical 2.0.32 invocation as proof. No installed-client or real-Provider reacceptance is asserted yet.
+
 Use the existing `dashscope-flash-chat` and `opencode-go-haiku-messages` bindings for the three recovery profiles below. Production initially promises a single candidate per route; the synthetic two-key recovery pool is not real failover acceptance. The drivers' explicit compat/config values are authoritative; do not substitute client defaults.
 
 | Profile | Fixed client declaration | Cache, session and auxiliary calls |

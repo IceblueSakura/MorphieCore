@@ -56,16 +56,19 @@ class OpenApiSchemaTests(unittest.TestCase):
     def test_native_thinking_carriers_are_typed_without_an_extension_bag(self):
         chat = {"model": "synthetic", "messages": []}
         response = {"model": "synthetic", "input": "go"}
-        for name, body in (("ChatRequest", chat), ("ResponsesRequest", response)):
+        for name, body in (("ResponsesRequest", response),):
             for value in (False, True):
                 validator(name).validate({**body, "enable_thinking": value})
             for value in (None, 1, "true"):
                 self.assertFalse(validator(name).is_valid({**body, "enable_thinking": value}))
             self.assertFalse(validator(name).is_valid({**body, "extra_body": {}}))
             self.assertFalse(validator(name).is_valid({**body, "parameters": {"max_tokens": 64}}))
-        validator("ChatRequest").validate({**chat, "thinking_budget": 32, "top_k": 40})
-        for patch in ({"thinking_budget": 0}, {"thinking_budget": None},
-                      {"top_k": 0}, {"top_k": 101}, {"top_k": 1.5}):
+        for field in ("enable_thinking", "thinking_budget", "preserve_thinking"):
+            self.assertNotIn(field, SCHEMAS["ChatRequest"]["properties"])
+        validator("ChatRequest").validate({**chat, "reasoning_effort": "low", "top_k": 40})
+        for patch in ({"reasoning_effort": "invalid"}, {"top_k": 0},
+                      {"top_k": 101}, {"top_k": 1.5}, {"extra_body": {}},
+                      {"parameters": {"max_tokens": 64}}):
             self.assertFalse(validator("ChatRequest").is_valid({**chat, **patch}))
 
     def test_native_identity_and_history_reading_use_distinct_bounded_carriers(self):
@@ -76,11 +79,6 @@ class OpenApiSchemaTests(unittest.TestCase):
         for value in ({"metadata": None}, {"metadata": {"user_id": 1}},
                       {"metadata": {"user_id": "x" * 513}}):
             self.assertFalse(validator("MessagesRequest").is_valid({**messages, **value}))
-        chat = {"model": "synthetic", "messages": []}
-        for value in (False, True):
-            validator("ChatRequest").validate({**chat, "preserve_thinking": value})
-        for value in (None, "true", 1):
-            self.assertFalse(validator("ChatRequest").is_valid({**chat, "preserve_thinking": value}))
 
     def test_generation_has_one_neutral_conversation_header_and_no_provider_session_body(self):
         parameter = DOCUMENT["components"]["parameters"]["ConversationId"]
