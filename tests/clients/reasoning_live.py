@@ -2,7 +2,8 @@
 
 Three requests per run, 2048 output tokens each, one attempt, no retries or
 payload rewriting. Credentials are resolved only by the ordinary gateway loader.
-All business inputs and captures are test-owned; only fixed verdicts are printed.
+All business inputs are test-owned; only fixed verdicts are printed. Delivered
+responses are observed in bounded memory, never persisted as raw SSE fragments.
 """
 import argparse
 import copy
@@ -30,6 +31,24 @@ def calls(message):
     return message.get("tool_calls") or []
 
 
+def plain_content(value):
+    """Compare text-part framing without changing delivered or replayed text."""
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value
+    check(isinstance(value, list) and all(isinstance(part, dict) and part.get("type") == "text"
+          and isinstance(part.get("text"), str) for part in value), "live_nontext_history")
+    return "".join(part["text"] for part in value)
+
+
+def opencode_final_output(events):
+    # A real tool turn can publish a pre-tool text block. The last text is the
+    # final answer; verify its whole delivered message separately in State.
+    texts = [event["part"]["text"] for event in events if event.get("type") == "text"]
+    check(bool(texts) and texts[-1].strip() == TEXT, "live_client_final_answer")
+
+
 def same_message(actual, observed):
     check(actual.get("role") == "assistant", "assistant_owner")
     check((actual.get("content") or "") == observed["content"], "answer_changed")
@@ -43,25 +62,40 @@ def same_message(actual, observed):
               "call_identity_or_arguments_changed")
 
 
-def observed_message(records, exchange):
-    records = [record for record in records if record["exchange"] == exchange
-               and record["boundary"] == "client_response"]
-    check(records and records[-1]["status"] == "source_eof", "client_capture_eof")
+def observed_message(payload):
+    """Independent finite SSE oracle over the unchanged, fully drained delivery."""
+    check(len(payload) <= 2 << 20, "response_body_limit")
+    wire = payload.decode("utf-8").replace("\r\n", "\n").replace("\r", "\n")
+    check(wire.endswith("\n\n"), "client_stream_eof")
     message = {"content": "", "reasoning_content": "", "tool_calls": []}
     by_index = {}
     terminals = []
-    for record in records:
-        if record["status"] != "body_unit":
+    done = False
+    for frame in wire.split("\n\n"):
+        check(len(frame.encode()) <= 1 << 20, "client_event_limit")
+        data = []
+        for line in frame.split("\n"):
+            field, _, value = line.partition(":")
+            if field == "data":
+                data.append(value.removeprefix(" "))
+        if not data:
             continue
-        value = record["value"]
+        check(not done, "client_data_after_done")
+        data = "\n".join(data)
+        if data == "[DONE]":
+            done = True
+            continue
+        value = json.loads(data)
         check("error" not in value, "published_error")
-        for choice in value.get("choices", []):
+        for choice in value["choices"]:
+            check(choice["index"] == 0 and not terminals, "client_choice_after_terminal")
             delta = choice["delta"]
             check("reasoning_details" not in delta and "reasoning" not in delta, "unexpected_reasoning_carrier")
             for key in ("content", "reasoning_content"):
                 if delta.get(key) is not None:
                     message[key] += delta[key]
             for part in delta.get("tool_calls") or []:
+                check(part.get("type", "function") == "function", "stream_call_type")
                 call = by_index.setdefault(part["index"], {"id": "", "function": {"name": "", "arguments": ""}})
                 if part.get("id"):
                     check(not call["id"] or call["id"] == part["id"], "stream_call_identity")
@@ -70,8 +104,14 @@ def observed_message(records, exchange):
                     call["function"][key] += part.get("function", {}).get(key) or ""
             if choice.get("finish_reason") is not None:
                 terminals.append(choice["finish_reason"])
+    check(done, "client_stream_done")
     check(len(terminals) == 1 and terminals[0] in ("tool_calls", "stop"), "honest_terminal")
+    check(sorted(by_index) == list(range(len(by_index))), "stream_call_indices")
     message["tool_calls"] = [by_index[index] for index in sorted(by_index)]
+    for call in message["tool_calls"]:
+        check(bool(call["id"]) and bool(call["function"]["name"]), "stream_call_identity")
+        check(isinstance(json.loads(call["function"]["arguments"]), dict), "stream_call_arguments")
+    check(bool(message["tool_calls"]) == (terminals[0] == "tool_calls"), "stream_call_terminal")
     return message, terminals[0]
 
 
@@ -87,6 +127,17 @@ class State:
         self.accepted = threading.Event()
         self.errors = []
         self.received_requests = 0
+        self.outputs = {}
+
+    def observe_response(self, body, status, content_type, payload):
+        check(status == 200, "live_response_status")
+        check(content_type is not None and content_type.split(";")[0] == "text/event-stream",
+              "live_response_content_type")
+        output = observed_message(payload)
+        with self.lock:
+            ordinal = self.owner.requests.index(body)
+            check(ordinal not in self.outputs, "live_duplicate_response")
+            self.outputs[ordinal] = output
 
     def incoming(self, headers, body):
         with self.lock:
@@ -129,18 +180,38 @@ class State:
                   and record.get("ignored_request_field_count", 0) == 0 for record in requests),
               "live_outcomes_or_attempts")
         capture = [json.loads(line) for line in (root / "capture.jsonl").read_text().splitlines()]
-        check(all(record["dropped_before"] == 0 and not record["redacted"]
-                  and record["status"] in ("body_unit", "source_eof") for record in capture), "live_capture_loss")
+        # Response capture may intentionally reject unsafe argument fragments.
+        # Only complete prepared requests are capture evidence; delivery uses the
+        # in-memory observer, without weakening production credential redaction.
         prepared = [record for record in capture if record["boundary"] == "upstream_request"]
         check(len(prepared) == BUDGET and len({record["exchange"] for record in prepared}) == BUDGET,
               "live_prepared_count")
-        outputs = [observed_message(capture, record["exchange"]) for record in prepared]
+        check(all(record["dropped_before"] == 0 and not record["redacted"]
+                  and record["status"] == "body_unit" for record in prepared), "live_capture_loss")
+        check(sorted(self.outputs) == list(range(BUDGET)), "live_response_count")
+        outputs = [self.outputs[index] for index in range(BUDGET)]
         check([terminal for _, terminal in outputs] == ["tool_calls", "stop", "stop"], "live_tool_loop_terminals")
-        for index in (1, 2):
+        check(all(message["reasoning_content"] for message, _ in outputs), "live_reasoning_not_observed")
+        check(all(message["content"].strip() == TEXT for message, _ in outputs[1:]), "live_final_answer")
+        for index in range(BUDGET):
             wire = prepared[index]["value"]
-            check(wire["model"] == MODEL and wire["max_completion_tokens"] == CAP, "live_prepared_controls")
+            check(wire["model"] == MODEL and wire["max_completion_tokens"] == CAP
+                  and wire["stream"] is True and wire["reasoning_effort"] == "low", "live_prepared_controls")
+            source = self.owner.requests[index]["messages"]
+            check([message["role"] for message in wire["messages"]] ==
+                  [message["role"] for message in source], "live_prepared_history_shape")
+            for actual, expected in zip(wire["messages"], source):
+                if expected["role"] != "assistant":
+                    check(plain_content(actual.get("content")) == plain_content(expected.get("content")),
+                          "live_prepared_history_content")
+                    check(actual.get("name") == expected.get("name"), "live_prepared_participant")
+                if expected["role"] == "tool":
+                    check(actual["tool_call_id"] == expected["tool_call_id"] ==
+                          outputs[0][0]["tool_calls"][0]["id"], "live_prepared_result_identity")
             history = [message for message in wire["messages"] if message["role"] == "assistant"]
+            incoming = [message for message in source if message["role"] == "assistant"]
             for earlier in range(index):
+                same_message(incoming[earlier], outputs[earlier][0])
                 same_message(history[earlier], outputs[earlier][0])
         return {"client_requests": BUDGET, "upstream_attempts": BUDGET,
                 "readable_reasoning_replayed": True, "model_issued_tool_history": True,
@@ -163,7 +234,8 @@ class State:
             message = str(error.get("message", "")).lower()
             code = error.get("code")
             known_codes = {"InvalidParameter", "InvalidParameterValue", "InvalidParameter.Unsupported",
-                           "InvalidApiKey", "ModelNotFound", "invalid_parameter_error", "invalid_request_error"}
+                           "InvalidApiKey", "ModelNotFound", "Arrearage",
+                           "invalid_parameter_error", "invalid_request_error"}
             fields = [field for field in ("model", "enable_thinking", "reasoning_effort",
                       "max_completion_tokens", "max_tokens", "tools", "tool_choice", "messages",
                       "temperature", "top_p", "preserve_thinking", "stream_options") if field in message]
@@ -195,11 +267,13 @@ def run_client(case, binary, env, root, work, origin, path):
         configuration = opencode_configuration(root, origin)
         env = {**env, "OPENCODE_CONFIG": str(configuration), "OPENCODE_DISABLE_AUTOUPDATE": "1",
                "OPENCODE_DISABLE_MODELS_FETCH": "1", "OPENCODE_DISABLE_PROJECT_CONFIG": "1"}
-        identity, events = opencode_prompt(binary, env, work, first, "reasoning-acceptance", timeout=130)
+        identity, events = opencode_prompt(binary, env, work, first, "reasoning-acceptance", timeout=130,
+                                          check_output=opencode_final_output)
         tools = [event for event in events if event.get("type") == "tool_use"]
         check(len(tools) == 1 and tools[0]["part"]["tool"] == "read"
               and tools[0]["part"]["state"]["status"] == "completed", "live_client_tool_execution")
-        resumed, _ = opencode_prompt(binary, env, work, next_turn, "reasoning-acceptance", identity, timeout=130)
+        resumed, _ = opencode_prompt(binary, env, work, next_turn, "reasoning-acceptance", identity, timeout=130,
+                                    check_output=opencode_final_output)
         check(resumed == identity, "live_client_session_changed")
 
 

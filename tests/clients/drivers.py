@@ -248,7 +248,8 @@ def check_opencode_session(database, identity, expected):
     check(idle == ("succeeded",), "opencode_idle_outcome")
 
 
-def opencode_prompt(binary, env, work, prompt, title, session=None, origin=None, timeout=30):
+def opencode_prompt(binary, env, work, prompt, title, session=None, origin=None, timeout=30,
+                    check_output=check_opencode_output):
     args = [binary, "run", *(["--server", origin] if origin else ["--standalone"]),
             "--format", "json", "--title", title, "-m", "recovery/qwen3.8-flash#low"]
     if session:
@@ -259,7 +260,7 @@ def opencode_prompt(binary, env, work, prompt, title, session=None, origin=None,
     identities = {e["sessionID"] for e in events if "sessionID" in e}
     check(len(identities) == 1, "opencode_session_event_identity")
     check(not any(e.get("type") == "error" for e in events), "opencode_error_event")
-    check_opencode_output(events)
+    check_output(events)
     return identities.pop(), events
 
 

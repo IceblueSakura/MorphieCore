@@ -247,12 +247,18 @@ def handler(state, ingress, direct_client=False):
                                     self.send_header(key, value)
                             self.send_header("connection", "close")
                             self.end_headers()
+                            observe = getattr(state, "observe_response", None)
+                            observed = bytearray() if observe is not None else None
                             received = 0
                             while chunk := response.read1(4096):
                                 received += len(chunk)
                                 check(received <= 2 * 1024 * 1024, "response_body_limit")
+                                if observed is not None:
+                                    observed.extend(chunk)
                                 self.wfile.write(chunk)
                                 self.wfile.flush()
+                            if observe is not None:
+                                observe(body, response.status, response.getheader("content-type"), bytes(observed))
                         finally:
                             self.server.untrack(outgoing)
                 else:
