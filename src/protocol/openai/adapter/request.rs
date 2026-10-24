@@ -151,13 +151,23 @@ fn with_tool_error_status(
 impl Adapter {
     /// Closed decode: every field must be registered.
     pub fn decode_request(&self, bytes: &[u8]) -> Result<Request, CodecError> {
-        self.decode_in(bytes, DecodeDirection::Request)
+        self.decode_in(bytes, DecodeDirection::Request, None)
     }
     /// Downstream client decode: unregistered fields are ignored and their names
     /// kept for diagnostics; nothing unregistered reaches the IR.
     pub fn decode_client_request(&self, bytes: &[u8]) -> Result<Request, CodecError> {
+        self.decode_client_history(bytes, None)
+    }
+    pub(crate) fn decode_client_history(
+        &self,
+        bytes: &[u8],
+        history: Option<(
+            &crate::protocol::DecodedRequest,
+            &crate::protocol::DecodedResponse,
+        )>,
+    ) -> Result<Request, CodecError> {
         let ignored = IgnoredFields::default();
-        let mut request = self.decode_in(bytes, DecodeDirection::Client(&ignored))?;
+        let mut request = self.decode_in(bytes, DecodeDirection::Client(&ignored), history)?;
         request.ignored_fields = ignored.into_names();
         Ok(request)
     }
@@ -165,6 +175,10 @@ impl Adapter {
         &self,
         bytes: &[u8],
         direction: DecodeDirection<'_>,
+        history: Option<(
+            &crate::protocol::DecodedRequest,
+            &crate::protocol::DecodedResponse,
+        )>,
     ) -> Result<Request, CodecError> {
         let mut value = crate::protocol::json::decode(bytes)?;
         let mut native_controls = serde_json::Map::new();
@@ -222,7 +236,7 @@ impl Adapter {
                 }
             }
             Profile::Responses => {
-                let decoded = envelope::decode_request_in(&value, direction)?;
+                let decoded = envelope::decode_request_with_history(&value, direction, history)?;
                 let options = match decoded.context.delivery.options {
                     Presence::Absent => Presence::Absent,
                     Presence::Null => Presence::Null,
@@ -296,10 +310,16 @@ impl Adapter {
             openai::dialect::bailian::check(&request, self.protocol, &request.model)?;
         }
         request.delivery.validate()?;
+        let retained = history.map_or(0, |(input, output)| {
+            input.semantic.items().len() + output.semantic.items().len()
+        });
         if let Some(scope) = &self.adaptation.scope {
-            request.task.fidelity.bind_replay_origin(scope)?;
+            request
+                .task
+                .fidelity
+                .bind_replay_origin_for_items(scope, &request.task.semantic.items()[retained..])?;
         }
-        for (_, item) in request.task.semantic.items() {
+        for (_, item) in &request.task.semantic.items()[retained..] {
             if let crate::semantic::task::generation::Item::Message(m) = item {
                 for p in &m.parts {
                     if matches!(

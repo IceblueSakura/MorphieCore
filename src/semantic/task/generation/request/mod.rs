@@ -54,6 +54,10 @@ impl GenerationRequest {
         Ok(r)
     }
     pub fn validate(&self) -> Result<(), GenerationError> {
+        self.retained_bytes().map(|_| ())
+    }
+    /// Validated semantic storage charge, independent of any wire representation.
+    pub(crate) fn retained_bytes(&self) -> Result<usize, GenerationError> {
         let settings = self.settings.validate()?;
         if self.settings.text.presence == Presence::Null
             || self.settings.text.format == Presence::Null
@@ -71,16 +75,15 @@ impl GenerationRequest {
             .as_ref()
             .map_or(0, CachedContextReference::bytes);
         let envelopes = self.envelopes.validate(&self.items)?;
-        if items
+        let bytes = items
             .saturating_add(settings)
             .saturating_add(resources)
             .saturating_add(cached_context)
-            .saturating_add(envelopes)
-            > MAX_TOTAL_BYTES
-        {
+            .saturating_add(envelopes);
+        if bytes > MAX_TOTAL_BYTES {
             return Err(GenerationError::Limit);
         }
-        Ok(())
+        Ok(bytes)
     }
     pub fn items(&self) -> &[(ItemId, Item)] {
         &self.items

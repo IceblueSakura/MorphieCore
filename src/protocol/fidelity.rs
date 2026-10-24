@@ -1,4 +1,5 @@
 //! Bounded representation records. Only surviving semantic owners may reuse them.
+mod history;
 mod replay;
 mod response_records;
 use super::CodecError;

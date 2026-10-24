@@ -101,6 +101,25 @@ async fn stored_history_capacity_delete_and_restart_release_without_hidden_dispa
         "history_capacity_exceeded"
     );
     assert_eq!(calls.load(Ordering::SeqCst), 1);
+    let empty_parts = client
+        .post(format!("{base}/responses"))
+        .bearer_auth(super::support::CLIENT_KEY)
+        .json(&body(json!([{"role":"assistant","content":vec![
+            json!({"type":"output_text","text":"","annotations":[]});1024
+        ]}])))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(
+        empty_parts.status(),
+        429,
+        "empty parts still occupy retained memory"
+    );
+    assert_eq!(
+        empty_parts.json::<Value>().await.unwrap()["error"]["code"],
+        "history_capacity_exceeded"
+    );
+    assert_eq!(calls.load(Ordering::SeqCst), 2);
     let small = body(json!("small"));
     let a = request(&client, &base, super::support::CLIENT_KEY, &small).await;
     let id = a["id"].as_str().unwrap();
@@ -143,7 +162,7 @@ async fn stored_history_capacity_delete_and_restart_release_without_hidden_dispa
         404
     );
     let b = request(&client, &base, super::support::CLIENT_KEY, &small).await;
-    assert_eq!(calls.load(Ordering::SeqCst), 4);
+    assert_eq!(calls.load(Ordering::SeqCst), 5);
     shutdown.send(()).unwrap();
     tokio::time::timeout(Duration::from_secs(3), &mut serving.0)
         .await
@@ -185,9 +204,9 @@ async fn stored_history_capacity_delete_and_restart_release_without_hidden_dispa
         continued.json::<Value>().await.unwrap()["error"]["code"],
         "response_not_found"
     );
-    assert_eq!(calls.load(Ordering::SeqCst), 4);
-    request(&client, &base, super::support::CLIENT_KEY, &small).await;
     assert_eq!(calls.load(Ordering::SeqCst), 5);
+    request(&client, &base, super::support::CLIENT_KEY, &small).await;
+    assert_eq!(calls.load(Ordering::SeqCst), 6);
     shutdown.send(()).unwrap();
     tokio::time::timeout(Duration::from_secs(3), &mut fresh.0)
         .await

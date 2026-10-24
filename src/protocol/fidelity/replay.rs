@@ -324,27 +324,49 @@ impl FidelityRecords {
     }
     /// Bind origin only at a trusted decode boundary, never from business JSON.
     pub fn bind_replay_origin(&mut self, origin: &ReplayOrigin) -> Result<(), CodecError> {
+        self.bind_origins(origin, None)
+    }
+    /// A typed retained prefix keeps its original owner-local associations.
+    pub(crate) fn bind_replay_origin_for_items(
+        &mut self,
+        origin: &ReplayOrigin,
+        items: &[(ItemId, Item)],
+    ) -> Result<(), CodecError> {
+        let owners = items.iter().map(|(id, _)| *id).collect();
+        self.bind_origins(origin, Some(&owners))
+    }
+    fn bind_origins(
+        &mut self,
+        origin: &ReplayOrigin,
+        owners: Option<&std::collections::BTreeSet<ItemId>>,
+    ) -> Result<(), CodecError> {
         if self
             .item_replay
-            .values()
-            .chain(self.part_replay.values())
-            .any(|r| r.origin.as_ref().is_some_and(|old| old != origin))
+            .iter()
+            .chain(self.part_replay.iter().map(|((owner, _), r)| (owner, r)))
+            .filter(|(owner, _)| owners.is_none_or(|owners| owners.contains(owner)))
+            .any(|(_, r)| r.origin.as_ref().is_some_and(|old| old != origin))
         {
             return Err(CodecError::Invalid("replay origin rebinding"));
         }
         for replay in self
             .item_replay
-            .values_mut()
-            .chain(self.part_replay.values_mut())
+            .iter_mut()
+            .chain(
+                self.part_replay
+                    .iter_mut()
+                    .map(|((owner, _), r)| (owner, r)),
+            )
+            .filter(|(owner, _)| owners.is_none_or(|owners| owners.contains(owner)))
         {
-            replay.origin = Some(origin.clone());
+            replay.1.origin = Some(origin.clone());
         }
         Ok(())
     }
 }
 
 // A digest binds replay to its typed owner without retaining a second readable payload.
-fn fingerprint(item: &ReasoningItem) -> [u8; 32] {
+pub(super) fn fingerprint(item: &ReasoningItem) -> [u8; 32] {
     use sha2::{Digest, Sha256};
     let mut hash = Sha256::new();
     hash.update([match item.status {
@@ -373,7 +395,7 @@ fn fingerprint(item: &ReasoningItem) -> [u8; 32] {
     hash.finalize().into()
 }
 
-fn part_dependency(
+pub(super) fn part_dependency(
     status: ItemLifecycle,
     ordinal: usize,
     part: &Part,
@@ -395,7 +417,7 @@ fn part_dependency(
     hash.update(value.fingerprint());
     Ok(hash.finalize().into())
 }
-fn call_dependency(call: &ToolCall) -> Result<[u8; 32], CodecError> {
+pub(super) fn call_dependency(call: &ToolCall) -> Result<[u8; 32], CodecError> {
     use sha2::{Digest, Sha256};
     let value = call
         .replay

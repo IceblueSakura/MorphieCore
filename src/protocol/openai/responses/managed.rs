@@ -50,8 +50,7 @@ pub(crate) fn read_storage(o: &Map<String, Value>) -> Result<Option<ResponseStor
     Ok(Some(storage))
 }
 
-/// Expand only typed stored history, then use ordinary client intake and validation.
-/// The temporary wire belongs to this codec, not to storage or upstream execution.
+/// Compose typed stored history with the current input before combined validation.
 pub fn decode(
     adapter: &Adapter,
     bytes: &[u8],
@@ -67,39 +66,13 @@ pub fn decode(
         .ok_or(CodecError::Invalid("request"))?;
     o.remove("previous_response_id");
     o.insert("store".into(), json!(false));
-    if let Some((input, output)) = history {
-        if !matches!(
-            output.semantic.outcome(),
-            crate::semantic::task::generation::Outcome::Completed
-                | crate::semantic::task::generation::Outcome::Incomplete
-        ) {
-            return Err(CodecError::Invalid("non-replayable response"));
-        }
-        let mut items = super::items::encode_items(
-            input.semantic.items(),
-            &input.fidelity,
-            false,
-            input.semantic.resources(),
-        )?;
-        items.extend(super::items::encode_items(
-            output.semantic.items(),
-            &output.fidelity,
-            false,
-            output.semantic.resources(),
-        )?);
-        match o.remove("input") {
-            Some(Value::Array(values)) => items.extend(values),
-            Some(Value::String(text)) => items.push(json!({"role":"user","content":text})),
-            None => {}
-            _ => return Err(CodecError::Invalid("input")),
-        }
-        o.insert("input".into(), Value::Array(items));
-    } else if options.previous.is_some() {
+    if history.is_none() && options.previous.is_some() {
         return Err(CodecError::Invalid("unresolved previous_response_id"));
     }
     bounded(&value)?;
-    let request = adapter.decode_client_request(
+    let request = adapter.decode_client_history(
         &serde_json::to_vec(&value).map_err(|_| CodecError::Invalid("request"))?,
+        history,
     )?;
     request
         .task
@@ -113,20 +86,35 @@ pub(crate) fn retained_size(
     output: &DecodedResponse,
     body_bytes: usize,
 ) -> Result<usize, CodecError> {
-    let mut value = json!({"input":super::items::encode_items(
-        input.semantic.items(), &input.fidelity, false, input.semantic.resources(),
-    )?});
-    crate::protocol::openai::settings::write(
-        input.semantic.settings(),
-        value.as_object_mut().expect("object"),
-    )?;
-    let input_bytes = crate::semantic::value::json_size(
-        &value,
-        crate::semantic::task::generation::MAX_TOTAL_BYTES,
-    )
-    .map_err(|_| CodecError::Limit)?;
-    // Account for the typed payload, retrieval bytes and fixed per-owner storage.
+    let input_bytes = input.semantic.retained_bytes()?;
+    let output_bytes = output.semantic.retained_bytes()?;
+    let owners = input.semantic.items().iter().chain(output.semantic.items());
+    let mut structural = 0usize;
+    for (_, item) in owners {
+        let provider_parts = match item {
+            crate::semantic::task::generation::Item::ProviderTool(value) => match &value.output {
+                Some(crate::semantic::task::generation::ToolOutput::Parts(parts)) => parts.len(),
+                _ => 0,
+            },
+            _ => 0,
+        };
+        // Payload validation does not charge empty content-part allocations.
+        // Part is the largest retained part variant; allow vector growth as well.
+        structural = structural.saturating_add(
+            item.part_ids()
+                .count()
+                .saturating_add(provider_parts)
+                .saturating_mul(std::mem::size_of::<crate::semantic::task::generation::Part>())
+                .saturating_mul(2),
+        );
+    }
+    // Include hidden native attachments and sidecars without encoding public wire.
     Ok(input_bytes
+        .saturating_add(output_bytes)
+        .saturating_add(structural)
+        .saturating_add(input.fidelity.retained_bytes())
+        .saturating_add(output.fidelity.retained_bytes())
+        .saturating_add(output.metadata.context.reports.validate()?)
         .saturating_add(body_bytes.saturating_mul(2))
         .saturating_add(
             (input.semantic.items().len() + output.semantic.items().len())
@@ -298,6 +286,295 @@ mod tests {
         assert!(Options::read(&json!({})).unwrap().store);
         assert!(Options::read(&json!({"store":null})).unwrap().store);
         assert!(!Options::read(&json!({"store":false})).unwrap().store);
+    }
+
+    #[test]
+    fn typed_continuation_preserves_native_signed_owners_and_grouping() {
+        use crate::protocol::{google::generate_content, native::ReplayTarget};
+        let adapter = Adapter::new(Profile::Responses, Dialect::Standard, None);
+        let old = adapter
+            .decode_client_request(br#"{"model":"m","input":"first"}"#)
+            .unwrap();
+        let target = ReplayTarget::new("synthetic", "native").unwrap();
+        let mut decoder = generate_content::GenerationSseDecoder::new(
+            200,
+            "text/event-stream",
+            Default::default(),
+            LocalScope::ROOT,
+            target.clone(),
+        )
+        .unwrap();
+        let body = json!({"responseId":"native-r","modelVersion":"native","candidates":[{
+            "index":0,"content":{"role":"model","parts":[
+                {"text":"OK","thoughtSignature":"text-a"},
+                {"text":"OK","thoughtSignature":"text-b"},
+                {"functionCall":{"id":"c","name":"lookup","args":{"n":9007199254740993u64}},
+                 "thoughtSignature":"call-signature"}
+            ]},"finishReason":"STOP"
+        }]});
+        let wire = format!("data: {body}\n\n");
+        let (consumed, _) = decoder.consume(wire.as_bytes()).unwrap();
+        assert_eq!(consumed, wire.len());
+        let mut output = decoder.finish().unwrap();
+        crate::execution::replay::seal_for_client(
+            &mut output,
+            &crate::execution::replay::CLIENT_ORIGIN,
+        )
+        .unwrap();
+        let before = output.clone();
+        let (mut request, _) = decode(
+            &adapter,
+            br#"{"model":"m","previous_response_id":"r","input":[{"type":"function_call_output","call_id":"c","output":"found"}]}"#,
+            Some((&old.task, &output)),
+        ).unwrap();
+        assert_eq!(
+            request.task.semantic.items()[0],
+            old.task.semantic.items()[0]
+        );
+        assert_eq!(request.task.semantic.message_envelopes().len(), 1);
+        assert_eq!(
+            request.task.semantic.message_envelopes()[0].members().len(),
+            3
+        );
+        let signatures: Vec<_> = request
+            .task
+            .semantic
+            .items()
+            .iter()
+            .flat_map(|(_, item)| match item {
+                Item::Message(m) => m
+                    .parts
+                    .iter()
+                    .filter_map(|p| p.replay.as_ref())
+                    .collect::<Vec<_>>(),
+                Item::ToolCall(c) => c.replay.iter().collect(),
+                _ => vec![],
+            })
+            .collect();
+        assert_eq!(
+            signatures.len(),
+            3,
+            "no attachment may disappear through public-wire composition"
+        );
+        assert!(retained_size(&request.task, &output, 2).unwrap() > 3 * 2048);
+        let empty = adapter.decode_response(br#"{"id":"empty","object":"response","created_at":1,"model":"m","status":"completed","output":[]}"#).unwrap();
+        let mut stale_prefix = request.task.clone();
+        let mut stale_items = stale_prefix.semantic.items().to_vec();
+        let Item::Message(message) = &mut stale_items[1].1 else {
+            panic!("signed prefix text")
+        };
+        message.parts[0].content = ContentPart::Text(
+            crate::semantic::value::Text::new("edited", "test", 32)
+                .unwrap()
+                .into(),
+        );
+        stale_prefix.semantic = stale_prefix.semantic.with_items(stale_items).unwrap();
+        assert!(matches!(
+            decode(
+                &adapter,
+                br#"{"model":"m","input":"third"}"#,
+                Some((&stale_prefix, &empty)),
+            ),
+            Err(CodecError::Invalid("part replay dependency"))
+        ));
+        let (third, _) = decode(
+            &adapter,
+            br#"{"model":"m","input":"third"}"#,
+            Some((&request.task, &empty)),
+        )
+        .unwrap();
+        assert_eq!(
+            &third.task.semantic.items()[..request.task.semantic.items().len()],
+            request.task.semantic.items(),
+        );
+        crate::execution::replay::open_from_client(&mut request).unwrap();
+        let (native, _) = generate_content::encode_generation_request(
+            &request.task.semantic,
+            &request.task.fidelity,
+            &target,
+            None,
+        )
+        .unwrap();
+        assert_eq!(
+            native["contents"],
+            json!([
+                {"role":"user","parts":[{"text":"first"}]},
+                {"role":"model","parts":[
+                    {"text":"OK","thoughtSignature":"text-a"},
+                    {"text":"OK","thoughtSignature":"text-b"},
+                    {"functionCall":{"id":"c","name":"lookup","args":{"n":9007199254740993u64}},
+                     "thoughtSignature":"call-signature"}
+                ]},
+                {"role":"user","parts":[{"functionResponse":{
+                    "id":"c","name":"lookup","response":{"output":"found"}
+                }}]}
+            ])
+        );
+        assert_eq!(
+            output, before,
+            "composition cannot mutate the stored source"
+        );
+        let mut edited = output.clone();
+        let mut items = edited.semantic.items().to_vec();
+        let Item::Message(message) = &mut items[0].1 else {
+            panic!("signed text")
+        };
+        message.parts[0].content = ContentPart::Text(
+            crate::semantic::value::Text::new("edited", "test", 32)
+                .unwrap()
+                .into(),
+        );
+        edited.semantic = edited.semantic.with_items(items).unwrap();
+        assert!(matches!(
+            decode(
+                &adapter,
+                br#"{"model":"m","input":"again"}"#,
+                Some((&old.task, &edited)),
+            ),
+            Err(CodecError::Invalid("part replay dependency"))
+        ));
+    }
+
+    #[test]
+    fn sealed_compaction_history_does_not_resurrect_output_only_creator_reports() {
+        let adapter = Adapter::new(
+            Profile::Responses,
+            Dialect::Standard,
+            Some(crate::semantic::value::ReplayOrigin::new("synthetic-issuer").unwrap()),
+        );
+        let old = adapter
+            .decode_client_request(br#"{"model":"m","input":"first"}"#)
+            .unwrap();
+        let mut output = adapter.decode_response(br#"{"id":"r","object":"response","created_at":1,"model":"m",
+            "status":"completed","output":[{"type":"compaction","id":"cmp","encrypted_content":"native-context","created_by":"actor"}]}"#).unwrap();
+        crate::execution::replay::seal_for_client(
+            &mut output,
+            &crate::execution::replay::CLIENT_ORIGIN,
+        )
+        .unwrap();
+        let (mut next, _) = decode(
+            &adapter,
+            br#"{"model":"m","input":"next"}"#,
+            Some((&old.task, &output)),
+        )
+        .unwrap();
+        let (id, item) = &next.task.semantic.items()[1];
+        assert!(
+            next.task
+                .fidelity
+                .created_by(*id, item, next.task.semantic.resources())
+                .is_none()
+        );
+        crate::execution::replay::open_from_client(&mut next).unwrap();
+        assert!(
+            matches!(&next.task.semantic.items()[1].1, Item::Compaction(value) if value.as_str() == "native-context")
+        );
+    }
+
+    #[test]
+    fn typed_history_keeps_resource_references_and_empty_envelope_boundaries() {
+        let adapter = Adapter::new(Profile::Responses, Dialect::Standard, None);
+        let mut old = adapter
+            .decode_client_request(
+                br#"{"model":"m","input":[{"role":"user","content":[
+            {"type":"input_image","image_url":"https://example.invalid/old"}]}]}"#,
+            )
+            .unwrap()
+            .task;
+        old.semantic = old
+            .semantic
+            .with_message_envelopes(vec![MessageEnvelope::empty(
+                GroupId::new(LocalScope::ROOT, 99),
+                MessageEnvelopeRole::Assistant,
+                None,
+            )])
+            .unwrap();
+        let mut output = adapter.decode_response(br#"{"id":"r","object":"response","model":"m","created_at":1,
+            "status":"completed","output":[{"id":"text","type":"message","role":"assistant","status":"completed","content":[
+                {"type":"output_text","text":"OK","annotations":[{"type":"url_citation","start_index":0,"end_index":2,
+                    "url":"https://example.invalid/source","title":"source"}]}
+            ]}]}"#).unwrap();
+        output.semantic = output
+            .semantic
+            .clone()
+            .with_message_envelopes(vec![
+                MessageEnvelope::empty(
+                    GroupId::new(LocalScope::ROOT, 1),
+                    MessageEnvelopeRole::Assistant,
+                    Some(output.semantic.items()[0].0),
+                ),
+                MessageEnvelope::empty(
+                    GroupId::new(LocalScope::ROOT, 2),
+                    MessageEnvelopeRole::Assistant,
+                    None,
+                ),
+            ])
+            .unwrap();
+        let (next, _) = decode(
+            &adapter,
+            br#"{"model":"m","input":[{"role":"user","content":[
+            {"type":"input_image","image_url":"https://example.invalid/new"}]}]}"#,
+            Some((&old, &output)),
+        )
+        .unwrap();
+        let items = next.task.semantic.items();
+        let groups = next.task.semantic.message_envelopes();
+        assert_eq!(groups.len(), 3);
+        assert_eq!(groups[0].before(), Some(items[1].0));
+        assert_eq!(groups[1].before(), Some(items[1].0));
+        assert_eq!(groups[2].before(), Some(items[2].0));
+        let resources = next.task.semantic.resources();
+        assert_eq!(resources.len(), 3);
+        let Item::Message(message) = &items[1].1 else {
+            panic!("assistant")
+        };
+        let ContentPart::Text(text) = &message.parts[0].content else {
+            panic!("text")
+        };
+        let citation = &text.annotations()[0];
+        citation.check_source(resources).unwrap();
+        assert_eq!(
+            resources.get(citation.value().source),
+            Some(&ResourceLocation::Url(
+                crate::semantic::value::Text::new("https://example.invalid/source", "source", 256)
+                    .unwrap(),
+            ))
+        );
+        for (index, expected) in [
+            (0, "https://example.invalid/old"),
+            (2, "https://example.invalid/new"),
+        ] {
+            let Item::Message(message) = &items[index].1 else {
+                panic!("user")
+            };
+            let ContentPart::Resource(resource) = &message.parts[0].content else {
+                panic!("image")
+            };
+            assert_eq!(
+                resource.resolve(resources).unwrap(),
+                &ResourceLocation::Url(
+                    crate::semantic::value::Text::new(expected, "image", 256).unwrap(),
+                )
+            );
+        }
+    }
+
+    #[test]
+    fn retained_size_charges_empty_history_part_allocations() {
+        let adapter = Adapter::new(Profile::Responses, Dialect::Standard, None);
+        let output = adapter.decode_response(br#"{"id":"r","object":"response","created_at":1,"model":"m","status":"completed","output":[]}"#).unwrap();
+        let weight = |count| {
+            let parts = vec![json!({"type":"output_text","text":"","annotations":[]}); count];
+            let request = adapter
+                .decode_client_request(
+                    json!({"model":"m","input":[{"role":"assistant","content":parts}]})
+                        .to_string()
+                        .as_bytes(),
+                )
+                .unwrap();
+            retained_size(&request.task, &output, 2).unwrap()
+        };
+        assert!(weight(1024) - weight(1) >= 1023 * std::mem::size_of::<Part>());
     }
 
     #[test]

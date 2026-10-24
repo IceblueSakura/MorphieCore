@@ -201,6 +201,9 @@ impl GenerationResponse {
         Ok(self)
     }
     fn validate_details_and_bounds(&self) -> Result<(), GenerationError> {
+        self.retained_bytes().map(|_| ())
+    }
+    pub(crate) fn retained_bytes(&self) -> Result<usize, GenerationError> {
         self.details.validate(self.outcome)?;
         if self
             .details
@@ -215,19 +218,18 @@ impl GenerationResponse {
         } else {
             crate::semantic::task::generation::validate::items(&self.items, true, &self.resources)?
         };
-        if bytes
+        let bytes = bytes
             .saturating_add(self.details.bytes())
             .saturating_add(self.resources.uncharged_bytes(&self.items)?)
             .saturating_add(self.usage.bytes())
             .saturating_add(self.envelopes.validate(&self.items)?)
             .saturating_add(crate::semantic::task::generation::safety::reports_bytes(
                 &self.safety_reports,
-            )?)
-            > crate::semantic::task::generation::MAX_TOTAL_BYTES
-        {
+            )?);
+        if bytes > crate::semantic::task::generation::MAX_TOTAL_BYTES {
             return Err(GenerationError::Limit);
         }
-        Ok(())
+        Ok(bytes)
     }
     pub fn items(&self) -> &[(ItemId, Item)] {
         &self.items

@@ -71,6 +71,13 @@ pub(crate) fn decode_request_in(
     v: &Value,
     direction: DecodeDirection<'_>,
 ) -> Result<DecodedResponsesRequest, CodecError> {
+    decode_request_with_history(v, direction, None)
+}
+pub(in crate::protocol::openai) fn decode_request_with_history(
+    v: &Value,
+    direction: DecodeDirection<'_>,
+    history: Option<(&DecodedRequest, &crate::protocol::DecodedResponse)>,
+) -> Result<DecodedResponsesRequest, CodecError> {
     bounded(v)?;
     let o = object(v)?;
     let allowed: Vec<_> = settings::FIELDS
@@ -101,9 +108,10 @@ pub(crate) fn decode_request_in(
         .map(|(k, v)| (k.clone(), v.clone()))
         .collect();
     Ok(DecodedResponsesRequest {
-        task: crate::protocol::openai::responses::request::decode_generation_in(
+        task: crate::protocol::openai::responses::request::decode_generation_with_history(
             &Value::Object(task),
             direction,
+            history,
         )?,
         context,
     })

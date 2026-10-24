@@ -2,7 +2,7 @@
 use crate::semantic::task::generation::Item;
 use crate::semantic::value::Text;
 
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Default, Eq, Ord, PartialEq, PartialOrd)]
 pub struct LocalScope(u64);
 impl LocalScope {
     /// Deterministic scope for a single standalone intake, not a global allocator.

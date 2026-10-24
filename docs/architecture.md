@@ -128,6 +128,7 @@ Protocol implementation is organized by the wire responsibility being reviewed:
 | Review boundary | Owner |
 |---|---|
 | OpenAI complete task requests, settings and history validation | `openai/{chat,responses}/request.rs`; the protocol `mod.rs` files expose the public task entry points |
+| Typed Responses continuation | `openai/responses/{managed,history}.rs` assembles retained owners with new input; `fidelity/history.rs` transfers verified owner-local associations under private identity remapping |
 | OpenAI message/item mapping reused by input, static output and events | `openai/{chat,responses}/items.rs`; these are not whole-request codecs |
 | OpenAI shared shape admission and content construction | `openai/shape.rs` owns readers and field policy; `content/{intake,call}.rs` owns item construction and function-call mapping |
 | OpenAI event state, poisoning, reduction and profile dispatch | `openai/events/{decode,encode}/mod.rs`; private Chat and Responses grammar/rendering modules operate on that same state, without a second reducer |
@@ -829,7 +830,7 @@ The existing `X-MorphieCore-Adaptation: possible` header and partial snapshot re
 
 **Migration boundary:** real semantic replay owners, dependency checks and trusted issuer isolation remain required. The legacy public `mc1.`/`mca1.` transport described below is implementation evidence, not the new official API contract. In particular, gateway manifests must not appear as fabricated reasoning/thinking owners. Prefer accurate native carriers and existing gateway-held continuation; any additional semantic extension requires its own contract and client-retention evidence. Keep internal opaque state separate from public retrieval representation, without a lossy typed-history → temporary-wire → typed-history composition step.
 
-**Native-only delivery selected on 2026-10-24; continuation migration pending.** Preserve genuine native reasoning/signature carriers. Signed ordinary text/calls without a standard downstream carrier remain available only in typed gateway-managed Responses continuation; incompatible stateless delivery rejects rather than hiding signatures in fabricated thinking. Do not invent a namespaced continuation extension or assume unknown-field retention by pi/opencode. Public retrieval and internal continuation are separate views; a native-looking output object does not promise stateless equivalence to richer managed state. This supersedes the historical attachment-manifest delivery below, not its owner-binding, deployment isolation or lifecycle safeguards.
+**Native-only delivery selected on 2026-10-24; public-carrier migration pending.** Preserve genuine native reasoning/signature carriers. Signed ordinary text/calls without a standard downstream carrier remain available only in typed gateway-managed Responses continuation; incompatible stateless delivery rejects rather than hiding signatures in fabricated thinking. Do not invent a namespaced continuation extension or assume unknown-field retention by pi/opencode. Public retrieval and internal continuation are separate views; a native-looking output object does not promise stateless equivalence to richer managed state. This supersedes the historical attachment-manifest delivery below, not its owner-binding, deployment isolation or lifecycle safeguards.
 
 Opaque upstream values reach clients in a tagged envelope:
 
@@ -916,7 +917,9 @@ Compaction admission is separate from reasoning support. Codec support does not 
 
 ### Stateful history
 
-Downstream Responses offers stateless full-history requests and gateway-managed `previous_response_id` continuation. The gateway retains canonical request input and the delivered response projection, with replay envelopes intact. The Responses codec materializes their ordered items with new input before ordinary IR validation and candidate preparation. Storage facts stay in protocol metadata, outside Generation IR and upstream execution hints.
+Downstream Responses offers stateless full-history requests and gateway-managed `previous_response_id` continuation. The gateway retains canonical request input and the delivered response projection, with replay envelopes intact. The Responses codec composes these typed owners directly with newly decoded input before combined IR validation and candidate preparation; retained history is never encoded to temporary public wire and decoded again. Storage facts stay in protocol metadata, outside Generation IR and upstream execution hints.
+
+Retained input stays in its sealed client-bound representation, captured before the single execution opening pass. Its existing identities and associations remain stable. Imported output receives collision-free private item/part/resource/group identities; verify source dependencies before recomputing identity-dependent receipts. New input has its own unused scope. Resource/citation edges, exact arguments, native grouping and empty-envelope append positions survive. Output-only creator and response-wide reports do not become request history. Legacy manifest input cannot rewrite a retained prefix.
 
 Storage defaults to true, matching OpenAI's Responses default. Omitted or null `store` retains the new response; explicit `store: false` opts out. A request may read a stored predecessor without storing its successor. Top-level instructions and other settings come from the new request, not its predecessor; instruction items in history remain history.
 
@@ -924,7 +927,7 @@ The synchronous API includes response retrieval and deletion and cursor-paginate
 
 History lives in bounded process memory with a TTL. Expiration or restart invalidates stored references; there is no disk durability or restart recovery. Other storage backends require a later decision, not a prebuilt backend framework.
 
-Capacity accounts for typed payloads, retrieval bytes and owner records. A final snapshot reserves capacity before its terminal frame is queued. The body publishes it synchronously at the final acknowledged handoff, so an immediately following request can resolve it. Dropped or failed delivery releases the reservation. TTL starts at publication, reads do not extend it, and expired entries are reclaimed on store access. Unexpired entries are not evicted.
+Capacity accounts for typed payloads, retrieval bytes, owner records and nested part allocations, including empty parts and signatures absent from public wire. Accounting does not require public representability or serialization of retained input. A final snapshot reserves capacity before its terminal frame is queued. The body publishes it synchronously at the final acknowledged handoff, so an immediately following request can resolve it. Dropped or failed delivery releases the reservation. TTL starts at publication, reads do not extend it, and expired entries are reclaimed on store access. Unexpired entries are not evicted.
 
 Upstream calls remain stateless, using full history and `store: false` where supported. Neither Provider-only nor hybrid Provider-held continuation is planned. Downstream storage intent never enables upstream storage. Cache affinity remains separate from history ownership.
 

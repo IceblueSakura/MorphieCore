@@ -16,11 +16,21 @@ pub(crate) fn decode_generation_in(
     v: &Value,
     direction: DecodeDirection<'_>,
 ) -> Result<DecodedRequest, CodecError> {
+    decode_generation_with_history(v, direction, None)
+}
+pub(super) fn decode_generation_with_history(
+    v: &Value,
+    direction: DecodeDirection<'_>,
+    history: Option<(&DecodedRequest, &crate::protocol::DecodedResponse)>,
+) -> Result<DecodedRequest, CodecError> {
     bounded(v)?;
     let o = object(v)?;
     let allowed: Vec<_> = settings::FIELDS.iter().copied().chain(["input"]).collect();
     direction.fields(o, &allowed)?;
-    let mut b = Items::new(direction);
+    let (mut b, mut groups) = match history {
+        Some((input, output)) => super::history::seed(input, output, direction)?,
+        None => (Items::new(direction), vec![]),
+    };
     match o.get("input") {
         Some(Value::String(s)) => {
             let id = b.id()?;
@@ -37,10 +47,31 @@ pub(crate) fn decode_generation_in(
             ));
         }
         Some(Value::Array(a)) => decode_items(&mut b, a, ItemSide::History, "completed")?,
-        None if o.get("instructions").is_some_and(Value::is_string) => {}
+        None if history.is_some() || o.get("instructions").is_some_and(Value::is_string) => {}
         _ => return Err(CodecError::Invalid("input")),
     }
-    let mut groups = vec![];
+    if history.is_some() && !b.attachments.is_empty() {
+        return Err(CodecError::Unsupported(
+            "legacy managed-history manifest".into(),
+        ));
+    }
+    if let Some((input, output)) = history {
+        for (index, group) in groups.iter_mut().enumerate() {
+            if group.members().is_empty() && group.before().is_none() {
+                let boundary = input.semantic.items().len()
+                    + if index < input.semantic.message_envelopes().len() {
+                        0
+                    } else {
+                        output.semantic.items().len()
+                    };
+                *group = MessageEnvelope::empty(
+                    group.id(),
+                    group.role(),
+                    b.items.get(boundary).map(|(id, _)| *id),
+                );
+            }
+        }
+    }
     crate::protocol::attachments::restore(
         &mut b.items,
         &mut groups,
@@ -52,7 +83,8 @@ pub(crate) fn decode_generation_in(
         settings::read(o, false, direction)?,
         b.resources,
     )?
-    .with_message_envelopes(groups)?;
+    .with_message_envelopes(groups)?
+    .with_cached_context(history.and_then(|(input, _)| input.semantic.cached_context().cloned()))?;
     validate_program_history(&semantic)?;
     Ok(DecodedRequest {
         semantic,

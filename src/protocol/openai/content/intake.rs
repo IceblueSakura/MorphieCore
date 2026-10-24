@@ -14,14 +14,19 @@ pub(in crate::protocol::openai) struct Items<'a> {
     pub message_owners: Vec<(ItemId, ItemId)>,
     pub fidelity: FidelityRecords,
     pub attachments: Vec<crate::protocol::attachments::Marker>,
+    scope: LocalScope,
     next_item: u64,
     next_part: u64,
     next_resource: u64,
 }
 impl<'a> Items<'a> {
     pub fn new(direction: DecodeDirection<'a>) -> Self {
+        Self::in_scope(direction, LocalScope::ROOT)
+    }
+    pub fn in_scope(direction: DecodeDirection<'a>, scope: LocalScope) -> Self {
         Self {
             direction,
+            scope,
             ..Default::default()
         }
     }
@@ -45,7 +50,7 @@ impl<'a> Items<'a> {
             return Err(CodecError::Limit);
         }
         self.next_resource += 1;
-        let id = ResourceId::new(self.next_resource);
+        let id = ResourceId::scoped(self.scope, self.next_resource);
         self.resources = std::mem::take(&mut self.resources).insert(id, value)?;
         Ok(id)
     }
@@ -54,14 +59,14 @@ impl<'a> Items<'a> {
             return Err(CodecError::Limit);
         }
         self.next_item += 1;
-        Ok(ItemId::new(self.next_item))
+        Ok(ItemId::scoped(self.scope, self.next_item))
     }
     pub fn part_id(&mut self) -> Result<PartId, CodecError> {
         self.next_part += 1;
         if self.next_part as usize > MAX_ITEMS {
             return Err(CodecError::Limit);
         }
-        Ok(PartId::new(self.next_part))
+        Ok(PartId::scoped(self.scope, self.next_part))
     }
     pub fn refusal(&mut self, text: Text) -> Result<Part, CodecError> {
         self.next_part += 1;
@@ -70,7 +75,7 @@ impl<'a> Items<'a> {
         }
         Ok(Part {
             replay: None,
-            id: PartId::new(self.next_part),
+            id: PartId::scoped(self.scope, self.next_part),
             content: ContentPart::Refusal(text.into()),
             cache: None,
         })
@@ -82,7 +87,7 @@ impl<'a> Items<'a> {
         }
         Ok(Part {
             replay: None,
-            id: PartId::new(self.next_part),
+            id: PartId::scoped(self.scope, self.next_part),
             cache: None,
             content: ContentPart::Text(
                 Text::allowing_empty(s, "text", MAX_TEXT_BYTES)
