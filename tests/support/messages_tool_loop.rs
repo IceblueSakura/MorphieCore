@@ -79,7 +79,7 @@ async fn answer(
     headers: HeaderMap,
     Json(body): Json<Value>,
 ) -> Response {
-    assert_eq!(headers["anthropic-version"], "2023-06-01");
+    assert_eq!(headers["anthropic-version"], "2026-10-21");
     if recovery.is_none() {
         assert_eq!(headers["x-api-key"], "synthetic-messages-upstream");
     }

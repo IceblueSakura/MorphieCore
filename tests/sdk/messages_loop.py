@@ -4,7 +4,7 @@ import sys
 from urllib.parse import urlsplit
 
 import anthropic
-from anthropic.types import ImageBlockParam
+from anthropic.types import ImageBlockParam, ToolParam
 import httpx2 as httpx
 from sdk_support import require_sdk
 
@@ -16,13 +16,17 @@ with httpx.Client(trust_env=False, timeout=10) as http:
         api_key="synthetic-local-token", base_url=origin,
         max_retries=0, http_client=http,
     ) as client:
+        tool: ToolParam = {
+            "type": "custom", "allowed_callers": ["direct"], "name": "lookup",
+            "input_schema": {"type": "object", "properties": {"n": {"type": "integer"}}},
+            "input_examples": [{"n": 9007199254740993}, {"n": 7}],
+            "eager_input_streaming": None, "cache_control": None,
+        }
         shared = dict(
             model="fixture-model", max_tokens=2048,
             thinking={"type": "enabled", "budget_tokens": 1024},
             metadata={"user_id": "sdk-user"},
-            tools=[{"type": "custom", "allowed_callers": ["direct"], "name": "lookup", "input_schema": {
-                "type": "object", "properties": {"n": {"type": "integer"}}
-            }, "input_examples": [{"n": 9007199254740993}, {"n": 7}]}],
+            tools=[tool],
         )
         image: ImageBlockParam = {
             "type": "image", "source": {"type": "url", "url": "https://example.invalid/a.png"},

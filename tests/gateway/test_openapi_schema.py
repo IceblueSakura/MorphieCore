@@ -18,6 +18,24 @@ def validator(name):
 
 
 class OpenApiSchemaTests(unittest.TestCase):
+    def test_messages_requires_current_version_and_excludes_removed_sampling(self):
+        parameters = DOCUMENT["paths"]["/v1/messages"]["post"]["parameters"]
+        version = next(p for p in parameters if p.get("name") == "anthropic-version")
+        self.assertEqual(version["in"], "header")
+        self.assertTrue(version["required"])
+        check = Draft202012Validator(version["schema"])
+        check.validate("2026-10-21")
+        for value in ("", "2023-06-01", "2026-10-22", "2026-10-21,2026-10-21", None):
+            self.assertFalse(check.is_valid(value))
+        body = {"model": "synthetic", "max_tokens": 32,
+                "messages": [{"role": "user", "content": "go"}]}
+        request = validator("MessagesRequest")
+        request.validate(body)
+        request.validate({**body, "unknown_extension": True})
+        for field in ("temperature", "top_p", "top_k"):
+            for value in (None, 1, 0.5, "invalid"):
+                self.assertFalse(request.is_valid({**body, field: value}))
+
     def test_native_thinking_carriers_are_typed_without_an_extension_bag(self):
         chat = {"model": "synthetic", "messages": []}
         response = {"model": "synthetic", "input": "go"}

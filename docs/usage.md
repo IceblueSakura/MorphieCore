@@ -432,6 +432,8 @@ Both forms work at ingress. Repeated headers or both forms together are rejected
 
 ### Messages
 
+Send exactly one `anthropic-version: 2026-10-21` header. Missing, duplicate, combined and unsupported versions return 400 before body collection; there is no legacy-version negotiation. The pinned Anthropic SDK sends the selected version by default. `temperature`, `top_p` and `top_k` are removed and reject even when null or set to former defaults.
+
 ```json
 {"model":"configured-public-model","messages":[{"role":"user","content":"Reply with exactly pong."}],"max_tokens":64}
 ```
@@ -461,6 +463,8 @@ Explicit null blocks fallback, and a permitted empty string remains explicit. Go
 `prompt_cache_key` remains independent. A projection can lose identity under `generation.omit-identity-hints.v1` and separately lose OpenAI legacy `user` cache bucketing under `cache.omit-legacy-user-bucketing.v1`; neither receipt includes identifier values. No identity is derived from credentials, prompts or conversation IDs. See the [attribution contract](architecture.md#end-user-attribution).
 
 ### Messages profile and cache markers
+
+In root and by-value ordinary tool definitions, `eager_input_streaming: null` or omission keeps the target default; explicit `false` disables eager input and remains distinct from omission. Tool `cache_control: null` or omission creates no breakpoint. These defaults do not enable new beta headers or relax strict validation of other known fields.
 
 On an admitted native Messages configuration, tool definitions, system blocks and supported conversation blocks retain their own cache markers, including a `tool_result` wrapper. `{"type":"ephemeral"}` and explicit `ttl:"5m"` mean five minutes; `ttl:"1h"` means one hour. At most four explicit breakpoints are allowed, ordered with longer TTLs before shorter ones. The gateway does not move or drop markers, shorten TTLs or add a request-wide policy alongside them. Marker-free requests retain the existing automatic five-minute default. Caller-supplied top-level `cache_control` remains rejected on this binding, independently of owner-local markers. Cache hits and deployed proxy TTL behavior are not certified by admission.
 

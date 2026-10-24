@@ -26,6 +26,9 @@ pub use request::{NativeProjection, RequestRule};
 use serde_json::Value;
 pub use wire::*;
 
+/// Selected stable HTTP contract, shared by ingress and trusted upstream preparation.
+pub const API_VERSION: &str = "2026-10-21";
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Profile {
     AdaptiveTextTools,
@@ -41,8 +44,7 @@ impl Profile {
             instructions: true,
             // Mid-conversation system messages need model-level binding evidence.
             ordered_instructions: false,
-            // Native carrier; an evidenced fixed-sampling binding may omit it.
-            temperature: true,
+            temperature: false,
             max_output_tokens: true,
             tools: true,
             custom_tools: false,
@@ -52,7 +54,7 @@ impl Profile {
             tool_result_errors: true,
             tool_result_media: true,
             text_metadata: false,
-            top_p: true,
+            top_p: false,
             top_k: false,
             stop_sequences: false,
             presence_penalty: false,
@@ -96,7 +98,6 @@ impl Profile {
         contract.ordered_instructions = true;
         // Without the binding's carrier, changes collapse under a named rule.
         contract.tool_changes = true;
-        contract.top_k = true;
         contract
     }
     pub fn decode_request(self, bytes: &[u8]) -> Result<Request, CodecError> {

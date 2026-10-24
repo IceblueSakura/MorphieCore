@@ -116,6 +116,14 @@ impl TargetCaps {
             protocol::reasoning::ReasoningConversion, semantic::task::generation::EffortScope,
         };
         let mut contract = self.semantics().clone();
+        if matches!(self, Self::AnthropicMessages(c)
+            if c.sampling == anthropic::messages::SamplingPolicy::Fixed)
+        {
+            // Selected omission admits other source protocols' controls without
+            // claiming removed fields as native Messages carriers.
+            contract.temperature = true;
+            contract.top_p = true;
+        }
         let policy = match self {
             Self::GoogleGenerateContent(c) => c.reasoning_policy.as_ref(),
             Self::GoogleInteractions(c) => c.reasoning_policy.as_ref(),

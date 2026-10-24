@@ -301,7 +301,10 @@ async fn run(
         headers.push(("content-type".into(), "application/json".into()));
     }
     if matches!(command, Command::Probe(options) if options.protocol == Protocol::Anthropic) {
-        headers.push(("anthropic-version".into(), "2023-06-01".into()));
+        headers.push((
+            "anthropic-version".into(),
+            morphiecore::protocol::anthropic::messages::API_VERSION.into(),
+        ));
     }
     let prepared = UpstreamRequest {
         origin: plan.provider.origin.as_str().into(),

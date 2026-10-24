@@ -46,6 +46,13 @@ async fn handle(
             .body(Body::empty())
             .unwrap();
     }
+    let versions: Vec<_> = headers.get_all("anthropic-version").iter().collect();
+    assert_eq!(versions.len(), 1);
+    assert_eq!(versions[0], "2026-10-21");
+    let wire: Value = serde_json::from_slice(&body).unwrap();
+    for field in ["eager_input_streaming", "cache_control"] {
+        assert_eq!(wire["tools"][0].get(field), Some(&Value::Null));
+    }
     let request =
         anthropic::messages::client::decode_client_request(&body).expect("synthetic SDK request");
     assert_eq!(
@@ -57,6 +64,8 @@ async fn handle(
         panic!("function")
     };
     assert!(tool.dispatch.is_inactive());
+    assert_eq!(tool.eager_input, None);
+    assert_eq!(tool.cache, None);
     assert_eq!(
         tool.input_examples
             .as_ref()
@@ -73,6 +82,12 @@ async fn handle(
     assert_eq!(native.value["metadata"], json!({"user_id":"sdk-user"}));
     assert!(native.value["tools"][0].get("allowed_callers").is_none());
     assert!(native.value["tools"][0].get("type").is_none());
+    assert!(
+        native.value["tools"][0]
+            .get("eager_input_streaming")
+            .is_none()
+    );
+    assert!(native.value["tools"][0].get("cache_control").is_none());
     assert_eq!(
         native.value["tools"][0]["input_examples"],
         json!([{"n":9007199254740993_u64},{"n":7}])

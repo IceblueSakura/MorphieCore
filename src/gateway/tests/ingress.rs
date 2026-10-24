@@ -370,6 +370,75 @@ async fn authentication_runs_before_any_body_poll() {
     }
 }
 #[tokio::test]
+async fn messages_version_is_single_current_and_checked_before_body_poll() {
+    let gate = gateway(Limits::default());
+    for path in ["/v1/messages", "/v1/messages?beta=true"] {
+        for versions in [
+            vec![],
+            vec![""],
+            vec!["2023-06-01"],
+            vec!["2026-10-22"],
+            vec!["invalid"],
+            vec!["2026-10-21, 2026-10-21"],
+            vec!["2026-10-21", "2026-10-21"],
+        ] {
+            let mut request = HttpRequest::builder()
+                .method("POST")
+                .uri(path)
+                .header("x-api-key", KEY)
+                .header("content-type", "application/json");
+            for version in versions {
+                request = request.header("anthropic-version", version);
+            }
+            let forbidden = futures_util::stream::poll_fn(
+                |_| -> std::task::Poll<Option<Result<bytes::Bytes, std::io::Error>>> {
+                    panic!("invalid Messages version must not poll body")
+                },
+            );
+            let response = gate
+                .router()
+                .oneshot(
+                    request
+                        .body(axum::body::Body::from_stream(forbidden))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), 400);
+            assert_eq!(response.headers()["cache-control"], "no-store");
+            let body: serde_json::Value = serde_json::from_slice(
+                &axum::body::to_bytes(response.into_body(), 4096)
+                    .await
+                    .unwrap(),
+            )
+            .unwrap();
+            assert_eq!(body["type"], "error");
+            assert_eq!(body["error"]["type"], "invalid_request_error");
+        }
+        // Current version passes header admission and reaches model resolution.
+        let response = gate.router().oneshot(
+            HttpRequest::builder().method("POST").uri(path)
+                .header("x-api-key", KEY).header("content-type", "application/json")
+                .header("anthropic-version", "2026-10-21")
+                .body(axum::body::Body::from(r#"{"model":"unregistered","max_tokens":32,"messages":[{"role":"user","content":"hi"}]}"#))
+                .unwrap()
+        ).await.unwrap();
+        assert_eq!(response.status(), 404);
+        let body: serde_json::Value = serde_json::from_slice(
+            &axum::body::to_bytes(response.into_body(), 4096)
+                .await
+                .unwrap(),
+        )
+        .unwrap();
+        assert!(
+            body["error"]["message"]
+                .as_str()
+                .unwrap()
+                .contains("model_not_found")
+        );
+    }
+}
+#[tokio::test]
 async fn identity_budget_and_scope_are_owned_by_trusted_ingress() {
     let gate = gateway(Limits::default());
     // The output cap is the client's choice: absent stays absent, large values pass.

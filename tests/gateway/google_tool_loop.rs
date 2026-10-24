@@ -161,6 +161,7 @@ async fn exercise_messages(api: fixture::Api) {
             let response = client
                 .post(format!("{}/messages", fixture.base))
                 .bearer_auth(fixture::KEY)
+                .header("anthropic-version", "2026-10-21")
                 .json(&body)
                 .send()
                 .await

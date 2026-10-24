@@ -317,7 +317,7 @@ mod native_bindings {
             ("x-api-key".into(), "synthetic-secret".into())
         );
         assert!(!format!("{prepared:?}").contains("synthetic-secret"));
-        assert_eq!(header(&prepared, "anthropic-version"), Some("2023-06-01"));
+        assert_eq!(header(&prepared, "anthropic-version"), Some("2026-10-21"));
         assert!(header(&prepared, "user-agent").is_some_and(|v| v.starts_with("MorphieCore/")));
         assert_eq!(header(&prepared, "x-opencode-session"), None);
         assert_eq!(body(&prepared), hello_wire());
@@ -611,7 +611,7 @@ mod native_catalog {
             assert!(
                 prepared
                     .safe_headers
-                    .contains(&("anthropic-version".into(), "2023-06-01".into()))
+                    .contains(&("anthropic-version".into(), "2026-10-21".into()))
             );
             assert!(
                 prepared

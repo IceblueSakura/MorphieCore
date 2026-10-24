@@ -98,18 +98,24 @@ impl MessagesBinding {
     }
     pub fn public_model(&self) -> PublicModel {
         let model = ModelId::new(self.model).expect("static model");
+        let mut contract = Profile::AdaptiveTextTools.semantic_contract();
+        // Accepted cross-protocol projection, not native Messages carriers.
+        contract.temperature = true;
+        contract.top_p = true;
         let mut public = PublicModel::new(
             model.clone(),
             model,
             TaskKind::Generation,
             self.route().id,
-            Profile::AdaptiveTextTools.semantic_contract(),
+            contract,
         );
         public.standard_context = false;
         public
     }
     pub fn canonical_model(&self) -> CanonicalModel {
         let mut contract = haiku_contract(Profile::AdaptiveTextTools.semantic_contract());
+        contract.temperature = true;
+        contract.top_p = true;
         contract.explicit_cache = true;
         CanonicalModel {
             id: ModelId::new(self.model).expect("static model"),

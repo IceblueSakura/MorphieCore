@@ -105,7 +105,12 @@
     "/v1/messages": {
       "post": {
         "operationId": "createMessage",
-        "parameters": [{"$ref": "#/components/parameters/ConversationId"}],
+        "parameters": [
+          {"$ref": "#/components/parameters/ConversationId"},
+          {"name": "anthropic-version", "in": "header", "required": true,
+           "schema": {"type": "string", "const": "2026-10-21"},
+           "description": "Exactly one selected stable API version. Missing, duplicate, combined and unsupported values reject before body collection; no legacy-version negotiation."}
+        ],
         "summary": "Generate with Anthropic Messages",
         "description": "Uses the public model's configured candidate array, shared by all Generation client protocols; candidates need not use a native Messages upstream. Handler, authentication and method errors use Anthropic envelopes.",
         "requestBody": {
@@ -916,6 +921,9 @@
         "properties": {
           "model": {"$ref": "#/components/schemas/PublicModelLabel"},
           "max_tokens": {"type": "integer", "minimum": 1},
+          "temperature": false,
+          "top_p": false,
+          "top_k": false,
           "metadata": {"type": "object", "properties": {"user_id": {"type": ["string", "null"], "maxLength": 512}}, "additionalProperties": true, "description": "Opaque end-user attribution, not credentials, routing or a cache key. Absent/null/empty user_id retain their meaning; unknown metadata names are ignored by name. Selected cross-protocol projection uses OpenAI safety_identifier or generateContent's fixed safety label, subject to stricter target bounds, without legacy user/cache substitution."},
           "messages": {
             "type": "array",
@@ -931,7 +939,7 @@
           "stream": {"type": ["boolean", "null"], "default": false}
         },
         "additionalProperties": true,
-        "description": "Envelope subset. The client codec carries text, thinking, redacted_thinking, tool_use and tool_result blocks, tools, reasoning controls and top-level output_config (effort and a json_schema format). Instruction content is text-only; system messages can additionally carry tool_addition/tool_removal blocks and per-message output_config.effort. A non-null per-message effort rejects on other roles. Adaptive thinking supports thinking.block_binding. Media-bearing instructions and non-null clear_at reject. The reviewed Go/Haiku profile opens owner-local cache, caller-selected top-level automatic cache_control (ephemeral with 5m/default or 1h ttl), ordered object input_examples in root/by-value tool definitions, per-use document context, strict tools, ordered instructions and tool changes only on all-native opted-in configured routes; mixed routes remain closed for these features. Context retains absent/null/empty/text without prompt concatenation. Examples are structurally bounded, not locally schema-instance validated. Native strict tools and JSON output share subset/resource checks: unsupported constraints, references, regex and case-sensitive string enum/const reject rather than being simplified. The reviewed numeric-schema structured/required/named profile is not arbitrary-schema or parallel-call acceptance. Cache marker bounds and TTL conflicts remain strict; write/read reports do not prove retention or invoices. Exact beta carriers and named target projections remain separate from public admission. top_k decodes into the IR and target projection decides representability. Known values stay strict; stop_sequences have a codec carrier but default binding admission remains narrower. Active container, mcp_servers, context_management and compaction are rejected; other unknown fields are ignored by name. Return thinking signatures and redacted thinking data unchanged. Codec support does not certify Provider-effective behavior."
+        "description": "Envelope subset for API 2026-10-21. Removed temperature/top_p/top_k reject on presence, including null and former defaults; older upstream acceptance does not restore them. The client codec carries text, thinking, redacted_thinking, tool_use and tool_result blocks, tools, reasoning controls and top-level output_config (effort and a json_schema format). Instruction content is text-only; system messages can additionally carry tool_addition/tool_removal blocks and per-message output_config.effort. A non-null per-message effort rejects on other roles. Adaptive thinking supports thinking.block_binding. Media-bearing instructions and non-null clear_at reject. The reviewed Go/Haiku profile opens owner-local cache, caller-selected top-level automatic cache_control (ephemeral with 5m/default or 1h ttl), ordered object input_examples in root/by-value tool definitions, per-use document context, strict tools, ordered instructions and tool changes only on all-native opted-in configured routes; mixed routes remain closed for these features. Tool eager_input_streaming null/omission selects the target default, not false; tool cache_control null/omission supplies no marker. Context retains absent/null/empty/text without prompt concatenation. Examples are structurally bounded, not locally schema-instance validated. Native strict tools and JSON output share subset/resource checks: unsupported constraints, references, regex and case-sensitive string enum/const reject rather than being simplified. The reviewed numeric-schema structured/required/named profile is not arbitrary-schema or parallel-call acceptance. Cache marker bounds and TTL conflicts remain strict; write/read reports do not prove retention or invoices. Exact beta carriers and named target projections remain separate from public admission. Known values stay strict; stop_sequences have a codec carrier but default binding admission remains narrower. Active container, mcp_servers, context_management and compaction are rejected; other unknown fields are ignored by name. Return thinking signatures and redacted thinking data unchanged. Codec support does not certify Provider-effective behavior."
       },
       "MessagesError": {
         "type": "object", "required": ["type", "error"], "additionalProperties": false,

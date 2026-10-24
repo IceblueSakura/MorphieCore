@@ -105,14 +105,14 @@ impl Recovery {
         let started = std::time::Instant::now();
         let mut unavailable = None;
         for request in 0..2 {
-            let response = client
+            let mut outgoing = client
                 .post(url)
                 .bearer_auth(key)
-                .header("x-session-affinity", "synthetic-cooling-session")
-                .json(input)
-                .send()
-                .await
-                .unwrap();
+                .header("x-session-affinity", "synthetic-cooling-session");
+            if url.ends_with("/v1/messages") {
+                outgoing = outgoing.header("anthropic-version", "2026-10-21");
+            }
+            let response = outgoing.json(input).send().await.unwrap();
             assert_eq!(
                 response.status(),
                 if request == 0 { attempted_status } else { 503 }

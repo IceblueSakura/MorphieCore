@@ -317,21 +317,27 @@ fn responses_omitted_strict_can_reach_native_best_effort_fallback() {
 }
 
 #[test]
-#[ignore = "known standards gap: public Messages API 2026-10-21 removes sampling fields"]
 fn messages_rejects_removed_sampling_even_at_defaults() {
+    use morphiecore::protocol::{CodecError, anthropic::messages::Profile as Messages};
     let baseline = messages();
     decode_client_request(baseline.to_string().as_bytes()).unwrap();
-    for (field, value) in [
-        ("temperature", json!(1)),
-        ("top_p", json!(1)),
-        ("top_k", json!(1)),
-    ] {
-        let mut wire = baseline.clone();
-        wire[field] = value;
-        assert!(
-            decode_client_request(wire.to_string().as_bytes()).is_err(),
-            "removed public field {field}"
-        );
+    for field in ["temperature", "top_p", "top_k"] {
+        for value in [Value::Null, json!(1), json!(0.5), json!("invalid")] {
+            let mut wire = baseline.clone();
+            wire[field] = value;
+            let bytes = wire.to_string();
+            let expected = CodecError::Unsupported(field.into());
+            assert_eq!(
+                decode_client_request(bytes.as_bytes()).unwrap_err(),
+                expected
+            );
+            assert_eq!(
+                Messages::AdaptiveTextTools
+                    .decode_request(bytes.as_bytes())
+                    .unwrap_err(),
+                expected
+            );
+        }
     }
 }
 

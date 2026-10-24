@@ -115,7 +115,7 @@ async fn answer(
     headers: HeaderMap,
     Json(body): Json<Value>,
 ) -> Response {
-    assert_eq!(headers["anthropic-version"], "2023-06-01");
+    assert_eq!(headers["anthropic-version"], "2026-10-21");
     assert!(matches!(
         headers["x-api-key"].to_str().unwrap(),
         "synthetic-upstream" | "synthetic-secondary"
@@ -597,7 +597,7 @@ async fn json_and_stream_clients_replay_native_thinking_and_tools() {
             let result = client
                 .post(format!("{base}/v1/messages"))
                 .header("x-api-key", "synthetic-client-identity-00000001")
-                .header("anthropic-version", "2023-06-01")
+                .header("anthropic-version", "2026-10-21")
                 .json(&input)
                 .send()
                 .await
@@ -669,6 +669,7 @@ async fn json_and_stream_clients_replay_native_thinking_and_tools() {
         let result = client
             .post(format!("{base}/v1/messages"))
             .header("x-api-key", "synthetic-client-identity-00000001")
+            .header("anthropic-version", "2026-10-21")
             .json(&json!({"model":binding.model,"max_tokens":64,"stream":stream,
                 "tools":[{"name":"lookup","strict":false,"input_schema":{"type":"object","properties":{"key":{"type":"string"}}}}],
                 "tool_choice":{"type":"auto","disable_parallel_tool_use":true},
@@ -844,17 +845,17 @@ async fn native_tool_publication_waits_for_eof_and_releases_upstream_without_rep
                     "stream_options":{"include_usage":true,"include_obfuscation":false}})
             };
             let count = seen.lock().unwrap().len();
-            let mut response = tokio::time::timeout(
-                Duration::from_secs(1),
-                client
-                    .post(format!("{base}{path}"))
-                    .bearer_auth("synthetic-client-identity-00000001")
-                    .json(&input)
-                    .send(),
-            )
-            .await
-            .expect("headers before release")
-            .unwrap();
+            let mut outgoing = client
+                .post(format!("{base}{path}"))
+                .bearer_auth("synthetic-client-identity-00000001");
+            if profile.is_none() {
+                outgoing = outgoing.header("anthropic-version", "2026-10-21");
+            }
+            let mut response =
+                tokio::time::timeout(Duration::from_secs(1), outgoing.json(&input).send())
+                    .await
+                    .expect("headers before release")
+                    .unwrap();
             assert_eq!(response.status(), 200);
             let mut output = vec![];
             tokio::time::timeout(Duration::from_secs(1), async {

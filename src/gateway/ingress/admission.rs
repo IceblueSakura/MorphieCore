@@ -99,6 +99,16 @@ pub(in crate::gateway) fn headers(headers: &HeaderMap, limit: usize) -> Result<(
     }
     Ok(())
 }
+pub(super) fn messages_version(headers: &HeaderMap) -> Result<(), ApiError> {
+    let mut versions = headers.get_all("anthropic-version").iter();
+    if versions.next().map(|v| v.as_bytes())
+        != Some(crate::protocol::anthropic::messages::API_VERSION.as_bytes())
+        || versions.next().is_some()
+    {
+        return Err(ApiError::invalid());
+    }
+    Ok(())
+}
 pub(in crate::gateway) async fn collect(body: Body, limit: usize) -> Result<Vec<u8>, ApiError> {
     let mut stream = body.into_data_stream();
     let mut bytes = Vec::new();

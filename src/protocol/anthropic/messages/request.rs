@@ -134,13 +134,6 @@ impl Profile {
             ..Default::default()
         };
         settings.controls.max_output_tokens = Some(wire.max_tokens);
-        if let Some(value) = wire.temperature {
-            settings.controls = settings.controls.with_temperature(value)?;
-        }
-        if let Some(value) = wire.top_p {
-            settings.controls = settings.controls.with_top_p(value)?;
-        }
-        settings.controls.top_k = wire.top_k;
         settings.controls.stop_sequences = wire
             .stop_sequences
             .iter()
@@ -454,7 +447,10 @@ pub(in crate::protocol::anthropic::messages) fn project(
     if request.cached_context().is_some() || !s.safety.is_empty() {
         return Err(unsupported());
     }
-    if s.controls.presence_penalty().is_some()
+    if s.controls.temperature().is_some()
+        || s.controls.top_p().is_some()
+        || s.controls.top_k.is_some()
+        || s.controls.presence_penalty().is_some()
         || s.controls.frequency_penalty().is_some()
         || s.controls.seed.is_some()
     {
@@ -792,9 +788,6 @@ pub(in crate::protocol::anthropic::messages) fn project(
     }
     Ok(super::Request {
         model: target.model().into(),
-        temperature: s.controls.temperature(),
-        top_p: s.controls.top_p(),
-        top_k: s.controls.top_k,
         user_id: Presence::Absent,
         service_policy: Presence::Absent,
         max_tokens: s

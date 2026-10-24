@@ -85,6 +85,8 @@ class Gateway:
         require(raw is None or len(raw) <= REQUEST_BYTES, "request_byte_limit")
         headers = {"authorization": "Bearer " + self.key, "content-type": "application/json",
                    "x-morphiecore-conversation-id": session}
+        if path == "/v1/messages":
+            headers["anthropic-version"] = "2026-10-21"
         with closing(http.client.HTTPConnection(self.address.hostname, self.address.port, timeout=130)) as connection:
             connection.request(method, path, raw, headers)
             response = connection.getresponse()

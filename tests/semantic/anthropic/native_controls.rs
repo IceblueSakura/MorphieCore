@@ -331,14 +331,7 @@ fn ordinary_budgets_preserve_numeric_intent_and_native_strict_relation() {
     assert!(adaptive_only.encode_request(&request, &target()).is_err());
 }
 #[test]
-fn sampling_is_native_unless_the_trusted_target_selects_fixed_policy() {
-    let wire = json!({"model":"m","max_tokens":4096,"temperature":0.25,"top_p":0.75,"top_k":7,
-            "messages":[{"role":"user","content":"go"}]});
-    let decoded =
-        anthropic::messages::client::decode_client_request(wire.to_string().as_bytes()).unwrap();
-    assert_eq!(decoded.task.semantic.controls().temperature(), Some(0.25));
-    assert_eq!(decoded.task.semantic.controls().top_p(), Some(0.75));
-    assert_eq!(decoded.task.semantic.controls().top_k, Some(7));
+fn removed_sampling_has_no_native_carrier_but_selected_fixed_projection_remains() {
     let mut request = typed(None);
     let mut settings = request.task.semantic.settings().clone();
     settings.controls = settings
@@ -350,14 +343,17 @@ fn sampling_is_native_unless_the_trusted_target_selects_fixed_policy() {
     settings.controls.top_k = Some(7);
     request.task.semantic = request.task.semantic.with_settings(settings).unwrap();
     let source = request.clone();
-    let native = caps().encode_request(&request, &target()).unwrap();
-    assert_eq!(native.value["temperature"], 0.25);
-    assert_eq!(native.value["top_p"], 0.75);
-    assert_eq!(native.value["top_k"], 7);
+    let profile = Profile::AdaptiveTextTools;
+    let contract = profile.representation_contract();
+    assert!(!contract.temperature && !contract.top_p && !contract.top_k);
+    let binding = &morphiecore::topology::catalog::MESSAGES_BINDINGS[0];
+    assert!(binding.public_model().contract.temperature);
+    assert!(!binding.endpoint().representation.semantics().temperature);
+    assert!(caps().encode_request(&request, &target()).is_err());
     assert!(
-        !native
-            .rules
-            .contains(&anthropic::messages::RequestRule::OmitSampling)
+        profile
+            .encode_generation_request(&request.task.semantic, &Default::default(), &target())
+            .is_err()
     );
     let mut fixed = caps();
     fixed.sampling = SamplingPolicy::Fixed;
@@ -365,6 +361,8 @@ fn sampling_is_native_unless_the_trusted_target_selects_fixed_policy() {
     let mut settings = request.task.semantic.settings().clone();
     settings.controls.top_k = None;
     request.task.semantic = request.task.semantic.with_settings(settings).unwrap();
+    // Removing top_k cannot accidentally make remaining temperature/top_p disappear.
+    assert!(caps().encode_request(&request, &target()).is_err());
     let projected = fixed.encode_request(&request, &target()).unwrap();
     assert!(projected.value.get("temperature").is_none());
     assert!(projected.value.get("top_p").is_none());
@@ -375,8 +373,7 @@ fn sampling_is_native_unless_the_trusted_target_selects_fixed_policy() {
     );
     assert_eq!(request.task.semantic.controls().temperature(), Some(0.25));
     assert_eq!(source.task.semantic.controls().top_k, Some(7));
-    let endpoint = morphiecore::topology::catalog::MESSAGES_BINDINGS[0].endpoint();
-    assert!(endpoint.encode_request_with_rules(&decoded).is_err());
+    assert_eq!(source.task.semantic.controls().top_p(), Some(0.75));
 }
 #[test]
 fn native_identity_keeps_presence_and_bounds_with_selected_cross_projection() {

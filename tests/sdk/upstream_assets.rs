@@ -42,6 +42,9 @@ async fn handle(
     let model = value["model"].as_str().unwrap();
     let messages = model == "messages";
     assert!(messages || model == "chat");
+    if messages {
+        assert_eq!(headers["anthropic-version"], "2026-10-21");
+    }
     let index = usize::from(messages);
     let turn = {
         let mut counts = counts.lock().unwrap();

@@ -24,9 +24,6 @@ const TOP: &[&str] = &[
     "tool_choice",
     "thinking",
     "output_config",
-    "temperature",
-    "top_p",
-    "top_k",
     "cache_control",
     "stop_sequences",
     "stream",
@@ -159,6 +156,7 @@ fn tool_fields(t: &mut Value, ignored: &mut BTreeSet<String>) -> Result<(), Code
 pub fn decode_client_request(bytes: &[u8]) -> Result<Request, CodecError> {
     let mut v = parse(bytes)?;
     let o = object(&v)?;
+    wire::request::reject_removed_fields(o)?;
     if let Some(key) = UNSUPPORTED.iter().find(|key| {
         o.get(**key)
             .is_some_and(|v| !v.is_null() && !(**key == "mcp_servers" && v == &json!([])))
@@ -188,26 +186,6 @@ pub fn decode_client_request(bytes: &[u8]) -> Result<Request, CodecError> {
             .filter(|n| *n > 0)
             .ok_or(CodecError::Invalid("max_tokens"))?,
     );
-    for (key, apply) in [
-        (
-            "temperature",
-            GenerationControls::with_temperature as fn(_, f64) -> _,
-        ),
-        ("top_p", GenerationControls::with_top_p),
-    ] {
-        if let Some(value) = wire::request::sampling(&o, key, 1.0)? {
-            settings.controls = apply(settings.controls, value)?;
-        }
-    }
-    // The IR owns top_k; Messages targets that reject it do so at projection.
-    if let Some(value) = o.get("top_k").filter(|v| !v.is_null()) {
-        settings.controls.top_k = Some(
-            value
-                .as_u64()
-                .and_then(|n| u32::try_from(n).ok())
-                .ok_or(CodecError::Invalid("top_k"))?,
-        );
-    }
     let scope = LocalScope::ROOT;
     let mut intake = Intake::new(scope);
     if let Some(mut system) = o.get("system").filter(|v| !v.is_null()).cloned() {

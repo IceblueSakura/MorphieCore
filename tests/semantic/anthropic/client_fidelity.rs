@@ -64,6 +64,156 @@ fn terminal() -> StreamEvent {
     }
 }
 #[test]
+fn nullable_tool_defaults_normalize_without_disabling_eager_input_or_inventing_cache() {
+    use morphiecore::protocol::{anthropic::messages::Profile as Messages, native::ReplayTarget};
+    let profile = Messages::AdaptiveTextTools;
+    let target = ReplayTarget::new("synthetic", "m").unwrap();
+    let text = |s: &str| morphiecore::semantic::value::Text::new(s, "fixture", 128).unwrap();
+    for (eager, expected_eager, cache, expected_cache) in [
+        (None, None, None, None),
+        (Some(json!(null)), None, Some(json!(null)), None),
+        (Some(json!(false)), Some(false), Some(json!(null)), None),
+        (Some(json!(true)), Some(true), None, None),
+        (
+            Some(json!(null)),
+            None,
+            Some(json!({"type":"ephemeral"})),
+            Some(PrefixCacheTtl::FiveMinutes),
+        ),
+    ] {
+        let mut definition = json!({"name":"lookup","input_schema":{"type":"object"}});
+        if let Some(eager) = eager {
+            definition["eager_input_streaming"] = eager;
+        }
+        if let Some(cache) = cache {
+            definition["cache_control"] = cache;
+        }
+        let mut later = definition.clone();
+        later["name"] = json!("later");
+        let body = json!({"model":"m","max_tokens":32,"tools":[definition],
+            "messages":[{"role":"user","content":"go"},{"role":"system","content":[
+                {"type":"tool_addition","tool":{"type":"tool_definition","definition":later}}]}]});
+        let decoded = decode_client_request(body.to_string().as_bytes()).unwrap();
+        let native = profile
+            .decode_generation_request(body.to_string().as_bytes(), LocalScope::ROOT, &target)
+            .unwrap();
+        for semantic in [&decoded.task.semantic, &native.semantic] {
+            let ToolDefinition::Function(root) = &semantic.tools()[0] else {
+                panic!("function");
+            };
+            let Item::ToolChange(ToolChange {
+                action: ToolChangeAction::AddDefinition(later),
+                ..
+            }) = &semantic.items()[1].1
+            else {
+                panic!("tool addition");
+            };
+            for tool in [root, later.as_ref()] {
+                assert_eq!(tool.eager_input, expected_eager);
+                assert_eq!(tool.cache, expected_cache);
+            }
+        }
+
+        // Independent semantic construction: null never becomes Some(false) or a TTL.
+        let root = FunctionTool {
+            name: text("lookup"),
+            description: None,
+            parameters: Some(json!({"type":"object"}).into()),
+            input_examples: None,
+            strict: FunctionStrictness::Omitted(StrictDefault::NonStrict),
+            output_schema: None,
+            dispatch: Default::default(),
+            cache: expected_cache,
+            eager_input: expected_eager,
+        };
+        let mut controls = GenerationControls::default();
+        controls.max_output_tokens = Some(32);
+        let request = GenerationRequest::new(
+            vec![
+                (
+                    ItemId::new(1),
+                    Item::Message(Message {
+                        participant: None,
+                        role: MessageRole::User,
+                        status: ItemLifecycle::Completed,
+                        phase: None,
+                        parts: vec![Part::new(
+                            PartId::new(1),
+                            ContentPart::Text(text("go").into()),
+                        )],
+                    }),
+                ),
+                (
+                    ItemId::new(2),
+                    Item::ToolChange(ToolChange {
+                        action: ToolChangeAction::AddDefinition(Box::new(FunctionTool {
+                            name: text("later"),
+                            ..root.clone()
+                        })),
+                        cache: None,
+                    }),
+                ),
+            ],
+            controls,
+        )
+        .unwrap()
+        .with_tools(vec![ToolDefinition::Function(root)], ToolChoice::Auto)
+        .unwrap()
+        .with_message_envelopes(vec![
+            MessageEnvelope::new(
+                GroupId::new(LocalScope::ROOT, 1),
+                MessageEnvelopeRole::User,
+                vec![ItemId::new(1)],
+            )
+            .unwrap(),
+        ])
+        .unwrap();
+        let projection = profile
+            .encode_generation_request(&request, &Default::default(), &target)
+            .unwrap();
+        assert!(projection.rules.is_empty());
+        let mut expected = json!({"name":"lookup","input_schema":{"type":"object"}});
+        if let Some(eager) = expected_eager {
+            expected["eager_input_streaming"] = json!(eager);
+        }
+        if expected_cache.is_some() {
+            expected["cache_control"] = json!({"type":"ephemeral"});
+        }
+        assert_eq!(projection.value["tools"], json!([expected]));
+        expected["name"] = json!("later");
+        assert_eq!(
+            projection.value["messages"][1]["content"],
+            json!([{"type":"tool_addition","tool":{"type":"tool_definition","definition":expected}}])
+        );
+    }
+    for inline in [false, true] {
+        for (field, value) in [
+            ("eager_input_streaming", json!("false")),
+            ("eager_input_streaming", json!(0)),
+            ("cache_control", json!(false)),
+            ("description", json!(null)),
+            ("strict", json!(null)),
+            ("defer_loading", json!(null)),
+            ("input_examples", json!(null)),
+        ] {
+            let mut definition = json!({"name":"lookup","input_schema":{"type":"object"}});
+            definition[field] = value;
+            let body = if inline {
+                json!({"model":"m","max_tokens":32,"messages":[{"role":"user","content":"go"},
+                    {"role":"system","content":[{"type":"tool_addition",
+                        "tool":{"type":"tool_definition","definition":definition}}]}]})
+            } else {
+                json!({"model":"m","max_tokens":32,"tools":[definition],
+                    "messages":[{"role":"user","content":"go"}]})
+            };
+            assert!(
+                decode_client_request(body.to_string().as_bytes()).is_err(),
+                "{field}"
+            );
+        }
+    }
+}
+#[test]
 fn messages_tool_examples_keep_order_presence_and_tool_change_owners() {
     use morphiecore::protocol::{anthropic::messages::Profile as Messages, native::ReplayTarget};
     let profile = Messages::AdaptiveTextTools;
@@ -1269,11 +1419,6 @@ fn client_intake_carries_caps_and_rejects_active_fields_it_cannot_carry() {
             "{key}"
         );
     }
-    // The IR owns top_k; a Messages target rejects it at projection, not intake.
-    let mut sampled = body.clone();
-    sampled["top_k"] = json!(4);
-    let sampled = decode_client_request(sampled.to_string().as_bytes()).unwrap();
-    assert_eq!(sampled.task.semantic.controls().top_k, Some(4));
     // Mid-conversation system messages are ordered, text-only instructions.
     let mut system = body.clone();
     system["messages"] = json!([{"role":"user","content":"go"},

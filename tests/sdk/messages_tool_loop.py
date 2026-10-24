@@ -77,7 +77,8 @@ with httpx.Client(trust_env=False, timeout=10,
                         {"type": "text", "text": "Inspect mode."},
                         {"type": "tool_removal", "tool": {"type": "tool_reference", "name": "lookup"}},
                         {"type": "tool_addition", "tool": {"type": "tool_definition", "definition": {
-                            "name": "inspect", "input_schema": {"type": "object"}, "eager_input_streaming": True,
+                            "name": "inspect", "input_schema": {"type": "object"},
+                            "eager_input_streaming": True, "cache_control": None,
                         }}},
                     ], "output_config": {"effort": "low"}})
                 else:

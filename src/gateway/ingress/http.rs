@@ -182,6 +182,9 @@ pub(in crate::gateway) async fn handle(
         .cloned();
     let permit = admission::acquire_permit(&state)?;
     admission::headers(request.headers(), state.limits.request_bytes)?;
+    if protocol == ClientProtocol::Messages {
+        admission::messages_version(request.headers())?;
+    }
     let conversation = admission::conversation(request.headers())?;
     let bytes = tokio::select! {
         biased;

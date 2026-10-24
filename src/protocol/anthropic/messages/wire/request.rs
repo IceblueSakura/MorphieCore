@@ -359,9 +359,9 @@ impl Tool {
         name(&self.name, 128)?;
         nonnull(&self.description)?;
         nonnull(&self.strict)?;
-        nonnull(&self.cache_control)?;
-        nonnull(&self.eager_input_streaming)?;
         nonnull(&self.input_examples)?;
+        // Nullable cache means no marker; nullable eager input selects the target
+        // default (not explicit false). Both already map through Presence::value.
         // A deferred definition cannot carry a breakpoint.
         if self.defer_loading && self.cache_control.value().is_some() {
             return Err(CodecError::Invalid("Anthropic deferred tool cache"));
@@ -772,9 +772,6 @@ pub(in crate::protocol::anthropic::messages) fn validate_automatic_cache(
 #[derive(Clone, PartialEq)]
 pub struct Request {
     pub model: String,
-    pub temperature: Option<f64>,
-    pub top_p: Option<f64>,
-    pub top_k: Option<u32>,
     pub user_id: Presence<String>,
     pub service_policy: Presence<crate::semantic::context::ServicePolicy>,
     pub max_tokens: u64,
@@ -795,13 +792,11 @@ impl std::fmt::Debug for Request {
 }
 impl Request {
     pub(in crate::protocol::anthropic::messages) fn read(v: &Value) -> Result<Self, CodecError> {
+        reject_removed_fields(object(v)?)?;
         let o = closed(
             v,
             &[
                 "model",
-                "temperature",
-                "top_p",
-                "top_k",
                 "metadata",
                 "service_tier",
                 "max_tokens",
@@ -818,12 +813,6 @@ impl Request {
         )?;
         let r = Self {
             model: string(required(o, "model")?)?,
-            temperature: sampling(o, "temperature", 1.0)?,
-            top_p: sampling(o, "top_p", 1.0)?,
-            top_k: match o.get("top_k").filter(|v| !v.is_null()) {
-                Some(v) => Some(u32::try_from(uint(v)?).map_err(|_| CodecError::Invalid("top_k"))?),
-                None => None,
-            },
             user_id: read_user_id(o)?,
             service_policy: crate::protocol::anthropic::messages::service::read_policy(o)?,
             max_tokens: uint(required(o, "max_tokens")?)?,
@@ -860,14 +849,6 @@ impl Request {
         }
         if self.max_tokens == 0 {
             return Err(CodecError::Invalid("Anthropic max_tokens"));
-        }
-        for value in [self.temperature, self.top_p].into_iter().flatten() {
-            if !value.is_finite() || !(0.0..=1.0).contains(&value) {
-                return Err(CodecError::Invalid("Anthropic sampling"));
-            }
-        }
-        if self.top_k == Some(0) {
-            return Err(CodecError::Invalid("Anthropic top_k"));
         }
         validate_user_id(&self.user_id)?;
         if let Presence::Value(Thinking::Enabled {
@@ -1124,14 +1105,6 @@ impl Request {
             "messages": self.messages.iter().map(InputMessage::wire).collect::<Vec<_>>(),
         });
         let o = v.as_object_mut().expect("object");
-        for (key, value) in [("temperature", self.temperature), ("top_p", self.top_p)] {
-            if let Some(value) = value {
-                o.insert(key.into(), json!(value));
-            }
-        }
-        if let Some(value) = self.top_k {
-            o.insert("top_k".into(), json!(value));
-        }
         if !self.user_id.is_absent() {
             let mut metadata = Map::new();
             put(&mut metadata, "user_id", &self.user_id, |value| {
@@ -1160,19 +1133,16 @@ impl Request {
         v
     }
 }
-pub(in crate::protocol::anthropic::messages) fn sampling(
+pub(in crate::protocol::anthropic::messages) fn reject_removed_fields(
     o: &Map<String, Value>,
-    key: &'static str,
-    max: f64,
-) -> Result<Option<f64>, CodecError> {
-    o.get(key)
-        .filter(|v| !v.is_null())
-        .map(|v| {
-            v.as_f64()
-                .filter(|v| v.is_finite() && (0.0..=max).contains(v))
-                .ok_or(CodecError::Invalid("Anthropic sampling"))
-        })
-        .transpose()
+) -> Result<(), CodecError> {
+    // Removed controls are known fields, not ignorable extensions, including null.
+    for key in ["temperature", "top_p", "top_k"] {
+        if o.contains_key(key) {
+            return Err(CodecError::Unsupported(key.into()));
+        }
+    }
+    Ok(())
 }
 pub(in crate::protocol::anthropic::messages) fn validate_user_id(
     value: &Presence<String>,

@@ -49,7 +49,7 @@ pub enum Dialect {
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum SamplingPolicy {
     #[default]
-    Native,
+    Reject,
     /// Evidenced Claude 5.x policy, selected by a trusted binding.
     Fixed,
 }
@@ -80,7 +80,7 @@ impl TargetCaps {
             reasoning_policy: None,
             reasoning_as_text: false,
             carriers: Default::default(),
-            sampling: SamplingPolicy::Native,
+            sampling: SamplingPolicy::Reject,
             manual_thinking: true,
             default_output_tokens: None,
             automatic_cache_default: None,
@@ -370,7 +370,7 @@ impl TargetCaps {
         body: &serde_json::Value,
     ) -> Result<Vec<(String, String)>, CodecError> {
         let mut headers = vec![
-            ("anthropic-version".into(), "2023-06-01".into()),
+            ("anthropic-version".into(), super::API_VERSION.into()),
             (
                 "user-agent".into(),
                 concat!("MorphieCore/", env!("CARGO_PKG_VERSION")).into(),
