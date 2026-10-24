@@ -17,7 +17,8 @@ pub(in crate::protocol::anthropic::messages) fn display(
     }
 }
 
-/// Effort and format of a Messages `output_config`; a null member is unset.
+/// Effort and format of a validated Messages `output_config`.
+/// Unresolved null-member semantics reject before optional owners are projected.
 pub(in crate::protocol::anthropic::messages) fn output_settings(
     config: &crate::protocol::anthropic::messages::OutputConfig,
     settings: &mut GenerationSettings,

@@ -442,3 +442,128 @@ fn openai_limits_check_calibrated_levels_and_do_not_insert_caps() {
     }
     assert_eq!(request, before);
 }
+
+#[test]
+fn google_sampling_omission_is_binding_selected_and_preparation_matches_preflight() {
+    use morphiecore::protocol::{
+        google::{self, SamplingPolicy},
+        native::ReplayTarget,
+    };
+    let binding = &GOOGLE_BINDINGS[0];
+    let request = source(
+        json!({"model":binding.model,"input":"go","max_output_tokens":64,
+        "temperature":0.25,"top_p":0.8,"store":false}),
+    );
+    let original = request.clone();
+    for mut endpoint in [binding.endpoint(), binding.interactions_endpoint()] {
+        let interactions = matches!(
+            endpoint.representation,
+            morphiecore::lowering::target::TargetCaps::GoogleInteractions(_)
+        );
+        let rule = if interactions {
+            "interactions.omit-ignored-sampling.v1"
+        } else {
+            "gemini.omit-ignored-sampling.v1"
+        };
+        assert!(!endpoint.representation.semantics().temperature);
+        assert!(!endpoint.representation.semantics().top_p);
+        representable(&endpoint, &request).unwrap();
+        let (wire, rules) = endpoint.encode_request_with_rules(&request).unwrap();
+        assert_eq!(rules, [rule]);
+        let config = &wire[if interactions {
+            "generation_config"
+        } else {
+            "generationConfig"
+        }];
+        for field in ["temperature", "top_p", "topP", "top_k", "topK"] {
+            assert!(config.get(field).is_none());
+        }
+        let prepared = prepare(
+            &endpoint,
+            &binding.provider(),
+            &SecretMaterial::new("synthetic-key").unwrap(),
+            &request,
+        )
+        .unwrap();
+        assert_eq!(
+            serde_json::from_slice::<Value>(&prepared.body).unwrap(),
+            wire
+        );
+        let mut settings = request.task.semantic.settings().clone();
+        settings.controls = settings.controls.without_sampling();
+        let mut absent = request.clone();
+        absent.task.semantic = request
+            .task
+            .semantic
+            .clone()
+            .with_settings(settings)
+            .unwrap();
+        let (_, rules) = endpoint.encode_request_with_rules(&absent).unwrap();
+        assert!(!rules.contains(&rule));
+        if interactions {
+            let morphiecore::lowering::target::TargetCaps::GoogleInteractions(caps) =
+                &mut endpoint.representation
+            else {
+                unreachable!()
+            };
+            caps.sampling = SamplingPolicy::Reject;
+            assert!(endpoint.encode_request(&request).is_err());
+            assert!(
+                google::interactions::encode_generation_request(
+                    &request.task.semantic,
+                    &request.task.fidelity,
+                    &ReplayTarget::new("synthetic", "model").unwrap()
+                )
+                .is_err()
+            );
+        }
+    }
+    let (native, rules) = google::generate_content::encode_generation_request(
+        &request.task.semantic,
+        &request.task.fidelity,
+        &ReplayTarget::new("synthetic", "model").unwrap(),
+        None,
+    )
+    .unwrap();
+    assert_eq!(native["generationConfig"]["temperature"], 0.25);
+    assert_eq!(native["generationConfig"]["topP"], 0.8);
+    assert!(!rules.contains(&google::generate_content::RequestRule::OmitSampling));
+    for patch in [json!({"temperature":-1}), json!({"top_p":2})] {
+        let mut value = json!({"model":binding.model,"input":"go"});
+        value
+            .as_object_mut()
+            .unwrap()
+            .extend(patch.as_object().unwrap().clone());
+        assert!(
+            Adapter::new(Profile::Responses, Dialect::Standard, None)
+                .decode_request(value.to_string().as_bytes())
+                .is_err()
+        );
+    }
+    assert_eq!(request, original);
+}
+
+#[test]
+fn unreviewed_google_models_do_not_inherit_ignored_sampling() {
+    use morphiecore::{protocol::google::SamplingPolicy, topology::catalog::GoogleBinding};
+    let binding = GoogleBinding {
+        model: "unreviewed-model",
+        upstream: "unreviewed-model",
+        released_at: 1,
+        developer: "synthetic",
+    };
+    let endpoint = binding.endpoint();
+    let morphiecore::lowering::target::TargetCaps::GoogleGenerateContent(caps) =
+        endpoint.representation
+    else {
+        unreachable!()
+    };
+    assert_eq!(caps.sampling, SamplingPolicy::Native);
+    let endpoint = binding.interactions_endpoint();
+    let morphiecore::lowering::target::TargetCaps::GoogleInteractions(caps) =
+        endpoint.representation
+    else {
+        unreachable!()
+    };
+    assert_eq!(caps.sampling, SamplingPolicy::Reject);
+}

@@ -76,6 +76,7 @@ pub enum RequestControlLoss {
         rule: &'static str,
         temperature: bool,
         top_p: bool,
+        top_k: bool,
     },
     MessagesVerbosity {
         input: Presence<Verbosity>,

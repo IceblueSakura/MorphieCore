@@ -1050,7 +1050,7 @@
         "defaulted": []
       }
     },
-    "terminal_marker": "event: done\n"
+    "terminal_marker": "event: interaction.completed\n"
   },
   "sparse": {
     "sse": "sparse-final.sse",

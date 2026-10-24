@@ -92,21 +92,21 @@ The acquirer checks source/asset revision agreement and expected digests, permit
 | Anthropic Python text/tool/sparse-usage SSE | Native IR and delivery, optional-count retention, strict EOF and invalid-order rejection |
 | Vercel Responses custom call | Unchanged output-array replay with distinct item/call IDs; missing-sequence stream is a rejection case, not a repaired success |
 | Vercel Google text | generateContent SSE content, signature-bearing owners and scoped source usage; static companion remains reference only |
-| Vercel Interactions | Original stream reproduces late-service-tier rejection; static companion remains reference only |
+| Vercel Interactions | Unchanged stream passes terminal-first service report and terminal-without-DONE intake across fragmented chunks; static companion remains reference only |
 | EventSource Parser | Literal multiline/CR/CRLF framing across every two-way byte split; no browser reconnection claim |
 
 The connected SDK case makes eight serial synthetic requests: JSON and SSE tool responses for Chat and Messages, each followed by SDK-built history carrying a fixed result. The real client decoder re-admits that history. Chat's second fixture deliberately ends at `length`; Messages returns a final text answer. Retries/tool execution are disabled, request ceilings are 32/128 tokens, HTTP timeout is eight seconds and child timeout is 45 seconds. This uses actual Attempt/ResponseDelivery and strict pinned SDK consumers, not the Router, real Providers or installed agents. It does not establish streaming latency, backpressure or adaptation-extension retention.
 
 ### Pending standard requirements
 
-Known differences have executable **desired-behavior** probes, not expected-failure success assertions. Unrepaired probes remain explicitly ignored in ordinary regression; repaired ones run normally. Run the standard assertions and remaining unmet probe separately:
+Known differences use executable **desired-behavior** probes, not expected-failure success assertions. All currently registered probes now run in ordinary regression, including the original Interactions late-report asset:
 
 ```sh
 cargo test --locked --offline --test semantic standard_contracts
-cargo test --locked --offline --test transport interactions_allows_first_service_tier_report_at_terminal -- --ignored
+cargo test --locked --offline --test transport interactions_allows_first_service_tier_report_at_terminal
 ```
 
-Prediction, participant-name, direct-only Messages tools, removed Messages sampling and native Responses omitted-strict requirements now run normally. Only the Interactions late-report probe above remains ignored. A compilation/setup error is not a reproduced protocol gap. Repair each owner, remove its ignore marker and retain the independent assertion during the responsible redesign slice. Remaining failures block **new conformance acceptance**, not publication of independently verified migration slices. The [inventory](refs/2026-10-23-stable-protocol-contracts.md#official-contract-difference-inventory) also records source-traced gaps not yet executable, explicit exclusions and SDK/schema disagreements.
+The selected mapping package also retains independent direction, strict-null, prefix/grouping, exact structured-result, binding-policy, report-phase and signature checks at their responsible owners. Existing pinned SDK loops exercise nullable cache defaults, ordered message effort, thought placeholders and terminal-only service reports without adding a parallel harness. A compilation/setup error is not a reproduced protocol gap. Future executable unmet requirements must remain visibly separate until repaired; green current probes are not comprehensive conformance. The [inventory](refs/2026-10-23-stable-protocol-contracts.md#official-contract-difference-inventory) records delivery gaps, explicit exclusions and unresolved SDK/schema disagreements.
 
 ### Source links and updates
 

@@ -43,6 +43,8 @@ impl GoogleBinding {
     }
     fn accepted_contract(&self) -> GenerationSemanticContract {
         let mut contract = generate_content::semantic_contract();
+        // The existing Interactions candidate retains its official image-result carrier.
+        contract.tool_result_media = true;
         contract.response_effort = self.reasoning_policy().is_some();
         contract
     }
@@ -63,6 +65,7 @@ impl GoogleBinding {
     }
     pub fn endpoint(&self) -> Endpoint {
         let provider = self.provider();
+        let ignored_sampling = self.model == "gemini-3.8-flash";
         let collection = provider
             .generation_entry(crate::provider::GenerationOperation::GoogleGenerateContent)
             .expect("declared path")
@@ -83,6 +86,16 @@ impl GoogleBinding {
             upstream_model: self.upstream.into(),
             canonical_model: ModelId::new(self.model).expect("static model"),
             representation: generate_content::TargetCaps {
+                semantics: GenerationSemanticContract {
+                    temperature: !ignored_sampling,
+                    top_p: !ignored_sampling,
+                    ..generate_content::semantic_contract()
+                },
+                sampling: if ignored_sampling {
+                    crate::protocol::google::SamplingPolicy::Ignored
+                } else {
+                    crate::protocol::google::SamplingPolicy::Native
+                },
                 model_limits: self.model_limits(),
                 reasoning_policy: self.reasoning_policy(),
                 messages_terminal_projection: self.model == "gemini-3.8-flash",
@@ -124,6 +137,11 @@ impl GoogleBinding {
             .path
             .clone();
         endpoint.representation = interactions::TargetCaps {
+            sampling: if self.model == "gemini-3.8-flash" {
+                crate::protocol::google::SamplingPolicy::Ignored
+            } else {
+                crate::protocol::google::SamplingPolicy::Reject
+            },
             model_limits: self.model_limits(),
             reasoning_policy: self.reasoning_policy(),
             messages_terminal_projection: self.model == "gemini-3.8-flash",

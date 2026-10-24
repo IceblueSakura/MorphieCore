@@ -124,6 +124,14 @@ impl TargetCaps {
             contract.temperature = true;
             contract.top_p = true;
         }
+        if matches!(self, Self::GoogleGenerateContent(c)
+            if c.sampling == crate::protocol::google::SamplingPolicy::Ignored)
+            || matches!(self, Self::GoogleInteractions(c)
+                if c.sampling == crate::protocol::google::SamplingPolicy::Ignored)
+        {
+            contract.temperature = true;
+            contract.top_p = true;
+        }
         let policy = match self {
             Self::GoogleGenerateContent(c) => c.reasoning_policy.as_ref(),
             Self::GoogleInteractions(c) => c.reasoning_policy.as_ref(),

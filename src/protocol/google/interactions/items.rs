@@ -148,6 +148,9 @@ pub(super) fn steps(
                                 })
                                 .collect::<Result<_, CodecError>>()?,
                         ),
+                        ToolOutput::Structured(value) if value.value().is_object() => {
+                            value.value().clone()
+                        }
                         ToolOutput::Structured(_) => return Err(unsupported()),
                     };
                     let name = request

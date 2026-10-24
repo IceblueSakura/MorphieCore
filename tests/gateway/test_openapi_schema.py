@@ -36,6 +36,23 @@ class OpenApiSchemaTests(unittest.TestCase):
             for value in (None, 1, 0.5, "invalid"):
                 self.assertFalse(request.is_valid({**body, field: value}))
 
+    def test_request_format_and_known_messages_controls_are_nonnull(self):
+        chat = {"model": "synthetic", "messages": []}
+        responses = {"model": "synthetic", "input": "go"}
+        messages = {"model": "synthetic", "max_tokens": 32, "messages": []}
+        for schema, body, valid, invalid in (
+            ("ChatRequest", chat, {"response_format": {"type": "text"}}, {"response_format": None}),
+            ("ResponsesRequest", responses, {"text": {"format": {"type": "text"}}}, {"text": {"format": None}}),
+            ("MessagesRequest", messages, {"output_config": {"effort": "low"}}, {"output_config": {"effort": None}}),
+            ("MessagesRequest", messages, {"output_config": {"format": {"type": "json_schema"}}}, {"output_config": {"format": None}}),
+            ("MessagesRequest", messages, {"tool_choice": {"type": "auto", "disable_parallel_tool_use": False}},
+                {"tool_choice": {"type": "auto", "disable_parallel_tool_use": None}}),
+        ):
+            validator(schema).validate(body)
+            validator(schema).validate({**body, **valid})
+            self.assertFalse(validator(schema).is_valid({**body, **invalid}))
+        self.assertFalse(validator("ResponsesRequest").is_valid({**responses, "text": None}))
+
     def test_native_thinking_carriers_are_typed_without_an_extension_bag(self):
         chat = {"model": "synthetic", "messages": []}
         response = {"model": "synthetic", "input": "go"}

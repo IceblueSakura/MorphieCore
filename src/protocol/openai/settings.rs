@@ -77,7 +77,10 @@ pub(super) fn read(
     s.text.presence = read_presence(o, "text", |t| {
         let t = object(t)?;
         direction.fields(t, &["format", "verbosity"])?;
-        s.text.format = read_presence(t, "format", |v| read_format(v, direction))?;
+        if !reported && t.get("format").is_some_and(Value::is_null) {
+            return Err(CodecError::Invalid("text.format"));
+        }
+        s.text.format = read_presence(t, "format", |v| read_format(v, reported, direction))?;
         s.text.verbosity = read_presence(t, "verbosity", verbosity)?;
         Ok(())
     })?;
@@ -87,6 +90,7 @@ pub(super) fn read(
 }
 pub(super) fn read_format(
     v: &Value,
+    reported: bool,
     direction: DecodeDirection,
 ) -> Result<OutputConstraint, CodecError> {
     let o = object(v)?;
@@ -101,13 +105,19 @@ pub(super) fn read_format(
         }
         "json_schema" => {
             direction.fields(o, &["type", "name", "description", "schema", "strict"])?;
-            read_schema_body(o)?
+            read_schema_body(o, reported)?
         }
         _ => return Err(CodecError::Unsupported("text format".into())),
     })
 }
 /// Shared json_schema body fields; each protocol shell owns its wrapper and key set.
-pub(super) fn read_schema_body(o: &Map<String, Value>) -> Result<OutputConstraint, CodecError> {
+pub(super) fn read_schema_body(
+    o: &Map<String, Value>,
+    reported: bool,
+) -> Result<OutputConstraint, CodecError> {
+    if !reported && o.get("description").is_some_and(Value::is_null) {
+        return Err(CodecError::Invalid("description"));
+    }
     Ok(OutputConstraint::JsonSchema {
         name: Some(text(string(o, "name")?, "schema name", 64)?),
         description: o
@@ -134,7 +144,7 @@ pub(super) fn read_schema_body(o: &Map<String, Value>) -> Result<OutputConstrain
             .transpose()?,
     })
 }
-/// Missing and null description/strict collapse to `None`; explicit `strict: false` stays visible.
+/// Reports may normalize null descriptions; nullable strictness keeps explicit false.
 pub(super) fn write_schema_body(
     o: &mut Map<String, Value>,
     name: Option<&Text>,

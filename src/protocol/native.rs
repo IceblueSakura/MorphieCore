@@ -194,10 +194,59 @@ pub(crate) fn group_client_history(
     if actual == expected {
         return Ok(request.clone());
     }
+    // Preserve known container boundaries when only part of the history has
+    // envelopes. Empty containers need their explicit anchor, not guessed regrouping.
+    if request
+        .message_envelopes()
+        .iter()
+        .any(|g| g.members().is_empty())
+    {
+        return Err(CodecError::Unsupported(
+            "partial native message grouping".into(),
+        ));
+    }
+    let positions: std::collections::BTreeMap<_, _> = request
+        .items()
+        .iter()
+        .enumerate()
+        .map(|(position, (id, _))| (*id, position))
+        .collect();
+    let mut previous = None;
+    for group in request.message_envelopes() {
+        let mut member_position = None;
+        for owner in group.members() {
+            let position = *positions
+                .get(owner)
+                .ok_or_else(|| CodecError::Unsupported("partial native message grouping".into()))?;
+            if previous.is_some_and(|p| position <= p)
+                || member_position.is_some_and(|p| position != p + 1)
+            {
+                return Err(CodecError::Unsupported(
+                    "partial native message grouping".into(),
+                ));
+            }
+            previous = Some(position);
+            member_position = Some(position);
+        }
+    }
+    let starts: std::collections::BTreeSet<_> = request
+        .message_envelopes()
+        .iter()
+        .filter_map(|g| g.members().first().copied())
+        .collect();
+    let ends: std::collections::BTreeSet<_> = request
+        .message_envelopes()
+        .iter()
+        .filter_map(|g| g.members().last().copied())
+        .collect();
     let mut groups: Vec<(MessageEnvelopeRole, Vec<ItemId>)> = vec![];
+    let mut boundary = true;
     for (id, item) in request.items() {
         let role = match item {
-            item if outside_envelopes(item) => continue,
+            item if outside_envelopes(item) => {
+                boundary = true;
+                continue;
+            }
             Item::Message(message) => match message.role {
                 MessageRole::User => MessageEnvelopeRole::User,
                 MessageRole::Assistant => MessageEnvelopeRole::Assistant,
@@ -207,9 +256,12 @@ pub(crate) fn group_client_history(
             _ => return Err(CodecError::Unsupported("native semantic carrier".into())),
         };
         match groups.last_mut() {
-            Some((last, members)) if *last == role => members.push(*id),
+            Some((last, members)) if *last == role && !boundary && !starts.contains(id) => {
+                members.push(*id)
+            }
             _ => groups.push((role, vec![*id])),
         }
+        boundary = ends.contains(id);
     }
     let groups = groups
         .into_iter()

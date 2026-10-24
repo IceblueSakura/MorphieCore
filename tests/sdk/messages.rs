@@ -77,6 +77,7 @@ async fn handle(
     );
     let mut caps = TargetCaps::new(Profile::AdaptiveTextTools, Dialect::Standard);
     caps.semantics = Profile::AdaptiveTextTools.representation_contract();
+    caps.carriers = anthropic::messages::Carriers::all();
     let target = ReplayTarget::new("synthetic-sdk", "fixture-model").unwrap();
     let native = caps.encode_request(&request, &target).unwrap();
     assert_eq!(native.value["metadata"], json!({"user_id":"sdk-user"}));
@@ -104,6 +105,17 @@ async fn handle(
     };
     assert!(turn <= 5);
     if turn <= 2 {
+        assert_eq!(
+            native.value["messages"][1],
+            json!({"role":"system","content":[],"output_config":{"effort":"low"}})
+        );
+        assert_eq!(
+            native.value["messages"][2],
+            json!({"role":"user","content":[{"type":"text","text":"second input"}]})
+        );
+        for part in native.value["messages"][0]["content"].as_array().unwrap() {
+            assert!(part.get("cache_control").is_none());
+        }
         assert_eq!(
             native.value["messages"][0]["content"][1],
             json!({"type":"document","source":{"type":"text","media_type":"text/plain",
@@ -147,7 +159,7 @@ async fn handle(
                             }))))
         ));
         assert_eq!(
-            native.value["messages"][2]["content"][0]["content"],
+            native.value["messages"][4]["content"][0]["content"],
             json!([{"type":"text","text":"found"},
                 {"type":"image","source":{"type":"url","url":"https://example.invalid/a.png"},
                     "transformations":{"oversized_image":"error"}}])

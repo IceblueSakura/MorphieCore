@@ -123,12 +123,6 @@ fn response_format_shells_map_to_one_owner_with_independent_shapes() {
     for (format, chat_format, responses_text, structured) in [
         (None, None, None, false),
         (
-            Some(Presence::Null),
-            Some(Value::Null),
-            Some(json!({"format":null})),
-            false,
-        ),
-        (
             Some(Presence::Value(OutputConstraint::Text)),
             Some(json!({"type":"text"})),
             Some(json!({"format":{"type":"text"}})),
@@ -214,6 +208,98 @@ fn response_format_shells_map_to_one_owner_with_independent_shapes() {
     assert!(chat::decode_generation(&invalid).is_err());
 }
 
+#[test]
+fn request_formats_reject_known_nulls_without_rejecting_nullable_reports() {
+    use morphiecore::protocol::{
+        CodecError,
+        openai::{Adapter, Dialect},
+    };
+    for profile in [Profile::Chat, Profile::Responses] {
+        let adapter = Adapter::new(profile, Dialect::Standard, None);
+        let baseline = if profile == Profile::Chat {
+            json!({"model":"m","messages":[{"role":"user","content":"go"}]})
+        } else {
+            json!({"model":"m","input":"go"})
+        };
+        let field = if profile == Profile::Chat {
+            "response_format"
+        } else {
+            "text"
+        };
+        let mut null = baseline.clone();
+        null[field] = if profile == Profile::Chat {
+            Value::Null
+        } else {
+            json!({"format":null})
+        };
+        for client in [false, true] {
+            let decode = |body: &Value| {
+                let bytes = body.to_string();
+                if client {
+                    adapter.decode_client_request(bytes.as_bytes())
+                } else {
+                    adapter.decode_request(bytes.as_bytes())
+                }
+            };
+            assert!(matches!(decode(&null), Err(CodecError::Invalid(_))));
+            let mut schema =
+                json!({"type":"json_schema","name":"answer","schema":{},"strict":null});
+            for description in [None, Some(json!("")), Some(json!(null))] {
+                let mut body = baseline.clone();
+                if let Some(value) = &description {
+                    schema["description"] = value.clone();
+                } else {
+                    schema.as_object_mut().unwrap().remove("description");
+                }
+                body[field] = if profile == Profile::Chat {
+                    let mut inner = schema.clone();
+                    inner.as_object_mut().unwrap().remove("type");
+                    json!({"type":"json_schema","json_schema":inner})
+                } else {
+                    json!({"format":schema})
+                };
+                if description.as_ref().is_some_and(Value::is_null) {
+                    assert_eq!(
+                        decode(&body).unwrap_err(),
+                        CodecError::Invalid("description")
+                    );
+                } else {
+                    let decoded = decode(&body).unwrap();
+                    assert!(matches!(decoded.task.semantic.settings().output(),
+                        OutputConstraint::JsonSchema { description: d, strict: None, .. }
+                        if d.as_ref().map(Text::as_str) == description.as_ref().map(|_| "")));
+                }
+            }
+        }
+    }
+    let settings = GenerationSettings {
+        text: TextOptions {
+            presence: Presence::Value(()),
+            format: Presence::Null,
+            verbosity: Presence::Absent,
+        },
+        ..GenerationSettings::default()
+    };
+    assert_eq!(
+        GenerationRequest::from_settings(
+            vec![(
+                ItemId::new(1),
+                Item::Message(Message {
+                    participant: None,
+                    role: MessageRole::User,
+                    status: ItemLifecycle::Completed,
+                    phase: None,
+                    parts: vec![Part::new(
+                        PartId::new(1),
+                        ContentPart::Text(text("go").into())
+                    )],
+                })
+            )],
+            settings
+        ),
+        Err(GenerationError::InvalidControl)
+    );
+}
 #[test]
 fn instruction_status_is_checked_in_history_and_reported_echoes() {
     let mut response = wire::response(2);
@@ -496,6 +582,14 @@ fn reported_text_container_presence_is_not_request_intent() {
             TextOptions {
                 presence: Presence::Value(()),
                 ..Default::default()
+            },
+        ),
+        (
+            Some(json!({"format":null})),
+            TextOptions {
+                presence: Presence::Value(()),
+                format: Presence::Null,
+                verbosity: Presence::Absent,
             },
         ),
         (

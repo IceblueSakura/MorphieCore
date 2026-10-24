@@ -28,7 +28,6 @@ impl<T> CacheMarked<T> {
             "cache_control",
             CacheControl::read_breakpoint,
         )?;
-        nonnull(&cache)?;
         Ok(Self {
             content: read(value)?,
             cache: cache.value().copied(),
@@ -449,10 +448,19 @@ impl ToolChoice {
         if !matches!(selection, Selection::Tool(_)) && o.contains_key("name") {
             return Err(CodecError::Invalid("Anthropic tool choice name"));
         }
-        Ok(Self {
+        let choice = Self {
             selection,
             disable_parallel_tool_use: presence(o, "disable_parallel_tool_use", boolean)?,
-        })
+        };
+        choice.validate()?;
+        Ok(choice)
+    }
+    fn validate(&self) -> Result<(), CodecError> {
+        nonnull(&self.disable_parallel_tool_use)?;
+        if self.selection == Selection::None && !self.disable_parallel_tool_use.is_absent() {
+            return Err(CodecError::Invalid("Anthropic none parallel control"));
+        }
+        Ok(())
     }
     fn wire(&self) -> Value {
         let mut v = match &self.selection {
@@ -640,7 +648,7 @@ impl OutputConfig {
         if o.contains_key("task_budget") {
             return Err(CodecError::Unsupported("Anthropic task budget".into()));
         }
-        Ok(Self {
+        let config = Self {
             effort: presence(o, "effort", Effort::read)?,
             format: presence(o, "format", |v| {
                 let o = closed(v, &["type", "schema"])?;
@@ -651,7 +659,13 @@ impl OutputConfig {
                 schema.validate()?;
                 Ok(schema)
             })?,
-        })
+        };
+        if config.effort == Presence::Null || config.format == Presence::Null {
+            return Err(CodecError::Unsupported(
+                "Anthropic output configuration null".into(),
+            ));
+        }
+        Ok(config)
     }
     fn wire(&self) -> Value {
         let mut v = Map::new();
@@ -1004,11 +1018,8 @@ impl Request {
             }
         }
         if let Presence::Value(choice) = &self.tool_choice {
-            nonnull(&choice.disable_parallel_tool_use)?;
+            choice.validate()?;
             match &choice.selection {
-                Selection::None if !choice.disable_parallel_tool_use.is_absent() => {
-                    return Err(CodecError::Invalid("Anthropic none parallel control"));
-                }
                 Selection::Any if names.is_empty() => {
                     return Err(CodecError::Invalid("Anthropic required tools"));
                 }

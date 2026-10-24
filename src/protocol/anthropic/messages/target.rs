@@ -356,6 +356,7 @@ impl TargetCaps {
                     rule: rule.name(),
                     temperature: sampling_loss.is_some_and(|v| v.0),
                     top_p: sampling_loss.is_some_and(|v| v.1),
+                    top_k: false,
                 }),
                 _ => {}
             }

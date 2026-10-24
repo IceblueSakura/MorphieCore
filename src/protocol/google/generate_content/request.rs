@@ -21,6 +21,7 @@ pub(super) fn unsupported() -> CodecError {
 /// Named degradable rules applied to one candidate's request copy.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
 pub enum RequestRule {
+    OmitSampling,
     OmitPrediction,
     OmitVerbosity,
     OmitMessagePhase,
@@ -42,6 +43,7 @@ pub enum RequestRule {
 impl RequestRule {
     pub const fn name(self) -> &'static str {
         match self {
+            Self::OmitSampling => "gemini.omit-ignored-sampling.v1",
             Self::OmitPrediction => "generation.omit-prediction.v1",
             Self::OmitVerbosity => "gemini.omit-verbosity.v1",
             Self::OmitMessagePhase => "gemini.omit-message-phase.v1",
@@ -135,14 +137,23 @@ pub(super) fn project(
         Presence::Value(t) => Some(vec![t.as_str().to_owned()]),
         Presence::Null => return Err(unsupported()),
     };
-    if let Some((_, Item::Instruction(i))) = request.items().first() {
-        if i.status.is_some() || system.is_some() {
+    for (_, item) in request
+        .items()
+        .iter()
+        .take_while(|(_, item)| matches!(item, Item::Instruction(_)))
+    {
+        let Item::Instruction(i) = item else {
+            unreachable!()
+        };
+        if i.status.is_some() {
             return Err(unsupported());
         }
         if i.authority == InstructionAuthority::Developer {
             rules.insert(RequestRule::DeveloperAsSystem);
         }
-        system = Some(i.texts().map(|(_, t)| t.to_owned()).collect());
+        system
+            .get_or_insert_with(Vec::new)
+            .extend(i.texts().map(|(_, t)| t.to_owned()));
     }
     if let Some(parts) = system {
         body.insert(

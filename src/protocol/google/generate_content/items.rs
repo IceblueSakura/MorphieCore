@@ -58,7 +58,7 @@ pub(super) fn contents(
         || request
             .items()
             .iter()
-            .skip(1)
+            .skip_while(|(_, item)| matches!(item, Item::Instruction(_)))
             .any(|(_, i)| matches!(i, Item::Instruction(_)))
     {
         return Err(unsupported());
@@ -84,7 +84,7 @@ fn item_parts(
                 let mut part = match &p.content {
                     ContentPart::Text(t) if t.is_plain() => json!({"text": t.as_str()}),
                     ContentPart::Resource(r) if m.role == MessageRole::User => {
-                        media(r.media(request.resources())?, false, rules)?
+                        media(r.media(request.resources())?)?
                     }
                     _ => return Err(unsupported()),
                 };
@@ -174,28 +174,21 @@ fn item_parts(
             {
                 return Err(unsupported());
             }
-            let mut media_parts = vec![];
             let output = match &r.output {
                 ToolOutput::Text(s) => json!(s),
                 ToolOutput::Parts(list) => {
                     let mut output = Vec::with_capacity(list.len());
-                    for (index, part) in list.iter().enumerate() {
+                    for part in list {
                         output.push(match &part.content {
                             InputPart::Text(t) => json!(t.as_str()),
-                            InputPart::Resource(r) => {
-                                // Reference labels belong to occurrences, not resources or
-                                // filenames. Result-local positions stay stable as history grows.
-                                let name = format!("morphie_tool_media_{index}");
-                                let mut value = media(r.media(request.resources())?, true, rules)?;
-                                value["inlineData"]["displayName"] = json!(name);
-                                media_parts.push(value);
-                                json!({"$ref": name})
-                            }
+                            // Gemini API has no established occurrence-association
+                            // carrier; never fabricate displayName/$ref linkage.
+                            InputPart::Resource(_) => return Err(unsupported()),
                         });
                     }
                     Value::Array(output)
                 }
-                ToolOutput::Structured(_) => return Err(unsupported()),
+                ToolOutput::Structured(value) => value.value().clone(),
             };
             // `functionResponse.name` repeats the call's name; results link by call ID.
             let name = request
@@ -213,11 +206,8 @@ fn item_parts(
             } else {
                 "output"
             };
-            let mut response = json!({
+            let response = json!({
                 "id": r.required_call_id()?, "name": name, "response": {key: output}});
-            if !media_parts.is_empty() {
-                response["parts"] = media_parts.into();
-            }
             parts.push(json!({"functionResponse": response}));
         }
         _ => return Err(unsupported()),
@@ -225,15 +215,10 @@ fn item_parts(
     Ok(())
 }
 
-/// One inert resource as `inlineData` or, outside tool results, `fileData`. Tool results
-/// carry only `inlineData` (`FunctionResponsePart`) of the documented types, so no audio
-/// or video. `mimeType` is optional for `fileData`.
+/// One inert user resource as `inlineData` or `fileData`.
+/// Tool-result media has no selected occurrence-association carrier.
 /// Source: docs/refs/multimodal.md.
-fn media(
-    resource: ResourceView<'_>,
-    tool: bool,
-    _rules: &mut BTreeSet<RequestRule>,
-) -> Result<Value, CodecError> {
+fn media(resource: ResourceView<'_>) -> Result<Value, CodecError> {
     if match resource.description {
         ResourceDescription::Image {
             detail,
@@ -251,31 +236,22 @@ fn media(
             media_type,
             data_base64,
         } => {
-            // Function responses admit a closed type list; user images have their own.
-            // https://ai.google.dev/gemini-api/docs/generate-content/function-calling
             // https://ai.google.dev/gemini-api/docs/image-understanding
-            let allowed = if tool {
-                matches!(
+            let allowed = !media_type
+                .as_str()
+                .to_ascii_lowercase()
+                .starts_with("image/")
+                || matches!(
                     media_type.as_str(),
-                    "image/png" | "image/jpeg" | "image/webp" | "application/pdf" | "text/plain"
-                )
-            } else {
-                !media_type
-                    .as_str()
-                    .to_ascii_lowercase()
-                    .starts_with("image/")
-                    || matches!(
-                        media_type.as_str(),
-                        "image/png" | "image/jpeg" | "image/webp" | "image/heic" | "image/heif"
-                    )
-            };
+                    "image/png" | "image/jpeg" | "image/webp" | "image/heic" | "image/heif"
+                );
             if !allowed {
                 return Err(unsupported());
             }
             Ok(json!({"inlineData": {
                 "mimeType": media_type.as_str(), "data": data_base64.as_str()}}))
         }
-        ResourceLocation::Url(url) if !tool => {
+        ResourceLocation::Url(url) => {
             crate::protocol::google::check_public_media_url(url.as_str())?;
             Ok(json!({"fileData": {"fileUri": url.as_str()}}))
         }

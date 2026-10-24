@@ -302,15 +302,15 @@ impl GenerationSseDecoder {
                 context: Default::default(),
                 instruction_fidelity: Default::default(),
             };
-            if !service_class.is_absent() {
-                metadata.context.reports = ResponseReports::phased(
-                    ReportPhase::Opening,
-                    ResponseReport {
+            metadata.context.reports = ResponseReports::Lifecycle {
+                opening: (!service_class.is_absent()).then(|| {
+                    Box::new(ResponseReport {
                         service_class,
                         ..Default::default()
-                    },
-                );
-            }
+                    })
+                }),
+                terminal: None,
+            };
             metadata.validate()?;
             self.metadata = Some(metadata);
             self.emit(StreamEvent::Started, out)?;
@@ -407,11 +407,13 @@ impl GenerationSseDecoder {
         if s.get("arguments").is_some_and(|v| !v.is_object()) {
             return Err(invalid("call arguments"));
         }
-        let signature = string(s, "signature")?.map(str::to_owned);
-        if signature.as_ref().is_some_and(String::is_empty) {
-            return Err(invalid("step signature"));
-        }
         let step_type = required(s, "type")?;
+        let signature = match string(s, "signature")? {
+            // An opening thought placeholder is not completed replay evidence.
+            Some("") if step_type == "thought" => None,
+            Some("") => return Err(invalid("step signature")),
+            signature => signature.map(str::to_owned),
+        };
         if signature.is_some() && !matches!(step_type, "thought" | "function_call") {
             return Err(CodecError::Unsupported("Interactions signature owner".into()).into());
         }
@@ -714,23 +716,34 @@ impl GenerationSseDecoder {
             "failed" | "cancelled" => return Err(CodecError::StreamFailure(500).into()),
             _ => return Err(invalid("Interactions terminal status")),
         };
-        let metadata = self.metadata.as_mut().expect("Interactions metadata");
-        if metadata.context.service_class() != &service_class {
+        let metadata = self.metadata.as_ref().expect("Interactions metadata");
+        if !metadata.context.service_class().is_absent()
+            && !service_class.is_absent()
+            && metadata.context.service_class() != &service_class
+        {
             return Err(invalid("Interactions service_tier changed"));
         }
-        if !service_class.is_absent() {
-            metadata.context.reports = crate::protocol::reports::observe(
-                Some(&metadata.context.reports),
-                &ResponseReports::phased(
-                    ReportPhase::Terminal,
-                    ResponseReport {
-                        service_class,
-                        ..Default::default()
-                    },
-                ),
-                false,
-            )?;
-        }
+        let reports = crate::protocol::reports::observe(
+            Some(&metadata.context.reports),
+            &ResponseReports::phased(
+                ReportPhase::Terminal,
+                ResponseReport {
+                    service_class,
+                    ..Default::default()
+                },
+            ),
+            false,
+        )?;
+        let final_usage = i
+            .get("usage")
+            .filter(|v| !v.is_null())
+            .map(|v| usage(v, UsageScope::Operation, UsageStage::Final))
+            .transpose()?;
+        self.metadata
+            .as_mut()
+            .expect("Interactions metadata")
+            .context
+            .reports = reports;
         let group = GroupId::new(self.scope, 1);
         let envelope = if self.members.is_empty() {
             MessageEnvelope::empty(group, MessageEnvelopeRole::Assistant, None)
@@ -739,11 +752,8 @@ impl GenerationSseDecoder {
                 .map_err(CodecError::from)?
         };
         self.emit(StreamEvent::MessageEnvelope(envelope), out)?;
-        if let Some(v) = i.get("usage").filter(|v| !v.is_null()) {
-            self.emit(
-                StreamEvent::UsageReport(usage(v, UsageScope::Operation, UsageStage::Final)?),
-                out,
-            )?;
+        if let Some(usage) = final_usage {
+            self.emit(StreamEvent::UsageReport(usage), out)?;
         } else if let Some(mut latest) = self.state.usage_reports().operation().cloned() {
             latest.stage = UsageStage::Final;
             self.emit(StreamEvent::UsageReport(latest), out)?;
@@ -773,7 +783,7 @@ impl GenerationSseDecoder {
         self.closed = true;
         let result = (|| {
             self.framing.finish_strict()?;
-            if !self.completed || !self.done {
+            if !self.completed {
                 return Err(invalid("unfinished Interactions stream"));
             }
             Ok(DecodedResponse {

@@ -432,10 +432,13 @@ impl Trace {
                     (json!(format!("{input:?}")), json!(format!("{output:?}")))
                 }
                 Loss::Sampling {
-                    temperature, top_p, ..
+                    temperature,
+                    top_p,
+                    top_k,
+                    ..
                 } => (
-                    json!({"temperature_present":temperature,"top_p_present":top_p}),
-                    json!({"temperature_present":false,"top_p_present":false}),
+                    json!({"temperature_present":temperature,"top_p_present":top_p,"top_k_present":top_k}),
+                    json!({"temperature_present":false,"top_p_present":false,"top_k_present":false}),
                 ),
             };
             self.loss(

@@ -16,7 +16,7 @@ pub fn semantic_contract() -> GenerationSemanticContract {
     GenerationSemanticContract {
         compaction: false,
         instructions: true,
-        // One leading system instruction only.
+        // A leading instruction prefix, never instructions after conversation content.
         ordered_instructions: false,
         temperature: true,
         max_output_tokens: true,
@@ -26,7 +26,7 @@ pub fn semantic_contract() -> GenerationSemanticContract {
         structured_tool_results: false,
         tool_execution_reports: false,
         tool_result_errors: true,
-        tool_result_media: true,
+        tool_result_media: false,
         text_metadata: false,
         top_p: true,
         top_k: false,
@@ -62,6 +62,7 @@ pub fn semantic_contract() -> GenerationSemanticContract {
 /// Pure codec support does not activate a model or widen a public promise.
 pub fn representation_contract() -> GenerationSemanticContract {
     let mut contract = semantic_contract();
+    contract.structured_tool_results = true;
     contract.structured_output = true;
     contract.logprobs = true;
     contract.top_k = true;
@@ -77,6 +78,7 @@ pub fn representation_contract() -> GenerationSemanticContract {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TargetCaps {
     pub semantics: GenerationSemanticContract,
+    pub sampling: super::super::SamplingPolicy,
     pub model_limits: crate::protocol::model_limits::ModelLimits,
     /// Supplied by the boundary; pure codecs never read a clock.
     pub resource_time: Option<std::time::SystemTime>,
@@ -92,6 +94,7 @@ impl Default for TargetCaps {
     fn default() -> Self {
         Self {
             semantics: semantic_contract(),
+            sampling: super::super::SamplingPolicy::Native,
             model_limits: Default::default(),
             resource_time: None,
             cache: CacheProjection::default(),
@@ -140,37 +143,51 @@ impl TargetCaps {
         let mut projected = std::borrow::Cow::Borrowed(request);
         let mut reasoning_rule = None;
         let mut controls = vec![];
+        let sampling = super::super::sampling::project(
+            &request.task.semantic,
+            self.sampling,
+            RequestRule::OmitSampling.name(),
+        )?;
+        let omitted_sampling = sampling.is_some();
+        if let Some((semantic, loss)) = sampling {
+            projected.to_mut().task.semantic = semantic;
+            controls.push(loss);
+        }
         if let Some(policy) = &self.reasoning_policy
-            && policy.applies_to(&request.task.semantic)
-            && let Some(semantic) = policy.project_request(&request.task.semantic, |settings| {
-                use crate::{
-                    protocol::reasoning::ReasoningConversion, semantic::task::generation::*,
-                };
-                match policy.conversion {
-                    ReasoningConversion::BudgetToEffort { .. } => {
-                        self.admits_budget()
-                            && settings.effort.is_absent()
-                            && settings
-                                .reasoning
-                                .budget_tokens
-                                .is_some_and(|b| b <= i32::MAX as u64)
+            && policy.applies_to(&projected.task.semantic)
+            && let Some(semantic) =
+                policy.project_request(&projected.task.semantic, |settings| {
+                    use crate::{
+                        protocol::reasoning::ReasoningConversion, semantic::task::generation::*,
+                    };
+                    match policy.conversion {
+                        ReasoningConversion::BudgetToEffort { .. } => {
+                            self.admits_budget()
+                                && settings.effort.is_absent()
+                                && settings
+                                    .reasoning
+                                    .budget_tokens
+                                    .is_some_and(|b| b <= i32::MAX as u64)
+                        }
+                        _ => {
+                            settings.reasoning.budget_tokens.is_none()
+                                && settings.effort.value().is_some_and(|effort| {
+                                    effort.scope == EffortScope::Reasoning
+                                        && matches!(
+                                            effort.level,
+                                            EffortLevel::Minimal
+                                                | EffortLevel::Low
+                                                | EffortLevel::Medium
+                                                | EffortLevel::High
+                                        )
+                                        && self
+                                            .model_limits
+                                            .check_values(None, [effort.level])
+                                            .is_ok()
+                                })
+                        }
                     }
-                    _ => {
-                        settings.reasoning.budget_tokens.is_none()
-                            && settings.effort.value().is_some_and(|effort| {
-                                effort.scope == EffortScope::Reasoning
-                                    && matches!(
-                                        effort.level,
-                                        EffortLevel::Minimal
-                                            | EffortLevel::Low
-                                            | EffortLevel::Medium
-                                            | EffortLevel::High
-                                    )
-                                    && self.model_limits.check_values(None, [effort.level]).is_ok()
-                            })
-                    }
-                }
-            })?
+                })?
         {
             controls.push(policy.receipt(&request.task.semantic, &semantic)?);
             projected.to_mut().task.semantic = semantic;
@@ -222,6 +239,9 @@ impl TargetCaps {
         }
         if foreign {
             rules.push(RequestRule::TransferVisibleHistory);
+        }
+        if omitted_sampling {
+            rules.push(RequestRule::OmitSampling);
         }
         if cache_key {
             rules.push(RequestRule::OmitCacheKey);

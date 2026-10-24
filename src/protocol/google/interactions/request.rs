@@ -9,6 +9,7 @@ use std::collections::BTreeSet;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
 pub enum RequestRule {
+    OmitSampling,
     OmitPrediction,
     OmitVerbosity,
     OmitMessagePhase,
@@ -24,6 +25,7 @@ pub enum RequestRule {
 impl RequestRule {
     pub const fn name(self) -> &'static str {
         match self {
+            Self::OmitSampling => "interactions.omit-ignored-sampling.v1",
             Self::OmitPrediction => "generation.omit-prediction.v1",
             Self::OmitVerbosity => "interactions.omit-verbosity.v1",
             Self::OmitMessagePhase => "interactions.omit-message-phase.v1",
@@ -62,7 +64,9 @@ pub(super) fn project(
     if !s.safety.is_empty() {
         return Err(unsupported());
     }
-    if s.controls.top_k.is_some()
+    if s.controls.temperature().is_some()
+        || s.controls.top_p().is_some()
+        || s.controls.top_k.is_some()
         || s.controls.presence_penalty().is_some()
         || s.controls.frequency_penalty().is_some()
     {
@@ -114,33 +118,41 @@ pub(super) fn project(
     body.insert("stream".into(), true.into());
     let mut system = match &s.instructions {
         Presence::Absent => None,
-        Presence::Value(t) => Some(t.as_str().to_owned()),
+        Presence::Value(t) => Some(vec![t.as_str().to_owned()]),
         Presence::Null => return Err(unsupported()),
     };
-    if let Some((_, Item::Instruction(i))) = request.items().first() {
-        if i.status.is_some() || system.is_some() {
+    for (_, item) in request
+        .items()
+        .iter()
+        .take_while(|(_, item)| matches!(item, Item::Instruction(_)))
+    {
+        let Item::Instruction(i) = item else {
+            unreachable!()
+        };
+        if i.status.is_some() {
             return Err(unsupported());
         }
         if i.authority == InstructionAuthority::Developer {
             rules.insert(RequestRule::DeveloperAsSystem);
         }
-        // `system_instruction` is one string. Parts become paragraphs, as generateContent
-        // renders separate system parts: https://ai.google.dev/api/caching#CachedContent
-        if i.parts.len() > 1 {
-            rules.insert(RequestRule::JoinInstructionParts);
-        }
-        system = Some(i.texts().map(|(_, t)| t).collect::<Vec<_>>().join("\n\n"));
+        system
+            .get_or_insert_with(Vec::new)
+            .extend(i.texts().map(|(_, t)| t.to_owned()));
     }
     if request
         .items()
         .iter()
-        .skip(1)
+        .skip_while(|(_, item)| matches!(item, Item::Instruction(_)))
         .any(|(_, i)| matches!(i, Item::Instruction(_)))
     {
         return Err(unsupported());
     }
     if let Some(system) = system {
-        body.insert("system_instruction".into(), system.into());
+        // The native string renders ordered parts as paragraphs, not reordered history.
+        if system.len() > 1 {
+            rules.insert(RequestRule::JoinInstructionParts);
+        }
+        body.insert("system_instruction".into(), system.join("\n\n").into());
     }
     body.insert("input".into(), steps(request, fidelity, target, rules)?);
     if s.tools.is_some() {
@@ -180,12 +192,6 @@ pub(super) fn project(
     let mut config = Map::new();
     if let Some(n) = s.controls.max_output_tokens {
         config.insert("max_output_tokens".into(), n.into());
-    }
-    if let Some(t) = s.controls.temperature() {
-        config.insert("temperature".into(), t.into());
-    }
-    if let Some(p) = s.controls.top_p() {
-        config.insert("top_p".into(), p.into());
     }
     if let Some(choice) = &s.tool_choice {
         config.insert(

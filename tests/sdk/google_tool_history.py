@@ -40,6 +40,8 @@ def responses_completion(client, params, stream):
             for event in events:
                 check(event.type not in ("error", "response.failed", "response.incomplete"))
                 completed += event.type == "response.completed"
+                if event.type == "response.created":
+                    check(event.response.service_tier is None)
             value = events.get_final_response()
         check(completed == 1)
     else:
@@ -85,6 +87,8 @@ def run(base, profile, api):
                 if api == "generate_content":
                     check(result["usage"]["total_tokens"] == 15)
                 else:
+                    if profile == "responses":
+                        check(result["service_tier"] == "default")
                     # Preserve 10 input / 5 nonreasoning output; missing thought
                     # accounting uses six visible UTF-8 bytes in turns 1..3.
                     output = 7 if turn <= 3 else 5

@@ -316,23 +316,41 @@ fn vercel_google_stream_preserves_content_and_source_accounting() {
 }
 
 #[test]
-#[ignore = "known standards gap: first terminal service_tier is incorrectly treated as drift"]
 fn interactions_allows_first_service_tier_report_at_terminal() {
+    use morphiecore::semantic::{
+        context::{ReportPhase, ServiceClass},
+        value::Presence,
+    };
     let target = ReplayTarget::new("public-fixture", "gemini-2.5-flash").unwrap();
     let bytes = jsonl_sse("vercel/interactions-basic.jsonl", Some("event_type"));
-    let attempt = decode(UpstreamAdapter::GoogleInteractions { target }, &bytes, 23).unwrap();
-    assert_eq!(
-        text(&attempt),
-        "I'm doing great, thank you for asking!\n\nHow are you doing today? And what can I do for you?"
-    );
-    let counts = &attempt
-        .response()
-        .unwrap()
-        .semantic
-        .usage_reports()
-        .operation()
-        .unwrap()
-        .counts;
-    assert_eq!(counts.input_tokens, Some(7));
-    assert_eq!(counts.output_tokens, Some(26));
+    for chunk in [1, 23, 8192] {
+        let attempt = decode(
+            UpstreamAdapter::GoogleInteractions {
+                target: target.clone(),
+            },
+            &bytes,
+            chunk,
+        )
+        .unwrap();
+        let reports = &attempt.response().unwrap().metadata.context.reports;
+        assert!(reports.at(ReportPhase::Opening).is_none());
+        assert_eq!(
+            reports.at(ReportPhase::Terminal).unwrap().service_class,
+            Presence::Value(ServiceClass::StandardProcessing)
+        );
+        assert_eq!(
+            text(&attempt),
+            "I'm doing great, thank you for asking!\n\nHow are you doing today? And what can I do for you?"
+        );
+        let counts = &attempt
+            .response()
+            .unwrap()
+            .semantic
+            .usage_reports()
+            .operation()
+            .unwrap()
+            .counts;
+        assert_eq!(counts.input_tokens, Some(7));
+        assert_eq!(counts.output_tokens, Some(26));
+    }
 }

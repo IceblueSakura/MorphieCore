@@ -87,7 +87,7 @@ pub(super) async fn answer(
         let summary = format!("Plan {turn}");
         let signature = format!("synthetic-thought-{turn}");
         frames.extend([
-            json!({"event_type":"step.start","index":0,"step":{"type":"thought"}}),
+            json!({"event_type":"step.start","index":0,"step":{"type":"thought","signature":""}}),
             json!({"event_type":"step.delta","index":0,"delta":{"type":"thought_summary","content":{"type":"text","text":"Plan "}}}),
             json!({"event_type":"step.delta","index":0,"delta":{"type":"thought_summary","content":{"type":"text","text":turn.to_string()}}}),
             json!({"event_type":"step.delta","index":0,"delta":{"type":"thought_signature","signature":signature}}),
@@ -131,6 +131,9 @@ pub(super) async fn answer(
     frames.push(json!({"event_type":"interaction.completed","interaction":{
         "status":if turn <= 2 {"requires_action"} else {"completed"}, "steps":steps,
         "usage":usage}}));
+    if !state.messages && state.profile == Profile::Responses {
+        frames.last_mut().unwrap()["interaction"]["service_tier"] = json!("standard");
+    }
     // The last Messages turn proves mandatory downstream accounting completion,
     // rather than merely projecting an already complete upstream report.
     if state.messages && turn == 4 {
@@ -139,7 +142,7 @@ pub(super) async fn answer(
             .unwrap()
             .remove("usage");
     }
-    let mut wire = frames
+    let wire = frames
         .iter()
         .map(|frame| {
             format!(
@@ -148,7 +151,6 @@ pub(super) async fn answer(
             )
         })
         .collect::<String>();
-    wire.push_str("event: done\ndata: [DONE]\n\n");
     Response::builder()
         .header("content-type", "text/event-stream")
         .body(axum::body::Body::from_stream(futures_util::stream::iter(

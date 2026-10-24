@@ -4,6 +4,8 @@ pub mod embeddings;
 pub mod generate_content;
 pub mod interactions;
 mod media;
+mod sampling;
 mod service;
 
 pub(crate) use media::check_public_media_url;
+pub use sampling::SamplingPolicy;

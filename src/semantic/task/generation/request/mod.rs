@@ -55,7 +55,9 @@ impl GenerationRequest {
     }
     pub fn validate(&self) -> Result<(), GenerationError> {
         let settings = self.settings.validate()?;
-        if self.settings.text.presence == Presence::Null {
+        if self.settings.text.presence == Presence::Null
+            || self.settings.text.format == Presence::Null
+        {
             return Err(GenerationError::InvalidControl);
         }
         let items = if self.items.is_empty() && self.settings.instructions.value().is_some() {

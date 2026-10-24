@@ -925,6 +925,8 @@
           "top_p": false,
           "top_k": false,
           "metadata": {"type": "object", "properties": {"user_id": {"type": ["string", "null"], "maxLength": 512}}, "additionalProperties": true, "description": "Opaque end-user attribution, not credentials, routing or a cache key. Absent/null/empty user_id retain their meaning; unknown metadata names are ignored by name. Selected cross-protocol projection uses OpenAI safety_identifier or generateContent's fixed safety label, subject to stricter target bounds, without legacy user/cache substitution."},
+          "output_config": {"type": "object", "properties": {"effort": {"type": "string"}, "format": {"type": "object"}}, "additionalProperties": true, "description": "Envelope subset. Supplied effort/format are non-null; values, supported combinations and schema restrictions require owning codec/profile validation."},
+          "tool_choice": {"type": "object", "properties": {"disable_parallel_tool_use": {"type": "boolean"}}, "additionalProperties": true, "description": "Known parallel-control nulls reject; choice type, names and none/parallel combinations require codec validation."},
           "messages": {
             "type": "array",
             "items": {
@@ -964,6 +966,7 @@
           "prompt_cache_key": {"type": ["string", "null"], "maxLength": 256, "description": "Cache-grouping intent, separate from conversation identity. Null is not filled from conversation context; no value guarantees a cache hit."},
           "messages": {"type": "array", "items": {"type": "object", "not": {"required": ["_openbridge"]}}, "description": "Ordered history. System/developer instructions are text-only and keep their position; media-bearing instructions reject. Optional string name labels belong to system/developer/user/assistant history owners, including call-only assistant messages; null names and targets without an exact carrier reject. Generated responses do not acquire participant names. Assistant history may mix text and refusal parts. Text and selected user image/audio inputs require codec and target admission. Tool results retain call links. Unbound audio IDs and unsupported media are rejected."},
           "tools": {"type": "array", "maxItems": 128, "items": {"$ref": "#/components/schemas/ChatTool"}, "description": "Function and custom definitions use their official nested shells. Custom inputs stay raw strings; grammar is not evaluated by the gateway. Binding and streaming admission remain separate."},
+          "response_format": {"type": "object", "description": "Request format is non-null. The codec validates its discriminator and nested schema, including non-null schema descriptions. Nullable response reports have a separate contract."},
           "tool_choice": {"oneOf": [{"enum": ["none", "auto", "required"]}, {"type": "object", "required": ["type"], "properties": {"type": {"enum": ["function", "custom", "allowed_tools"]}}}], "description": "Named custom choice uses custom.name; allowed_tools nests mode and typed references. The owning codec validates names and membership."},
           "modalities": {"type": ["array", "null"], "items": {"enum": ["text", "audio"]}, "minItems": 1, "maxItems": 2, "uniqueItems": true, "description": "Output intent; audio also requires matching options and explicit public/endpoint admission. This schema activates no audio model."},
           "audio": {"type": ["object", "null"], "required": ["format", "voice"], "properties": {"format": {"enum": ["wav", "aac", "mp3", "flac", "opus", "pcm16"]}, "voice": {"type": "string", "minLength": 1, "maxLength": 128}}, "description": "Named-voice output options. Requires audio modality; streaming requires pcm16. Target admission is separate."},
@@ -1046,6 +1049,7 @@
           "conversation": {"type": "null", "description": "Provider-held conversations and Conversations API are not supported."},
           "prompt_cache_key": {"type": ["string", "null"], "maxLength": 256, "description": "Cache-grouping intent, separate from conversation identity. Null is not filled from conversation context; cache reports remain upstream facts."},
           "input": {"oneOf": [{"type": "string"}, {"type": "array", "items": {"type": "object", "not": {"required": ["_openbridge"]}}}], "description": "Ordered input. System/developer instructions are text-only; media-bearing instructions reject at decoding independently of target capabilities."},
+          "text": {"type": "object", "properties": {"format": {"type": "object"}}, "additionalProperties": true, "description": "Request text container and supplied format are non-null. Format values, non-null schema descriptions and verbosity require owning codec validation; nullable reports remain separate."},
           "tools": {
             "type": "array",
             "maxItems": 128,

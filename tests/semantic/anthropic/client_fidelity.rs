@@ -64,6 +64,289 @@ fn terminal() -> StreamEvent {
     }
 }
 #[test]
+fn content_cache_null_defaults_do_not_erase_business_values_or_invent_boundaries() {
+    use morphiecore::protocol::{anthropic::messages::Profile as Messages, native::ReplayTarget};
+    let baseline = json!({"model":"m","max_tokens":32,
+        "system":[{"type":"text","text":"system"}],
+        "messages":[
+            {"role":"user","content":[{"type":"text","text":"go"},
+                {"type":"image","source":{"type":"base64","media_type":"image/png","data":"AQID"}},
+                {"type":"document","source":{"type":"text","media_type":"text/plain","data":"notes"}}]},
+            {"role":"assistant","content":[{"type":"tool_use","id":"c","name":"lookup",
+                "input":{"cache_control":null,"is_error":null}}]},
+            {"role":"user","content":[{"type":"tool_result","tool_use_id":"c","is_error":false,"content":[
+                {"type":"text","text":"result"},
+                {"type":"image","source":{"type":"base64","media_type":"image/png","data":"AQID"}}]}]}]});
+    let mut nullable = baseline.clone();
+    nullable["system"][0]["cache_control"] = json!(null);
+    for message in nullable["messages"].as_array_mut().unwrap() {
+        for block in message["content"].as_array_mut().unwrap() {
+            block["cache_control"] = json!(null);
+            if block["type"] == "tool_result" {
+                for part in block["content"].as_array_mut().unwrap() {
+                    part["cache_control"] = json!(null);
+                }
+            }
+        }
+    }
+    let decoded = decode_client_request(nullable.to_string().as_bytes()).unwrap();
+    let expected = decode_client_request(baseline.to_string().as_bytes()).unwrap();
+    assert_eq!(decoded.task.semantic, expected.task.semantic);
+    assert!(
+        decoded
+            .task
+            .semantic
+            .items()
+            .iter()
+            .all(|(_, item)| !item.has_cache_breakpoints())
+    );
+    let profile = Messages::AdaptiveTextTools;
+    let target = ReplayTarget::new("synthetic", "m").unwrap();
+    let native = profile
+        .decode_generation_request(nullable.to_string().as_bytes(), LocalScope::ROOT, &target)
+        .unwrap();
+    assert!(
+        native
+            .semantic
+            .items()
+            .iter()
+            .all(|(_, item)| !item.has_cache_breakpoints())
+    );
+    for marker in [
+        json!({"type":"ephemeral","ttl":null}),
+        json!(false),
+        json!({"type":"unknown"}),
+    ] {
+        let mut invalid = baseline.clone();
+        invalid["messages"][0]["content"][0]["cache_control"] = marker;
+        assert!(decode_client_request(invalid.to_string().as_bytes()).is_err());
+        assert!(
+            profile
+                .decode_request(invalid.to_string().as_bytes())
+                .is_err()
+        );
+    }
+}
+
+#[test]
+fn known_boolean_and_unresolved_configuration_nulls_cannot_disappear_at_intake() {
+    use morphiecore::protocol::anthropic::messages::Profile as Messages;
+    let base = json!({"model":"m","max_tokens":32,
+        "messages":[{"role":"user","content":"go"},
+            {"role":"assistant","content":[{"type":"tool_use","id":"c","name":"lookup","input":{}}]},
+            {"role":"user","content":[{"type":"tool_result","tool_use_id":"c","content":"done"}]}]});
+    let profile = Messages::AdaptiveTextTools;
+    for flag in [
+        None,
+        Some(json!(false)),
+        Some(json!(true)),
+        Some(json!(null)),
+    ] {
+        for error_flag in [false, true] {
+            let mut body = base.clone();
+            body["tool_choice"] = json!({"type":"auto"});
+            if let Some(flag) = &flag {
+                if error_flag {
+                    body["messages"][2]["content"][0]["is_error"] = flag.clone();
+                } else {
+                    body["tool_choice"]["disable_parallel_tool_use"] = flag.clone();
+                }
+            }
+            let decoded = decode_client_request(body.to_string().as_bytes());
+            let native = profile.decode_request(body.to_string().as_bytes());
+            if flag.as_ref().is_some_and(serde_json::Value::is_null) {
+                assert_eq!(decoded.unwrap_err(), CodecError::Invalid("Anthropic null"));
+                assert_eq!(native.unwrap_err(), CodecError::Invalid("Anthropic null"));
+            } else {
+                let decoded = decoded.unwrap();
+                native.unwrap();
+                if error_flag {
+                    let Item::ToolResult(result) = &decoded.task.semantic.items()[2].1 else {
+                        panic!("result")
+                    };
+                    assert_eq!(
+                        result.is_error,
+                        flag.as_ref().and_then(serde_json::Value::as_bool)
+                    );
+                } else {
+                    assert_eq!(
+                        decoded.task.semantic.settings().parallel_tool_calls,
+                        flag.as_ref()
+                            .and_then(serde_json::Value::as_bool)
+                            .map(|v| !v)
+                    );
+                }
+            }
+        }
+    }
+    for field in ["effort", "format"] {
+        let mut body = base.clone();
+        body["output_config"] = json!({field:null});
+        let expected = CodecError::Unsupported("Anthropic output configuration null".into());
+        assert_eq!(
+            decode_client_request(body.to_string().as_bytes()).unwrap_err(),
+            expected
+        );
+        assert_eq!(
+            profile
+                .decode_request(body.to_string().as_bytes())
+                .unwrap_err(),
+            expected
+        );
+    }
+}
+
+#[test]
+fn leading_instructions_compose_once_and_effort_boundaries_split_same_role_history() {
+    use morphiecore::protocol::{
+        anthropic::messages::{self, Carriers},
+        native::ReplayTarget,
+    };
+    let text =
+        |s: &str| morphiecore::semantic::value::Text::allowing_empty(s, "fixture", 128).unwrap();
+    let target = ReplayTarget::new("synthetic", "m").unwrap();
+    let profile = messages::Profile::AdaptiveTextTools;
+    let mut caps = messages::TargetCaps::new(profile, messages::Dialect::Standard);
+    caps.semantics = profile.representation_contract();
+    caps.carriers = Carriers::all();
+    for root in [None, Some(text("root"))] {
+        let mut settings = GenerationSettings::default();
+        settings.controls.max_output_tokens = Some(32);
+        settings.instructions = root.clone().map_or(Presence::Absent, Presence::Value);
+        let mut items = vec![];
+        for (index, content) in ["A", "B"].into_iter().enumerate() {
+            items.push((
+                ItemId::new(index as u64 + 1),
+                Item::Instruction(Instruction {
+                    participant: None,
+                    authority: InstructionAuthority::System,
+                    status: None,
+                    parts: vec![Part {
+                        id: PartId::new(index as u64 + 1),
+                        replay: None,
+                        content: text(content),
+                        cache: (index == 0)
+                            .then_some(PrefixCacheBoundary::Ttl(PrefixCacheTtl::OneHour)),
+                    }],
+                }),
+            ));
+        }
+        items.push((
+            ItemId::new(3),
+            Item::Message(Message {
+                participant: None,
+                role: MessageRole::User,
+                status: ItemLifecycle::Completed,
+                phase: None,
+                parts: vec![Part::new(
+                    PartId::new(3),
+                    ContentPart::Text(text("go").into()),
+                )],
+            }),
+        ));
+        let semantic = GenerationRequest::from_settings(items, settings).unwrap();
+        let request = morphiecore::adapter::Request::from_generation(
+            morphiecore::protocol::DecodedRequest {
+                semantic,
+                fidelity: Default::default(),
+            },
+            "m",
+        )
+        .unwrap();
+        let original = request.clone();
+        let projection = caps.encode_request(&request, &target).unwrap();
+        let mut expected = vec![];
+        if root.is_some() {
+            expected.push(json!({"type":"text","text":"root"}));
+        }
+        expected.extend([
+            json!({"type":"text","text":"A","cache_control":{"type":"ephemeral","ttl":"1h"}}),
+            json!({"type":"text","text":"B"}),
+        ]);
+        assert_eq!(projection.value["system"], json!(expected));
+        assert_eq!(
+            projection.value["messages"],
+            json!([{"role":"user","content":[{"type":"text","text":"go"}]}])
+        );
+        assert!(projection.rules.is_empty());
+        assert_eq!(request, original);
+    }
+    let body = json!({"model":"m","max_tokens":32,"messages":[
+        {"role":"user","content":"first"},
+        {"role":"system","content":[],"output_config":{"effort":"low"}},
+        {"role":"user","content":"second"}]});
+    let request = decode_client_request(body.to_string().as_bytes()).unwrap();
+    let original = request.clone();
+    let projection = caps.encode_request(&request, &target).unwrap();
+    assert_eq!(
+        projection.value["messages"],
+        json!([
+        {"role":"user","content":[{"type":"text","text":"first"}]},
+        {"role":"system","content":[],"output_config":{"effort":"low"}},
+        {"role":"user","content":[{"type":"text","text":"second"}]}])
+    );
+    assert!(projection.rules.is_empty());
+    caps.carriers.message_effort = false;
+    let flattened = caps.encode_request(&request, &target).unwrap();
+    assert_eq!(flattened.value["output_config"], json!({"effort":"low"}));
+    assert!(
+        flattened
+            .rules
+            .contains(&messages::RequestRule::FlattenMessageEffort)
+    );
+    assert_eq!(request, original);
+    let body = json!({"model":"m","max_tokens":32,"messages":[
+        {"role":"user","content":"A"},{"role":"user","content":"B"},{"role":"user","content":"C"}]});
+    let mut partial = decode_client_request(body.to_string().as_bytes()).unwrap();
+    partial.task.semantic = partial
+        .task
+        .semantic
+        .clone()
+        .with_message_envelopes(vec![
+            MessageEnvelope::new(
+                GroupId::new(LocalScope::ROOT, 7),
+                MessageEnvelopeRole::User,
+                vec![ItemId::new(1)],
+            )
+            .unwrap(),
+            MessageEnvelope::new(
+                GroupId::new(LocalScope::ROOT, 8),
+                MessageEnvelopeRole::User,
+                vec![ItemId::new(2)],
+            )
+            .unwrap(),
+        ])
+        .unwrap();
+    let original = partial.clone();
+    let encoded = caps.encode_request(&partial, &target).unwrap();
+    assert_eq!(
+        encoded.value["messages"],
+        json!([
+        {"role":"user","content":[{"type":"text","text":"A"}]},
+        {"role":"user","content":[{"type":"text","text":"B"}]},
+        {"role":"user","content":[{"type":"text","text":"C"}]}])
+    );
+    assert_eq!(partial, original);
+    partial.task.semantic = partial
+        .task
+        .semantic
+        .clone()
+        .with_message_envelopes(vec![
+            MessageEnvelope::new(
+                GroupId::new(LocalScope::ROOT, 7),
+                MessageEnvelopeRole::User,
+                vec![ItemId::new(1), ItemId::new(3)],
+            )
+            .unwrap(),
+        ])
+        .unwrap();
+    assert!(matches!(caps.encode_request(&partial, &target),
+        Err(morphiecore::adapter::AdapterError::Codec(
+            morphiecore::protocol::CodecError::Unsupported(reason)))
+            if reason == "partial native message grouping"));
+}
+
+#[test]
 fn nullable_tool_defaults_normalize_without_disabling_eager_input_or_inventing_cache() {
     use morphiecore::protocol::{anthropic::messages::Profile as Messages, native::ReplayTarget};
     let profile = Messages::AdaptiveTextTools;

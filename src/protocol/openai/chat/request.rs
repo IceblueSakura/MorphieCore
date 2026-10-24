@@ -155,6 +155,9 @@ pub(crate) fn decode_generation_with(
     if controls.top_logprobs.is_some() && controls.logprobs != Presence::Value(true) {
         return Err(CodecError::Invalid("top_logprobs without logprobs"));
     }
+    if o.get("response_format").is_some_and(Value::is_null) {
+        return Err(CodecError::Invalid("response_format"));
+    }
     let format = read_presence(o, "response_format", |v| read_response_format(v, direction))?;
     let verbosity = read_presence(o, "verbosity", crate::protocol::openai::settings::verbosity)?;
     let mut settings = GenerationSettings {
@@ -224,7 +227,7 @@ fn read_response_format(
                     .ok_or(CodecError::Invalid("json_schema"))?,
             )?;
             direction.fields(body, &["name", "description", "schema", "strict"])?;
-            crate::protocol::openai::settings::read_schema_body(body)?
+            crate::protocol::openai::settings::read_schema_body(body, false)?
         }
         _ => return Err(CodecError::Unsupported("response format".into())),
     })
@@ -385,7 +388,7 @@ pub fn encode_generation(target: &RequestRepresentation<'_>) -> Result<Value, Co
     match &target.semantic.text_options().format {
         crate::semantic::value::Presence::Absent => {}
         crate::semantic::value::Presence::Null => {
-            o.insert("response_format".into(), Value::Null);
+            return Err(CodecError::Invalid("response_format"));
         }
         crate::semantic::value::Presence::Value(format) => {
             o.insert("response_format".into(), write_response_format(format)?);

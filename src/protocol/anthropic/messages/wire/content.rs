@@ -92,6 +92,8 @@ impl Block {
             "tool_result" => {
                 let o = object(v)?;
                 reject_toolset(o)?;
+                let is_error = presence(o, "is_error", boolean)?;
+                nonnull(&is_error)?;
                 Self::ToolResult {
                     tool_use_id: string(required(o, "tool_use_id")?)?,
                     // Optional in the pinned ToolResultBlockParam; absence is no content.
@@ -99,7 +101,7 @@ impl Block {
                         None => crate::protocol::anthropic::messages::ResultContent::Blocks(vec![]),
                         Some(v) => crate::protocol::anthropic::messages::ResultContent::read(v)?,
                     },
-                    is_error: presence(o, "is_error", boolean)?,
+                    is_error,
                 }
             }
             "image" | "document" => {

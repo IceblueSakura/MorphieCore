@@ -479,7 +479,6 @@ fn audit_step_errors_and_unrepresented_lifecycle_facts_cannot_complete() {
             json!([{"type":"model_output","content":[{"type":"text","text":"B"}]}]),
         ),
         ("continuation_token", json!("synthetic-token")),
-        ("service_tier", json!("flex")),
     ] {
         let mut unsupported = base.clone();
         unsupported[3]["interaction"][key] = value.clone();
@@ -539,18 +538,56 @@ fn service_reports_preserve_matching_v1_phases_without_inference_or_capacity_ali
                 .unwrap_err()
                 .contains("service_tier changed")
         );
-        for phase in [0, frames.len() - 1] {
-            let mut erased = frames.clone();
-            erased[phase]["interaction"]
-                .as_object_mut()
+        let mut late = frames.clone();
+        late[0]["interaction"]
+            .as_object_mut()
+            .unwrap()
+            .remove("service_tier");
+        let reported = decode_interaction(&late, true).unwrap();
+        assert!(
+            reported
+                .metadata
+                .context
+                .reports
+                .at(ReportPhase::Opening)
+                .is_none()
+        );
+        assert_eq!(
+            reported
+                .metadata
+                .context
+                .reports
+                .at(ReportPhase::Terminal)
                 .unwrap()
-                .remove("service_tier");
-            assert!(
-                decode_interaction(&erased, true)
-                    .unwrap_err()
-                    .contains("service_tier changed")
-            );
-        }
+                .service_class,
+            Presence::Value(class)
+        );
+        let mut erased = frames.clone();
+        erased.last_mut().unwrap()["interaction"]
+            .as_object_mut()
+            .unwrap()
+            .remove("service_tier");
+        let opening_only = decode_interaction(&erased, true).unwrap();
+        assert_eq!(
+            opening_only
+                .metadata
+                .context
+                .reports
+                .at(ReportPhase::Opening)
+                .unwrap()
+                .service_class,
+            Presence::Value(class)
+        );
+        assert!(
+            opening_only
+                .metadata
+                .context
+                .reports
+                .at(ReportPhase::Terminal)
+                .unwrap()
+                .service_class
+                .is_absent()
+        );
     }
     for value in [
         serde_json::Value::Null,
@@ -778,6 +815,25 @@ fn empty_source_steps_are_bounded_even_without_semantic_members() {
 #[test]
 fn step_stream_preserves_usage_call_arguments_and_thought_signature() {
     let decoded = decode_interaction(&interaction_frames(), true).unwrap();
+    let mut placeholder = interaction_frames();
+    placeholder[2]["step"]["signature"] = json!("");
+    assert_eq!(decode_interaction(&placeholder, false).unwrap(), decoded);
+    for invalid in [json!(null), json!(42)] {
+        let mut malformed = placeholder.clone();
+        malformed[2]["step"]["signature"] = invalid;
+        assert!(
+            decode_interaction(&malformed, true)
+                .unwrap_err()
+                .contains("signature")
+        );
+    }
+    let mut duplicate = placeholder;
+    duplicate.insert(5, duplicate[4].clone());
+    assert!(
+        decode_interaction(&duplicate, true)
+            .unwrap_err()
+            .contains("duplicate step signature")
+    );
     assert_eq!(decoded.metadata.id.as_deref(), Some("i"));
     assert_eq!(
         decoded.semantic.progress(),
@@ -993,7 +1049,10 @@ fn step_stream_rejects_missing_call_identity_and_unfinished_or_late_data() {
     missing[6]["step"].as_object_mut().unwrap().remove("id");
     assert!(decode_interaction(&missing, true).is_err());
     let frames = interaction_frames();
-    assert!(decode_interaction(&frames, false).is_err());
+    assert_eq!(
+        decode_interaction(&frames, false).unwrap(),
+        decode_interaction(&frames, true).unwrap()
+    );
     assert!(decode_interaction(&frames[..9], true).is_err());
     let mut late = frames.clone();
     late.push(frames[1].clone());
@@ -1307,6 +1366,39 @@ fn projects_stateless_steps_tools_and_controls() {
         .with_settings(settings)
         .unwrap();
     assert!(encode_generation_request(&invalid, &request.task.fidelity, &target).is_err());
+    for (schema, supported) in [
+        (
+            json!({"type":"array","items":{"type":"string"},"minItems":1}),
+            true,
+        ),
+        (
+            json!({"type":"array","items":{"type":"string","minLength":1}}),
+            false,
+        ),
+        (
+            json!({"type":"array","items":{"type":"string"},"uniqueItems":true}),
+            false,
+        ),
+    ] {
+        let mut settings = request.task.semantic.settings().clone();
+        let Presence::Value(OutputConstraint::JsonSchema { schema: slot, .. }) =
+            &mut settings.text.format
+        else {
+            panic!("schema")
+        };
+        *slot = schema.clone().into();
+        let semantic = request
+            .task
+            .semantic
+            .clone()
+            .with_settings(settings)
+            .unwrap();
+        let encoded = encode_generation_request(&semantic, &request.task.fidelity, &target);
+        assert_eq!(encoded.is_ok(), supported);
+        if supported {
+            assert_eq!(encoded.unwrap().0["response_format"]["schema"], schema);
+        }
+    }
 }
 
 #[test]

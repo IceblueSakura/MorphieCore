@@ -6,6 +6,20 @@ from pathlib import Path
 
 
 class SdkOracleTests(unittest.TestCase):
+    def test_google_object_result_types_retain_exact_values_and_error_presence(self):
+        from google.genai import types
+        from google.genai._gaos.types.interactions.functionresultstep import FunctionResultStep
+        for value in ({}, {"n": 9007199254740993, "nested": [None, {"$ref": "literal"}]}):
+            for error in (None, False, True):
+                data = {"type": "function_result", "call_id": "c", "name": "read", "result": value}
+                if error is not None:
+                    data["is_error"] = error
+                result = FunctionResultStep.model_validate(data)
+                self.assertEqual(result.model_dump(exclude_unset=True), data)
+                envelope = {"error" if error is True else "output": value}
+                response = types.FunctionResponse(id="c", name="read", response=envelope)
+                self.assertEqual(response.model_dump(exclude_unset=True)["response"], envelope)
+
     def test_reasoning_replay_oracle_keeps_readable_and_opaque_facts_separate(self):
         code = """
 from copy import deepcopy

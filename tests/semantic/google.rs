@@ -1645,7 +1645,7 @@ fn user_media_become_inline_or_file_data_parts() {
 }
 
 #[test]
-fn tool_media_ride_inline_in_the_function_response() {
+fn unproven_tool_media_linkage_rejects_instead_of_fabricating_display_names() {
     let input = |image: &str| {
         json!({"model":"gemini","input":[
             {"type":"function_call","call_id":"c1","name":"shot","arguments":"{}"},
@@ -1655,21 +1655,15 @@ fn tool_media_ride_inline_in_the_function_response() {
             "tools":[{"type":"function","name":"shot","strict":false,"parameters":{"type":"object"}}]})
     };
     let request = client(Profile::Responses, input("data:image/png;base64,AQID"));
-    let (body, rules) = encode_generation_request(
-        &request.task.semantic,
-        &request.task.fidelity,
-        &target(),
-        None,
-    )
-    .unwrap();
-    assert_eq!(
-        body["contents"][1],
-        json!({"role":"user","parts":[{"functionResponse":{"id":"c1","name":"shot",
-            "response":{"output":["screen",{"$ref":"morphie_tool_media_1"}]},
-            "parts":[{"inlineData":{"mimeType":"image/png","data":"AQID",
-                "displayName":"morphie_tool_media_1"}}]}}]})
+    assert!(
+        encode_generation_request(
+            &request.task.semantic,
+            &request.task.fidelity,
+            &target(),
+            None,
+        )
+        .is_err()
     );
-    assert!(rules.is_empty());
     let mut detailed = input("data:image/png;base64,AQID");
     detailed["input"][1]["output"][1]["detail"] = json!("auto");
     let detailed = client(Profile::Responses, detailed);
@@ -1713,19 +1707,15 @@ fn tool_media_ride_inline_in_the_function_response() {
         )
         .is_err()
     );
-    // Function responses admit only the documented image, PDF and plain-text types.
+    // A MIME type alone does not establish occurrence association.
     let part = |part: Value| {
         let mut body = input("data:image/png;base64,AQID");
         body["input"][1]["output"] = json!([part]);
         client(Profile::Responses, body)
     };
     let pdf = part(json!({"type":"input_file","file_data":"data:application/pdf;base64,BAUG"}));
-    let (body, _) =
-        encode_generation_request(&pdf.task.semantic, &pdf.task.fidelity, &target(), None).unwrap();
-    assert_eq!(
-        body["contents"][1]["parts"][0]["functionResponse"]["parts"],
-        json!([{"inlineData":{"mimeType":"application/pdf","data":"BAUG",
-            "displayName":"morphie_tool_media_0"}}])
+    assert!(
+        encode_generation_request(&pdf.task.semantic, &pdf.task.fidelity, &target(), None).is_err()
     );
     let video = part(json!({"type":"input_video","video_url":"data:video/mp4;base64,BAUG"}));
     assert!(
@@ -1735,7 +1725,7 @@ fn tool_media_ride_inline_in_the_function_response() {
 }
 
 #[test]
-fn tool_result_parts_preserve_order_boundaries_and_repeated_resources() {
+fn tool_results_preserve_supported_values_and_reject_unproven_media() {
     let text = |s: &str| Text::allowing_empty(s, "fixture", 64).unwrap();
     let request = |output, is_error| {
         GenerationRequest::from_resources(
@@ -1794,8 +1784,23 @@ fn tool_result_parts_preserve_order_boundaries_and_repeated_resources() {
         Part::new(PartId::new(4), InputPart::Text(text("after"))),
         Part::new(PartId::new(5), resource()),
     ];
-    for is_error in [None, Some(true)] {
+    for is_error in [None, Some(false), Some(true)] {
         let source = request(ToolOutput::Parts(parts.clone()), is_error);
+        let original = source.clone();
+        assert!(encode_generation_request(&source, &Default::default(), &target(), None).is_err());
+        assert_eq!(source, original);
+        // Text-only order/boundaries remain exact; rejecting media never drops it
+        // and pretends the remainder is a successful projection.
+        let source = request(
+            ToolOutput::Parts(
+                parts
+                    .iter()
+                    .filter(|p| matches!(p.content, InputPart::Text(_)))
+                    .cloned()
+                    .collect(),
+            ),
+            is_error,
+        );
         let original = source.clone();
         let encode = |source: &GenerationRequest| {
             encode_generation_request(source, &Default::default(), &target(), None).unwrap()
@@ -1811,14 +1816,7 @@ fn tool_result_parts_preserve_order_boundaries_and_repeated_resources() {
             response,
             &json!({
                 "id":"c", "name":"shot",
-                "response":{key:["before",{"$ref":"morphie_tool_media_1"},"","after",
-                    {"$ref":"morphie_tool_media_4"}]},
-                "parts":[
-                    {"inlineData":{"mimeType":"image/png","data":"AQID",
-                        "displayName":"morphie_tool_media_1"}},
-                    {"inlineData":{"mimeType":"image/png","data":"AQID",
-                        "displayName":"morphie_tool_media_4"}}
-                ]
+                "response":{key:["before","","after"]}
             })
         );
         assert!(rules.is_empty());
@@ -1866,6 +1864,87 @@ fn tool_result_parts_preserve_order_boundaries_and_repeated_resources() {
         );
         assert!(rules.is_empty());
     }
+    assert!(
+        morphiecore::protocol::google::generate_content::representation_contract()
+            .structured_tool_results
+    );
+    assert!(
+        morphiecore::protocol::google::interactions::representation_contract()
+            .structured_tool_results
+    );
+    assert!(
+        !morphiecore::protocol::google::generate_content::semantic_contract()
+            .structured_tool_results
+    );
+    assert!(
+        !morphiecore::protocol::google::interactions::semantic_contract().structured_tool_results
+    );
+    for value in [
+        json!({}),
+        json!({"n":9007199254740993_u64,"nested":[null,{"$ref":"literal"}]}),
+        json!([1, 2]),
+        json!(false),
+        json!(null),
+    ] {
+        for is_error in [None, Some(false), Some(true)] {
+            let source = request(
+                ToolOutput::Structured(StructuredValue::new(value.clone()).unwrap()),
+                is_error,
+            );
+            let original = source.clone();
+            let (wire, rules) =
+                encode_generation_request(&source, &Default::default(), &target(), None).unwrap();
+            let key = if is_error == Some(true) {
+                "error"
+            } else {
+                "output"
+            };
+            assert_eq!(
+                wire["contents"][1]["parts"][0],
+                json!({"functionResponse":{"id":"c","name":"shot","response":{key:value}}})
+            );
+            assert!(rules.is_empty());
+            let interaction =
+                morphiecore::protocol::google::interactions::encode_generation_request(
+                    &source,
+                    &Default::default(),
+                    &target(),
+                );
+            if value.is_object() {
+                let (wire, rules) = interaction.unwrap();
+                let mut expected =
+                    json!({"type":"function_result","call_id":"c","name":"shot","result":value});
+                if let Some(error) = is_error {
+                    expected["is_error"] = json!(error);
+                }
+                assert_eq!(wire["input"][1], expected);
+                assert!(rules.is_empty());
+            } else {
+                assert!(
+                    interaction.is_err(),
+                    "only native object results, not arbitrary array/scalar coercion"
+                );
+            }
+            let mut items = source.items().to_vec();
+            let Item::ToolResult(result) = &mut items[1].1 else {
+                panic!("result")
+            };
+            result.execution = Some(ToolExecution::Unknown);
+            let reported = source.clone().with_items(items).unwrap();
+            assert!(
+                encode_generation_request(&reported, &Default::default(), &target(), None).is_err()
+            );
+            assert!(
+                morphiecore::protocol::google::interactions::encode_generation_request(
+                    &reported,
+                    &Default::default(),
+                    &target(),
+                )
+                .is_err()
+            );
+            assert_eq!(source, original);
+        }
+    }
 }
 
 #[test]
@@ -1904,16 +1983,16 @@ fn image_sizes_remain_strict_in_user_and_tool_result_uses() {
                     &Default::default(),
                     &target(),
                 );
-            if oversized == "downsize" {
+            if tool {
+                assert!(generate.is_err(), "no established tool-media carrier");
+            } else if oversized == "downsize" {
                 generate.unwrap();
+            } else {
+                assert!(generate.is_err());
+            }
+            if oversized == "downsize" {
                 interactions.unwrap();
             } else {
-                assert_eq!(
-                    generate.unwrap_err(),
-                    morphiecore::protocol::CodecError::Unsupported(
-                        "Gemini semantic carrier".into()
-                    )
-                );
                 assert_eq!(
                     interactions.unwrap_err(),
                     morphiecore::protocol::CodecError::Unsupported(
@@ -1986,4 +2065,73 @@ fn request_maps_tool_choice_effort_and_leading_instructions() {
             "{effort}"
         );
     }
+}
+
+#[test]
+fn google_composes_only_the_leading_instruction_prefix_without_hoisting_history() {
+    let request = client(
+        Profile::Responses,
+        json!({"model":"gemini","instructions":"root",
+        "input":[{"role":"system","content":[{"type":"input_text","text":"A"},{"type":"input_text","text":"B"}]},
+            {"role":"developer","content":"C"},{"role":"user","content":"go"}]}),
+    );
+    let original = request.clone();
+    let (wire, rules) = encode_generation_request(
+        &request.task.semantic,
+        &request.task.fidelity,
+        &target(),
+        None,
+    )
+    .unwrap();
+    assert_eq!(
+        wire["systemInstruction"],
+        json!({"parts":[
+        {"text":"root"},{"text":"A"},{"text":"B"},{"text":"C"}]})
+    );
+    assert_eq!(
+        wire["contents"],
+        json!([{"role":"user","parts":[{"text":"go"}]}])
+    );
+    assert_eq!(
+        rules,
+        [morphiecore::protocol::google::generate_content::RequestRule::DeveloperAsSystem]
+    );
+    let (wire, rules) = morphiecore::protocol::google::interactions::encode_generation_request(
+        &request.task.semantic,
+        &request.task.fidelity,
+        &target(),
+    )
+    .unwrap();
+    assert_eq!(wire["system_instruction"], "root\n\nA\n\nB\n\nC");
+    assert_eq!(
+        wire["input"],
+        json!([{"type":"user_input","content":[{"type":"text","text":"go"}]}])
+    );
+    assert!(
+        rules.contains(
+            &morphiecore::protocol::google::interactions::RequestRule::JoinInstructionParts
+        )
+    );
+    assert!(
+        rules
+            .contains(&morphiecore::protocol::google::interactions::RequestRule::DeveloperAsSystem)
+    );
+    let mut items = request.task.semantic.items().to_vec();
+    items.swap(1, 2);
+    let late = GenerationRequest::from_resources(
+        items,
+        request.task.semantic.settings().clone(),
+        request.task.semantic.resources().clone(),
+    )
+    .unwrap();
+    assert!(encode_generation_request(&late, &request.task.fidelity, &target(), None).is_err());
+    assert!(
+        morphiecore::protocol::google::interactions::encode_generation_request(
+            &late,
+            &request.task.fidelity,
+            &target(),
+        )
+        .is_err()
+    );
+    assert_eq!(request, original);
 }

@@ -470,27 +470,39 @@ pub(in crate::protocol::anthropic::messages) fn project(
         Presence::Value(t) => Presence::Value(WireText::Text(t.as_str().into())),
         Presence::Null => return Err(unsupported()),
     };
-    if let Some((_, Item::Instruction(i))) = request.items().first() {
-        if i.status.is_some() || !system.is_absent() {
-            return Err(unsupported());
-        }
-        match i.authority {
-            InstructionAuthority::System => {}
-            InstructionAuthority::Developer => {
+    let leading_instructions = request
+        .items()
+        .iter()
+        .take_while(|(_, item)| matches!(item, Item::Instruction(_)))
+        .count();
+    if leading_instructions > 0 {
+        let mut parts = match system {
+            Presence::Value(WireText::Text(content)) => vec![super::CacheMarked {
+                content,
+                cache: None,
+            }],
+            Presence::Value(WireText::Blocks(parts)) => parts,
+            Presence::Absent => vec![],
+            Presence::Null => return Err(unsupported()),
+        };
+        for (_, item) in &request.items()[..leading_instructions] {
+            let Item::Instruction(i) = item else {
+                unreachable!()
+            };
+            if i.status.is_some() {
+                return Err(unsupported());
+            }
+            if i.authority == InstructionAuthority::Developer {
                 rules.insert(RequestRule::DeveloperAsSystem);
             }
+            for p in &i.parts {
+                parts.push(super::CacheMarked {
+                    content: p.content.as_str().into(),
+                    cache: cache_ttl(p.cache)?,
+                });
+            }
         }
-        system = Presence::Value(WireText::Blocks(
-            i.parts
-                .iter()
-                .map(|p| {
-                    Ok(super::CacheMarked {
-                        content: p.content.as_str().into(),
-                        cache: cache_ttl(p.cache)?,
-                    })
-                })
-                .collect::<Result<_, CodecError>>()?,
-        ));
+        system = Presence::Value(WireText::Blocks(parts));
     }
     let tools = if s.tools.is_some() {
         Presence::Value(
@@ -650,10 +662,7 @@ pub(in crate::protocol::anthropic::messages) fn project(
         .items()
         .iter()
         .enumerate()
-        .skip(usize::from(matches!(
-            request.items().first(),
-            Some((_, Item::Instruction(_)))
-        )))
+        .skip(leading_instructions)
         .filter(|(_, (_, item))| system_side(item))
         .map(|(index, (_, item))| (index, item))
         .peekable();

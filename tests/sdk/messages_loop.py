@@ -31,13 +31,15 @@ with httpx.Client(trust_env=False, timeout=10) as http:
         image: ImageBlockParam = {
             "type": "image", "source": {"type": "url", "url": "https://example.invalid/a.png"},
             "transformations": {"oversized_image": "error"},
+            "cache_control": None,
         }
         history = [{"role": "user", "content": [
-            {"type": "text", "text": "go"},
+            {"type": "text", "text": "go", "cache_control": None},
             {"type": "document", "source": {"type": "text", "media_type": "text/plain",
-                "data": "synthetic notes"}, "context": "summary-only"},
+                "data": "synthetic notes"}, "context": "summary-only", "cache_control": None},
             image,
-        ]}]
+        ]}, {"role": "system", "content": [], "output_config": {"effort": "low"}},
+            {"role": "user", "content": "second input"}]
         first = client.messages.create(**shared, messages=history)
         assert first.stop_reason == "tool_use"
         assert first.content[0].type == "tool_use"
@@ -46,7 +48,8 @@ with httpx.Client(trust_env=False, timeout=10) as http:
         history += [
             {"role": "assistant", "content": [block.model_dump(exclude_none=True) for block in first.content]},
             {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "call_sdk",
-                "content": [{"type": "text", "text": "found"}, image], "is_error": False}]},
+                "content": [{"type": "text", "text": "found", "cache_control": None}, image],
+                "is_error": False, "cache_control": None}]},
         ]
         for partial, messages in [(False, history), (True, [{"role": "user", "content": "go"}])]:
             fragments = []
