@@ -19,6 +19,9 @@ This page owns accepted principles, domain contracts and decision records. [Road
   - [Reasoning controls](#reasoning-controls)
   - [Media](#media)
   - [Adaptation evidence](#adaptation-evidence)
+    - [Domain evidence interface](#domain-evidence-interface)
+    - [Atomic evidence and output batches](#atomic-evidence-and-output-batches)
+    - [Typed conversion failures](#typed-conversion-failures)
 - [History and replay](#history-and-replay)
   - [Reasoning replay](#reasoning-replay)
   - [Chat reasoning extensions](#chat-reasoning-extensions)
@@ -810,11 +813,136 @@ Required output evidence is established by explicit request controls, the source
 
 Chat omits incidental settings echoes because its response has no settings carrier. Responses omits unsupported independent reasoning-control echoes while retaining representable settings. Strict-complete delivery rejects either loss. These rules never drop generated reasoning, probabilities, citations or continuation values. Messages rejects unsupported probabilities and citations; its retained usage uses the same explicit cache/total view as delivery.
 
+#### Domain evidence interface
+
+**Internal implementation target, refined on 2026-10-24.** This specifies the next evidence/failure migration under the accepted reporting direction, not current Rust APIs, a public diagnostic schema, new conversion permission or production telemetry activation. The shape below is schematic; concrete enum cases enter with their responsible conversion, not through a speculative all-protocol catalogue.
+
+```text
+Conversion<T> {
+    value: T,
+    evidence: EvidenceDelta
+}
+EvidenceDelta {
+    effects: bounded Effect entries,
+    coverage: selected-boundary coverage,
+    omitted_entries: saturating count
+}
+Effect {
+    rule: RuleId,
+    boundary: ConversionBoundary,
+    locus: SemanticLocus,
+    change: Change,
+    summary: optional typed SafeSummary
+}
+```
+
+`RuleId` is a versioned compile-time identifier with no runtime registration or duplicate revision field. `SemanticLocus` combines a closed field category with an optional typed local owner: request/response root, item, part, tool-definition ordinal or usage scope/counter. Reuse semantic IDs and accounting enums; do not accept arbitrary JSON pointers, schema keys, tool names, wire IDs or strings from input. A locus describes the affected source owner, not a generated wire alias; target-only fields use the explicitly identified delivery view. One-to-many transformations may report a bounded set/range or a counted aggregate, never silently substitute one unrelated owner.
+
+Boundaries are closed request/response/event decode, project and encode operations. The pure producer stamps the boundary where meaning changed; an outer serialization check cannot relabel a projection as an intake effect. The execution wrapper supplies the attempt binding, view and checked unit, not fields in the semantic IR. Views distinguish request intake, source response intake, upstream request, downstream JSON, downstream SSE and retained JSON. Static rules/profile declarations stay in protocol owners; the report references their stable IDs without becoming a rule registry or an executor.
+
+| Interface owner | Target responsibility |
+|---|---|
+| `lowering::generation` shared vocabulary | Pure conversion result/delta, field/locus, change/method and boundary types; no execution, Provider or telemetry dependency |
+| Protocol codecs/lowering | Construct effects and typed leaf failures at the responsible transformation; no mutable report, I/O or publication state |
+| `protocol` shared source-failure vocabulary | Body-free error-envelope meaning/basis shared with HTTP intake; trusted dialect classifiers remain at their current responsible boundaries |
+| `adapter` | Contextual codec/representation failure and protocol dispatch; transport no longer needs to recover meaning from strings |
+| `execution` | Request/attempt report, atomic checked-unit acceptance and view-specific batch associations around existing lifecycle owners |
+| `gateway` / transport | Actual send/head, publication gate, body acknowledgment and interruption observations; log/wire projections cannot change those facts |
+
+| `Change` family | Meaning and required basis |
+|---|---|
+| `Normalize` | Equivalent representation; record only where a selected normalization/provenance question warrants it, not for every exact field |
+| `Derive` | Exact result with established premises and a named formula/method |
+| `Default` | Source-defined default or explicitly selected target-policy insertion; distinguish those bases and never label either as an explicit upstream report |
+| `InferFromRequest` | Delivery presentation copied from known request intent; not evidence that the model actually used or reported it |
+| `Omit` | A selected meaning has no retained target carrier; identify that field/owner |
+| `Approximate` | Selected behavioral mapping or coarsening; name its method |
+| `Estimate` | Eligible unknown quantity filled by a selected bounded method; identify each estimated counter, not the whole response |
+
+Use enum variants carrying their necessary basis/method, rather than independent optional strings that permit an estimate without a method. `SafeSummary` has specific bounded control/presence/accounting variants, not `serde_json::Value`, arbitrary `Debug` or before/after IR snapshots. Preserve the existing request-summary allowlist. Defaulting a genuinely unknown token quantity to zero is not a source default or exact derivation; it remains an estimate only where the existing policy permits one.
+
+One transformation can produce several effects. Exact input/cache arithmetic may derive an aggregate while separately omitting source breakdown/provenance; these must not become one generic usage loss. Change kind is not severity: exact normalization/derivation are not warnings, and recording an omission or estimate grants no authority to discard protected meaning. Retain source reports in `UsageReports`/response context and delivery values in `GenerationDelivery`; evidence explains the difference without a second writable value/provenance store.
+
+Replace parallel `RequestControlLoss`, rule-name lists, `LossEvidence`, adapter-specific omission lists and audit-only fidelity normalizations with this single returned delta as each path migrates. Human-readable names and log/wire codes are projections, not separately maintained receipts. Replay bindings, native identity/dependency proof and genuine source reports stay in their current owners. History retention or client echo must not reapply old diagnostic effects as new authoritative source observations.
+
+Accepted request-intake evidence is request-owned with its original boundary, view and checked-unit identity, not assigned to the first candidate. Preparation can reference it but cannot re-emit or recount it for every attempt, rebind it to the upstream-request view, or discard it when preparation fails. Only newly produced candidate/request-encoding effects remain provisional until that preparation succeeds. Source-response intake similarly stays attempt-owned and is not recounted for every downstream or retained view.
+
+Effects aggregate only within their request/attempt, boundary, view, rule, locus, change/basis and safe-summary identity. Counts describe checked conversion occurrences, not tokens or distinct model facts. Emit deltas once and consume the returned unit once; do not repeatedly scan cumulative encoder lists. Preserve separate checked, no-carrier and handoff counts when aggregating. Coalescing repeated deltas must not cause unbounded per-event state or merge different owners/methods.
+
+Both entry count and retained bytes, including indexes and safe summaries, have a finite optional allowance in the responsible request/attempt/delivery resource envelope. Exhaust that allowance by truncating diagnostics, not by rejecting otherwise valid business data or allocating without bounds. A saturated optional evidence delta returns the business value plus explicit omitted-count/coverage state, not a fabricated lossless result. Reserve failure/terminal summaries outside the optional effect-entry allowance. Coverage is `assessed-within-declared-boundary`, `partial` or `unassessed`, independently of truncation; assessed coverage means the selected fields/rules at that boundary, not complete official-protocol conformance. Empty or truncated evidence proves neither native support nor losslessness. Export loss remains a separate telemetry property.
+
+#### Atomic evidence and output batches
+
+Pure transformations return `Result<Conversion<T>, ...>`; their effects are candidates until the responsible outer boundary accepts the whole returned unit. That boundary includes source validation, selected projection, final representation checks and applicable serialization/framing/byte limits. Its success hands immutable evidence to execution; its failure returns a typed cause and **no new success receipts**.
+
+For static output, the checked unit includes the fully serialized bytes and corresponding typed history. Request preparation also includes body limits and trusted header preparation. For SSE, it is one caller-visible encoding invocation and all the frames it returns, not each successful inner event. If event A encodes and event B fails inside that invocation, discard its temporary bytes/effects together; do not return an internal checked-prefix receipt. Earlier independently returned successful units remain. Rejected stateful encoders may be poisoned instead of restoring their semantic state; this transaction requirement applies to publication/evidence, not to cloning an entire reducer.
+
+Keep the existing preparation/coalescing owner but distinguish these encoding outcomes explicitly:
+
+```text
+Ready(EncodedBatch { nonempty frames, evidence })
+NoCarrier(EvidenceDelta)     // intentional transformation completed
+Deferred                    // no checked output yet; owner retains pending state/effects
+```
+
+A queue operation may return ready prepared units and retain a pending run simultaneously. `Deferred` therefore describes the particular encoded unit, not the whole stream. Empty `Vec<Bytes>` alone cannot distinguish buffering, waiting for a future metadata carrier, a no-op, and completed omission. An assessment-only report may deliberately have no carrier; a control projected into an opening frame that has not yet been serialized is still deferred. Neither outcome publishes bytes merely to expose a notice.
+
+Pending effects follow the frozen `PreparedEvents`/metadata context through coalescing; a later source snapshot cannot reattribute them. Hold buffers retain bounded batch associations instead of flattening away evidence ownership. If serialization of a held/coalesced unit later fails, discard that unit's provisional effects. Successful already checked units abandoned before publication remain checked-but-not-handed-off in their attempt report, not losses delivered by the next attempt.
+
+Execution observes progress around existing I/O calls; it does not add a second retry/delivery state machine:
+
+| Observation | Owner and permitted conclusion |
+|---|---|
+| Preview/preflight | Pure planning result only; never an actual attempt, prepared request or sent effect |
+| Checked input | Successful intake/reduction unit; terminal/body completeness still waits for the existing EOF checks |
+| Prepared request | Complete bounded upstream request exists; no send or Provider acceptance is implied |
+| Send started / response head observed | Transport invoked / actual response status available; neither proves all request bytes arrived or controls took effect |
+| Checked output / no carrier | Complete output unit accepted / intentional transformation completed; no I/O handoff is implied |
+| Publication gate set | Preserve the existing conservative freeze before enqueue; it forbids replay even if the first handoff fails |
+| Body handoff | Existing body-consumer acknowledgment of one complete `Bytes` item; not socket flush, client parse or remote persistence |
+| Final delivery | Existing finalized encoding, verified upstream EOF and final handoff conditions all hold; does not replace semantic task outcome |
+
+Use the responsible internal request scope or existing execution attempt identity plus a bounded monotonic checked-unit ordinal; neither wire response IDs nor naked codec-local indexes establish that binding. A non-cloneable execution batch handle associates effects with its total frame count and acknowledged prefix. Per-frame effect maps are not required initially: conservatively count carrier-associated effects as fully handed off only after the complete batch is acknowledged. A partial batch records its prefix and uncertain effect-to-frame attribution, not a blanket delivered-loss claim. `NoCarrier` never becomes fully handed off by the vacuous equality `0 == 0`. Completed units can fold into bounded aggregates; retain detailed progress only while necessary for held/in-flight output.
+
+Mandatory I/O acknowledgment/completion bookkeeping remains with its existing lifecycle owner, independently of optional evidence capacity. Exhausting diagnostic association/index capacity cannot skip an acknowledgment, lose cancellation handling or reject business output. Retain bounded incompleteness/counts when detailed attribution is unavailable; do not infer delivered effects from the surviving subset.
+
+Previously returned successful content must be drained at its existing boundary before a following barrier. `finish_stream` and `fail_stream` must not hide such content inside a new all-or-nothing terminal/failure operation. A terminal serialization failure adds no terminal receipts and cannot erase the earlier checked prefix. Gateway failure frames are error-delivery units, separate from an adapted successful Generation terminal; their handoff does not call success-only completion logic. Publication/health behavior on cancellation remains unchanged.
+
+Retained JSON generated after SSE is a distinct projection view, not a reconstruction of stream events or a reason to add JSON-only losses to the delivered-SSE view. Storage staging/publishing keeps its existing owner. The same report supplies view-specific summaries; it does not require equal loss sets across JSON, SSE and retrieval. A terminal response can describe only evidence checked before its serialization, never certify its own eventual handoff. Cancellation may prevent any final diagnostic notice.
+
+#### Typed conversion failures
+
+Keep semantic failed/refused/incomplete/cancelled outcomes in `GenerationResponse` and source `ResponseError`/terminal details. They are not automatically malformed input, codec rejection or transport failure. The failure interface below describes a rejected local conversion or a standalone source error envelope, not every non-success task result.
+
+```text
+ConversionFailure {
+    boundary: ConversionBoundary,
+    locus: optional SemanticLocus,
+    cause: Codec(CodecError) | Representation(RepresentationError)
+}
+SourceFailureEvidence {
+    kind: shared closed source-failure kind,
+    basis: status | envelope code/type | named message pattern | unrecognized,
+    status_hint: optional ProtocolStatusHint,
+    observation: complete | interrupted | over-limit | intentionally-unread
+}
+```
+
+Evolve the current adapter error boundary into the contextual `ConversionFailure`; retain its codec/representation sum rather than adding a second competing error tree. Pure codecs and lowering continue to return their own typed leaves. Tag the first responsible decode/project/encode boundary while the cause is still available and preserve it through outer wrappers. Execution adds the attempt and retains its own transport, lifecycle, timeout, cancellation and delivery failures in `AttemptError`. Never infer the rejecting boundary from a tracing stage or reconstruct causes from `Display`, public error messages or generic `invalid_request`.
+
+Retain `GenerationError`, `EventError`, `ContextError` and `RepresentationError` leaf identities. Replace Generation's string-only invalid/unsupported labels with closed shape/relationship/carrier reasons and a safe locus; distinguish bounded resource failures such as depth/nodes, bytes, events and projection limits. Execution-only `Protocol`/`Delivery` labels likewise become closed reasons. Add variants at migrated responsible sites, not a speculative generic error catalogue or an arbitrary context stack. Unknown names/values and raw parse text never become diagnostic labels.
+
+Replace `StreamFailure(u16)` with `SourceFailureEvidence`. Share the existing source-failure vocabulary and pure classifiers between protocol error-envelope decoding and HTTP-error intake; do not duplicate it in the report. Raw bounded error bytes remain ephemeral classifier/capture input. Actual HTTP status belongs to the execution response head, separately from an SSE code/type or a protocol's suggested status mapping. `ProtocolStatusHint` is constructed only by the responsible protocol mapping and retains distinctions needed by existing policy, including hints that share an overloaded classification; it is not an arbitrary source-supplied integer or a second observed response head. In particular, an error event inside HTTP 200 is not an observed HTTP 429/400. Record incomplete or deliberately unread error-body evidence independently of recognition: a complete unknown envelope remains unrecognized; a status-only classification may be known even when its body was not read.
+
+Execution derives its existing fallback/health decision and the public error presentation from typed facts before rendering. Preserve `ErrorClass`, status/authentication precedence, credential scopes and no-replay rules. Diagnostics are not retry authority. Richer SSE classification does not silently enable new advancement, health or public-error behavior: preserve the current policy decision during migration and select any behavioral correction separately. For example, HTTP 429 quota evidence currently survives a body classifier, whereas a status-only SSE path cannot distinguish quota from throttling; the new interface retains that distinction without itself approving a different recovery policy.
+
+Keep each failed attempt's original cause even if a later attempt succeeds. Within an attempt retain an already observed source failure when cancellation or failure-frame encoding/handoff later fails; record the later handling failure separately within a finite allowance rather than overwriting the source cause or constructing an unbounded chain. Final request success contains no inherited prior-attempt terminal error. Public `ApiError` is a presentation selected alongside an internal execution decision, not the owner of diagnostics; neither report truncation nor exporter failure can change that decision.
+
 #### Public capability and adaptation notice
 
 The capability snapshot describes supported request domains, delivery and history contracts, not unions of candidate feature bits or model-effective guarantees. Unlisted cases remain unassessed. Keep `/v1/models` standard and hide credentials, deployment origins and private candidate identities.
 
-**Actual-loss reporting was selected on 2026-10-23; unified ownership and publication were deferred by the user on 2026-10-24.** The design below supersedes the internal-only P7 policy, but is not implemented or a current text/SSE acceptance requirement; [Roadmap](roadmap.md#standards-reset-and-redesign) owns its scheduling. Preserve existing loss/source/safety assertions without building a temporary evidence framework. The target design reports successful non-rejection losses briefly through a semantically suitable official field, otherwise an explicit namespaced extension. Error, stop, refusal, annotation, safety and usage fields are not generic warning containers. Standard fields retain their official meaning; an extension cannot establish full conformance merely because an SDK tolerates it.
+**Actual-loss reporting was selected on 2026-10-23; unified ownership and publication were deferred by the user on 2026-10-24.** The subsequent [internal-interface refinement](#domain-evidence-interface) resumes design, not runtime report/publication implementation or a new text/SSE acceptance requirement; [Roadmap](roadmap.md#observability-follow-up) owns the next slice. Preserve existing loss/source/safety assertions without building a temporary evidence framework. The target design supersedes the internal-only P7 policy and reports successful non-rejection losses briefly through a semantically suitable official field, otherwise an explicit namespaced extension. Error, stop, refusal, annotation, safety and usage fields are not generic warning containers. Standard fields retain their official meaning; an extension cannot establish full conformance merely because an SDK tolerates it.
 
 **Safe-to-ignore diagnostics selected on 2026-10-24.** MorphieCore may expose additional namespaced response fields for a future deployer-owned Agent Runtime to display or analyze. With those fields ignored or removed, the supported standard SDK Agent loop must still preserve content, tool calls/results, failure and terminal meaning, and promised continuation. Clients need not parse, display, aggregate, retain or return the extensions. SDK acceptance, raw-event visibility and final-object retention are different properties; none implies the others. This is an official-protocol baseline with optional diagnostics, not a claim that every closed-schema consumer accepts extra fields.
 
@@ -822,7 +950,7 @@ Expose selected diagnostic views, not serialized internal objects: actual losses
 
 One bounded execution-owned adaptation report is authoritative. Pure codecs return immutable evidence; commit it only after the responsible transformation and serialization checks succeed. Distinguish prepared, sent and delivered effects. A response reports its producing attempt, not rejected/abandoned candidates; valid published prefixes survive later failure. Diagnostics and JSON/SSE/stored retrieval project this report rather than maintaining separate mutable ledgers.
 
-Actual-loss entries identify the affected fields and use short descriptions and selected codes, with method identifiers for estimates. Exact carriage and derivation are not warnings. Bound diagnostic bytes/counts within existing budgets; absence or truncation never proves that no adaptation occurred. Field layout, naming, grouping, aggregation and a stable consumer-facing schema remain provisional under the [current scheduling decision](roadmap.md#standards-reset-and-redesign); do not build a reporting framework to finalize them now.
+Actual-loss entries identify the affected fields and use short descriptions and selected codes, with method identifiers for estimates. Exact carriage and derivation are not warnings. Bound diagnostic bytes/counts within existing budgets; absence or truncation never proves that no adaptation occurred. Public field layout, naming, grouping, aggregation and a stable consumer-facing schema remain provisional under the [current scheduling decision](roadmap.md#standards-reset-and-redesign); internal evidence-interface convergence does not finalize those wire contracts or activate their dedicated tests.
 
 Attach streaming fields to valid protocol envelopes; preserve standard event order and terminal grammar. Do not fabricate content, reasoning, usage chunks, errors or success solely for a notice. Receipt-only output must not prematurely publish a held candidate. Headers alone cannot describe late observations, and cancellation cannot guarantee final notice delivery. A client may discard diagnostic fields during parsing or aggregation; no cross-SDK final-object retention or next-request echo is promised.
 
@@ -1424,7 +1552,7 @@ The 2026-10-23 standards reset supersedes conflicting historical conversion, pub
 | Required and incidental output evidence | P5 preserves required output facts and allows selected incidental-report loss after validation; request intent never fabricates upstream reports |
 | Configurable internal exchange capture | P6 permits opt-in business headers/bodies at all four I/O boundaries with separate controls, finite retention and best-effort writes. Credentials are always redacted; no switch permits credential-bearing logs |
 | Cluster diagnostics planning (2026-10-23) | [Future capture baseline](#configurable-exchange-capture) permits sensitive business diagnostics in explicitly configured deployer-owned infrastructure, preserves mandatory authentication redaction and bounded best-effort capture, and distinguishes observed exchanges from complete Agent traces. No backend deployment or export is activated |
-| Actual adaptation reporting (2026-10-23; implementation deferred 2026-10-24) | Selected target design supersedes P7's internal-only receipts: one bounded execution report supplies short actual-loss notices through semantically correct standard fields or namespaced extensions. Unified ownership, field-specific provenance management and publication await evidence-management selection, without blocking the remaining text/SSE gate. Preserve current loss records, selected-attempt isolation, source facts, publication honesty and privacy; capabilities and a possible-adaptation header are not actual receipts |
+| Actual adaptation reporting (2026-10-23; implementation deferred, interfaces refined 2026-10-24) | Selected target design supersedes P7's internal-only receipts. The [domain evidence/failure target](#domain-evidence-interface) specifies returned deltas, typed causes and atomic checked-unit acceptance under one execution report. Runtime migration and public notices remain unimplemented; the completed text/SSE gate is not reopened. Preserve source facts, selected-attempt isolation, publication honesty and privacy; a possible-adaptation header is not an actual receipt |
 | Safe-to-ignore diagnostic extensions (2026-10-24) | [Optional namespaced fields](#public-capability-and-adaptation-notice) may carry selected loss, error and routing diagnostics for a future deployer-owned Runtime. Standard SDK Agent loops remain independent of them; no client display, retention or echo is required. Field organization/aggregation and dedicated extension tests are deferred to final production preparation, not current delivery gates |
 | Bounded text-delta coalescing | Startup-only, disabled-by-default optimization after client projection and before encoding. One pending run retains its prepared context and fixed deadline; invalid bounds fail startup. Final-only clients retain existing materialization; original intake validation and publication safety remain authoritative |
 | Scoped source accounting | Retain raw buckets and latest operation/step snapshots independently; derive delivery views without summing snapshots or inferring unknown inclusion relations. Source-default zeros and optional counts remain distinguishable |
