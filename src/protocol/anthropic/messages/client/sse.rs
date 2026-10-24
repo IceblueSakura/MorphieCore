@@ -46,6 +46,8 @@ pub struct ClientEventEncoder {
     rejected: bool,
     service_class: Presence<ServiceClass>,
     open: BTreeMap<ItemId, OpenItem>,
+    owner_order: BTreeMap<ItemId, usize>,
+    last_block_owner: usize,
     text_parts: BTreeMap<(ItemId, PartId), usize>,
     next: usize,
     calls: bool,
@@ -88,6 +90,8 @@ impl ClientEventEncoder {
             rejected: false,
             service_class: Presence::Absent,
             open: BTreeMap::new(),
+            owner_order: BTreeMap::new(),
+            last_block_owner: 0,
             text_parts: BTreeMap::new(),
             next: 0,
             calls: false,
@@ -178,6 +182,17 @@ impl ClientEventEncoder {
                 "id":self.id,"type":"message","role":"assistant","model":self.model,"content":[],
                 "stop_reason":null,"stop_sequence":null,"usage":usage}})));
         }
+    }
+    fn check_block_order(&mut self, item: ItemId) -> Result<(), CodecError> {
+        let order = *self
+            .owner_order
+            .get(&item)
+            .ok_or(CodecError::Invalid("Messages block owner"))?;
+        if order < self.last_block_owner {
+            return Err(CodecError::Unsupported("Messages block order".into()));
+        }
+        self.last_block_owner = order;
+        Ok(())
     }
     fn report(&mut self, source: &UsageReport, out: &mut Vec<Bytes>) -> Result<(), CodecError> {
         source.validate()?;
@@ -283,6 +298,13 @@ impl ClientEventEncoder {
             // Wait for opening accounting or the first content owner, without buffering content.
             StreamEvent::Started => self.seen_start = true,
             StreamEvent::ItemStarted { item, kind, replay } => {
+                if self.owner_order.len() >= crate::semantic::task::generation::MAX_ITEMS {
+                    return Err(CodecError::Limit);
+                }
+                let order = self.owner_order.len();
+                if self.owner_order.insert(*item, order).is_some() {
+                    return Err(CodecError::Invalid("duplicate Messages owner"));
+                }
                 self.start(&mut out);
                 let block = match kind {
                     ItemKind::Message { phase: None } => OpenItem::Text,
@@ -300,6 +322,7 @@ impl ClientEventEncoder {
                         if !context.is_direct() || context.alias_domain.is_some() {
                             return Err(CodecError::Unsupported("Messages call context".into()));
                         }
+                        self.check_block_order(*item)?;
                         self.calls = true;
                         OpenItem::ToolUse {
                             prefix: String::new(),
@@ -329,6 +352,7 @@ impl ClientEventEncoder {
                 .get(item)
                 .is_some_and(|block| matches!(block, OpenItem::Text)) =>
             {
+                self.check_block_order(*item)?;
                 if *kind == PartKind::Refusal {
                     let loss = super::projection::refusal_loss("event.encode");
                     if !self.losses.contains(&loss) {
@@ -365,6 +389,12 @@ impl ClientEventEncoder {
                 fragment,
                 ..
             } if !fragment.is_empty() => {
+                if matches!(
+                    self.open.get(item),
+                    Some(OpenItem::Thinking { index: None, .. })
+                ) {
+                    self.check_block_order(*item)?;
+                }
                 let block = self
                     .open
                     .get_mut(item)
@@ -451,6 +481,9 @@ impl ClientEventEncoder {
                     && signature
                         .as_deref()
                         .is_some_and(super::projection::redacted);
+                if index.is_none() {
+                    self.check_block_order(*item)?;
+                }
                 let index = match index {
                     Some(index) => index,
                     None if redacted => open_block(
@@ -600,9 +633,103 @@ impl ClientEventEncoder {
 mod tests {
     use super::*;
     use crate::semantic::{
-        task::generation::{ArgumentFormat, Usage},
+        task::generation::{ArgumentFormat, StreamState, Usage, reduce},
         value::Text,
     };
+
+    #[test]
+    fn late_block_starts_cannot_reverse_source_owner_order() {
+        let first = ItemId::new(1);
+        let second = ItemId::new(2);
+        let tool = StreamEvent::ItemStarted {
+            item: second,
+            kind: ItemKind::ToolCall {
+                format: ArgumentFormat::Raw,
+                call_id: Text::new("c", "id", 32).unwrap(),
+                name: Text::new("read", "name", 32).unwrap(),
+                context: Default::default(),
+            },
+            replay: None,
+        };
+        let text = StreamEvent::PartStarted {
+            item: first,
+            part: PartId::new(1),
+            kind: PartKind::Text,
+        };
+        for thinking in [false, true] {
+            let owner = StreamEvent::ItemStarted {
+                item: first,
+                kind: if thinking {
+                    ItemKind::Reasoning
+                } else {
+                    ItemKind::Message { phase: None }
+                },
+                replay: None,
+            };
+            let part = if thinking {
+                StreamEvent::PartStarted {
+                    item: first,
+                    part: PartId::new(1),
+                    kind: PartKind::ReasoningText,
+                }
+            } else {
+                text.clone()
+            };
+            let mut events = vec![StreamEvent::Started, owner, tool.clone(), part];
+            if thinking {
+                events.push(StreamEvent::Delta {
+                    item: first,
+                    part: PartId::new(1),
+                    fragment: "plan".into(),
+                    logprobs: vec![],
+                });
+            }
+            let mut source = StreamState::new();
+            for event in &events {
+                source = reduce(source, event.clone()).expect("valid source prefix");
+            }
+            let mut encoder = ClientEventEncoder::new("r", "m");
+            for event in &events[..events.len() - 1] {
+                encoder.encode(event).unwrap();
+            }
+            assert_eq!(
+                encoder.encode(events.last().unwrap()),
+                Err(CodecError::Unsupported("Messages block order".into())),
+            );
+            assert!(encoder.encode(&StreamEvent::Started).is_err());
+            assert!(encoder.finish().is_err());
+        }
+        let mut encoder = ClientEventEncoder::new("r", "m");
+        let mut starts = vec![];
+        for event in [
+            StreamEvent::Started,
+            StreamEvent::ItemStarted {
+                item: first,
+                kind: ItemKind::Message { phase: None },
+                replay: None,
+            },
+            text,
+            tool,
+        ] {
+            for bytes in encoder.encode(&event).unwrap() {
+                let wire = std::str::from_utf8(&bytes).unwrap();
+                let value: Value = serde_json::from_str(
+                    wire.lines().find_map(|s| s.strip_prefix("data: ")).unwrap(),
+                )
+                .unwrap();
+                if value["type"] == "content_block_start" {
+                    starts.push((
+                        value["index"].clone(),
+                        value["content_block"]["type"].clone(),
+                    ));
+                }
+            }
+        }
+        assert_eq!(
+            starts,
+            vec![(json!(0), json!("text")), (json!(1), json!("tool_use"))]
+        );
+    }
 
     #[test]
     fn scalar_completion_does_not_erase_published_optional_accounting() {

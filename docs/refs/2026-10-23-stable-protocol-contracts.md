@@ -128,6 +128,7 @@ Primary release evidence:
 | Thinking `display:null` | Client/native intake reject; selected SDK types permit null without establishing omission equivalence | SDK/schema discrepancy pending service evidence |
 | Gateway-only state emitted as empty signed thinking | [static delivery](../../src/protocol/anthropic/messages/client/response.rs) and [SSE delivery](../../src/protocol/anthropic/messages/client/sse.rs) append a manufactured block | Continuation owner redesign; preserve real upstream signatures |
 | Extension supplied only in a late `message_delta` | SDK accepts extra fields but its final-message reducer copies an enumerated set | Consumer-contract distinction, not a generic successful warning carrier |
+| Messages delivery with text/thinking owner A, then call B, then A's first block | Pinned SDK appends content at `content_block_start`; lazy A would otherwise follow B despite the opposite semantic item order. Client SSE delivery now rejects backward block starts and stays poisoned | Source-order safety correction, rechecked 2026-10-24; independent valid-IR prefixes distinguish rejection from supported text-before-tool starts. No general interleaving scheduler or new live acceptance |
 
 Bearer/X-Api-Key singleton authentication already aligns at [ingress auth](../../src/gateway/ingress/auth.rs); ambiguous credentials remain rejected. Direct assistant documents already reject. Documents nested in supported tool results and the SDK's system-message role must not be accidentally prohibited by the migration.
 

@@ -1010,6 +1010,8 @@ Native observations stay unchanged. OpenAI delivery projects a copy:
 
 Messages delivery rejects citations until that carrier is implemented. Static and streamed output use the same refusal to discard annotations.
 
+Messages block starts preserve source item order. Text/thinking owners may open lazily, but cannot start a new block after a later owner's block has already started; reject that interleaving rather than reversing the SDK's final content array. Deltas for already opened blocks may interleave. This is an explicit streaming representation boundary, not a new buffering scheduler or a claim that every cross-protocol item schedule is representable.
+
 Messages final usage requires reported input/output counts and a known accounting relation. `output_tokens_details.thinking_tokens` maps to the reported reasoning subset in both directions and is never derived. Cache-exclusive input is preserved. Inclusive input needs a reported cache-read count. An unreported cache-write category stays absent rather than zero, and the remaining input keeps any such writes. With both counts reported, at least one must be zero: the IR does not promise that nonzero cache-read and cache-write subsets are disjoint. Missing or ambiguous counts fail projection instead of becoming zero. SSE opening counters are provisional; they never replace the required final report.
 
 ## Runtime and trust
