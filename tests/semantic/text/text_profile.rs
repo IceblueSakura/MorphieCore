@@ -705,6 +705,48 @@ fn reported_text_container_presence_is_not_request_intent() {
 }
 
 #[test]
+fn reasoning_mode_null_is_report_only_and_cannot_enter_a_typed_request() {
+    let base = responses::decode_generation(&json!({"input":"go"})).unwrap();
+    let mut reasoning = ReasoningRequest::present(None);
+    reasoning.mode = Presence::Null;
+    let mut settings = base.semantic.settings().clone();
+    settings.reasoning = reasoning.clone();
+    settings.validate().unwrap();
+    assert_eq!(
+        base.semantic.clone().with_reasoning(reasoning),
+        Err(GenerationError::InvalidControl)
+    );
+    assert_eq!(
+        base.semantic.clone().with_settings(settings.clone()),
+        Err(GenerationError::InvalidControl)
+    );
+    assert_eq!(
+        GenerationRequest::from_settings(base.semantic.items().to_vec(), settings),
+        Err(GenerationError::InvalidControl)
+    );
+    for mode in [
+        Presence::Absent,
+        Presence::Value(ReasoningMode::Standard),
+        Presence::Value(ReasoningMode::Pro),
+    ] {
+        let mut request = base.clone();
+        let mut reasoning = ReasoningRequest::present(None);
+        reasoning.mode = mode.clone();
+        request.semantic = request.semantic.with_reasoning(reasoning).unwrap();
+        let wire = request_wire(&request);
+        assert_eq!(
+            wire["reasoning"].get("mode"),
+            match mode {
+                Presence::Value(ReasoningMode::Standard) => Some(json!("standard")),
+                Presence::Value(ReasoningMode::Pro) => Some(json!("pro")),
+                _ => None,
+            }
+            .as_ref()
+        );
+    }
+}
+
+#[test]
 fn null_empty_false_and_default_controls_are_deliberate_not_unknown_passthrough() {
     let d=responses::decode_generation(&json!({"input":"","instructions":null,"reasoning":{"effort":null,"summary":null},"tools":[],"tool_choice":"none","parallel_tool_calls":false,"text":{"format":{"type":"text"},"verbosity":null}})).unwrap();
     let out = request_wire(&d);

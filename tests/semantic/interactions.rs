@@ -114,6 +114,54 @@ fn empty_chat_carrier_is_not_an_empty_text_part() {
 }
 
 #[test]
+fn empty_assistant_envelopes_cannot_disappear_behind_complete_member_coverage() {
+    let user = ItemId::new(1);
+    let source = GenerationRequest::new(
+        vec![(
+            user,
+            Item::Message(Message {
+                participant: None,
+                role: MessageRole::User,
+                status: ItemLifecycle::Completed,
+                phase: None,
+                parts: vec![Part::new(
+                    PartId::new(1),
+                    ContentPart::Text(Text::new("hello", "fixture", 64).unwrap().into()),
+                )],
+            }),
+        )],
+        Default::default(),
+    )
+    .unwrap();
+    let target = ReplayTarget::new("synthetic-google", "gemini-synthetic").unwrap();
+    for before in [None, Some(user)] {
+        let request = source
+            .clone()
+            .with_message_envelopes(vec![
+                MessageEnvelope::new(
+                    GroupId::new(LocalScope::ROOT, 1),
+                    MessageEnvelopeRole::User,
+                    vec![user],
+                )
+                .unwrap(),
+                MessageEnvelope::empty(
+                    GroupId::new(LocalScope::ROOT, 2),
+                    MessageEnvelopeRole::Assistant,
+                    before,
+                ),
+            ])
+            .unwrap();
+        request.validate().unwrap();
+        assert_eq!(
+            encode_generation_request(&request, &FidelityRecords::default(), &target),
+            Err(morphiecore::protocol::CodecError::Unsupported(
+                "Interactions semantic carrier".into()
+            ))
+        );
+    }
+}
+
+#[test]
 fn lifecycle_distinguishes_optional_fields_from_invalid_or_unsupported_values() {
     let frames = interaction_frames();
     assert!(decode_interaction(&frames, true).is_ok());

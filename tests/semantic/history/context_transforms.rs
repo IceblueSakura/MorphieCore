@@ -94,6 +94,108 @@ fn participant_labels_survive_selection_and_cannot_be_reattributed_under_the_sam
     assert_eq!(source.items()[0].1.participant(), Some(&text("alice")));
 }
 #[test]
+fn retained_calls_cannot_change_their_effective_participant_through_envelopes() {
+    use morphiecore::protocol::openai::{Adapter, Dialect, Profile};
+    use serde_json::json;
+    let adapter = Adapter::new(Profile::Chat, Dialect::Standard, None);
+    for custom in [false, true] {
+        for (from, to) in [
+            (Some("alice"), Some("bob")),
+            (Some("alice"), None),
+            (None, Some("bob")),
+            (None, Some("")),
+            (None, None),
+            (Some("alice"), Some("alice")),
+        ] {
+            let call = if custom {
+                json!({"id":"c","type":"custom","custom":{"name":"lookup","input":"raw"}})
+            } else {
+                json!({"id":"c","type":"function","function":{"name":"lookup","arguments":"{}"}})
+            };
+            let mut wire = json!({"model":"m","messages":[
+                {"role":"assistant","content":"Checking","tool_calls":[call]},
+                {"role":"tool","tool_call_id":"c","content":"ok"},
+                {"role":"assistant","content":"Continue"}]});
+            if let Some(name) = from {
+                wire["messages"][0]["name"] = json!(name);
+            }
+            if let Some(name) = to {
+                wire["messages"][2]["name"] = json!(name);
+            }
+            let source = adapter
+                .decode_request(wire.to_string().as_bytes())
+                .unwrap()
+                .task
+                .semantic;
+            let ids: Vec<_> = source.items().iter().map(|(id, _)| *id).collect();
+            assert_eq!(ids.len(), 4);
+            if from.is_some() {
+                assert_eq!(
+                    source.clone().with_message_envelopes(vec![]),
+                    Err(GenerationError::InvalidContextTransform)
+                );
+                source
+                    .clone()
+                    .with_message_envelopes(source.message_envelopes().to_vec())
+                    .unwrap();
+            } else if to.is_some() {
+                let items = vec![
+                    source.items()[3].clone(),
+                    source.items()[1].clone(),
+                    source.items()[2].clone(),
+                ];
+                let unassociated =
+                    GenerationRequest::new(items.clone(), Default::default()).unwrap();
+                let groups = vec![
+                    MessageEnvelope::new(
+                        GroupId::new(LocalScope::ROOT, 98),
+                        MessageEnvelopeRole::Assistant,
+                        vec![ids[3], ids[1]],
+                    )
+                    .unwrap(),
+                ];
+                assert_eq!(
+                    unassociated.with_message_envelopes(groups.clone()),
+                    Err(GenerationError::InvalidContextTransform)
+                );
+                GenerationRequest::from_resources_and_envelopes(
+                    items,
+                    Default::default(),
+                    Default::default(),
+                    groups,
+                )
+                .unwrap();
+            }
+            let moved = source.clone().transform(vec![
+                ContextEdit::Reorder(vec![ids[0], ids[3], ids[1], ids[2]]),
+                ContextEdit::MessageEnvelopes(vec![
+                    MessageEnvelope::new(
+                        GroupId::new(LocalScope::ROOT, 99),
+                        MessageEnvelopeRole::Assistant,
+                        vec![ids[3], ids[1]],
+                    )
+                    .unwrap(),
+                ]),
+            ]);
+            if from == to {
+                moved.unwrap();
+            } else {
+                let error = moved.unwrap_err();
+                assert_eq!(error.stage, ContextStage::Association);
+                assert_eq!(error.error, GenerationError::InvalidContextTransform);
+            }
+            if from.is_some() {
+                assert_eq!(
+                    source.clone().with_items(source.items()[1..].to_vec()),
+                    Err(GenerationError::InvalidContextTransform)
+                );
+            }
+            assert_eq!(source.items()[0].1.participant().map(Text::as_str), from);
+        }
+    }
+}
+
+#[test]
 fn atomic_edits_report_ids_preserve_source_and_do_not_leak_bodies() {
     let source = source();
     let branch = source

@@ -1,6 +1,6 @@
 //! Atomic caller-supplied edits and content-free receipts, not a history store.
 use super::*;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Clone)]
 pub enum ContextEdit {
@@ -286,8 +286,13 @@ impl GenerationRequest {
             request.items(),
         )
         .map_err(|e| fail(ContextStage::Association, None, e))?;
-        check_protected_edits(source.items(), request.items())
-            .map_err(|e| fail(ContextStage::Association, None, e))?;
+        check_protected_edits(
+            source.items(),
+            source.message_envelopes(),
+            request.items(),
+            request.message_envelopes(),
+        )
+        .map_err(|e| fail(ContextStage::Association, None, e))?;
         request
             .validate()
             .map_err(|e| fail(ContextStage::Association, None, e))?;
@@ -301,8 +306,12 @@ impl GenerationRequest {
 
 pub(in crate::semantic::task::generation) fn check_protected_edits(
     source: &[(ItemId, Item)],
+    source_envelopes: &[MessageEnvelope],
     final_items: &[(ItemId, Item)],
+    final_envelopes: &[MessageEnvelope],
 ) -> Result<(), GenerationError> {
+    let before = call_participants(source, source_envelopes);
+    let after = call_participants(final_items, final_envelopes);
     for (old_position, (id, old)) in source.iter().enumerate() {
         let Some((new_position, (_, new))) = final_items
             .iter()
@@ -312,6 +321,11 @@ pub(in crate::semantic::task::generation) fn check_protected_edits(
             continue;
         };
         if std::mem::discriminant(old) != std::mem::discriminant(new) {
+            return Err(GenerationError::InvalidContextTransform);
+        }
+        if matches!(old, Item::ToolCall(_) | Item::CustomCall(_))
+            && before.get(id).copied().flatten() != after.get(id).copied().flatten()
+        {
             return Err(GenerationError::InvalidContextTransform);
         }
         if let (Item::Instruction(old), Item::Instruction(new)) = (old, new) {
@@ -335,4 +349,30 @@ pub(in crate::semantic::task::generation) fn check_protected_edits(
         }
     }
     Ok(())
+}
+
+/// Participant labels stay on messages; envelopes only establish which calls
+/// inherit that label. Unnamed regrouping does not change effective attribution.
+fn call_participants<'a>(
+    items: &'a [(ItemId, Item)],
+    groups: &[MessageEnvelope],
+) -> BTreeMap<ItemId, Option<&'a Text>> {
+    let mut participants = BTreeMap::new();
+    for group in groups {
+        let mut participant = None;
+        for id in group.members() {
+            match items
+                .iter()
+                .find(|(owner, _)| owner == id)
+                .map(|(_, item)| item)
+            {
+                Some(Item::Message(message)) => participant = message.participant.as_ref(),
+                Some(Item::ToolCall(_) | Item::CustomCall(_)) => {
+                    participants.insert(*id, participant);
+                }
+                _ => {}
+            }
+        }
+    }
+    participants
 }

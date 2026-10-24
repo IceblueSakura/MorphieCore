@@ -548,8 +548,8 @@ pub(in crate::protocol::anthropic::messages) fn project(
     if !reasoning.context.is_absent() || !reasoning.read_history.is_absent() {
         return Err(unsupported());
     }
-    // An OpenAI summary request selects the display; without one the field stays absent,
-    // which equals the 5.x default (`omitted`).
+    // Visibility is an explicit guarantee, not an inference from nullable summary
+    // preference. Absent display preserves the target's model-dependent default.
     let display = match (
         &reasoning.presentation.visibility,
         &reasoning.presentation.summary,
@@ -563,9 +563,7 @@ pub(in crate::protocol::anthropic::messages) fn project(
             }
             Presence::Value(super::Display::Summarized)
         }
-        (Presence::Value(ReasoningDisplay::Omitted), _) | (Presence::Absent, Presence::Null) => {
-            Presence::Value(super::Display::Omitted)
-        }
+        (Presence::Value(ReasoningDisplay::Omitted), _) => Presence::Value(super::Display::Omitted),
         (Presence::Null, _) => Presence::Null,
         (Presence::Absent, Presence::Absent) => Presence::Absent,
         _ => return Err(unsupported()),

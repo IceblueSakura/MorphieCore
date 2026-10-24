@@ -157,6 +157,18 @@ pub fn decode_client_request(bytes: &[u8]) -> Result<Request, CodecError> {
     let mut v = parse(bytes)?;
     let o = object(&v)?;
     wire::request::reject_removed_fields(o)?;
+    for field in [
+        "system",
+        "tools",
+        "tool_choice",
+        "thinking",
+        "output_config",
+        "stream",
+    ] {
+        if o.get(field).is_some_and(Value::is_null) {
+            return Err(CodecError::Invalid("Anthropic null"));
+        }
+    }
     if let Some(key) = UNSUPPORTED.iter().find(|key| {
         o.get(**key)
             .is_some_and(|v| !v.is_null() && !(**key == "mcp_servers" && v == &json!([])))
@@ -188,7 +200,7 @@ pub fn decode_client_request(bytes: &[u8]) -> Result<Request, CodecError> {
     );
     let scope = LocalScope::ROOT;
     let mut intake = Intake::new(scope);
-    if let Some(mut system) = o.get("system").filter(|v| !v.is_null()).cloned() {
+    if let Some(mut system) = o.get("system").cloned() {
         blocks(&mut system, &mut ignored)?;
         match WireText::read(&system)? {
             WireText::Text(s) => settings.instructions = Presence::Value(text(&s)?),
@@ -215,7 +227,7 @@ pub fn decode_client_request(bytes: &[u8]) -> Result<Request, CodecError> {
             WireText::Blocks(_) => {}
         }
     }
-    if let Some(tools) = o.get("tools").filter(|v| !v.is_null()) {
+    if let Some(tools) = o.get("tools") {
         let tools = tools.as_array().ok_or(CodecError::Invalid("tools"))?;
         settings.tools = Some(
             tools
@@ -237,7 +249,7 @@ pub fn decode_client_request(bytes: &[u8]) -> Result<Request, CodecError> {
             },
         ))?;
     }
-    if let Some(choice) = o.get("tool_choice").filter(|v| !v.is_null()) {
+    if let Some(choice) = o.get("tool_choice") {
         let choice = WireChoice::read(choice)?;
         settings.tool_choice = Some(match &choice.selection {
             Selection::Auto => ToolChoice::Auto,
@@ -247,7 +259,7 @@ pub fn decode_client_request(bytes: &[u8]) -> Result<Request, CodecError> {
         });
         settings.parallel_tool_calls = choice.disable_parallel_tool_use.value().map(|b| !b);
     }
-    if let Some(thinking) = o.get("thinking").filter(|v| !v.is_null()) {
+    if let Some(thinking) = o.get("thinking") {
         let mut thinking = thinking.clone();
         keep(
             &mut thinking,
@@ -310,7 +322,7 @@ pub fn decode_client_request(bytes: &[u8]) -> Result<Request, CodecError> {
         settings.reasoning.replay_mismatch =
             binding.map(crate::protocol::anthropic::messages::settings::replay_mismatch);
     }
-    if let Some(config) = o.get("output_config").filter(|v| !v.is_null()) {
+    if let Some(config) = o.get("output_config") {
         let mut config = config.clone();
         keep(
             &mut config,
@@ -391,6 +403,9 @@ pub fn decode_client_request(bytes: &[u8]) -> Result<Request, CodecError> {
                 .map(|v| wire::request::CacheMarked::read(v, Block::read))
                 .collect::<Result<_, _>>()?
         };
+        if !wire::request::input_block_bytes(role, &parsed, true)?.1 {
+            return Err(CodecError::Invalid("Anthropic empty message"));
+        }
         if parsed.iter().any(|block| match &block.content {
             Block::Thinking { signature, .. } | Block::RedactedThinking(signature) => {
                 crate::protocol::replay_projection::is_marker(signature)
@@ -431,7 +446,7 @@ pub fn decode_client_request(bytes: &[u8]) -> Result<Request, CodecError> {
     request.context.identity.user = wire::request::read_user_id(&o)?;
     request.service_policy = service::read_policy(&o)?;
     request.source = Some(crate::adapter::ClientProtocol::Messages);
-    if let Some(stream) = o.get("stream").filter(|v| !v.is_null()) {
+    if let Some(stream) = o.get("stream") {
         request.delivery.stream =
             Presence::Value(stream.as_bool().ok_or(CodecError::Invalid("stream"))?);
     }

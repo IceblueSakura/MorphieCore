@@ -129,6 +129,58 @@ fn content_cache_null_defaults_do_not_erase_business_values_or_invent_boundaries
 }
 
 #[test]
+fn nonnullable_top_level_controls_and_empty_ordinary_messages_reject_before_normalization() {
+    use morphiecore::protocol::anthropic::messages::Profile as Messages;
+    let profile = Messages::AdaptiveTextTools;
+    let baseline =
+        json!({"model":"m","max_tokens":4096,"messages":[{"role":"user","content":"go"}]});
+    for (field, value) in [
+        ("system", json!("system")),
+        ("tools", json!([])),
+        ("tool_choice", json!({"type":"auto"})),
+        ("thinking", json!({"type":"adaptive"})),
+        ("output_config", json!({"effort":"medium"})),
+        ("stream", json!(false)),
+    ] {
+        let mut request = baseline.clone();
+        request[field] = value;
+        decode_client_request(request.to_string().as_bytes()).unwrap();
+        profile
+            .decode_request(request.to_string().as_bytes())
+            .unwrap();
+        request[field] = json!(null);
+        assert_eq!(
+            decode_client_request(request.to_string().as_bytes()).unwrap_err(),
+            CodecError::Invalid("Anthropic null")
+        );
+        assert_eq!(
+            profile
+                .decode_request(request.to_string().as_bytes())
+                .unwrap_err(),
+            CodecError::Invalid("Anthropic null")
+        );
+    }
+    for content in [json!([]), json!(""), json!([{"type":"text","text":""}])] {
+        let mut request = baseline.clone();
+        request["messages"] = json!([
+            {"role":"user","content":"A"},
+            {"role":"assistant","content":content},
+            {"role":"user","content":"B"}]);
+        assert_eq!(
+            decode_client_request(request.to_string().as_bytes()).unwrap_err(),
+            CodecError::Invalid("Anthropic empty message")
+        );
+        assert_eq!(
+            profile
+                .decode_request(request.to_string().as_bytes())
+                .unwrap_err(),
+            CodecError::Invalid("Anthropic empty message")
+        );
+    }
+    decode_client_request(baseline.to_string().as_bytes()).unwrap();
+}
+
+#[test]
 fn known_boolean_and_unresolved_configuration_nulls_cannot_disappear_at_intake() {
     use morphiecore::protocol::anthropic::messages::Profile as Messages;
     let base = json!({"model":"m","max_tokens":32,

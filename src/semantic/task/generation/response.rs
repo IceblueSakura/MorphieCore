@@ -299,7 +299,9 @@ impl GenerationResponse {
         )?;
         crate::semantic::task::generation::request::context_transform::check_protected_edits(
             &self.items,
+            self.envelopes.values(),
             response.items(),
+            response.message_envelopes(),
         )?;
         response = response.with_usage_reports(self.usage)?;
         response = response.with_safety_reports(self.safety_reports)?;

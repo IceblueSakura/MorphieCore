@@ -236,6 +236,63 @@ fn each_resolution_is_closed_phase_local_and_source_checked() {
 }
 
 #[test]
+fn nullable_report_mode_remains_an_explicit_observation_in_json_and_sse() {
+    let mut reasoning = ReasoningRequest::present(None);
+    reasoning.mode = Presence::Null;
+    let settings = GenerationSettings {
+        reasoning,
+        ..Default::default()
+    };
+    settings.validate().unwrap();
+    let source = metadata(ResponseReports::phased(
+        ReportPhase::Terminal,
+        ResponseReport {
+            settings: Some(settings),
+            service_class: Presence::Absent,
+        },
+    ));
+    let fidelity = FidelityRecords::default();
+    let mut encoder = EventEncoder::new(Profile::Responses, source.clone()).unwrap();
+    encoder.encode(&StreamEvent::Started, &fidelity).unwrap();
+    let frames = encoder
+        .encode(
+            &StreamEvent::Terminal {
+                terminal: StreamTerminal::Completed,
+                details: Default::default(),
+            },
+            &fidelity,
+        )
+        .unwrap();
+    encoder.finish().unwrap();
+    assert_eq!(frames[0]["response"]["reasoning"], json!({"mode":null}));
+    let response = GenerationResponse::new(vec![], Outcome::Completed).unwrap();
+    let target = lower_response(
+        &response,
+        &fidelity,
+        &source,
+        Profile::Responses,
+        TargetCaps::full(),
+    )
+    .unwrap();
+    let wire =
+        morphiecore::protocol::openai::responses::envelope::encode_response(&target).unwrap();
+    assert_eq!(wire["reasoning"], json!({"mode":null}));
+    assert_eq!(
+        source
+            .context
+            .reports
+            .at(ReportPhase::Terminal)
+            .unwrap()
+            .settings
+            .as_ref()
+            .unwrap()
+            .reasoning
+            .mode,
+        Presence::Null
+    );
+}
+
+#[test]
 fn independently_constructed_reports_use_phase_carriers_and_terminal_snapshots() {
     let original = metadata(lifecycle());
     let fidelity = FidelityRecords::default();

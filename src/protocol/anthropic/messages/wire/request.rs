@@ -188,34 +188,9 @@ impl InputMessage {
         })
     }
     fn bytes(&self) -> Result<usize, CodecError> {
-        let mut has_content = false;
-        let bytes = match &self.content {
-            MessageContent::Text(s) => {
-                has_content = !s.is_empty();
-                text(s)?
-            }
-            MessageContent::Blocks(a) => {
-                count(a.len())?;
-                let mut bytes = 0;
-                for block in a {
-                    if !block.content.permits(self.role)
-                        || block.cache.is_some()
-                            && matches!(
-                                block.content,
-                                Block::Thinking { .. } | Block::RedactedThinking(_)
-                            )
-                    {
-                        return Err(CodecError::Invalid("Anthropic block role"));
-                    }
-                    let content_bytes = block.content.bytes(false)?;
-                    has_content |= content_bytes > 0;
-                    charge(
-                        &mut bytes,
-                        content_bytes + usize::from(block.cache.is_some()) * 32,
-                    )?;
-                }
-                bytes
-            }
+        let (bytes, has_content) = match &self.content {
+            MessageContent::Text(s) => (text(s)?, !s.is_empty()),
+            MessageContent::Blocks(a) => input_block_bytes(self.role, a, false)?,
         };
         if self.effort.is_some() && self.role != Role::System {
             return Err(CodecError::Invalid("Anthropic message output_config"));
@@ -238,6 +213,38 @@ impl InputMessage {
         }
         v
     }
+}
+/// Shared source validation before intake can normalize away a message boundary.
+pub(in crate::protocol::anthropic::messages) fn input_block_bytes(
+    role: Role,
+    blocks: &[CacheMarked<Block>],
+    allow_unsigned_thinking: bool,
+) -> Result<(usize, bool), CodecError> {
+    count(blocks.len())?;
+    let mut bytes = 0;
+    let mut has_content = false;
+    for block in blocks {
+        if !block.content.permits(role)
+            || block.cache.is_some()
+                && matches!(
+                    block.content,
+                    Block::Thinking { .. } | Block::RedactedThinking(_)
+                )
+        {
+            return Err(CodecError::Invalid("Anthropic block role"));
+        }
+        // Public history may carry visible reasoning from a non-native target;
+        // native replay still requires a completed signature.
+        let content_bytes = block
+            .content
+            .bytes(allow_unsigned_thinking && matches!(block.content, Block::Thinking { .. }))?;
+        has_content |= content_bytes > 0;
+        charge(
+            &mut bytes,
+            content_bytes + usize::from(block.cache.is_some()) * 32,
+        )?;
+    }
+    Ok((bytes, has_content))
 }
 /// Absent, null, `{}` and a null effort all mean no per-message change.
 pub(in crate::protocol::anthropic::messages) fn read_message_effort(

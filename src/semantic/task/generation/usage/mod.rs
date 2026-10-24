@@ -68,10 +68,17 @@ impl Usage {
         }
     }
     pub fn validate(self) -> Result<(), GenerationError> {
+        if self.counters().iter().all(Option::is_none) {
+            return Err(GenerationError::InvalidResponse);
+        }
+        self.validate_values()
+    }
+    /// Accounting premises remain valid even when observations exist only in a
+    /// scoped report's breakdown, outside this aggregate view.
+    fn validate_values(self) -> Result<(), GenerationError> {
         let subset = |detail: Option<u64>, total: Option<u64>| !matches!((detail, total), (Some(a), Some(b)) if a > b);
-        if self.counters().iter().all(Option::is_none)
-            || self.output_relation == OutputTokenRelation::IncludesReasoning
-                && !subset(self.reasoning_tokens, self.output_tokens)
+        if self.output_relation == OutputTokenRelation::IncludesReasoning
+            && !subset(self.reasoning_tokens, self.output_tokens)
             || self.input_relation == InputTokenRelation::IncludesCache
                 && (!subset(self.cached_input_tokens, self.input_tokens)
                     || !subset(self.input_cache_write_tokens, self.input_tokens))

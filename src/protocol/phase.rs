@@ -41,12 +41,12 @@ pub(crate) fn omit_request(
         }
     }
     Ok(Some(
-        GenerationRequest::from_resources(
+        GenerationRequest::from_resources_and_envelopes(
             items,
             source.settings().clone(),
             source.resources().clone(),
+            source.message_envelopes().to_vec(),
         )?
-        .with_cached_context(source.cached_context().cloned())?
-        .with_message_envelopes(source.message_envelopes().to_vec())?,
+        .with_cached_context(source.cached_context().cloned())?,
     ))
 }

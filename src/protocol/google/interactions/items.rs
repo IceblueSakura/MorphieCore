@@ -18,6 +18,9 @@ pub(super) fn steps(
 ) -> Result<Value, CodecError> {
     let mut steps = vec![];
     for group in request.message_envelopes() {
+        if group.members().is_empty() {
+            return Err(unsupported());
+        }
         for id in group.members() {
             let item = &request
                 .items()

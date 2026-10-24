@@ -9,6 +9,67 @@ fn report(scope: UsageScope, stage: UsageStage, tokens: u64) -> UsageReport {
 }
 
 #[test]
+fn sparse_breakdowns_still_validate_aggregate_accounting_premises() {
+    let mut usage = Usage::operation(0, 0, 0);
+    usage.input_tokens = None;
+    usage.output_tokens = None;
+    usage.total_tokens = None;
+    usage.input_text_tokens = Some(1);
+    let valid = UsageReport::operation(usage);
+    valid.validate().unwrap();
+    assert_eq!(valid.summary().input_text_tokens, Some(1));
+    assert_eq!(valid.summary().input_tokens, None);
+    let mut reports = UsageReports::default();
+    reports.replace(valid.clone()).unwrap();
+    let before = reports.clone();
+    for (total, input, output) in [
+        (
+            TotalTokenRelation::InputOutputAndReasoning,
+            InputTokenRelation::IncludesCache,
+            OutputTokenRelation::IncludesReasoning,
+        ),
+        (
+            TotalTokenRelation::InputCacheAndOutput,
+            InputTokenRelation::IncludesCache,
+            OutputTokenRelation::IncludesReasoning,
+        ),
+        (
+            TotalTokenRelation::InputCacheAndOutput,
+            InputTokenRelation::ExcludesCacheReadAndWrite,
+            OutputTokenRelation::ExcludesReasoning,
+        ),
+    ] {
+        let invalid = Usage {
+            total_relation: total,
+            input_relation: input,
+            output_relation: output,
+            ..usage
+        };
+        assert_eq!(invalid.validate(), Err(GenerationError::InvalidResponse));
+        assert_eq!(
+            UsageReport::operation(invalid).validate(),
+            Err(GenerationError::InvalidResponse)
+        );
+        assert_eq!(
+            reports.replace(UsageReport::operation(invalid)),
+            Err(GenerationError::InvalidResponse)
+        );
+        assert_eq!(reports, before);
+        assert_eq!(reports.bytes(), before.bytes());
+        assert_eq!(
+            GenerationResponse::new(vec![], Outcome::Completed)
+                .unwrap()
+                .with_usage(Some(invalid)),
+            Err(GenerationError::InvalidResponse)
+        );
+    }
+    let mut sparse = valid;
+    sparse.details.modalities[0].tokens = None;
+    sparse.validate().unwrap();
+    assert_eq!(sparse.summary().input_text_tokens, None);
+}
+
+#[test]
 fn modality_observations_have_one_owner_and_flat_views_follow_edits() {
     let mut source = UsageReport::operation(Usage {
         input_text_tokens: Some(3),

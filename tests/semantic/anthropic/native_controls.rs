@@ -60,6 +60,60 @@ fn typed(budget: Option<u64>) -> Request {
     .unwrap()
 }
 #[test]
+fn nullable_summary_preference_never_becomes_a_hidden_display_guarantee() {
+    for budget in [None, Some(1024)] {
+        for (visibility, summary, display) in [
+            (Presence::Absent, Presence::Absent, None),
+            (
+                Presence::Value(ReasoningDisplay::Omitted),
+                Presence::Absent,
+                Some("omitted"),
+            ),
+            (
+                Presence::Value(ReasoningDisplay::Summary),
+                Presence::Value(ReasoningSummary::Auto),
+                Some("summarized"),
+            ),
+            (Presence::Absent, Presence::Null, None),
+        ] {
+            let mut request = typed(budget);
+            let mut reasoning = request.task.semantic.reasoning().clone();
+            reasoning.presence = ReasoningPresence::Present;
+            reasoning.activation = Presence::Value(ReasoningActivation::Enabled);
+            reasoning.mode = Presence::Value(if budget.is_some() {
+                ReasoningMode::Budgeted
+            } else {
+                ReasoningMode::Adaptive
+            });
+            reasoning.presentation.visibility = visibility;
+            reasoning.presentation.summary = summary.clone();
+            request.task.semantic = request.task.semantic.with_reasoning(reasoning).unwrap();
+            let before = request.clone();
+            let encoded = caps().encode_request(&request, &target());
+            if summary == Presence::Null {
+                assert!(encoded.is_err());
+                assert!(
+                    Profile::AdaptiveTextTools
+                        .encode_generation_request(
+                            &request.task.semantic,
+                            &request.task.fidelity,
+                            &target(),
+                        )
+                        .is_err()
+                );
+            } else {
+                let encoded = encoded.unwrap();
+                assert_eq!(
+                    encoded.value["thinking"].get("display"),
+                    display.map(|v| json!(v)).as_ref()
+                );
+            }
+            assert_eq!(request, before);
+        }
+    }
+}
+
+#[test]
 fn configured_fallback_never_replaces_supported_native_allocation_or_visibility() {
     use morphiecore::protocol::reasoning::{
         ReasoningConversion, ReasoningRequestPolicy, SHARED_BUDGETS,

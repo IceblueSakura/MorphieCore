@@ -174,8 +174,8 @@ pub(crate) fn decode_generation_with(
     }
     crate::protocol::openai::chat::audio::settings(o, &mut settings, direction)?;
     let groups = owners::envelopes(&b.message_owners)?;
-    let r = GenerationRequest::from_resources(b.items, settings, b.resources)?
-        .with_message_envelopes(groups)?;
+    let r =
+        GenerationRequest::from_resources_and_envelopes(b.items, settings, b.resources, groups)?;
     Ok(DecodedRequest {
         semantic: function_tools::decode(r, o, Profile::Chat, direction)?,
         fidelity: b.fidelity,

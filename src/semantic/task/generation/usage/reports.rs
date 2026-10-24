@@ -200,9 +200,11 @@ impl UsageReport {
             + std::mem::size_of_val(self.details.defaulted.as_slice())
     }
     pub fn validate(&self) -> Result<(), GenerationError> {
-        if self.counts.counters().iter().any(Option::is_some) {
-            self.counts.validate()?;
-        } else if self.tool_input_tokens().is_none() && self.details == UsageDetails::default() {
+        self.counts.view().validate_values()?;
+        if self.counts.counters().iter().all(Option::is_none)
+            && self.tool_input_tokens().is_none()
+            && self.details == UsageDetails::default()
+        {
             return Err(GenerationError::InvalidResponse);
         }
         let invalid = || GenerationError::InvalidResponse;

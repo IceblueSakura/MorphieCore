@@ -43,12 +43,26 @@ impl GenerationRequest {
         settings: GenerationSettings,
         resources: ResourceTable,
     ) -> Result<Self, GenerationError> {
+        Self::from_resources_and_envelopes(items, settings, resources, vec![])
+    }
+    /// Initial construction establishes attribution atomically. Later envelope
+    /// changes are edits and cannot reattribute retained calls.
+    pub fn from_resources_and_envelopes(
+        items: Vec<(ItemId, Item)>,
+        settings: GenerationSettings,
+        resources: ResourceTable,
+        groups: Vec<MessageEnvelope>,
+    ) -> Result<Self, GenerationError> {
+        let envelopes =
+            crate::semantic::task::generation::history::envelope::MessageEnvelopes::new(
+                &items, groups,
+            )?;
         let r = Self {
             items,
             resources,
             cached_context: None,
             settings: std::sync::Arc::new(settings),
-            envelopes: Default::default(),
+            envelopes,
         };
         r.validate()?;
         Ok(r)
@@ -61,6 +75,7 @@ impl GenerationRequest {
         let settings = self.settings.validate()?;
         if self.settings.text.presence == Presence::Null
             || self.settings.text.format == Presence::Null
+            || self.settings.reasoning.mode == Presence::Null
         {
             return Err(GenerationError::InvalidControl);
         }
@@ -117,11 +132,18 @@ impl GenerationRequest {
         mut self,
         groups: Vec<MessageEnvelope>,
     ) -> Result<Self, GenerationError> {
-        self.envelopes =
+        let envelopes =
             crate::semantic::task::generation::history::envelope::MessageEnvelopes::new(
                 &self.items,
                 groups,
             )?;
+        context_transform::check_protected_edits(
+            &self.items,
+            self.message_envelopes(),
+            &self.items,
+            envelopes.values(),
+        )?;
+        self.envelopes = envelopes;
         self.validate()?;
         Ok(self)
     }
@@ -192,11 +214,17 @@ impl GenerationRequest {
         if items.len() > MAX_ITEMS {
             return Err(GenerationError::Limit);
         }
-        self.envelopes = self.envelopes.edited(&items)?;
+        let source_envelopes = std::mem::take(&mut self.envelopes);
+        self.envelopes = source_envelopes.edited(&items)?;
         let source = std::mem::replace(&mut self.items, items);
         self.validate()?;
         crate::semantic::task::generation::identity::check_call_edits(&source, &self.items)?;
-        context_transform::check_protected_edits(&source, &self.items)?;
+        context_transform::check_protected_edits(
+            &source,
+            source_envelopes.values(),
+            &self.items,
+            self.message_envelopes(),
+        )?;
         Ok(self)
     }
     /// Candidate copy: listed reasoning becomes assistant text under a fresh derived ID,
