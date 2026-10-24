@@ -56,6 +56,7 @@ async fn handle(
     let ToolDefinition::Function(tool) = &request.task.semantic.tools()[0] else {
         panic!("function")
     };
+    assert!(tool.dispatch.is_inactive());
     assert_eq!(
         tool.input_examples
             .as_ref()
@@ -70,6 +71,8 @@ async fn handle(
     let target = ReplayTarget::new("synthetic-sdk", "fixture-model").unwrap();
     let native = caps.encode_request(&request, &target).unwrap();
     assert_eq!(native.value["metadata"], json!({"user_id":"sdk-user"}));
+    assert!(native.value["tools"][0].get("allowed_callers").is_none());
+    assert!(native.value["tools"][0].get("type").is_none());
     assert_eq!(
         native.value["tools"][0]["input_examples"],
         json!([{"n":9007199254740993_u64},{"n":7}])

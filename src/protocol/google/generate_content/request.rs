@@ -64,6 +64,13 @@ pub(super) fn project(
     rules: &mut BTreeSet<RequestRule>,
     identity: &crate::semantic::context::ClientIdentityHints,
 ) -> Result<Value, CodecError> {
+    if request
+        .items()
+        .iter()
+        .any(|(_, i)| i.participant().is_some())
+    {
+        return Err(unsupported());
+    }
     let s = request.settings();
     if s.prediction.is_some() {
         rules.insert(RequestRule::OmitPrediction);

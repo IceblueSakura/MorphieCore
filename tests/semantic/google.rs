@@ -544,6 +544,7 @@ fn stream_maps_thoughts_text_calls_and_owned_signatures() {
             vec![(
                 ItemId::new(1),
                 Item::Message(Message {
+                    participant: None,
                     role: MessageRole::Assistant,
                     status: ItemLifecycle::Completed,
                     phase: None,
@@ -1825,6 +1826,7 @@ fn tool_result_parts_preserve_order_boundaries_and_repeated_resources() {
         history.push((
             ItemId::new(3),
             Item::Message(Message {
+                participant: None,
                 role: MessageRole::User,
                 status: ItemLifecycle::Completed,
                 phase: None,

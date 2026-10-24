@@ -4,6 +4,10 @@ import sys
 from sdk_support import check, client_for
 
 from pydantic import BaseModel
+from openai.types.chat import (
+    ChatCompletionSystemMessageParam, ChatCompletionDeveloperMessageParam,
+    ChatCompletionUserMessageParam,
+)
 
 
 class Answer(BaseModel):
@@ -13,7 +17,11 @@ class Answer(BaseModel):
 def run(base_url: str, stream: bool) -> dict[str, object]:
     """Use synthetic tools, no execution, no external target and no automatic retry."""
     client = client_for(base_url)
-    history = [{"role": "user", "content": "hello 🧪"}]
+    history = [
+        ChatCompletionSystemMessageParam(role="system", name="policy", content="Be precise"),
+        ChatCompletionDeveloperMessageParam(role="developer", name="author", content="Use tools"),
+        ChatCompletionUserMessageParam(role="user", name="requester", content="hello 🧪"),
+    ]
     tools = [{"type": "function", "function": {"name": "lookup", "parameters": {"type": "object", "properties": {"n": {"type": "integer"}}, "required": ["n"], "additionalProperties": False}, "strict": True}}]
     allowed = {"type": "allowed_tools", "allowed_tools": {"mode": "required", "tools": [{"type": "function", "function": {"name": "lookup"}}]}}
     counts = []
@@ -111,11 +119,15 @@ def run(base_url: str, stream: bool) -> dict[str, object]:
                 check(call["function"]["name"] == "lookup")
                 check(call["function"]["arguments"] == '{"n":1}')
                 check(call["function"]["parsed_arguments"] == {"n": 1}, "dump must carry the derived view")
+                check("name" not in message, "outputs have no official participant report")
+                message["name"] = "planner"  # Explicit caller-supplied history label.
                 history.extend([message, {"role": "tool", "tool_call_id": "call-local", "content": [{"type": "text", "text": "synthetic result"}, {"type": "text", "text": ""}]}])
             elif turn == 2:
                 check(finish == "stop" and message["content"] == '{"answer":"new 🧪"}')
                 check(json.loads(message["content"]) == {"answer": "new 🧪"})
                 check(message["parsed"] == {"answer": "new 🧪"}, "dump must carry the derived view")
+                check("name" not in message, "outputs have no official participant report")
+                message["name"] = "writer"
                 history.append(message)
             else:
                 check(finish == "stop" and message["content"] == "old 🧪")

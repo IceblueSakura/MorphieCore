@@ -121,10 +121,23 @@ fn decode_message(
         _ => return Err(CodecError::Unsupported("message role".into())),
     };
     direction.fields(m, allowed)?;
-    // A participant name is model-visible, and no IR or target carrier owns it.
-    if m.get("name").is_some_and(|v| !v.is_null()) {
+    if (!replay || role == "tool") && m.get("name").is_some_and(|v| !v.is_null()) {
         return Err(CodecError::Unsupported("message name".into()));
     }
+    let participant = if replay && role != "tool" {
+        m.get("name")
+            .map(|v| {
+                crate::semantic::value::Text::allowing_empty(
+                    v.as_str().ok_or(CodecError::Invalid("message name"))?,
+                    "participant",
+                    MAX_TEXT_BYTES,
+                )
+                .map_err(|_| CodecError::Limit)
+            })
+            .transpose()?
+    } else {
+        None
+    };
     if replay && role != "assistant" && m.contains_key("parsed") {
         // The pinned SDK attaches its parsed view to assistant messages only.
         return Err(CodecError::Invalid("parsed"));
@@ -234,6 +247,7 @@ fn decode_message(
             b.items.push((
                 id,
                 Item::Instruction(Instruction {
+                    participant,
                     authority: if role == "system" {
                         InstructionAuthority::System
                     } else {
@@ -401,6 +415,7 @@ fn decode_message(
             b.items.push((
                 id,
                 Item::Message(Message {
+                    participant,
                     role: if role == "user" {
                         MessageRole::User
                     } else {
@@ -504,7 +519,11 @@ pub(in crate::protocol::openai) fn encode_items_with(
                     InstructionAuthority::System => "system",
                     InstructionAuthority::Developer => "developer",
                 };
-                messages.push(json!({ "role": role, "content": content }));
+                let mut message = json!({ "role": role, "content": content });
+                if let Some(name) = &i.participant {
+                    message["name"] = json!(name.as_str());
+                }
+                messages.push(message);
             }
             Item::Message(m) => {
                 standalone_calls = false;
@@ -514,6 +533,9 @@ pub(in crate::protocol::openai) fn encode_items_with(
                     "assistant"
                 };
                 let mut message = json!({ "role": role });
+                if let Some(name) = &m.participant {
+                    message["name"] = json!(name.as_str());
+                }
                 crate::protocol::openai::chat::reasoning::write_carrier(
                     &mut message,
                     &std::mem::take(&mut reasoning),

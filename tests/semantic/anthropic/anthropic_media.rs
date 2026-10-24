@@ -172,6 +172,7 @@ fn document_context_preserves_per_use_presence_in_messages_and_tool_history() {
                 (
                     ItemId::new(1),
                     Item::Message(Message {
+                        participant: None,
                         role: MessageRole::User,
                         status: ItemLifecycle::Completed,
                         phase: None,
@@ -483,6 +484,7 @@ fn image_size_policy_belongs_to_each_use_not_the_resource_or_fidelity() {
         vec![(
             ItemId::new(1),
             Item::Message(Message {
+                participant: None,
                 role: MessageRole::User,
                 status: ItemLifecycle::Completed,
                 phase: None,
@@ -526,6 +528,7 @@ fn image_size_policy_belongs_to_each_use_not_the_resource_or_fidelity() {
             (
                 ItemId::new(1),
                 Item::Message(Message {
+                    participant: None,
                     role: MessageRole::User,
                     status: ItemLifecycle::Completed,
                     phase: None,

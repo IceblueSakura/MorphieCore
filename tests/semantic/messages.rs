@@ -79,6 +79,7 @@ mod message_envelopes {
             (
                 derived,
                 Item::Message(Message {
+                    participant: None,
                     role: MessageRole::Assistant,
                     parts: vec![Part {
                         replay: None,
@@ -266,6 +267,7 @@ mod message_ownership_owner {
             (
                 ItemId::new(1),
                 Item::Message(Message {
+                    participant: None,
                     role: MessageRole::Assistant,
                     parts: vec![],
                     status: ItemLifecycle::Completed,

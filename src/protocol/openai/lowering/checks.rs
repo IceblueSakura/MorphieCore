@@ -187,6 +187,9 @@ pub(super) fn text_items(
     crate::protocol::openai::content::citations::check_items(items, resources, profile)
         .map_err(|_| RepresentationError::TextMetadata)?;
     for (_, i) in items {
+        if i.participant().is_some() && (!request || profile != Profile::Chat) {
+            return Err(RepresentationError::UnmigratedSemantic);
+        }
         if !request
             && profile == Profile::Chat
             && matches!(i, Item::ToolResult(_) | Item::CustomResult(_))

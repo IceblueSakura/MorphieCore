@@ -143,6 +143,7 @@ fn resource_edits_preserve_original_usage_and_do_not_report_new_measurements() {
             vec![(
                 ItemId::new(1),
                 Item::Message(Message {
+                    participant: None,
                     role: MessageRole::Assistant,
                     status: ItemLifecycle::Completed,
                     phase: None,

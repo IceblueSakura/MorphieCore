@@ -75,6 +75,7 @@ fn selection_budgets_and_settings_are_validated() {
         vec![(
             ItemId::new(60),
             Item::Message(Message {
+                participant: None,
                 role: MessageRole::User,
                 parts: vec![Part::new(
                     PartId::new(60),
@@ -101,6 +102,7 @@ fn selection_budgets_and_settings_are_validated() {
         .transform(vec![ContextEdit::Replace {
             owner: ItemId::new(60),
             item: Item::Message(Message {
+                participant: None,
                 role: MessageRole::User,
                 parts: vec![Part::new(
                     PartId::new(60),
@@ -118,6 +120,7 @@ fn selection_budgets_and_settings_are_validated() {
         vec![(
             ItemId::new(61),
             Item::Message(Message {
+                participant: None,
                 role: MessageRole::User,
                 parts: vec![Part::new(
                     PartId::new(61),
@@ -179,6 +182,7 @@ fn mixed_successor_separates_client_results_and_provider_progress() {
             (
                 ItemId::new(5),
                 Item::Message(Message {
+                    participant: None,
                     role: MessageRole::Assistant,
                     parts: vec![Part {
                         replay: None,

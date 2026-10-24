@@ -17,7 +17,8 @@ pub(in crate::protocol::anthropic::messages) fn item_blocks(
     let media = |resource: &ResourceUse| Media::from_resource(resource.media(request.resources())?);
     Ok(match item {
         Item::Message(m) => {
-            if m.status != ItemLifecycle::Completed || m.phase.is_some() {
+            if m.status != ItemLifecycle::Completed || m.phase.is_some() || m.participant.is_some()
+            {
                 return Err(unsupported());
             }
             m.parts

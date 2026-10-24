@@ -37,6 +37,7 @@ fn typed(budget: Option<u64>) -> Request {
         vec![(
             ItemId::new(1),
             Item::Message(Message {
+                participant: None,
                 role: MessageRole::User,
                 status: ItemLifecycle::Completed,
                 phase: None,

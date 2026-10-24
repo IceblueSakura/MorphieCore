@@ -274,6 +274,7 @@ fn stable_refusal_details_have_independent_native_directions_and_guarded_deliver
             vec![(
                 id,
                 Item::Message(Message {
+                    participant: None,
                     role: MessageRole::Assistant,
                     status: ItemLifecycle::Completed,
                     phase: None,
@@ -873,6 +874,7 @@ fn ordered_system_blocks_and_disabled_controls_have_independent_semantic_owners(
             (
                 ItemId::new(1),
                 Item::Instruction(Instruction {
+                    participant: None,
                     authority: InstructionAuthority::System,
                     status: None,
                     parts: vec![
@@ -889,6 +891,7 @@ fn ordered_system_blocks_and_disabled_controls_have_independent_semantic_owners(
             (
                 ItemId::new(2),
                 Item::Message(Message {
+                    participant: None,
                     role: MessageRole::User,
                     status: ItemLifecycle::Completed,
                     phase: None,

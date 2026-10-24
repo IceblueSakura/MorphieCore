@@ -1060,6 +1060,7 @@ fn independent_empty_carriers_rebuild_once_and_share_aggregate_budgets() {
         items.push((
             ItemId::new(n),
             Item::Message(Message {
+                participant: None,
                 role: MessageRole::Assistant,
                 status: ItemLifecycle::Completed,
                 phase: None,
@@ -1089,6 +1090,7 @@ fn independent_empty_carriers_rebuild_once_and_share_aggregate_budgets() {
     let mut items = vec![(
         ItemId::new(1),
         Item::Message(Message {
+            participant: None,
             role: MessageRole::User,
             status: ItemLifecycle::Completed,
             phase: None,
@@ -1179,6 +1181,7 @@ fn restore_keeps_described_phase_and_drops_unsplittable_carriers() {
         vec![(
             ItemId::new(1),
             Item::Message(Message {
+                participant: None,
                 role: MessageRole::Assistant,
                 status: ItemLifecycle::Completed,
                 phase,

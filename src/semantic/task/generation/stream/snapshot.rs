@@ -38,6 +38,7 @@ impl StreamItem {
         };
         let item = match &i.kind {
             ItemKind::Message { phase } => Item::Message(Message {
+                participant: None,
                 role: MessageRole::Assistant,
                 status,
                 phase: *phase,

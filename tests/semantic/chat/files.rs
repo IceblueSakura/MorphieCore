@@ -62,6 +62,7 @@ fn typed_request(values: Vec<Resource>) -> Result<GenerationRequest, GenerationE
         vec![(
             ItemId::new(1),
             Item::Message(Message {
+                participant: None,
                 role: MessageRole::User,
                 parts,
                 status: ItemLifecycle::Completed,
@@ -247,6 +248,7 @@ fn request_lifetime_boundaries_have_independent_ir_and_reject_unrelated_ttls() {
             (
                 ItemId::new(1),
                 Item::Instruction(Instruction {
+                    participant: None,
                     authority: InstructionAuthority::System,
                     parts: vec![part],
                     status: None,
@@ -255,6 +257,7 @@ fn request_lifetime_boundaries_have_independent_ir_and_reject_unrelated_ttls() {
             (
                 ItemId::new(2),
                 Item::Message(Message {
+                    participant: None,
                     role: MessageRole::User,
                     phase: None,
                     status: ItemLifecycle::Completed,
@@ -350,6 +353,7 @@ fn request_lifetime_boundaries_have_independent_ir_and_reject_unrelated_ttls() {
     let mut generated = Part::new(PartId::new(1), ContentPart::Text(text("answer").into()));
     generated.cache = Some(PrefixCacheBoundary::RequestLifetime);
     items[0].1 = Item::Message(Message {
+        participant: None,
         role: MessageRole::Assistant,
         phase: None,
         status: ItemLifecycle::Completed,

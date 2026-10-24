@@ -65,6 +65,7 @@ impl Intake {
         self.items.push((
             id,
             Item::Instruction(Instruction {
+                participant: None,
                 authority: InstructionAuthority::System,
                 parts,
                 status: None,
@@ -153,6 +154,7 @@ impl Intake {
         let part = PartId::scoped(self.scope, id.get() * (MAX_ITEMS as u64 + 1));
         let item = match block {
             Block::Text(s) => Item::Message(Message {
+                participant: None,
                 role: if role == Role::User {
                     MessageRole::User
                 } else {
@@ -168,6 +170,7 @@ impl Intake {
                 phase: None,
             }),
             Block::Media(media) => Item::Message(Message {
+                participant: None,
                 role: MessageRole::User,
                 parts: vec![Part {
                     replay: None,

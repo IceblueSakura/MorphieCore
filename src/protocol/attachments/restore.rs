@@ -186,9 +186,10 @@ pub(super) fn restore_marker(
     for (id, item) in previous {
         match item {
             Item::Message(m) => {
-                if m.parts
-                    .iter()
-                    .any(|p| !matches!(p.content, ContentPart::Text(_)) || p.replay.is_some())
+                if m.participant.is_some()
+                    || m.parts
+                        .iter()
+                        .any(|p| !matches!(p.content, ContentPart::Text(_)) || p.replay.is_some())
                 {
                     return Err(unsupported());
                 }
@@ -259,6 +260,7 @@ pub(super) fn restore_marker(
                 (
                     owner,
                     Item::Message(Message {
+                        participant: None,
                         role: MessageRole::Assistant,
                         status: status.into(),
                         phase,

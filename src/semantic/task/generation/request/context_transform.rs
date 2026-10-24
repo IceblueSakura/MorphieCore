@@ -214,7 +214,8 @@ fn summarize(
     let values: Vec<_> = selected(&request.items, &sources)?.collect();
     let plain_message = |item: &Item| {
         matches!(item, Item::Message(m)
-            if m.phase.is_none()
+            if m.participant.is_none()
+                && m.phase.is_none()
                 && m.status == ItemLifecycle::Completed
                 && m.parts
                     .iter()
@@ -245,6 +246,7 @@ fn summarize(
     let sources: Vec<_> = values.iter().map(|(id, _)| *id).collect();
     request.items.retain(|(id, _)| !sources.contains(id));
     let summary = Message {
+        participant: None,
         role: MessageRole::User,
         parts: vec![Part::new(part, ContentPart::Text(text.into()))],
         status: ItemLifecycle::Completed,
@@ -313,7 +315,7 @@ pub(in crate::semantic::task::generation) fn check_protected_edits(
             return Err(GenerationError::InvalidContextTransform);
         }
         if let (Item::Instruction(old), Item::Instruction(new)) = (old, new) {
-            if old.authority != new.authority {
+            if old.authority != new.authority || old.participant != new.participant {
                 return Err(GenerationError::InvalidContextTransform);
             }
             for (other_position, (other, _)) in source.iter().enumerate() {
@@ -325,7 +327,9 @@ pub(in crate::semantic::task::generation) fn check_protected_edits(
             }
         }
         if let (Item::Message(old), Item::Message(new)) = (old, new)
-            && (old.role != new.role || old.phase != new.phase)
+            && (old.role != new.role
+                || old.phase != new.phase
+                || old.participant != new.participant)
         {
             return Err(GenerationError::InvalidContextTransform);
         }

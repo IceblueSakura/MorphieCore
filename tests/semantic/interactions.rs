@@ -1556,6 +1556,7 @@ fn tool_result_execution_reports_require_a_real_carrier() {
                 (
                     ItemId::new(1),
                     Item::Message(Message {
+                        participant: None,
                         role: MessageRole::User,
                         status: ItemLifecycle::Completed,
                         phase: None,

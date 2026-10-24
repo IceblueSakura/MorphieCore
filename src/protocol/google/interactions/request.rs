@@ -48,6 +48,13 @@ pub(super) fn project(
     target: &ReplayTarget,
     rules: &mut BTreeSet<RequestRule>,
 ) -> Result<Value, CodecError> {
+    if request
+        .items()
+        .iter()
+        .any(|(_, i)| i.participant().is_some())
+    {
+        return Err(unsupported());
+    }
     let s = request.settings();
     if s.prediction.is_some() {
         rules.insert(RequestRule::OmitPrediction);

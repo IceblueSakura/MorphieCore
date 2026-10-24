@@ -23,6 +23,7 @@ fn adapter(dialect: Dialect) -> Adapter {
 }
 fn message(role: MessageRole, id: u64, value: &str) -> Item {
     Item::Message(Message {
+        participant: None,
         role,
         status: ItemLifecycle::Completed,
         phase: None,
@@ -60,6 +61,7 @@ fn request(grouped: bool, stream: bool) -> Request {
             (
                 ItemId::new(1),
                 Item::Instruction(Instruction {
+                    participant: None,
                     authority: InstructionAuthority::Developer,
                     parts: vec![Part::new(PartId::new(1), text("ordered"))],
                     status: None,
@@ -178,6 +180,7 @@ fn response(grouped: bool, streamed: bool) -> DecodedResponse {
             (
                 ItemId::new(3),
                 Item::Message(Message {
+                    participant: None,
                     role: MessageRole::Assistant,
                     status: ItemLifecycle::Completed,
                     phase: Some(Phase::Commentary),

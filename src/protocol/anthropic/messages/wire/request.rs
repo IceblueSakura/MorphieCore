@@ -304,6 +304,8 @@ pub struct Tool {
     pub eager_input_streaming: Presence<bool>,
 }
 pub(in crate::protocol::anthropic::messages) const TOOL_FIELDS: &[&str] = &[
+    "type",
+    "allowed_callers",
     "name",
     "description",
     "input_schema",
@@ -316,6 +318,16 @@ pub(in crate::protocol::anthropic::messages) const TOOL_FIELDS: &[&str] = &[
 impl Tool {
     pub(in crate::protocol::anthropic::messages) fn read(v: &Value) -> Result<Self, CodecError> {
         let o = closed(v, TOOL_FIELDS)?;
+        match o.get("type") {
+            None | Some(Value::Null) => {}
+            Some(Value::String(kind)) if kind == "custom" => {}
+            _ => return Err(CodecError::Unsupported("Anthropic tool type".into())),
+        }
+        if let Some(callers) = o.get("allowed_callers")
+            && callers != &json!(["direct"])
+        {
+            return Err(CodecError::Unsupported("Anthropic tool dispatch".into()));
+        }
         let defer = presence(o, "defer_loading", boolean)?;
         nonnull(&defer)?;
         Ok(Self {

@@ -23,6 +23,8 @@ impl InputPart {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Instruction {
     pub authority: InstructionAuthority,
+    /// Model-visible participant label, independent of authority and tool identity.
+    pub participant: Option<Text>,
     pub parts: Vec<Part<Text>>,
     /// Non-complete lifecycle only. Omitted and explicit `completed` stay absent.
     pub status: Option<ItemLifecycle>,
@@ -81,6 +83,8 @@ impl<T> Part<T> {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Message {
     pub role: MessageRole,
+    /// Request-history participant label; not a generated-output observation.
+    pub participant: Option<Text>,
     pub parts: Vec<Part>,
     pub status: ItemLifecycle,
     pub phase: Option<Phase>,
@@ -144,6 +148,13 @@ impl ToolChange {
     }
 }
 impl Item {
+    pub fn participant(&self) -> Option<&Text> {
+        match self {
+            Self::Instruction(i) => i.participant.as_ref(),
+            Self::Message(m) => m.participant.as_ref(),
+            _ => None,
+        }
+    }
     /// All content-part identities owned by this item; operation IDs are separate.
     pub fn part_ids(&self) -> impl Iterator<Item = PartId> {
         let instructions: &[Part<Text>] = match self {

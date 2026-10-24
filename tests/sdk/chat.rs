@@ -65,14 +65,37 @@ pub(super) async fn handle(
     ) else {
         return failure(StatusCode::BAD_REQUEST, "Chat lowering", &state);
     };
-    if envelope::encode_request(&target, &request.context).is_err() {
+    let Ok(encoded) = envelope::encode_request(&target, &request.context) else {
         return failure(StatusCode::BAD_REQUEST, "Chat projection", &state);
-    }
+    };
     let turn = {
         let mut seen = state.0.lock().unwrap();
         seen.0 += 1;
         seen.0
     };
+    if turn <= 3 {
+        for (index, name) in ["policy", "author", "requester"].into_iter().enumerate() {
+            assert_eq!(encoded["messages"][index]["name"], name);
+            assert_eq!(
+                request.task.semantic.items()[index]
+                    .1
+                    .participant()
+                    .map(Text::as_str),
+                Some(name)
+            );
+        }
+        for (from, name) in [(2, "planner"), (3, "writer")] {
+            if turn >= from {
+                assert!(
+                    encoded["messages"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .any(|m| m["name"] == name)
+                );
+            }
+        }
+    }
     if turn > 3 {
         let grammar = request.task.semantic.tools().iter().any(|tool| matches!(tool,
             ToolDefinition::Custom(custom) if custom.name.as_str()=="sql"

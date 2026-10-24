@@ -89,6 +89,9 @@ pub(in crate::protocol::openai) fn check_message_carriers(
     groups: &[MessageEnvelope],
     profile: Profile,
 ) -> Result<(), CodecError> {
+    if profile != Profile::Chat && items.iter().any(|(_, i)| i.participant().is_some()) {
+        return Err(CodecError::Unsupported("participant carrier".into()));
+    }
     if items.iter().any(|(_, item)| {
         item.cache_boundaries()
             .any(|cache| profile == Profile::Chat || matches!(cache, PrefixCacheBoundary::Ttl(_)))

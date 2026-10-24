@@ -14,6 +14,7 @@ fn message(id: u64, value: &str) -> (ItemId, Item) {
     (
         ItemId::new(id),
         Item::Message(Message {
+            participant: None,
             role: MessageRole::User,
             parts: vec![Part {
                 replay: None,
@@ -110,6 +111,7 @@ impl Sample {
                 (
                     owner(1, 1),
                     Item::Message(Message {
+                        participant: None,
                         role: MessageRole::Assistant,
                         parts: vec![Part {
                             replay: None,
@@ -214,6 +216,7 @@ impl Sample {
                 (
                     ItemId::new(10),
                     Item::Instruction(Instruction {
+                        participant: None,
                         authority: InstructionAuthority::Developer,
                         parts: vec![Part::new(PartId::new(10), text("observe; do not execute"))],
                         status: None,

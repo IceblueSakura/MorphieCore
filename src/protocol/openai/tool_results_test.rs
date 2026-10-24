@@ -3,6 +3,28 @@ use crate::protocol::openai::*;
 use crate::semantic::{task::generation::*, value::Text};
 
 #[test]
+fn responses_final_encoding_and_managed_history_cannot_drop_participants() {
+    let request = Adapter::new(Profile::Chat, Dialect::Standard, None)
+        .decode_client_request(br#"{"model":"synthetic","messages":[{"role":"user","name":"alice","content":"hello"}]}"#)
+        .unwrap();
+    let forged = RequestRepresentation {
+        semantic: std::borrow::Cow::Borrowed(&request.task.semantic),
+        projection: vec![],
+        fidelity: &request.task.fidelity,
+        profile: Profile::Responses,
+        adaptation: Default::default(),
+    };
+    assert_eq!(
+        responses::encode_generation(&forged),
+        Err(CodecError::Unsupported("participant carrier".into()))
+    );
+    assert_eq!(
+        responses::managed::input_items(&request.task, "synthetic", None),
+        Err(CodecError::Unsupported("participant carrier".into()))
+    );
+}
+
+#[test]
 fn static_codecs_reject_new_domains_even_for_forged_target_handles() {
     let base = GenerationResponse::new(
         vec![(

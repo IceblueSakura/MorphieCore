@@ -30,6 +30,7 @@ fn message(id: u64, annotations: Vec<Annotation>) -> (ItemId, Item) {
     (
         ItemId::new(id),
         Item::Message(Message {
+            participant: None,
             role: MessageRole::Assistant,
             status: ItemLifecycle::Completed,
             phase: None,

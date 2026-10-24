@@ -185,6 +185,7 @@ pub(crate) fn project(
             parts.truncate(1);
         }
         let message = Item::Message(Message {
+            participant: None,
             role: MessageRole::Assistant,
             parts,
             status,

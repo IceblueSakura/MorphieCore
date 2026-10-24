@@ -228,6 +228,7 @@ impl GenerationRequest {
             items.push((
                 fresh,
                 Item::Message(Message {
+                    participant: None,
                     role: MessageRole::Assistant,
                     parts,
                     status: reasoning.status,

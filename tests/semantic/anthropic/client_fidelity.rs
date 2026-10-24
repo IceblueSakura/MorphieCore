@@ -18,6 +18,7 @@ fn response() -> DecodedResponse {
             vec![(
                 ItemId::new(1),
                 Item::Message(Message {
+                    participant: None,
                     role: MessageRole::Assistant,
                     status: ItemLifecycle::Completed,
                     phase: None,
@@ -135,6 +136,7 @@ fn messages_tool_examples_keep_order_presence_and_tool_change_owners() {
             (
                 ItemId::new(1),
                 Item::Message(Message {
+                    participant: None,
                     role: MessageRole::User,
                     status: ItemLifecycle::Completed,
                     phase: None,
@@ -1452,12 +1454,19 @@ fn client_intake_carries_caps_and_rejects_active_fields_it_cannot_carry() {
     let mut stored = body.clone();
     stored["store"] = json!(false);
     assert!(decode(&stored).is_ok());
-    // A participant name is model-visible and has no carrier.
+    // Official request names belong to the message, not a tool or fidelity record.
     let mut named = body.clone();
     named["messages"][0]["name"] = json!("alice");
-    assert!(decode(&named).is_err());
+    assert_eq!(
+        decode(&named).unwrap().task.semantic.items()[0]
+            .1
+            .participant()
+            .unwrap()
+            .as_str(),
+        "alice"
+    );
     named["messages"][0]["name"] = serde_json::Value::Null;
-    assert!(decode(&named).is_ok());
+    assert!(decode(&named).is_err());
     // Assistant history may mix text and refusal parts; both keep their kinds.
     let mut refused = body.clone();
     refused["messages"] = json!([{"role":"user","content":"go"},

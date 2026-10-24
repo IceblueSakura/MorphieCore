@@ -208,6 +208,7 @@ fn requests_reject_unselected_controls_while_incidental_reports_project() {
             vec![(
                 ItemId::new(1),
                 Item::Message(Message {
+                    participant: None,
                     role: MessageRole::Assistant,
                     phase: None,
                     status: ItemLifecycle::Completed,

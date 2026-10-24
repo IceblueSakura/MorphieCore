@@ -148,9 +148,6 @@ fn blocks(v: &mut Value, ignored: &mut BTreeSet<String>) -> Result<(), CodecErro
 }
 /// Close a tool definition without filtering examples or other known model input.
 fn tool_fields(t: &mut Value, ignored: &mut BTreeSet<String>) -> Result<(), CodecError> {
-    if t.get("allowed_callers").is_some() {
-        return Err(CodecError::Unsupported("Anthropic tool dispatch".into()));
-    }
     keep(t, wire::request::TOOL_FIELDS, ignored);
     if let Some(cache) = t.get_mut("cache_control") {
         keep(cache, &["type", "ttl"], ignored);
@@ -220,6 +217,7 @@ pub fn decode_client_request(bytes: &[u8]) -> Result<Request, CodecError> {
             WireText::Blocks(parts) if !parts.is_empty() => intake.items.push((
                 ItemId::scoped(scope, 1),
                 Item::Instruction(Instruction {
+                    participant: None,
                     authority: InstructionAuthority::System,
                     status: None,
                     parts: parts

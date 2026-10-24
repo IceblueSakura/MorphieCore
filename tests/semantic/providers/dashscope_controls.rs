@@ -12,6 +12,7 @@ use serde_json::{Value, json};
 
 fn message(role: MessageRole, part: u64, value: &str) -> Item {
     Item::Message(Message {
+        participant: None,
         role,
         status: ItemLifecycle::Completed,
         phase: None,

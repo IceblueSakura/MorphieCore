@@ -158,6 +158,7 @@ fn client_text_history_shorthand_does_not_relax_annotations() {
         vec![(
             ItemId::new(1),
             Item::Message(Message {
+                participant: None,
                 role: MessageRole::Assistant,
                 phase: None,
                 status: ItemLifecycle::Completed,

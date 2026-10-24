@@ -28,6 +28,7 @@ pub(crate) fn decode_generation_in(
             b.items.push((
                 id,
                 Item::Message(Message {
+                    participant: None,
                     role: MessageRole::User,
                     parts: vec![part],
                     status: ItemLifecycle::Completed,

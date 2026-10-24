@@ -363,6 +363,7 @@ fn owned_replay_belongs_to_assistant_text_and_calls_with_final_values() {
         let mut part = Part::new(PartId::new(2), content);
         part.replay = Some(replay);
         Item::Message(Message {
+            participant: None,
             role,
             status,
             phase: None,
@@ -386,6 +387,7 @@ fn owned_replay_belongs_to_assistant_text_and_calls_with_final_values() {
                 (
                     ItemId::new(1),
                     Item::Message(Message {
+                        participant: None,
                         role: MessageRole::User,
                         status: ItemLifecycle::Completed,
                         phase: None,
@@ -418,6 +420,7 @@ fn owned_replay_belongs_to_assistant_text_and_calls_with_final_values() {
         ReplayValue::final_value(ReplayFormat::GoogleGenerateContentPart, text("s"));
     for invalid in [
         Item::Instruction(Instruction {
+            participant: None,
             authority: InstructionAuthority::System,
             parts: vec![instruction],
             status: None,

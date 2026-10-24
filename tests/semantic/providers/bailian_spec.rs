@@ -32,6 +32,7 @@ fn request(settings: GenerationSettings) -> Request {
         vec![(
             ItemId::new(1),
             Item::Message(Message {
+                participant: None,
                 role: MessageRole::User,
                 status: ItemLifecycle::Completed,
                 phase: None,

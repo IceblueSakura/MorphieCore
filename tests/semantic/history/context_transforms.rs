@@ -8,6 +8,7 @@ fn message(id: u64, s: &str) -> (ItemId, Item) {
     (
         ItemId::new(id),
         Item::Message(Message {
+            participant: None,
             role: MessageRole::User,
             parts: vec![Part {
                 replay: None,
@@ -30,6 +31,67 @@ fn source() -> GenerationRequest {
         GenerationControls::default(),
     )
     .unwrap()
+}
+#[test]
+fn participant_labels_survive_selection_and_cannot_be_reattributed_under_the_same_owner() {
+    let (id, mut item) = message(1, "hello");
+    let Item::Message(m) = &mut item else {
+        unreachable!()
+    };
+    m.participant = Some(text("alice"));
+    let source = GenerationRequest::new(vec![(id, item.clone())], Default::default()).unwrap();
+    let selected = ClientManaged::new(Default::default())
+        .unwrap()
+        .select_request(&source)
+        .unwrap()
+        .build()
+        .unwrap();
+    assert_eq!(selected.items()[0].1.participant(), Some(&text("alice")));
+    let mut edited = item.clone();
+    let Item::Message(m) = &mut edited else {
+        unreachable!()
+    };
+    m.participant = None;
+    assert_eq!(
+        source.clone().with_items(vec![(id, edited)]),
+        Err(GenerationError::InvalidContextTransform)
+    );
+    assert!(
+        source
+            .clone()
+            .transform(vec![ContextEdit::Summary {
+                sources: vec![id],
+                owner: ItemId::new(9),
+                part: PartId::new(9),
+                text: text("summary")
+            }])
+            .is_err()
+    );
+    let mut oversized = item;
+    let Item::Message(m) = &mut oversized else {
+        unreachable!()
+    };
+    m.participant = Some(
+        Text::allowing_empty("x".repeat(MAX_TEXT_BYTES + 1), "synthetic", MAX_TOTAL_BYTES).unwrap(),
+    );
+    assert_eq!(
+        GenerationRequest::new(vec![(id, oversized)], Default::default()),
+        Err(GenerationError::Limit)
+    );
+    let mut items = vec![message(1, "one"), message(2, "two")];
+    let label =
+        Text::allowing_empty("x".repeat(MAX_TEXT_BYTES), "synthetic", MAX_TEXT_BYTES).unwrap();
+    for (_, item) in &mut items {
+        let Item::Message(m) = item else {
+            unreachable!()
+        };
+        m.participant = Some(label.clone());
+    }
+    assert_eq!(
+        GenerationRequest::new(items, Default::default()),
+        Err(GenerationError::Limit)
+    );
+    assert_eq!(source.items()[0].1.participant(), Some(&text("alice")));
 }
 #[test]
 fn atomic_edits_report_ids_preserve_source_and_do_not_leak_bodies() {
@@ -108,6 +170,7 @@ fn external_summary_is_new_user_content_with_explicit_sources_and_no_old_authori
     );
     let mut items = source.items().to_vec();
     items[0].1 = Item::Instruction(Instruction {
+        participant: None,
         authority: InstructionAuthority::Developer,
         parts: vec![Part::new(PartId::new(1), text("protected"))],
         status: None,

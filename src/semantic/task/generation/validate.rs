@@ -116,6 +116,12 @@ pub fn items(
             return Err(GenerationError::InvalidResponse);
         }
         charge(&mut bytes, usize::from(item.has_cache_breakpoints()) * 32)?;
+        if let Some(participant) = item.participant() {
+            if response {
+                return Err(GenerationError::InvalidResponse);
+            }
+            add(&mut bytes, participant.as_str())?;
+        }
         match item {
             Item::Instruction(i) => {
                 if response {

@@ -14,6 +14,7 @@ fn source() -> DecodedResponse {
         (
             ItemId::new(id),
             Item::Message(Message {
+                participant: None,
                 role: MessageRole::Assistant,
                 status: ItemLifecycle::Completed,
                 phase,
@@ -142,6 +143,30 @@ fn phase_only_manifest_preserves_boundaries_and_native_responses_stay_exact() {
     let standard = ClientAdapter::openai(
         Adapter::new(Profile::Chat, Dialect::Standard, None),
         TargetCaps::full(),
+    );
+    let chat = client(ClientProtocol::Chat);
+    let (_, body) = chat.snapshot(source.clone()).unwrap();
+    let mut named = returned(ClientProtocol::Chat, &body);
+    named["messages"][1]["name"] = json!("planner");
+    let decoded = chat
+        .decode_client_request(named.to_string().as_bytes())
+        .unwrap();
+    assert_eq!(
+        decoded.task.semantic.items()[1]
+            .1
+            .participant()
+            .map(Text::as_str),
+        Some("planner")
+    );
+    assert!(!crate::protocol::phase::has_phase(
+        decoded.task.semantic.items()
+    ));
+    assert!(
+        decoded
+            .task
+            .fidelity
+            .normalizations()
+            .contains(&crate::protocol::fidelity::REPLAY_MANIFEST_OMISSION)
     );
     assert!(standard.snapshot(source.clone()).is_err());
     assert_eq!(source, before);

@@ -155,6 +155,7 @@ impl Profile {
                 intake.items.push((
                     ItemId::scoped(scope, 1),
                     Item::Instruction(Instruction {
+                        participant: None,
                         authority: InstructionAuthority::System,
                         status: None,
                         parts: parts
@@ -439,6 +440,13 @@ pub(in crate::protocol::anthropic::messages) fn project(
     omitted: &mut Vec<ItemId>,
     rules: &mut BTreeSet<RequestRule>,
 ) -> Result<super::Request, CodecError> {
+    if request
+        .items()
+        .iter()
+        .any(|(_, i)| i.participant().is_some())
+    {
+        return Err(unsupported());
+    }
     let s = request.settings();
     if s.prediction.is_some() {
         rules.insert(RequestRule::OmitPrediction);

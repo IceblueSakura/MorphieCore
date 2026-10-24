@@ -482,6 +482,7 @@ pub(in crate::protocol::openai) fn decode_items(
                         parts.push(part);
                     }
                     Item::Instruction(Instruction {
+                        participant: None,
                         authority: if role == "system" {
                             InstructionAuthority::System
                         } else {
@@ -581,6 +582,7 @@ pub(in crate::protocol::openai) fn decode_items(
                         return Err(CodecError::Invalid("completed item"));
                     }
                     Item::Message(Message {
+                        participant: None,
                         role,
                         parts,
                         status,
@@ -672,6 +674,9 @@ pub(in crate::protocol::openai) fn encode_items(
     response: bool,
     resources: &ResourceTable,
 ) -> Result<Vec<Value>, CodecError> {
+    if items.iter().any(|(_, i)| i.participant().is_some()) {
+        return Err(CodecError::Unsupported("participant carrier".into()));
+    }
     let mut out = vec![];
     for (id, item) in items {
         let mut v = match item {
