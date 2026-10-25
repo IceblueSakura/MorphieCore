@@ -22,6 +22,15 @@ use std::{
 use tower::ServiceExt;
 
 fn gateway(origin: &str) -> Gateway {
+    gateway_with_limits(
+        origin,
+        Limits {
+            concurrency: 1,
+            ..Default::default()
+        },
+    )
+}
+fn gateway_with_limits(origin: &str, limits: Limits) -> Gateway {
     Gateway::new(
         super::topology::topology_at(origin),
         crate::gateway::TaskEntries {
@@ -38,10 +47,7 @@ fn gateway(origin: &str) -> Gateway {
             Arc::new(SecretMaterial::new("synthetic-upstream-credential-0001").unwrap()),
         )]),
         SecretMaterial::new(KEY).unwrap(),
-        Limits {
-            concurrency: 1,
-            ..Default::default()
-        },
+        limits,
         None,
     )
     .unwrap()
@@ -300,6 +306,8 @@ async fn stored_json_and_sse_support_tool_continuation_retrieval_and_independent
 
 #[tokio::test]
 async fn abandoned_stored_stream_is_not_retrievable_and_auth_precedes_lookup() {
+    // This case drops before final staging; the unpolled JSON case below covers
+    // a reservation already transferred into the outgoing body.
     let upstream = Router::new().route(
         "/responses",
         post(|| async {
@@ -381,6 +389,81 @@ async fn abandoned_stored_stream_is_not_retrievable_and_auth_precedes_lookup() {
             .unwrap();
         assert_eq!(response.status(), 401);
     }
+    gate.shutdown();
+    server.abort();
+}
+
+#[tokio::test]
+async fn timed_out_unpolled_body_releases_staged_history_without_consumer_cleanup() {
+    let upstream = Router::new().route(
+        "/responses",
+        post(|| async {
+            Json(
+                json!({"id":"wire-response","object":"response","model":"private-fixture",
+            "created_at":1,"status":"completed","output":[]}),
+            )
+        }),
+    );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let gate = gateway_with_limits(
+        &format!("http://{}", listener.local_addr().unwrap()),
+        Limits {
+            concurrency: 1,
+            history_entries: 1,
+            exchange_timeout: Duration::from_millis(200),
+            ..Default::default()
+        },
+    );
+    let server = tokio::spawn(async move { axum::serve(listener, upstream).await.unwrap() });
+    let request = json!({"model":"fixture-model","input":"first","store":true});
+    let unpolled = send(&gate, "POST", "/v1/responses", request.clone()).await;
+    assert_eq!(unpolled.status(), 200);
+    // Producer completion, not a body poll or TTL, must reclaim the reservation.
+    let permit = tokio::time::timeout(
+        Duration::from_secs(2),
+        gate.state.permits.clone().acquire_owned(),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    drop(permit);
+    let next = send(&gate, "POST", "/v1/responses", request).await;
+    assert_eq!(next.status(), 200);
+    let mut body = next.into_body().into_data_stream();
+    let bytes = body.next().await.unwrap().unwrap();
+    // Final handoff wins: abort immediately, before the producer resumes.
+    // Its reservation guard must not revoke an already published snapshot.
+    drop(body);
+    let next: Value = serde_json::from_slice(&bytes).unwrap();
+    let id = next["id"].as_str().unwrap();
+    assert!(
+        gate.state
+            .history
+            .get(id, tokio::time::Instant::now())
+            .is_ok()
+    );
+    let permit = tokio::time::timeout(
+        Duration::from_secs(2),
+        gate.state.permits.clone().acquire_owned(),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    drop(permit);
+    assert_eq!(
+        send(&gate, "GET", &format!("/v1/responses/{id}"), Value::Null)
+            .await
+            .status(),
+        200
+    );
+    assert!(to_bytes(unpolled.into_body(), 1 << 20).await.is_err());
+    // Cleanup of the old failed body cannot revoke the newly published response.
+    assert_eq!(
+        send(&gate, "GET", &format!("/v1/responses/{id}"), Value::Null)
+            .await
+            .status(),
+        200
+    );
     gate.shutdown();
     server.abort();
 }

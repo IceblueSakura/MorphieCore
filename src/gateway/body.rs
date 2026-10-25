@@ -2,8 +2,6 @@
 //! each candidate owns a fresh decoder/delivery, and visibility forbids advancement.
 #[cfg(test)]
 mod tests;
-#[cfg(test)]
-use crate::gateway::BoundCandidate;
 use crate::gateway::{
     ApiError, BoundEntry, Limits,
     diagnostics::{Outcome, Stage, Trace},
@@ -33,7 +31,15 @@ pub(super) struct Chunk {
     ack: oneshot::Sender<()>,
     evidence_ack: Option<crate::execution::report::FrameAck>,
     audio_content_type: Option<&'static str>,
-    history: Option<crate::gateway::generation::history::Reservation>,
+    history: Option<Arc<Mutex<Option<crate::gateway::generation::history::Reservation>>>>,
+}
+/// The producer can revoke a queued reservation without another consumer poll.
+/// The same lock serializes revocation with final acknowledgment/publication.
+struct HistoryHandoff(Arc<Mutex<Option<crate::gateway::generation::history::Reservation>>>);
+impl Drop for HistoryHandoff {
+    fn drop(&mut self) {
+        self.0.lock().expect("history handoff").take();
+    }
 }
 pub(super) enum ResponseType {
     Json,
@@ -46,7 +52,7 @@ pub(super) enum Message {
 }
 #[derive(Default)]
 pub(super) struct Status {
-    failed: AtomicBool,
+    error: Mutex<Option<ApiError>>,
     complete: AtomicBool,
     pub(super) published: AtomicBool,
     /// Explicit wait attribution; the last trace stage is not a wait state.
@@ -78,7 +84,7 @@ impl Stream for Output {
         if self.ended {
             return Poll::Ready(None);
         }
-        if self.status.failed.load(Ordering::Acquire) {
+        if self.status.error.lock().expect("delivery status").is_some() {
             self.ended = true;
             return Poll::Ready(Some(Err(std::io::Error::other("upstream stream failed"))));
         }
@@ -90,6 +96,10 @@ impl Stream for Output {
         match item {
             Poll::Pending => Poll::Pending,
             Poll::Ready(Some(Message::Chunk(chunk))) => {
+                let mut history = chunk
+                    .history
+                    .as_ref()
+                    .map(|h| h.lock().expect("history handoff"));
                 let accepted = match chunk.evidence_ack {
                     Some(evidence) => evidence.acknowledge(|| chunk.ack.send(()).is_ok()),
                     None => chunk.ack.send(()).is_ok(),
@@ -98,8 +108,8 @@ impl Stream for Output {
                     self.ended = true;
                     Poll::Ready(Some(Err(std::io::Error::other("delivery cancelled"))))
                 } else {
-                    if let Some(history) = chunk.history {
-                        history.publish(Instant::now());
+                    if let Some(reservation) = history.as_mut().and_then(|h| h.take()) {
+                        reservation.publish(Instant::now());
                     }
                     Poll::Ready(Some(Ok(chunk.bytes)))
                 }
@@ -208,6 +218,8 @@ async fn send_chunk(
     lane.state.waiting_upstream.store(false, Ordering::Release);
     let size = bytes.len();
     let (ack, seen) = oneshot::channel();
+    let history =
+        history.map(|reservation| HistoryHandoff(Arc::new(Mutex::new(Some(reservation)))));
     // Publication freezes advancement; acknowledgement alone proves body handoff.
     lane.state.published.store(true, Ordering::Release);
     trace.report.update(|a| a.published = true);
@@ -217,7 +229,7 @@ async fn send_chunk(
             ack,
             evidence_ack,
             audio_content_type,
-            history,
+            history: history.as_ref().map(|h| h.0.clone()),
         }))
         .await
         .map_err(|_| {
@@ -346,34 +358,6 @@ impl Producer {
         }
     }
 }
-#[cfg(test)]
-#[allow(clippy::too_many_arguments)]
-async fn respond(
-    entry: Arc<BoundEntry>,
-    candidate: Arc<BoundCandidate>,
-    request: Request,
-    upstream: reqwest::Response,
-    limits: &Limits,
-    deadline: Instant,
-    shutdown: tokio_util::sync::CancellationToken,
-    permit: OwnedSemaphorePermit,
-    trace: Trace,
-) -> Result<Response, ApiError> {
-    respond_source(
-        entry,
-        request,
-        Upstreams::Observed {
-            candidate,
-            response: upstream,
-        },
-        limits.clone(),
-        deadline,
-        shutdown,
-        permit,
-        trace,
-    )
-    .await
-}
 #[allow(clippy::too_many_arguments)]
 pub(super) async fn respond_source(
     entry: Arc<BoundEntry>,
@@ -437,23 +421,35 @@ pub(super) async fn respond_producer(
                 worker_state.complete.store(true, Ordering::Release);
             }
             Err(error) => {
+                trace
+                    .report
+                    .public_failure(error.code, error.status.as_u16());
                 trace.outcome(match error.code {
                     "upstream_timeout" => Outcome::Timeout,
                     "shutting_down" => Outcome::Shutdown,
                     _ => Outcome::Error,
                 });
-                worker_state.failed.store(true, Ordering::Release);
+                *worker_state.error.lock().expect("delivery status") = Some(error);
                 let _ = tx.try_send(Message::Error(error));
             }
         }
     });
     let abort = worker.abort_handle();
     let first = match rx.recv().await {
-        Some(Message::Chunk(chunk)) if !state.failed.load(Ordering::Acquire) => {
+        Some(Message::Chunk(chunk)) => {
+            if let Some(error) = *state.error.lock().expect("delivery status") {
+                return Err(error);
+            }
             Message::Chunk(chunk)
         }
         Some(Message::Error(error)) => return Err(error),
-        _ => return Err(ApiError::upstream()),
+        _ => {
+            return Err(state
+                .error
+                .lock()
+                .expect("delivery status")
+                .unwrap_or_else(ApiError::upstream));
+        }
     };
     let content_type = match (&response_type, &first) {
         (ResponseType::Audio, Message::Chunk(chunk)) => {

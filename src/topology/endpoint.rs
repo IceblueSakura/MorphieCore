@@ -183,8 +183,8 @@ impl Endpoint {
         &self,
         request: &crate::adapter::Request,
     ) -> Result<serde_json::Value, crate::adapter::ConversionFailure> {
-        self.encode_request_with_rules(request)
-            .map(|(value, _)| value)
+        self.encode_request_with_evidence(request)
+            .map(|projection| projection.value)
     }
     /// The body plus the names of the degradable rules applied to it.
     pub fn encode_request_with_rules(

@@ -1,4 +1,4 @@
-//! Source-derived requirements; ignored probes remain unmet, not expected-failure passes.
+//! Source-derived contracts with independent directional expectations.
 //! Sources and scope: docs/refs/2026-10-23-stable-protocol-contracts.md.
 use morphiecore::protocol::{
     anthropic::messages::client::decode_client_request,
@@ -12,6 +12,66 @@ fn adapter(profile: Profile) -> Adapter {
 }
 fn messages() -> Value {
     json!({"model":"public", "max_tokens":32, "messages":[{"role":"user","content":"Hello"}]})
+}
+
+#[test]
+fn chat_function_contract_distinguishes_omission_null_and_target_name_grammar() {
+    let chat = adapter(Profile::Chat);
+    let responses = adapter(Profile::Responses);
+    let base = json!({"model":"public","messages":[{"role":"user","content":"go","name":"participant with spaces"}],
+        "tools":[{"type":"function","function":{"name":"lookup","strict":null}}]});
+    chat.decode_client_request(base.to_string().as_bytes())
+        .unwrap();
+    for field in ["description", "parameters"] {
+        let mut bad = base.clone();
+        bad["tools"][0]["function"][field] = Value::Null;
+        assert!(
+            chat.decode_client_request(bad.to_string().as_bytes())
+                .is_err(),
+            "{field}"
+        );
+        assert!(
+            chat.decode_request(bad.to_string().as_bytes()).is_err(),
+            "{field}"
+        );
+    }
+    let mut custom = base.clone();
+    custom["tools"] = json!([{"type":"custom","custom":{"name":"lookup","description":null}}]);
+    assert!(
+        chat.decode_client_request(custom.to_string().as_bytes())
+            .is_err()
+    );
+    let nullable = json!({"model":"public","input":"go","tools":[{
+        "type":"function","name":"lookup","description":null,"parameters":null,"strict":false}]});
+    responses
+        .decode_client_request(nullable.to_string().as_bytes())
+        .unwrap();
+    for name in [
+        "bad name".to_owned(),
+        "a".repeat(65),
+        "工具".to_owned(),
+        "a".repeat(64),
+    ] {
+        let valid = name == "a".repeat(64);
+        let mut wire = base.clone();
+        wire["tools"][0]["function"]["name"] = json!(name);
+        assert_eq!(
+            chat.decode_client_request(wire.to_string().as_bytes())
+                .is_ok(),
+            valid
+        );
+        // Build the target input independently from the broader Responses carrier.
+        let mut native = nullable.clone();
+        native["tools"][0]["name"] = json!(name);
+        let request = responses
+            .decode_client_request(native.to_string().as_bytes())
+            .unwrap();
+        assert_eq!(
+            chat.encode_request(&request, "public", &TargetCaps::full())
+                .is_ok(),
+            valid
+        );
+    }
 }
 
 #[test]

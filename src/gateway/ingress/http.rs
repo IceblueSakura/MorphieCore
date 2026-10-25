@@ -214,7 +214,6 @@ pub(in crate::gateway) async fn handle(
         }
     };
     semantic.conversation = Some(conversation);
-    trace.request_intake(std::mem::take(&mut semantic.task.evidence));
     trace.ignored_fields(std::mem::take(&mut semantic.ignored_fields));
     let timeout = entry
         .policy

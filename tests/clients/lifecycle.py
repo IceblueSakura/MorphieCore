@@ -360,7 +360,7 @@ def main():
             gateway.process.send_signal(signal.SIGINT)
             gateway.wait(timeout=5)
         records = [json.loads(line) for line in (root / "diagnostics.jsonl").read_text().splitlines()]
-        check(all(r.get("event") in ("file", "request") for r in records), "lifecycle_diagnostic_loss")
+        check(all(r.get("event") in ("file", "request", "log", "span") for r in records), "lifecycle_diagnostic_loss")
         requests = [r for r in records if r.get("event") == "request"]
         check(len(requests) == 2 and requests[0]["outcome"] != "complete" and requests[1]["outcome"] == "complete",
               "cancelled_or_recovered_gateway_outcome")

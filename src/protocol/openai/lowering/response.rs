@@ -192,10 +192,6 @@ fn validate_response(
     {
         return Err(RepresentationError::Reasoning);
     }
-    // `system_fingerprint` is a Chat reported fact with no Responses wire position.
-    if profile == Profile::Responses && !metadata.context.system_fingerprint.is_absent() {
-        return Err(RepresentationError::SystemFingerprint);
-    }
     // Phase labels are Responses-only; reject instead of dropping the label.
     if profile == Profile::Chat
         && r.items()

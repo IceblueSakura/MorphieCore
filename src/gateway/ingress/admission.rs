@@ -177,7 +177,9 @@ pub(in crate::gateway) fn prepare_responses(
             previous.as_ref().map(|old| (&old.input, &old.response)),
         )?;
         if options.store {
-            input = Some(request.task.clone());
+            let mut retained = request.task.clone();
+            retained.evidence = Default::default();
+            input = Some(retained);
         }
         Ok(request)
     })?;
@@ -226,6 +228,9 @@ fn prepare_in(
         );
         ApiError::invalid()
     })?;
+    // Decode/replay validation is one checked intake unit. Later public
+    // admission cannot erase it or assign it to a candidate attempt.
+    report.intake(std::mem::take(&mut request.task.evidence));
     crate::execution::admit(&entry.public, &request).map_err(|error| {
         report.failure(
             Some(crate::lowering::generation::ConversionBoundary::RequestProject),

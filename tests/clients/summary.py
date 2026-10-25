@@ -87,7 +87,7 @@ def assert_summary(body, native, path, prefix=False):
         check(body["thinking"] == {"type": "adaptive", "display": "summarized",
                                   "block_binding": {"prefix_mismatch_behavior": "drop_block"}},
               "summary_thinking")
-        check(body["output_config"] == {"effort": "high"}, "summary_root_effort")
+        check(body["output_config"] == {"effort": "low"}, "summary_root_effort")
         controls = [m for m in messages if m["role"] == "system"]
         check(bool(controls) and all(m["content"] == [] and m["output_config"] == {"effort": "low"}
                                     for m in controls), "summary_ordered_effort")
@@ -301,7 +301,7 @@ def main():
             gateway.process.send_signal(signal.SIGINT)
             gateway.wait(timeout=5)
             records = [json.loads(line) for line in (root / "diagnostics.jsonl").read_text().splitlines()]
-            check(all(r.get("event") in ("file", "request") for r in records), "summary_logging_loss")
+            check(all(r.get("event") in ("file", "request", "log", "span") for r in records), "summary_logging_loss")
             requests = [r for r in records if r.get("event") == "request"]
             check(len(requests) == len(state.order)
                   and [r["outcome"] for r in requests] ==

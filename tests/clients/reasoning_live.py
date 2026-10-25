@@ -172,7 +172,7 @@ class State:
         check(self.owner.process.returncode == 0, "live_gateway_shutdown")
         root = self.owner.root
         diagnostics = [json.loads(line) for line in (root / "diagnostics.jsonl").read_text().splitlines()]
-        check(all(record.get("event") in ("file", "request") for record in diagnostics), "live_diagnostic_loss")
+        check(all(record.get("event") in ("file", "request", "log", "span") for record in diagnostics), "live_diagnostic_loss")
         requests = [record for record in diagnostics if record.get("event") == "request"]
         check(len(requests) == len(self.owner.requests) == self.received_requests == BUDGET,
               "live_actual_request_count")

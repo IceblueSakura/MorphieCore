@@ -21,7 +21,7 @@ class ClientSummaryOracles(unittest.TestCase):
                 "stream": True, "tools": [tool], "messages": []}
         if native:
             body.update(max_tokens=2048, thinking={"type": "adaptive", "display": "summarized",
-                "block_binding": {"prefix_mismatch_behavior": "drop_block"}}, output_config={"effort": "high"})
+                "block_binding": {"prefix_mismatch_behavior": "drop_block"}}, output_config={"effort": "low"})
             body["messages"] = [{"role": "system", "content": [], "output_config": {"effort": "low"}}]
         else:
             body.update(max_completion_tokens=2048, reasoning_effort="low")

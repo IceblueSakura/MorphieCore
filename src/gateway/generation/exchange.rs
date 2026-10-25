@@ -104,12 +104,17 @@ pub(in crate::gateway) async fn produce_chain(
     };
     let mut chain = Chain::new(&candidates, &entry.policy);
     let mut blocked_delay: Option<u64> = None;
+    let mut blocked_health = None;
+    let mut pending_error = None;
     for (index, candidate) in candidates.iter().enumerate() {
         if let Some(reason) = chain.skip(index) {
             trace.selection_skip(reason);
             continue;
         }
         if Instant::now() >= deadline {
+            if let Some(code) = pending_error.take() {
+                trace.end_candidate(Some(code), false);
+            }
             return Err(ApiError::timeout());
         }
         let lease = if let Some(runtime) = &runtime {
@@ -121,7 +126,11 @@ pub(in crate::gateway) async fn produce_chain(
                             delay.min(observation.retry_after_seconds)
                         }),
                     );
-                    trace.health(observation);
+                    if pending_error.is_some() {
+                        blocked_health = Some(observation);
+                    } else {
+                        trace.health(observation);
+                    }
                     trace.selection_skip(observation.reason);
                     continue;
                 }
@@ -129,6 +138,11 @@ pub(in crate::gateway) async fn produce_chain(
         } else {
             None
         };
+        if let Some(code) = pending_error.take() {
+            trace.report.update(|a| a.advanced = true);
+            trace.end_candidate(Some(code), true);
+        }
+        blocked_health = None;
         chain.begin(index);
         trace.begin_candidate(chain.attempts);
         trace.probe(lease.as_ref().is_some_and(|lease| lease.probing));
@@ -290,7 +304,6 @@ pub(in crate::gateway) async fn produce_chain(
                     && error.fallback.is_some()
                     && Instant::now() < deadline
                     && (index + 1..candidates.len()).any(|next| chain.skip(next).is_none());
-                trace.report.update(|a| a.advanced = advance);
                 if !advance {
                     trace.selection_stop(if state.published.load(Ordering::Acquire) {
                         "published"
@@ -306,9 +319,17 @@ pub(in crate::gateway) async fn produce_chain(
                     trace.end_candidate(Some(error.code), false);
                     return Err(error);
                 }
-                trace.end_candidate(Some(error.code), true);
+                // Permission to advance is not an observed successor attempt.
+                trace.report.end(false);
+                pending_error = Some(error.code);
             }
         }
+    }
+    if let Some(code) = pending_error {
+        trace.end_candidate(Some(code), false);
+    }
+    if let Some(observation) = blocked_health {
+        trace.health(observation);
     }
     trace.selection_stop(if blocked_delay.is_some() {
         "unavailable"
@@ -324,9 +345,17 @@ pub(in crate::gateway) async fn run(
     history: Option<Box<super::history::Pending>>,
     deadline: Instant,
     permit: OwnedSemaphorePermit,
-    trace: Trace,
+    mut trace: Trace,
 ) -> Result<Response, ApiError> {
-    let candidates = entry.eligible(&request)?;
+    let candidates = entry.eligible(&request).map_err(|cause| {
+        let error = ApiError::invalid();
+        trace.report.planning_failure(cause);
+        trace
+            .report
+            .public_failure(error.code, error.status.as_u16());
+        trace.outcome(crate::gateway::diagnostics::Outcome::Error);
+        error
+    })?;
     let limits = runtime.limits.clone();
     let shutdown = runtime.shutdown.clone();
     body::respond_source(

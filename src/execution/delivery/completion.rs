@@ -124,6 +124,8 @@ enum UsageMethod {
     ZeroCache,
     CompletedTotal,
     CompletedResidual,
+    DetailFloor,
+    DetailSum,
 }
 impl UsageMethod {
     fn estimated(self) -> bool {
@@ -134,6 +136,7 @@ impl UsageMethod {
                 | Self::CacheInclusive
                 | Self::CacheExclusive
                 | Self::ReasoningInclusive
+                | Self::DetailSum
         )
     }
     fn rule(self) -> &'static str {
@@ -155,6 +158,8 @@ impl UsageMethod {
             Self::ZeroCache => "generation.usage-unreported-cache-zero.v1",
             Self::CompletedTotal => "generation.usage-total-from-estimates.v1",
             Self::CompletedResidual => "generation.usage-residual-from-estimates.v1",
+            Self::DetailFloor => "generation.usage-detail-floor.v1",
+            Self::DetailSum => "generation.usage-detail-sum.v1",
         }
     }
 }
@@ -186,7 +191,26 @@ pub(super) fn complete(
         u.total_tokens = None;
         u
     });
+    // Both TTL categories exhaust cache writes. A single category is only a
+    // lower bound; retain the source's unknown parent and estimate on delivery.
+    let cache_writes = response
+        .usage_reports()
+        .operation()
+        .map(|r| r.details.cache_writes.as_slice())
+        .unwrap_or_default();
+    let write_floor = cache_writes.iter().try_fold(0u64, |sum, part| {
+        sum.checked_add(part.tokens).ok_or(CodecError::Limit)
+    })?;
+    if u.input_cache_write_tokens.is_none() && cache_writes.len() == 2 {
+        u.input_cache_write_tokens = Some(write_floor);
+        cache_write_method = UsageMethod::DetailSum;
+    }
     match u.total_relation {
+        TotalTokenRelation::InputAndOutput => {
+            let mut counts = [u.input_tokens, u.output_tokens];
+            infer_residual(u.total_tokens, &mut counts)?;
+            [u.input_tokens, u.output_tokens] = counts;
+        }
         TotalTokenRelation::InputOutputAndReasoning => {
             let mut counts = [u.input_tokens, u.output_tokens, u.reasoning_tokens];
             infer_residual(u.total_tokens, &mut counts)?;
@@ -220,6 +244,7 @@ pub(super) fn complete(
     }
     if source.is_some_and(|s| s.input_cache_write_tokens.is_none())
         && u.input_cache_write_tokens.is_some()
+        && matches!(cache_write_method, UsageMethod::Accounting)
     {
         cache_write_method = UsageMethod::Residual;
     }
@@ -255,6 +280,15 @@ pub(super) fn complete(
     };
     let mut input_floor = modality_floor(UsageBucket::Input)?;
     let mut output_floor = modality_floor(UsageBucket::Output)?;
+    let cache_floor = modality_floor(UsageBucket::CacheRead)?;
+    if u.cached_input_tokens.is_none() && cache_floor > 0 {
+        u.cached_input_tokens = Some(cache_floor);
+        cache_read_method = UsageMethod::DetailFloor;
+    }
+    if u.input_cache_write_tokens.is_none() && write_floor > 0 {
+        u.input_cache_write_tokens = Some(write_floor);
+        cache_write_method = UsageMethod::DetailFloor;
+    }
     if let Some(report) = response.usage_reports().operation()
         && report.counts.output_relation == OutputTokenRelation::ExcludesReasoning
     {
@@ -266,12 +300,21 @@ pub(super) fn complete(
         && let UsageAccounting::SplitGeneration {
             tool_input_tokens,
             tool_input_relation,
-            total_relation,
+            ..
         } = report.accounting
     {
         let tool_floor = tool_input_tokens
             .unwrap_or(0)
             .max(modality_floor(UsageBucket::ToolInput)?);
+        input_floor = input_floor.max(report.counts.input_tokens.unwrap_or(0));
+        output_floor = output_floor.max(
+            report
+                .counts
+                .output_tokens
+                .unwrap_or(0)
+                .checked_add(report.counts.reasoning_tokens.unwrap_or(0))
+                .ok_or(CodecError::Limit)?,
+        );
         input_floor = if tool_input_relation == ToolInputRelation::Additional {
             input_floor
                 .checked_add(tool_floor)
@@ -279,29 +322,78 @@ pub(super) fn complete(
         } else {
             input_floor.max(tool_floor)
         };
-        // Residual inference precedes recovery/estimation of exclusive buckets.
-        // The attested total already includes tool input and reasoning.
-        if total_relation == SplitTotalRelation::InputToolOutputAndReasoning
-            && let Some(total) = report.counts.total_tokens
-        {
-            if let (Some(input), None) = (u.input_tokens, u.output_tokens) {
-                let output = total.checked_sub(input).ok_or(CodecError::Invalid(
-                    crate::protocol::failure::ShapeReason::InvalidValue,
-                ))?;
-                u.output_tokens = Some(output);
-                if u.reasoning_tokens.is_none()
-                    && let Some(visible) = report.counts.output_tokens
-                {
-                    u.reasoning_tokens = Some(output.checked_sub(visible).ok_or(
-                        CodecError::Invalid(crate::protocol::failure::ShapeReason::InvalidValue),
-                    )?);
-                }
-            } else if let (None, Some(output)) = (u.input_tokens, u.output_tokens) {
-                u.input_tokens = Some(total.checked_sub(output).ok_or(CodecError::Invalid(
-                    crate::protocol::failure::ShapeReason::InvalidValue,
-                ))?);
+    }
+    // Complete the source's attested inclusive total before changing target
+    // conventions. Disjoint details bound the split, never change that total.
+    if u.total_relation == TotalTokenRelation::InputAndOutput
+        && u.input_relation == InputTokenRelation::IncludesCache
+        && u.output_relation == OutputTokenRelation::IncludesReasoning
+        && let (None, None, Some(total)) = (u.input_tokens, u.output_tokens, u.total_tokens)
+    {
+        let minimum_input = input_floor
+            .max(u.cached_input_tokens.unwrap_or(0))
+            .max(u.input_cache_write_tokens.unwrap_or(0));
+        let minimum_output = output_floor.max(u.reasoning_tokens.unwrap_or(0)).max(
+            u.accepted_prediction_tokens
+                .unwrap_or(0)
+                .checked_add(u.rejected_prediction_tokens.unwrap_or(0))
+                .ok_or(CodecError::Limit)?,
+        );
+        let maximum_input = total
+            .checked_sub(minimum_output)
+            .filter(|maximum| *maximum >= minimum_input)
+            .ok_or(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::Usage,
+            ))?;
+        let input = input_estimate.clamp(minimum_input, maximum_input);
+        u.input_tokens = Some(input);
+        u.output_tokens = Some(total - input);
+        input_method = if total == 0 {
+            UsageMethod::Residual
+        } else {
+            UsageMethod::SplitEstimate
+        };
+        output_method = input_method;
+    }
+    let known_output = u
+        .output_tokens
+        .map(|n| {
+            if u.output_relation == OutputTokenRelation::ExcludesReasoning {
+                n.checked_add(u.reasoning_tokens.unwrap_or(0))
+                    .ok_or(CodecError::Limit)
+            } else {
+                Ok(n)
             }
-        }
+        })
+        .transpose()?;
+    if u.input_tokens.is_some_and(|n| n < input_floor)
+        || known_output.is_some_and(|n| n < output_floor)
+        || u.cached_input_tokens.is_some_and(|n| n < cache_floor)
+        || u.input_cache_write_tokens.is_some_and(|n| n < write_floor)
+    {
+        return Err(CodecError::Invalid(
+            crate::protocol::failure::ShapeReason::Usage,
+        ));
+    }
+    if let Some(report) = response.usage_reports().operation()
+        && matches!(
+            report.accounting,
+            UsageAccounting::SplitGeneration {
+                total_relation: SplitTotalRelation::InputToolOutputAndReasoning,
+                ..
+            }
+        )
+        && u.reasoning_tokens.is_none()
+        && let (Some(output), Some(visible)) = (u.output_tokens, report.counts.output_tokens)
+    {
+        u.reasoning_tokens = Some(output.checked_sub(visible).ok_or(CodecError::Invalid(
+            crate::protocol::failure::ShapeReason::Usage,
+        ))?);
+        reasoning_method = if output_method.estimated() {
+            UsageMethod::CompletedResidual
+        } else {
+            UsageMethod::Residual
+        };
     }
     // A conservative scalar summary can hide known source buckets when an
     // inclusion relation or a sibling is missing. Estimate the missing relation,
@@ -353,13 +445,20 @@ pub(super) fn complete(
     if let Some(n) = input {
         input = Some(match (messages, u.input_relation) {
             (false, InputTokenRelation::ExcludesCacheReadAndWrite) => {
-                input_method = if inclusive_input_from_total.is_some() {
+                let method = if inclusive_input_from_total.is_some() {
                     UsageMethod::Residual
-                } else if u.cached_input_tokens.is_none() || u.input_cache_write_tokens.is_none() {
+                } else if u.cached_input_tokens.is_none()
+                    || u.input_cache_write_tokens.is_none()
+                    || cache_read_method.estimated()
+                    || cache_write_method.estimated()
+                {
                     UsageMethod::MissingCache
                 } else {
                     UsageMethod::CacheInclusive
                 };
+                if method.estimated() || !input_method.estimated() {
+                    input_method = method;
+                }
                 match inclusive_input_from_total {
                     Some(input) => input,
                     None => add(
@@ -369,8 +468,10 @@ pub(super) fn complete(
                 }
             }
             (true, InputTokenRelation::IncludesCache) => {
-                input_method = if u.cached_input_tokens.is_none()
+                let method = if u.cached_input_tokens.is_none()
                     || u.input_cache_write_tokens.is_none()
+                    || cache_read_method.estimated()
+                    || cache_write_method.estimated()
                     || u.cached_input_tokens.is_some_and(|n| n > 0)
                         && u.input_cache_write_tokens.is_some_and(|n| n > 0)
                 {
@@ -378,6 +479,9 @@ pub(super) fn complete(
                 } else {
                     UsageMethod::CacheExclusive
                 };
+                if method.estimated() || !input_method.estimated() {
+                    input_method = method;
+                }
                 // Overlap is unknown: estimate the union as its larger known subset.
                 n.checked_sub(
                     u.cached_input_tokens
@@ -401,94 +505,51 @@ pub(super) fn complete(
         .output_tokens
         .map(|n| {
             if u.output_relation == OutputTokenRelation::ExcludesReasoning {
-                output_method = if u.reasoning_tokens.is_some() {
+                let method = if u.reasoning_tokens.is_some() {
                     UsageMethod::ReasoningInclusive
                 } else {
                     UsageMethod::ReasoningBytes
                 };
+                if method.estimated() || !output_method.estimated() {
+                    output_method = method;
+                }
                 add(n, u.reasoning_tokens.unwrap_or(reasoning_estimate))
             } else {
                 Ok(n)
             }
         })
         .transpose()?;
-    let total = (!messages
-        && u.input_relation == InputTokenRelation::IncludesCache
-        && u.output_relation == OutputTokenRelation::IncludesReasoning
-        && u.total_relation == TotalTokenRelation::InputAndOutput)
-        .then_some(u.total_tokens)
-        .flatten();
-    match (input, output, total) {
-        (Some(_), None, Some(_)) => {
-            output_method = if input_method.estimated() {
-                UsageMethod::CompletedResidual
-            } else {
-                UsageMethod::Residual
-            }
-        }
-        (None, Some(_), Some(_)) => {
-            input_method = if output_method.estimated() {
-                UsageMethod::CompletedResidual
-            } else {
-                UsageMethod::Residual
-            }
-        }
-        (None, None, Some(0)) => {
-            input_method = UsageMethod::Residual;
-            output_method = UsageMethod::Residual;
-        }
-        (None, None, Some(_)) => {
-            input_method = UsageMethod::SplitEstimate;
-            output_method = UsageMethod::SplitEstimate;
-        }
-        (i, o, None) => {
-            if i.is_none() {
-                input_method = UsageMethod::InputBytes;
-            }
-            if o.is_none() {
-                output_method = UsageMethod::OutputBytes;
-            }
-        }
-        _ => {}
+    if input.is_none() {
+        input_method = UsageMethod::InputBytes;
     }
-    let (input, output) = match (input, output, total) {
-        (Some(i), Some(o), _) => (i, o),
-        (Some(i), None, Some(t)) => (
-            i,
-            t.checked_sub(i).ok_or(CodecError::Invalid(
-                crate::protocol::failure::ShapeReason::InvalidValue,
-            ))?,
-        ),
-        (None, Some(o), Some(t)) => (
-            t.checked_sub(o).ok_or(CodecError::Invalid(
-                crate::protocol::failure::ShapeReason::InvalidValue,
-            ))?,
-            o,
-        ),
-        (None, None, Some(t)) => (input_estimate.min(t), t - input_estimate.min(t)),
-        (i, o, None) => (
-            i.unwrap_or(input_estimate.max(input_floor)),
-            o.unwrap_or(output_estimate),
-        ),
-    };
-    let input = if u.input_tokens.is_none() && total.is_none() && !messages {
-        input
-            .max(u.cached_input_tokens.unwrap_or(0))
-            .max(u.input_cache_write_tokens.unwrap_or(0))
-            .max(input_floor)
-    } else {
-        input
-    };
-    let output = if u.output_tokens.is_none() && total.is_none() {
-        output
-            .max(u.reasoning_tokens.unwrap_or(0))
+    if output.is_none() {
+        output_method = UsageMethod::OutputBytes;
+    }
+    let input = input.unwrap_or_else(|| {
+        let floor = if messages && u.input_relation == InputTokenRelation::IncludesCache {
+            input_floor.saturating_sub(
+                u.cached_input_tokens
+                    .unwrap_or(0)
+                    .max(u.input_cache_write_tokens.unwrap_or(0)),
+            )
+        } else if !messages {
+            input_floor
+                .max(u.cached_input_tokens.unwrap_or(0))
+                .max(u.input_cache_write_tokens.unwrap_or(0))
+        } else {
+            input_floor
+        };
+        input_estimate.max(floor)
+    });
+    let output = match output {
+        Some(output) => output,
+        None => output_estimate
             .max(output_floor)
+            .max(u.reasoning_tokens.unwrap_or(0))
             .max(add(
                 u.accepted_prediction_tokens.unwrap_or(0),
                 u.rejected_prediction_tokens.unwrap_or(0),
-            )?)
-    } else {
-        output
+            )?),
     };
     u.input_tokens = Some(input);
     u.output_tokens = Some(output);
@@ -637,6 +698,31 @@ mod tests {
     #[test]
     fn completion_preserves_reports_derives_residuals_and_estimates_only_missing_fields() {
         let empty = GenerationResponse::new(vec![], Outcome::Completed).unwrap();
+        for missing_input in [true, false] {
+            let mut sparse = Usage::operation(7, 3, 10);
+            if missing_input {
+                sparse.input_tokens = None;
+            } else {
+                sparse.output_tokens = None;
+            }
+            sparse.cached_input_tokens = Some(0);
+            sparse.input_cache_write_tokens = Some(0);
+            sparse.reasoning_tokens = Some(0);
+            let source = empty.clone().with_usage(Some(sparse)).unwrap();
+            let mut delivery = GenerationDelivery::default();
+            let evidence = complete(&mut delivery, &source, ClientProtocol::Messages, 100).unwrap();
+            let usage = delivery.usage.unwrap();
+            assert_eq!(
+                (usage.input_tokens, usage.output_tokens),
+                (Some(7), Some(3))
+            );
+            assert_eq!(source.usage(), Some(sparse));
+            assert!(
+                !evidence
+                    .iter()
+                    .any(|e| e.change() == crate::lowering::generation::Change::Estimate)
+            );
+        }
         let mut delivery = GenerationDelivery::default();
         complete(&mut delivery, &empty, ClientProtocol::Responses, 7).unwrap();
         let estimated = delivery.usage.unwrap();
@@ -689,6 +775,128 @@ mod tests {
 
     #[test]
     fn missing_parents_are_bounded_by_disjoint_modalities_without_rewriting_reports() {
+        for complete_ttls in [false, true] {
+            let mut report = UsageReport::operation(Usage::operation(100, 3, 103));
+            report.details.cache_writes = vec![CacheWriteTokens {
+                ttl: PrefixCacheTtl::FiveMinutes,
+                tokens: 40,
+            }];
+            if complete_ttls {
+                report.details.cache_writes.push(CacheWriteTokens {
+                    ttl: PrefixCacheTtl::OneHour,
+                    tokens: 30,
+                });
+            }
+            let mut reports = UsageReports::default();
+            reports.replace(report).unwrap();
+            let source = GenerationResponse::new(vec![], Outcome::Completed)
+                .unwrap()
+                .with_usage_reports(reports)
+                .unwrap();
+            let mut delivery = GenerationDelivery::default();
+            let evidence = complete(&mut delivery, &source, ClientProtocol::Responses, 1).unwrap();
+            assert_eq!(
+                delivery.usage.unwrap().input_cache_write_tokens,
+                Some(if complete_ttls { 70 } else { 40 })
+            );
+            assert_eq!(source.usage().unwrap().input_cache_write_tokens, None);
+            assert!(evidence.iter().any(|e| e.semantic_field()
+                == crate::lowering::generation::Field::CacheWriteTokens
+                && e.change()
+                    == if complete_ttls {
+                        crate::lowering::generation::Change::Derive
+                    } else {
+                        crate::lowering::generation::Change::Estimate
+                    }));
+        }
+        let mut counts = Usage::operation(0, 0, 100);
+        counts.input_tokens = None;
+        counts.output_tokens = None;
+        let mut report = UsageReport::operation(counts);
+        report.details.modalities.push(ModalityTokens {
+            bucket: UsageBucket::CacheRead,
+            modality: Some(TokenModality::Text),
+            tokens: Some(90),
+            defaulted: false,
+        });
+        let mut reports = UsageReports::default();
+        reports.replace(report).unwrap();
+        let source = GenerationResponse::new(vec![], Outcome::Completed)
+            .unwrap()
+            .with_usage_reports(reports)
+            .unwrap();
+        let mut delivery = GenerationDelivery::default();
+        complete(&mut delivery, &source, ClientProtocol::Responses, 1).unwrap();
+        let usage = delivery.usage.unwrap();
+        assert_eq!(
+            (
+                usage.input_tokens,
+                usage.output_tokens,
+                usage.cached_input_tokens
+            ),
+            (Some(90), Some(10), Some(90))
+        );
+        assert_eq!(source.usage().unwrap().cached_input_tokens, None);
+        // A known total cannot override disjoint details, including details
+        // which have no flat Usage field.
+        for modalities in [
+            vec![(TokenModality::Text, 5), (TokenModality::Image, 5)],
+            vec![(TokenModality::Video, 10)],
+        ] {
+            let mut counts = Usage::operation(0, 3, 10);
+            counts.input_tokens = None;
+            let mut report = UsageReport::operation(counts);
+            report.details.modalities = modalities
+                .into_iter()
+                .map(|(modality, count)| ModalityTokens {
+                    bucket: UsageBucket::Input,
+                    modality: Some(modality),
+                    tokens: Some(count),
+                    defaulted: false,
+                })
+                .collect();
+            let mut reports = UsageReports::default();
+            reports.replace(report).unwrap();
+            let source = GenerationResponse::new(vec![], Outcome::Completed)
+                .unwrap()
+                .with_usage_reports(reports)
+                .unwrap();
+            for protocol in [
+                ClientProtocol::Chat,
+                ClientProtocol::Responses,
+                ClientProtocol::Messages,
+            ] {
+                assert!(
+                    complete(&mut GenerationDelivery::default(), &source, protocol, 1).is_err()
+                );
+            }
+        }
+        for (cache, reasoning, estimate, expected) in [
+            (90, 0, 1, (90, 10)),
+            (0, 90, 99, (10, 90)),
+            (40, 60, 1, (40, 60)),
+        ] {
+            let mut counts = Usage::operation(0, 0, 100);
+            counts.input_tokens = None;
+            counts.output_tokens = None;
+            counts.cached_input_tokens = Some(cache);
+            counts.reasoning_tokens = Some(reasoning);
+            let source = GenerationResponse::new(vec![], Outcome::Completed)
+                .unwrap()
+                .with_usage(Some(counts))
+                .unwrap();
+            for protocol in [ClientProtocol::Chat, ClientProtocol::Responses] {
+                let mut delivery = GenerationDelivery::default();
+                complete(&mut delivery, &source, protocol, estimate).unwrap();
+                let usage = delivery.usage.unwrap();
+                assert_eq!(
+                    (usage.input_tokens, usage.output_tokens),
+                    (Some(expected.0), Some(expected.1))
+                );
+                assert_eq!(usage.total_tokens, Some(100));
+                assert_eq!(source.usage(), Some(counts));
+            }
+        }
         let mut counts = Usage::operation(0, 0, 0);
         counts.input_tokens = None;
         counts.output_tokens = None;
@@ -784,6 +992,35 @@ mod tests {
         assert_eq!(delivery.usage.unwrap().input_tokens, Some(80));
         assert_eq!(delivery.usage.unwrap().input_cache_write_tokens, Some(40));
         assert_eq!(delivery.usage.unwrap().total_tokens, Some(100));
+        let mut counts = Usage::operation(10, 20, 100);
+        counts.output_relation = OutputTokenRelation::ExcludesReasoning;
+        counts.total_relation = TotalTokenRelation::Unreported;
+        let sparse = response(
+            counts,
+            UsageAccounting::SplitGeneration {
+                tool_input_tokens: None,
+                tool_input_relation: ToolInputRelation::Additional,
+                total_relation: SplitTotalRelation::InputToolOutputAndReasoning,
+            },
+        );
+        let original = sparse.clone();
+        for protocol in [ClientProtocol::Responses, ClientProtocol::Chat] {
+            let evidence = complete(&mut delivery, &sparse, protocol, 1).unwrap();
+            let usage = delivery.usage.unwrap();
+            assert_eq!(
+                (
+                    usage.input_tokens,
+                    usage.output_tokens,
+                    usage.total_tokens,
+                    usage.reasoning_tokens
+                ),
+                (Some(10), Some(90), Some(100), Some(70))
+            );
+            assert!(evidence.iter().any(|e| e.semantic_field()
+                == crate::lowering::generation::Field::ReasoningTokens
+                && e.change() == crate::lowering::generation::Change::Estimate));
+            assert_eq!(sparse, original);
+        }
     }
 }
 

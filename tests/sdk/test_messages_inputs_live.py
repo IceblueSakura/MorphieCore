@@ -52,10 +52,17 @@ class MessagesInputRunnerOracles(unittest.TestCase):
             diagnostic = {"event": "request", "outcome": "complete", "candidates": [{}]}
             capture = {"exchange": "synthetic-1", "attempt": 1, "boundary": "upstream_request",
                        "status": "body_unit", "dropped_before": 0, "redacted": False, "value": {}}
-            (gateway.root / "diagnostics.jsonl").write_text(json.dumps(diagnostic) + "\n")
+            diagnostic_path = gateway.root / "diagnostics.jsonl"
+            diagnostics = json.dumps(diagnostic) + '\n{"event":"log"}\n{"event":"span"}\n'
+            diagnostic_path.write_text(diagnostics)
             path = gateway.root / "capture.jsonl"
             path.write_text(json.dumps(capture) + "\n")
             self.assertEqual(gateway.verify(exact=True), [{}])
+            for event in ["logging_status", "unknown"]:
+                diagnostic_path.write_text(diagnostics + json.dumps({"event": event}) + "\n")
+                with self.assertRaisesRegex(live.GateError, "^diagnostic_loss$"):
+                    gateway.verify(exact=True)
+            diagnostic_path.write_text(diagnostics)
             path.write_text(json.dumps({**capture, "redacted": True}) + "\n")
             with self.assertRaisesRegex(live.GateError, "^redacted_history_observation$"):
                 gateway.verify(exact=True)

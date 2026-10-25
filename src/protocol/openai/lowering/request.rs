@@ -38,32 +38,27 @@ pub fn lower_request<'a>(
         && let Some(projected) = crate::protocol::phase::omit_request(r)?
     {
         semantic = std::borrow::Cow::Owned(projected);
-        let mut stage = (projection::LossRule::OmitChatMessagePhase)
-            .effect(crate::lowering::generation::ConversionBoundary::ResponseProject);
-        stage =
-            stage.with_boundary(crate::lowering::generation::ConversionBoundary::RequestProject);
-        projection.push(stage);
+        projection.push(
+            projection::LossRule::OmitChatMessagePhase
+                .effect(crate::lowering::generation::ConversionBoundary::RequestProject),
+        );
     }
     if let Some((groups, loss)) =
         message_groups::project(semantic.items(), semantic.message_envelopes(), profile)?
     {
         // Replay dependencies must be checked against the final target value below.
         semantic = std::borrow::Cow::Owned(semantic.into_owned().with_message_envelopes(groups)?);
-        let mut stage =
-            (loss).effect(crate::lowering::generation::ConversionBoundary::ResponseProject);
-        stage =
-            stage.with_boundary(crate::lowering::generation::ConversionBoundary::RequestProject);
-        projection.push(stage);
+        projection
+            .push(loss.effect(crate::lowering::generation::ConversionBoundary::RequestProject));
     }
     if semantic.settings().prediction.is_some() && (profile != Profile::Chat || !c.prediction) {
         let mut settings = semantic.settings().clone();
         settings.prediction = None;
         semantic = std::borrow::Cow::Owned(semantic.into_owned().with_settings(settings)?);
-        let mut stage = (projection::LossRule::OmitPrediction)
-            .effect(crate::lowering::generation::ConversionBoundary::ResponseProject);
-        stage =
-            stage.with_boundary(crate::lowering::generation::ConversionBoundary::RequestProject);
-        projection.push(stage);
+        projection.push(
+            projection::LossRule::OmitPrediction
+                .effect(crate::lowering::generation::ConversionBoundary::RequestProject),
+        );
     }
     let r = semantic.as_ref();
     let q = check(r, c.clone())?;
@@ -219,6 +214,13 @@ pub fn lower_request<'a>(
             return Err(RepresentationError::Tools);
         }
         if let ToolDefinition::Function(t) = tool {
+            if profile == Profile::Chat
+                && !crate::protocol::openai::function_tools::valid_chat_function_name(
+                    t.name.as_str(),
+                )
+            {
+                return Err(RepresentationError::Tools);
+            }
             if t.cache.is_some() {
                 return Err(RepresentationError::Controls);
             }

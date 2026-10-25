@@ -163,6 +163,10 @@ The subsequent 2026-10-24 readable Chat slice adds `chat_profile: readable_reaso
 
 ## Verification gates
 
+The **2026-10-25 Generation Text closure review** passes the full offline baseline, production-only `cargo check --locked --offline --lib --bins`, all 16 connected SDK scenarios and the separately discovered Python suites. Owner-local regressions cover Chat function null/name contracts; empty-envelope append order; source-total residuals, bounded sparse accounting and cache-detail provenance; failed unpolled Responses reservation release and final-handoff cancellation; queued-first-frame timeout classification; intake/planning/final-error ownership; actual successor advancement and authoritative handoff counters. The initial unpolled-history and sparse-accounting reproducers failed at their intended assertions before repair. No valid regression suite was pruned; cleanup removes duplicate accounting/control paths, discarded rule-name allocation, unreachable rejection and production-hosted test forwarding.
+
+Current-host/Provider evidence remains [separate](refs/2026-10-17-generation-contracts.md#current-host-closure-recheck-2026-10-25). The local telemetry oracle accepts normal `log`/`span` records but still rejects recording-loss status and unknown record types. Sparse accounting repairs have offline/SDK evidence, not a claim that each sparse combination occurred at a real Provider.
+
 | Change or claim | Procedure |
 |---|---|
 | Markdown-only change | Local paths/anchors and whitespace under [documentation checks](#documentation-checks); no Rust/SDK run |
@@ -198,7 +202,7 @@ cargo test --locked --offline --test process
 
 ### Telemetry ecosystem checks
 
-The selected [Rust telemetry stack](architecture.md#observability) has a test-only integration, verified on **2026-10-24**. Pins remain in `[dev-dependencies]` and `Cargo.lock`; no production exporter, global provider, public diagnostic schema, Collector deployment or private-capture migration is activated.
+The selected [Rust telemetry stack](architecture.md#observability) has a test-only ecosystem integration verified on **2026-10-24**, followed by scoped local production trace/log wiring on **2026-10-25**. Shared tracing/OTel pins are production dependencies; additional metrics and OTLP network-export features remain development-only. Neither path installs a global provider or activates a stable public diagnostic schema, Collector deployment or private-capture migration.
 
 ```sh
 cargo test --locked --offline --test telemetry
@@ -425,7 +429,7 @@ Owned HTTP sockets/workers and child process groups are bounded and released, in
 
 The test sets `keepRecentTokens:512` and a bounded 4096-character recent user span to select a complete user boundary. It verifies the standalone summary's ordered serialized user/tool/result/answer exchange, omission of reasoning/signature prose and exclusion of the retained span. Merely setting the retained budget to zero does not mean retaining nothing: pi can select a split-turn cut, which is outside this case. The summary uses the same model, no declared tools and no implicit native-compaction endpoint.
 
-The summary request has no caller cache markers or affinity headers. Native Messages still receives the trusted binding's five-minute automatic cache default and a distinct generated upstream session; ordinary requests retain their original client/native affinity. Native adaptive display/block-binding controls, root-high/system-low effort and the new signed tool history are checked separately. Client events establish fresh read execution and final text; projected history must retain the summary plus the recent span, without the summarized native tool exchange.
+The summary request has no caller cache markers or affinity headers. Native Messages still receives the trusted binding's five-minute automatic cache default and a distinct generated upstream session; ordinary requests retain their original client/native affinity. Native adaptive display/block-binding controls, current-host root-low/system-low effort and the new signed tool history are checked separately. Earlier root-high evidence retains its dated profile; [the current build recheck](refs/2026-10-17-generation-contracts.md#current-host-closure-recheck-2026-10-25) is independent of its unchanged version label. Client events establish fresh read execution and final text; projected history must retain the summary plus the recent span, without the summarized native tool exchange.
 
 Two additional cases characterize auxiliary requests without widening the ordinary profiles:
 
@@ -569,7 +573,7 @@ For the selected Responses gate, use a test-owned `read` from `createReadToolDef
 
 For the R2 changed-tool gate, use RPC with the installed Haiku compatibility flags, not pi's less capable built-in `opencode-go` entry. Launch with `--tools read,ls`; a test-owned extension initially selects only `read`, then switches to `ls` using `setActiveTools`. Change structured prompt sections through `before_agent_start` and effort through RPC. Do not patch serialized payloads or returned history. Correlate command IDs and wait for `agent_settled`, not prompt acknowledgement or `agent_end`. Fix five upstream requests: read/final, switch tools and high→low effort for ls/final, then recall both results without tools.
 
-Set the scratch model's `maxTokens` and verify the wire ceiling. Disable compaction, warming and both agent/provider retries. pi can independently retry a preferred-strict grammar-limit error without strictness; reject downgraded, duplicate or excess requests before forwarding, count client attempts separately and fail the gate on any fallback. Keep session affinity stable. The managed-effort profile retains root `output_config.effort: high`; requested effort changes belong in system messages, not root replacements.
+Set the scratch model's `maxTokens` and verify the wire ceiling. Disable compaction, warming and both agent/provider retries. pi can independently retry a preferred-strict grammar-limit error without strictness; reject downgraded, duplicate or excess requests before forwarding, count client attempts separately and fail the gate on any fallback. Keep session affinity stable. The current installed managed-effort profile uses root `output_config.effort: low`; requested effort changes belong in system messages, not root replacements. Do not substitute an old build merely to reproduce the historical root-high profile.
 
 Select retention explicitly (`PI_CACHE_RETENTION=long` for 1h). Observe only presence flags and numeric cache/TTL reports through a read-only `provider_stream_event` hook; pi's normalized zero counters cannot distinguish absent reports. A successful `drop_block` continuation alone does not prove thinking reuse. A separately bounded native JSON companion may use the already supported `"error"` binding behavior to check exact signature restoration and absence of reported transformations through opt-in private capture. Keep that companion distinct from the unmodified pi profile and remove captures afterward. Cache write classes/read counts do not measure expiry, invoices or cross-account reuse.
 

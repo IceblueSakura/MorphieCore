@@ -246,7 +246,11 @@ impl Trace {
                 upstream_status: self.record.upstream_status,
                 retry_after_seconds: self.record.retry_after_seconds,
                 received_bytes: self.record.received_bytes.saturating_sub(received),
-                handed_off_bytes: self.record.handed_off_bytes.saturating_sub(handed),
+                handed_off_bytes: if self.generation {
+                    self.report.attempt().handed_off_bytes
+                } else {
+                    self.record.handed_off_bytes.saturating_sub(handed)
+                },
                 elapsed_ms: start.elapsed().as_millis().min(u64::MAX as u128) as u64,
                 error_code,
                 advanced,
@@ -292,13 +296,9 @@ impl Trace {
     pub(super) fn ignored_events(&mut self, count: usize) {
         self.record.ignored_upstream_events = count as u64;
     }
-    pub(super) fn request_intake(&mut self, evidence: crate::lowering::generation::EvidenceDelta) {
-        self.report.intake(evidence);
-    }
     pub(super) fn reported_settings(
         &mut self,
         settings: Option<&crate::semantic::task::generation::GenerationSettings>,
-        _fidelity: Option<&crate::protocol::fidelity::FidelityRecords>,
     ) {
         self.report
             .update(|a| a.reported_settings = settings.map(Into::into));
@@ -429,7 +429,11 @@ impl Trace {
         };
     }
     pub(super) fn handed_off(&mut self, n: usize) {
-        self.record.handed_off_bytes = self.record.handed_off_bytes.saturating_add(n as u64);
+        // Generation is acknowledged atomically by FrameAck, before the
+        // producer can resume or be cancelled. Standalone tasks use this path.
+        if !self.generation {
+            self.record.handed_off_bytes = self.record.handed_off_bytes.saturating_add(n as u64);
+        }
     }
     pub(super) fn coalescing_peak(&mut self, bytes: usize) {
         self.record.coalescing_peak_bytes = self.record.coalescing_peak_bytes.max(bytes as u64);
@@ -456,7 +460,12 @@ impl Drop for Trace {
         self.end_candidate(Some("interrupted"), false);
         if let Some(_sink) = self.sink.take() {
             if self.generation {
-                self.record.generation = Some(self.report.snapshot());
+                let report = self.report.snapshot();
+                self.record.handed_off_bytes = report
+                    .attempts
+                    .iter()
+                    .fold(0u64, |sum, a| sum.saturating_add(a.handed_off_bytes));
+                self.record.generation = Some(report);
             }
             self.record.capture_exchange = self.capture.as_ref().map(super::capture::Exchange::id);
             self.record.elapsed_ms = self.start.elapsed().as_millis().min(u64::MAX as u128) as u64;
@@ -564,7 +573,7 @@ mod tests {
         let mut trace = Trace::new(Some(&sink));
         let mut intake = EvidenceDelta::default();
         intake.record_history_annotations_default();
-        trace.request_intake(intake);
+        trace.report.intake(intake);
         trace.executor_order("affinity");
         trace.begin_candidate(1);
         trace.probe(true);

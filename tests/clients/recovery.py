@@ -58,7 +58,7 @@ def assert_profile(body, native):
     check("path" in schema["properties"], "read_path_schema")
     if native:
         check(body["thinking"]["type"] == "adaptive", "native_adaptive_thinking")
-        check(body["output_config"]["effort"] == "high", "native_root_effort")
+        check(body["output_config"]["effort"] == "low", "native_root_effort")
         check(read[0]["strict"] is True and read[0]["eager_input_streaming"] is True, "native_tool_profile")
     else:
         check(body["reasoning_effort"] == "low", "chat_effort")
@@ -396,7 +396,7 @@ def main():
             gateway.process.send_signal(signal.SIGINT)
             gateway.wait(timeout=5)
             records = [json.loads(line) for line in (root / "diagnostics.jsonl").read_text().splitlines()]
-            check(all(r.get("event") in ("file", "request") for r in records), "gateway_logging_loss")
+            check(all(r.get("event") in ("file", "request", "log", "span") for r in records), "gateway_logging_loss")
             records = [r for r in records if r.get("event") == "request"]
             check(len(records) == 4 and all(r["outcome"] == "complete" for r in records),
                   "gateway_completion_records")

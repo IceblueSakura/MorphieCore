@@ -120,12 +120,22 @@ async fn reports_keep_native_bodies_correlated_recovery_and_runtime_isolation() 
 
 #[tokio::test]
 async fn body_abort_keeps_the_runtime_alive_and_closes_interrupted_spans_once() {
+    use crate::execution::report::View;
     let directory = crate::test_files::private_directory();
     let path = directory.path().join("events.jsonl");
     let sink = Sink::open(&path).unwrap();
     let mut trace = Trace::generation(Some(&sink));
     trace.begin_candidate(1);
     trace.outcome(Outcome::Interrupted);
+    let frames = trace.report.batch(
+        View::DownstreamSse,
+        vec![bytes::Bytes::from_static(b"acknowledged")],
+        Default::default(),
+    );
+    let (_, ack) = frames.into_acknowledged_frames().next().unwrap();
+    assert!(ack.unwrap().acknowledge(|| true));
+    // Cancellation before producer resumption must not lose this observation
+    // or require a second trace.handed_off call to synchronize a parallel counter.
     let runtime = Arc::downgrade(&trace.telemetry.as_ref().unwrap().telemetry);
     let output = trace.telemetry.as_ref().unwrap().telemetry.output.clone();
     drop(sink);
@@ -145,6 +155,12 @@ async fn body_abort_keeps_the_runtime_alive_and_closes_interrupted_spans_once() 
     let requests = select(&rows, "request");
     assert_eq!(requests.len(), 1);
     assert_eq!(requests[0]["generation"]["result"], "interrupted");
+    assert_eq!(requests[0]["handed_off_bytes"], 12);
+    assert_eq!(requests[0]["candidates"][0]["handed_off_bytes"], 12);
+    assert_eq!(
+        requests[0]["generation"]["attempts"][0]["handed_off_bytes"],
+        12
+    );
     let spans = select(&rows, "span");
     assert_eq!(spans.len(), 2);
     assert!(spans.iter().all(|row| row["status"] == "error"));

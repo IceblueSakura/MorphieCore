@@ -100,7 +100,7 @@ class ClientRecoveryOracles(unittest.TestCase):
 
     def native(self):
         return {"model": "claude-haiku-5-5", "stream": True, "max_tokens": 2048,
-                "thinking": {"type": "adaptive"}, "output_config": {"effort": "high"},
+                "thinking": {"type": "adaptive"}, "output_config": {"effort": "low"},
                 "tools": [{"name": "read", "strict": True, "eager_input_streaming": True,
                            "input_schema": {"properties": {"path": {"type": "string"}}}}],
                 "messages": [
@@ -113,6 +113,10 @@ class ClientRecoveryOracles(unittest.TestCase):
                                                    "content": recovery.TEXT}]}]}
 
     def test_history_failures_reach_the_intended_oracle(self):
+        wrong_root = self.native()
+        wrong_root["output_config"]["effort"] = "high"
+        with self.assertRaisesRegex(RuntimeError, "^native_root_effort$"):
+            recovery.assert_profile(wrong_root, True)
         for native, original, cases in [
             (False, self.chat(), [
                 (("messages", 1, "reasoning_content"), "changed", "chat_readable_reasoning"),

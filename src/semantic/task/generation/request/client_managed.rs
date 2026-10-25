@@ -46,7 +46,7 @@ impl ClientManaged {
             .request
             .resources
             .merge(&source.resources().select_items(source.items())?)?;
-        self.request.items.extend_from_slice(source.items());
+        self.extend_items(source.items())?;
         self.merge_envelopes(source.message_envelopes())?;
         self.request.validate()?;
         self.record_selection(source.items(), None)?;
@@ -58,7 +58,7 @@ impl ClientManaged {
             .request
             .resources
             .merge(&source.resources().select_items(source.items())?)?;
-        self.request.items.extend_from_slice(source.items());
+        self.extend_items(source.items())?;
         self.merge_envelopes(source.message_envelopes())?;
         self.request.validate()?;
         self.record_selection(source.items(), Some(source.progress()))?;
@@ -67,7 +67,7 @@ impl ClientManaged {
     /// Explicit new input/results; edits of selected history use validated request APIs.
     pub fn append_items(mut self, items: Vec<(ItemId, Item)>) -> Result<Self, GenerationError> {
         self.reserve_selection(&items)?;
-        self.request.items.extend(items);
+        self.extend_items(&items)?;
         self.request.validate()?;
         Ok(self)
     }
@@ -145,7 +145,7 @@ impl ClientManaged {
             .resources
             .merge(&source.resources().select_items(&items).map_err(selection)?)
             .map_err(selection)?;
-        self.request.items.extend_from_slice(&items);
+        self.extend_items(&items).map_err(selection)?;
         let selected = crate::semantic::task::generation::history::envelope::MessageEnvelopes::new(
             source.items(),
             source.message_envelopes().to_vec(),
@@ -191,6 +191,30 @@ impl ClientManaged {
         {
             return Err(GenerationError::DuplicateItemId);
         }
+        Ok(())
+    }
+    fn extend_items(&mut self, items: &[(ItemId, Item)]) -> Result<(), GenerationError> {
+        let Some((first, _)) = items.first() else {
+            return Ok(());
+        };
+        let groups = self
+            .request
+            .message_envelopes()
+            .iter()
+            .map(|group| {
+                if group.members().is_empty() && group.before().is_none() {
+                    MessageEnvelope::empty(group.id(), group.role(), Some(*first))
+                } else {
+                    group.clone()
+                }
+            })
+            .collect();
+        self.request.items.extend_from_slice(items);
+        self.request.envelopes =
+            crate::semantic::task::generation::history::envelope::MessageEnvelopes::new(
+                self.request.items(),
+                groups,
+            )?;
         Ok(())
     }
     fn merge_envelopes(&mut self, groups: &[MessageEnvelope]) -> Result<(), GenerationError> {

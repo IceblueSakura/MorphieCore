@@ -63,6 +63,114 @@ fn client_profile_cannot_depend_on_candidate_order_or_select_responses_extension
 }
 
 #[tokio::test]
+async fn checked_intake_survives_admission_and_planning_failures_without_an_attempt() {
+    use crate::execution::{
+        plan::{PlanError, RejectionReason},
+        report::{Report, ResultState},
+    };
+    let mut gate = gateway(Limits::default());
+    let state = Arc::get_mut(&mut gate.state).unwrap();
+    let mut entry = state.entries.values().next().unwrap().as_ref().clone();
+    entry.client = crate::adapter::ClientAdapter::openai(
+        crate::protocol::openai::Adapter::new(
+            Profile::Responses,
+            crate::protocol::openai::Dialect::Standard,
+            None,
+        ),
+        crate::protocol::openai::TargetCaps::full(),
+    );
+    entry.public.contract.tools = false;
+    state.entries.insert(
+        (ClientProtocol::Responses, "fixture-model".into()),
+        Arc::new(entry),
+    );
+    let wire = serde_json::json!({"model":"fixture-model",
+        "input":[{"role":"assistant","content":[{"type":"output_text","text":"prior"}]}],
+        "tools":[{"type":"function","name":"lookup","strict":false}]});
+    let report = Report::default();
+    assert_eq!(
+        admission::prepare(
+            state,
+            ClientProtocol::Responses,
+            &serde_json::to_vec(&wire).unwrap(),
+            &report
+        )
+        .err()
+        .unwrap()
+        .status,
+        400
+    );
+    let snapshot = report.snapshot();
+    assert!(!snapshot.intake.entries.is_empty());
+    assert!(snapshot.attempts.is_empty());
+    assert_eq!(
+        snapshot.failure.unwrap().boundary,
+        Some(crate::lowering::generation::ConversionBoundary::RequestProject)
+    );
+    let mut invalid = wire.clone();
+    invalid["tools"][0]["name"] = serde_json::Value::Null;
+    let failed_decode = Report::default();
+    assert!(
+        admission::prepare(
+            state,
+            ClientProtocol::Responses,
+            &serde_json::to_vec(&invalid).unwrap(),
+            &failed_decode
+        )
+        .is_err()
+    );
+    assert!(failed_decode.snapshot().intake.entries.is_empty());
+    let entry = Arc::make_mut(
+        state
+            .entries
+            .get_mut(&(ClientProtocol::Responses, "fixture-model".into()))
+            .unwrap(),
+    );
+    entry.public.contract.tools = true;
+    for candidate in &mut entry.candidates {
+        Arc::make_mut(candidate)
+            .endpoint
+            .execution
+            .request_body_limit = 1;
+    }
+    let trace = crate::gateway::diagnostics::Trace::generation(None);
+    let report = trace.report.clone();
+    let (entry, request) = admission::prepare(
+        state,
+        ClientProtocol::Responses,
+        &serde_json::to_vec(&wire).unwrap(),
+        &report,
+    )
+    .unwrap();
+    let error = crate::gateway::generation::exchange::run(
+        gate.state.clone(),
+        entry,
+        request,
+        None,
+        tokio::time::Instant::now() + Duration::from_secs(1),
+        gate.state.permits.clone().acquire_owned().await.unwrap(),
+        trace,
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(error.status, 400);
+    let snapshot = report.snapshot();
+    assert_eq!(snapshot.result, ResultState::Failed);
+    assert_eq!(snapshot.public_code, Some(error.code));
+    assert_eq!(snapshot.public_status, Some(400));
+    assert!(snapshot.attempts.is_empty());
+    assert!(!snapshot.intake.entries.is_empty());
+    assert!(matches!(
+        snapshot.planning_failure,
+        Some(PlanError::CandidateRejected(RejectionReason::BodyLimit))
+            | Some(PlanError::NoCandidate { .. })
+    ));
+    let encoded = serde_json::to_string(&report.snapshot()).unwrap();
+    assert!(!encoded.contains("fixture-chat"));
+    assert!(!encoded.contains("prior"));
+}
+
+#[tokio::test]
 async fn activated_members_keep_route_order_with_a_shared_client_carrier() {
     let entries = ["fixture-chat", "fixture-responses"]
         .into_iter()

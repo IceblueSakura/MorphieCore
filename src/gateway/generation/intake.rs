@@ -177,7 +177,6 @@ async fn produce(
                 attempt
                     .metadata()
                     .and_then(|metadata| metadata.context.settings()),
-                attempt.fidelity(),
             );
             if used == 0 {
                 return Err(ApiError::upstream());
@@ -272,7 +271,6 @@ async fn produce(
         attempt
             .metadata()
             .and_then(|metadata| metadata.context.settings()),
-        attempt.fidelity(),
     );
     trace.stage(Stage::Projection);
     if stream {

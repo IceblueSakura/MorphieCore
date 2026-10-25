@@ -187,6 +187,8 @@ pub struct AttemptReport {
 pub struct RequestReport {
     pub public_code: Option<&'static str>,
     pub public_status: Option<u16>,
+    #[serde(serialize_with = "serialize_planning_failure")]
+    pub planning_failure: Option<super::plan::PlanError>,
     pub intake: Evidence,
     pub failure: Option<Failure>,
     pub attempts: Vec<AttemptReport>,
@@ -195,6 +197,35 @@ pub struct RequestReport {
 }
 #[derive(Clone, Default, Debug)]
 pub struct Report(Arc<Mutex<RequestReport>>);
+fn serialize_planning_failure<S: Serializer>(
+    failure: &Option<super::plan::PlanError>,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    use super::plan::PlanError;
+    let Some(error) = failure else {
+        return serializer.serialize_none();
+    };
+    // Retain the typed cause internally, but never expose private endpoint IDs.
+    let (kind, reasons) = match error {
+        PlanError::UnknownModel => ("unknown_model", vec![]),
+        PlanError::TaskMismatch => ("task_mismatch", vec![]),
+        PlanError::InvalidRequest => ("invalid_request", vec![]),
+        PlanError::CandidateLimit => ("candidate_limit", vec![]),
+        PlanError::CandidateRejected(reason) => ("candidate_rejected", vec![format!("{reason:?}")]),
+        PlanError::NoCandidate { rejections } => (
+            "no_candidate",
+            rejections
+                .iter()
+                .take(super::plan::MAX_CANDIDATES)
+                .map(|r| format!("{:?}", r.reason))
+                .collect(),
+        ),
+    };
+    let mut state = serializer.serialize_struct("PlanningFailure", 2)?;
+    state.serialize_field("kind", kind)?;
+    state.serialize_field("reasons", &reasons)?;
+    state.end()
+}
 impl Report {
     fn with<T>(&self, f: impl FnOnce(&mut RequestReport) -> T) -> T {
         f(&mut self.0.lock().unwrap_or_else(|p| p.into_inner()))
@@ -210,6 +241,9 @@ impl Report {
     }
     pub fn snapshot(&self) -> RequestReport {
         self.with(|r| r.clone())
+    }
+    pub(crate) fn planning_failure(&self, failure: super::plan::PlanError) {
+        self.with(|r| r.planning_failure = Some(failure));
     }
     pub fn intake(&self, evidence: EvidenceDelta) {
         self.with(|r| {

@@ -228,6 +228,11 @@ pub(super) fn read_tool(
                 })
             })
             .transpose()?;
+        if profile == Profile::Chat && o.get("description").is_some_and(Value::is_null) {
+            return Err(CodecError::Invalid(
+                crate::protocol::failure::ShapeReason::InvalidValue,
+            ));
+        }
         return Ok(ToolDefinition::Custom(CustomTool {
             name: text(string(o, "name")?, "custom tool name", 128)?,
             description: o
@@ -277,6 +282,16 @@ pub(super) fn read_tool(
     } else {
         dispatch(f)?
     };
+    if profile == Profile::Chat
+        && (["description", "parameters"]
+            .iter()
+            .any(|key| f.get(*key).is_some_and(Value::is_null))
+            || !valid_chat_function_name(string(f, "name")?))
+    {
+        return Err(CodecError::Invalid(
+            crate::protocol::failure::ShapeReason::InvalidValue,
+        ));
+    }
     Ok(ToolDefinition::Function(FunctionTool {
         name: text(string(f, "name")?, "function name", 128)?,
         description: f
@@ -456,6 +471,13 @@ pub(super) fn write_settings(
     }
     Ok(())
 }
+pub(super) fn valid_chat_function_name(name: &str) -> bool {
+    !name.is_empty()
+        && name.len() <= 64
+        && name
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'-'))
+}
 pub(super) fn write_tool(t: &ToolDefinition, profile: Profile) -> Result<Value, CodecError> {
     Ok(match t {
         ToolDefinition::Namespace(_) if profile == Profile::Chat => {
@@ -468,6 +490,11 @@ pub(super) fn write_tool(t: &ToolDefinition, profile: Profile) -> Result<Value, 
             "tools":group.tools.iter().map(|t| write_tool(t, profile)).collect::<Result<Vec<_>, _>>()?
         }),
         ToolDefinition::Function(t) => {
+            if profile == Profile::Chat && !valid_chat_function_name(t.name.as_str()) {
+                return Err(CodecError::Unsupported(
+                    crate::protocol::failure::CarrierReason::Tools,
+                ));
+            }
             if t.input_examples.is_some() {
                 return Err(CodecError::Unsupported(
                     crate::protocol::failure::CarrierReason::Tools,

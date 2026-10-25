@@ -398,8 +398,8 @@ impl Adapter {
         model: &str,
         contract: &TargetCaps,
     ) -> Result<Value, ConversionFailure> {
-        self.encode_request_with_rules(request, model, contract)
-            .map(|(value, _)| value)
+        self.encode_request_with_evidence(request, model, contract)
+            .map(|projection| projection.value)
     }
     /// The body plus the names of the degradable rules applied to it.
     pub fn encode_request_with_rules(

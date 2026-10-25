@@ -1,6 +1,6 @@
 //! Bound entries and request-independent gateway state.
 use super::{
-    ApiError, Limits, diagnostics,
+    Limits, diagnostics,
     ingress::{auth, capabilities, models},
     routing::{executors, prefix_cache as affinity},
     startup::credentials,
@@ -37,14 +37,13 @@ impl BoundEntry {
     pub(super) fn eligible(
         &self,
         request: &crate::adapter::Request,
-    ) -> Result<Vec<Arc<BoundCandidate>>, ApiError> {
+    ) -> Result<Vec<Arc<BoundCandidate>>, crate::execution::plan::PlanError> {
         let selected = crate::execution::plan::select_candidates_for_client(
             request,
             self.policy.candidates,
             self.candidates.iter().map(|c| &c.endpoint),
             Some(&self.client),
-        )
-        .map_err(|_| ApiError::invalid())?;
+        )?;
         Ok(selected
             .candidates
             .iter()

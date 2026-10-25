@@ -78,6 +78,4 @@ pub enum RepresentationError {
     UsageProjection,
     #[error("invalid or conflicting response representation metadata")]
     Metadata,
-    #[error("target has no system fingerprint carrier")]
-    SystemFingerprint,
 }

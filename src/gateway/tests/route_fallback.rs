@@ -255,7 +255,9 @@ async fn ordered_route_only_falls_back_before_visible_delivery() {
             crate::topology::ModelMetadata::new(1, "Synthetic Developer").unwrap(),
         )])
         .unwrap();
-        let gateway = Gateway::new(
+        let diagnostics = crate::test_files::private_directory();
+        let diagnostic_path = diagnostics.path().join("events.jsonl");
+        let mut gateway = Gateway::new(
             topology,
             TaskEntries {
                 generation: ["b", "a"]
@@ -278,6 +280,10 @@ async fn ordered_route_only_falls_back_before_visible_delivery() {
             None,
         )
         .unwrap();
+        if status == 503 && !stream {
+            Arc::get_mut(&mut gateway.state).unwrap().diagnostics =
+                Some(crate::gateway::diagnostics::Sink::open(&diagnostic_path).unwrap());
+        }
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
         let owned_gateway = gateway.clone();
@@ -362,6 +368,30 @@ async fn ordered_route_only_falls_back_before_visible_delivery() {
                     "upstream_unavailable"
                 );
                 assert_eq!(*calls.lock().unwrap(), ["a"]);
+                gateway.flush_diagnostics().await;
+                let records: Vec<Value> = std::fs::read_to_string(&diagnostic_path)
+                    .unwrap()
+                    .lines()
+                    .map(|line| serde_json::from_str(line).unwrap())
+                    .filter(|value: &Value| value["event"] == "request")
+                    .collect();
+                let recovered = &records[0]["generation"];
+                assert_eq!(recovered["result"], "succeeded");
+                assert!(recovered["public_code"].is_null());
+                assert_eq!(recovered["attempts"][0]["advanced"], true);
+                let blocked = records.last().unwrap();
+                assert_eq!(blocked["generation"]["public_code"], "upstream_unavailable");
+                assert_eq!(blocked["generation"]["public_status"], 503);
+                assert_eq!(
+                    blocked["generation"]["attempts"].as_array().unwrap().len(),
+                    1
+                );
+                assert_eq!(blocked["generation"]["attempts"][0]["advanced"], false);
+                assert_eq!(blocked["candidates"][0]["advanced"], false);
+                assert_eq!(blocked["candidates"][0]["health"]["reason"], "failure");
+                assert_eq!(blocked["candidates"][0]["health"]["scope"], "target");
+                assert_eq!(blocked["health"]["reason"], "cooling");
+                assert_eq!(blocked["health"]["scope"], "pool");
                 // Expire both scopes before the remaining affinity assertions.
                 tokio::time::pause();
                 tokio::time::advance(std::time::Duration::from_secs(60)).await;

@@ -6,6 +6,60 @@ use morphiecore::semantic::{
 fn text(value: &str) -> Text {
     Text::new(value, "synthetic", 256).unwrap()
 }
+
+#[test]
+fn appended_history_keeps_trailing_empty_envelopes_at_the_original_boundary() {
+    let item = |id| {
+        (
+            ItemId::new(id),
+            Item::Message(Message {
+                participant: None,
+                role: if id == 1 {
+                    MessageRole::User
+                } else {
+                    MessageRole::Assistant
+                },
+                parts: vec![Part::new(
+                    PartId::new(id),
+                    ContentPart::Text(text("input").into()),
+                )],
+                status: ItemLifecycle::Completed,
+                phase: None,
+            }),
+        )
+    };
+    let source = GenerationRequest::new(vec![item(1)], Default::default())
+        .unwrap()
+        .with_message_envelopes(vec![MessageEnvelope::empty(
+            GroupId::new(LocalScope::new(1), 1),
+            MessageEnvelopeRole::Assistant,
+            None,
+        )])
+        .unwrap();
+    let next = GenerationRequest::new(vec![item(2)], Default::default()).unwrap();
+    let response = GenerationResponse::new(vec![item(2)], Outcome::Completed).unwrap();
+    for mode in 0..4 {
+        let selected = ClientManaged::new(Default::default())
+            .unwrap()
+            .select_request(&source)
+            .unwrap();
+        let selected = match mode {
+            0 => selected.append_items(vec![item(2)]).unwrap(),
+            1 => selected.select_request(&next).unwrap(),
+            2 => selected.select_response(&response).unwrap(),
+            _ => selected
+                .select_response_items(&response, &[ItemId::new(2)])
+                .unwrap(),
+        }
+        .build()
+        .unwrap();
+        assert_eq!(
+            selected.message_envelopes()[0].before(),
+            Some(ItemId::new(2))
+        );
+        assert_eq!(source.message_envelopes()[0].before(), None);
+    }
+}
 fn call() -> Item {
     Item::ToolCall(ToolCall {
         replay: None,

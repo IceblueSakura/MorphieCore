@@ -1,6 +1,6 @@
 //! Delivery owner tests use an instrumented HTTP body, not a second Router.
 use super::*;
-use crate::gateway::tests::responses_wire;
+use crate::gateway::{BoundCandidate, tests::responses_wire};
 use crate::{
     adapter::ClientProtocol,
     gateway::{family, tests::support::gateway},
@@ -8,6 +8,33 @@ use crate::{
 };
 use futures_util::StreamExt;
 use std::{sync::atomic::AtomicUsize, time::Duration};
+#[allow(clippy::too_many_arguments)]
+async fn respond(
+    entry: Arc<BoundEntry>,
+    candidate: Arc<crate::gateway::BoundCandidate>,
+    request: Request,
+    upstream: reqwest::Response,
+    limits: &Limits,
+    deadline: Instant,
+    shutdown: tokio_util::sync::CancellationToken,
+    permit: OwnedSemaphorePermit,
+    trace: Trace,
+) -> Result<Response, ApiError> {
+    respond_source(
+        entry,
+        request,
+        Upstreams::Observed {
+            candidate,
+            response: upstream,
+        },
+        limits.clone(),
+        deadline,
+        shutdown,
+        permit,
+        trace,
+    )
+    .await
+}
 #[allow(dead_code)]
 #[path = "../../../tests/support/chat_profile.rs"]
 mod wire;
@@ -845,6 +872,58 @@ async fn late_truncation_and_trailing_payload_never_emit_success_terminal() {
     assert!(!wire.contains("response.completed"));
 }
 #[tokio::test]
+async fn queued_first_frame_timeout_preserves_the_final_public_error() {
+    let gate = gateway(Limits {
+        concurrency: 1,
+        ..Default::default()
+    });
+    let (tx, upstream, _, _) = upstream(200, "application/json");
+    tx.send(Ok(Bytes::from(wire::response(1).to_string())))
+        .await
+        .unwrap();
+    drop(tx);
+    let entry = gate.state.entries[&(family(Profile::Chat), "fixture-model".into())].clone();
+    let request = entry
+        .client
+        .as_openai()
+        .unwrap()
+        .0
+        .decode_request(
+            br#"{"model":"fixture-model","messages":[{"role":"user","content":"hello"}]}"#,
+        )
+        .unwrap();
+    let trace = Trace::generation(None);
+    let report = trace.report.clone();
+    let permit = gate.state.permits.clone().acquire_owned().await.unwrap();
+    let pending = respond(
+        entry.clone(),
+        entry.candidates[0].clone(),
+        request,
+        upstream,
+        &gate.state.limits,
+        Instant::now() + Duration::from_millis(100),
+        gate.state.shutdown.clone(),
+        permit,
+        trace,
+    );
+    tokio::pin!(pending);
+    assert!(futures_util::poll!(&mut pending).is_pending());
+    let _released = bounded(gate.state.permits.clone().acquire_owned())
+        .await
+        .unwrap();
+    let snapshot = report.snapshot();
+    assert!(
+        snapshot.attempts[0].checked_units > 0,
+        "must reach queued output"
+    );
+    assert_eq!(snapshot.attempts[0].handed_off_frames, 0);
+    let error = pending.await.unwrap_err();
+    assert_eq!(error.status, 504);
+    assert_eq!(snapshot.public_code, Some(error.code));
+    assert_eq!(snapshot.public_status, Some(504));
+}
+
+#[tokio::test]
 async fn drop_deadline_and_shutdown_release_upstream_even_when_body_is_unpolled() {
     for mode in ["drop", "deadline", "shutdown", "server-drop"] {
         let gate = gateway(Limits {
@@ -1090,6 +1169,12 @@ async fn invalid_heads_and_static_overflow_fail_without_exposing_provider_data()
         assert_eq!(error.status, 502);
         assert_eq!(reads.load(Ordering::SeqCst), 0);
         let snapshot = report.snapshot();
+        assert_eq!(snapshot.public_code, Some(error.code));
+        assert_eq!(snapshot.public_status, Some(502));
+        assert_eq!(
+            snapshot.result,
+            crate::execution::report::ResultState::Failed
+        );
         let failure = snapshot.attempts[0].failure.as_ref().unwrap();
         assert!(matches!(
             failure.cause,

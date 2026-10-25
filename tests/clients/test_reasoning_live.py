@@ -172,9 +172,17 @@ class ReasoningLiveOracles(unittest.TestCase):
                         "redacted": False, "dropped_before": 0}]
             capture_path = root / "capture.jsonl"
             capture_path.write_text("".join(json.dumps(record) + "\n" for record in capture))
-            (root / "diagnostics.jsonl").write_text("".join(json.dumps({
-                "event": "request", "outcome": "complete", "candidates": [{}]}) + "\n" for _ in range(3)))
+            diagnostic_path = root / "diagnostics.jsonl"
+            diagnostics = "".join(json.dumps({
+                "event": "request", "outcome": "complete", "candidates": [{}]}) + "\n" for _ in range(3))
+            diagnostics += '{"event":"log"}\n{"event":"span"}\n'
+            diagnostic_path.write_text(diagnostics)
             self.assertTrue(state.verify()["readable_reasoning_replayed"])
+            for event in ["logging_status", "unknown"]:
+                diagnostic_path.write_text(diagnostics + json.dumps({"event": event}) + "\n")
+                with self.assertRaisesRegex(RuntimeError, "^live_diagnostic_loss$"):
+                    state.verify()
+            diagnostic_path.write_text(diagnostics)
             owner.requests[1]["messages"][1]["reasoning_content"] = "changed"
             with self.assertRaisesRegex(RuntimeError, "^reasoning_changed$"):
                 state.verify()

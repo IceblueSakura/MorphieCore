@@ -126,7 +126,7 @@ class Gateway:
     def verify(self, exact=False):
         require(self.process.returncode == 0, "gateway_shutdown")
         records = [json.loads(line) for line in (self.root / "diagnostics.jsonl").read_text().splitlines()]
-        require(all(record.get("event") in ("file", "request") for record in records), "diagnostic_loss")
+        require(all(record.get("event") in ("file", "request", "log", "span") for record in records), "diagnostic_loss")
         requests = [record for record in records if record.get("event") == "request"]
         require(len(requests) == len(self.requests) == self.budget, "actual_request_count")
         require(all(record["outcome"] == "complete" and len(record["candidates"]) == 1
