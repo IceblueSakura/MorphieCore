@@ -53,7 +53,6 @@ impl Counters {
 struct Shared {
     tx: mpsc::SyncSender<Message>,
     run: String,
-    next: AtomicU64,
     counts: Arc<Counters>,
 }
 #[derive(Clone)]
@@ -115,12 +114,7 @@ impl Sink {
         let mut nonce = [0u8; 16];
         getrandom::fill(&mut nonce).map_err(|_| io::Error::other("diagnostics randomness"))?;
         let run = nonce.iter().map(|b| format!("{b:02x}")).collect();
-        let shared = Arc::new(Shared {
-            tx,
-            run,
-            next: AtomicU64::new(1),
-            counts,
-        });
+        let shared = Arc::new(Shared { tx, run, counts });
         let telemetry = super::telemetry::Telemetry::new(Output(shared.clone()));
         Ok(Self(shared, telemetry))
     }
@@ -128,19 +122,12 @@ impl Sink {
     pub(super) fn from_sender(tx: mpsc::SyncSender<Message>) -> Self {
         Self::from_parts(tx, Arc::default()).unwrap()
     }
-    pub(super) fn request_id(&self) -> Option<String> {
-        self.0
-            .next
-            .try_update(Ordering::Relaxed, Ordering::Relaxed, |n| n.checked_add(1))
-            .ok()
-            .map(|n| format!("{}:{n}", self.0.run))
-    }
     #[cfg(test)]
     pub(super) fn record(&self, record: Box<Record>) {
         Output(self.0.clone()).send(Message::Record(record));
     }
-    pub(super) fn request(&self, id: &str) -> super::telemetry::Request {
-        self.1.request(id)
+    pub(super) fn request(&self, id: &str, agent: Option<&str>) -> super::telemetry::Request {
+        self.1.request(id, agent)
     }
     pub(in crate::gateway) async fn flush(&self) {
         Output(self.0.clone()).flush().await;
@@ -609,10 +596,6 @@ mod tests {
     async fn queue_loss_disconnect_and_incomplete_flush_are_observable_without_waiting() {
         let (tx, rx) = mpsc::sync_channel(1);
         let sink = Sink::from_sender(tx);
-        let first = sink.request_id().unwrap();
-        let second = sink.request_id().unwrap();
-        assert_ne!(first, second);
-        assert_eq!(first.split(':').next(), second.split(':').next());
         sink.record(Box::default());
         sink.record(Box::default());
         assert_eq!(sink.0.counts.snapshot().dropped, 1);
@@ -622,12 +605,6 @@ mod tests {
         sink.record(Box::default());
         assert!(sink.0.counts.snapshot().writer_failed);
         assert_eq!(sink.0.counts.snapshot().failed, 1);
-        let (tx, _rx) = mpsc::sync_channel(1);
-        let restarted = Sink::from_sender(tx);
-        assert_ne!(
-            first.split(':').next(),
-            restarted.request_id().unwrap().split(':').next()
-        );
     }
 
     #[test]

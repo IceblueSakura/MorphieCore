@@ -1,4 +1,4 @@
-//! Opt-in operator metadata. Never observes bodies, arbitrary headers or identities.
+//! Opt-in operator metadata. Only trusted Agent identity and body-free observations.
 //! Request paths only try-send to a bounded writer; failures cannot alter responses.
 use serde::Serialize;
 use std::time::Instant;
@@ -173,20 +173,55 @@ pub(super) struct Trace {
     telemetry: Option<telemetry::Request>,
 }
 impl Trace {
-    pub(super) fn agent(&mut self, agent: Option<&super::ingress::auth::AuthenticatedAgent>) {
-        self.record.agent_id = agent.map(|agent| agent.agent_id.to_string());
-    }
-
-    pub(super) fn generation(sink: Option<&Sink>) -> Self {
-        let mut trace = Self::new(sink);
-        trace.generation = true;
+    pub(super) fn for_request(sink: Option<&Sink>, request: &axum::extract::Request) -> Self {
+        let mut trace = Self::build(
+            sink,
+            request
+                .extensions()
+                .get::<super::ingress::correlation::RequestId>()
+                .map(|id| id.0.to_string()),
+            request
+                .extensions()
+                .get::<super::ingress::auth::AuthenticatedAgent>()
+                .map(|agent| agent.agent_id.to_string()),
+        );
+        trace.capture = request
+            .extensions()
+            .get::<super::capture::Exchange>()
+            .cloned();
         trace
     }
 
+    pub(super) fn generation(&mut self) {
+        self.generation = true;
+    }
+
+    #[cfg(test)]
+    pub(super) fn generation_trace(sink: Option<&Sink>) -> Self {
+        let mut trace = Self::new(sink);
+        trace.generation();
+        trace
+    }
+
+    #[cfg(test)]
     pub(super) fn new(sink: Option<&Sink>) -> Self {
-        let request_id = sink.and_then(Sink::request_id);
-        let telemetry =
-            sink.map(|sink| sink.request(request_id.as_deref().unwrap_or("unavailable")));
+        Self::build(
+            sink,
+            super::ingress::correlation::RequestIds::new()
+                .unwrap()
+                .next()
+                .map(|id| id.0.to_string()),
+            None,
+        )
+    }
+
+    fn build(sink: Option<&Sink>, request_id: Option<String>, agent_id: Option<String>) -> Self {
+        let telemetry = sink.map(|sink| {
+            sink.request(
+                request_id.as_deref().unwrap_or("unavailable"),
+                agent_id.as_deref(),
+            )
+        });
         Self {
             telemetry,
             report: Default::default(),
@@ -197,6 +232,7 @@ impl Trace {
             sink: sink.cloned(),
             record: Record {
                 request_id,
+                agent_id,
                 ..Default::default()
             },
             start: Instant::now(),
@@ -373,8 +409,22 @@ impl Trace {
             }),
         );
     }
-    pub(super) fn events(&mut self, events: &[crate::semantic::task::generation::StreamEvent]) {
+    pub(super) fn events(
+        &mut self,
+        events: &[crate::semantic::task::generation::StreamEvent],
+        evidence: &crate::lowering::generation::EvidenceDelta,
+    ) {
         use crate::semantic::task::generation::{ItemKind, StreamEvent};
+        for event in events {
+            match event {
+                StreamEvent::Usage(usage) => self.report.source_usage(
+                    &crate::semantic::task::generation::UsageReport::operation(*usage),
+                    evidence,
+                ),
+                StreamEvent::UsageReport(report) => self.report.source_usage(report, evidence),
+                _ => {}
+            }
+        }
         if self.sink.is_none() {
             return;
         }
@@ -769,12 +819,15 @@ mod tests {
         let (tx, _rx) = mpsc::sync_channel(1);
         let sink = Sink::from_sender(tx);
         let mut trace = Trace::new(Some(&sink));
-        trace.events(&[StreamEvent::Delta {
-            item: ItemId::new(1),
-            part: PartId::new(1),
-            fragment: "synthetic-private-body".into(),
-            logprobs: vec![],
-        }]);
+        trace.events(
+            &[StreamEvent::Delta {
+                item: ItemId::new(1),
+                part: PartId::new(1),
+                fragment: "synthetic-private-body".into(),
+                logprobs: vec![],
+            }],
+            &Default::default(),
+        );
         let error=Adapter::new(Profile::Chat,Dialect::Standard,None).decode_request(br#"{"model":"m","messages":[{"role":"user","content":"synthetic-private-body"}],"synthetic-private-field":"synthetic-private-value"}"#).unwrap_err();
         assert!(matches!(
             error,

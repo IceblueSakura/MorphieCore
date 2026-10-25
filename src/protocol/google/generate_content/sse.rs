@@ -135,6 +135,10 @@ impl GenerationSseDecoder {
     pub fn metadata(&self) -> Option<&ResponseMetadata> {
         self.metadata.as_ref()
     }
+    /// Validated source accounting may precede its terminal event carrier.
+    pub(crate) fn pending_usage_report(&self) -> Option<&UsageReport> {
+        self.usage.as_ref()
+    }
     pub fn fidelity(&self) -> &FidelityRecords {
         &self.fidelity
     }

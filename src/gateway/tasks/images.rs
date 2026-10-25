@@ -74,8 +74,7 @@ pub(in crate::gateway) async fn handle(
         .unwrap_or_else(IntoResponse::into_response)
 }
 async fn ingress(runtime: Arc<Runtime>, request: Request) -> Result<Response, ApiError> {
-    let mut trace = Trace::new(runtime.diagnostics.as_ref());
-    trace.agent(request.extensions().get());
+    let trace = Trace::for_request(runtime.diagnostics.as_ref(), &request);
     if runtime.shutdown.is_cancelled() {
         return Err(ApiError::shutdown());
     }

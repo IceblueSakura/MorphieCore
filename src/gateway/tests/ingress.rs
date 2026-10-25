@@ -136,7 +136,7 @@ async fn checked_intake_survives_admission_and_planning_failures_without_an_atte
             .execution
             .request_body_limit = 1;
     }
-    let trace = crate::gateway::diagnostics::Trace::generation(None);
+    let trace = crate::gateway::diagnostics::Trace::generation_trace(None);
     let report = trace.report.clone();
     let (entry, request) = admission::prepare(
         state,
@@ -447,6 +447,9 @@ async fn diagnostics_only_record_authenticated_requests_and_never_expose_headers
         .filter(|value: &serde_json::Value| value["event"] == "request")
         .collect();
     assert_eq!(records.len(), 1);
+    assert_eq!(records[0]["agent_id"], "fixture-agent");
+    let request_id = records[0]["request_id"].as_str().unwrap();
+    assert!(!request_id.is_empty());
     assert!(!text.contains(KEY));
     assert!(!text.contains("invalid json"));
     assert!(text.contains("admission"));
@@ -456,18 +459,20 @@ async fn diagnostics_only_record_authenticated_requests_and_never_expose_headers
     assert!(!captured.contains("invalid json"));
     assert!(captured.contains("synthetic-private-header"));
     assert!(captured.contains("client_response"));
-    assert!(
-        captured.lines().all(|line| {
-            serde_json::from_str::<serde_json::Value>(line).unwrap()["exchange"] == 1
-        })
-    );
+    assert!(captured.lines().all(|line| {
+        let row: serde_json::Value = serde_json::from_str(line).unwrap();
+        row["exchange"] == 1
+            && row["request_id"] == request_id
+            && row["agent_id"] == records[0]["agent_id"]
+    }));
 }
 #[tokio::test]
 async fn authenticated_agent_is_fixed_before_optional_capture() {
     use crate::gateway::ingress::auth::{Auth, AuthenticatedAgent};
+    use crate::gateway::ingress::correlation::RequestId;
     use axum::extract::Extension;
     const OTHER: &str = "synthetic-second-client-token-00002";
-    for capture in [false, true] {
+    for (diagnostics, capture) in [(false, false), (false, true), (true, false), (true, true)] {
         let directory = crate::test_files::private_directory();
         let mut gate = gateway(Limits::default());
         Arc::get_mut(&mut gate.state).unwrap().auth = Auth::new(BTreeMap::from([
@@ -475,6 +480,11 @@ async fn authenticated_agent_is_fixed_before_optional_capture() {
             ("opencode".into(), SecretMaterial::new(OTHER).unwrap()),
         ]))
         .unwrap();
+        if diagnostics {
+            gate = gate
+                .with_diagnostics(&directory.path().join("events.jsonl"))
+                .unwrap();
+        }
         if capture {
             gate = gate
                 .with_capture(
@@ -488,15 +498,24 @@ async fn authenticated_agent_is_fixed_before_optional_capture() {
         }
         let app = Router::new()
             .fallback(
-                |Extension(agent): Extension<AuthenticatedAgent>| async move {
-                    agent.agent_id.to_string()
+                |Extension(agent): Extension<AuthenticatedAgent>,
+                 Extension(id): Extension<RequestId>| async move {
+                    axum::Json(serde_json::json!({
+                        "agent_id":agent.agent_id.as_ref(),"request_id":id.0.as_ref()
+                    }))
                 },
             )
             .layer(middleware::from_fn_with_state(
                 gate.state.clone(),
                 authenticate,
             ));
-        for (key, expected) in [(KEY, "pi"), (OTHER, "opencode")] {
+        let mut references = std::collections::BTreeSet::new();
+        for (key, expected) in [(KEY, "pi"), (OTHER, "opencode"), (KEY, "pi")] {
+            let forbidden = futures_util::stream::poll_fn(
+                |_| -> std::task::Poll<Option<Result<bytes::Bytes, std::io::Error>>> {
+                    panic!("identity observer must not poll the body")
+                },
+            );
             let response = app
                 .clone()
                 .oneshot(
@@ -505,20 +524,33 @@ async fn authenticated_agent_is_fixed_before_optional_capture() {
                         .header("x-api-key", key)
                         .header("agent_id", "forged")
                         .header("x-morphiecore-agent-id", "forged")
-                        .body(axum::body::Body::from(r#"{"agent_id":"forged"}"#))
+                        .header("x-request-id", "forged")
+                        .body(axum::body::Body::from_stream(forbidden))
                         .unwrap(),
                 )
                 .await
                 .unwrap();
             assert_eq!(response.status(), 200);
-            assert_eq!(
-                axum::body::to_bytes(response.into_body(), 128)
-                    .await
-                    .unwrap(),
-                expected
-            );
+            let bytes = axum::body::to_bytes(response.into_body(), 512)
+                .await
+                .unwrap();
+            let value: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+            assert_eq!(value["agent_id"], expected);
+            let id = value["request_id"].as_str().unwrap();
+            assert_ne!(id, "forged");
+            assert!(references.insert(id.to_owned()));
         }
         gate.flush_diagnostics().await;
+        if capture {
+            let captured = std::fs::read_to_string(directory.path().join("capture.jsonl")).unwrap();
+            for row in captured
+                .lines()
+                .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
+            {
+                assert!(references.contains(row["request_id"].as_str().unwrap()));
+                assert!(matches!(row["agent_id"].as_str(), Some("pi" | "opencode")));
+            }
+        }
     }
 }
 

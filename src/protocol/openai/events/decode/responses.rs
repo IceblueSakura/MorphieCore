@@ -1381,6 +1381,7 @@ impl EventDecoder {
         let semantic = materialize(self.state()?)?;
         self.fidelity
             .bind_verified_snapshot_records(&decoded.fidelity, &semantic);
+        self.evidence.extend(decoded.evidence);
         Ok(())
     }
 }

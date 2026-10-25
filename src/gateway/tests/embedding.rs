@@ -113,7 +113,17 @@ async fn cancelled_embedding_intake_releases_its_body_without_a_result() {
     )
     .unwrap();
     let mut trace = Trace::new(None);
-    trace.capture = Some(sink.exchange());
+    trace.capture = Some(
+        sink.exchange(
+            crate::gateway::ingress::correlation::RequestIds::new()
+                .unwrap()
+                .next()
+                .as_ref(),
+            &crate::gateway::ingress::auth::AuthenticatedAgent {
+                agent_id: "fixture-agent".into(),
+            },
+        ),
+    );
     trace.capture_attempt = 1;
     let (tx, response, dropped) = source(200, "application/json");
     tx.send(Ok(Bytes::from_static(RESULT))).await.unwrap();

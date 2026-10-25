@@ -58,6 +58,7 @@ pub(super) struct Runtime {
     pub(super) affinity: affinity::Index,
     pub(super) executors: executors::Executors,
     pub(super) auth: auth::Auth,
+    pub(super) request_ids: super::ingress::correlation::RequestIds,
     pub(super) entries: BTreeMap<(ClientProtocol, String), Arc<BoundEntry>>,
     pub(super) images: BTreeMap<String, Arc<images::BoundImage>>,
     pub(super) speech: BTreeMap<String, Arc<speech::BoundSpeech>>,

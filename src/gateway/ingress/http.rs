@@ -117,12 +117,16 @@ pub(in crate::gateway) async fn authenticate(
             ApiError::new(StatusCode::UNAUTHORIZED, "unauthorized"),
         );
     };
-    request.extensions_mut().insert(agent);
+    let request_id = state.request_ids.next();
+    request.extensions_mut().insert(agent.clone());
+    if let Some(id) = &request_id {
+        request.extensions_mut().insert(id.clone());
+    }
     let Some(sink) = &state.capture else {
         return next.run(request).await;
     };
     use crate::gateway::capture::Boundary;
-    let capture = sink.exchange();
+    let capture = sink.exchange(request_id.as_ref(), &agent);
     capture.head(
         Boundary::ClientRequest,
         None,
@@ -176,12 +180,8 @@ pub(in crate::gateway) async fn handle(
     protocol: ClientProtocol,
     request: Request,
 ) -> Result<Response, ApiError> {
-    let mut trace = Trace::generation(state.diagnostics.as_ref());
-    trace.agent(request.extensions().get());
-    trace.capture = request
-        .extensions()
-        .get::<crate::gateway::capture::Exchange>()
-        .cloned();
+    let mut trace = Trace::for_request(state.diagnostics.as_ref(), &request);
+    trace.generation();
     let admission:Result<_,ApiError>=async {
     let permit = admission::acquire_permit(&state)?;
     admission::headers(request.headers(), state.limits.request_bytes)?;

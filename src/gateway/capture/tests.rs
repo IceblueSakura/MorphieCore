@@ -20,7 +20,15 @@ async fn credentials_are_redacted_before_bounded_capture_and_incomplete_sources_
     );
     let sink = CaptureSink::open(config.clone()).unwrap();
     assert!(CaptureSink::open(config).is_err());
-    let capture = sink.exchange();
+    let capture = sink.exchange(
+        crate::gateway::ingress::correlation::RequestIds::new()
+            .unwrap()
+            .next()
+            .as_ref(),
+        &crate::gateway::ingress::auth::AuthenticatedAgent {
+            agent_id: "synthetic-agent".into(),
+        },
+    );
     let mut headers = HeaderMap::new();
     headers.insert(
         "authorization",

@@ -44,6 +44,15 @@ async fn answer(
     headers: HeaderMap,
     axum::Json(request): axum::Json<Value>,
 ) -> Response {
+    for name in [
+        "agent_id",
+        "x-morphiecore-agent-id",
+        "x-request-id",
+        "traceparent",
+        "tracestate",
+    ] {
+        assert!(!headers.contains_key(name));
+    }
     if state.profile == Profile::Google {
         assert_eq!(
             headers["x-goog-api-key"],

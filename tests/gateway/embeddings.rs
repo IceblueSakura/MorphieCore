@@ -57,6 +57,14 @@ async fn embedding_encodings_receipts_capture_and_effective_width() {
                 .post(format!("{}/v1/embeddings", fixture.base))
                 .bearer_auth(CLIENT_KEY)
                 .header("x-never-forward", "synthetic-private")
+                .header("agent_id", "forged")
+                .header("x-morphiecore-agent-id", "forged")
+                .header("x-request-id", "forged")
+                .header(
+                    "traceparent",
+                    "00-11111111111111111111111111111111-2222222222222222-01",
+                )
+                .header("tracestate", "synthetic=forged")
                 .json(&request)
                 .send()
                 .await
@@ -178,6 +186,25 @@ async fn embedding_encodings_receipts_capture_and_effective_width() {
             })
             .unwrap();
         let exchange = &delivery["exchange"];
+        let request_id = delivery["request_id"].as_str().unwrap();
+        let diagnostic = records
+            .iter()
+            .find(|r| r["request_id"] == request_id)
+            .unwrap();
+        assert_eq!(diagnostic["agent_id"], "fixture-agent");
+        assert_eq!(diagnostic["capture_exchange"], *exchange);
+        assert!(
+            captures
+                .iter()
+                .filter(|r| &r["exchange"] == exchange)
+                .all(|r| r["request_id"] == request_id && r["agent_id"] == "fixture-agent")
+        );
+        let ids: std::collections::BTreeSet<_> = records
+            .iter()
+            .filter(|r| r["event"] == "request")
+            .map(|r| r["request_id"].as_str().unwrap())
+            .collect();
+        assert_eq!(ids.len(), candidates.len() + 1);
         for boundary in [
             "client_request",
             "upstream_request",

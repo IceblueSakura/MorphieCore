@@ -8,6 +8,8 @@ use crate::protocol::failure::SourceFailureEvidence;
 use bytes::Bytes;
 use serde::{Serialize, Serializer, ser::SerializeStruct};
 use std::sync::{Arc, Mutex};
+mod usage;
+pub use usage::SourceUsage;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -155,6 +157,7 @@ pub enum TaskOutcome {
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct AttemptReport {
     pub ordinal: usize,
+    pub source_usage: SourceUsage,
     pub reported_settings: Option<crate::lowering::generation::ReasoningControls>,
     pub prepared: bool,
     pub send_started: bool,
@@ -269,6 +272,13 @@ impl Report {
                 f(a)
             }
         });
+    }
+    pub(crate) fn source_usage(
+        &self,
+        report: &crate::semantic::task::generation::UsageReport,
+        evidence: &EvidenceDelta,
+    ) {
+        self.update(|a| a.source_usage.observe(report, evidence));
     }
     pub fn failure(&self, boundary: Option<ConversionBoundary>, error: &AttemptError) {
         self.with(|r| {

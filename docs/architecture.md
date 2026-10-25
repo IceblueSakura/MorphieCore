@@ -27,6 +27,7 @@ This page owns accepted principles, domain contracts and decision records. [Road
   - [Chat reasoning extensions](#chat-reasoning-extensions)
   - [Compacted history](#compacted-history)
   - [Stateful history](#stateful-history)
+  - [Agent session files](#agent-session-files)
 - [Native Messages projection](#native-messages-projection)
   - [Request rules](#request-rules)
   - [Missing output ceilings](#missing-output-ceilings)
@@ -1071,13 +1072,23 @@ Storage defaults to true, matching OpenAI's Responses default. Omitted or null `
 
 The synchronous API includes response retrieval and deletion and cursor-paginated input items. Only fully delivered terminal responses become visible. Unknown, deleted and expired references have the same not-found result. Stored branches own complete snapshots: deleting or expiring an ancestor does not invalidate an already stored descendant. Retrieval is JSON only; there is no event log or stream resumption.
 
-History lives in bounded process memory with a TTL. Expiration or restart invalidates stored references; there is no disk durability or restart recovery. Other storage backends require a later decision, not a prebuilt backend framework.
+History lives in bounded process memory with a TTL. Expiration or restart invalidates stored references; there is no disk durability or restart recovery. The selected [Agent session-file direction](#agent-session-files) still needs its concrete storage contract; it does not change this implementation or justify a prebuilt backend framework.
 
 Capacity accounts for typed payloads, retrieval bytes, owner records and nested part allocations, including empty parts and signatures absent from public wire. Accounting does not require public representability or serialization of retained input. A final snapshot reserves capacity before its terminal frame is queued. The body publishes it synchronously at the final acknowledged handoff, so an immediately following request can resolve it. Dropped or failed delivery releases the reservation. TTL starts at publication, reads do not extend it, and expired entries are reclaimed on store access. Unexpired entries are not evicted.
 
 Upstream calls remain stateless, using full history and `store: false` where supported. Neither Provider-only nor hybrid Provider-held continuation is planned. Downstream storage intent never enables upstream storage. Cache affinity remains separate from history ownership.
 
 The scope is conversation history management, not execution persistence. No `background: true`, detached generation jobs, scheduler or agent loop is planned. JSON and SSE requests keep the existing cancellation and honest-delivery rules.
+
+### Agent session files
+
+**Direction selected on 2026-10-25; included in the current downstream-integration stage, not implemented.** Organize retained sessions in separate directories per stable authenticated Agent, with each directory containing a group of JSONL files when session storage is enabled. Names, client-supplied paths and credentials cannot select the storage namespace. This is session storage, not the operational JSONL log or exchange-capture sink.
+
+Cross-Agent work should explicitly read an earlier session or copy it into a new working session before continuing, rather than silently changing the original session's Agent. Keep original provenance and distinguish the new caller's work; submitted client history alone does not prove the authorship of every message. Directory organization does not itself define an ACL, cluster store or new public API.
+
+Reading history as context and copying resumable typed history are different operations. Public transcript JSON may omit hidden signatures/grouping required by managed continuation. No read or copy may strip protected state, make foreign Provider/account-bound replay valid or treat copied text as complete executable continuation.
+
+The next design must select session identity, JSONL record meaning, explicit read/copy behavior, storage opt-in and its relation to protocol `store`, finite retention/capacity, private-file safety and interrupted-write/publication semantics. Concrete migration, file layout/record schema, persistence implementation and endpoint activation are not selected here. Existing Responses storage defaults/TTL and shared HTTP permissions remain unchanged; Chat/Messages gain no `store` field through this direction.
 
 ## Native Messages projection
 
@@ -1328,11 +1339,19 @@ API keys remain supported for simple or unattended clients. Reuse the authorizat
 
 #### Shared history and usage attribution
 
-The future session store is cluster-shared among admitted Agents, not tenant-private by default. Record the creating Agent and the actual Agent on every subsequent request; handoff does not rewrite history authorship. Shared data access does not grant credential-management privileges or bypass Provider/account-bound replay restrictions. Key revocation blocks the relevant future access under the selected revocation policy; it does not delete history. Durable storage is a separate choice from attribution and does not replace today's [process-local TTL history](#stateful-history).
+Session organization follows the selected [per-Agent JSONL direction](#agent-session-files), with explicit reading or copying for cross-Agent work. Record the creating Agent and the actual Agent on every subsequent operation; handoff does not rewrite history authorship. Current admitted Agents still share the existing HTTP access policy, not tenant-private ACLs. Shared data access does not grant credential-management privileges or bypass Provider/account-bound replay restrictions. Key revocation does not delete history. Persistence implementation remains separate from attribution and does not replace today's [process-local TTL history](#stateful-history).
 
 Fix attribution at request admission, not by looking up a credential's current binding during later aggregation. Usage belongs to the Agent making each request, not the conversation creator or parent Agent. Conversation and parent/child rollups are alternate views, never additional consumption. Preserve per-attempt source accounting and distinguish reported values, explicitly estimated values with provenance, and unknown usage. Do not sum cumulative streaming snapshots, treat failed/cancelled requests as free, or equate price-versioned cost estimates with Provider invoices.
 
 Internal statistics may be best effort with visible loss and completeness indicators; diagnostic logs are not a durable billing ledger or strict quota authority. This baseline selects neither financial billing nor a reservation/settlement subsystem. Structured events and full-content capture use shared Agent/request/attempt references but retain separate storage and reliability policies under [Observability](#observability) and [exchange capture](#configurable-exchange-capture).
+
+**Minimal diagnostic attribution selected on 2026-10-25.** Authenticated admission allocates one runtime-nonce/sequence request reference independently of diagnostics or capture. Inference traces, attempt logs/spans and each enabled capture row use that reference and the authenticated Agent, never a caller-provided identity. Exhausted sequence space leaves correlation unknown rather than reusing an ID or rejecting business data. IDs remain internal; no new response header, client turn inference, history-access audit or upstream header is introduced.
+
+Each Generation attempt retains bounded, latest validated source usage observations by operation/step scope before delivery projection. Repeated observations replace rather than merge or sum; final accounting stage is not EOF, successful delivery or exhaustive billing. Earlier successful source units survive later failure/cancellation, while rejected units contribute no new observations. Static intake contributes only after successful typed completion. Pending generateContent accounting is observed without changing its terminal event carrier.
+
+The execution report retains exact source counters, accounting premises, sparse breakdowns and source-default markers, not downstream completed/estimated usage. The existing intake evidence qualifies cache-write normalization: `cache_write_basis` distinguishes `source`, `selected_policy` and `unassessed`. Policy-filled cache writes, or writes whose provenance could be missing after evidence truncation, remain unknown in this source view; an explicitly reported zero stays zero. Streaming observations retain their source-unit evidence rather than re-reading the materialized response after those deltas were drained.
+
+The allowance is 32 scopes and 16 KiB of accounted report storage per attempt; overflow increments omitted-observation counts without affecting inference. These count failed retention calls, not distinct upstream messages. A prior retained scope whose replacement cannot fit is explicitly marked `latest:false`, not advertised as current. Missing usage remains unknown. This is diagnostic evidence, not usage aggregation, metrics activation or durable accounting.
 
 ### Observability
 
@@ -1360,7 +1379,7 @@ The retained JSONL file adapter is a local sink for standard SDK records, not a 
 
 The selected local maintenance keeps the existing 64-record try-send boundary and one writer. It retains two private, whole-record files of at most 1 MiB each, recognizes its versioned format, locks both data-file namespaces and rejects unrelated/empty files or aliases. Recognized incomplete tails are repaired with a byte-loss count; this is not power-loss durability. Healthy output records cumulative loss/flush health; failed file output uses fixed, body-free background stderr warnings. Neither request recording nor the two-second best-effort flush waits for stderr. See [operator procedures](usage.md#body-free-diagnostics).
 
-Each request receives a gateway-generated run-nonce/sequence correlation ID; candidate ordinals are scoped to that request. This is neither authentication nor evidence of a client turn/session and is not forwarded upstream. `first_upstream_delta_ms` measures the first decoded nonempty text/reasoning/argument delta relative to request start, including previous attempts. It is distinct from first bytes and actual client visibility; use the [controlled consumer-side observation](development.md#sustained-operation-acceptance). Completed-block CLI output is not a first-delta signal, and network release proves neither remote compute nor billing cancellation.
+Each authenticated request receives a gateway-generated runtime-nonce/sequence correlation ID independently of these sinks; candidate ordinals are scoped to that request. See [minimal attribution](#shared-history-and-usage-attribution). This is neither authentication nor evidence of a client turn/session and is not forwarded upstream. `first_upstream_delta_ms` measures the first decoded nonempty text/reasoning/argument delta relative to request start, including previous attempts. It is distinct from first bytes and actual client visibility; use the [controlled consumer-side observation](development.md#sustained-operation-acceptance). Completed-block CLI output is not a first-delta signal, and network release proves neither remote compute nor billing cancellation.
 
 ### Configurable exchange capture
 
@@ -1395,6 +1414,7 @@ The 2026-10-23 standards reset supersedes conflicting historical conversion, pub
 | Decision | Consequence |
 |---|---|
 | Local telemetry wiring (2026-10-25) | Scoped tracing/OTel request and attempt lifetimes project the existing report into native structured logs and completed spans through the existing private writer. No global registration, ambient destination, metrics reader, new retention mechanism or network exporter; Collector/export-health integration remains separately selected |
+| Minimal diagnostic attribution (2026-10-25) | Admission-owned Agent/request references join inference logs/spans and private capture independently of sink availability. Bounded per-attempt source accounting retains observed facts and explicit loss, not completed delivery estimates or billing totals; no routing, public diagnostic schema or aggregation change |
 | Unified Generation evidence (2026-10-24) | One pure typed effect delta, contextual typed failures and an execution-owned bounded report replace parallel audit ledgers. Checked conversion, publication and body handoff remain distinct. Logs and optional wire views project the same evidence independently of telemetry availability; no retry/health/no-replay change or production exporter activation |
 | Standards reset and breaking redesign (2026-10-23) | User accepted semantic-union IR with unique ownership, exact-first ordered fallback, official public protocol baselines, actual-loss reporting and review of all prior conversions. Pin current stable dependencies and release sources before implementation; old mapping outputs are not regression authority. Reuse upstream standard-based tests in the integrated redesign gate, preserving independent safety invariants |
 | Standard classified stream errors (2026-10-24) | User selected standard Responses `error` events for gateway-classified failures, preserving exact codes without inventing model-reported `response.failed` objects. Supersedes the former Codex-only failure shape; pre-frame and published failures retain separate ordering, bounds and SDK checks |
@@ -1540,6 +1560,7 @@ The 2026-10-23 standards reset supersedes conflicting historical conversion, pub
 | Prefix-cache ownership (migration completed 2026-10-24) | One semantic boundary owner distinguishes request-inherited lifetime from owner-supplied TTL, including separate inner and outer tool-result boundaries. No fidelity marker survives deletion. Automatic caching and maximum retention remain separate; preserve native TTL admission and bounds. Unsupported targets reject rather than substitute TTLs, cache keys or retention |
 | Compacted context is required history | A distinct ordered compaction item preserves opaque content and identity. Incompatible targets reject it rather than apply the foreign-reasoning strip rule |
 | Gateway-only history | [In-memory TTL history](#stateful-history) defaults to enabled for OpenAI Responses compatibility; `store: false` opts out. Continuation, retrieval and deletion remain synchronous, without Provider-held state or background execution |
+| Agent session organization (2026-10-25) | [Per-Agent directories of JSONL sessions](#agent-session-files) are the selected current-stage direction when storage is enabled. Cross-Agent work explicitly reads or copies earlier sessions, preserving provenance and replay restrictions. Concrete records, migration and persistence implementation remain unselected; current TTL/API behavior is unchanged |
 | Stateless Google Interactions | `store: false` and full history; no `previous_interaction_id` or revision header. Signatures keep their native formats |
 | Existing cached context | A typed optional reference belongs to `GenerationRequest` as its input base, not settings, an ordered item or advisory cache hints. Preserve resource identity and reported expiry; unreported expiry is not unlimited retention. Boundary records hold provenance and an explicit target clock checks known expiry. Never fetch, expand, renew or silently omit the reference. Default binding admission and public request schemas stay unchanged |
 

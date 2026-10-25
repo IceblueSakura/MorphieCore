@@ -167,11 +167,14 @@ async fn produce(
                     return Err(failure);
                 }
             };
-            trace.report.accept(
-                crate::execution::report::View::SourceIntake,
-                attempt.take_evidence(),
-            );
-            trace.events(&events);
+            let evidence = attempt.take_evidence();
+            trace.events(&events, &evidence);
+            if let Some(report) = attempt.pending_source_usage_report() {
+                trace.report.source_usage(report, &evidence);
+            }
+            trace
+                .report
+                .accept(crate::execution::report::View::SourceIntake, evidence);
             trace.ignored_events(attempt.ignored_events());
             trace.reported_settings(
                 attempt
@@ -246,10 +249,17 @@ async fn produce(
         trace.decode_error(&error);
         ApiError::transport(crate::provider::ErrorClass::Upstream)
     })?;
-    trace.report.accept(
-        crate::execution::report::View::SourceIntake,
-        attempt.take_evidence(),
-    );
+    let evidence = attempt.take_evidence();
+    // Stream reports were observed with their source-unit provenance. Re-reading
+    // the materialized response after draining those deltas would lose that basis.
+    if json && let Ok(response) = attempt.response() {
+        for report in response.semantic.usage_reports().reports() {
+            trace.report.source_usage(report, &evidence);
+        }
+    }
+    trace
+        .report
+        .accept(crate::execution::report::View::SourceIntake, evidence);
     trace.report.update(|a| {
         a.source_eof = true;
         a.task_outcome = attempt.response().ok().map(|r| match r.semantic.outcome() {

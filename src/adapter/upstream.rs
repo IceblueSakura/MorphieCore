@@ -165,6 +165,14 @@ impl GenerationDecoder {
             _ => 0,
         }
     }
+    pub(crate) fn pending_usage_report(
+        &self,
+    ) -> Option<&crate::semantic::task::generation::UsageReport> {
+        match self {
+            Self::Google(d) => d.pending_usage_report(),
+            _ => None,
+        }
+    }
     pub(crate) fn metadata(&self) -> Option<&ResponseMetadata> {
         match self {
             Self::Responses(d) => d.metadata(),

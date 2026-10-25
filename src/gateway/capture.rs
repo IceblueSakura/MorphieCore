@@ -192,9 +192,15 @@ impl Sink {
             counts,
         })))
     }
-    pub(super) fn exchange(&self) -> Exchange {
+    pub(super) fn exchange(
+        &self,
+        request_id: Option<&super::ingress::correlation::RequestId>,
+        agent: &super::ingress::auth::AuthenticatedAgent,
+    ) -> Exchange {
         Exchange(Arc::new(ExchangeState {
             sink: self.clone(),
+            request_id: request_id.cloned(),
+            agent: agent.clone(),
             id: self.0.next.fetch_add(1, Ordering::Relaxed),
             used: AtomicUsize::new(0),
             sequence: AtomicU64::new(0),
@@ -216,6 +222,8 @@ impl Sink {
     }
 }
 struct ExchangeState {
+    request_id: Option<super::ingress::correlation::RequestId>,
+    agent: super::ingress::auth::AuthenticatedAgent,
     dropped: Arc<AtomicU64>,
     sink: Sink,
     id: u64,
@@ -276,7 +284,10 @@ impl Exchange {
         redacted: bool,
     ) {
         let writer = &self.0.sink.0;
-        let record = json!({"exchange":self.0.id,"attempt":attempt,"boundary":boundary.label(),
+        let record = json!({"exchange":self.0.id,
+            "request_id":self.0.request_id.as_ref().map(|id| id.0.as_ref()),
+            "agent_id":self.0.agent.agent_id.as_ref(),
+            "attempt":attempt,"boundary":boundary.label(),
             "sequence":self.0.sequence.fetch_add(1, Ordering::Relaxed),"status":status,
             "redacted":redacted,"dropped_before":self.0.dropped.load(Ordering::Relaxed),"value":value});
         let Ok(mut bytes) = serde_json::to_vec(&record) else {

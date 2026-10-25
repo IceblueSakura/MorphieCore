@@ -83,16 +83,17 @@ impl Telemetry {
             })
         })
     }
-    pub(super) fn request(self: &Arc<Self>, id: &str) -> Request {
+    pub(super) fn request(self: &Arc<Self>, id: &str, agent: Option<&str>) -> Request {
         let root = tracing::dispatcher::with_default(
             &self.dispatch,
-            || tracing::info_span!(target: TARGET, parent: None, "request", request_id = id),
+            || tracing::info_span!(target: TARGET, parent: None, "request", request_id = id, agent_id = agent),
         );
         Request {
             telemetry: self.clone(),
             root: Some(root),
             attempt: None,
             request_id: id.to_owned(),
+            agent_id: agent.map(str::to_owned),
         }
     }
 }
@@ -124,6 +125,7 @@ pub(super) struct Request {
     root: Option<tracing::Span>,
     attempt: Option<(tracing::Span, usize)>,
     request_id: String,
+    agent_id: Option<String>,
 }
 impl Request {
     pub(super) fn begin(&mut self, ordinal: usize) {
@@ -132,7 +134,7 @@ impl Request {
         self.attempt = Some((
             tracing::dispatcher::with_default(
                 &self.telemetry.dispatch,
-                || tracing::info_span!(target: TARGET, parent: self.root.as_ref().unwrap(), "attempt", attempt = attribute_ordinal, request_id = self.request_id.as_str()),
+                || tracing::info_span!(target: TARGET, parent: self.root.as_ref().unwrap(), "attempt", attempt = attribute_ordinal, request_id = self.request_id.as_str(), agent_id = self.agent_id.as_deref()),
             ),
             ordinal,
         ));
@@ -150,6 +152,7 @@ impl Request {
             attempt.in_scope(|| {
                 tracing::info!(name: "gateway.attempt.finished", target: TARGET,
                     request_id = self.request_id.as_str(),
+                    agent_id = self.agent_id.as_deref(),
                     attempt = ordinal,
                     outcome = if code.is_some() {"failed"} else {"succeeded"},
                     error_type = code.unwrap_or("none"), advanced);

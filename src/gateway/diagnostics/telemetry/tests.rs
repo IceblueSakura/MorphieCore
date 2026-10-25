@@ -34,7 +34,21 @@ async fn reports_keep_native_bodies_correlated_recovery_and_runtime_isolation() 
     let ambient = opentelemetry::Context::new().with_remote_span_context(remote);
     let mut trace = {
         let _guard = ambient.attach();
-        Trace::generation(Some(&sink_a))
+        let mut request = axum::extract::Request::new(axum::body::Body::empty());
+        request.extensions_mut().insert(
+            crate::gateway::ingress::correlation::RequestIds::new()
+                .unwrap()
+                .next()
+                .unwrap(),
+        );
+        request
+            .extensions_mut()
+            .insert(crate::gateway::ingress::auth::AuthenticatedAgent {
+                agent_id: "fixture-agent".into(),
+            });
+        let mut trace = Trace::for_request(Some(&sink_a), &request);
+        trace.generation();
+        trace
     };
     let id = trace.record.request_id.clone().unwrap();
     let instrumentation = trace.telemetry.as_ref().unwrap();
@@ -62,7 +76,7 @@ async fn reports_keep_native_bodies_correlated_recovery_and_runtime_isolation() 
     })
     .await
     .unwrap();
-    let mut other = Trace::generation(Some(&sink_b));
+    let mut other = Trace::generation_trace(Some(&sink_b));
     other.outcome(Outcome::Timeout);
     drop(other);
     sink_a.flush().await;
@@ -78,6 +92,7 @@ async fn reports_keep_native_bodies_correlated_recovery_and_runtime_isolation() 
     assert_eq!(requests.len(), 1);
     let request = requests[0];
     assert_eq!(request["request_id"], id);
+    assert_eq!(request["agent_id"], "fixture-agent");
     assert!(request["generation"].is_object());
     assert_eq!(request["reported_cached_tokens"], u64::MAX.to_string());
     assert_eq!(request["generation"]["result"], "succeeded");
@@ -85,6 +100,8 @@ async fn reports_keep_native_bodies_correlated_recovery_and_runtime_isolation() 
     assert_eq!(spans.len(), 3);
     let root = *spans.iter().find(|row| row["name"] == "request").unwrap();
     assert_eq!(root["status"], "ok");
+    assert_eq!(root["attributes"]["agent_id"], "fixture-agent");
+    assert_eq!(root["attributes"]["request_id"], id);
     assert_eq!(root["parent_span_id"], "0000000000000000");
     assert_ne!(root["trace_id"], "11111111111111111111111111111111");
     assert_eq!(request["telemetry"]["trace_id"], root["trace_id"]);
@@ -96,6 +113,7 @@ async fn reports_keep_native_bodies_correlated_recovery_and_runtime_isolation() 
             .unwrap();
         assert_eq!(attempt["parent_span_id"], root["span_id"]);
         assert_eq!(attempt["trace_id"], root["trace_id"]);
+        assert_eq!(attempt["attributes"]["agent_id"], "fixture-agent");
         assert_eq!(attempt["status"], if ordinal == 1 { "error" } else { "ok" });
         let logs = select(&rows, "log");
         assert_eq!(logs.len(), 2);
@@ -107,6 +125,7 @@ async fn reports_keep_native_bodies_correlated_recovery_and_runtime_isolation() 
         assert_eq!(log["telemetry"]["trace_id"], root["trace_id"]);
         assert_eq!(log["telemetry"]["span_id"], attempt["span_id"]);
         assert_eq!(log["telemetry"]["attributes"]["request_id"], id);
+        assert_eq!(log["telemetry"]["attributes"]["agent_id"], "fixture-agent");
     }
     assert_eq!(select(&other, "request").len(), 1);
     assert_ne!(
@@ -124,7 +143,7 @@ async fn body_abort_keeps_the_runtime_alive_and_closes_interrupted_spans_once() 
     let directory = crate::test_files::private_directory();
     let path = directory.path().join("events.jsonl");
     let sink = Sink::open(&path).unwrap();
-    let mut trace = Trace::generation(Some(&sink));
+    let mut trace = Trace::generation_trace(Some(&sink));
     trace.begin_candidate(1);
     trace.outcome(Outcome::Interrupted);
     let frames = trace.report.batch(
@@ -241,7 +260,7 @@ async fn synthetic_environment_child() {
     let directory = crate::test_files::private_directory();
     let path = directory.path().join("events.jsonl");
     let sink = Sink::open(&path).unwrap();
-    let mut trace = Trace::generation(Some(&sink));
+    let mut trace = Trace::generation_trace(Some(&sink));
     trace.begin_candidate(1);
     trace.end_candidate(None, false);
     trace.outcome(Outcome::Complete);
