@@ -2,6 +2,8 @@
 //! Request paths only try-send to a bounded writer; failures cannot alter responses.
 use serde::Serialize;
 use std::time::Instant;
+mod export;
+mod telemetry;
 mod writer;
 pub(super) use writer::Sink;
 
@@ -28,6 +30,17 @@ pub(super) enum Outcome {
     Timeout,
     Shutdown,
     Complete,
+}
+impl Outcome {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Error => "error",
+            Self::Interrupted => "interrupted",
+            Self::Timeout => "timeout",
+            Self::Shutdown => "shutdown",
+            Self::Complete => "complete",
+        }
+    }
 }
 fn is_zero(n: &u64) -> bool {
     *n == 0
@@ -155,6 +168,7 @@ pub(super) struct Trace {
     start: Instant,
     candidate_start: Option<(usize, Instant, u64, u64)>,
     provider: Option<String>,
+    telemetry: Option<telemetry::Request>,
 }
 impl Trace {
     pub(super) fn generation(sink: Option<&Sink>) -> Self {
@@ -164,7 +178,11 @@ impl Trace {
     }
 
     pub(super) fn new(sink: Option<&Sink>) -> Self {
+        let request_id = sink.and_then(Sink::request_id);
+        let telemetry =
+            sink.map(|sink| sink.request(request_id.as_deref().unwrap_or("unavailable")));
         Self {
+            telemetry,
             report: Default::default(),
             embedding_receipts: vec![],
             generation: false,
@@ -172,7 +190,7 @@ impl Trace {
             capture_attempt: 0,
             sink: sink.cloned(),
             record: Record {
-                request_id: sink.and_then(Sink::request_id),
+                request_id,
                 ..Default::default()
             },
             start: Instant::now(),
@@ -181,6 +199,9 @@ impl Trace {
         }
     }
     pub(super) fn begin_candidate(&mut self, ordinal: usize) {
+        if let Some(telemetry) = &mut self.telemetry {
+            telemetry.begin(ordinal);
+        }
         self.report.begin(ordinal);
         self.embedding_receipts.clear();
         self.record.routing = RoutingObservation::default();
@@ -203,6 +224,9 @@ impl Trace {
         }
     }
     pub(super) fn end_candidate(&mut self, error_code: Option<&'static str>, advanced: bool) {
+        if let Some(telemetry) = &mut self.telemetry {
+            telemetry.end(error_code, advanced);
+        }
         self.report.end(error_code.is_none());
         if let Some((ordinal, start, received, handed)) = self.candidate_start.take()
             && self.record.candidates.len() < crate::topology::route::MAX_ROUTE_CANDIDATES
@@ -430,13 +454,15 @@ impl Drop for Trace {
     fn drop(&mut self) {
         self.report.interrupted();
         self.end_candidate(Some("interrupted"), false);
-        if let Some(sink) = self.sink.take() {
+        if let Some(_sink) = self.sink.take() {
             if self.generation {
                 self.record.generation = Some(self.report.snapshot());
             }
             self.record.capture_exchange = self.capture.as_ref().map(super::capture::Exchange::id);
             self.record.elapsed_ms = self.start.elapsed().as_millis().min(u64::MAX as u128) as u64;
-            sink.record(Box::new(std::mem::take(&mut self.record)));
+            if let Some(telemetry) = self.telemetry.take() {
+                telemetry.finish(&self.record);
+            }
         }
     }
 }
@@ -476,7 +502,7 @@ mod tests {
             let first = gate.router().oneshot(request()).await.unwrap();
             assert_eq!(first.status(), 404);
             // First establish that this HTTP path actually records metadata.
-            assert!(matches!(rx.try_recv(), Ok(writer::Message::Record(_))));
+            assert!(matches!(rx.try_recv(), Ok(writer::Message::Log(_))));
             let mut rx = Some(rx);
             if disconnected {
                 drop(rx.take());

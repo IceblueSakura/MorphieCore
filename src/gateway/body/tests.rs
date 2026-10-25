@@ -309,7 +309,11 @@ async fn diagnostic_status_and_final_intake_are_from_the_original_attempt() {
     gate.flush_diagnostics().await;
     let raw = std::fs::read_to_string(&path).unwrap();
     assert!(!raw.contains("synthetic-private-fingerprint"));
-    let record: serde_json::Value = serde_json::from_str(raw.lines().last().unwrap()).unwrap();
+    let record: serde_json::Value = raw
+        .lines()
+        .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
+        .rfind(|row| row["event"] == "request")
+        .unwrap();
     let losses = record["generation"]["attempts"][0]["evidence"]["entries"]
         .as_array()
         .unwrap();
@@ -682,14 +686,12 @@ async fn first_frame_precedes_terminal_and_ack_gates_upstream_progress() {
         );
         assert_eq!(decoded.semantic.usage().unwrap().total_tokens, Some(18));
         gate.flush_diagnostics().await;
-        let record: serde_json::Value = serde_json::from_str(
-            std::fs::read_to_string(&path)
-                .unwrap()
-                .lines()
-                .last()
-                .unwrap(),
-        )
-        .unwrap();
+        let record: serde_json::Value = std::fs::read_to_string(&path)
+            .unwrap()
+            .lines()
+            .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
+            .find(|row| row["event"] == "request")
+            .unwrap();
         let peak = record["coalescing_peak_bytes"].as_u64().unwrap_or(0) as usize;
         assert!(peak <= policy.max_pending_bytes);
         assert_eq!(peak > 0, enabled);

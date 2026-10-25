@@ -1,4 +1,5 @@
 //! One private, locked, bounded JSONL writer; request paths only try-send.
+#[cfg(test)]
 use super::Record;
 use serde::Serialize;
 use std::{
@@ -56,9 +57,14 @@ struct Shared {
     counts: Arc<Counters>,
 }
 #[derive(Clone)]
-pub(in crate::gateway) struct Sink(Arc<Shared>);
+pub(in crate::gateway) struct Sink(Arc<Shared>, Arc<super::telemetry::Telemetry>);
+#[derive(Clone)]
+pub(super) struct Output(Arc<Shared>);
 pub(super) enum Message {
+    #[cfg(test)]
     Record(Box<Record>),
+    Log(Box<super::export::LocalLog>),
+    Span(Box<super::export::LocalSpan>),
     Flush(tokio::sync::oneshot::Sender<bool>),
 }
 #[derive(Serialize)]
@@ -109,12 +115,14 @@ impl Sink {
         let mut nonce = [0u8; 16];
         getrandom::fill(&mut nonce).map_err(|_| io::Error::other("diagnostics randomness"))?;
         let run = nonce.iter().map(|b| format!("{b:02x}")).collect();
-        Ok(Self(Arc::new(Shared {
+        let shared = Arc::new(Shared {
             tx,
             run,
             next: AtomicU64::new(1),
             counts,
-        })))
+        });
+        let telemetry = super::telemetry::Telemetry::new(Output(shared.clone()));
+        Ok(Self(shared, telemetry))
     }
     #[cfg(test)]
     pub(super) fn from_sender(tx: mpsc::SyncSender<Message>) -> Self {
@@ -127,20 +135,19 @@ impl Sink {
             .ok()
             .map(|n| format!("{}:{n}", self.0.run))
     }
+    #[cfg(test)]
     pub(super) fn record(&self, record: Box<Record>) {
-        if self.0.counts.writer_failed.load(Ordering::Relaxed) {
-            self.0.counts.failed.fetch_add(1, Ordering::Relaxed);
-            return;
-        }
-        match self.0.tx.try_send(Message::Record(record)) {
-            Ok(()) => {}
-            Err(mpsc::TrySendError::Full(_)) => {
-                self.0.counts.dropped.fetch_add(1, Ordering::Relaxed);
-            }
-            Err(mpsc::TrySendError::Disconnected(_)) => self.0.counts.fail(),
-        }
+        Output(self.0.clone()).send(Message::Record(record));
+    }
+    pub(super) fn request(&self, id: &str) -> super::telemetry::Request {
+        self.1.request(id)
     }
     pub(in crate::gateway) async fn flush(&self) {
+        Output(self.0.clone()).flush().await;
+    }
+}
+impl Output {
+    pub(super) async fn flush(&self) {
         let (tx, rx) = tokio::sync::oneshot::channel();
         let complete = self.0.tx.try_send(Message::Flush(tx)).is_ok()
             && matches!(
@@ -152,6 +159,26 @@ impl Sink {
                 .counts
                 .flush_incomplete
                 .fetch_add(1, Ordering::Relaxed);
+        }
+    }
+    pub(super) fn encoding_failed(&self) {
+        self.0.counts.failed.fetch_add(1, Ordering::Relaxed);
+    }
+    pub(super) fn send(&self, message: Message) -> bool {
+        if self.0.counts.writer_failed.load(Ordering::Relaxed) {
+            self.0.counts.failed.fetch_add(1, Ordering::Relaxed);
+            return false;
+        }
+        match self.0.tx.try_send(message) {
+            Ok(()) => true,
+            Err(mpsc::TrySendError::Full(_)) => {
+                self.0.counts.dropped.fetch_add(1, Ordering::Relaxed);
+                false
+            }
+            Err(mpsc::TrySendError::Disconnected(_)) => {
+                self.0.counts.fail();
+                false
+            }
         }
     }
 }
@@ -171,11 +198,22 @@ fn work(mut writer: impl Write, rx: mpsc::Receiver<Message>, counts: Arc<Counter
             message,
             Ok(Message::Flush(_)) | Err(mpsc::RecvTimeoutError::Disconnected)
         );
-        if let Ok(Message::Record(record)) = &message {
+        let encoded = match &message {
+            #[cfg(test)]
+            Ok(Message::Record(record)) => Some(encode("request", record.as_ref())),
+            Ok(Message::Log(log)) => Some(
+                log.json()
+                    .map_err(|_| io::Error::other("diagnostics encoding"))
+                    .and_then(|(event, value)| encode(event, &value)),
+            ),
+            Ok(Message::Span(span)) => Some(encode("span", &span.json())),
+            _ => None,
+        };
+        if let Some(encoded) = encoded {
             if counts.writer_failed.load(Ordering::Relaxed) {
                 counts.failed.fetch_add(1, Ordering::Relaxed);
             } else {
-                match encode("request", record.as_ref()) {
+                match encoded {
                     Ok(bytes) if bytes.len() > RECORD_LIMIT => {
                         counts.dropped.fetch_add(1, Ordering::Relaxed);
                     }

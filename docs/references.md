@@ -39,7 +39,7 @@ The [stable-release protocol recheck](refs/2026-10-23-stable-protocol-contracts.
 
 ### Telemetry dependency selection
 
-Resolved from crates.io release metadata and published package `.cargo_vcs_info.json` on **2026-10-24**. Exact package versions/checksums live in `Cargo.toml`/`Cargo.lock`; these are test-only dependency pins, not new protocol assets in `tests/upstream/`.
+Resolved from crates.io release metadata and published package `.cargo_vcs_info.json` on **2026-10-24**. Exact package versions/checksums live in `Cargo.toml`/`Cargo.lock`; the same tracing/SDK pins enter local production wiring on **2026-10-25**, while OTLP export and metrics feasibility remain test-only. These are not new protocol assets in `tests/upstream/`.
 
 | Packages | Selected release / source revision | License |
 |---|---|---|
