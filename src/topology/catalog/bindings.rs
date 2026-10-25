@@ -123,6 +123,17 @@ impl ApiKeyBinding {
         };
         let scope = crate::protocol::replay_envelope::issuer(provider.id.as_str(), self.upstream);
         let mut adapter = Adapter::new(family, self.dialect, Some(scope.clone()));
+        // This hosted model's published Chat contract permits one initial string
+        // system message. Do not extend it to Responses or other NVIDIA models.
+        // https://docs.api.nvidia.com/nim/reference/nvidia-nemotron-3-super-120b-a12b-infer
+        if self.dialect == Dialect::Nvidia
+            && family == crate::protocol::openai::Profile::Chat
+            && self.upstream == "nvidia/nemotron-3-super-120b-a12b"
+        {
+            adapter.adaptation.rules.system_instruction_messages = true;
+            adapter.adaptation.rules.chat_string_instructions = true;
+            adapter.adaptation.rules.chat_initial_instruction_only = true;
+        }
         adapter.adaptation.rules.responses_lifecycle_reports = self.dialect == Dialect::OpenRouter
             && family == crate::protocol::openai::Profile::Responses
             && self.canonical_model == "gpt-6-luna";

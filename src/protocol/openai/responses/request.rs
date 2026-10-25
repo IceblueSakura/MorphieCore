@@ -153,11 +153,19 @@ pub fn encode_generation(target: &RequestRepresentation<'_>) -> Result<Value, Co
         );
         encoded_settings.instructions = Presence::Absent;
     }
-    if target.adaptation.rules.system_instruction_messages {
-        for item in &mut input {
-            if item.get("role").and_then(Value::as_str) == Some("developer") {
-                item["role"] = json!("system");
-            }
+    for item in &mut input {
+        if target.adaptation.rules.responses_typed_messages
+            && matches!(
+                item.get("role").and_then(Value::as_str),
+                Some("system" | "developer" | "user" | "assistant")
+            )
+        {
+            item["type"] = json!("message");
+        }
+        if target.adaptation.rules.system_instruction_messages
+            && item.get("role").and_then(Value::as_str) == Some("developer")
+        {
+            item["role"] = json!("system");
         }
     }
     let mut v = json!({ "input": input });

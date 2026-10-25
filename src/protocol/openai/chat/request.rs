@@ -324,6 +324,28 @@ pub fn encode_generation(target: &RequestRepresentation<'_>) -> Result<Value, Co
             "content":crate::protocol::openai::settings::instruction_content(root, Profile::Chat)?,
         }));
     }
+    for (index, message) in messages.iter().enumerate() {
+        if !matches!(
+            message.get("role").and_then(Value::as_str),
+            Some("developer" | "system")
+        ) {
+            continue;
+        }
+        let rules = &target.adaptation.rules;
+        if rules.chat_string_instructions && !message["content"].is_string()
+            || rules.chat_initial_instruction_only
+                && (index != 0
+                    || message.as_object().is_some_and(|fields| {
+                        fields
+                            .keys()
+                            .any(|key| !matches!(key.as_str(), "role" | "content"))
+                    }))
+        {
+            return Err(CodecError::Unsupported(
+                crate::protocol::failure::CarrierReason::Unavailable,
+            ));
+        }
+    }
     let mut v = json!({"messages": messages});
     let o = v.as_object_mut().expect("object literal");
     if let Some(parts) = &target.semantic.settings().prediction {

@@ -317,6 +317,8 @@ Recommended bounded correction:
 
 Do not copy Vercel's generic [Open Responses converter](https://github.com/vercel/ai/blob/594495a5af70547d9d7a13d6df334ae30db49622/packages/open-responses/src/responses/convert-to-open-responses-input.ts#L490-L495): it collects every system message and joins them into root instructions, including instructions encountered after user content. That loses ordered placement under MorphieCore's selected contract. Keep canonical Developer IR; put validated carrier changes in target dialects. This review neither selects those repairs nor certifies every parameter, live Provider behavior or a new Vercel package execution baseline.
 
+**Selected follow-up, 2026-10-25:** the user subsequently authorized the recommended repairs without additional tests. The [implemented contract](../architecture.md#instruction-authority-and-canonical-roles) selects conservative rejection rather than introducing text composition. Reusing the same preparation probe confirms Zhipu's Chat system/Responses typed-developer split, rejection of string-target multipart instructions, and the exact NVIDIA Chat binding's single-initial-instruction boundary. The table above remains the audit finding at `6e31bcd`, not a description of the repaired encoder. Live hosted behavior and the separately identified evidence gaps remain unverified.
+
 ## Imported asset boundaries
 
 [The asset manifest](../../tests/upstream/assets.lock.json) records unchanged source bytes and derived framing digests. [Development](../development.md#upstream-test-sources) owns commands, extraction rules and test selection.

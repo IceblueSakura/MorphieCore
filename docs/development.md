@@ -183,6 +183,8 @@ The later **2026-10-25 canonical instruction migration** implements the [IR and 
 
 Full offline, Clippy, formatting, production-only compilation, upstream-asset/Python checks, all 16 SDK scenarios and all 12 installed-client synthetic scenarios pass with pi 1.4.0/OpenCode 2.0.32. The existing pinned Chat SDK scenario independently checks both old system and developer becoming developer; the Messages SDK scenario supplies root string then equivalent blocks without adding requests or changing history ownership. No real Provider inference, mixed-role model-quality measurement, new binding or temporary Messages scope acceptance was performed.
 
+The subsequent **2026-10-25 Provider instruction-boundary correction** reuses the existing tests and the [earlier preparation probe](refs/2026-10-23-stable-protocol-contracts.md#vercel-provider-instruction-cross-check-2026-10-25); no tests were added or modified, as requested. Final code passes the full offline baseline, Clippy, formatting, production-only compilation, asset/Python checks, all 16 SDK and all 12 installed-client synthetic scenarios with the same actual Agent versions. Prepared bodies confirm the selected Zhipu operation split and conservative Chat rejection boundaries; the existing gates do not establish exhaustive Provider conformance, live acceptance or a text-composition policy.
+
 | Change or claim | Procedure |
 |---|---|
 | Markdown-only change | Local paths/anchors and whitespace under [documentation checks](#documentation-checks); no Rust/SDK run |

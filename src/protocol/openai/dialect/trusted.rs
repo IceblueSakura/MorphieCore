@@ -163,6 +163,7 @@ impl Dialect {
                 "bailian-v1",
                 WireRules {
                     system_instruction_messages: profile == Profile::Chat,
+                    chat_string_instructions: profile == Profile::Chat,
                     chat_video_url: true,
                     // Both billing plans use the same upstream wire dialect.
                     chunk_created_drift: true,
@@ -184,6 +185,12 @@ impl Dialect {
             Self::Zhipu => (
                 "zhipu-v1",
                 WireRules {
+                    // Chat and Responses have different role and message-shape contracts.
+                    // https://docs.bigmodel.cn/api-reference/模型-api/对话补全
+                    // https://docs.bigmodel.cn/api-reference/response/创建-response
+                    system_instruction_messages: profile == Profile::Chat,
+                    chat_string_instructions: profile == Profile::Chat,
+                    responses_typed_messages: profile == Profile::Responses,
                     chat_video_url: true,
                     readable_reasoning: true,
                     reject_disabled_reasoning: true,
