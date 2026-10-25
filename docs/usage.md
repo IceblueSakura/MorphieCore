@@ -484,6 +484,10 @@ Both forms work at ingress. Repeated headers or both forms together are rejected
 
 Send exactly one `anthropic-version: 2026-10-21` header. Missing, duplicate, combined and unsupported versions return 400 before body collection; there is no legacy-version negotiation. The pinned Anthropic SDK sends the selected version by default. `temperature`, `top_p` and `top_k` are removed and reject even when null or set to former defaults.
 
+For cross-protocol Messages delivery, unsigned readable reasoning stays in `thinking` with an empty signature. The gateway preserves each item's readable bytes/order, while its [declared projection](architecture.md#response-rules) may lose raw/summary types and part boundaries. Return those blocks as assistant history; do not replace them with answer text or invent a signature. Native opaque/signature compatibility remains separate.
+
+For pi 1.4.0 using `anthropic-messages` against such a route, set `"allowEmptySignature": true` in the model's `compat` configuration. The current installed client otherwise returns unsigned thinking as ordinary assistant text; that preserves words but loses the reasoning channel. This flag is unnecessary for genuinely signed native-only history and cannot make an incompatible upstream accept unsigned thinking. The [consumer recheck](refs/2026-10-17-generation-contracts.md#current-host-closure-recheck-2026-10-25) distinguishes source/request-builder evidence from full CLI acceptance. Other clients need their own returned-history verification.
+
 ```json
 {"model":"configured-public-model","messages":[{"role":"user","content":"Reply with exactly pong."}],"max_tokens":64}
 ```

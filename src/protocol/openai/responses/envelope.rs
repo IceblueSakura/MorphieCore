@@ -19,6 +19,19 @@ pub struct StreamOptions {
     #[serde(default, skip_serializing_if = "Presence::is_absent")]
     pub include_obfuscation: Presence<bool>,
 }
+impl StreamOptions {
+    fn read(v: &Value, direction: DecodeDirection<'_>) -> Result<Self, CodecError> {
+        let o = object(v)?;
+        direction.fields(o, &["include_obfuscation"])?;
+        Ok(Self {
+            include_obfuscation: read_presence(o, "include_obfuscation", |v| {
+                v.as_bool().ok_or(CodecError::Invalid(
+                    crate::protocol::failure::ShapeReason::InvalidValue,
+                ))
+            })?,
+        })
+    }
+}
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Delivery {
     pub stream: Presence<bool>,
@@ -98,11 +111,7 @@ pub(in crate::protocol::openai) fn decode_request_with_history(
                     crate::protocol::failure::ShapeReason::InvalidValue,
                 ))
             })?,
-            options: read_presence(o, "stream_options", |v| {
-                serde_json::from_value(v.clone()).map_err(|_| {
-                    CodecError::Invalid(crate::protocol::failure::ShapeReason::InvalidValue)
-                })
-            })?,
+            options: read_presence(o, "stream_options", |v| StreamOptions::read(v, direction))?,
         },
         execution: ExecutionHints::read(o, Profile::Responses, direction)?,
         service_policy: super::super::service::read_policy(o, Profile::Responses)?,

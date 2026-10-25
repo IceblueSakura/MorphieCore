@@ -55,6 +55,108 @@ fn response() -> DecodedResponse {
         },
     }
 }
+#[test]
+fn unsigned_reasoning_projection_keeps_bytes_and_returned_history() {
+    use morphiecore::adapter::ClientAdapter;
+    use morphiecore::semantic::value::Text;
+    let text = |s| Text::allowing_empty(s, "test", MAX_TEXT_BYTES).unwrap();
+    let mut source = response();
+    let mut usage = Usage::operation(2, 3, 5);
+    usage.cached_input_tokens = Some(0);
+    source.semantic = source.semantic.with_usage(Some(usage)).unwrap();
+    let reasoning = ReasoningItem {
+        parts: vec![
+            (PartId::new(10), ReasoningContent::Text(text(" 思考\n"))),
+            (PartId::new(11), ReasoningContent::Summary(text(""))),
+            (PartId::new(12), ReasoningContent::Summary(text("summary"))),
+            (PartId::new(13), ReasoningContent::Text(text(" tail "))),
+        ],
+        status: ItemLifecycle::Completed,
+        replay: None,
+    };
+    let mut items = vec![(ItemId::new(2), Item::Reasoning(reasoning.clone()))];
+    items.extend(source.semantic.items().iter().cloned());
+    source.semantic = source.semantic.with_items(items).unwrap();
+    let original = source.clone();
+    let (retained, wire) = ClientAdapter::Messages.snapshot(source.clone()).unwrap();
+    assert_eq!(
+        wire["content"],
+        json!([
+        {"type":"thinking","thinking":" 思考\nsummary tail ","signature":""},
+        {"type":"text","text":"answer"}])
+    );
+    let expected = ReasoningItem {
+        parts: vec![(
+            PartId::new(10),
+            ReasoningContent::Summary(text(" 思考\nsummary tail ")),
+        )],
+        status: ItemLifecycle::Completed,
+        replay: None,
+    };
+    assert_eq!(
+        retained.semantic.items()[0],
+        (ItemId::new(2), Item::Reasoning(expected))
+    );
+    assert_eq!(source, original);
+    let (again, second_wire) = ClientAdapter::Messages.snapshot(retained.clone()).unwrap();
+    assert_eq!(again, retained);
+    assert_eq!(second_wire, wire);
+    let request = decode_client_request(
+        json!({"model":"m","max_tokens":32,"messages":[
+            {"role":"user","content":"go"}, {"role":"assistant","content":wire["content"]},
+            {"role":"user","content":"continue"}
+        ]})
+        .to_string()
+        .as_bytes(),
+    )
+    .unwrap();
+    let upstream = Adapter::new(Profile::Chat, Dialect::Bailian, None)
+        .encode_request(
+            &request,
+            "m",
+            &morphiecore::protocol::openai::TargetCaps::full(),
+        )
+        .unwrap();
+    assert_eq!(
+        upstream["messages"],
+        json!([
+        {"role":"user","content":"go"},
+        {"role":"assistant","content":"answer","reasoning_content":" 思考\nsummary tail "},
+        {"role":"user","content":"continue"}])
+    );
+    let mut signed = source.clone();
+    let mut items = signed.semantic.items().to_vec();
+    let Item::Reasoning(r) = &mut items[0].1 else {
+        panic!("reasoning")
+    };
+    r.replay = Some(ReplayValue::final_value(
+        ReplayFormat::AnthropicMessagesThinking,
+        text("signature"),
+    ));
+    signed.semantic = signed.semantic.with_items(items).unwrap();
+    assert_eq!(
+        encode_client_response(&signed, "m").unwrap_err(),
+        CodecError::Unsupported(morphiecore::protocol::failure::CarrierReason::Replay)
+    );
+    let mut large = source;
+    let mut items = large.semantic.items().to_vec();
+    let Item::Reasoning(r) = &mut items[0].1 else {
+        panic!("reasoning")
+    };
+    r.parts = vec![
+        (
+            PartId::new(10),
+            ReasoningContent::Text(text(&"x".repeat(MAX_TEXT_BYTES))),
+        ),
+        (PartId::new(11), ReasoningContent::Summary(text("y"))),
+    ];
+    large.semantic = large.semantic.with_items(items).unwrap();
+    assert_eq!(
+        encode_client_response(&large, "m").unwrap_err(),
+        CodecError::Limit
+    );
+}
+
 fn terminal() -> StreamEvent {
     StreamEvent::Terminal {
         terminal: StreamTerminal::Completed,
@@ -1311,6 +1413,46 @@ fn messages_preserves_parts_and_rejects_unrepresentable_calls() {
         encode_client_response(&tool_response(call.clone()), "m").unwrap()["content"],
         json!([{"type":"tool_use","id":"c","name":"lookup","input":{}}])
     );
+    for (id, name, valid) in [
+        ("a".repeat(64), "b".repeat(128), true),
+        ("a".repeat(65), "lookup".into(), false),
+        ("bad.id".into(), "lookup".into(), false),
+        ("c".into(), "bad.name".into(), false),
+        ("c".into(), "工具".into(), false),
+    ] {
+        let mut candidate = call.clone();
+        candidate.call_id = morphiecore::semantic::value::Text::new(id, "id", 256).unwrap();
+        candidate.name = morphiecore::semantic::value::Text::new(name, "name", 128).unwrap();
+        let source = tool_response(candidate.clone());
+        let rendered = morphiecore::adapter::ClientAdapter::Messages.snapshot(source);
+        assert_eq!(rendered.is_ok(), valid);
+        let mut stream = ClientEventEncoder::new("r", "m");
+        assert_eq!(
+            stream
+                .encode(&crate::events_support::start(
+                    1,
+                    ItemKind::ToolCall {
+                        format: ArgumentFormat::Raw,
+                        call_id: candidate.call_id.clone(),
+                        name: candidate.name.clone(),
+                        context: candidate.context.clone(),
+                    }
+                ))
+                .is_ok(),
+            valid
+        );
+        if valid {
+            let (_, wire) = rendered.unwrap();
+            let history = json!({"model":"m","max_tokens":32,"messages":[
+                {"role":"user","content":"go"}, {"role":"assistant","content":wire["content"]},
+                {"role":"user","content":[{"type":"tool_result","tool_use_id":candidate.call_id.as_str(),
+                    "content":"found"}]}]});
+            decode_client_request(history.to_string().as_bytes()).unwrap();
+        } else {
+            assert!(stream.encode(&terminal()).is_err());
+            assert!(stream.finish().is_err());
+        }
+    }
     call.context.namespace = Some(text("private"));
     assert!(encode_client_response(&tool_response(call.clone()), "m").is_err());
     let mut stream = ClientEventEncoder::new("r", "m");

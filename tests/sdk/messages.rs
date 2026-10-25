@@ -50,6 +50,9 @@ async fn handle(
     assert_eq!(versions.len(), 1);
     assert_eq!(versions[0], "2026-10-21");
     let wire: Value = serde_json::from_slice(&body).unwrap();
+    if wire["model"] == "cross-model" {
+        return cross_protocol(&seen, &body, &wire);
+    }
     for field in ["eager_input_streaming", "cache_control"] {
         assert_eq!(wire["tools"][0].get(field), Some(&Value::Null));
     }
@@ -287,10 +290,152 @@ async fn sdk_messages_native_controls_history_and_partial_stream() {
         "synthetic Messages SDK failure: {}",
         String::from_utf8_lossy(&output.stderr)
     );
-    assert_eq!(*observed.lock().unwrap(), 5);
+    assert_eq!(*observed.lock().unwrap(), 9);
     let report: Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(
         report,
-        json!({"requests":5,"partial":true,"refusal_details":true})
+        json!({"requests":9,"partial":true,"refusal_details":true,"unsigned_replay":true})
     );
+}
+
+fn cross_protocol(seen: &Mutex<usize>, body: &[u8], wire: &Value) -> Response {
+    use morphiecore::{
+        execution::attempt::prepare,
+        protocol::openai::{Adapter, Dialect as OpenAiDialect, Profile as OpenAiProfile},
+        provider::SecretMaterial,
+        topology::{ProtocolProfile, catalog::API_KEY_BINDINGS},
+    };
+    let turn = {
+        let mut n = seen.lock().unwrap();
+        *n += 1;
+        *n - 6
+    };
+    assert!(turn < 4);
+    let feedback = turn % 2 == 1;
+    let streaming = wire["stream"] == true;
+    let request = anthropic::messages::client::decode_client_request(body).unwrap();
+    let binding = API_KEY_BINDINGS
+        .iter()
+        .find(|b| (b.provider)().id.as_str() == "aliyun-tokenplan-cn" && b.model == "qwen3.8-flash")
+        .unwrap();
+    let upstream = prepare(
+        &binding.endpoint(ProtocolProfile::OpenAiChat).unwrap(),
+        &(binding.provider)(),
+        &SecretMaterial::new("synthetic-cross-protocol-key").unwrap(),
+        &request,
+    )
+    .unwrap();
+    let prepared: Value = serde_json::from_slice(&upstream.body).unwrap();
+    if feedback {
+        assert_eq!(
+            prepared["messages"],
+            json!([
+                {"role":"user","content":"go"},
+                {"role":"assistant","content":null,"reasoning_content":"Plan 🧪 Check",
+                    "tool_calls":[{"id":"call_cross","type":"function","function":{"name":"lookup","arguments":"{\"n\":7}"}}]},
+                {"role":"tool","tool_call_id":"call_cross","content":"found"}
+            ])
+        );
+    } else {
+        assert_eq!(
+            prepared["messages"],
+            json!([{"role":"user","content":"go"}])
+        );
+    }
+    let chunk = |delta, finish| {
+        json!({"id":"cross","object":"chat.completion.chunk",
+        "created":1,"model":"synthetic","choices":[{"index":0,"delta":delta,"finish_reason":finish}]})
+    };
+    let mut frames = if feedback {
+        vec![
+            chunk(json!({"role":"assistant","content":"done"}), Value::Null),
+            // Chat `stop` is natural-or-stop-sequence, not an exact Messages end_turn.
+            chunk(json!({}), json!("length")),
+        ]
+    } else {
+        vec![
+            chunk(
+                json!({"role":"assistant","reasoning_content":"Plan 🧪 "}),
+                Value::Null,
+            ),
+            chunk(json!({"reasoning_content":"Check"}), Value::Null),
+            chunk(
+                json!({"tool_calls":[{"index":0,"id":"call_cross","type":"function",
+                "function":{"name":"lookup","arguments":"{\"n\":7}"}}]}),
+                Value::Null,
+            ),
+            chunk(json!({}), json!("tool_calls")),
+        ]
+    };
+    frames.push(
+        json!({"id":"cross","object":"chat.completion.chunk","created":1,"model":"synthetic",
+        "choices":[],"usage":{"prompt_tokens":2,"completion_tokens":3,"total_tokens":5,
+            "prompt_tokens_details":{"cached_tokens":0}}}),
+    );
+    let mut attempt = Attempt::new(
+        UpstreamAdapter::OpenAi(Box::new(Adapter::new(
+            OpenAiProfile::Chat,
+            OpenAiDialect::ChatReasoning,
+            None,
+        ))),
+        1 << 20,
+        SseLimits::default(),
+    );
+    attempt.begin(200, "text/event-stream").unwrap();
+    let mut delivery = ResponseDelivery::new(
+        ClientAdapter::Messages,
+        "cross-model",
+        SseLimits::default(),
+        StreamOptions::default(),
+        Obfuscation::Disabled,
+    );
+    let mut output = vec![];
+    let input = frames
+        .iter()
+        .map(|v| format!("data: {v}\n\n"))
+        .collect::<String>()
+        + "data: [DONE]\n\n";
+    for fragment in input.as_bytes().chunks(7) {
+        let mut rest = fragment;
+        while !rest.is_empty() {
+            let (used, events) = attempt.push(rest).unwrap();
+            if streaming {
+                output.extend(
+                    delivery
+                        .encode_events(&attempt, &events)
+                        .unwrap()
+                        .into_bytes()
+                        .into_iter()
+                        .flatten(),
+                );
+            }
+            rest = &rest[used..];
+        }
+    }
+    attempt.finish().unwrap();
+    if streaming {
+        output.extend(
+            delivery
+                .finish_stream(&attempt)
+                .unwrap()
+                .into_bytes()
+                .into_iter()
+                .flatten(),
+        );
+    } else {
+        output = delivery.encode_json(&attempt).unwrap();
+    }
+    delivery.commit().unwrap();
+    delivery.complete(&attempt).unwrap();
+    Response::builder()
+        .header(
+            "content-type",
+            if streaming {
+                "text/event-stream"
+            } else {
+                "application/json"
+            },
+        )
+        .body(Body::from(output))
+        .unwrap()
 }

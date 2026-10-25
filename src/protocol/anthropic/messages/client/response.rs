@@ -1,5 +1,5 @@
 //! Messages client response rendering over the shared delivery projection.
-use super::projection::{redacted, tool_input};
+use super::projection::{project_reasoning, redacted, tool_input};
 use crate::protocol::{CodecError, DecodedResponse, anthropic::messages as wire};
 use crate::semantic::task::generation::*;
 use serde_json::{Map, Value, json};
@@ -37,6 +37,7 @@ pub fn encode_client_response(
     for (_, item) in semantic.items() {
         match item {
             Item::Reasoning(r) => {
+                let r = project_reasoning(r)?;
                 let signature = r.replay.as_ref().map_or("", ReplayValue::as_str);
                 if redacted(signature) {
                     content.push(json!({"type":"redacted_thinking","data":signature}));

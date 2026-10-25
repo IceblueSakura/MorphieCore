@@ -2,6 +2,7 @@
 use crate::protocol::{CodecError, DecodedResponse, anthropic::messages as wire, replay_envelope};
 use crate::semantic::{task::generation::*, value::Presence};
 use serde_json::Value;
+use std::borrow::Cow;
 
 /// Selected only for a trusted Google binding whose effective request has no
 /// stop sequences. This is client delivery policy, never native source decoding.
@@ -76,8 +77,76 @@ pub(crate) fn redacted(sealed: &str) -> bool {
     )
 }
 
-/// Retained metadata and accounting reflect the actual Messages carrier.
+/// Preserve readable bytes, not an invented summary. Only unsigned delivery copies
+/// may lose the distinction between raw reasoning and summary or their boundaries.
+pub(super) fn project_reasoning(
+    reasoning: &ReasoningItem,
+) -> Result<Cow<'_, ReasoningItem>, CodecError> {
+    if reasoning
+        .replay
+        .as_ref()
+        .is_some_and(|r| redacted(r.as_str()))
+        && !reasoning.parts.is_empty()
+    {
+        return Err(CodecError::Unsupported(
+            crate::protocol::failure::CarrierReason::Replay,
+        ));
+    }
+    if reasoning.parts.is_empty()
+        || matches!(reasoning.parts.as_slice(), [(_, ReasoningContent::Summary(t))] if !t.as_str().is_empty())
+    {
+        return Ok(Cow::Borrowed(reasoning));
+    }
+    if reasoning.replay.is_some() {
+        return Err(CodecError::Unsupported(
+            crate::protocol::failure::CarrierReason::Replay,
+        ));
+    }
+    let mut thinking = String::new();
+    for (_, part) in &reasoning.parts {
+        let (ReasoningContent::Summary(text) | ReasoningContent::Text(text)) = part;
+        if thinking.len().saturating_add(text.as_str().len()) > MAX_TEXT_BYTES {
+            return Err(CodecError::Limit);
+        }
+        thinking.push_str(text.as_str());
+    }
+    let mut projected = reasoning.clone();
+    projected.parts = if thinking.is_empty() {
+        vec![]
+    } else {
+        vec![(
+            reasoning.parts[0].0,
+            ReasoningContent::Summary(
+                crate::semantic::value::Text::new(thinking, "thinking", MAX_TEXT_BYTES)
+                    .map_err(|_| CodecError::Limit)?,
+            ),
+        )]
+    };
+    Ok(Cow::Owned(projected))
+}
+pub(super) fn reasoning_loss(
+    item: ItemId,
+    direction: &'static str,
+) -> crate::lowering::generation::Effect {
+    crate::lowering::generation::Effect::Field {
+        rule: "messages.readable-reasoning.v1".into(),
+        field: crate::lowering::generation::Field::DeliveredProjection,
+        direction: direction.into(),
+        action: "approximate".into(),
+        owner: crate::lowering::generation::Owner::item(item),
+    }
+}
+
+/// Retained content, metadata and accounting reflect the actual Messages carrier.
 pub(crate) fn project_snapshot(response: &mut DecodedResponse) -> Result<(), CodecError> {
+    let mut items = response.semantic.items().to_vec();
+    for (_, item) in &mut items {
+        if let Item::Reasoning(reasoning) = item {
+            *reasoning = project_reasoning(reasoning)?.into_owned();
+        }
+    }
+    response.semantic = response.semantic.clone().with_items(items)?;
+    response.fidelity.retain_owners(response.semantic.items());
     response.metadata.context.validate()?;
     if !response.semantic.safety_reports().is_empty()
         || response
@@ -182,6 +251,13 @@ pub(crate) fn content_losses(
     response: &GenerationResponse,
 ) -> Vec<crate::lowering::generation::Effect> {
     let mut losses = Vec::new();
+    for (id, item) in response.items() {
+        if let Item::Reasoning(reasoning) = item
+            && project_reasoning(reasoning).is_ok_and(|r| matches!(r, Cow::Owned(_)))
+        {
+            losses.push(reasoning_loss(*id, "response.project"));
+        }
+    }
     if !response.details().explanation.is_absent() {
         losses.push(explanation_loss("response.project"));
     }
@@ -243,6 +319,7 @@ pub(crate) fn usage_loss() -> crate::lowering::generation::Effect {
     }
 }
 pub(super) fn tool_input(call: &ToolCall) -> Result<Value, CodecError> {
+    tool_labels(call.call_id.as_str(), call.name.as_str())?;
     if !call.context.is_direct() || call.context.alias_domain.is_some() {
         return Err(CodecError::Unsupported(
             crate::protocol::failure::CarrierReason::Unavailable,
@@ -264,10 +341,16 @@ pub(super) fn tool_input(call: &ToolCall) -> Result<Value, CodecError> {
     }
     Ok(input.value().clone())
 }
+/// Delivery must not publish identities that public Messages history cannot admit.
+pub(super) fn tool_labels(id: &str, tool: &str) -> Result<(), CodecError> {
+    wire::shape::name(id, 64)?;
+    wire::shape::name(tool, 128)
+}
 /// Reuse the existing EOF-validated materialization; never buffer streamed arguments again.
 pub(crate) fn validate_tool_calls(response: &DecodedResponse) -> Result<(), CodecError> {
     for (_, item) in response.semantic.items() {
         if let Item::ToolCall(call) = item {
+            tool_labels(call.call_id.as_str(), call.name.as_str())?;
             if matches!(call.arguments, ToolArguments::StructuredPartial(_))
                 && call.status == ItemLifecycle::Incomplete
                 && response.semantic.outcome() == Outcome::Incomplete

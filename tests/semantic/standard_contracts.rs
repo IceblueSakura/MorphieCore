@@ -15,6 +15,43 @@ fn messages() -> Value {
 }
 
 #[test]
+fn responses_stream_options_follow_directional_field_policy() {
+    let adapter = adapter(Profile::Responses);
+    let mut wire = json!({"model":"public","input":"go","stream":true,
+        "stream_options":{"include_obfuscation":false}});
+    let original = adapter
+        .decode_client_request(wire.to_string().as_bytes())
+        .unwrap();
+    wire["stream_options"]["future_option"] = json!({"nested":true});
+    let decoded = adapter
+        .decode_client_request(wire.to_string().as_bytes())
+        .unwrap();
+    assert_eq!(decoded.task, original.task);
+    assert_eq!(decoded.delivery, original.delivery);
+    assert!(adapter.decode_request(wire.to_string().as_bytes()).is_err());
+    for invalid in [json!(1), json!("false"), json!([])] {
+        wire["stream_options"]["include_obfuscation"] = invalid;
+        assert!(
+            adapter
+                .decode_client_request(wire.to_string().as_bytes())
+                .is_err()
+        );
+    }
+    wire["stream_options"] = json!({"include_obfuscation":null});
+    assert!(
+        adapter
+            .decode_client_request(wire.to_string().as_bytes())
+            .is_err()
+    );
+    wire["stream_options"] = json!(false);
+    assert!(
+        adapter
+            .decode_client_request(wire.to_string().as_bytes())
+            .is_err()
+    );
+}
+
+#[test]
 fn chat_function_contract_distinguishes_omission_null_and_target_name_grammar() {
     let chat = adapter(Profile::Chat);
     let responses = adapter(Profile::Responses);

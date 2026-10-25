@@ -1167,6 +1167,10 @@ Native observations stay unchanged. OpenAI delivery projects a copy:
 
 Messages delivery rejects citations until that carrier is implemented. Static and streamed output use the same refusal to discard annotations.
 
+**Readable reasoning compatibility selected on 2026-10-25.** Preserve ordinary cross-protocol continuation before preserving readable reasoning's exact type and segmentation. For unsigned readable reasoning, Messages joins each item's parts in order without trimming, inserting separators, summarizing, or mixing reasoning into the answer. The delivery copy represents the result as one Summary (or no parts for empty text), matching returned Messages history; source IR, item order and lifecycle remain unchanged. `messages.readable-reasoning.v1` records the item-local type/boundary approximation. This preserves text carriage, not measured model quality or a reversible raw/summary distinction. It neither reveals hidden reasoning nor discards opaque continuation. Native signed thinking and redacted blocks retain their exact path; replay-bearing content that needs this normalization rejects instead of rebinding a signature. SSE preserves sequential part order and the single-value byte bound, rejecting overlapping reasoning parts rather than concatenating arrival order.
+
+Messages delivery checks tool-call IDs and names against its public history grammar before publishing the call owner, including incomplete calls. Unrepresentable labels reject without renaming identities, so a successful call cannot become an unavoidable next-turn grammar error.
+
 Messages block starts preserve source item order. Text/thinking owners may open lazily, but cannot start a new block after a later owner's block has already started; reject that interleaving rather than reversing the SDK's final content array. Deltas for already opened blocks may interleave. This is an explicit streaming representation boundary, not a new buffering scheduler or a claim that every cross-protocol item schedule is representable.
 
 Messages final usage requires reported input/output counts and a known accounting relation. `output_tokens_details.thinking_tokens` maps to the reported reasoning subset in both directions and is never derived. Cache-exclusive input is preserved. Inclusive input needs a reported cache-read count. An unreported cache-write category stays absent rather than zero, and the remaining input keeps any such writes. With both counts reported, at least one must be zero: the IR does not promise that nonzero cache-read and cache-write subsets are disjoint. Missing or ambiguous counts fail projection instead of becoming zero. SSE opening counters are provisional; they never replace the required final report.
@@ -1234,7 +1238,7 @@ The gateway derives Provider-specific cache/session carriers; it does not read P
 
 Without a declared conversation, a short-lived prefix-digest index offers best-effort cache-group reuse. It stores no bodies, selects no credential and restores no history. Opaque-reasoning histories are excluded.
 
-Implicit cache scope is isolated by ingress key, credential source and public model. It is independent of the replay fingerprint. Losing the index loses cache hits, not correctness.
+Implicit cache scope includes the complete configured Agent ID/key-table namespace, credential source and public model, not a per-Agent boundary. Admitted Agents share that namespace under the single-deployer access policy. It is independent of the replay fingerprint. Losing the index loses cache hits, not correctness.
 
 ### Streaming and delivery
 
@@ -1413,6 +1417,7 @@ The 2026-10-23 standards reset supersedes conflicting historical conversion, pub
 
 | Decision | Consequence |
 |---|---|
+| Messages readable reasoning compatibility (2026-10-25) | User prioritizes ordinary cross-protocol Agent continuation and reasoning carriage over exact readable type/segmentation. Preserve unsigned bytes/order through a declared item-local delivery projection; retained snapshots match Messages history. Native replay/visibility, source IR and call identity remain protected; no model-quality or broader Provider acceptance claim |
 | Local telemetry wiring (2026-10-25) | Scoped tracing/OTel request and attempt lifetimes project the existing report into native structured logs and completed spans through the existing private writer. No global registration, ambient destination, metrics reader, new retention mechanism or network exporter; Collector/export-health integration remains separately selected |
 | Minimal diagnostic attribution (2026-10-25) | Admission-owned Agent/request references join inference logs/spans and private capture independently of sink availability. Bounded per-attempt source accounting retains observed facts and explicit loss, not completed delivery estimates or billing totals; no routing, public diagnostic schema or aggregation change |
 | Unified Generation evidence (2026-10-24) | One pure typed effect delta, contextual typed failures and an execution-owned bounded report replace parallel audit ledgers. Checked conversion, publication and body handoff remain distinct. Logs and optional wire views project the same evidence independently of telemetry availability; no retry/health/no-replay change or production exporter activation |

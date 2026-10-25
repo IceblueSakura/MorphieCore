@@ -91,4 +91,31 @@ with httpx.Client(trust_env=False, timeout=10) as http:
             assert details is not None
             assert details.type == "refusal" and details.category == "cyber"
             assert details.explanation == "synthetic explanation"
-print(json.dumps({"requests": 5, "partial": True, "refusal_details": True}))
+        for streamed in [False, True]:
+            shared_cross = dict(
+                model="cross-model", max_tokens=32,
+                tools=[{"name": "lookup", "description": "Synthetic lookup", "input_schema": {
+                    "type": "object", "properties": {"n": {"type": "integer"}}}}],
+            )
+            messages = [{"role": "user", "content": "go"}]
+            if streamed:
+                with client.messages.stream(**shared_cross, messages=messages) as stream:
+                    answer = stream.get_final_message()
+            else:
+                answer = client.messages.create(**shared_cross, messages=messages)
+            assert answer.stop_reason == "tool_use"
+            assert [b.type for b in answer.content] == ["thinking", "tool_use"]
+            assert answer.content[0].thinking == "Plan 🧪 Check"
+            assert answer.content[0].signature == ""
+            assert answer.content[1].id == "call_cross"
+            assert answer.content[1].input == {"n": 7}
+            messages += [
+                {"role": "assistant", "content": [
+                    b.model_dump(exclude_none=True) for b in answer.content]},
+                {"role": "user", "content": [
+                    {"type": "tool_result", "tool_use_id": "call_cross", "content": "found"}]},
+            ]
+            final = client.messages.create(**shared_cross, messages=messages)
+            assert final.stop_reason == "max_tokens"
+            assert final.content[0].text == "done"
+print(json.dumps({"requests": 9, "partial": True, "refusal_details": True, "unsigned_replay": True}))

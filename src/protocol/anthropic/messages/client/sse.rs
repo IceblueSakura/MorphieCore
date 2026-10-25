@@ -19,6 +19,11 @@ enum OpenItem {
     Thinking {
         index: Option<usize>,
         signature: Option<String>,
+        parts: usize,
+        raw: bool,
+        active_part: Option<PartId>,
+        bytes: usize,
+        projected: bool,
     },
     ToolUse {
         index: usize,
@@ -334,6 +339,11 @@ impl ClientEventEncoder {
                     ItemKind::Reasoning => OpenItem::Thinking {
                         index: None,
                         signature: replay.as_ref().map(|r| r.value.as_str().to_owned()),
+                        parts: 0,
+                        raw: false,
+                        active_part: None,
+                        bytes: 0,
+                        projected: false,
                     },
                     ItemKind::ToolCall {
                         call_id,
@@ -346,6 +356,7 @@ impl ClientEventEncoder {
                                 crate::protocol::failure::CarrierReason::Unavailable,
                             ));
                         }
+                        super::projection::tool_labels(call_id.as_str(), name.as_str())?;
                         self.check_block_order(*item)?;
                         self.calls = true;
                         OpenItem::ToolUse {
@@ -370,6 +381,54 @@ impl ClientEventEncoder {
                     }
                 };
                 self.open.insert(*item, block);
+            }
+            StreamEvent::PartStarted { item, part, kind }
+                if matches!(self.open.get(item), Some(OpenItem::Thinking { .. })) =>
+            {
+                let Some(OpenItem::Thinking {
+                    parts,
+                    raw,
+                    active_part,
+                    signature,
+                    projected,
+                    ..
+                }) = self.open.get_mut(item)
+                else {
+                    unreachable!()
+                };
+                if active_part.is_some()
+                    || !matches!(kind, PartKind::Summary | PartKind::ReasoningText)
+                {
+                    // Arrival-order concatenation would change interleaved part text.
+                    return Err(CodecError::Unsupported(
+                        crate::protocol::failure::CarrierReason::Reasoning,
+                    ));
+                }
+                *parts += 1;
+                *raw |= *kind == PartKind::ReasoningText;
+                *active_part = Some(*part);
+                if (*raw || *parts > 1) && signature.is_some() {
+                    return Err(CodecError::Unsupported(
+                        crate::protocol::failure::CarrierReason::Replay,
+                    ));
+                }
+                if (*raw || *parts > 1) && !*projected {
+                    self.losses
+                        .push(super::projection::reasoning_loss(*item, "event.encode"));
+                    *projected = true;
+                }
+            }
+            StreamEvent::PartFinished { item, part }
+                if matches!(self.open.get(item), Some(OpenItem::Thinking { .. })) =>
+            {
+                let Some(OpenItem::Thinking { active_part, .. }) = self.open.get_mut(item) else {
+                    unreachable!()
+                };
+                if active_part.take() != Some(*part) {
+                    return Err(CodecError::Invalid(
+                        crate::protocol::failure::ShapeReason::InvalidValue,
+                    ));
+                }
             }
             StreamEvent::PartStarted {
                 item,
@@ -444,12 +503,28 @@ impl ClientEventEncoder {
                             ))?,
                         json!({"type":"text_delta","text":fragment}),
                     ),
-                    OpenItem::Thinking { index, .. } => (
-                        *index.get_or_insert_with(|| {
-                            open_block(&mut self.next, &mut out, thinking_block())
-                        }),
-                        json!({"type":"thinking_delta","thinking":fragment}),
-                    ),
+                    OpenItem::Thinking {
+                        index,
+                        active_part,
+                        bytes,
+                        ..
+                    } => {
+                        if *active_part != Some(*part) {
+                            return Err(CodecError::Invalid(
+                                crate::protocol::failure::ShapeReason::InvalidValue,
+                            ));
+                        }
+                        *bytes = bytes.saturating_add(fragment.len());
+                        if *bytes > crate::semantic::task::generation::MAX_TEXT_BYTES {
+                            return Err(CodecError::Limit);
+                        }
+                        (
+                            *index.get_or_insert_with(|| {
+                                open_block(&mut self.next, &mut out, thinking_block())
+                            }),
+                            json!({"type":"thinking_delta","thinking":fragment}),
+                        )
+                    }
                     OpenItem::ToolUse {
                         index,
                         prefix,
@@ -514,7 +589,33 @@ impl ClientEventEncoder {
                         out.push(frame(&json!({"type":"content_block_stop","index":index})));
                         return Ok(out);
                     }
-                    OpenItem::Thinking { index, signature } => (index, signature),
+                    OpenItem::Thinking {
+                        index,
+                        signature,
+                        parts,
+                        raw,
+                        bytes,
+                        projected,
+                        ..
+                    } => {
+                        let signed = replay
+                            .as_ref()
+                            .map(|r| r.value.as_str())
+                            .or(signature.as_deref());
+                        if signed.is_some_and(|s| {
+                            raw || parts > 1
+                                || parts > 0 && (bytes == 0 || super::projection::redacted(s))
+                        }) {
+                            return Err(CodecError::Unsupported(
+                                crate::protocol::failure::CarrierReason::Replay,
+                            ));
+                        }
+                        if parts > 0 && bytes == 0 && !projected {
+                            self.losses
+                                .push(super::projection::reasoning_loss(*item, "event.encode"));
+                        }
+                        (index, signature)
+                    }
                 };
                 let signature = replay
                     .as_ref()
@@ -607,6 +708,25 @@ impl ClientEventEncoder {
                     self.calls,
                     &details,
                 )?;
+                for (item, block) in &self.open {
+                    if let OpenItem::Thinking {
+                        parts,
+                        bytes: 0,
+                        projected: false,
+                        signature,
+                        ..
+                    } = block
+                        && *parts > 0
+                    {
+                        if signature.is_some() {
+                            return Err(CodecError::Unsupported(
+                                crate::protocol::failure::CarrierReason::Replay,
+                            ));
+                        }
+                        self.losses
+                            .push(super::projection::reasoning_loss(*item, "event.encode"));
+                    }
+                }
                 // Close every started block by its wire index. Text items own no block;
                 // a thinking item without content has not opened one yet.
                 let mut started: Vec<usize> =
@@ -728,6 +848,139 @@ mod tests {
         task::generation::{ArgumentFormat, StreamState, Usage, reduce},
         value::Text,
     };
+
+    #[test]
+    fn unfinished_empty_summary_reports_projection_after_evidence_drain() {
+        let mut encoder = ClientEventEncoder::new("r", "m");
+        let owner = ItemId::new(1);
+        for event in [
+            StreamEvent::ItemStarted {
+                item: owner,
+                kind: ItemKind::Reasoning,
+                replay: None,
+            },
+            StreamEvent::PartStarted {
+                item: owner,
+                part: PartId::new(1),
+                kind: PartKind::Summary,
+            },
+        ] {
+            encoder.encode(&event).unwrap();
+        }
+        assert!(encoder.take_evidence().is_empty());
+        let mut usage = Usage::operation(2, 3, 5);
+        usage.cached_input_tokens = Some(0);
+        encoder.encode(&StreamEvent::Usage(usage)).unwrap();
+        encoder.take_evidence();
+        encoder
+            .encode(&StreamEvent::Terminal {
+                terminal: StreamTerminal::Incomplete,
+                details: crate::semantic::task::generation::TerminalDetails {
+                    incomplete: Some(
+                        crate::semantic::task::generation::IncompleteReason::MaxOutputTokens,
+                    ),
+                    ..Default::default()
+                },
+            })
+            .unwrap();
+        assert_eq!(
+            encoder.losses(),
+            &[super::super::projection::reasoning_loss(
+                owner,
+                "event.encode"
+            )]
+        );
+        encoder.finish().unwrap();
+    }
+
+    #[test]
+    fn reasoning_projection_preserves_sequential_bytes_and_rejects_signed_or_interleaved_parts() {
+        use crate::semantic::task::generation::{
+            ItemLifecycle, ItemReplay, ReplayFormat, ReplayValue,
+        };
+        let owner = ItemId::new(1);
+        let start = StreamEvent::ItemStarted {
+            item: owner,
+            kind: ItemKind::Reasoning,
+            replay: None,
+        };
+        let part = |n, kind| StreamEvent::PartStarted {
+            item: owner,
+            part: PartId::new(n),
+            kind,
+        };
+        let delta = |n, text: &str| StreamEvent::Delta {
+            item: owner,
+            part: PartId::new(n),
+            fragment: text.into(),
+            logprobs: vec![],
+        };
+        let close = |n| StreamEvent::PartFinished {
+            item: owner,
+            part: PartId::new(n),
+        };
+        let finish = |replay| StreamEvent::ItemFinished {
+            item: owner,
+            status: ItemLifecycle::Completed,
+            replay,
+        };
+        let mut encoder = ClientEventEncoder::new("r", "m");
+        encoder.encode(&start).unwrap();
+        let mut text = String::new();
+        for event in [
+            part(1, PartKind::ReasoningText),
+            delta(1, " 思考\n"),
+            close(1),
+            part(2, PartKind::Summary),
+            delta(2, "summary"),
+            close(2),
+            finish(None),
+        ] {
+            for frame in encoder.encode(&event).unwrap() {
+                let wire = std::str::from_utf8(&frame).unwrap();
+                let v: Value = serde_json::from_str(
+                    wire.lines().find_map(|s| s.strip_prefix("data: ")).unwrap(),
+                )
+                .unwrap();
+                if v["delta"]["type"] == "thinking_delta" {
+                    text.push_str(v["delta"]["thinking"].as_str().unwrap());
+                }
+            }
+        }
+        assert_eq!(text, " 思考\nsummary");
+        assert_eq!(
+            encoder.losses(),
+            &[super::super::projection::reasoning_loss(
+                owner,
+                "event.encode"
+            )]
+        );
+        for late_signature in [false, true] {
+            let mut encoder = ClientEventEncoder::new("r", "m");
+            for event in [
+                start.clone(),
+                part(1, PartKind::ReasoningText),
+                delta(1, "a"),
+            ] {
+                encoder.encode(&event).unwrap();
+            }
+            let rejected = if late_signature {
+                encoder.encode(&close(1)).unwrap();
+                finish(Some(ItemReplay {
+                    value: ReplayValue::final_value(
+                        ReplayFormat::AnthropicMessagesThinking,
+                        Text::new("signature", "test", 64).unwrap(),
+                    ),
+                    origin: None,
+                }))
+            } else {
+                part(2, PartKind::Summary)
+            };
+            assert!(encoder.encode(&rejected).is_err());
+            assert!(encoder.encode(&finish(None)).is_err());
+            assert!(encoder.finish().is_err());
+        }
+    }
 
     #[test]
     fn late_block_starts_cannot_reverse_source_owner_order() {
