@@ -171,6 +171,25 @@ Google remains upstream encoding/SSE intake only. Missing native downstream/stat
 
 The shared [usage validator](../../src/semantic/task/generation/usage/mod.rs) now separates observation presence from accounting consistency. [Scoped reports](../../src/semantic/task/generation/usage/reports.rs) always check aggregate premises, including modality-only observations with no aggregate counters. The 2026-10-24 follow-up rejects contradictory reasoning/cache inclusion relations through report construction, response shorthand and atomic replacement, while retaining valid sparse/unknown breakdowns without zero filling. The pinned OpenAI reasoning-output breakdown and Anthropic inclusive-output definitions inform the existing relations; this is IR consistency, not new modality wire acceptance.
 
+## Instruction conversion review, 2026-10-25
+
+This additional read-only review covers public/native Messages, Chat and Responses instruction intake, target encoding and typed continuation. The official pins above distinguish Messages root `system` (string or text blocks), explicit Chat/Responses system/developer messages, and Responses request-wide `instructions`. No instruction-authority rewrite was selected by this review.
+
+| Source | Current IR/target behavior | Assessment |
+|---|---|---|
+| Explicit Chat/Responses system/developer | Ordered instruction owner; authority and position survive Chat/Responses. Messages uses its native placement subset, with a named developer-to-system approximation | Preserve order; do not hoist later instructions or flatten authority without a separate rule |
+| Responses root `instructions` | Separate request settings, leading developer for default Chat, or system under the trusted root-only selector; Messages root system | Existing selected projection; no built-in binding currently enables the Chat system selector |
+| Messages `system:"P"` versus `system:[{type:text,text:P}]` | String becomes root settings; blocks become a leading System instruction. Default Chat consequently emits developer versus system; Responses emits root instructions versus a system input item | Representation-dependent authority/scope discrepancy requiring selection, not an accepted equivalence claim |
+| Managed Responses continuation | Current settings replace old root instructions; explicit instruction history persists. New root absence/null/empty must not be confused with deleting ordered instruction history | Existing ownership split follows the pinned continuation contract; do not repair Messages intake by flattening all Responses history |
+| Named, cached or unfinished instruction owners | Unsupported participant, TTL or lifecycle carriers reject rather than disappearing | Intentional boundaries; text compatibility does not imply these additional carriers |
+| Later instructions to Messages | Native system-message placement is checked; invalid positions reject rather than moving instructions across conversational turns | Preserve native placement and scoped effort/tool-change boundaries |
+
+The Messages string/block discrepancy was reproduced with a standalone synthetic probe through public decoders and encoders: identical `P` produces leading Chat developer/system respectively. A separate public typed-history composition probe shows the corresponding root-setting value disappears when the next Responses request omits instructions, while the explicit System item persists. This latter probe is a library composition observation, not proof of a deployed cross-protocol resource-ID workflow. No network or private configuration was used.
+
+Recommended design review: make Messages string and block roots share explicit root System authority and scope, retain ordered mid-conversation instructions separately, and keep per-block cache ownership. A string-only shortcut to request settings currently loses that distinction. Unifying only as ordered history would fix the role difference but also select persistence semantics; determine the root owner and continuation contract before implementation. Independently decide per-target explicit developer-to-system approximation, especially when both authorities coexist. The Chat root selector alone cannot repair explicit developer input to DeepSeek Responses.
+
+DeepSeek's separately selected parallel-control fix does not implement these proposals. Both DeepSeek request protocols now reject explicit false and omit explicit true with candidate-local evidence; no prompt-based serial substitute, role promotion, or live Provider claim follows.
+
 ## Imported asset boundaries
 
 [The asset manifest](../../tests/upstream/assets.lock.json) records unchanged source bytes and derived framing digests. [Development](../development.md#upstream-test-sources) owns commands, extraction rules and test selection.

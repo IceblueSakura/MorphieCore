@@ -60,6 +60,23 @@ pub fn lower_request<'a>(
                 .effect(crate::lowering::generation::ConversionBoundary::RequestProject),
         );
     }
+    if c.adaptation.rules.parallel_tools_always_enabled {
+        match semantic.settings().parallel_tool_calls {
+            Some(false) => return Err(RepresentationError::Tools),
+            Some(true) => {
+                let mut settings = semantic.settings().clone();
+                settings.parallel_tool_calls = None;
+                semantic = std::borrow::Cow::Owned(semantic.into_owned().with_settings(settings)?);
+                projection.push(crate::lowering::generation::Effect::new(
+                    "deepseek.omit-parallel-tool-permission.v1",
+                    crate::lowering::generation::Field::ParallelTools,
+                    crate::lowering::generation::ConversionBoundary::RequestProject,
+                    crate::lowering::generation::Change::Omit,
+                ));
+            }
+            None => {}
+        }
+    }
     let r = semantic.as_ref();
     let q = check(r, c.clone())?;
     if r.controls().top_k.is_some()

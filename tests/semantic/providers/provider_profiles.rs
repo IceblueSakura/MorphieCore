@@ -18,6 +18,109 @@ fn body() -> Value {
 }
 
 #[test]
+fn deepseek_never_forwards_parallel_control_or_weakens_serial_intent() {
+    use morphiecore::{
+        execution::attempt::prepare_with_rules,
+        provider::SecretMaterial,
+        topology::{ProtocolProfile, catalog::API_KEY_BINDINGS},
+    };
+    let binding = API_KEY_BINDINGS
+        .iter()
+        .find(|b| b.endpoint_prefix == "deepseek")
+        .unwrap();
+    for (profile, target) in [
+        (Profile::Chat, ProtocolProfile::OpenAiChat),
+        (Profile::Responses, ProtocolProfile::OpenAiResponses),
+    ] {
+        let client = Adapter::new(profile, Dialect::Standard, None);
+        let endpoint = binding.endpoint(target).unwrap();
+        for parallel in [None, Some(true), Some(false)] {
+            let mut wire = match profile {
+                Profile::Chat => {
+                    json!({"model":binding.model,"messages":[{"role":"user","content":"go"}]})
+                }
+                Profile::Responses => json!({"model":binding.model,"input":"go"}),
+            };
+            if let Some(value) = parallel {
+                wire["parallel_tool_calls"] = json!(value);
+            }
+            let request = client
+                .decode_client_request(wire.to_string().as_bytes())
+                .unwrap();
+            let original = request.clone();
+            let encoded = endpoint.encode_request_with_rules(&request);
+            let prepared = prepare_with_rules(
+                &endpoint,
+                &(binding.provider)(),
+                &SecretMaterial::new("synthetic-deepseek-key").unwrap(),
+                &request,
+            );
+            if parallel == Some(false) {
+                assert!(matches!(
+                    encoded,
+                    Err(morphiecore::adapter::ConversionFailure {
+                        cause: morphiecore::adapter::ConversionCause::Representation(
+                            morphiecore::lowering::generation::RepresentationError::Tools
+                        ),
+                        ..
+                    })
+                ));
+                assert!(prepared.is_err());
+            } else {
+                let (value, rules) = encoded.unwrap();
+                assert!(value.get("parallel_tool_calls").is_none());
+                assert_eq!(
+                    rules,
+                    if parallel.is_some() {
+                        vec!["deepseek.omit-parallel-tool-permission.v1"]
+                    } else {
+                        vec![]
+                    }
+                );
+                let (prepared, prepared_rules) = prepared.unwrap();
+                assert_eq!(
+                    serde_json::from_slice::<Value>(&prepared.body).unwrap(),
+                    value
+                );
+                assert_eq!(prepared_rules, rules);
+            }
+            assert_eq!(request.task, original.task);
+            let standard = client
+                .encode_request(&request, "m", &Contract::full())
+                .unwrap();
+            assert_eq!(
+                standard.get("parallel_tool_calls"),
+                parallel.as_ref().map(|v| if *v {
+                    &Value::Bool(true)
+                } else {
+                    &Value::Bool(false)
+                })
+            );
+        }
+    }
+    // Messages' inverse flag must reach the same candidate-local refusal.
+    let request = morphiecore::protocol::anthropic::messages::client::decode_client_request(
+        br#"{"model":"deepseek-flash","max_tokens":32,"tool_choice":{"type":"auto","disable_parallel_tool_use":true},"messages":[{"role":"user","content":"go"}]}"#
+    ).unwrap();
+    assert_eq!(
+        request.task.semantic.settings().parallel_tool_calls,
+        Some(false)
+    );
+    for target in [
+        ProtocolProfile::OpenAiChat,
+        ProtocolProfile::OpenAiResponses,
+    ] {
+        assert!(
+            binding
+                .endpoint(target)
+                .unwrap()
+                .encode_request_with_rules(&request)
+                .is_err()
+        );
+    }
+}
+
+#[test]
 fn zhipu_effort_lands_on_its_three_levels_by_a_named_rule() {
     use morphiecore::topology::{ProtocolProfile, catalog::API_KEY_BINDINGS};
     let endpoint = API_KEY_BINDINGS

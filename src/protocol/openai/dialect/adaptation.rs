@@ -103,6 +103,9 @@ pub struct WireRules {
     pub legacy_max_tokens: bool,
     /// Trusted compatibility choice for request-wide instructions, not ordered history.
     pub chat_system_instructions: bool,
+    /// Target always permits parallel calls and has no request switch.
+    /// Explicit serial intent rejects; explicit permission is omitted on a copy.
+    pub parallel_tools_always_enabled: bool,
     /// Fixed client identity and an explicit session header for OpenCode Go.
     /// Never forwards inbound headers or invents a conversation identity.
     /// Source: <https://opencode.ai/docs/go/#where-can-i-use-it>.

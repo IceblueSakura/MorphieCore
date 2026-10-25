@@ -82,6 +82,7 @@ impl Dialect {
             Self::DeepSeek => (
                 "deepseek-v1",
                 WireRules {
+                    parallel_tools_always_enabled: true,
                     chat_cache_usage_aliases: true,
                     readable_reasoning: true,
                     chat_original_image_detail: true,

@@ -177,6 +177,8 @@ The final attribution revision passes the full offline baseline, production-only
 
 The **2026-10-25 cross-protocol maintenance** passes the full offline baseline, production-only compile, Python/provenance checks, all 16 SDK scenarios and all 12 existing installed-client synthetic scenarios with pi 1.4.0/OpenCode 2.0.32. Independent owner checks cover Messages output/history labels, unsigned reasoning bytes/order and represented snapshots, signed/interleaved rejection, joined-value limits and incomplete empty-part evidence. The extended Messages SDK case independently checks JSON/SSE tool-history return through actual upstream preparation. Existing installed-client profiles retain their native/Chat boundaries, not a new unsigned cross-protocol CLI acceptance claim. No real Provider or model-quality measurement was run; DeepSeek adaptation remains paused.
 
+The subsequent **2026-10-25 DeepSeek parallel-control slice** implements only the separately selected [request policy](architecture.md#selected-request-approximations). `providers::provider_profiles::deepseek_never_forwards_parallel_control_or_weakens_serial_intent` checks both catalog protocols, omission/true/false, preparation agreement, unchanged source/standard encoding and Messages' inverse flag. Full offline, all 16 SDK and all 12 current installed-client synthetic gates pass. Instruction conversion remains a [review with unselected changes](refs/2026-10-23-stable-protocol-contracts.md#instruction-conversion-review-2026-10-25); no real DeepSeek call or role-policy change was performed.
+
 | Change or claim | Procedure |
 |---|---|
 | Markdown-only change | Local paths/anchors and whitespace under [documentation checks](#documentation-checks); no Rust/SDK run |
