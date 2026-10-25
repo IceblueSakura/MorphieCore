@@ -97,7 +97,8 @@ def main():
         with ExitStack() as stack:
             origin = stack.enter_context(server(state, False, direct_client=direct))
             if not direct:
-                private_json(run / "gateway.json", {"client_key": KEY, "bind": "127.0.0.1:0",
+                private_json(run / "auth.json", {"version": 1, "agents": [{"agent_id": "fixture-agent", "key": KEY}]})
+                private_json(run / "gateway.json", {"auth_file": "auth.json", "bind": "127.0.0.1:0",
                     "models_file": "models.json", "exchange_timeout_ms": 10000,
                     "diagnostics": "diagnostics.jsonl"})
                 private_json(run / "models.json", {"models": {"claude-haiku-5-5": {

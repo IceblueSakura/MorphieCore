@@ -118,8 +118,18 @@ async fn binary_bootstraps_default_home_files_and_ignores_environment_keys() {
         .unwrap()
         .write_all(
             &serde_json::to_vec(
-                &json!({"client_key":support::CLIENT_KEY,"bind":"127.0.0.1:0","proxy":"unsupported://invalid"}),
+                &json!({"auth_file":"auth.json","bind":"127.0.0.1:0","proxy":"unsupported://invalid"}),
             )
+            .unwrap(),
+        )
+        .unwrap();
+    options
+        .open(root.parent().unwrap().join("auth.json"))
+        .unwrap()
+        .write_all(
+            &serde_json::to_vec(&json!({"version":1,"agents":[
+                {"agent_id":"fixture-agent","key":support::CLIENT_KEY}
+            ]}))
             .unwrap(),
         )
         .unwrap();
@@ -222,6 +232,7 @@ async fn binary_bootstraps_default_home_files_and_ignores_environment_keys() {
 #[cfg(unix)]
 #[tokio::test]
 async fn cli_diagnostics_rotate_recover_and_refuse_unowned_files_before_listening() {
+    const SECOND_KEY: &str = "synthetic-second-agent-client-key-0001";
     use morphiecore::credential::{CredentialManager, CredentialPool, CredentialRef, Secret};
     use std::{
         io::Write,
@@ -276,7 +287,16 @@ async fn cli_diagnostics_rotate_recover_and_refuse_unowned_files_before_listenin
             },
         )
         .unwrap();
-    let mut config = json!({"client_key":support::CLIENT_KEY,"bind":"127.0.0.1:0",
+    write(
+        "auth.json",
+        &serde_json::to_vec(&json!({"version":1,"agents":[
+            {"agent_id":"fixture-agent","key":support::CLIENT_KEY},
+            {"agent_id":"second-agent","name":"Private display label","key":SECOND_KEY,
+                "desc":"Private maintenance note"}
+        ]}))
+        .unwrap(),
+    );
+    let mut config = json!({"auth_file":"auth.json","bind":"127.0.0.1:0",
         "models_file":"models.json","diagnostics":"diagnostics.jsonl","exchange_timeout_ms":5000});
     write("gateway.json", &serde_json::to_vec(&config).unwrap());
     write(
@@ -357,7 +377,12 @@ async fn cli_diagnostics_rotate_recover_and_refuse_unowned_files_before_listenin
         assert!(!base.is_empty() && base.bytes().all(|b| b.is_ascii_digit()));
         let response = client
             .post(format!("http://127.0.0.1:{base}/v1/chat/completions"))
-            .bearer_auth(support::CLIENT_KEY)
+            .bearer_auth(if run == 0 {
+                support::CLIENT_KEY
+            } else {
+                SECOND_KEY
+            })
+            .header("x-morphiecore-agent-id", "forged-agent")
             .header("x-private-business", "synthetic-arbitrary-header-marker")
             .json(&json!({"model":"qwen3.8-flash","max_completion_tokens":32,
                 "reasoning_effort":"none",
@@ -393,6 +418,10 @@ async fn cli_diagnostics_rotate_recover_and_refuse_unowned_files_before_listenin
             let data = String::from_utf8(data).unwrap();
             for marker in [
                 support::CLIENT_KEY,
+                SECOND_KEY,
+                "Private display label",
+                "Private maintenance note",
+                "forged-agent",
                 "synthetic-rotation-upstream",
                 "synthetic-private-prompt-marker",
                 "synthetic-arbitrary-header-marker",
@@ -414,6 +443,8 @@ async fn cli_diagnostics_rotate_recover_and_refuse_unowned_files_before_listenin
             .iter()
             .all(|r| r["outcome"] == "complete" && r["candidates"].as_array().unwrap().len() == 1)
     );
+    assert_eq!(requests[0]["agent_id"], "fixture-agent");
+    assert_eq!(requests[1]["agent_id"], "second-agent");
     assert_ne!(
         requests[0]["request_id"]
             .as_str()

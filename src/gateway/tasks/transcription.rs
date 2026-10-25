@@ -115,7 +115,8 @@ fn upload_head(headers: &HeaderMap, limit: usize) -> Result<(String, Option<u64>
     Ok((raw.into(), length))
 }
 async fn ingress(runtime: Arc<Runtime>, request: Request) -> Result<Response, ApiError> {
-    let trace = Trace::new(runtime.diagnostics.as_ref());
+    let mut trace = Trace::new(runtime.diagnostics.as_ref());
+    trace.agent(request.extensions().get());
     if runtime.shutdown.is_cancelled() {
         return Err(ApiError::shutdown());
     }

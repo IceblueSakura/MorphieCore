@@ -37,7 +37,7 @@ Read by task:
 
 ## Run
 
-After preparing credentials, a pool, `gateway.json` and `models.json` using [Usage](docs/usage.md):
+After preparing credentials, a pool, `gateway.json`, `auth.json` and `models.json` using [Usage](docs/usage.md):
 
 ```sh
 cargo run --locked --offline --bin morphiecore

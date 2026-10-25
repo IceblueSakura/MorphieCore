@@ -1,5 +1,7 @@
 //! Startup-only private service and model configuration. No credential values from env.
 #[cfg(test)]
+mod auth_tests;
+#[cfg(test)]
 mod managed_key_tests;
 #[cfg(test)]
 mod media_tests;
@@ -26,7 +28,8 @@ use std::{
 #[derive(serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Configuration {
-    client_key: Secret,
+    #[serde(default = "auth_file")]
+    auth_file: PathBuf,
     #[serde(default = "listen")]
     bind: SocketAddr,
     credentials_dir: Option<PathBuf>,
@@ -39,11 +42,57 @@ struct Configuration {
     exchange_timeout_ms: Option<u64>,
     delta_coalescing: Option<crate::execution::delivery::DeltaCoalescing>,
 }
+
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct AuthConfiguration {
+    version: u32,
+    agents: Vec<AgentKeyConfiguration>,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct AgentKeyConfiguration {
+    agent_id: String,
+    key: Secret,
+    #[serde(default)]
+    name: String,
+    #[serde(default)]
+    desc: String,
+}
+
+impl AuthConfiguration {
+    fn into_agents(
+        self,
+    ) -> Result<std::collections::BTreeMap<String, SecretMaterial>, StartupError> {
+        if self.version != 1 {
+            return Err(StartupError::Configuration("auth"));
+        }
+        let mut agents = std::collections::BTreeMap::new();
+        for agent in self.agents {
+            if agent.name.len() > 256
+                || agent.name.chars().any(char::is_control)
+                || agent.desc.len() > 2048
+            {
+                return Err(StartupError::Configuration("auth"));
+            }
+            let key =
+                SecretMaterial::new(agent.key.expose()).map_err(|_| StartupError::Credentials)?;
+            if agents.insert(agent.agent_id, key).is_some() {
+                return Err(StartupError::Configuration("auth"));
+            }
+        }
+        Ok(agents)
+    }
+}
 fn listen() -> SocketAddr {
     ([127, 0, 0, 1], 8080).into()
 }
 fn models_file() -> PathBuf {
     "models.json".into()
+}
+fn auth_file() -> PathBuf {
+    "auth.json".into()
 }
 fn relative(parent: &Path, path: &Path) -> Result<PathBuf, StartupError> {
     if path.as_os_str().is_empty() {
@@ -103,6 +152,9 @@ impl Bootstrap {
             return Err(StartupError::Listener);
         }
         let parent = path.parent().unwrap_or(Path::new("."));
+        let auth: AuthConfiguration =
+            read_configuration(&relative(parent, &configuration.auth_file)?, "auth")?;
+        let agents = auth.into_agents()?;
         let directory = match directory {
             Some(path) if !path.as_os_str().is_empty() => path.to_owned(),
             Some(_) => return Err(StartupError::Configuration("credential directory")),
@@ -135,8 +187,7 @@ impl Bootstrap {
             plan.topology,
             plan.entries,
             plan.credentials,
-            SecretMaterial::new(configuration.client_key.expose())
-                .map_err(|_| StartupError::Credentials)?,
+            agents,
             limits,
             proxy.or(configuration.proxy.as_deref()),
             environment,

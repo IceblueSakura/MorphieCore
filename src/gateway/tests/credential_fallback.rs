@@ -171,7 +171,10 @@ async fn same_provider_fallback_is_ordered_bounded_and_never_crosses_publication
                 ..Default::default()
             },
             credentials,
-            SecretMaterial::new(crate::gateway::tests::support::KEY).unwrap(),
+            std::collections::BTreeMap::from([(
+                "fixture-agent".into(),
+                SecretMaterial::new(crate::gateway::tests::support::KEY).unwrap(),
+            )]),
             Limits::default(),
             None,
         )

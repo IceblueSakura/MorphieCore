@@ -333,7 +333,8 @@ def main():
         upstream = stack.enter_context(authority(state))
         model = "claude-haiku-5-5" if state.native else "qwen3.8-flash"
         binding = "opencode-go-haiku-messages" if state.native else "aliyun-tokenplan-cn-chat"
-        private_json(root / "gateway.json", {"client_key": KEY, "bind": "127.0.0.1:0",
+        private_json(root / "auth.json", {"version": 1, "agents": [{"agent_id": "fixture-agent", "key": KEY}]})
+        private_json(root / "gateway.json", {"auth_file": "auth.json", "bind": "127.0.0.1:0",
             "models_file": "models.json", "concurrency": 1,
             "exchange_timeout_ms": 30000, "diagnostics": "diagnostics.jsonl"})
         private_json(root / "models.json", {"models": {model: {"max_attempts": 2,

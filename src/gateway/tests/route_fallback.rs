@@ -272,7 +272,10 @@ async fn ordered_route_only_falls_back_before_visible_delivery() {
                 ..Default::default()
             },
             credentials,
-            SecretMaterial::new(crate::gateway::tests::support::KEY).unwrap(),
+            std::collections::BTreeMap::from([(
+                "fixture-agent".into(),
+                SecretMaterial::new(crate::gateway::tests::support::KEY).unwrap(),
+            )]),
             Limits {
                 exchange_timeout: std::time::Duration::from_millis(3000),
                 ..Limits::default()
@@ -468,7 +471,10 @@ async fn recovery_ownership_spans_final_handoff_and_distinguishes_deadlines() {
             ..Default::default()
         },
         credentials,
-        SecretMaterial::new(super::support::KEY).unwrap(),
+        std::collections::BTreeMap::from([(
+            "fixture-agent".into(),
+            SecretMaterial::new(super::support::KEY).unwrap(),
+        )]),
         Limits {
             exchange_timeout: Duration::from_millis(100),
             ..Default::default()

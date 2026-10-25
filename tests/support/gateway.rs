@@ -300,7 +300,10 @@ fn bound_gateway(origin: &str, limits: Limits, embeddings: bool) -> Gateway {
             },
         },
         credentials,
-        SecretMaterial::new(CLIENT_KEY).unwrap(),
+        std::collections::BTreeMap::from([(
+            "fixture-agent".into(),
+            SecretMaterial::new(CLIENT_KEY).unwrap(),
+        )]),
         limits,
         None,
     )

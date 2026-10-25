@@ -161,7 +161,8 @@ def main():
     state = State(path)
     with ExitStack() as stack:
         upstream = stack.enter_context(server(state, False))
-        private_json(root / "gateway.json", {"client_key": KEY, "bind": "127.0.0.1:0",
+        private_json(root / "auth.json", {"version": 1, "agents": [{"agent_id": "fixture-agent", "key": KEY}]})
+        private_json(root / "gateway.json", {"auth_file": "auth.json", "bind": "127.0.0.1:0",
             "models_file": "models.json", "exchange_timeout_ms": 10000, "diagnostics": "diagnostics.jsonl"})
         private_json(root / "models.json", {"models": {"qwen3.8-flash": {"max_attempts": 1,
             "chat_profile": "readable_reasoning",

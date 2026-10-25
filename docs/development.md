@@ -167,6 +167,8 @@ The **2026-10-25 Generation Text closure review** passes the full offline baseli
 
 Current-host/Provider evidence remains [separate](refs/2026-10-17-generation-contracts.md#current-host-closure-recheck-2026-10-25). The local telemetry oracle accepts normal `log`/`span` records but still rejects recording-loss status and unknown record types. Sparse accounting repairs have offline/SDK evidence, not a claim that each sparse combination occurred at a real Provider.
 
+The **2026-10-25 Agent API-key migration** retains the full offline and 16-scenario SDK baseline. `gateway::startup::bootstrap::auth_tests` checks the private versioned schema, strict fields, duplicates, metadata/identity separation and startup-only rotation/removal. Ingress checks preserve pre-body authentication and reject spoofed Agent labels with capture enabled or disabled; the CLI diagnostics test attributes successful synthetic inference to two configured Agents without recording their keys or maintenance metadata. All 12 installed-client synthetic cases pass with pi 1.4.0 and OpenCode 2.0.32 using isolated state. No real Provider acceptance was rerun; this is neither OAuth nor per-Agent usage/history attribution acceptance.
+
 | Change or claim | Procedure |
 |---|---|
 | Markdown-only change | Local paths/anchors and whitespace under [documentation checks](#documentation-checks); no Rust/SDK run |
@@ -482,7 +484,7 @@ Before each run:
 4. Run serially with no hidden retries. For a single-attempt check, set the selected model's attempt ceiling to one.
 5. Report only redacted status, counts and error codes. Never print credentials or request/response bodies.
 
-The gateway CLI loads `gateway.json`, its selected `models.json` and pools through the project loader. A test harness must do the same; do not hand-parse credential files.
+The gateway CLI loads `gateway.json`, its selected Agent-key `auth.json`, `models.json` and pools through the project loader. A test harness must do the same; do not hand-parse credential files.
 
 Local byte, event and deadline limits do not prove bounded upstream charges when a target has no output-token control. Real checks supplement synthetic regression; they do not replace it.
 

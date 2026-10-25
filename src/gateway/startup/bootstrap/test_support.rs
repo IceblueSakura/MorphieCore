@@ -20,6 +20,10 @@ pub(super) fn write_configuration(
 ) {
     service["models_file"] = serde_json::json!("models.json");
     write_private(
+        &directory.join("auth.json"),
+        br#"{"version":1,"agents":[{"agent_id":"fixture-agent","key":"synthetic-gateway-client-token-0001"}]}"#,
+    );
+    write_private(
         &directory.join("gateway.json"),
         &serde_json::to_vec(&service).unwrap(),
     );
@@ -70,6 +74,10 @@ impl std::ops::Deref for Fixture {
     }
 }
 impl Fixture {
+    pub(super) fn directory(&self) -> &Path {
+        self._directory.path()
+    }
+
     pub(super) fn new(
         service: serde_json::Value,
         models: serde_json::Value,
@@ -113,7 +121,7 @@ impl Fixture {
 
 pub(super) fn service() -> serde_json::Value {
     serde_json::json!({
-        "client_key": "synthetic-gateway-client-token-0001",
+        "auth_file": "auth.json",
         "bind": "127.0.0.1:0"
     })
 }

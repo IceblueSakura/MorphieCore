@@ -8,7 +8,7 @@ fn setup() -> (tempfile::TempDir, CredentialManager) {
     let manager = CredentialManager::new(dir.path().join("credentials"), vec![]).unwrap();
     write_configuration(
         dir.path(),
-        serde_json::json!({"client_key":"synthetic-gateway-key-at-least-32-bytes"}),
+        serde_json::json!({"auth_file":"auth.json"}),
         selected_models(&["deepseek-flash"], &["deepseek"]),
     );
     manager

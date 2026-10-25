@@ -31,7 +31,7 @@ fn embeddings_need_explicit_selection_and_a_single_nonfallback_key() {
                 },
             )
             .unwrap();
-        let service = serde_json::json!({"client_key":"synthetic-gateway-key-at-least-32-bytes"});
+        let service = serde_json::json!({"auth_file":"auth.json"});
         write_configuration(
             dir.path(),
             service.clone(),
@@ -143,7 +143,7 @@ fn tokenplan_audio_requires_explicit_selection_and_nonfallback_single_source() {
             .unwrap();
         write_configuration(
             directory.path(),
-            json!({"client_key":"synthetic-entry-key-at-least-32-bytes"}),
+            json!({"auth_file":"auth.json"}),
             selected_models(
                 models.as_deref().unwrap_or(&[text.model]),
                 &["aliyun-tokenplan-cn"],
@@ -221,7 +221,7 @@ fn openrouter_speech_requires_explicit_selection_and_single_nonfallback_pool() {
             .unwrap();
         write_configuration(
             dir.path(),
-            json!({"client_key":"synthetic-gateway-key-at-least-32-bytes"}),
+            json!({"auth_file":"auth.json"}),
             selected_models(
                 selection.as_deref().unwrap_or(&[text.model]),
                 &["openrouter"],

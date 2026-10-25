@@ -171,7 +171,10 @@ async fn stateless_json_and_sse_replay_signatures_and_cancel_upstream() {
             binding.credential(),
             Arc::new(SecretMaterial::new("synthetic-upstream").unwrap()),
         )]),
-        SecretMaterial::new(super::support::CLIENT_KEY).unwrap(),
+        std::collections::BTreeMap::from([(
+            "fixture-agent".into(),
+            SecretMaterial::new(super::support::CLIENT_KEY).unwrap(),
+        )]),
         Limits::default(),
         None,
     )

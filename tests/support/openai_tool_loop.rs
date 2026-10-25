@@ -326,7 +326,10 @@ async fn start_with_recovery(
             ..Default::default()
         },
         credentials,
-        SecretMaterial::new(CLIENT_KEY).unwrap(),
+        std::collections::BTreeMap::from([(
+            "fixture-agent".into(),
+            SecretMaterial::new(CLIENT_KEY).unwrap(),
+        )]),
         Limits::default(),
         None,
     )

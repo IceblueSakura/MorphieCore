@@ -53,8 +53,9 @@ class Gateway:
         if capture_response:
             capture["client_response"] = {"body": True}
             capture["upstream_response"] = {"body": True}
+        private_json(directory / "auth.json", {"version": 1, "agents": [{"agent_id": "fixture-agent", "key": self.key}]})
         private_json(directory / "gateway.json", {
-            "client_key": self.key, "bind": "127.0.0.1:0", "models_file": "models.json",
+            "auth_file": "auth.json", "bind": "127.0.0.1:0", "models_file": "models.json",
             "exchange_timeout_ms": DEADLINE_MS, "diagnostics": "diagnostics.jsonl",
             "capture": capture})
         candidate = {"binding": binding, "attempt_timeout_ms": DEADLINE_MS,

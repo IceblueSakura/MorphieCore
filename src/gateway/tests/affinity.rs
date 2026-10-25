@@ -206,7 +206,10 @@ fn gateway(origin: &str, profile: Profile, dialect: Dialect) -> Gateway {
             CredentialBindingId::new("key").unwrap(),
             Arc::new(SecretMaterial::new("synthetic-upstream").unwrap()),
         )]),
-        SecretMaterial::new(crate::gateway::tests::support::KEY).unwrap(),
+        std::collections::BTreeMap::from([(
+            "fixture-agent".into(),
+            SecretMaterial::new(crate::gateway::tests::support::KEY).unwrap(),
+        )]),
         Limits::default(),
         None,
     )

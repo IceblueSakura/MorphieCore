@@ -93,6 +93,8 @@ struct ImageAccountingObservation {
 #[derive(Default, Serialize)]
 struct Record {
     #[serde(skip_serializing_if = "Option::is_none")]
+    agent_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     generation: Option<crate::execution::report::RequestReport>,
     request_id: Option<String>,
     #[serde(flatten)]
@@ -171,6 +173,10 @@ pub(super) struct Trace {
     telemetry: Option<telemetry::Request>,
 }
 impl Trace {
+    pub(super) fn agent(&mut self, agent: Option<&super::ingress::auth::AuthenticatedAgent>) {
+        self.record.agent_id = agent.map(|agent| agent.agent_id.to_string());
+    }
+
     pub(super) fn generation(sink: Option<&Sink>) -> Self {
         let mut trace = Self::new(sink);
         trace.generation = true;

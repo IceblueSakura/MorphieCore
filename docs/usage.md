@@ -10,6 +10,8 @@ This guide owns local setup, configuration and client-facing procedures for impl
   - [OAuth](#oauth)
 - [Manual upstream diagnostics](#manual-upstream-diagnostics)
 - [Configure the gateway](#configure-the-gateway)
+  - [Agent API keys](#agent-api-keys)
+  - [Body-free diagnostics](#body-free-diagnostics)
   - [Model configuration](#model-configuration)
   - [Delta coalescing](#delta-coalescing)
   - [Private exchange capture](#private-exchange-capture)
@@ -185,13 +187,13 @@ The HTTP response ceiling is 4 MiB; JSON keeps shared structural limits, and SIW
 
 ## Configure the gateway
 
-Create private `gateway.json` and `models.json` files in `$HOME/.local/share/morphiecore` (use `%USERPROFILE%` on Windows), or select a different service file with `--config`. Their parent directories must also be private on Unix. Keep configuration outside the credential store. Each file is bounded to 64 KiB and rejects unknown fields and duplicate JSON keys. Changes take effect at startup; there is no hot reload.
+Create private `gateway.json`, `auth.json` and `models.json` files in `$HOME/.local/share/morphiecore` (use `%USERPROFILE%` on Windows), or select a different service file with `--config`. Their parent directories must also be private on Unix; use directory mode `0700` and file mode `0600`. Keep configuration outside the credential store. Each file is bounded to 64 KiB and rejects unknown fields and duplicate JSON keys. Changes take effect at startup; there is no hot reload.
 
-`gateway.json` owns service settings. This example uses a synthetic ingress token; replace it with a private random token of 32–4096 bytes:
+`gateway.json` owns service settings, not key values:
 
 ```json
 {
-  "client_key": "synthetic-local-ingress-token-00000001",
+  "auth_file": "auth.json",
   "bind": "127.0.0.1:8080",
   "models_file": "models.json",
   "credentials_dir": "credentials"
@@ -200,7 +202,7 @@ Create private `gateway.json` and `models.json` files in `$HOME/.local/share/mor
 
 | Field | Meaning |
 |---|---|
-| `client_key` | Required ingress token, separate from upstream credentials |
+| `auth_file` | Required private Agent-key file; default `auth.json` beside this file |
 | `bind` | Loopback listener; default `127.0.0.1:8080` |
 | `models_file` | Model configuration path; default `models.json` beside this file |
 | `credentials_dir` | Optional credential-store path; omission retains the independent home-relative default |
@@ -213,13 +215,50 @@ Create private `gateway.json` and `models.json` files in `$HOME/.local/share/mor
 
 Paths in the service file resolve relative to that file, not the process working directory. CLI paths remain explicit process-relative or absolute paths.
 
+### Agent API keys
+
+`auth.json` has one versioned schema. The following keys are synthetic; replace each with an independent high-entropy random key:
+
+```json
+{
+  "version": 1,
+  "agents": [
+    {
+      "agent_id": "pi-workstation",
+      "name": "Workstation Pi",
+      "key": "synthetic-pi-ingress-secret-00000001",
+      "desc": "Primary coding agent"
+    },
+    {
+      "agent_id": "opencode-workstation",
+      "key": "synthetic-opencode-secret-000000002"
+    }
+  ]
+}
+```
+
+| Field | Contract |
+|---|---|
+| `version` | Required integer `1`; unsupported versions reject |
+| `agents` | Required array of 1–256 records |
+| `agent_id` | Required unique, case-sensitive identity: 1–128 ASCII bytes, starts with a letter/digit, then letters/digits or `.`, `_`, `-` |
+| `key` | Required globally unique secret: 32–4096 printable non-space ASCII bytes |
+| `name` | Optional mutable display label; defaults to empty, at most 256 UTF-8 bytes, no control characters |
+| `desc` | Optional maintenance description; defaults to empty, at most 2048 UTF-8 bytes |
+
+Records reject unknown fields; supplied fields must have their declared types, not null. Both duplicate IDs and duplicate keys reject startup. The file must exist and pass the same private-file checks as other configuration; there is no environment-key or anonymous fallback. The former `gateway.json.client_key` and unversioned ID-to-key dictionaries are not accepted.
+
+Use the Agent's `key` in the SDK. Authentication determines `agent_id`; request headers, metadata and business content cannot choose it. Names and descriptions are private maintenance metadata, not authentication or public discovery fields. The runtime retains key digests, not plaintext keys; ordinary inference diagnostics record only the authenticated ID.
+
+All configured Agents share the current model and stored-response access policy, including deletion; this is not a per-Agent ACL or quota system. Keep `agent_id` unchanged when renaming an Agent or replacing its key. Remove a record to revoke access, then restart: running gateways retain their loaded keys and in-flight requests are not forcibly cancelled. There is no persistent identity registry or deletion tombstone; operators must not reuse a retired ID for a different Agent. OAuth, remote registration and credential-management APIs remain deferred.
+
 ### Body-free diagnostics
 
 Diagnostics remain opt-in, separate from [private exchange capture](#private-exchange-capture). Use an existing trusted directory that other users cannot modify; mode `0700` is recommended on Unix, and created files use mode `0600`. No parent directories are created implicitly.
 
 The configured path and `<path>.1` retain at most 1 MiB each. Rotation preserves complete JSONL records and discards only the oldest recognized archive. `<path>.lock` and `<path>.1.lock` are reserved zero-byte lock files; do not use either data slot as another active writer's base path. One writer holds both locks, including across rotation. Do not externally rotate, replace or edit these files while it runs.
 
-Each line has `kind:"morphiecore_diagnostics"` and `version:1`. The `event` is `file` for an ownership marker, `request` for the final metadata/report record, `log` for a scalar attempt-finished event, `span` for a completed request/attempt span, or `logging_status` for cumulative loss/failure/recovery counters. Readers counting requests must select `event:"request"`, not count all lines. Request `request_id` is a generated run nonce plus sequence; its candidate ordinals identify attempts, not user sessions or routing authority.
+Each line has `kind:"morphiecore_diagnostics"` and `version:1`. The `event` is `file` for an ownership marker, `request` for the final metadata/report record, `log` for a scalar attempt-finished event, `span` for a completed request/attempt span, or `logging_status` for cumulative loss/failure/recovery counters. Readers counting requests must select `event:"request"`, not count all lines. Authenticated inference request rows include `agent_id`, fixed at admission; this does not add history-access auditing or usage aggregation. Request `request_id` is a generated run nonce plus sequence; its candidate ordinals identify attempts, not user sessions or routing authority.
 
 The same path now enables scoped tracing/OpenTelemetry wiring. Request/log `telemetry` metadata includes event name, resource, scope, trace/span IDs and timestamps; span rows include their parent ID and final status. The report stays a structured `generation` object in the single request row. Unknown optional null map members are omitted; counters above signed 64-bit range use exact decimal strings, declared by `telemetry.body_encoding`. `gateway.attempt.finished` logs carry their request ID and candidate ordinal explicitly. A failed attempt can precede an `ok` request span after recovery.
 
@@ -416,12 +455,12 @@ For Rust embedding, `Gateway::new` takes a compiled topology and one `TaskEntrie
 
 ## Send a request
 
-Set the SDK `base_url` to `http://127.0.0.1:8080/v1` and `api_key` to the ingress `client_key`. Anthropic clients use the bare origin, `http://127.0.0.1:8080`.
+Set the SDK `base_url` to `http://127.0.0.1:8080/v1` and `api_key` to the Agent's `key` from [auth.json](#agent-api-keys). Anthropic clients use the bare origin, `http://127.0.0.1:8080`.
 
 Send JSON with `Content-Type: application/json` and exactly one credential header:
 
-- `Authorization: Bearer <client_key>`, or
-- `x-api-key: <client_key>`.
+- `Authorization: Bearer <key>`, or
+- `x-api-key: <key>`.
 
 Both forms work at ingress. Repeated headers or both forms together are rejected, even if they carry the same token.
 
@@ -557,7 +596,7 @@ Signed Google ordinary text/calls require managed continuation on Responses. The
 | `DELETE /v1/responses/{response_id}` | Return `{"id":"…","object":"response.deleted","deleted":true}` |
 | `GET /v1/responses/{response_id}/input_items` | List the complete resolved input, excluding this response's output; `limit` is 1–100 (default 20), `order` is `asc` or `desc` (default `desc`), and `after` is a returned item ID |
 
-All operations require the same ingress authentication. Unknown, expired, deleted and unstored IDs return `404` with `response_not_found`. Concurrent requests may branch from one predecessor; they do not mutate it. Deleting an ancestor leaves already stored descendants usable.
+All operations require a configured Agent key and retain shared access among admitted Agents. Unknown, expired, deleted and unstored IDs return `404` with `response_not_found`. Concurrent requests may branch from one predecessor; they do not mutate it. Deleting an ancestor leaves already stored descendants usable.
 
 Snapshots use a fixed TTL from final delivery, not a sliding TTL. Defaults are 30 minutes, 1,024 entries and a 256 MiB accounted payload/owner budget; transient request and body limits still apply. See [Limits](../src/gateway/startup/config.rs) for embedded configuration and bounds. Capacity exhaustion rejects storage with `history_capacity_exceeded` before a successful terminal; an already started SSE body aborts. Unexpired snapshots are not evicted to make room.
 

@@ -53,7 +53,10 @@ fn client_profile_cannot_depend_on_candidate_order_or_select_responses_extension
                     CredentialBindingId::new("fixture-key").unwrap(),
                     Arc::new(SecretMaterial::new("synthetic-upstream").unwrap())
                 )]),
-                SecretMaterial::new(KEY).unwrap(),
+                std::collections::BTreeMap::from([(
+                    "fixture-agent".into(),
+                    SecretMaterial::new(KEY).unwrap()
+                )]),
                 Limits::default(),
                 None
             )
@@ -191,7 +194,10 @@ async fn activated_members_keep_route_order_with_a_shared_client_carrier() {
             CredentialBindingId::new("fixture-key").unwrap(),
             Arc::new(SecretMaterial::new("synthetic-upstream-credential-0001").unwrap()),
         )]),
-        SecretMaterial::new(KEY).unwrap(),
+        std::collections::BTreeMap::from([(
+            "fixture-agent".into(),
+            SecretMaterial::new(KEY).unwrap(),
+        )]),
         Limits::default(),
         None,
     )
@@ -256,7 +262,10 @@ fn ingress_unwraps_only_the_candidate_compatible_opaque_and_never_selects_a_targ
             CredentialBindingId::new("fixture-key").unwrap(),
             Arc::new(SecretMaterial::new("synthetic-upstream-credential-0001").unwrap()),
         )]),
-        SecretMaterial::new(KEY).unwrap(),
+        std::collections::BTreeMap::from([(
+            "fixture-agent".into(),
+            SecretMaterial::new(KEY).unwrap(),
+        )]),
         Limits::default(),
         None,
     )
@@ -330,7 +339,10 @@ async fn model_request_limits_do_not_suppress_client_reported_facts() {
             CredentialBindingId::new("fixture-key").unwrap(),
             Arc::new(SecretMaterial::new("synthetic-upstream-credential-0001").unwrap()),
         )]),
-        SecretMaterial::new(KEY).unwrap(),
+        std::collections::BTreeMap::from([(
+            "fixture-agent".into(),
+            SecretMaterial::new(KEY).unwrap(),
+        )]),
         Limits::default(),
         None,
     )
@@ -450,6 +462,66 @@ async fn diagnostics_only_record_authenticated_requests_and_never_expose_headers
         })
     );
 }
+#[tokio::test]
+async fn authenticated_agent_is_fixed_before_optional_capture() {
+    use crate::gateway::ingress::auth::{Auth, AuthenticatedAgent};
+    use axum::extract::Extension;
+    const OTHER: &str = "synthetic-second-client-token-00002";
+    for capture in [false, true] {
+        let directory = crate::test_files::private_directory();
+        let mut gate = gateway(Limits::default());
+        Arc::get_mut(&mut gate.state).unwrap().auth = Auth::new(BTreeMap::from([
+            ("pi".into(), SecretMaterial::new(KEY).unwrap()),
+            ("opencode".into(), SecretMaterial::new(OTHER).unwrap()),
+        ]))
+        .unwrap();
+        if capture {
+            gate = gate
+                .with_capture(
+                    serde_json::from_value(serde_json::json!({
+                        "path":directory.path().join("capture.jsonl"),
+                        "client_request":{"headers":true}
+                    }))
+                    .unwrap(),
+                )
+                .unwrap();
+        }
+        let app = Router::new()
+            .fallback(
+                |Extension(agent): Extension<AuthenticatedAgent>| async move {
+                    agent.agent_id.to_string()
+                },
+            )
+            .layer(middleware::from_fn_with_state(
+                gate.state.clone(),
+                authenticate,
+            ));
+        for (key, expected) in [(KEY, "pi"), (OTHER, "opencode")] {
+            let response = app
+                .clone()
+                .oneshot(
+                    HttpRequest::builder()
+                        .uri("/synthetic-identity-observer")
+                        .header("x-api-key", key)
+                        .header("agent_id", "forged")
+                        .header("x-morphiecore-agent-id", "forged")
+                        .body(axum::body::Body::from(r#"{"agent_id":"forged"}"#))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), 200);
+            assert_eq!(
+                axum::body::to_bytes(response.into_body(), 128)
+                    .await
+                    .unwrap(),
+                expected
+            );
+        }
+        gate.flush_diagnostics().await;
+    }
+}
+
 #[tokio::test]
 async fn authentication_runs_before_any_body_poll() {
     let gate = gateway(Limits::default());
@@ -677,7 +749,10 @@ fn clients_only_resolve_public_labels_and_cannot_select_a_provider() {
             CredentialBindingId::new("fixture-key").unwrap(),
             Arc::new(SecretMaterial::new("synthetic-upstream-credential-0001").unwrap()),
         )]),
-        SecretMaterial::new(KEY).unwrap(),
+        std::collections::BTreeMap::from([(
+            "fixture-agent".into(),
+            SecretMaterial::new(KEY).unwrap(),
+        )]),
         Limits::default(),
         None,
     )
@@ -826,7 +901,10 @@ fn entries_cannot_escape_compiled_route_or_credential_ownership() {
             ..Default::default()
         },
         BTreeMap::new(),
-        SecretMaterial::new(KEY).unwrap(),
+        std::collections::BTreeMap::from([(
+            "fixture-agent".into(),
+            SecretMaterial::new(KEY).unwrap(),
+        )]),
         Limits::default(),
         None,
     );
@@ -850,7 +928,10 @@ fn entries_cannot_escape_compiled_route_or_credential_ownership() {
             CredentialBindingId::new("fixture-key").unwrap(),
             Arc::new(SecretMaterial::new("different-synthetic-upstream-key").unwrap()),
         )]),
-        SecretMaterial::new(KEY).unwrap(),
+        std::collections::BTreeMap::from([(
+            "fixture-agent".into(),
+            SecretMaterial::new(KEY).unwrap(),
+        )]),
         Limits::default(),
         None,
     )
@@ -910,7 +991,10 @@ fn entries_cannot_escape_compiled_route_or_credential_ownership() {
                 ..Default::default()
             },
             credentials,
-            SecretMaterial::new(KEY).unwrap(),
+            std::collections::BTreeMap::from([(
+                "fixture-agent".into(),
+                SecretMaterial::new(KEY).unwrap(),
+            )]),
             Limits::default(),
             None,
         );

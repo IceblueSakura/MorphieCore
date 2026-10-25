@@ -266,7 +266,10 @@ impl Fixture {
                 CredentialBindingId::new("fixture-key").unwrap(),
                 Arc::new(SecretMaterial::new("synthetic-embedding-upstream-key-0001").unwrap()),
             )]),
-            SecretMaterial::new(CLIENT_KEY).unwrap(),
+            std::collections::BTreeMap::from([(
+                "fixture-agent".into(),
+                SecretMaterial::new(CLIENT_KEY).unwrap(),
+            )]),
             Limits::default(),
             None,
         )

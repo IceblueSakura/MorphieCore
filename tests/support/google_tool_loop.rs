@@ -200,7 +200,10 @@ async fn start_with(profile: Profile, api: Api, messages: bool) -> Fixture {
             endpoint.credential,
             Arc::new(SecretMaterial::new("synthetic-google-loop-upstream").unwrap()),
         )]),
-        SecretMaterial::new(KEY).unwrap(),
+        std::collections::BTreeMap::from([(
+            "fixture-agent".into(),
+            SecretMaterial::new(KEY).unwrap(),
+        )]),
         Limits::default(),
         None,
     )

@@ -361,7 +361,10 @@ async fn native_fixture() -> NativeFixture {
                 Arc::new(SecretMaterial::new("synthetic-secondary").unwrap()),
             ),
         ]),
-        SecretMaterial::new("synthetic-client-identity-00000001").unwrap(),
+        std::collections::BTreeMap::from([(
+            "fixture-agent".into(),
+            SecretMaterial::new("synthetic-client-identity-00000001").unwrap(),
+        )]),
         Limits::default(),
         None,
     )

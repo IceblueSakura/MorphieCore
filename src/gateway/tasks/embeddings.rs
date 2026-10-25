@@ -77,6 +77,7 @@ pub(in crate::gateway) async fn handle(
 }
 async fn ingress(runtime: Arc<Runtime>, request: Request) -> Result<Response, ApiError> {
     let mut trace = Trace::new(runtime.diagnostics.as_ref());
+    trace.agent(request.extensions().get());
     trace.capture = request
         .extensions()
         .get::<crate::gateway::capture::Exchange>()

@@ -46,7 +46,10 @@ fn gateway_with_limits(origin: &str, limits: Limits) -> Gateway {
             CredentialBindingId::new("fixture-key").unwrap(),
             Arc::new(SecretMaterial::new("synthetic-upstream-credential-0001").unwrap()),
         )]),
-        SecretMaterial::new(KEY).unwrap(),
+        std::collections::BTreeMap::from([(
+            "fixture-agent".into(),
+            SecretMaterial::new(KEY).unwrap(),
+        )]),
         limits,
         None,
     )

@@ -316,10 +316,8 @@ fn bootstrap_is_loopback_and_requires_explicit_auth_and_provider_keys() {
     let models = selected_models(&["deepseek-flash"], &["deepseek"]);
     let credentials = [("deepseek", "deepseek-api-key", "synthetic-upstream-only")];
     assert!(Fixture::new(service(), models.clone(), &credentials).is_ok());
-    assert!(matches!(
-        Fixture::new(serde_json::json!({}), models.clone(), &credentials),
-        Err(StartupError::Configuration("gateway"))
-    ));
+    // Omitted auth_file selects the fixture's required private auth.json.
+    assert!(Fixture::new(serde_json::json!({}), models.clone(), &credentials).is_ok());
     let mut public = service();
     public["bind"] = serde_json::json!("0.0.0.0:8080");
     assert!(matches!(
@@ -707,13 +705,17 @@ fn configured_failover_orders_and_limits_a_models_providers() {
         .unwrap();
     let gateway_file = directory.path().join("gateway.json");
     let models_file = directory.path().join("models.json");
+    write_private(
+        &directory.path().join("auth.json"),
+        br#"{"version":1,"agents":[{"agent_id":"fixture-agent","key":"synthetic-gateway-client-token-0001"}]}"#,
+    );
     let private_write = |path: &std::path::Path, value: serde_json::Value| {
         write_private(path, &serde_json::to_vec(&value).unwrap());
     };
     private_write(
         &gateway_file,
         serde_json::json!({
-            "client_key":"synthetic-gateway-client-token-0001",
+            "auth_file":"auth.json",
             "bind":"127.0.0.1:0",
             "models_file":"models.json"
         }),
@@ -738,7 +740,7 @@ fn configured_failover_orders_and_limits_a_models_providers() {
     let configured = Bootstrap::from_files(&gateway_file, &store).unwrap();
     assert!(configured.gateway.state.limits.delta_coalescing.is_none());
     let mut service = serde_json::json!({
-        "client_key":"synthetic-gateway-client-token-0001",
+        "auth_file":"auth.json",
         "bind":"127.0.0.1:0","models_file":"models.json",
         "delta_coalescing":{"max_delay_ms":10,"max_pending_bytes":16384}
     });
@@ -1121,7 +1123,7 @@ fn configured_failover_orders_and_limits_a_models_providers() {
     private_write(
         &gateway_file,
         serde_json::json!({
-            "client_key":"synthetic-gateway-client-token-0001",
+            "auth_file":"auth.json",
             "credentials_dir":"credentials"
         }),
     );

@@ -195,25 +195,17 @@ impl Gateway {
         topology: CompiledTopology,
         entries: TaskEntries,
         credentials: impl Into<Credentials>,
-        client_key: SecretMaterial,
+        agents: BTreeMap<String, SecretMaterial>,
         limits: Limits,
         proxy: Option<&str>,
     ) -> Result<Self, StartupError> {
-        Self::bind(
-            topology,
-            entries,
-            credentials,
-            client_key,
-            limits,
-            proxy,
-            false,
-        )
+        Self::bind(topology, entries, credentials, agents, limits, proxy, false)
     }
     pub(crate) fn bind(
         topology: CompiledTopology,
         entries: TaskEntries,
         credentials: impl Into<Credentials>,
-        client_key: SecretMaterial,
+        agents: BTreeMap<String, SecretMaterial>,
         limits: Limits,
         proxy: Option<&str>,
         environment: bool,
@@ -238,7 +230,7 @@ impl Gateway {
         if !limits.validate() {
             return Err(StartupError::Limits);
         }
-        let auth = auth::Auth::new(client_key)?;
+        let auth = auth::Auth::new(agents)?;
         let transport = HttpTransport::with_environment_proxy(proxy, environment)
             .map_err(|_| StartupError::Transport)?;
         let mut bound: BTreeMap<(crate::adapter::ClientProtocol, String), BoundEntry> =

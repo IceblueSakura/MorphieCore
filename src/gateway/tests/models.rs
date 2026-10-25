@@ -137,7 +137,10 @@ async fn activated_protocols_are_deduplicated_and_images_share_the_directory() {
             crate::provider::CredentialBindingId::new("fixture-key").unwrap(),
             Arc::new(SecretMaterial::new("synthetic-upstream-credential").unwrap()),
         )]),
-        SecretMaterial::new(crate::gateway::tests::support::KEY).unwrap(),
+        std::collections::BTreeMap::from([(
+            "fixture-agent".into(),
+            SecretMaterial::new(crate::gateway::tests::support::KEY).unwrap(),
+        )]),
         Limits::default(),
         None,
     )

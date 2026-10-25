@@ -111,12 +111,13 @@ pub(in crate::gateway) async fn authenticate(
     mut request: Request,
     next: Next,
 ) -> Response {
-    if !state.auth.accepts(request.headers()) {
+    let Some(agent) = state.auth.authenticate(request.headers()) else {
         return ingress_error(
             request.uri().path(),
             ApiError::new(StatusCode::UNAUTHORIZED, "unauthorized"),
         );
-    }
+    };
+    request.extensions_mut().insert(agent);
     let Some(sink) = &state.capture else {
         return next.run(request).await;
     };
@@ -176,6 +177,7 @@ pub(in crate::gateway) async fn handle(
     request: Request,
 ) -> Result<Response, ApiError> {
     let mut trace = Trace::generation(state.diagnostics.as_ref());
+    trace.agent(request.extensions().get());
     trace.capture = request
         .extensions()
         .get::<crate::gateway::capture::Exchange>()
