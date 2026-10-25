@@ -1,6 +1,6 @@
 # MiniMax H3 video contracts
 
-Official sources checked on 2026-10-22. These mutable documentation observations establish neither account access nor a successful generation. Video integration stays [deferred](../roadmap.md#grok-imagine-adaptation) until an operation is selected; this note is evidence for the stage-4 video operation, not a design approval.
+Official sources checked on 2026-10-22. These mutable documentation observations establish neither account access nor a successful generation. Video integration requires [operation selection](../roadmap.md#grok-imagine-adaptation) under the current stage-4 schedule; this note is evidence for the stage-4 video operation, not a design approval.
 
 ## Sources
 

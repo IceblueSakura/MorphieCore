@@ -61,15 +61,15 @@
 
 This page owns proposed operation, resource and advanced-Generation designs. The requested scope is confirmed; structural recommendations remain proposals unless already established in [Architecture](architecture.md). No new interface, binding, resource service or execution policy is activated by this document.
 
-[Roadmap](roadmap.md#planned-order) owns the five-stage sequence and the current routing freeze. Stage 3 closed its selected projection/loop scope with `count_tokens` deferred. The selected [Generation Text production closure](roadmap.md#generation-text-production-closure) precedes stage-4 Embedding/audio/image/video and Files/multipart Uploads. Server-side compaction, Batch and Realtime join complete citations/discovery/hosted tools in stage 5. **All stage-5 tasks are currently unscheduled:** scope placement is not a start or delivery commitment. Detailed operation designs remain proposals; stage-4/5 work is not an exit condition for earlier stages.
+[Roadmap](roadmap.md#planned-order) owns the five-stage sequence and the current routing freeze. Stage 3 closed its selected projection/loop scope with `count_tokens` deferred. The selected [Generation Text production closure](roadmap.md#generation-text-production-closure) precedes stage-4 Decision, Embedding/audio/image/video and Files/multipart Uploads. Server-side compaction, Batch and Realtime join complete citations/discovery/hosted tools in stage 5. **All stage-5 tasks are currently unscheduled:** scope placement is not a start or delivery commitment. Detailed operation designs remain proposals; stage-4/5 work is not an exit condition for earlier stages.
 
 Code and tests describe current behavior, not authority over official contracts. The accepted [standards reset and Generation redesign](roadmap.md#standards-reset-and-redesign) precedes further modality implementation and supersedes conflicting legacy mapping assumptions here. This document records unselected operation/resource designs, not a catalog or conformance claim. Provider and binding availability belongs to [the catalog](../src/topology/catalog.rs) and [startup](../src/gateway/startup/bootstrap.rs).
 
-On 2026-10-22 the user prioritized **Embedding and Images design**. The detailed proposals below are the current review surface, not approval of new IR layouts, delivery dialects, comprehensive coverage or bindings. Audio, Files and deferred video keep their existing scope; the [roadmap](roadmap.md#stage-4-scope) owns scheduling.
+The 2026-10-25 [stage-4 scheduling decision](roadmap.md#stage-4-scope) supersedes earlier Embedding/Images-first and Decision-first ordering. Decision, Embedding, Audio, Images, Files/Uploads and Video have equal priority; only their own contract selection and actual dependencies constrain a slice. The proposals below do not approve new IR layouts, delivery dialects, comprehensive coverage or bindings.
 
 The subsequent Embedding selections are recorded in Architecture: [four-way encoding](architecture.md#embedding-encoding-compatibility), sample-centered inputs and [report/identity projection](architecture.md#google-embedding-compatibility) are implemented. Complete downstream usage with explicit request-based approximation supersedes missing-usage delivery; it does not reopen the deferred counting endpoint. This document retains only unselected Embedding extensions.
 
-On 2026-10-23 the user selected [dual-SDK Decision access](architecture.md#decision-api-direction), with research/design before further modality work. Both TypeSafe and OpenAI are required downstream families, rather than competing alternatives. The [Decision section](#decisions) proposes the detailed contract; selecting that direction does not approve its pending layouts, mappings or implementation.
+On 2026-10-23 the user selected [dual-SDK Decision access](architecture.md#decision-api-direction). Its design, implementation and acceptance closure now belongs to stage 4. Both TypeSafe and OpenAI are required downstream families, rather than competing alternatives. The [Decision section](#decisions) proposes the detailed contract; selecting that direction does not approve its pending layouts, mappings or implementation.
 
 ## Requested scope
 
@@ -257,7 +257,7 @@ Keep diagnostics body-free. Apply the existing private-capture policy deliberate
 
 ### Decisions
 
-The [dual-SDK direction and capability-union principle](architecture.md#decision-api-direction) are selected. The concrete realization below remains proposed, not approval of semantic layout, dialect behavior, SDK coverage or bindings. The [dated source note](refs/2026-10-23-decision-contracts.md) owns protocol findings and discrepancies; the [roadmap](roadmap.md#decision-api-design) owns ordering and gates.
+The [dual-SDK direction and capability-union principle](architecture.md#decision-api-direction) are selected. The concrete realization below remains proposed, not approval of semantic layout, dialect behavior, SDK coverage or bindings. The [dated source note](refs/2026-10-23-decision-contracts.md) owns protocol findings and discrepancies; the [roadmap](roadmap.md#decision-api-closure) owns ordering and gates.
 
 #### SDK surfaces and discovery
 
@@ -581,7 +581,7 @@ Review these choices before dependent implementation:
 | Initial executable slice | Text/JSON, three probability primitives, synchronous single-target execution | Concrete profiles, bounds and accepted feature domains for both SDKs |
 | Later capabilities | Preserve research coverage without premature implementation | Images/Box/multipart, audio/video, cache controls, streaming/Batch and fallback |
 
-Neither the dual-SDK direction nor the capability-union principle approves these concrete recommendations automatically. Use the [roadmap gates](roadmap.md#decision-api-design), not this section as a second implementation queue.
+Neither the dual-SDK direction nor the capability-union principle approves these concrete recommendations automatically. Use the [roadmap gates](roadmap.md#decision-api-closure), not this section as a second implementation queue.
 
 ### Token counting
 
@@ -742,7 +742,7 @@ Recommend keeping strict OpenAI Images as the standard dialect and designing an 
 
 #### Static Generate review proposal
 
-**Unselected proposal, refined on 2026-10-23.** The [roadmap](roadmap.md#next-stage-4-slice) owns the recommended sequence. Start with Generate's existing task/artifact owners; neither an Image Generate/Edit type migration nor native ratio/tier controls are prerequisites for this review.
+**Unselected proposal, refined on 2026-10-23.** The [roadmap](roadmap.md#stage-4-operation-readiness) owns scheduling and the Images-internal sequence. Start with Generate's existing task/artifact owners; neither an Image Generate/Edit type migration nor native ratio/tier controls are prerequisites for this review.
 
 | Public-contract option | Benefit and cost | Recommendation |
 |---|---|---|
@@ -797,7 +797,7 @@ Independent directional oracles must cover Generate and Edit, multipart and JSON
 
 ### Video API and implementation
 
-Video integration is explicitly [deferred](roadmap.md#grok-imagine-adaptation). On resumption, use Grok's native asynchronous API as the primary design reference; the earlier synchronous-wait choice is superseded. Public wire schemas, typed owners, job authorization and persistence remain unselected. Do not label a Grok job or synchronous wrapper as OpenAI Videos compatibility. For each operation, pin current official contracts before selecting input/output, generation or editing behavior. Separate conversational video content from standalone production operations; the wire endpoint name does not determine the task owner.
+Video has equal stage-4 priority but still needs [operation selection](roadmap.md#grok-imagine-adaptation) before implementation. For its design, use Grok's native asynchronous API as the primary design reference; the earlier synchronous-wait choice is superseded. Public wire schemas, typed owners, job authorization and persistence remain unselected. Do not label a Grok job or synchronous wrapper as OpenAI Videos compatibility. For each operation, pin current official contracts before selecting input/output, generation or editing behavior. Separate conversational video content from standalone production operations; the wire endpoint name does not determine the task owner.
 
 For each selected operation, specify supported input references, required media controls, output artifacts and reported accounting. If the native API is asynchronous, select submission identity, status, cancellation, artifact access and uncertain-submission handling explicitly. Do not reuse a completed text response as evidence of video completion or turn a returned artifact URL into unrestricted server-side fetching.
 
@@ -1201,7 +1201,7 @@ These recommendations have not been adopted merely by requesting this document.
 | Decision | Options and recommendation | Blocks |
 |---|---|---|
 | Dual-SDK Decision contract | Both standard SDK families and shared IR/codec/dialect adaptation are selected. The [Decision review](#decision-execution-and-review-choices) owns remaining roots, evidence/result types, projections, delivery and execution choices | Decision implementation and integration, not independent source research |
-| Prioritized Images | The [Image review](#image-design-review) owns pending structural choices. The selected Embedding contract has moved to [Architecture](architecture.md#independent-embedding-path); future extensions remain unselected | Dependent S4-3 implementation and integration |
+| Images contract | The [Image review](#image-design-review) owns pending structural choices. The selected Embedding contract has moved to [Architecture](architecture.md#independent-embedding-path); future extensions remain unselected | Dependent S4-3 implementation and integration |
 | Task grouping and shared content | Recommend independent TokenCount/Compaction, AudioToText variants, and Image Generate/Edit variants; share content without inheriting Generation execution | New task type and public Rust contract changes |
 | Counting companion surface | Recommend Responses input-token counting; image generations/edits already belong to stage 4 | Adding the Responses counting surface to delivery scope |
 | Counting profile and public scope | **Deferred scheduling; profile unselected.** When reopened, select the public-model/target profile, upstream reliability criteria, coarse estimation rule/input coverage and client-visible scope/provenance. [Upstream preference, explicit estimates for inaccurate reports, no gateway tokenizer counting and no inference side effects](architecture.md#token-counting-policy) are selected, not open alternatives | Cross-protocol counting admission and client promises, only after reopening |
@@ -1212,7 +1212,7 @@ These recommendations have not been adopted merely by requesting this document.
 | Custom voices | Recommend authorized voice references first; voice creation/consent management as a separate resource slice. Broader audio resource coverage may be selected explicitly | Voice-resource endpoints, not ordinary speech |
 | Video contracts | Select current operations/endpoints, task versus content ownership, artifact access and any required job lifecycle before implementation | Video implementation, not stages 1–3 |
 | Realtime design | Client scenario, session/transport and interruption/recovery contracts are unselected; keep stage 5 unscheduled | Realtime implementation |
-| Later-operation selection | Generation Text closure and the selected Embedding design are complete; Decision design now precedes further modality work, with static Generate still the next Images review. Other stage-4 operation contracts need just-in-time selection. All stage-5 tasks remain unscheduled | Per-operation design, activation and full-chain acceptance |
+| Later-operation selection | Generation Text closure and the selected Embedding design are complete; all stage-4 API families have equal priority, including Decision closure. Static Generate is an Images-internal recommendation; each operation needs just-in-time contract selection. All stage-5 tasks remain unscheduled | Per-operation design, activation and full-chain acceptance |
 
 ## Execution handoff
 
