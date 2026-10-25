@@ -273,7 +273,6 @@ fn external_summary_is_new_user_content_with_explicit_sources_and_no_old_authori
     let mut items = source.items().to_vec();
     items[0].1 = Item::Instruction(Instruction {
         participant: None,
-        authority: InstructionAuthority::Developer,
         parts: vec![Part::new(PartId::new(1), text("protected"))],
         status: None,
     });

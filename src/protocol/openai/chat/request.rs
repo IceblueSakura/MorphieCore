@@ -308,13 +308,21 @@ pub fn encode_generation(target: &RequestRepresentation<'_>) -> Result<Value, Co
         false,
         target.semantic.resources(),
     );
-    if let Some(t) = target.semantic.instructions().value() {
-        let role = if target.adaptation.rules.chat_system_instructions {
-            "system"
-        } else {
-            "developer"
-        };
-        messages.insert(0, json!({"role":role,"content":t.as_str()}));
+    let role = if target.adaptation.rules.system_instruction_messages {
+        for message in &mut messages {
+            if message.get("role").and_then(Value::as_str) == Some("developer") {
+                message["role"] = json!("system");
+            }
+        }
+        "system"
+    } else {
+        "developer"
+    };
+    if let Some(root) = target.semantic.instructions().value() {
+        messages.insert(0, json!({
+            "role":role,
+            "content":crate::protocol::openai::settings::instruction_content(root, Profile::Chat)?,
+        }));
     }
     let mut v = json!({"messages": messages});
     let o = v.as_object_mut().expect("object literal");

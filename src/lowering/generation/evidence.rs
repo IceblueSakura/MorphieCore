@@ -493,12 +493,6 @@ pub enum Effect {
         input: Presence<ReasoningSummary>,
         output: ReasoningDisplay,
     },
-    Role {
-        owner: Owner,
-        rule: RuleId,
-        input: InstructionAuthority,
-        output: InstructionAuthority,
-    },
     Sampling {
         owner: Owner,
         rule: RuleId,
@@ -535,7 +529,6 @@ impl Effect {
             | Self::Verbosity { rule, .. }
             | Self::Reasoning { rule, .. }
             | Self::Summary { rule, .. }
-            | Self::Role { rule, .. }
             | Self::Sampling { rule, .. } => rule.as_str(),
             Self::MessagesVerbosity { .. } => "messages.omit-verbosity.v1",
         }
@@ -562,7 +555,6 @@ impl Effect {
                 }
             }
             Self::Summary { .. } => Field::ReasoningSummary,
-            Self::Role { .. } => Field::InstructionAuthority,
             Self::Sampling { .. } => Field::Sampling,
             Self::Verbosity { .. } | Self::MessagesVerbosity { .. } => Field::Verbosity,
         }
@@ -613,7 +605,6 @@ impl Effect {
             | Self::Reasoning { owner, .. }
             | Self::Verbosity { owner, .. }
             | Self::Summary { owner, .. }
-            | Self::Role { owner, .. }
             | Self::Sampling { owner, .. }
             | Self::MessagesVerbosity { owner, .. } => *owner,
         }
@@ -625,7 +616,6 @@ impl Effect {
             | Self::Reasoning { owner, .. }
             | Self::Verbosity { owner, .. }
             | Self::Summary { owner, .. }
-            | Self::Role { owner, .. }
             | Self::Sampling { owner, .. }
             | Self::MessagesVerbosity { owner, .. } => *owner = value,
         }
@@ -700,9 +690,6 @@ impl Effect {
                 (json!(format!("{input:?}")), json!(format!("{output:?}")))
             }
             Self::Summary { input, output, .. } => {
-                (json!(format!("{input:?}")), json!(format!("{output:?}")))
-            }
-            Self::Role { input, output, .. } => {
                 (json!(format!("{input:?}")), json!(format!("{output:?}")))
             }
             Self::Sampling {

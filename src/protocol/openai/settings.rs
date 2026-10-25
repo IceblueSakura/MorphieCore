@@ -19,6 +19,36 @@ pub(super) const FIELDS: &[&str] = &[
     "include",
     "text",
 ];
+/// Root instructions projected into a temporary leading message. Semantic
+/// settings remain request-local even when the wire lacks an exact root carrier.
+pub(super) fn instruction_content(
+    root: &RootInstructions,
+    profile: Profile,
+) -> Result<Value, CodecError> {
+    if let Some(text) = root.plain_text() {
+        return Ok(json!(text.as_str()));
+    }
+    let mut parts = vec![];
+    for part in &root.parts {
+        let mut value = json!({
+            "type": if profile == Profile::Chat { "text" } else { "input_text" },
+            "text": part.text.as_str(),
+        });
+        match part.cache {
+            None => {}
+            Some(PrefixCacheBoundary::RequestLifetime) if profile == Profile::Responses => {
+                value["prompt_cache_breakpoint"] = json!({"mode":"explicit"});
+            }
+            _ => {
+                return Err(CodecError::Unsupported(
+                    crate::protocol::failure::CarrierReason::Unavailable,
+                ));
+            }
+        }
+        parts.push(value);
+    }
+    Ok(json!(parts))
+}
 /// `reported` distinguishes response-echo admission from request admission: the
 /// pinned response model marks `text` nullable, the create type does not.
 pub(super) fn read(
@@ -34,6 +64,7 @@ pub(super) fn read(
             "instructions",
             MAX_TEXT_BYTES,
         )
+        .map(RootInstructions::from)
         .map_err(|_| CodecError::Limit)
     })?;
     let mut s = GenerationSettings {
@@ -214,7 +245,14 @@ pub(super) fn write(s: &GenerationSettings, o: &mut Map<String, Value>) -> Resul
             crate::protocol::failure::CarrierReason::Unavailable,
         ));
     }
-    put_presence(o, "instructions", &s.instructions, |t| json!(t.as_str()));
+    let instructions = match &s.instructions {
+        Presence::Absent => Presence::Absent,
+        Presence::Null => Presence::Null,
+        Presence::Value(root) => Presence::Value(root.plain_text().ok_or(
+            CodecError::Unsupported(crate::protocol::failure::CarrierReason::Unavailable),
+        )?),
+    };
+    put_presence(o, "instructions", &instructions, |t| json!(t.as_str()));
     write_control_values(&s.controls, o, "max_output_tokens");
     if let Some(v) = s.controls.top_p() {
         o.insert("top_p".into(), json!(v));

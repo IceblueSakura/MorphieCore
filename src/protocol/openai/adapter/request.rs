@@ -190,6 +190,30 @@ impl Adapter {
         )>,
     ) -> Result<Request, CodecError> {
         let mut value = crate::protocol::json::decode(bytes)?;
+        if self.protocol == Profile::Responses
+            && self.adaptation.rules.responses_developer_is_user
+            && let Some(items) = value.get_mut("input").and_then(Value::as_array_mut)
+        {
+            // The trusted source dialect, never a requested target, defines this
+            // spelling as user content. The standard decoder still validates it.
+            for item in items {
+                if item.get("role").and_then(Value::as_str) == Some("developer") {
+                    if let Some(parts) = item.get("content").and_then(Value::as_array)
+                        && parts.iter().any(|part| {
+                            !matches!(
+                                part.get("type").and_then(Value::as_str),
+                                Some("input_text" | "output_text" | "input_image")
+                            )
+                        })
+                    {
+                        return Err(CodecError::Unsupported(
+                            crate::protocol::failure::CarrierReason::Unavailable,
+                        ));
+                    }
+                    item["role"] = serde_json::json!("user");
+                }
+            }
+        }
         if self.protocol == Profile::Chat
             && direction.client()
             && !self.adaptation.rules.thinking_controls
@@ -491,19 +515,6 @@ impl Adapter {
                 projected.to_mut().task.semantic = semantic;
             }
             let request = projected.as_ref();
-            if self.protocol == Profile::Chat
-                && self.adaptation.rules.chat_system_instructions
-                && request.task.semantic.instructions().value().is_some()
-            {
-                controls.push(Effect::Role {
-                    rule: crate::lowering::generation::RuleId::new(
-                        "chat.instructions-as-system.v1",
-                    ),
-                    input: crate::semantic::task::generation::InstructionAuthority::Developer,
-                    output: crate::semantic::task::generation::InstructionAuthority::System,
-                    owner: crate::lowering::generation::Owner::Root,
-                });
-            }
             if self.adaptation.rules.reject_disabled_reasoning
             && (request.task.semantic.reasoning().activation.value()
                 == Some(&crate::semantic::task::generation::ReasoningActivation::Disabled)

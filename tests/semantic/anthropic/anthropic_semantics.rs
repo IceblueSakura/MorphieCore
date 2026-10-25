@@ -829,7 +829,7 @@ fn automatic_cache_keeps_examples_context_and_deferred_definitions() {
 }
 
 #[test]
-fn ordered_system_blocks_and_disabled_controls_have_independent_semantic_owners() {
+fn root_system_blocks_and_disabled_controls_have_independent_semantic_owners() {
     let p = Profile::AdaptiveTextTools;
     let content_wire = br#"{"model":"synthetic-model","max_tokens":32,"system":[{"type":"text","text":"stable","cache_control":{"type":"ephemeral","ttl":"1h"}},{"type":"text","text":"changing"}],"cache_control":{"type":"ephemeral"},"messages":[{"role":"user","content":[{"type":"text","text":"go","cache_control":{"type":"ephemeral"}}]}]}"#;
     let content = p
@@ -859,9 +859,9 @@ fn ordered_system_blocks_and_disabled_controls_have_independent_semantic_owners(
         ])
     );
     assert_eq!(encoded.value["cache_control"], json!({"type":"ephemeral"}));
-    let Item::Instruction(instruction) = &content.semantic.items()[0].1 else {
-        panic!("system owner")
-    };
+    let instruction = content.semantic.instructions().value().unwrap();
+    assert_eq!(content.semantic.items().len(), 1);
+    assert!(GenerationRequirements::derive(&content.semantic).explicit_cache);
     assert_eq!(
         instruction.parts[0].cache,
         Some(PrefixCacheBoundary::Ttl(PrefixCacheTtl::OneHour))
@@ -877,41 +877,34 @@ fn ordered_system_blocks_and_disabled_controls_have_independent_semantic_owners(
         ..Default::default()
     };
     settings.controls.max_output_tokens = Some(32);
-    let manual = GenerationRequest::from_settings(
-        vec![
-            (
-                ItemId::new(1),
-                Item::Instruction(Instruction {
-                    participant: None,
-                    authority: InstructionAuthority::System,
-                    status: None,
-                    parts: vec![
-                        Part {
-                            replay: None,
-                            id: PartId::new(1),
-                            content: text("stable"),
-                            cache: Some(PrefixCacheBoundary::Ttl(PrefixCacheTtl::OneHour)),
-                        },
-                        Part::new(PartId::new(2), text("changing")),
-                    ],
-                }),
-            ),
-            (
-                ItemId::new(2),
-                Item::Message(Message {
-                    participant: None,
-                    role: MessageRole::User,
-                    status: ItemLifecycle::Completed,
-                    phase: None,
-                    parts: vec![Part {
-                        replay: None,
-                        id: PartId::new(3),
-                        content: ContentPart::Text(text("go").into()),
-                        cache: Some(PrefixCacheBoundary::Ttl(PrefixCacheTtl::FiveMinutes)),
-                    }],
-                }),
-            ),
+    settings.instructions = Presence::Value(RootInstructions {
+        parts: vec![
+            InstructionText {
+                text: text("stable"),
+                cache: Some(PrefixCacheBoundary::Ttl(PrefixCacheTtl::OneHour)),
+            },
+            InstructionText {
+                text: text("changing"),
+                cache: None,
+            },
         ],
+    });
+    let manual = GenerationRequest::from_settings(
+        vec![(
+            ItemId::new(1),
+            Item::Message(Message {
+                participant: None,
+                role: MessageRole::User,
+                status: ItemLifecycle::Completed,
+                phase: None,
+                parts: vec![Part {
+                    replay: None,
+                    id: PartId::new(1),
+                    content: ContentPart::Text(text("go").into()),
+                    cache: Some(PrefixCacheBoundary::Ttl(PrefixCacheTtl::FiveMinutes)),
+                }],
+            }),
+        )],
         settings,
     )
     .unwrap()
@@ -919,7 +912,7 @@ fn ordered_system_blocks_and_disabled_controls_have_independent_semantic_owners(
         MessageEnvelope::new(
             GroupId::new(LocalScope::ROOT, 1),
             MessageEnvelopeRole::User,
-            vec![ItemId::new(2)],
+            vec![ItemId::new(1)],
         )
         .unwrap(),
     ])
@@ -978,12 +971,12 @@ fn ordered_system_blocks_and_disabled_controls_have_independent_semantic_owners(
             {"type":"text","text":"go","cache_control":{"type":"ephemeral","ttl":"1h"}}
         ]}]})
     );
-    let mut items = content.semantic.items().to_vec();
-    let Item::Instruction(instruction) = &mut items[0].1 else {
+    let mut settings = content.semantic.settings().clone();
+    let morphiecore::semantic::value::Presence::Value(root) = &mut settings.instructions else {
         unreachable!()
     };
-    instruction.parts[0].cache = None;
-    let edited = content.semantic.clone().with_items(items).unwrap();
+    root.parts[0].cache = None;
+    let edited = content.semantic.clone().with_settings(settings).unwrap();
     let encoded = p
         .encode_generation_request(&edited, &content.fidelity, &target())
         .unwrap();
@@ -1090,7 +1083,7 @@ fn ordered_system_blocks_and_disabled_controls_have_independent_semantic_owners(
         .is_ok()
     );
     let mut items = manual.items().to_vec();
-    let Item::Message(message) = &mut items[1].1 else {
+    let Item::Message(message) = &mut items[0].1 else {
         panic!("message owner")
     };
     message.parts.push(Part {
@@ -1271,15 +1264,19 @@ fn ordered_system_blocks_and_disabled_controls_have_independent_semantic_owners(
     let decoded = p
         .decode_generation_request(raw, LocalScope::new(1), &target())
         .unwrap();
-    assert!(decoded.semantic.instructions().is_absent());
-    let Item::Instruction(i) = &decoded.semantic.items()[0].1 else {
-        panic!()
-    };
-    assert_eq!(i.authority, InstructionAuthority::System);
     assert_eq!(
-        i.texts().map(|(_, t)| t).collect::<Vec<_>>(),
+        decoded
+            .semantic
+            .instructions()
+            .value()
+            .unwrap()
+            .parts
+            .iter()
+            .map(|part| part.text.as_str())
+            .collect::<Vec<_>>(),
         ["one", "two"]
     );
+    assert!(matches!(&decoded.semantic.items()[0].1, Item::Message(_)));
     let encoded = p
         .encode_generation_request(&decoded.semantic, &decoded.fidelity, &target())
         .unwrap();

@@ -25,7 +25,7 @@ fn typed_disabled_summary_is_valid_semantics_without_a_responses_carrier() {
     reasoning.activation =
         morphiecore::semantic::value::Presence::Value(ReasoningActivation::Disabled);
     let settings = GenerationSettings {
-        instructions: morphiecore::semantic::value::Presence::Value(text("hello")),
+        instructions: morphiecore::semantic::value::Presence::Value(text("hello").into()),
         reasoning,
         ..Default::default()
     };
@@ -109,7 +109,7 @@ fn standard_summary_presence_and_deprecated_alias_have_independent_wire_expectat
         let request = GenerationRequest::from_settings(
             vec![],
             GenerationSettings {
-                instructions: Presence::Value(text("hello")),
+                instructions: Presence::Value(text("hello").into()),
                 reasoning,
                 ..Default::default()
             },

@@ -282,11 +282,6 @@ fn decode_message(
                 id,
                 Item::Instruction(Instruction {
                     participant,
-                    authority: if role == "system" {
-                        InstructionAuthority::System
-                    } else {
-                        InstructionAuthority::Developer
-                    },
                     parts,
                     status: None,
                 }),
@@ -592,10 +587,7 @@ pub(in crate::protocol::openai) fn encode_items_with(
                             .collect::<Vec<_>>()
                     )
                 };
-                let role = match i.authority {
-                    InstructionAuthority::System => "system",
-                    InstructionAuthority::Developer => "developer",
-                };
+                let role = "developer";
                 let mut message = json!({ "role": role, "content": content });
                 if let Some(name) = &i.participant {
                     message["name"] = json!(name.as_str());

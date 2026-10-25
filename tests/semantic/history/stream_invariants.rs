@@ -421,7 +421,6 @@ fn owned_replay_belongs_to_assistant_text_and_calls_with_final_values() {
     for invalid in [
         Item::Instruction(Instruction {
             participant: None,
-            authority: InstructionAuthority::System,
             parts: vec![instruction],
             status: None,
         }),

@@ -621,6 +621,8 @@ mod tests {
             listed["data"][0]["content"],
             json!([{"type":"input_text","text":"rules"}])
         );
+        assert_eq!(listed["data"][0]["role"], "developer");
+        assert_eq!(listed["data"][1]["role"], "developer");
         assert_eq!(listed["data"][0]["status"], "completed");
         assert_eq!(
             listed["data"][1]["content"],

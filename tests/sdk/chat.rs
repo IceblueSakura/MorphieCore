@@ -74,6 +74,9 @@ pub(super) async fn handle(
         seen.0
     };
     if turn <= 3 {
+        assert_eq!(encoded["messages"][0]["role"], "developer");
+        assert_eq!(encoded["messages"][1]["role"], "developer");
+        assert_eq!(encoded["messages"][2]["role"], "user");
         for (index, name) in ["policy", "author", "requester"].into_iter().enumerate() {
             assert_eq!(encoded["messages"][index]["name"], name);
             assert_eq!(

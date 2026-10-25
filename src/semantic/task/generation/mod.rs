@@ -25,8 +25,8 @@ pub use content::citation::{
     TextUnit,
 };
 pub use content::item::{
-    ConfigurationUpdate, ContentPart, InputPart, Instruction, InstructionAuthority, Item, Message,
-    MessageRole, Part, Phase, ToolChange, ToolChangeAction,
+    ConfigurationUpdate, ContentPart, InputPart, Instruction, Item, Message, MessageRole, Part,
+    Phase, ToolChange, ToolChangeAction,
 };
 pub use content::reasoning::{
     EffortControl, EffortLevel, EffortScope, ReasoningActivation, ReasoningContent,
@@ -51,8 +51,8 @@ pub use identity::{ItemId, LocalScope, NativeAliasDomain, PartId};
 pub use output::{OutputConstraint, TextOptions, Verbosity};
 pub use request::{
     CachedContextReference, ClientManaged, ContextBuild, ContextChange, ContextEdit, ContextError,
-    ContextStage, GenerationControls, GenerationRequest, GenerationSettings, SelectedHistory,
-    Truncation,
+    ContextStage, GenerationControls, GenerationRequest, GenerationSettings, InstructionText,
+    RootInstructions, SelectedHistory, Truncation,
 };
 pub use requirements::{GenerationRequirements, GenerationResponseRequirements};
 pub use resources::table::{ResourceDependency, ResourceId, ResourceTable, ResourceUse};

@@ -8,7 +8,9 @@ pub use context_transform::{
     ContextBuild, ContextChange, ContextEdit, ContextError, ContextStage, SelectedHistory,
 };
 mod settings;
-pub use settings::{GenerationControls, GenerationSettings, Truncation};
+pub use settings::{
+    GenerationControls, GenerationSettings, InstructionText, RootInstructions, Truncation,
+};
 mod cached_context;
 pub use cached_context::CachedContextReference;
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -168,7 +170,7 @@ impl GenerationRequest {
     pub fn text_options(&self) -> &TextOptions {
         &self.settings.text
     }
-    pub fn instructions(&self) -> &Presence<Text> {
+    pub fn instructions(&self) -> &Presence<RootInstructions> {
         &self.settings.instructions
     }
     pub fn reasoning(&self) -> &ReasoningRequest {

@@ -1,11 +1,6 @@
 //! Ordered heterogeneous items shared by requests and responses.
 use crate::semantic::task::generation::*;
 use crate::semantic::value::Text;
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum InstructionAuthority {
-    System,
-    Developer,
-}
 /// Input-only content of tool results: text or an inert resource.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum InputPart {
@@ -21,8 +16,9 @@ impl InputPart {
     }
 }
 #[derive(Clone, Debug, Eq, PartialEq)]
+/// Ordered application/developer instructions. Legacy and protocol-specific
+/// system spelling belongs to codecs, not a second semantic authority tier.
 pub struct Instruction {
-    pub authority: InstructionAuthority,
     /// Model-visible participant label, independent of authority and tool identity.
     pub participant: Option<Text>,
     pub parts: Vec<Part<Text>>,

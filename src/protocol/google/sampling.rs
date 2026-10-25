@@ -59,7 +59,7 @@ mod tests {
     #[test]
     fn ignored_sampling_receipt_identifies_only_changed_controls_and_keeps_other_settings() {
         let mut settings = GenerationSettings {
-            instructions: Presence::Value(Text::new("go", "fixture", 32).unwrap()),
+            instructions: Presence::Value(Text::new("go", "fixture", 32).unwrap().into()),
             ..Default::default()
         };
         settings.controls.top_k = Some(7);

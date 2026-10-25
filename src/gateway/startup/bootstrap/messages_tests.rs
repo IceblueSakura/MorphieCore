@@ -491,9 +491,7 @@ async fn configured_messages_cache_admission_requires_all_native_candidates() {
                 request.task.semantic.settings().automatic_prefix_cache,
                 None
             );
-            let Item::Instruction(system) = &request.task.semantic.items()[0].1 else {
-                panic!("system")
-            };
+            let system = request.task.semantic.instructions().value().unwrap();
             assert_eq!(
                 system.parts.iter().map(|p| p.cache).collect::<Vec<_>>(),
                 [

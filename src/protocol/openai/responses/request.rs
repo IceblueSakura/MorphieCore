@@ -8,6 +8,7 @@ use crate::protocol::openai::{
     lowering::carriers::{check_item_carriers, check_message_carriers},
 };
 use crate::semantic::task::generation::*;
+use crate::semantic::value::Presence;
 use serde_json::{Value, json};
 pub fn decode_generation(v: &Value) -> Result<DecodedRequest, CodecError> {
     decode_generation_in(v, DecodeDirection::Request)
@@ -133,15 +134,35 @@ pub fn encode_generation(target: &RequestRepresentation<'_>) -> Result<Value, Co
     target
         .fidelity
         .check_wire_item_ids(target.semantic.items(), false)?;
-    let input = encode_items(
+    let mut input = encode_items(
         target.semantic.items(),
         target.fidelity,
         false,
         target.semantic.resources(),
     )?;
+    let mut encoded_settings = target.semantic.settings().clone();
+    if let Some(root) = encoded_settings.instructions.value()
+        && root.plain_text().is_none()
+    {
+        input.insert(
+            0,
+            json!({
+                "role":"developer",
+                "content":settings::instruction_content(root, Profile::Responses)?,
+            }),
+        );
+        encoded_settings.instructions = Presence::Absent;
+    }
+    if target.adaptation.rules.system_instruction_messages {
+        for item in &mut input {
+            if item.get("role").and_then(Value::as_str) == Some("developer") {
+                item["role"] = json!("system");
+            }
+        }
+    }
     let mut v = json!({ "input": input });
     if target.adaptation.rules.bailian_requests || target.adaptation.rules.thinking_controls {
-        let mut standard = target.semantic.settings().clone();
+        let mut standard = encoded_settings.clone();
         standard.reasoning = ReasoningRequest::absent();
         standard.effort = crate::semantic::value::Presence::Absent;
         if target.adaptation.rules.bailian_requests {
@@ -164,10 +185,7 @@ pub fn encode_generation(target: &RequestRepresentation<'_>) -> Result<Value, Co
             )?;
         }
     } else {
-        settings::write(
-            target.semantic.settings(),
-            v.as_object_mut().expect("object"),
-        )?;
+        settings::write(&encoded_settings, v.as_object_mut().expect("object"))?;
     }
     bounded(&v)?;
     Ok(v)

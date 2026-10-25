@@ -251,7 +251,6 @@ fn request_lifetime_boundaries_have_independent_ir_and_reject_unrelated_ttls() {
                 ItemId::new(1),
                 Item::Instruction(Instruction {
                     participant: None,
-                    authority: InstructionAuthority::System,
                     parts: vec![part],
                     status: None,
                 }),
@@ -288,7 +287,7 @@ fn request_lifetime_boundaries_have_independent_ir_and_reject_unrelated_ttls() {
     let wire = morphiecore::protocol::openai::responses::encode_generation(&target).unwrap();
     assert_eq!(
         wire["input"][0],
-        json!({"role":"system","content":[
+        json!({"role":"developer","content":[
             {"type":"input_text","text":"stable","prompt_cache_breakpoint":{"mode":"explicit"}}
         ]})
     );
@@ -428,7 +427,6 @@ fn responses_instructions_reject_media_and_preserve_text() {
     let Item::Instruction(instruction) = &semantic.items()[0].1 else {
         panic!("instruction")
     };
-    assert_eq!(instruction.authority, InstructionAuthority::Developer);
     assert_eq!(instruction.parts[0].content.as_str(), "Follow the guide.");
     assert!(semantic.resources().is_empty());
     assert_eq!(GenerationRequirements::derive(semantic).file_inputs, 0);

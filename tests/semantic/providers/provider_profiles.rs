@@ -18,6 +18,104 @@ fn body() -> Value {
 }
 
 #[test]
+fn application_instruction_carriers_are_dialect_local_and_never_become_user() {
+    use morphiecore::{
+        execution::attempt::prepare_with_rules,
+        provider::SecretMaterial,
+        semantic::task::generation::{Item, MessageRole},
+        topology::{ProtocolProfile, catalog::API_KEY_BINDINGS},
+    };
+    let standard = Adapter::new(Profile::Responses, Dialect::Standard, None);
+    let source = standard.decode_client_request(br#"{"model":"public","instructions":"R","input":[
+        {"role":"system","content":"A"},{"role":"user","content":"U"},{"role":"developer","content":"B"}]}"#).unwrap();
+    let original = source.clone();
+    let binding = API_KEY_BINDINGS
+        .iter()
+        .find(|b| b.endpoint_prefix == "deepseek")
+        .unwrap();
+    for (profile, protocol) in [
+        (Profile::Chat, ProtocolProfile::OpenAiChat),
+        (Profile::Responses, ProtocolProfile::OpenAiResponses),
+    ] {
+        let endpoint = binding.endpoint(protocol).unwrap();
+        let (wire, rules) = endpoint.encode_request_with_rules(&source).unwrap();
+        let (prepared, prepared_rules) = prepare_with_rules(
+            &endpoint,
+            &(binding.provider)(),
+            &SecretMaterial::new("synthetic-key").unwrap(),
+            &source,
+        )
+        .unwrap();
+        assert_eq!(
+            serde_json::from_slice::<Value>(&prepared.body).unwrap(),
+            wire
+        );
+        assert_eq!(prepared_rules, rules);
+        let expected = if profile == Profile::Chat {
+            json!([{"role":"system","content":"R"},{"role":"system","content":"A"},
+                {"role":"user","content":"U"},{"role":"system","content":"B"}])
+        } else {
+            assert_eq!(wire["instructions"], "R");
+            json!([{"role":"system","content":"A"},
+                {"type":"message","role":"user","content":[{"type":"input_text","text":"U"}]},
+                {"role":"system","content":"B"}])
+        };
+        assert_eq!(
+            wire[if profile == Profile::Chat {
+                "messages"
+            } else {
+                "input"
+            }],
+            expected
+        );
+    }
+    let bailian = adapter(Dialect::Bailian)
+        .encode_request(&source, "qwen3.8-flash", &Contract::full())
+        .unwrap();
+    assert_eq!(bailian["messages"][0]["role"], "system");
+    assert_eq!(bailian["messages"][1]["role"], "system");
+    assert_eq!(bailian["messages"][2]["role"], "user");
+    assert_eq!(bailian["messages"][3]["role"], "system");
+    assert_eq!(source.task, original.task);
+    let canonical = standard
+        .encode_request(&source, "m", &Contract::full())
+        .unwrap();
+    assert_eq!(canonical["input"][0]["role"], "developer");
+    assert_eq!(canonical["input"][2]["role"], "developer");
+    // A trusted native source dialect interprets effective meaning, while a
+    // public standard source remains developer regardless of requested model.
+    let native = Adapter::new(Profile::Responses, Dialect::DeepSeek, None);
+    let wire =
+        br#"{"model":"deepseek-flash","input":[{"role":"developer","content":"unprivileged"}]}"#;
+    let decoded = native.decode_request(wire).unwrap();
+    assert!(
+        matches!(&decoded.task.semantic.items()[0].1, Item::Message(m) if m.role==MessageRole::User)
+    );
+    let decoded = standard.decode_client_request(wire).unwrap();
+    assert!(matches!(
+        &decoded.task.semantic.items()[0].1,
+        Item::Instruction(_)
+    ));
+    // The native dialect explicitly allows images for its effective-user
+    // developer spelling; that does not widen standard instruction content.
+    let image = br#"{"model":"deepseek-flash","input":[{"role":"developer","content":[
+        {"type":"input_image","image_url":"https://example.invalid/a.png"}]}]}"#;
+    let decoded = native.decode_request(image).unwrap();
+    assert!(
+        matches!(&decoded.task.semantic.items()[0].1, Item::Message(m) if m.role==MessageRole::User)
+    );
+    assert!(standard.decode_client_request(image).is_err());
+    assert!(
+        native
+            .decode_request(
+                br#"{"model":"m","input":[{"role":"developer","content":[
+        {"type":"input_file","file_url":"https://example.invalid/a.pdf"}]}]}"#
+            )
+            .is_err()
+    );
+}
+
+#[test]
 fn deepseek_never_forwards_parallel_control_or_weakens_serial_intent() {
     use morphiecore::{
         execution::attempt::prepare_with_rules,

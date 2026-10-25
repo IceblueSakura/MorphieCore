@@ -228,7 +228,7 @@ fn selection_budgets_and_settings_are_validated() {
 #[test]
 fn mixed_successor_separates_client_results_and_provider_progress() {
     let settings = GenerationSettings {
-        instructions: Presence::Value(text("original configuration")),
+        instructions: Presence::Value(text("original configuration").into()),
         ..Default::default()
     };
     let r1 = GenerationResponse::new(

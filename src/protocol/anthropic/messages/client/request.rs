@@ -208,30 +208,11 @@ pub fn decode_client_request(bytes: &[u8]) -> Result<Request, CodecError> {
     let mut intake = Intake::new(scope);
     if let Some(mut system) = o.get("system").cloned() {
         blocks(&mut system, &mut ignored)?;
-        match WireText::read(&system)? {
-            WireText::Text(s) => settings.instructions = Presence::Value(text(&s)?),
-            WireText::Blocks(parts) if !parts.is_empty() => intake.items.push((
-                ItemId::scoped(scope, 1),
-                Item::Instruction(Instruction {
-                    participant: None,
-                    authority: InstructionAuthority::System,
-                    status: None,
-                    parts: parts
-                        .iter()
-                        .enumerate()
-                        .map(|(i, s)| {
-                            Ok(Part {
-                                replay: None,
-                                id: PartId::scoped(scope, i as u64 + 1),
-                                content: text(&s.content)?,
-                                cache: s.cache.map(PrefixCacheBoundary::Ttl),
-                            })
-                        })
-                        .collect::<Result<_, CodecError>>()?,
-                }),
-            )),
-            WireText::Blocks(_) => {}
-        }
+        settings.instructions = Presence::Value(
+            crate::protocol::anthropic::messages::items::root_instructions(WireText::read(
+                &system,
+            )?)?,
+        );
     }
     if let Some(tools) = o.get("tools") {
         let tools = tools.as_array().ok_or(CodecError::Invalid(

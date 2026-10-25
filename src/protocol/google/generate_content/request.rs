@@ -32,8 +32,6 @@ pub enum RequestRule {
     TransferVisibleHistory,
     /// Explicit opt-in for unattributed readable reasoning.
     ReasoningAsText,
-    /// A leading developer instruction (pi, Codex) is the system instruction.
-    DeveloperAsSystem,
     OmitSchemaName,
     /// Gemini caches implicitly and has no cache-key carrier.
     OmitCacheKey,
@@ -44,7 +42,6 @@ impl RequestRule {
     pub(crate) fn effect(self, request: &GenerationRequest) -> crate::lowering::generation::Effect {
         use crate::lowering::generation::{Change, ConversionBoundary as B, Effect, Field, Owner};
         let (field, change) = match self {
-            Self::DeveloperAsSystem => (Field::InstructionAuthority, Change::Approximate),
             Self::Hint(hint) => return hint.effect(),
             Self::OmitCacheKey => (Field::Cache, Change::Omit),
             Self::OmitLegacySignature => (Field::Replay, Change::Omit),
@@ -64,12 +61,6 @@ impl RequestRule {
                 input: request.reasoning().presentation.summary.clone(),
                 output: ReasoningDisplay::Summary,
             },
-            Self::DeveloperAsSystem => Effect::Role {
-                rule: self.name().into(),
-                owner: Owner::Root,
-                input: InstructionAuthority::Developer,
-                output: InstructionAuthority::System,
-            },
             _ => Effect::new(self.name(), field, B::RequestProject, change),
         }
     }
@@ -84,7 +75,6 @@ impl RequestRule {
             Self::SummarizeReasoning => "gemini.summarize-reasoning.v1",
             Self::TransferVisibleHistory => "gemini.transfer-visible-history.v1",
             Self::ReasoningAsText => "gemini.reasoning-as-text.v1",
-            Self::DeveloperAsSystem => "gemini.developer-as-system.v1",
             Self::OmitSchemaName => "gemini.omit-schema-name.v1",
             Self::OmitCacheKey => "gemini.omit-cache-key.v1",
             Self::OmitLegacySignature => "gemini.omit-legacy-signature.v1",
@@ -167,7 +157,17 @@ pub(super) fn project(
     }
     let mut system = match &s.instructions {
         Presence::Absent => None,
-        Presence::Value(t) => Some(vec![t.as_str().to_owned()]),
+        Presence::Value(root) => {
+            if root.parts.iter().any(|part| part.cache.is_some()) {
+                return Err(unsupported());
+            }
+            Some(
+                root.parts
+                    .iter()
+                    .map(|part| part.text.as_str().to_owned())
+                    .collect(),
+            )
+        }
         Presence::Null => return Err(unsupported()),
     };
     for (_, item) in request
@@ -180,9 +180,6 @@ pub(super) fn project(
         };
         if i.status.is_some() {
             return Err(unsupported());
-        }
-        if i.authority == InstructionAuthority::Developer {
-            rules.insert(RequestRule::DeveloperAsSystem);
         }
         system
             .get_or_insert_with(Vec::new)

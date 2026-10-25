@@ -82,6 +82,8 @@ impl Dialect {
             Self::DeepSeek => (
                 "deepseek-v1",
                 WireRules {
+                    system_instruction_messages: true,
+                    responses_developer_is_user: profile == Profile::Responses,
                     parallel_tools_always_enabled: true,
                     chat_cache_usage_aliases: true,
                     readable_reasoning: true,
@@ -160,6 +162,7 @@ impl Dialect {
             Self::Bailian => (
                 "bailian-v1",
                 WireRules {
+                    system_instruction_messages: profile == Profile::Chat,
                     chat_video_url: true,
                     // Both billing plans use the same upstream wire dialect.
                     chunk_created_drift: true,

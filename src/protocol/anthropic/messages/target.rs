@@ -273,6 +273,10 @@ impl TargetCaps {
                 )?);
             }
             let default_cache = settings.automatic_prefix_cache.is_none()
+                && !settings
+                    .instructions
+                    .value()
+                    .is_some_and(|root| root.parts.iter().any(|part| part.cache.is_some()))
                 && !semantic
                     .items()
                     .iter()

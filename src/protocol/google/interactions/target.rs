@@ -216,7 +216,7 @@ impl TargetCaps {
             rules.sort();
             rules.dedup();
             for rule in &rules {
-                use crate::semantic::task::generation::{InstructionAuthority, ReasoningDisplay};
+                use crate::semantic::task::generation::ReasoningDisplay;
                 match rule {
                     RequestRule::Hint(hint) => controls.extend(hint.evidence()),
                     RequestRule::OmitMessagePhase => {
@@ -238,12 +238,6 @@ impl TargetCaps {
                             .summary
                             .clone(),
                         output: ReasoningDisplay::Summary,
-                        owner: crate::lowering::generation::Owner::Root,
-                    }),
-                    RequestRule::DeveloperAsSystem => controls.push(Loss::Role {
-                        rule: crate::lowering::generation::RuleId::new(rule.name()),
-                        input: InstructionAuthority::Developer,
-                        output: InstructionAuthority::System,
                         owner: crate::lowering::generation::Owner::Root,
                     }),
                     _ => {}

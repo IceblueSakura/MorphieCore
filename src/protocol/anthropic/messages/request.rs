@@ -133,37 +133,11 @@ impl Profile {
             .iter()
             .map(|s| text(s))
             .collect::<Result<_, _>>()?;
-        match &wire.system {
-            Presence::Value(WireText::Text(s)) => settings.instructions = Presence::Value(text(s)?),
-            Presence::Value(WireText::Blocks(parts)) => {
-                if parts.is_empty() {
-                    return Err(CodecError::Unsupported(
-                        crate::protocol::failure::CarrierReason::Unavailable,
-                    ));
-                }
-                intake.items.push((
-                    ItemId::scoped(scope, 1),
-                    Item::Instruction(Instruction {
-                        participant: None,
-                        authority: InstructionAuthority::System,
-                        status: None,
-                        parts: parts
-                            .iter()
-                            .enumerate()
-                            .map(|(i, s)| {
-                                Ok(Part {
-                                    replay: None,
-                                    id: PartId::scoped(scope, i as u64 + 1),
-                                    content: text(&s.content)?,
-                                    cache: s.cache.map(PrefixCacheBoundary::Ttl),
-                                })
-                            })
-                            .collect::<Result<_, CodecError>>()?,
-                    }),
-                ));
-            }
-            _ => {}
-        }
+        settings.instructions = match wire.system {
+            Presence::Value(system) => Presence::Value(super::items::root_instructions(system)?),
+            Presence::Absent => Presence::Absent,
+            Presence::Null => return Err(unsupported()),
+        };
         if let Presence::Value(tools) = &wire.tools {
             settings.tools = Some(
                 tools
@@ -261,8 +235,6 @@ pub enum RequestRule {
     TransferVisibleHistory,
     /// Explicit opt-in for unattributed readable reasoning, not foreign-state transfer.
     ReasoningAsText,
-    /// A leading developer instruction (pi, Codex) is the system prompt.
-    DeveloperAsSystem,
     /// A Messages output format has no name; OpenAI requires one as a label.
     OmitSchemaName,
     /// A trusted target inserts its configured ceiling on the candidate copy.
@@ -289,7 +261,6 @@ impl RequestRule {
                 Field::MaximumOutput,
                 Change::Default(crate::lowering::generation::DefaultBasis::SelectedPolicy),
             ),
-            Self::DeveloperAsSystem => (Field::InstructionAuthority, Change::Approximate),
             Self::FlattenMessageEffort => (Field::Effort, Change::Omit),
             Self::Hint(hint) => return hint.effect(),
             Self::OmitBlockBinding => (Field::Replay, Change::Omit),
@@ -318,12 +289,6 @@ impl RequestRule {
                 input: request.reasoning().presentation.summary.clone(),
                 output: ReasoningDisplay::Summary,
             },
-            Self::DeveloperAsSystem => Effect::Role {
-                rule: self.name().into(),
-                owner: Owner::Root,
-                input: InstructionAuthority::Developer,
-                output: InstructionAuthority::System,
-            },
             _ => Effect::new(self.name(), field, B::RequestProject, change),
         }
     }
@@ -340,7 +305,6 @@ impl RequestRule {
             Self::ProjectCallIds => "messages.project-call-ids.v1",
             Self::TransferVisibleHistory => "messages.transfer-visible-history.v1",
             Self::ReasoningAsText => "messages.reasoning-as-text.v1",
-            Self::DeveloperAsSystem => "messages.developer-as-system.v1",
             Self::OmitSchemaName => "messages.omit-schema-name.v1",
             Self::DefaultMaxTokens => "messages.default-max-tokens.v1",
             Self::DefaultAutomaticCache => "messages.default-automatic-cache.v1",
@@ -417,10 +381,7 @@ fn system_side(item: &Item) -> bool {
 }
 /// One run of system-side items. Consecutive system messages form one section, so the
 /// run shares a message; an effort closes it, keeping each message to one level.
-fn system_messages(
-    run: &[&Item],
-    rules: &mut BTreeSet<RequestRule>,
-) -> Result<Vec<InputMessage>, CodecError> {
+fn system_messages(run: &[&Item]) -> Result<Vec<InputMessage>, CodecError> {
     let mut messages = vec![];
     let mut blocks = vec![];
     for item in run {
@@ -428,9 +389,6 @@ fn system_messages(
             Item::Instruction(i) => {
                 if i.status.is_some() {
                     return Err(unsupported());
-                }
-                if i.authority == InstructionAuthority::Developer {
-                    rules.insert(RequestRule::DeveloperAsSystem);
                 }
                 blocks.extend(
                     i.parts
@@ -518,7 +476,23 @@ pub(in crate::protocol::anthropic::messages) fn project(
     }
     let mut system = match &s.instructions {
         Presence::Absent => Presence::Absent,
-        Presence::Value(t) => Presence::Value(WireText::Text(t.as_str().into())),
+        Presence::Value(root) if root.plain_text().is_some() => Presence::Value(WireText::Text(
+            root.plain_text()
+                .expect("checked plain root")
+                .as_str()
+                .into(),
+        )),
+        Presence::Value(root) => Presence::Value(WireText::Blocks(
+            root.parts
+                .iter()
+                .map(|part| {
+                    Ok(super::CacheMarked {
+                        content: part.text.as_str().into(),
+                        cache: cache_ttl(part.cache)?,
+                    })
+                })
+                .collect::<Result<_, CodecError>>()?,
+        )),
         Presence::Null => return Err(unsupported()),
     };
     let leading_instructions = request
@@ -542,9 +516,6 @@ pub(in crate::protocol::anthropic::messages) fn project(
             };
             if i.status.is_some() {
                 return Err(unsupported());
-            }
-            if i.authority == InstructionAuthority::Developer {
-                rules.insert(RequestRule::DeveloperAsSystem);
             }
             for p in &i.parts {
                 parts.push(super::CacheMarked {
@@ -738,7 +709,7 @@ pub(in crate::protocol::anthropic::messages) fn project(
             }
             run.push(item);
         }
-        messages.extend(system_messages(&run, rules)?);
+        messages.extend(system_messages(&run)?);
         previous_end = Some(last);
         let role = match group.role() {
             MessageEnvelopeRole::User => Role::User,
@@ -828,7 +799,7 @@ pub(in crate::protocol::anthropic::messages) fn project(
         }
         run.push(item);
     }
-    messages.extend(system_messages(&run, rules)?);
+    messages.extend(system_messages(&run)?);
     let expected = request
         .items()
         .iter()

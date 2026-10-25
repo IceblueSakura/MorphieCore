@@ -2,7 +2,7 @@
 use crate::adapter::Request;
 use crate::{
     protocol::CodecError,
-    semantic::task::generation::{InstructionAuthority, Item, ToolDefinition},
+    semantic::task::generation::{Item, ToolDefinition},
 };
 
 pub(in crate::protocol::openai) fn check(
@@ -42,7 +42,6 @@ pub(in crate::protocol::openai) fn check(
     }
     for (_, item) in request.task.semantic.items() {
         let unsupported = match item {
-            Item::Instruction(i) => i.authority == InstructionAuthority::System,
             Item::ToolCall(c) => {
                 c.context.namespace.is_none() || c.context.async_call || c.context.caller.is_some()
             }

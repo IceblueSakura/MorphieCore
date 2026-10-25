@@ -119,7 +119,12 @@ impl GenerationRequirements {
             tool_examples: functions().any(|t| t.input_examples.is_some()),
             normalization_default_tools: functions()
                 .any(|t| t.strict == FunctionStrictness::Omitted(StrictDefault::NormalizeSchema)),
-            explicit_cache: functions().any(|t| t.cache.is_some()),
+            explicit_cache: functions().any(|t| t.cache.is_some())
+                || r.instructions().value().is_some_and(|root| {
+                    root.parts
+                        .iter()
+                        .any(|p| matches!(p.cache, Some(PrefixCacheBoundary::Ttl(_))))
+                }),
             max_output_tokens: r.controls().max_output_tokens,
             temperature: r.controls().temperature().is_some(),
             tool_count: r.tools().iter().map(|t| t.leaves().len()).sum(),

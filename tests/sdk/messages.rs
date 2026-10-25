@@ -63,6 +63,21 @@ async fn handle(
         morphiecore::semantic::value::Presence::Value("sdk-user".into())
     );
     assert_eq!(request.task.semantic.reasoning().budget_tokens, Some(1024));
+    assert_eq!(
+        request
+            .task
+            .semantic
+            .instructions()
+            .value()
+            .unwrap()
+            .plain_text()
+            .unwrap()
+            .as_str(),
+        "SDK root instructions"
+    );
+    assert!(
+        matches!(&request.task.semantic.items()[0].1, Item::Message(m) if m.role == MessageRole::User)
+    );
     let ToolDefinition::Function(tool) = &request.task.semantic.tools()[0] else {
         panic!("function")
     };
@@ -83,6 +98,7 @@ async fn handle(
     caps.carriers = anthropic::messages::Carriers::all();
     let target = ReplayTarget::new("synthetic-sdk", "fixture-model").unwrap();
     let native = caps.encode_request(&request, &target).unwrap();
+    assert_eq!(native.value["system"], "SDK root instructions");
     assert_eq!(native.value["metadata"], json!({"user_id":"sdk-user"}));
     assert!(native.value["tools"][0].get("allowed_callers").is_none());
     assert!(native.value["tools"][0].get("type").is_none());

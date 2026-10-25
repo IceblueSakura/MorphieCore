@@ -544,11 +544,6 @@ pub(in crate::protocol::openai) fn decode_items(
                     }
                     Item::Instruction(Instruction {
                         participant: None,
-                        authority: if role == "system" {
-                            InstructionAuthority::System
-                        } else {
-                            InstructionAuthority::Developer
-                        },
                         parts,
                         status: instruction_status,
                     })
@@ -770,10 +765,7 @@ pub(in crate::protocol::openai) fn encode_items(
                             .collect::<Vec<_>>()
                     )
                 };
-                let role = match i.authority {
-                    InstructionAuthority::System => "system",
-                    InstructionAuthority::Developer => "developer",
-                };
+                let role = "developer";
                 let mut v = json!({ "role": role, "content": content });
                 if let Some(status) = i.status {
                     v["type"] = json!("message");

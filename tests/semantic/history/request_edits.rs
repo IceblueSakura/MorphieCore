@@ -8,7 +8,9 @@ fn request() -> GenerationRequest {
     GenerationRequest::from_settings(
         vec![],
         GenerationSettings {
-            instructions: Presence::Value(Text::new("synthetic", "instruction", 64).unwrap()),
+            instructions: Presence::Value(
+                Text::new("synthetic", "instruction", 64).unwrap().into(),
+            ),
             parallel_tool_calls: Some(false),
             ..Default::default()
         },

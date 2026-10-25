@@ -17,7 +17,6 @@ pub enum RequestRule {
     SummarizeReasoning,
     TransferVisibleHistory,
     ReasoningAsText,
-    DeveloperAsSystem,
     OmitSchemaName,
     OmitCacheKey,
     JoinInstructionParts,
@@ -26,7 +25,6 @@ impl RequestRule {
     pub(crate) fn effect(self, request: &GenerationRequest) -> crate::lowering::generation::Effect {
         use crate::lowering::generation::{Change, ConversionBoundary as B, Effect, Field, Owner};
         let (field, change) = match self {
-            Self::DeveloperAsSystem => (Field::InstructionAuthority, Change::Approximate),
             Self::Hint(hint) => return hint.effect(),
             Self::JoinInstructionParts => (Field::InstructionAuthority, Change::Approximate),
             Self::OmitCacheKey => (Field::Cache, Change::Omit),
@@ -46,12 +44,6 @@ impl RequestRule {
                 input: request.reasoning().presentation.summary.clone(),
                 output: ReasoningDisplay::Summary,
             },
-            Self::DeveloperAsSystem => Effect::Role {
-                rule: self.name().into(),
-                owner: Owner::Root,
-                input: InstructionAuthority::Developer,
-                output: InstructionAuthority::System,
-            },
             _ => Effect::new(self.name(), field, B::RequestProject, change),
         }
     }
@@ -66,7 +58,6 @@ impl RequestRule {
             Self::SummarizeReasoning => "interactions.summarize-reasoning.v1",
             Self::TransferVisibleHistory => "interactions.transfer-visible-history.v1",
             Self::ReasoningAsText => "interactions.reasoning-as-text.v1",
-            Self::DeveloperAsSystem => "interactions.developer-as-system.v1",
             Self::OmitSchemaName => "interactions.omit-schema-name.v1",
             Self::OmitCacheKey => "interactions.omit-cache-key.v1",
             Self::JoinInstructionParts => "interactions.join-instruction-parts.v1",
@@ -151,7 +142,17 @@ pub(super) fn project(
     body.insert("stream".into(), true.into());
     let mut system = match &s.instructions {
         Presence::Absent => None,
-        Presence::Value(t) => Some(vec![t.as_str().to_owned()]),
+        Presence::Value(root) => {
+            if root.parts.iter().any(|part| part.cache.is_some()) {
+                return Err(unsupported());
+            }
+            Some(
+                root.parts
+                    .iter()
+                    .map(|part| part.text.as_str().to_owned())
+                    .collect(),
+            )
+        }
         Presence::Null => return Err(unsupported()),
     };
     for (_, item) in request
@@ -164,9 +165,6 @@ pub(super) fn project(
         };
         if i.status.is_some() {
             return Err(unsupported());
-        }
-        if i.authority == InstructionAuthority::Developer {
-            rules.insert(RequestRule::DeveloperAsSystem);
         }
         system
             .get_or_insert_with(Vec::new)

@@ -374,14 +374,15 @@ fn leading_instructions_compose_once_and_effort_boundaries_split_same_role_histo
     for root in [None, Some(text("root"))] {
         let mut settings = GenerationSettings::default();
         settings.controls.max_output_tokens = Some(32);
-        settings.instructions = root.clone().map_or(Presence::Absent, Presence::Value);
+        settings.instructions = root
+            .clone()
+            .map_or(Presence::Absent, |text| Presence::Value(text.into()));
         let mut items = vec![];
         for (index, content) in ["A", "B"].into_iter().enumerate() {
             items.push((
                 ItemId::new(index as u64 + 1),
                 Item::Instruction(Instruction {
                     participant: None,
-                    authority: InstructionAuthority::System,
                     status: None,
                     parts: vec![Part {
                         id: PartId::new(index as u64 + 1),
@@ -1610,17 +1611,17 @@ fn pi_haiku_profile_keeps_carriers_or_records_rules() {
         })
     };
     let items: Vec<_> = semantic.items().iter().map(|(_, item)| item).collect();
-    assert_eq!(items.len(), 11);
-    assert_eq!(items[2], &effort(EffortLevel::Low));
-    assert!(matches!(items[7], Item::Instruction(i)
+    assert_eq!(items.len(), 10);
+    assert_eq!(items[1], &effort(EffortLevel::Low));
+    assert!(matches!(items[6], Item::Instruction(i)
             if i.texts().map(|(_, t)| t).collect::<Vec<_>>() == ["Write mode."]));
-    assert!(matches!(items[8], Item::ToolChange(ToolChange {
+    assert!(matches!(items[7], Item::ToolChange(ToolChange {
             action: ToolChangeAction::Remove(name), cache: None }) if name.as_str() == "read"));
-    assert!(matches!(items[9], Item::ToolChange(ToolChange {
+    assert!(matches!(items[8], Item::ToolChange(ToolChange {
             action: ToolChangeAction::AddDefinition(tool), cache: None })
             if tool.name.as_str() == "write"
                 && tool.strict == FunctionStrictness::Explicit(true)));
-    assert_eq!(items[10], &effort(EffortLevel::Medium));
+    assert_eq!(items[9], &effort(EffortLevel::Medium));
 
     let target = ReplayTarget::new("synthetic", "synthetic").unwrap();
     let mut caps = anthropic::messages::TargetCaps::new(
@@ -1638,7 +1639,7 @@ fn pi_haiku_profile_keeps_carriers_or_records_rules() {
             morphiecore::lowering::generation::ConversionBoundary::RequestEncode,
             morphiecore::lowering::generation::Change::Normalize
         )
-        .at(morphiecore::lowering::generation::Owner::Item { scope: 0, index: 4 })]
+        .at(morphiecore::lowering::generation::Owner::Item { scope: 0, index: 3 })]
     );
     let wire = &exact.value;
     assert_eq!(wire["thinking"], body["thinking"]);
@@ -1929,8 +1930,7 @@ fn client_intake_carries_caps_and_rejects_active_fields_it_cannot_carry() {
     let decoded = decode_client_request(system.to_string().as_bytes()).unwrap();
     assert!(
         matches!(&decoded.task.semantic.items()[1].1, Item::Instruction(i)
-            if i.authority == InstructionAuthority::System
-                && i.texts().map(|(_, t)| t).collect::<Vec<_>>() == ["Be brief."])
+            if i.texts().map(|(_, t)| t).collect::<Vec<_>>() == ["Be brief."])
     );
     for messages in [
         json!([{"role":"system","content":"first"},{"role":"user","content":"go"}]),

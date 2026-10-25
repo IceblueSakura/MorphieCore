@@ -1463,7 +1463,9 @@ fn next_request_restores_signatures_on_their_parts_in_any_item_order() {
     );
     let mut settings = cached.task.semantic.settings().clone();
     settings.instructions = morphiecore::semantic::value::Presence::Value(
-        Text::new("replacement instruction", "fixture", 256).unwrap(),
+        Text::new("replacement instruction", "fixture", 256)
+            .unwrap()
+            .into(),
     );
     assert!(
         encode_generation_request(
@@ -2042,7 +2044,7 @@ fn request_maps_tool_choice_effort_and_leading_instructions() {
         wire["contents"],
         json!([{"role":"user","parts":[{"text":"go"}]}])
     );
-    assert_eq!(rules, ["gemini.developer-as-system.v1"]);
+    assert!(rules.is_empty());
     assert!(wire.get("toolConfig").is_none());
     for (choice, config) in [
         (json!("auto"), json!({"mode":"AUTO"})),
@@ -2100,10 +2102,7 @@ fn google_composes_only_the_leading_instruction_prefix_without_hoisting_history(
         wire["contents"],
         json!([{"role":"user","parts":[{"text":"go"}]}])
     );
-    assert_eq!(
-        rules,
-        [morphiecore::protocol::google::generate_content::RequestRule::DeveloperAsSystem]
-    );
+    assert!(rules.is_empty());
     let (wire, rules) = morphiecore::protocol::google::interactions::encode_generation_request(
         &request.task.semantic,
         &request.task.fidelity,
@@ -2120,10 +2119,7 @@ fn google_composes_only_the_leading_instruction_prefix_without_hoisting_history(
             &morphiecore::protocol::google::interactions::RequestRule::JoinInstructionParts
         )
     );
-    assert!(
-        rules
-            .contains(&morphiecore::protocol::google::interactions::RequestRule::DeveloperAsSystem)
-    );
+
     let mut items = request.task.semantic.items().to_vec();
     items.swap(1, 2);
     let late = GenerationRequest::from_resources(

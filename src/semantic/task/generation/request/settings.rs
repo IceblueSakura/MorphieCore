@@ -75,11 +75,59 @@ impl GenerationControls {
             || self.seed.is_some()
     }
 }
+/// One root instruction block. Its index is local to the current request's root,
+/// not an ordered history identity or a replay owner.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct InstructionText {
+    pub text: Text,
+    pub cache: Option<PrefixCacheBoundary>,
+}
+/// Current-request application instructions; multipart text and cache boundaries
+/// have one owner rather than a second copy in ordered history.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RootInstructions {
+    pub parts: Vec<InstructionText>,
+}
+impl From<Text> for RootInstructions {
+    fn from(text: Text) -> Self {
+        Self {
+            parts: vec![InstructionText { text, cache: None }],
+        }
+    }
+}
+impl RootInstructions {
+    /// Exact string carrier, without joining parts or discarding cache intent.
+    pub fn plain_text(&self) -> Option<&Text> {
+        match self.parts.as_slice() {
+            [InstructionText { text, cache: None }] => Some(text),
+            _ => None,
+        }
+    }
+    pub fn text_bytes(&self) -> usize {
+        self.parts.iter().map(|p| p.text.as_str().len()).sum()
+    }
+    fn validate(&self) -> Result<usize, GenerationError> {
+        if self.parts.is_empty() || self.parts.len() > MAX_ITEMS {
+            return Err(GenerationError::Limit);
+        }
+        let mut bytes = 0usize;
+        for part in &self.parts {
+            if part.text.as_str().len() > MAX_TEXT_BYTES {
+                return Err(GenerationError::Limit);
+            }
+            bytes = bytes
+                .checked_add(part.text.as_str().len() + 32)
+                .filter(|n| *n <= MAX_TOTAL_BYTES)
+                .ok_or(GenerationError::Limit)?;
+        }
+        Ok(bytes)
+    }
+}
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct GenerationSettings {
     /// Request-wide plain-text instructions. They precede every ordered item,
     /// including ordered instruction items; history composition does not inherit them.
-    pub instructions: Presence<Text>,
+    pub instructions: Presence<RootInstructions>,
     pub controls: GenerationControls,
     /// Ordered predicted output text: an optimization hint, never an output constraint.
     pub prediction: Option<Vec<Text>>,
@@ -166,7 +214,10 @@ impl GenerationSettings {
         if let Some(options) = self.audio.value() {
             options.validate()?;
         }
-        let instructions = self.instructions.value().map_or(0, |t| t.as_str().len());
+        let instructions = self
+            .instructions
+            .value()
+            .map_or(Ok(0), RootInstructions::validate)?;
         let mut prediction_bytes = 0usize;
         if let Some(parts) = &self.prediction {
             if parts.is_empty() || parts.len() > MAX_ITEMS {
@@ -181,9 +232,6 @@ impl GenerationSettings {
                     .filter(|n| *n <= MAX_TOTAL_BYTES)
                     .ok_or(GenerationError::Limit)?;
             }
-        }
-        if instructions > MAX_TEXT_BYTES {
-            return Err(GenerationError::Limit);
         }
         let bytes = instructions
             + prediction_bytes

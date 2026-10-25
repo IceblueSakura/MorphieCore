@@ -22,7 +22,13 @@ fn chat_text_arrays_keep_order_and_follow_typed_edits() {
     let encoded = client()
         .encode_request(&request, "m", &Contract::full())
         .unwrap();
-    assert_eq!(encoded["messages"], wire["messages"]);
+    assert_eq!(
+        encoded["messages"],
+        json!([
+            {"role":"developer","content":[{"type":"text","text":"first"},{"type":"text","text":"second"}]},
+            {"role":"user","content":[{"type":"text","text":"alpha"},{"type":"text","text":"beta"}]}
+        ])
+    );
     let mut items = request.task.semantic.items().to_vec();
     if let Item::Message(m) = &mut items[1].1 {
         m.parts.remove(0);

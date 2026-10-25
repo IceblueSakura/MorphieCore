@@ -15,6 +15,267 @@ fn messages() -> Value {
 }
 
 #[test]
+fn legacy_and_current_instruction_roles_have_one_ir_meaning_and_canonical_output() {
+    // Pinned OpenAI Chat types call both roles developer-provided instructions.
+    // The selected current-standard profile canonicalizes mixed roles in place.
+    for profile in [Profile::Chat, Profile::Responses] {
+        let source_items = json!([
+            {"role":"system","content":"A"},
+            {"role":"user","content":"U"},
+            {"role":"developer","content":"B"},
+        ]);
+        let wire = match profile {
+            Profile::Chat => json!({"model":"public","messages":source_items}),
+            Profile::Responses => json!({"model":"public","input":source_items}),
+        };
+        let client = adapter(profile);
+        let source = client
+            .decode_client_request(wire.to_string().as_bytes())
+            .unwrap();
+        let text = |s| Text::new(s, "test", 32).unwrap();
+        let expected = vec![
+            (
+                ItemId::new(1),
+                Item::Instruction(Instruction {
+                    participant: None,
+                    parts: vec![Part::new(PartId::new(1), text("A"))],
+                    status: None,
+                }),
+            ),
+            (
+                ItemId::new(2),
+                Item::Message(Message {
+                    role: MessageRole::User,
+                    participant: None,
+                    parts: vec![Part::new(
+                        PartId::new(2),
+                        ContentPart::Text(text("U").into()),
+                    )],
+                    status: ItemLifecycle::Completed,
+                    phase: None,
+                }),
+            ),
+            (
+                ItemId::new(3),
+                Item::Instruction(Instruction {
+                    participant: None,
+                    parts: vec![Part::new(PartId::new(3), text("B"))],
+                    status: None,
+                }),
+            ),
+        ];
+        assert_eq!(source.task.semantic.items(), expected);
+        for target in [Profile::Chat, Profile::Responses] {
+            let value = adapter(target)
+                .encode_request(&source, "m", &TargetCaps::full())
+                .unwrap();
+            let items = &value[if target == Profile::Chat {
+                "messages"
+            } else {
+                "input"
+            }];
+            assert_eq!(items[0]["role"], "developer");
+            assert_eq!(items[1]["role"], "user");
+            assert_eq!(items[2]["role"], "developer");
+            assert_eq!(items[0]["content"], "A");
+            assert_eq!(items[2]["content"], "B");
+        }
+        for invalid in [
+            json!(null),
+            json!(false),
+            json!([{"type":"image_url","image_url":{"url":"https://example.invalid/a.png"}}]),
+        ] {
+            let mut bad = wire.clone();
+            bad[if profile == Profile::Chat {
+                "messages"
+            } else {
+                "input"
+            }][0]["content"] = invalid;
+            assert!(
+                client
+                    .decode_client_request(bad.to_string().as_bytes())
+                    .is_err()
+            );
+        }
+    }
+}
+
+#[test]
+fn messages_root_forms_share_request_scope_without_becoming_history() {
+    use morphiecore::semantic::value::Presence;
+    let mut source = messages();
+    source["system"] = json!("R");
+    let string = decode_client_request(source.to_string().as_bytes()).unwrap();
+    source["system"] = json!([{"type":"text","text":"R"}]);
+    let block = decode_client_request(source.to_string().as_bytes()).unwrap();
+    assert_eq!(string.task.semantic, block.task.semantic);
+    assert_eq!(block.task.semantic.items().len(), 1);
+    source["system"] = json!([]);
+    let empty = decode_client_request(source.to_string().as_bytes()).unwrap();
+    source["system"] = json!("");
+    assert_eq!(
+        empty.task.semantic,
+        decode_client_request(source.to_string().as_bytes())
+            .unwrap()
+            .task
+            .semantic
+    );
+    assert_eq!(
+        block.task.semantic.instructions(),
+        &Presence::Value(RootInstructions::from(Text::new("R", "test", 32).unwrap()))
+    );
+    for request in [&string, &block] {
+        let chat = adapter(Profile::Chat)
+            .encode_request(request, "m", &TargetCaps::full())
+            .unwrap();
+        assert_eq!(
+            chat["messages"][0],
+            json!({"role":"developer","content":"R"})
+        );
+        let response = adapter(Profile::Responses)
+            .encode_request(request, "m", &TargetCaps::full())
+            .unwrap();
+        assert_eq!(response["instructions"], "R");
+        assert_eq!(response["input"].as_array().unwrap().len(), 1);
+    }
+    source["system"] = json!([{"type":"text","text":"R"},{"type":"text","text":"S"}]);
+    let multipart = decode_client_request(source.to_string().as_bytes()).unwrap();
+    let chat = adapter(Profile::Chat)
+        .encode_request(&multipart, "m", &TargetCaps::full())
+        .unwrap();
+    assert_eq!(
+        chat["messages"][0],
+        json!({"role":"developer","content":[
+        {"type":"text","text":"R"},{"type":"text","text":"S"}]})
+    );
+    let response = adapter(Profile::Responses)
+        .encode_request(&multipart, "m", &TargetCaps::full())
+        .unwrap();
+    assert!(response.get("instructions").is_none());
+    assert_eq!(
+        response["input"][0],
+        json!({"role":"developer","content":[
+        {"type":"input_text","text":"R"},{"type":"input_text","text":"S"}]})
+    );
+    assert_eq!(multipart.task.semantic.items().len(), 1);
+    assert_eq!(
+        multipart
+            .task
+            .semantic
+            .instructions()
+            .value()
+            .unwrap()
+            .parts
+            .len(),
+        2
+    );
+    source["system"][0]["cache_control"] = json!({"type":"ephemeral","ttl":"1h"});
+    let cached = decode_client_request(source.to_string().as_bytes()).unwrap();
+    assert!(GenerationRequirements::derive(&cached.task.semantic).explicit_cache);
+    assert!(
+        adapter(Profile::Chat)
+            .encode_request(&cached, "m", &TargetCaps::full())
+            .is_err()
+    );
+    assert!(
+        adapter(Profile::Responses)
+            .encode_request(&cached, "m", &TargetCaps::full())
+            .is_err()
+    );
+    let mut boundary = block.clone();
+    let mut settings = boundary.task.semantic.settings().clone();
+    let Presence::Value(root) = &mut settings.instructions else {
+        unreachable!()
+    };
+    root.parts[0].cache = Some(PrefixCacheBoundary::RequestLifetime);
+    boundary.task.semantic = boundary.task.semantic.with_settings(settings).unwrap();
+    let response = adapter(Profile::Responses)
+        .encode_request(&boundary, "m", &TargetCaps::full())
+        .unwrap();
+    assert!(response.get("instructions").is_none());
+    assert_eq!(
+        response["input"][0],
+        json!({"role":"developer","content":[{
+        "type":"input_text","text":"R","prompt_cache_breakpoint":{"mode":"explicit"}}]})
+    );
+    assert_eq!(boundary.task.semantic.items().len(), 1);
+}
+
+#[test]
+fn managed_continuation_replaces_root_but_retains_ordered_application_instructions() {
+    let client = adapter(Profile::Responses);
+    let output = client.decode_response(br#"{"id":"r","object":"response","created_at":1,
+        "model":"public","status":"completed","output":[{"type":"message","id":"a","role":"assistant",
+        "status":"completed","content":[{"type":"output_text","text":"ok","annotations":[]}]}]}"#).unwrap();
+    let sources = [
+        client
+            .decode_client_request(
+                br#"{"model":"public","instructions":"R",
+            "input":[{"role":"system","content":"P"},{"role":"user","content":"go"}]}"#,
+            )
+            .unwrap(),
+        decode_client_request(
+            br#"{"model":"public","max_tokens":32,"system":[{"type":"text","text":"R"}],
+            "messages":[{"role":"user","content":"go"},{"role":"system","content":"P"}]}"#,
+        )
+        .unwrap(),
+    ];
+    for source in sources {
+        for root in [None, Some(json!(null)), Some(json!("")), Some(json!("new"))] {
+            let mut next = json!({"model":"public","input":"again"});
+            if let Some(value) = &root {
+                next["instructions"] = value.clone();
+            }
+            let combined = client
+                .decode_client_history(next.to_string().as_bytes(), Some((&source.task, &output)))
+                .unwrap();
+            let value = client
+                .encode_request(&combined, "m", &TargetCaps::full())
+                .unwrap();
+            assert_eq!(value.get("instructions"), root.as_ref());
+            let instructions: Vec<_> = value["input"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter(|item| item["role"] == "developer")
+                .collect();
+            assert_eq!(instructions.len(), 1);
+            assert_eq!(instructions[0]["content"], "P");
+            assert_eq!(combined.task.semantic.items().len(), 4);
+        }
+    }
+    let text = |s| Text::allowing_empty(s, "test", MAX_TEXT_BYTES).unwrap();
+    for parts in [
+        vec![],
+        vec![
+            InstructionText {
+                text: text(""),
+                cache: None
+            };
+            MAX_ITEMS + 1
+        ],
+        vec![
+            InstructionText {
+                text: text(&"x".repeat(MAX_TEXT_BYTES)),
+                cache: None
+            };
+            MAX_TOTAL_BYTES / MAX_TEXT_BYTES + 1
+        ],
+    ] {
+        assert!(
+            GenerationSettings {
+                instructions: morphiecore::semantic::value::Presence::Value(RootInstructions {
+                    parts
+                }),
+                ..Default::default()
+            }
+            .validate()
+            .is_err()
+        );
+    }
+}
+
+#[test]
 fn responses_stream_options_follow_directional_field_policy() {
     let adapter = adapter(Profile::Responses);
     let mut wire = json!({"model":"public","input":"go","stream":true,
@@ -301,7 +562,9 @@ fn named_chat_participant_survives_same_protocol_projection() {
     let output = adapter
         .encode_request(&request, "public", &TargetCaps::full())
         .unwrap();
-    assert_eq!(output["messages"], wire["messages"]);
+    let mut expected_messages = wire["messages"].clone();
+    expected_messages[0]["role"] = json!("developer");
+    assert_eq!(output["messages"], expected_messages);
     assert!(
         self::adapter(Profile::Responses)
             .encode_request(&request, "public", &TargetCaps::full())
@@ -340,7 +603,6 @@ fn independently_owned_participants_encode_exactly_or_reject_without_a_carrier()
                 ItemId::new(1),
                 Item::Instruction(Instruction {
                     participant: Some(text("policy")),
-                    authority: InstructionAuthority::System,
                     parts: vec![Part::new(PartId::new(1), text("exact"))],
                     status: None,
                 }),
@@ -368,7 +630,7 @@ fn independently_owned_participants_encode_exactly_or_reject_without_a_carrier()
     assert_eq!(
         chat::encode_generation(&target).unwrap()["messages"],
         json!([
-            {"role":"system","name":"policy","content":"exact"},{"role":"user","name":"alice","content":"hello"}
+            {"role":"developer","name":"policy","content":"exact"},{"role":"user","name":"alice","content":"hello"}
         ])
     );
     // Test both instruction and ordinary-message paths without an earlier

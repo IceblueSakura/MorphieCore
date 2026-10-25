@@ -10,6 +10,28 @@ use crate::{
 pub(in crate::protocol::anthropic::messages) fn text(s: &str) -> Result<Text, CodecError> {
     Text::allowing_empty(s, "native text", MAX_TEXT_BYTES).map_err(|_| CodecError::Limit)
 }
+pub(in crate::protocol::anthropic::messages) fn root_instructions(
+    system: super::super::TextContent,
+) -> Result<RootInstructions, CodecError> {
+    use super::super::TextContent;
+    Ok(match system {
+        TextContent::Text(s) => text(&s)?.into(),
+        TextContent::Blocks(parts) if !parts.is_empty() => RootInstructions {
+            parts: parts
+                .into_iter()
+                .map(|part| {
+                    Ok(InstructionText {
+                        text: text(&part.content)?,
+                        cache: part.cache.map(PrefixCacheBoundary::Ttl),
+                    })
+                })
+                .collect::<Result<_, CodecError>>()?,
+        },
+        // An explicitly empty root list has no blocks/cache owners. Normalize
+        // it to an explicit empty root, not an ordered empty instruction.
+        TextContent::Blocks(_) => text("")?.into(),
+    })
+}
 pub(in crate::protocol::anthropic::messages) struct Intake {
     scope: LocalScope,
     pub(in crate::protocol::anthropic::messages) items: Vec<(ItemId, Item)>,
@@ -68,7 +90,6 @@ impl Intake {
             id,
             Item::Instruction(Instruction {
                 participant: None,
-                authority: InstructionAuthority::System,
                 parts,
                 status: None,
             }),
@@ -386,13 +407,14 @@ pub(in crate::protocol::anthropic::messages) fn validate_cache(
         ToolDefinition::Function(tool) if !tool.dispatch.defer_loading => Some(tool.cache),
         _ => None,
     });
-    if request
-        .settings()
-        .instructions
-        .value()
-        .is_some_and(|text| !text.as_str().is_empty())
-    {
-        last = Some(None);
+    if let Some(root) = request.instructions().value() {
+        for part in &root.parts {
+            let cache = super::cache_ttl(part.cache)?;
+            if text_cache_eligible(part.text.as_str(), cache)? {
+                markers.extend(cache);
+                last = Some(cache);
+            }
+        }
     }
     for (_, item) in request.items() {
         match item {

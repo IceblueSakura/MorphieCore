@@ -69,7 +69,7 @@ impl Sample {
             _ => panic!("unknown abstract sample"),
         };
         let settings = GenerationSettings {
-            instructions: Presence::Value(text("current configuration")),
+            instructions: Presence::Value(text("current configuration").into()),
             effort: Presence::Value(EffortControl {
                 scope: if family == "messages" {
                     EffortScope::Response
@@ -217,7 +217,6 @@ impl Sample {
                     ItemId::new(10),
                     Item::Instruction(Instruction {
                         participant: None,
-                        authority: InstructionAuthority::Developer,
                         parts: vec![Part::new(PartId::new(10), text("observe; do not execute"))],
                         status: None,
                     }),
@@ -265,11 +264,11 @@ fn combined_history_rejects_broken_association_authority_and_phase() {
         item(accepted.request(), ItemId::new(11)),
         item(&original, ItemId::new(11))
     );
-    let mut elevated = item(&original, ItemId::new(10)).clone();
-    let Item::Instruction(instruction) = &mut elevated else {
+    let mut relabeled = item(&original, ItemId::new(10)).clone();
+    let Item::Instruction(instruction) = &mut relabeled else {
         panic!()
     };
-    instruction.authority = InstructionAuthority::System;
+    instruction.participant = Some(text("another operator"));
     let mut phased = item(&original, owner(1, 1)).clone();
     let Item::Message(message) = &mut phased else {
         panic!()
@@ -280,7 +279,7 @@ fn combined_history_rejects_broken_association_authority_and_phase() {
     for edits in [
         vec![ContextEdit::Replace {
             owner: ItemId::new(10),
-            item: elevated,
+            item: relabeled,
         }],
         vec![ContextEdit::Replace {
             owner: owner(1, 1),

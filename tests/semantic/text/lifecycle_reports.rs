@@ -436,7 +436,9 @@ fn emitted_reports_cannot_be_rewritten_and_both_slots_count_toward_the_bound() {
     assert!(encoder.finish().is_err());
     let settings = GenerationSettings {
         instructions: Presence::Value(
-            Text::new("x".repeat(MAX_TEXT_BYTES), "test", MAX_TEXT_BYTES).unwrap(),
+            Text::new("x".repeat(MAX_TEXT_BYTES), "test", MAX_TEXT_BYTES)
+                .unwrap()
+                .into(),
         ),
         ..Default::default()
     };

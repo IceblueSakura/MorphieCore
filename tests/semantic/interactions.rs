@@ -1627,7 +1627,7 @@ fn projects_instructions_tool_choice_effort_summaries_and_result_errors() {
             {"type":"model_output","content":[{"type":"text","text":"Reading."}]}
         ])
     );
-    assert_eq!(rules, ["interactions.developer-as-system.v1"]);
+    assert!(rules.is_empty());
     for (choice, wire_choice) in [
         (json!("auto"), json!("auto")),
         (json!("none"), json!("none")),

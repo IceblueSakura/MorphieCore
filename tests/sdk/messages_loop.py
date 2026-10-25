@@ -24,6 +24,7 @@ with httpx.Client(trust_env=False, timeout=10) as http:
         }
         shared = dict(
             model="fixture-model", max_tokens=2048,
+            system="SDK root instructions",
             thinking={"type": "enabled", "budget_tokens": 1024},
             metadata={"user_id": "sdk-user"},
             tools=[tool],
@@ -51,6 +52,7 @@ with httpx.Client(trust_env=False, timeout=10) as http:
                 "content": [{"type": "text", "text": "found", "cache_control": None}, image],
                 "is_error": False, "cache_control": None}]},
         ]
+        shared["system"] = [{"type": "text", "text": "SDK root instructions"}]
         for partial, messages in [(False, history), (True, [{"role": "user", "content": "go"}])]:
             fragments = []
             text = []

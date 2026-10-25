@@ -101,8 +101,10 @@ pub struct WireRules {
     pub require_parameters: bool,
     /// Provider request spelling; downstream still uses max_completion_tokens.
     pub legacy_max_tokens: bool,
-    /// Trusted compatibility choice for request-wide instructions, not ordered history.
-    pub chat_system_instructions: bool,
+    /// Native application-instruction carrier, for both root and ordered instructions.
+    pub system_instruction_messages: bool,
+    /// DeepSeek Responses accepts developer spelling with effective user meaning.
+    pub responses_developer_is_user: bool,
     /// Target always permits parallel calls and has no request switch.
     /// Explicit serial intent rejects; explicit permission is omitted on a copy.
     pub parallel_tools_always_enabled: bool,

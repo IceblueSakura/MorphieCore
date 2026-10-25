@@ -551,7 +551,6 @@ mod native_catalog {
             rules,
             [
                 "messages.default-automatic-cache.v1",
-                "messages.developer-as-system.v1",
                 "messages.omit-sampling.v1"
             ]
         );

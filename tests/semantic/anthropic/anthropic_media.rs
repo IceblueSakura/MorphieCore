@@ -760,7 +760,11 @@ fn unrepresentable_sources_and_uncalibrated_options_fail_without_losing_filename
         json!([{"role":"user","content":[{"type":"text","text":"go"}]},
                 {"role":"system","content":[{"type":"text","text":"Be brief."}]}])
     );
-    assert!(rules.contains(&"messages.developer-as-system.v1"));
+    assert!(
+        !rules
+            .iter()
+            .any(|rule| rule.contains("developer-as-system"))
+    );
     let between = ordered(json!([{"role":"user","content":"go"},
             {"role":"developer","content":"Be brief."},{"role":"user","content":"again"}]));
     assert!(widened.encode_request_with_rules(&between).is_err());

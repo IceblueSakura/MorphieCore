@@ -62,7 +62,6 @@ fn request(grouped: bool, stream: bool) -> Request {
                 ItemId::new(1),
                 Item::Instruction(Instruction {
                     participant: None,
-                    authority: InstructionAuthority::Developer,
                     parts: vec![Part::new(PartId::new(1), text("ordered"))],
                     status: None,
                 }),
@@ -70,7 +69,7 @@ fn request(grouped: bool, stream: bool) -> Request {
             (ItemId::new(2), message(MessageRole::User, 2, "go")),
         ],
         GenerationSettings {
-            instructions: Presence::Value(text("policy")),
+            instructions: Presence::Value(text("policy").into()),
             tools: Some(tools(grouped)),
             parallel_tool_calls: Some(false),
             reasoning: ReasoningRequest::absent().with_encrypted_output(true),

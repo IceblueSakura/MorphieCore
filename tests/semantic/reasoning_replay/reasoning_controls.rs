@@ -63,7 +63,7 @@ fn requests_reject_unselected_controls_while_incidental_reports_project() {
         },
     };
     let mut settings = GenerationSettings {
-        instructions: Presence::Value(Text::new("hello", "test", 32).unwrap()),
+        instructions: Presence::Value(Text::new("hello", "test", 32).unwrap().into()),
         reasoning: ReasoningRequest::present(None),
         ..Default::default()
     };
@@ -162,7 +162,7 @@ fn requests_reject_unselected_controls_while_incidental_reports_project() {
         .unwrap();
     let mut instruction = instruction;
     let mut settings = instruction.task.semantic.settings().clone();
-    settings.instructions = Presence::Value(Text::new("instructions", "test", 32).unwrap());
+    settings.instructions = Presence::Value(Text::new("instructions", "test", 32).unwrap().into());
     instruction.task.semantic = instruction.task.semantic.with_settings(settings).unwrap();
     assert_eq!(
         client
@@ -170,7 +170,7 @@ fn requests_reject_unselected_controls_while_incidental_reports_project() {
             .unwrap()["messages"][0]["role"],
         "developer"
     );
-    client.adaptation.rules.chat_system_instructions = true;
+    client.adaptation.rules.system_instruction_messages = true;
     let (wire, rules) = client
         .encode_request_with_rules(&instruction, "m", &TargetCaps::full())
         .unwrap();
@@ -178,7 +178,7 @@ fn requests_reject_unselected_controls_while_incidental_reports_project() {
         wire["messages"][0],
         serde_json::json!({"role":"system","content":"instructions"})
     );
-    assert_eq!(rules, ["chat.instructions-as-system.v1"]);
+    assert!(rules.is_empty());
     for dimension in 0..4 {
         let mut control = ReasoningRequest::present(None);
         match dimension {
@@ -188,7 +188,7 @@ fn requests_reject_unselected_controls_while_incidental_reports_project() {
             _ => control.mode = Presence::Value(ReasoningMode::Adaptive),
         }
         let settings = GenerationSettings {
-            instructions: Presence::Value(Text::new("hello", "test", 32).unwrap()),
+            instructions: Presence::Value(Text::new("hello", "test", 32).unwrap().into()),
             reasoning: control,
             effort: Presence::Value(EffortControl {
                 scope: EffortScope::Reasoning,

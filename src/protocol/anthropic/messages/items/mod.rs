@@ -5,7 +5,7 @@ mod encode;
 use crate::protocol::CodecError;
 
 pub(in crate::protocol::anthropic::messages) use decode::{
-    Intake, bind, function_tool, text, validate_cache,
+    Intake, bind, function_tool, root_instructions, text, validate_cache,
 };
 pub(in crate::protocol::anthropic::messages) use encode::item_blocks;
 

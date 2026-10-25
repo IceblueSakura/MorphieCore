@@ -142,13 +142,7 @@ fn chat_rejects_uncarried_cache_boundaries_before_client_field_filtering() {
             messages.push(message);
             let mut source = json!({"model":"synthetic","messages":messages});
             let baseline = adapter.decode_client_request(source.to_string().as_bytes());
-            if dialect == Dialect::Bailian && role == "developer" {
-                assert!(
-                    matches!(baseline,Err(CodecError::Unsupported(field)) if field == morphiecore::protocol::failure::CarrierReason::Unavailable)
-                );
-            } else {
-                baseline.unwrap();
-            }
+            baseline.unwrap();
             let last = source["messages"].as_array().unwrap().len() - 1;
             for marker in [json!({"mode":"explicit"}), Value::Null] {
                 source["messages"][last]["content"][0]["prompt_cache_breakpoint"] = marker;

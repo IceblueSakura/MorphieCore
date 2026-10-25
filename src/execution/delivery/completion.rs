@@ -82,7 +82,7 @@ fn infer_residual(total: Option<u64>, counts: &mut [Option<u64>]) -> Result<(), 
 pub(super) fn input_estimate(request: &GenerationRequest) -> u64 {
     let s = request.settings();
     let mut bytes: usize = request.items().iter().map(|(_, i)| item_bytes(i)).sum();
-    bytes += s.instructions.value().map_or(0, |t| t.as_str().len());
+    bytes += s.instructions.value().map_or(0, |root| root.text_bytes());
     for tool in s.tools.iter().flatten().flat_map(ToolDefinition::leaves) {
         bytes += tool.name().as_str().len();
         match tool {

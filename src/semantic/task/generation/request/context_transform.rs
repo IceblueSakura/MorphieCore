@@ -329,7 +329,7 @@ pub(in crate::semantic::task::generation) fn check_protected_edits(
             return Err(GenerationError::InvalidContextTransform);
         }
         if let (Item::Instruction(old), Item::Instruction(new)) = (old, new) {
-            if old.authority != new.authority || old.participant != new.participant {
+            if old.participant != new.participant {
                 return Err(GenerationError::InvalidContextTransform);
             }
             for (other_position, (other, _)) in source.iter().enumerate() {

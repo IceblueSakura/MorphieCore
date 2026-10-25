@@ -476,9 +476,10 @@ pub(in crate::protocol::openai) fn check_semantic(
                 crate::protocol::failure::CarrierReason::Tools,
             ));
         }
-        if c.frequency_penalty().is_some() || !s.text.verbosity.is_absent() || !s.instructions.is_absent()
-            || semantic.items().iter().any(|(_,i)|matches!(i,Item::Instruction(v) if v.authority==InstructionAuthority::Developer)) {
-            return Err(CodecError::Unsupported(crate::protocol::failure::CarrierReason::Unavailable));
+        if c.frequency_penalty().is_some() || !s.text.verbosity.is_absent() {
+            return Err(CodecError::Unsupported(
+                crate::protocol::failure::CarrierReason::Unavailable,
+            ));
         }
         if qwen && matches!(s.tool_choice, Some(ToolChoice::Required)) {
             return Err(CodecError::Unsupported(
