@@ -170,6 +170,7 @@ impl ApiKeyBinding {
             identity_hints: false,
             standard_context: false,
             prediction: false,
+            model_limits: models::planning_limits(self.canonical_model, provider.id.as_str()),
             ..TargetContract::full()
         };
         Ok(Endpoint {

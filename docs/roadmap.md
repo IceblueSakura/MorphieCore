@@ -57,7 +57,7 @@ This page owns current scope, priorities, dependencies and exit gates. Start wit
 
 The selected 2026-10-26 structure/vocabulary maintenance is complete. [Architecture](architecture.md#domain-vocabulary-and-failure-contracts) owns the implemented contracts; [verification evidence](development.md#verification-gates) separates offline, SDK and installed-client checks. No new API, binding, Google classification, retry policy or diagnostic-extension certification follows.
 
-The selected Generation Text-only [model discovery](architecture.md#generation-text-model-discovery) is implemented. Standard Models, existing capabilities and other task discovery retain their behavior; no version/revision maintenance, pagination, media declarations or Agent configuration integration is selected.
+The expanded Generation Text-only [model discovery](architecture.md#generation-text-model-discovery) is implemented: trusted context/input planning metadata, assessed Generation image inputs and Pi consumption, with schema-only definitions for other task families. Runtime discovery and new client wiring remain Generation Text-only; existing independent tasks, standard Models/capabilities, routing, version/revision policy and pagination behavior are unchanged. Further activation remains separately scoped under [Models discovery interfaces](#models-discovery-interfaces).
 
 | Area | State | Next step |
 |---|---|---|
@@ -599,9 +599,11 @@ Exit evidence: independent request/result oracles for the count request's effect
 
 ### Models discovery interfaces
 
-Only extensions beyond the implemented [Generation Text contract](architecture.md#generation-text-model-discovery) remain unselected. Other-task and multimodal summaries, richer planning metadata and actual Agent configuration consumption need a separately authorized slice; existing implementations are preserved without filling their gaps. No version/revision maintenance or pagination is queued.
+The selected 2026-10-26 [discovery expansion](architecture.md#generation-text-model-discovery) is implemented. Generation Text owns runtime publication and Pi wiring; the other typed task families remain schema-only. Their discovery publication and client integration are deferred even where independent inference APIs already exist.
 
-Future acceptance must distinguish metadata publication from actual Agent budgeting/control behavior and Provider effectiveness. Preserve authentication, no-upstream-I/O, complete bounded lists and private-topology isolation. Metadata work does not reopen token counting, routing, Files or model activation.
+Remaining selections are broader Generation media domains, independently evidenced capacities for unverified bindings, conditional-capacity modes and non-Generation discovery/client consumers. Existing schema vocabulary does not schedule those implementations or select new task IR, session protocols or resource lifecycles.
+
+Future acceptance must distinguish metadata publication, synthetic client behavior and real Provider effectiveness, and preserve source-to-discovery projection, narrowing/unknowns, task-schema exclusion, bounds/privacy and actual client budgeting/payload behavior. Metadata work does not reopen token counting, routing, Files, model activation or host deployment. Version/revision maintenance and pagination remain unselected.
 
 ### Messages citations
 

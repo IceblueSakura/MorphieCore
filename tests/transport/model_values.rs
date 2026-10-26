@@ -417,6 +417,7 @@ fn openai_limits_check_calibrated_levels_and_do_not_insert_caps() {
         caps.model_limits = ModelLimits {
             allowed_effort: Some(vec![EffortLevel::High].into()),
             maximum_output_tokens: Some(32),
+            ..Default::default()
         };
         let (wire, rules) = adapter
             .encode_request_with_rules(&request, "synthetic", &caps)

@@ -986,7 +986,8 @@ fn configured_failover_orders_and_limits_a_models_providers() {
         .unwrap();
     let limits_config = serde_json::json!({"models":{google.model:{"candidates":[
         {"binding":google.endpoint().id.as_str(),
-            "allowed_effort":["medium","high"],"maximum_output_tokens":4096},
+            "allowed_effort":["medium","high"],"maximum_output_tokens":4096,
+            "context_window_tokens":200000,"maximum_input_tokens":100000},
         {"binding":google.interactions_endpoint().id.as_str()}
     ]}}});
     private_write(&models_file, limits_config.clone());
@@ -999,6 +1000,8 @@ fn configured_failover_orders_and_limits_a_models_providers() {
         assert_eq!(entry.candidates.len(), 2);
         let limits = entry.candidates[0].endpoint.representation.model_limits();
         assert_eq!(limits.maximum_output_tokens, Some(4096));
+        assert_eq!(limits.context_window_tokens, Some(200_000));
+        assert_eq!(limits.maximum_input_tokens, Some(100_000));
         assert_eq!(
             limits.allowed_effort.as_deref(),
             Some(
@@ -1090,6 +1093,10 @@ fn configured_failover_orders_and_limits_a_models_providers() {
         ("maximum_output_tokens", serde_json::json!(65537)),
         ("maximum_output_tokens", serde_json::json!(-1)),
         ("maximum_output_tokens", serde_json::json!(1.5)),
+        ("context_window_tokens", serde_json::json!(0)),
+        ("context_window_tokens", serde_json::json!(-1)),
+        ("maximum_input_tokens", serde_json::json!(0)),
+        ("maximum_input_tokens", serde_json::json!(1048577)),
     ] {
         let mut invalid = limits_config.clone();
         invalid["models"][google.model]["candidates"][0][name] = value;
@@ -1098,6 +1105,41 @@ fn configured_failover_orders_and_limits_a_models_providers() {
             Bootstrap::from_files(&gateway_file, &store).is_err(),
             "{name}"
         );
+    }
+    // Changed trusted deployments do not inherit unrelated planning-capacity evidence.
+    for (field, replacement) in [
+        ("upstream_model", "another-model".to_owned()),
+        ("base_url", "https://example.invalid".to_owned()),
+        (
+            "base_url",
+            format!("{}/another-path", google.provider().origin.as_str()),
+        ),
+    ] {
+        let mut candidate = serde_json::json!({"binding":google.endpoint().id.as_str()});
+        candidate[field] = serde_json::json!(replacement);
+        private_write(
+            &models_file,
+            serde_json::json!({"models":{google.model:{"candidates":[candidate.clone()]}}}),
+        );
+        let changed = Bootstrap::from_files(&gateway_file, &store).unwrap();
+        let entry =
+            &changed.gateway.state.entries[&(ClientProtocol::Responses, google.model.into())];
+        let limits = entry.candidates[0].endpoint.representation.model_limits();
+        assert_eq!(limits.maximum_input_tokens, None);
+        assert_eq!(limits.context_window_tokens, None);
+        assert_eq!(limits.maximum_output_tokens, Some(65_536));
+        candidate["context_window_tokens"] = serde_json::json!(2_000_000);
+        candidate["maximum_input_tokens"] = serde_json::json!(1_200_000);
+        private_write(
+            &models_file,
+            serde_json::json!({"models":{google.model:{"candidates":[candidate]}}}),
+        );
+        let declared = Bootstrap::from_files(&gateway_file, &store).unwrap();
+        let entry =
+            &declared.gateway.state.entries[&(ClientProtocol::Responses, google.model.into())];
+        let limits = entry.candidates[0].endpoint.representation.model_limits();
+        assert_eq!(limits.context_window_tokens, Some(2_000_000));
+        assert_eq!(limits.maximum_input_tokens, Some(1_200_000));
     }
     let mut models = serde_json::json!({"models":{google.model:{
         "thinking_tokens":{"minimal":1024,"low":2048,"medium":3072,"high":8192,"xhigh":16384,"max":24576},

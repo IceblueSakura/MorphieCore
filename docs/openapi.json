@@ -666,6 +666,8 @@
         "required": [
           "scope",
           "composition",
+          "input",
+          "output",
           "token_limits",
           "features",
           "reasoning"
@@ -676,6 +678,12 @@
           },
           "composition": {
             "const": "not_asserted"
+          },
+          "input": {
+            "$ref": "#/components/schemas/TextGenerationInput"
+          },
+          "output": {
+            "$ref": "#/components/schemas/TextGenerationOutput"
           },
           "token_limits": {
             "$ref": "#/components/schemas/TextTokenLimits"
@@ -744,6 +752,1465 @@
         },
         "additionalProperties": false,
         "description": "Partial simple text request domains through public admission and configured target projection; independent features do not promise arbitrary schemas, combinations, Provider effectiveness or a complete tool/replay loop. See docs/usage.md."
+      },
+      "TextGenerationInput": {
+        "type": "object",
+        "required": [
+          "text",
+          "image"
+        ],
+        "properties": {
+          "text": {
+            "$ref": "#/components/schemas/TextCapability"
+          },
+          "image": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TextImageInputDomain"
+            },
+            "minItems": 0,
+            "maxItems": 20,
+            "uniqueItems": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "TextGenerationOutput": {
+        "type": "object",
+        "required": [
+          "text"
+        ],
+        "properties": {
+          "text": {
+            "$ref": "#/components/schemas/TextCapability"
+          }
+        },
+        "additionalProperties": false
+      },
+      "TextImageInputDomain": {
+        "type": "object",
+        "required": [
+          "state",
+          "placement",
+          "source",
+          "detail"
+        ],
+        "properties": {
+          "state": {
+            "enum": [
+              "faithful",
+              "approved_adaptation"
+            ]
+          },
+          "rules": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "minItems": 1,
+            "maxItems": 64,
+            "uniqueItems": true
+          },
+          "placement": {
+            "enum": [
+              "user",
+              "tool_result"
+            ]
+          },
+          "source": {
+            "enum": [
+              "inline",
+              "url"
+            ]
+          },
+          "detail": {
+            "enum": [
+              "omitted",
+              "auto"
+            ]
+          },
+          "mime_types": {
+            "type": "array",
+            "items": {
+              "enum": [
+                "image/png",
+                "image/jpeg",
+                "image/webp",
+                "image/gif"
+              ]
+            },
+            "minItems": 1,
+            "maxItems": 4,
+            "uniqueItems": true
+          }
+        },
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "state": {
+                  "const": "approved_adaptation"
+                }
+              }
+            },
+            "then": {
+              "required": [
+                "rules"
+              ]
+            },
+            "else": {
+              "not": {
+                "required": [
+                  "rules"
+                ]
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "source": {
+                  "const": "inline"
+                }
+              }
+            },
+            "then": {
+              "required": [
+                "mime_types"
+              ]
+            },
+            "else": {
+              "not": {
+                "required": [
+                  "mime_types"
+                ]
+              }
+            }
+          }
+        ],
+        "description": "One image at the stated placement/source/detail. MIME values are independently assessed with identical treatment; URL contents are not fetched. No size/count guarantee or arbitrary feature-combination claim."
+      },
+      "DiscoveryPositiveInteger": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 9007199254740991
+      },
+      "DiscoveryCapacity": {
+        "type": [
+          "integer",
+          "null"
+        ],
+        "minimum": 1,
+        "maximum": 9007199254740991
+      },
+      "DiscoveryDimensions": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "values"
+            ],
+            "properties": {
+              "values": {
+                "type": "array",
+                "items": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 9007199254740991
+                },
+                "minItems": 1,
+                "maxItems": 128,
+                "uniqueItems": true
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "minimum",
+              "maximum"
+            ],
+            "properties": {
+              "minimum": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 9007199254740991
+              },
+              "maximum": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 9007199254740991
+              }
+            },
+            "additionalProperties": false
+          }
+        ],
+        "description": "A discrete set or inclusive integer interval. Producers also require minimum <= maximum and any default to belong to this domain."
+      },
+      "DiscoveryMediaInput": {
+        "type": "object",
+        "required": [
+          "state",
+          "sources"
+        ],
+        "properties": {
+          "state": {
+            "enum": [
+              "faithful",
+              "approved_adaptation"
+            ]
+          },
+          "rules": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "minItems": 1,
+            "maxItems": 64,
+            "uniqueItems": true
+          },
+          "sources": {
+            "type": "array",
+            "items": {
+              "enum": [
+                "inline",
+                "url",
+                "file_id"
+              ]
+            },
+            "minItems": 1,
+            "maxItems": 3,
+            "uniqueItems": true
+          },
+          "mime_types": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "minItems": 1,
+            "maxItems": 32,
+            "uniqueItems": true
+          },
+          "max_items": {
+            "$ref": "#/components/schemas/DiscoveryPositiveInteger"
+          },
+          "max_bytes_per_item": {
+            "$ref": "#/components/schemas/DiscoveryPositiveInteger"
+          },
+          "max_bytes_per_request": {
+            "$ref": "#/components/schemas/DiscoveryPositiveInteger"
+          },
+          "max_duration_seconds": {
+            "type": "number",
+            "exclusiveMinimum": 0
+          },
+          "max_pages": {
+            "$ref": "#/components/schemas/DiscoveryPositiveInteger"
+          }
+        },
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "state": {
+                  "const": "approved_adaptation"
+                }
+              }
+            },
+            "then": {
+              "required": [
+                "rules"
+              ]
+            },
+            "else": {
+              "not": {
+                "required": [
+                  "rules"
+                ]
+              }
+            }
+          }
+        ],
+        "description": "Schema-only finite media input domain. Formats and limits are optional known constraints, not unlimited defaults. Multiple entries describe distinct domains rather than an arbitrary Cartesian product."
+      },
+      "DiscoveryImageOutput": {
+        "type": "object",
+        "required": [
+          "state",
+          "mime_types"
+        ],
+        "properties": {
+          "state": {
+            "enum": [
+              "faithful",
+              "approved_adaptation"
+            ]
+          },
+          "rules": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "minItems": 1,
+            "maxItems": 64,
+            "uniqueItems": true
+          },
+          "mime_types": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "minItems": 1,
+            "maxItems": 16,
+            "uniqueItems": true
+          },
+          "sizes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "width",
+                "height"
+              ],
+              "properties": {
+                "width": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 9007199254740991
+                },
+                "height": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 9007199254740991
+                }
+              },
+              "additionalProperties": false
+            },
+            "minItems": 1,
+            "maxItems": 128,
+            "uniqueItems": true
+          },
+          "max_images": {
+            "$ref": "#/components/schemas/DiscoveryPositiveInteger"
+          }
+        },
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "state": {
+                  "const": "approved_adaptation"
+                }
+              }
+            },
+            "then": {
+              "required": [
+                "rules"
+              ]
+            },
+            "else": {
+              "not": {
+                "required": [
+                  "rules"
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "DiscoveryAudioFormat": {
+        "type": "object",
+        "required": [
+          "mime_type"
+        ],
+        "properties": {
+          "mime_type": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "sample_rate_hz": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "channels": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          }
+        },
+        "additionalProperties": false
+      },
+      "DiscoveryAudioOutput": {
+        "type": "object",
+        "required": [
+          "state",
+          "formats"
+        ],
+        "properties": {
+          "state": {
+            "enum": [
+              "faithful",
+              "approved_adaptation"
+            ]
+          },
+          "rules": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "minItems": 1,
+            "maxItems": 64,
+            "uniqueItems": true
+          },
+          "formats": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DiscoveryAudioFormat"
+            },
+            "minItems": 1,
+            "maxItems": 32,
+            "uniqueItems": true
+          },
+          "max_duration_seconds": {
+            "type": "number",
+            "exclusiveMinimum": 0
+          }
+        },
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "state": {
+                  "const": "approved_adaptation"
+                }
+              }
+            },
+            "then": {
+              "required": [
+                "rules"
+              ]
+            },
+            "else": {
+              "not": {
+                "required": [
+                  "rules"
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "DiscoveryVideoOutput": {
+        "type": "object",
+        "required": [
+          "state",
+          "mime_types"
+        ],
+        "properties": {
+          "state": {
+            "enum": [
+              "faithful",
+              "approved_adaptation"
+            ]
+          },
+          "rules": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "minItems": 1,
+            "maxItems": 64,
+            "uniqueItems": true
+          },
+          "mime_types": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "minItems": 1,
+            "maxItems": 16,
+            "uniqueItems": true
+          },
+          "max_duration_seconds": {
+            "type": "number",
+            "exclusiveMinimum": 0
+          },
+          "sizes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "width",
+                "height"
+              ],
+              "properties": {
+                "width": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 9007199254740991
+                },
+                "height": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 9007199254740991
+                }
+              },
+              "additionalProperties": false
+            },
+            "minItems": 1,
+            "maxItems": 128,
+            "uniqueItems": true
+          },
+          "frame_rates": {
+            "type": "array",
+            "items": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            },
+            "minItems": 1,
+            "maxItems": 32,
+            "uniqueItems": true
+          }
+        },
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "state": {
+                  "const": "approved_adaptation"
+                }
+              }
+            },
+            "then": {
+              "required": [
+                "rules"
+              ]
+            },
+            "else": {
+              "not": {
+                "required": [
+                  "rules"
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "EmbeddingModelInterface": {
+        "type": "object",
+        "required": [
+          "task",
+          "protocol",
+          "delivery_modes",
+          "embedding"
+        ],
+        "properties": {
+          "task": {
+            "const": "embedding"
+          },
+          "protocol": {
+            "const": "embeddings"
+          },
+          "delivery_modes": {
+            "type": "array",
+            "items": {
+              "enum": [
+                "json"
+              ]
+            },
+            "minItems": 1,
+            "maxItems": 1,
+            "uniqueItems": true
+          },
+          "embedding": {
+            "type": "object",
+            "required": [
+              "input",
+              "output",
+              "limits"
+            ],
+            "properties": {
+              "input": {
+                "type": "object",
+                "required": [],
+                "properties": {
+                  "text": {
+                    "$ref": "#/components/schemas/TextCapability"
+                  },
+                  "image": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/components/schemas/DiscoveryMediaInput"
+                    },
+                    "minItems": 1,
+                    "maxItems": 16,
+                    "uniqueItems": true
+                  },
+                  "audio": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/components/schemas/DiscoveryMediaInput"
+                    },
+                    "minItems": 1,
+                    "maxItems": 16,
+                    "uniqueItems": true
+                  },
+                  "video": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/components/schemas/DiscoveryMediaInput"
+                    },
+                    "minItems": 1,
+                    "maxItems": 16,
+                    "uniqueItems": true
+                  },
+                  "token_ids": {
+                    "type": "object",
+                    "required": [
+                      "tokenizer"
+                    ],
+                    "properties": {
+                      "tokenizer": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 128
+                      }
+                    },
+                    "additionalProperties": false
+                  }
+                },
+                "additionalProperties": false
+              },
+              "output": {
+                "type": "object",
+                "required": [
+                  "kind",
+                  "dimensions",
+                  "default_dimensions",
+                  "encodings"
+                ],
+                "properties": {
+                  "kind": {
+                    "const": "dense_vector"
+                  },
+                  "dimensions": {
+                    "$ref": "#/components/schemas/DiscoveryDimensions"
+                  },
+                  "default_dimensions": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 9007199254740991
+                  },
+                  "encodings": {
+                    "type": "array",
+                    "items": {
+                      "enum": [
+                        "float",
+                        "base64"
+                      ]
+                    },
+                    "minItems": 1,
+                    "maxItems": 2,
+                    "uniqueItems": true
+                  },
+                  "space_id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  }
+                },
+                "additionalProperties": false
+              },
+              "limits": {
+                "type": "object",
+                "required": [
+                  "max_input_tokens_per_sample"
+                ],
+                "properties": {
+                  "max_input_tokens_per_sample": {
+                    "$ref": "#/components/schemas/DiscoveryCapacity"
+                  },
+                  "max_samples": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 9007199254740991
+                  },
+                  "max_total_tokens": {
+                    "$ref": "#/components/schemas/DiscoveryCapacity"
+                  },
+                  "max_text_bytes": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 9007199254740991
+                  },
+                  "max_vector_values": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 9007199254740991
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false,
+        "description": "Schema-only discovery contract. Not published by the current Generation Text directory; no inference API or client adapter is activated."
+      },
+      "DecisionModelInterface": {
+        "type": "object",
+        "required": [
+          "task",
+          "protocol",
+          "delivery_modes",
+          "decision"
+        ],
+        "properties": {
+          "task": {
+            "const": "decision"
+          },
+          "protocol": {
+            "enum": [
+              "decisions",
+              "system_one"
+            ]
+          },
+          "delivery_modes": {
+            "type": "array",
+            "items": {
+              "enum": [
+                "json"
+              ]
+            },
+            "minItems": 1,
+            "maxItems": 1,
+            "uniqueItems": true
+          },
+          "decision": {
+            "type": "object",
+            "required": [
+              "input",
+              "output",
+              "limits"
+            ],
+            "properties": {
+              "input": {
+                "type": "object",
+                "required": [],
+                "properties": {
+                  "text": {
+                    "$ref": "#/components/schemas/TextCapability"
+                  },
+                  "image": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/components/schemas/DiscoveryMediaInput"
+                    },
+                    "minItems": 1,
+                    "maxItems": 16,
+                    "uniqueItems": true
+                  },
+                  "audio": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/components/schemas/DiscoveryMediaInput"
+                    },
+                    "minItems": 1,
+                    "maxItems": 16,
+                    "uniqueItems": true
+                  },
+                  "video": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/components/schemas/DiscoveryMediaInput"
+                    },
+                    "minItems": 1,
+                    "maxItems": 16,
+                    "uniqueItems": true
+                  }
+                },
+                "additionalProperties": false
+              },
+              "output": {
+                "type": "object",
+                "required": [
+                  "question_types"
+                ],
+                "properties": {
+                  "question_types": {
+                    "type": "array",
+                    "items": {
+                      "enum": [
+                        "predicate",
+                        "choice",
+                        "ordinal_score",
+                        "box"
+                      ]
+                    },
+                    "minItems": 1,
+                    "maxItems": 4,
+                    "uniqueItems": true
+                  }
+                },
+                "additionalProperties": false
+              },
+              "limits": {
+                "type": "object",
+                "required": [
+                  "context_window_tokens"
+                ],
+                "properties": {
+                  "context_window_tokens": {
+                    "$ref": "#/components/schemas/DiscoveryCapacity"
+                  },
+                  "max_questions": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 9007199254740991
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false,
+        "description": "Schema-only discovery contract. Not published by the current Generation Text directory; no inference API or client adapter is activated."
+      },
+      "ImageModelInterface": {
+        "type": "object",
+        "required": [
+          "task",
+          "protocol",
+          "delivery_modes",
+          "operation",
+          "image"
+        ],
+        "properties": {
+          "task": {
+            "const": "image"
+          },
+          "protocol": {
+            "enum": [
+              "images",
+              "responses"
+            ]
+          },
+          "delivery_modes": {
+            "type": "array",
+            "items": {
+              "enum": [
+                "json",
+                "sse"
+              ]
+            },
+            "minItems": 1,
+            "maxItems": 2,
+            "uniqueItems": true
+          },
+          "operation": {
+            "enum": [
+              "generate",
+              "edit"
+            ]
+          },
+          "image": {
+            "type": "object",
+            "required": [
+              "input",
+              "output"
+            ],
+            "properties": {
+              "input": {
+                "type": "object",
+                "required": [],
+                "properties": {
+                  "text": {
+                    "$ref": "#/components/schemas/TextCapability"
+                  },
+                  "image": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/components/schemas/DiscoveryMediaInput"
+                    },
+                    "minItems": 1,
+                    "maxItems": 16,
+                    "uniqueItems": true
+                  }
+                },
+                "additionalProperties": false
+              },
+              "output": {
+                "type": "object",
+                "required": [
+                  "image"
+                ],
+                "properties": {
+                  "image": {
+                    "$ref": "#/components/schemas/DiscoveryImageOutput"
+                  },
+                  "text": {
+                    "$ref": "#/components/schemas/TextCapability"
+                  }
+                },
+                "additionalProperties": false
+              },
+              "mask": {
+                "$ref": "#/components/schemas/TextCapability"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false,
+        "description": "Schema-only discovery contract. Not published by the current Generation Text directory; no inference API or client adapter is activated.",
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "operation": {
+                  "const": "edit"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "image": {
+                  "properties": {
+                    "input": {
+                      "required": [
+                        "image"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        ]
+      },
+      "SpeechModelInterface": {
+        "type": "object",
+        "required": [
+          "task",
+          "protocol",
+          "delivery_modes",
+          "speech"
+        ],
+        "properties": {
+          "task": {
+            "const": "speech_synthesis"
+          },
+          "protocol": {
+            "const": "speech"
+          },
+          "delivery_modes": {
+            "type": "array",
+            "items": {
+              "enum": [
+                "binary",
+                "sse"
+              ]
+            },
+            "minItems": 1,
+            "maxItems": 2,
+            "uniqueItems": true
+          },
+          "speech": {
+            "type": "object",
+            "required": [
+              "input",
+              "output"
+            ],
+            "properties": {
+              "input": {
+                "type": "object",
+                "required": [
+                  "text"
+                ],
+                "properties": {
+                  "text": {
+                    "$ref": "#/components/schemas/TextCapability"
+                  }
+                },
+                "additionalProperties": false
+              },
+              "output": {
+                "type": "object",
+                "required": [
+                  "audio"
+                ],
+                "properties": {
+                  "audio": {
+                    "$ref": "#/components/schemas/DiscoveryAudioOutput"
+                  }
+                },
+                "additionalProperties": false
+              },
+              "controls": {
+                "type": "object",
+                "required": [],
+                "properties": {
+                  "voices": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 128
+                    },
+                    "minItems": 1,
+                    "maxItems": 128,
+                    "uniqueItems": true
+                  },
+                  "speed": {
+                    "$ref": "#/components/schemas/TextCapability"
+                  },
+                  "instructions": {
+                    "$ref": "#/components/schemas/TextCapability"
+                  }
+                },
+                "additionalProperties": false
+              },
+              "limits": {
+                "type": "object",
+                "required": [],
+                "properties": {
+                  "max_input_characters": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 9007199254740991
+                  },
+                  "max_input_tokens": {
+                    "$ref": "#/components/schemas/DiscoveryCapacity"
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false,
+        "description": "Schema-only discovery contract. Not published by the current Generation Text directory; no inference API or client adapter is activated."
+      },
+      "AudioToTextModelInterface": {
+        "type": "object",
+        "required": [
+          "task",
+          "protocol",
+          "delivery_modes",
+          "operation",
+          "audio_to_text"
+        ],
+        "properties": {
+          "task": {
+            "const": "audio_to_text"
+          },
+          "protocol": {
+            "enum": [
+              "transcriptions",
+              "translations"
+            ]
+          },
+          "delivery_modes": {
+            "type": "array",
+            "items": {
+              "enum": [
+                "json",
+                "sse",
+                "text"
+              ]
+            },
+            "minItems": 1,
+            "maxItems": 3,
+            "uniqueItems": true
+          },
+          "operation": {
+            "enum": [
+              "transcribe",
+              "translate"
+            ]
+          },
+          "audio_to_text": {
+            "type": "object",
+            "required": [
+              "input",
+              "output"
+            ],
+            "properties": {
+              "input": {
+                "type": "object",
+                "required": [
+                  "audio"
+                ],
+                "properties": {
+                  "audio": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/components/schemas/DiscoveryMediaInput"
+                    },
+                    "minItems": 1,
+                    "maxItems": 16,
+                    "uniqueItems": true
+                  }
+                },
+                "additionalProperties": false
+              },
+              "output": {
+                "type": "object",
+                "required": [
+                  "text"
+                ],
+                "properties": {
+                  "text": {
+                    "$ref": "#/components/schemas/TextCapability"
+                  }
+                },
+                "additionalProperties": false
+              },
+              "controls": {
+                "type": "object",
+                "required": [],
+                "properties": {
+                  "languages": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 128
+                    },
+                    "minItems": 1,
+                    "maxItems": 256,
+                    "uniqueItems": true
+                  },
+                  "timestamp_granularities": {
+                    "type": "array",
+                    "items": {
+                      "enum": [
+                        "word",
+                        "segment"
+                      ]
+                    },
+                    "minItems": 1,
+                    "maxItems": 2,
+                    "uniqueItems": true
+                  },
+                  "diarization": {
+                    "$ref": "#/components/schemas/TextCapability"
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false,
+        "description": "Schema-only discovery contract. Not published by the current Generation Text directory; no inference API or client adapter is activated.",
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "operation": {
+                  "const": "transcribe"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "protocol": {
+                  "const": "transcriptions"
+                }
+              }
+            },
+            "else": {
+              "properties": {
+                "protocol": {
+                  "const": "translations"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "VideoModelInterface": {
+        "type": "object",
+        "required": [
+          "task",
+          "protocol",
+          "delivery_modes",
+          "operation",
+          "video"
+        ],
+        "properties": {
+          "task": {
+            "const": "video"
+          },
+          "protocol": {
+            "const": "video"
+          },
+          "delivery_modes": {
+            "type": "array",
+            "items": {
+              "enum": [
+                "json"
+              ]
+            },
+            "minItems": 1,
+            "maxItems": 1,
+            "uniqueItems": true
+          },
+          "operation": {
+            "enum": [
+              "generate",
+              "edit"
+            ]
+          },
+          "video": {
+            "type": "object",
+            "required": [
+              "input",
+              "output",
+              "execution"
+            ],
+            "properties": {
+              "input": {
+                "type": "object",
+                "required": [],
+                "properties": {
+                  "text": {
+                    "$ref": "#/components/schemas/TextCapability"
+                  },
+                  "image": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/components/schemas/DiscoveryMediaInput"
+                    },
+                    "minItems": 1,
+                    "maxItems": 16,
+                    "uniqueItems": true
+                  },
+                  "video": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/components/schemas/DiscoveryMediaInput"
+                    },
+                    "minItems": 1,
+                    "maxItems": 16,
+                    "uniqueItems": true
+                  }
+                },
+                "additionalProperties": false
+              },
+              "output": {
+                "type": "object",
+                "required": [
+                  "video"
+                ],
+                "properties": {
+                  "video": {
+                    "$ref": "#/components/schemas/DiscoveryVideoOutput"
+                  }
+                },
+                "additionalProperties": false
+              },
+              "execution": {
+                "enum": [
+                  "synchronous",
+                  "job"
+                ]
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false,
+        "description": "Schema-only discovery contract. Not published by the current Generation Text directory; no inference API or client adapter is activated."
+      },
+      "RealtimeModelInterface": {
+        "type": "object",
+        "required": [
+          "task",
+          "protocol",
+          "transports",
+          "realtime"
+        ],
+        "properties": {
+          "task": {
+            "const": "realtime"
+          },
+          "protocol": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "transports": {
+            "type": "array",
+            "items": {
+              "enum": [
+                "websocket",
+                "webrtc"
+              ]
+            },
+            "minItems": 1,
+            "maxItems": 2,
+            "uniqueItems": true
+          },
+          "realtime": {
+            "type": "object",
+            "required": [
+              "input",
+              "output",
+              "session"
+            ],
+            "properties": {
+              "input": {
+                "type": "object",
+                "required": [],
+                "properties": {
+                  "text": {
+                    "$ref": "#/components/schemas/TextCapability"
+                  },
+                  "image": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/components/schemas/DiscoveryMediaInput"
+                    },
+                    "minItems": 1,
+                    "maxItems": 16,
+                    "uniqueItems": true
+                  },
+                  "audio": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/components/schemas/DiscoveryMediaInput"
+                    },
+                    "minItems": 1,
+                    "maxItems": 16,
+                    "uniqueItems": true
+                  }
+                },
+                "additionalProperties": false
+              },
+              "output": {
+                "type": "object",
+                "required": [],
+                "properties": {
+                  "text": {
+                    "$ref": "#/components/schemas/TextCapability"
+                  },
+                  "audio": {
+                    "$ref": "#/components/schemas/DiscoveryAudioOutput"
+                  }
+                },
+                "additionalProperties": false
+              },
+              "input_audio_formats": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/DiscoveryAudioFormat"
+                },
+                "minItems": 1,
+                "maxItems": 32,
+                "uniqueItems": true
+              },
+              "tools": {
+                "$ref": "#/components/schemas/TextCapability"
+              },
+              "session": {
+                "type": "object",
+                "required": [],
+                "properties": {
+                  "turn_detection": {
+                    "type": "array",
+                    "items": {
+                      "enum": [
+                        "manual",
+                        "server_vad",
+                        "semantic_vad"
+                      ]
+                    },
+                    "minItems": 1,
+                    "maxItems": 3,
+                    "uniqueItems": true
+                  },
+                  "interruption": {
+                    "$ref": "#/components/schemas/TextCapability"
+                  },
+                  "resumption": {
+                    "$ref": "#/components/schemas/TextCapability"
+                  },
+                  "max_duration_seconds": {
+                    "type": "number",
+                    "exclusiveMinimum": 0
+                  },
+                  "context_window_tokens": {
+                    "$ref": "#/components/schemas/DiscoveryCapacity"
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false,
+        "description": "Schema-only stateful session discovery, not Generation SSE or a WebSocket transport flag. Concrete session protocols and activation remain deferred."
+      },
+      "ModelDiscoveryInterface": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/TextGenerationInterface"
+          },
+          {
+            "$ref": "#/components/schemas/EmbeddingModelInterface"
+          },
+          {
+            "$ref": "#/components/schemas/DecisionModelInterface"
+          },
+          {
+            "$ref": "#/components/schemas/ImageModelInterface"
+          },
+          {
+            "$ref": "#/components/schemas/SpeechModelInterface"
+          },
+          {
+            "$ref": "#/components/schemas/AudioToTextModelInterface"
+          },
+          {
+            "$ref": "#/components/schemas/VideoModelInterface"
+          },
+          {
+            "$ref": "#/components/schemas/RealtimeModelInterface"
+          }
+        ],
+        "description": "Task-discriminated discovery vocabulary. Active TextModelDescriptor intentionally references only TextGenerationInterface, not this future union."
       },
       "TextTokenLimits": {
         "type": "object",

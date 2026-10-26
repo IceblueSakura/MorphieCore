@@ -244,3 +244,19 @@ pub fn canonical_models() -> Vec<CanonicalModel> {
         })
         .collect()
 }
+
+pub(super) fn planning_limits(
+    model: &str,
+    provider: &str,
+) -> crate::protocol::model_limits::ModelLimits {
+    // Exact model IDs and native service scope only. See docs/refs/2026-10-26-model-discovery.md.
+    // Do not transfer native API limits to TokenPlan, Go, OpenRouter or subscriptions.
+    let context_window_tokens = match (model, provider) {
+        ("qwen3.8-max" | "qwen3.8-flash", "aliyun-dashscope-cn") => Some(1_000_000),
+        _ => None,
+    };
+    crate::protocol::model_limits::ModelLimits {
+        context_window_tokens,
+        ..Default::default()
+    }
+}

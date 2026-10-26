@@ -358,6 +358,8 @@ class TextModelsSchemaTests(unittest.TestCase):
             "task": "generation", "protocol": "responses", "delivery_modes": ["json", "sse"],
             "generation": {
                 "scope": "route_common", "composition": "not_asserted", "token_limits": limits,
+                "input": {"text": {"state": "faithful"}, "image": []},
+                "output": {"text": {"state": "faithful"}},
                 "features": features, "reasoning": {
                     "activation": {"state": "unavailable"},
                     "effort": {"response": {"state": "unavailable"},
@@ -397,6 +399,114 @@ class TextModelsSchemaTests(unittest.TestCase):
             for status in ("401", "405", "503"):
                 self.assertIn(status, operation["responses"])
             self.assertNotIn("delete", paths[path])
+
+    def test_image_domains_do_not_invent_placement_detail_or_mime_combinations(self):
+        check = validator("TextImageInputDomain")
+        inline = {"state": "faithful", "placement": "tool_result", "source": "inline",
+                  "detail": "auto", "mime_types": ["image/png", "image/jpeg"]}
+        check.validate(inline)
+        check.validate({**inline, "state": "approved_adaptation", "rules": ["example.v1"]})
+        check.validate({"state": "faithful", "placement": "user", "source": "url",
+                        "detail": "omitted"})
+        for patch in (
+            {"placement": "assistant"}, {"detail": "high"}, {"source": "file_id"},
+            {"mime_types": []}, {"mime_types": ["image/png", "image/png"]},
+            {"mime_types": ["audio/wav"]}, {"source": "url"},
+            {"state": "unavailable"}, {"state": "approved_adaptation"},
+            {"upstream_url": "https://private.invalid"},
+        ):
+            self.assertFalse(check.is_valid({**inline, **patch}), patch)
+        self.assertFalse(check.is_valid({k: v for k, v in inline.items() if k != "mime_types"}))
+        validator("TextGenerationOutput").validate({"text": {"state": "faithful"}})
+        self.assertFalse(validator("TextGenerationOutput").is_valid({
+            "text": {"state": "faithful"}, "audio": {"state": "faithful"}}))
+
+
+class FutureModelDiscoverySchemaTests(unittest.TestCase):
+    def test_typed_task_examples_are_schema_only_not_active_text_interfaces(self):
+        faithful = {"state": "faithful"}
+        image_input = {"state": "faithful", "sources": ["inline"], "mime_types": ["image/png"]}
+        audio_input = {"state": "faithful", "sources": ["inline"], "mime_types": ["audio/wav"]}
+        audio_output = {"state": "faithful", "formats": [
+            {"mime_type": "audio/pcm", "sample_rate_hz": 24000, "channels": 1}]}
+        examples = [
+            {
+                "task": "embedding", "protocol": "embeddings", "delivery_modes": ["json"],
+                "embedding": {
+                    "input": {"text": faithful, "token_ids": {"tokenizer": "cl100k_base"}},
+                    "output": {"kind": "dense_vector", "dimensions": {"values": [256, 1024]},
+                               "default_dimensions": 1024, "encodings": ["float", "base64"]},
+                    "limits": {"max_input_tokens_per_sample": 8192, "max_samples": 100},
+                },
+            },
+            {
+                "task": "decision", "protocol": "system_one", "delivery_modes": ["json"],
+                "decision": {"input": {"text": faithful, "image": [image_input]},
+                             "output": {"question_types": ["predicate", "choice", "ordinal_score"]},
+                             "limits": {"context_window_tokens": None}},
+            },
+            {
+                "task": "image", "operation": "edit", "protocol": "images",
+                "delivery_modes": ["json"],
+                "image": {"input": {"text": faithful, "image": [image_input]},
+                          "output": {"image": {"state": "faithful", "mime_types": ["image/png"],
+                                               "sizes": [{"width": 1024, "height": 1024}]}},
+                          "mask": faithful},
+            },
+            {
+                "task": "speech_synthesis", "protocol": "speech", "delivery_modes": ["binary"],
+                "speech": {"input": {"text": faithful}, "output": {"audio": audio_output},
+                           "controls": {"voices": ["example"], "speed": faithful}},
+            },
+            {
+                "task": "audio_to_text", "operation": "transcribe", "protocol": "transcriptions",
+                "delivery_modes": ["json"],
+                "audio_to_text": {"input": {"audio": [audio_input]}, "output": {"text": faithful},
+                                  "controls": {"timestamp_granularities": ["word", "segment"]}},
+            },
+            {
+                "task": "video", "operation": "generate", "protocol": "video",
+                "delivery_modes": ["json"],
+                "video": {"input": {"text": faithful}, "execution": "job",
+                          "output": {"video": {"state": "faithful", "mime_types": ["video/mp4"]}}},
+            },
+            {
+                "task": "realtime", "protocol": "example-realtime", "transports": ["websocket"],
+                "realtime": {"input": {"audio": [audio_input]}, "output": {"audio": audio_output},
+                             "input_audio_formats": [
+                                 {"mime_type": "audio/pcm", "sample_rate_hz": 24000, "channels": 1}],
+                             "session": {"turn_detection": ["manual", "server_vad"],
+                                         "interruption": faithful,
+                                         "resumption": {"state": "not_assessed"}}},
+            },
+        ]
+        check = validator("ModelDiscoveryInterface")
+        for example in examples:
+            with self.subTest(task=example["task"]):
+                check.validate(example)
+                self.assertFalse(validator("TextGenerationInterface").is_valid(example))
+                self.assertFalse(validator("TextModelDescriptor").is_valid({
+                    "id": "example", "name": "example", "owned_by": "Example Lab",
+                    "interfaces": [example]}))
+                self.assertFalse(check.is_valid({**example, "upstream_url": "https://private.invalid"}))
+        for example, change in (
+            (examples[0], {"delivery_modes": ["sse"]}),
+            (examples[1], {"task": "embedding"}),
+            (examples[4], {"protocol": "translations"}),
+            (examples[6], {"delivery_modes": ["sse"]}),
+        ):
+            self.assertFalse(check.is_valid({**example, **change}))
+        edit_without_image = copy.deepcopy(examples[2])
+        del edit_without_image["image"]["input"]["image"]
+        self.assertFalse(check.is_valid(edit_without_image))
+        bad_dimensions = copy.deepcopy(examples[0])
+        bad_dimensions["embedding"]["output"]["dimensions"] = {"values": []}
+        self.assertFalse(check.is_valid(bad_dimensions))
+
+    def test_all_discovery_components_are_valid_json_schemas(self):
+        for name, schema in SCHEMAS.items():
+            with self.subTest(schema=name):
+                Draft202012Validator.check_schema(schema)
 
 
 class ResponsesSchemaTests(unittest.TestCase):

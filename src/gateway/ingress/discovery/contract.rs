@@ -21,8 +21,8 @@ enum State {
     NonUniform,
     NotAssessed,
 }
-#[derive(Serialize)]
-struct Capability {
+#[derive(Clone, Eq, PartialEq, Serialize)]
+pub(super) struct Capability {
     state: State,
     #[serde(skip_serializing_if = "BTreeSet::is_empty")]
     rules: BTreeSet<&'static str>,
@@ -34,7 +34,7 @@ impl Capability {
             rules: BTreeSet::new(),
         }
     }
-    fn positive(&self) -> bool {
+    pub(super) fn positive(&self) -> bool {
         matches!(self.state, State::Faithful | State::ApprovedAdaptation)
     }
     fn common(values: impl IntoIterator<Item = Self>) -> Self {
@@ -98,6 +98,8 @@ pub(super) struct Interface {
 struct Generation {
     scope: &'static str,
     composition: &'static str,
+    input: super::media::Input,
+    output: super::media::Output,
     token_limits: TokenLimits,
     features: BTreeMap<&'static str, Capability>,
     reasoning: Reasoning,
@@ -164,19 +166,29 @@ impl Interface {
         let activation = Choices::new(
             ["enabled", "disabled", "adaptive"].map(|mode| (mode, assess(Case::Activation(mode)))),
         );
-        // These are model ceilings, never inferred from inserted output defaults or byte limits.
-        let maximum = entry
-            .candidates
-            .iter()
-            .try_fold(u64::MAX, |minimum, candidate| {
-                candidate
-                    .endpoint
-                    .representation
-                    .model_limits()
-                    .maximum_output_tokens
-                    .filter(|n| *n <= 9_007_199_254_740_991)
-                    .map(|n| minimum.min(n))
-            });
+        // Only complete comparable declarations produce a route-common planning ceiling.
+        let common_limit =
+            |select: fn(&crate::protocol::model_limits::ModelLimits) -> Option<u64>| {
+                entry
+                    .candidates
+                    .iter()
+                    .try_fold(u64::MAX, |minimum, candidate| {
+                        select(candidate.endpoint.representation.model_limits())
+                            .filter(|n| (1..=9_007_199_254_740_991).contains(n))
+                            .map(|n| minimum.min(n))
+                    })
+            };
+        let token_limits = TokenLimits {
+            purpose: "planning",
+            context_window_tokens: common_limit(|limits| limits.context_window_tokens),
+            max_input_tokens: common_limit(|limits| limits.maximum_input_tokens),
+            max_output_tokens: common_limit(|limits| limits.maximum_output_tokens),
+            output_token_accounting: "not_assessed",
+        };
+        let input = super::media::input(entry, &delivery_modes);
+        let output = super::media::Output {
+            text: assess(Case::Text),
+        };
         Self {
             task: "generation",
             protocol: match entry.client.protocol() {
@@ -188,13 +200,9 @@ impl Interface {
             generation: Generation {
                 scope: "route_common",
                 composition: "not_asserted",
-                token_limits: TokenLimits {
-                    purpose: "planning",
-                    context_window_tokens: None,
-                    max_input_tokens: None,
-                    max_output_tokens: maximum,
-                    output_token_accounting: "not_assessed",
-                },
+                input,
+                output,
+                token_limits,
                 features,
                 reasoning: Reasoning { activation, effort },
             },
@@ -203,8 +211,9 @@ impl Interface {
 }
 
 #[derive(Clone, Copy)]
-enum Case {
+pub(super) enum Case {
     Text,
+    Image(super::media::ImageCase),
     Tools(bool),
     Parallel,
     JsonObject,
@@ -250,6 +259,7 @@ impl Case {
         let schema = json!({"type":"object","properties":{"value":{"type":"string"}},"required":["value"],"additionalProperties":false});
         match self {
             Self::Text => {}
+            Self::Image(image) => image.apply(&mut value, protocol)?,
             Self::Tools(_) | Self::Parallel => {
                 let strict = matches!(self, Self::Tools(true));
                 let function = json!({"name":"lookup","description":"Look up a value","parameters":schema,"strict":strict});
@@ -339,7 +349,7 @@ impl Case {
     }
 }
 
-fn assess(entry: &BoundEntry, modes: &[&str], case: Case) -> Capability {
+pub(super) fn assess(entry: &BoundEntry, modes: &[&str], case: Case) -> Capability {
     Capability::common(modes.iter().flat_map(|mode| {
         let stream = *mode == "sse";
         let base = Case::Text.request(entry, stream);

@@ -832,9 +832,9 @@ The [stage-5 backlog](roadmap.md#stage-5-backlog) has no implementation queue or
 
 ### Models discovery interfaces
 
-The earlier broad discovery draft was superseded by the selected **Generation Text-only** implementation on 2026-10-26. [Architecture](architecture.md#generation-text-model-discovery) owns its contract, [Usage](usage.md#generation-text-model-discovery) owns the implemented endpoints, and [OpenAPI](openapi.json) owns the machine schema. Standard Models and existing capabilities remain unchanged.
+The selected 2026-10-26 [model capability directory](architecture.md#generation-text-model-discovery) supersedes the earlier broad draft. Architecture owns fact ownership, task-specific contracts, independent capacities, modalities and interface projection; [Usage](usage.md#generation-text-model-discovery) owns implemented endpoints and [OpenAPI](openapi.json) owns machine schemas.
 
-Other-task summaries, multimodal declarations, richer context/input metadata and Agent configuration integration are not part of this implementation. Any later expansion requires its own scoped selection; it is not an automatic follow-up queue. No version/revision maintenance or pagination system is selected.
+Only Generation Text models, their assessed image inputs and current Pi Generation consumption are selected for runtime wiring. Embedding, Decision, independent Images/Audio/Video and Realtime receive discovery schema definitions only; they do not authorize inference contracts, bindings, new directory entries or client adapters. Existing independent APIs and standard Models/capabilities remain unchanged. Actual non-Generation discovery/client integration, broader media-domain assessment, conditional-capacity modes and resource-service discovery remain future selections, not an automatic queue. No version/revision maintenance or pagination system is selected.
 
 ### Centralized agent authorization
 

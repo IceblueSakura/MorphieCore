@@ -30,6 +30,9 @@ async fn text_directory_is_interface_scoped_and_leaves_standard_discovery_unchan
         let generation = &interface["generation"];
         assert_eq!(generation["scope"], "route_common");
         assert_eq!(generation["composition"], "not_asserted");
+        assert_eq!(generation["input"]["text"], json!({"state":"faithful"}));
+        assert_eq!(generation["output"], json!({"text":{"state":"faithful"}}));
+        assert!(generation["input"]["image"].is_array());
         assert_eq!(
             generation["token_limits"],
             json!({
@@ -157,15 +160,21 @@ fn text_contract_intersects_source_efforts_and_comparable_limits_without_inventi
     let mut second = first.clone();
     let limits = first.endpoint.representation.model_limits_mut();
     limits.allowed_effort = Some(vec![Low, High].into());
+    limits.context_window_tokens = Some(200_000);
+    limits.maximum_input_tokens = Some(150_000);
     limits.maximum_output_tokens = Some(8192);
     let limits = second.endpoint.representation.model_limits_mut();
     limits.allowed_effort = Some(vec![High].into());
+    limits.context_window_tokens = Some(100_000);
+    limits.maximum_input_tokens = Some(90_000);
     limits.maximum_output_tokens = Some(4096);
     second.endpoint.execution.streaming = false;
     entry.candidates = vec![Arc::new(first), Arc::new(second)];
     assert_eq!(interface(entry.clone())["delivery_modes"], json!(["json"]));
     let value = descriptor(entry.clone());
     assert_eq!(value["token_limits"]["max_output_tokens"], 4096);
+    assert_eq!(value["token_limits"]["context_window_tokens"], 100_000);
+    assert_eq!(value["token_limits"]["max_input_tokens"], 90_000);
     assert_eq!(
         value["reasoning"]["effort"]["reasoning"],
         json!({"state":"faithful","values":["high"]})
@@ -181,9 +190,16 @@ fn text_contract_intersects_source_efforts_and_comparable_limits_without_inventi
         .representation
         .model_limits_mut()
         .maximum_output_tokens = None;
+    second
+        .endpoint
+        .representation
+        .model_limits_mut()
+        .context_window_tokens = None;
     entry.candidates[1] = Arc::new(second);
     let value = descriptor(entry.clone());
     assert_eq!(value["token_limits"]["max_output_tokens"], Value::Null);
+    assert_eq!(value["token_limits"]["context_window_tokens"], Value::Null);
+    assert_eq!(value["token_limits"]["max_input_tokens"], 90_000);
     assert_eq!(
         value["reasoning"]["effort"]["reasoning"],
         json!({"state":"non_uniform"})
@@ -298,6 +314,8 @@ fn text_reasoning_uses_source_scopes_and_never_advertises_noop_activation_or_def
     entry.candidates = vec![Arc::new(candidate.clone())];
     let value = descriptor(entry.clone());
     assert_eq!(value["token_limits"]["max_output_tokens"], 65536);
+    assert_eq!(value["token_limits"]["max_input_tokens"], 1_048_576);
+    assert_eq!(value["token_limits"]["context_window_tokens"], Value::Null);
     assert_eq!(
         value["reasoning"]["effort"]["response"],
         json!({
@@ -328,6 +346,7 @@ fn text_reasoning_uses_source_scopes_and_never_advertises_noop_activation_or_def
 
 #[test]
 fn text_directory_bounds_cover_both_envelopes_and_empty_generation() {
+    // Image domains remain inside the same complete, bounded Generation directory.
     let gate = crate::gateway::tests::support::gateway(Limits::default());
     let topology = crate::gateway::tests::topology::topology();
     let entries = BTreeMap::new();
@@ -360,6 +379,71 @@ fn text_directory_bounds_cover_both_envelopes_and_empty_generation() {
         TextModelView::bind(&topology, &many, 256 << 10),
         Err(StartupError::Binding)
     ));
+}
+
+#[test]
+fn image_domains_preserve_placement_detail_and_candidate_intersection() {
+    use crate::protocol::openai::{Dialect, GenerationApi, GenerationCodec, TargetContract};
+    let gate = crate::gateway::tests::support::gateway(Limits::default());
+    let mut entry = gate.state.entries[&(ClientProtocol::Chat, "fixture-model".into())]
+        .as_ref()
+        .clone();
+    entry.client = crate::adapter::ClientAdapter::openai(
+        GenerationCodec::new(GenerationApi::Responses, Dialect::MorphieCore, None),
+        TargetContract::full(),
+    );
+    // A native Responses candidate carries both user and function-result images.
+    let mut responses = entry.candidates[0].as_ref().clone();
+    responses.endpoint = crate::gateway::tests::topology::topology()
+        .endpoint(&crate::topology::EndpointId::new("fixture-responses").unwrap())
+        .unwrap()
+        .clone();
+    let responses = Arc::new(responses);
+    entry.candidates = vec![responses.clone()];
+    let value = descriptor(entry.clone());
+    let images = value["input"]["image"].as_array().unwrap();
+    for placement in ["user", "tool_result"] {
+        let domain = images
+            .iter()
+            .find(|d| {
+                d["placement"] == placement && d["source"] == "inline" && d["detail"] == "auto"
+            })
+            .unwrap_or_else(|| panic!("missing {placement} inline/auto domain: {images:?}"));
+        assert_eq!(domain["state"], "faithful");
+        assert_eq!(
+            domain["mime_types"],
+            json!(["image/png", "image/jpeg", "image/webp", "image/gif"])
+        );
+    }
+    let mut restricted = entry.candidates[0].as_ref().clone();
+    restricted
+        .endpoint
+        .representation
+        .openai_mut()
+        .unwrap()
+        .images
+        .details
+        .clear();
+    entry.candidates.push(Arc::new(restricted));
+    let value = descriptor(entry.clone());
+    let images = value["input"]["image"].as_array().unwrap();
+    assert!(!images.is_empty());
+    assert!(images.iter().all(|d| d["detail"] == "omitted"));
+
+    // A Chat alternative removes tool-result image support, not ordinary user images.
+    entry.candidates = vec![
+        responses,
+        gate.state.entries[&(ClientProtocol::Chat, "fixture-model".into())].candidates[0].clone(),
+    ];
+    let value = descriptor(entry.clone());
+    let images = value["input"]["image"].as_array().unwrap();
+    assert!(!images.is_empty());
+    assert!(images.iter().all(|d| d["placement"] == "user"));
+    entry.public.contract.image_input = false;
+    let value = descriptor(entry);
+    assert_eq!(value["input"]["image"], json!([]));
+    assert_eq!(value["input"]["text"], json!({"state":"faithful"}));
+    assert_eq!(value["output"], json!({"text":{"state":"faithful"}}));
 }
 
 #[tokio::test]

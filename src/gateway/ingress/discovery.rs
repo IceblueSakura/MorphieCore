@@ -1,5 +1,6 @@
 //! Startup-only Generation Text discovery. Pure contract projection, never Provider probing.
 mod contract;
+mod media;
 
 use super::models::{response, running};
 use crate::{

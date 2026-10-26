@@ -49,6 +49,8 @@ pub(super) struct Model {
 struct Candidate {
     binding: String,
     allowed_effort: Option<Vec<String>>,
+    context_window_tokens: Option<u64>,
+    maximum_input_tokens: Option<u64>,
     maximum_output_tokens: Option<u64>,
     #[serde(default)]
     default_output_tokens: crate::semantic::value::Presence<u64>,
@@ -241,6 +243,8 @@ impl Models {
                 endpoint.id =
                     EndpointId::new(&format!("configured-{model_index}-{candidate_index}"))
                         .map_err(|_| invalid())?;
+                let original_target = endpoint.target.clone();
+                let original_model = endpoint.upstream_model.clone();
                 if let Some(model) = candidate.upstream_model {
                     endpoint.upstream_model = model;
                 }
@@ -261,6 +265,12 @@ impl Models {
                         .ok_or(StartupError::Binding)?;
                     endpoint.target.path =
                         endpoint.declared_path(entry.path).map_err(|_| invalid())?;
+                }
+                if endpoint.target != original_target || endpoint.upstream_model != original_model {
+                    // A different deployment/model has no inherited capacity evidence.
+                    let limits = endpoint.representation.model_limits_mut();
+                    limits.context_window_tokens = None;
+                    limits.maximum_input_tokens = None;
                 }
                 if let Some(ms) = candidate.attempt_timeout_ms {
                     endpoint.execution.timeout_ms = timeout(ms)?;
@@ -299,6 +309,8 @@ impl Models {
                                 .collect::<Result<Box<[_]>, _>>()
                         })
                         .transpose()?,
+                    context_window_tokens: candidate.context_window_tokens,
+                    maximum_input_tokens: candidate.maximum_input_tokens,
                     maximum_output_tokens: candidate.maximum_output_tokens,
                 };
                 *endpoint.representation.model_limits_mut() = endpoint

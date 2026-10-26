@@ -54,7 +54,10 @@ impl GoogleBinding {
         // https://ai.google.dev/gemini-api/docs/models/gemini-3.8-flash (2026-10-20).
         ModelLimits {
             allowed_effort: Some(vec![Low, Medium, High].into()),
+            // The source labels this input capacity, not a total context window.
+            maximum_input_tokens: Some(1_048_576),
             maximum_output_tokens: Some(65_536),
+            ..Default::default()
         }
     }
     pub fn provider(&self) -> ProviderDefinition {

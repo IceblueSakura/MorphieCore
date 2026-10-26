@@ -98,6 +98,7 @@ Image test paths observed in the 2026-10-23 source inventory include OpenAI Pyth
 
 | Domain | Note | Evidence boundary |
 |---|---|---|
+| Model discovery | [2026-10-26 capacity and client domains](refs/2026-10-26-model-discovery.md) | Exact context/input source facts, binding applicability, unknown capacities and Pi image carriers; not live Provider acceptance or other-task activation |
 | Stable-release protocol reset | [Stable protocol contracts](refs/2026-10-23-stable-protocol-contracts.md) | Latest release/API migration evidence, standard-vs-SDK differences and new test entry points; checked 2026-10-23. Not a conformance certificate |
 | Standard Generation request boundaries | [2026-10-26 source/IR/target review](refs/2026-10-26-standard-request-boundaries.md) | Pinned contracts and synthetic counterexamples for standard Chat/Responses/Messages intake, shared replay opening and standard request encoding; separates compatibility choices, source traces and unresolved semantics. No Provider dialect, response/SSE or full-conformance acceptance |
 | Instruction authority and role migration | [Current, legacy and Provider roles](refs/2026-10-23-stable-protocol-contracts.md#instruction-authority-research-current-legacy-and-provider-dialects) | Additional 2026-10-25 official-source research separates application system/developer from vendor-reserved authority, Messages rollout/scope and DeepSeek/Alibaba/Xiaomi/OpenRouter dialect behavior; directional recommendations, not selected redesign or live acceptance |
