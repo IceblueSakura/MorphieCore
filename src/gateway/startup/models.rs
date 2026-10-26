@@ -274,10 +274,7 @@ impl Models {
                 )) {
                     return Err(StartupError::Binding);
                 }
-                if single
-                    && endpoint.execution.credential_kind
-                        == crate::provider::CredentialKind::OAuth("openai")
-                {
+                if single && endpoint.execution.credential_kind.single_account() {
                     route.policy.fallback = topology::FallbackPolicy::Disabled;
                     if config.max_attempts.is_none() {
                         route.policy.max_attempts = 1;

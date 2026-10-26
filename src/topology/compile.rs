@@ -264,9 +264,7 @@ fn compile_deployments(
             let endpoint = endpoint_map
                 .get(candidate.as_str())
                 .ok_or(TopologyError::UnknownEndpoint)?;
-            if endpoint.execution.credential_kind
-                == crate::provider::CredentialKind::OAuth("openai")
-            {
+            if endpoint.execution.credential_kind.single_account() {
                 // Another Provider is a legal fallback, not another SIWC account
                 // or endpoint. A standalone subscription still has one attempt.
                 if siwc_seen

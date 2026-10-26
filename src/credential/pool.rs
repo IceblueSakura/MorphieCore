@@ -34,7 +34,7 @@ impl CredentialPool {
             || (self
                 .members
                 .iter()
-                .any(|m| matches!(m, CredentialRef::OAuth { profile, .. } if profile == "openai"))
+                .any(|m| matches!(m, CredentialRef::OAuth { profile, .. } if crate::provider::auth::single_account_profile(profile)))
                 && (self.members.len() != 1 || self.fallback || self.max_attempts != 1))
         {
             return Err(Error::InvalidInput);

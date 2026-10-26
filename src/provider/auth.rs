@@ -13,6 +13,18 @@ pub enum CredentialKind {
     OAuth(&'static str),
 }
 
+/// ChatGPT subscription (SIWC) authorizes one account: a pool holds only that
+/// account without credential fallback, a route holds at most one such
+/// endpoint, and a standalone subscription route makes one attempt.
+pub fn single_account_profile(profile: &str) -> bool {
+    profile == "openai"
+}
+impl CredentialKind {
+    pub fn single_account(self) -> bool {
+        matches!(self, Self::OAuth(profile) if single_account_profile(profile))
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum AuthScheme {
     /// `Authorization: Bearer <secret>`.

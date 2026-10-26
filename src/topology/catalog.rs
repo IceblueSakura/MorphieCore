@@ -72,7 +72,7 @@ pub fn default_topology() -> Result<CompiledTopology, TopologyError> {
             id: public.route.clone(),
             task: public.task,
             policy: RoutePolicy {
-                max_attempts: if binding.profile == "openai" {
+                max_attempts: if crate::provider::auth::single_account_profile(binding.profile) {
                     1
                 } else {
                     RoutePolicy::default().max_attempts
