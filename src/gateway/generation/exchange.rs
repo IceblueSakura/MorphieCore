@@ -8,6 +8,7 @@ use crate::gateway::{
 use crate::{adapter::Request, gateway::routing::chain::Chain};
 use axum::response::Response;
 use std::{
+    borrow::Cow,
     sync::{Arc, atomic::Ordering},
     time::Duration,
 };
@@ -65,6 +66,99 @@ pub(in crate::gateway) enum Upstreams {
         candidate: Arc<BoundCandidate>,
         response: reqwest::Response,
     },
+}
+/// One candidate's prepared request on the wire, with the affinity projection it used.
+struct Sent<'r> {
+    response: reqwest::Response,
+    request: Cow<'r, Request>,
+    affinity: Option<crate::gateway::routing::prefix_cache::Selection>,
+}
+/// Resolve the bound credential, apply an affinity projection when it fits,
+/// encode for this candidate and send. Each candidate starts from the original
+/// immutable input; affinity never chooses or advances the credential.
+async fn send_attempt<'r>(
+    runtime: &Runtime,
+    candidate: &BoundCandidate,
+    request: &'r Request,
+    ordinal: usize,
+    deadline: Instant,
+    state: &Status,
+    trace: &mut Trace,
+) -> Result<Sent<'r>, ApiError> {
+    trace.stage(Stage::Prepare);
+    let (secret, grant) = candidate.secret.resolve_for_request().await?;
+    let mut local = Cow::Borrowed(request);
+    let mut affinity =
+        crate::gateway::routing::prefix_cache::choose(&runtime.affinity, candidate, request, trace);
+    if let Some(selection) = &affinity {
+        match selection.project(candidate, request) {
+            Some(projected) => local = Cow::Owned(projected),
+            None => {
+                // A hint must not turn an otherwise valid request into a
+                // body-budget/admission error. Reuse the original projection.
+                affinity = None;
+                trace.affinity("unavailable", false, false);
+            }
+        }
+    }
+    let conversion = crate::execution::attempt::prepare_with_evidence(
+        &candidate.endpoint,
+        &candidate.provider,
+        &secret,
+        &local,
+    )
+    .map_err(|error| {
+        trace.report.failure(
+            Some(crate::lowering::generation::ConversionBoundary::RequestEncode),
+            &error,
+        );
+        ApiError::invalid()
+    })?;
+    let mut prepared = conversion.value;
+    if let Some(grant) = grant {
+        prepared.safe_headers.extend(
+            crate::provider::subscription::headers(candidate.provider.auth, &grant)
+                .map_err(|_| ApiError::upstream())?,
+        );
+    }
+    trace.report.accept(
+        crate::execution::report::View::UpstreamRequest,
+        conversion.evidence,
+    );
+    trace.report.update(|a| a.prepared = true);
+    let key_sent = serde_json::from_slice::<serde_json::Value>(&prepared.body)
+        .ok()
+        .is_some_and(|v| {
+            v.get("prompt_cache_key")
+                .is_some_and(serde_json::Value::is_string)
+        });
+    let session_sent = prepared
+        .safe_headers
+        .iter()
+        .any(|(name, _)| name == "x-opencode-session");
+    trace.stage(Stage::Connect);
+    if let Some(capture) = &trace.capture {
+        capture.upstream_request(&prepared, ordinal);
+    }
+    state.waiting_upstream.store(true, Ordering::Release);
+    trace.report.update(|a| a.send_started = true);
+    let response = runtime
+        .transport
+        .send(prepared, deadline.saturating_duration_since(Instant::now()))
+        .await
+        .map_err(|class| {
+            trace
+                .report
+                .failure(None, &crate::execution::AttemptError::Transport(class));
+            ApiError::transport(class)
+        })?;
+    state.waiting_upstream.store(false, Ordering::Release);
+    trace.affinity_carriers(key_sent, session_sent);
+    Ok(Sent {
+        response,
+        request: local,
+        affinity,
+    })
 }
 #[allow(clippy::too_many_arguments)]
 pub(in crate::gateway) async fn produce_chain(
@@ -153,90 +247,25 @@ pub(in crate::gateway) async fn produce_chain(
         let attempt_deadline = deadline
             .min(Instant::now() + Duration::from_millis(candidate.endpoint.execution.timeout_ms));
         let result = tokio::time::timeout_at(attempt_deadline, async {
-            // Each candidate starts from the original immutable input. Only the fixed
-            // bound credential is validated; affinity never chooses or advances it.
-            let mut local = std::borrow::Cow::Borrowed(request);
+            let mut local = Cow::Borrowed(request);
             let mut affinity = None;
             let upstream = if let Some(response) = observed.take() {
                 response
             } else {
                 let runtime = runtime.as_ref().ok_or(ApiError::upstream())?;
-                trace.stage(Stage::Prepare);
-                let (secret, grant) = candidate.secret.resolve_for_request().await?;
-                affinity = crate::gateway::routing::prefix_cache::choose(
-                    &runtime.affinity,
+                let sent = send_attempt(
+                    runtime,
                     candidate,
                     request,
+                    chain.attempts,
+                    attempt_deadline,
+                    state,
                     trace,
-                );
-                if let Some(selection) = &affinity {
-                    if let Some(projected) = selection.project(candidate, request) {
-                        local = std::borrow::Cow::Owned(projected);
-                    } else {
-                        // A hint must not turn an otherwise valid request into a
-                        // body-budget/admission error. Reuse the original projection.
-                        local = std::borrow::Cow::Borrowed(request);
-                        affinity = None;
-                        trace.affinity("unavailable", false, false);
-                    }
-                }
-                let conversion = crate::execution::attempt::prepare_with_evidence(
-                    &candidate.endpoint,
-                    &candidate.provider,
-                    &secret,
-                    &local,
                 )
-                .map_err(|error| {
-                    trace.report.failure(
-                        Some(crate::lowering::generation::ConversionBoundary::RequestEncode),
-                        &error,
-                    );
-                    ApiError::invalid()
-                })?;
-                let mut prepared = conversion.value;
-                if let Some(grant) = grant {
-                    prepared.safe_headers.extend(
-                        crate::provider::subscription::headers(candidate.provider.auth, &grant)
-                            .map_err(|_| ApiError::upstream())?,
-                    );
-                }
-                trace.report.accept(
-                    crate::execution::report::View::UpstreamRequest,
-                    conversion.evidence,
-                );
-                trace.report.update(|a| a.prepared = true);
-                let key_sent = serde_json::from_slice::<serde_json::Value>(&prepared.body)
-                    .ok()
-                    .is_some_and(|v| {
-                        v.get("prompt_cache_key")
-                            .is_some_and(serde_json::Value::is_string)
-                    });
-                let session_sent = prepared
-                    .safe_headers
-                    .iter()
-                    .any(|(name, _)| name == "x-opencode-session");
-                trace.stage(Stage::Connect);
-                if let Some(capture) = &trace.capture {
-                    capture.upstream_request(&prepared, chain.attempts);
-                }
-                state.waiting_upstream.store(true, Ordering::Release);
-                trace.report.update(|a| a.send_started = true);
-                let response = runtime
-                    .transport
-                    .send(
-                        prepared,
-                        attempt_deadline.saturating_duration_since(Instant::now()),
-                    )
-                    .await
-                    .map_err(|class| {
-                        trace
-                            .report
-                            .failure(None, &crate::execution::AttemptError::Transport(class));
-                        ApiError::transport(class)
-                    })?;
-                state.waiting_upstream.store(false, Ordering::Release);
-                trace.affinity_carriers(key_sent, session_sent);
-                response
+                .await?;
+                local = sent.request;
+                affinity = sent.affinity;
+                sent.response
             };
             // Hold only while another candidate could still answer.
             let hold = (index + 1..candidates.len()).any(|next| {
