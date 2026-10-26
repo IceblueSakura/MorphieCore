@@ -89,7 +89,7 @@ async fn ingress(runtime: Arc<Runtime>, request: Request) -> Result<Response, Ap
             entry.route.endpoint.execution.timeout_ms,
         ));
     body::respond_producer(
-        body::Producer::Speech {
+        Exchange {
             runtime: runtime.clone(),
             entry,
             request,
@@ -103,7 +103,7 @@ async fn ingress(runtime: Arc<Runtime>, request: Request) -> Result<Response, Ap
     )
     .await
 }
-pub(in crate::gateway) async fn produce(
+async fn produce(
     runtime: Arc<Runtime>,
     entry: Arc<BoundSpeech>,
     request: crate::adapter::speech::Request,
@@ -243,5 +243,29 @@ pub(in crate::gateway) async fn receive(
             .audio)
     } else {
         AudioArtifact::new(bytes.into(), encoding).map_err(|_| ApiError::upstream())
+    }
+}
+/// One bounded upstream exchange behind the response body.
+struct Exchange {
+    runtime: Arc<Runtime>,
+    entry: Arc<BoundSpeech>,
+    request: crate::adapter::speech::Request,
+}
+impl body::Produce for Exchange {
+    fn produce(
+        self,
+        _: &crate::gateway::Limits,
+        deadline: Instant,
+        lane: &body::Lane<'_>,
+        trace: &mut Trace,
+    ) -> impl std::future::Future<Output = Result<(), ApiError>> + Send {
+        produce(
+            self.runtime,
+            self.entry,
+            self.request,
+            deadline,
+            lane,
+            trace,
+        )
     }
 }

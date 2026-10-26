@@ -73,7 +73,7 @@ async fn consume(
     }
     let upstream = reqwest::Response::from(builder.body(reqwest::Body::from(bytes)).unwrap());
     tokio::time::timeout(Duration::from_secs(4), async {
-        let result = body::respond_source(
+        let result = exchange::respond_source(
             entry,
             request,
             exchange::Upstreams::Observed {

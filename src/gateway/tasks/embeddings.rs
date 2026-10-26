@@ -73,7 +73,7 @@ async fn ingress(runtime: Arc<Runtime>, request: Request) -> Result<Response, Ap
             entry.route.endpoint.execution.timeout_ms,
         ));
     body::respond_producer(
-        body::Producer::Embedding {
+        Exchange {
             runtime: runtime.clone(),
             entry,
             prepared,
@@ -88,7 +88,7 @@ async fn ingress(runtime: Arc<Runtime>, request: Request) -> Result<Response, Ap
     .await
     .map(capabilities::notice)
 }
-pub(in crate::gateway) async fn produce(
+async fn produce(
     runtime: Arc<Runtime>,
     entry: Arc<BoundEmbedding>,
     prepared: PreparedEmbedding,
@@ -247,4 +247,28 @@ pub(in crate::gateway) async fn receive(
     profile
         .decode_response_as(&bytes, encoding)
         .map_err(|_| ApiError::upstream())
+}
+/// One bounded upstream exchange behind the response body.
+struct Exchange {
+    runtime: Arc<Runtime>,
+    entry: Arc<BoundEmbedding>,
+    prepared: PreparedEmbedding,
+}
+impl body::Produce for Exchange {
+    fn produce(
+        self,
+        _: &crate::gateway::Limits,
+        deadline: Instant,
+        lane: &body::Lane<'_>,
+        trace: &mut Trace,
+    ) -> impl std::future::Future<Output = Result<(), ApiError>> + Send {
+        produce(
+            self.runtime,
+            self.entry,
+            self.prepared,
+            deadline,
+            lane,
+            trace,
+        )
+    }
 }

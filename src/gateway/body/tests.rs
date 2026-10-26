@@ -1,7 +1,9 @@
 //! Delivery owner tests use an instrumented HTTP body, not a second Router.
 use super::*;
+use crate::gateway::generation::exchange::{Upstreams, produce_chain, respond_source};
 use crate::gateway::{BoundCandidate, tests::responses_wire};
 use crate::{adapter::ClientProtocol, gateway::tests::support::gateway, protocol::openai::Profile};
+use crate::{adapter::Request, gateway::BoundEntry};
 use futures_util::StreamExt;
 use std::{sync::atomic::AtomicUsize, time::Duration};
 #[allow(clippy::too_many_arguments)]

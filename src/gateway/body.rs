@@ -2,12 +2,11 @@
 //! each candidate owns a fresh decoder/delivery, and visibility forbids advancement.
 #[cfg(test)]
 mod tests;
+use crate::execution::ResponseDelivery;
 use crate::gateway::{
-    ApiError, BoundEntry, Limits,
+    ApiError, Limits,
     diagnostics::{Outcome, Stage, Trace},
-    generation::exchange::{Upstreams, produce_chain},
 };
-use crate::{adapter::Request, execution::ResponseDelivery};
 use axum::{
     body::{Body, Bytes},
     response::Response,
@@ -253,145 +252,20 @@ async fn send_chunk(
     trace.handed_off(size);
     Ok(())
 }
-pub(super) enum Producer {
-    Generation {
-        entry: Arc<BoundEntry>,
-        request: Box<Request>,
-        source: Upstreams,
-    },
-    Image {
-        runtime: Arc<crate::gateway::Runtime>,
-        entry: Arc<crate::gateway::tasks::images::BoundImage>,
-        request: crate::adapter::images::Request,
-    },
-    Speech {
-        runtime: Arc<crate::gateway::Runtime>,
-        entry: Arc<crate::gateway::tasks::speech::BoundSpeech>,
-        request: crate::adapter::speech::Request,
-    },
-    Transcription {
-        runtime: Arc<crate::gateway::Runtime>,
-        entry: Arc<crate::gateway::tasks::transcription::BoundTranscription>,
-        request: crate::adapter::transcription::Request,
-    },
-    Embedding {
-        runtime: Arc<crate::gateway::Runtime>,
-        entry: Arc<crate::gateway::tasks::embeddings::BoundEmbedding>,
-        prepared: crate::execution::embeddings::PreparedEmbedding,
-    },
-}
-impl Producer {
-    async fn produce(
+/// The work behind one response body: Generation's attempt chain or a
+/// standalone task exchange. The body owner only publishes what it produces.
+pub(super) trait Produce: Send + 'static {
+    fn produce(
         self,
         limits: &Limits,
         deadline: Instant,
-        tx: &mpsc::Sender<Message>,
-        state: &Status,
+        lane: &Lane<'_>,
         trace: &mut Trace,
-    ) -> Result<(), ApiError> {
-        match self {
-            Self::Generation {
-                entry,
-                request,
-                source,
-            } => produce_chain(source, &entry, &request, limits, deadline, tx, state, trace).await,
-            Self::Embedding {
-                runtime,
-                entry,
-                prepared,
-            } => {
-                crate::gateway::tasks::embeddings::produce(
-                    runtime,
-                    entry,
-                    prepared,
-                    deadline,
-                    &Lane { tx, state },
-                    trace,
-                )
-                .await
-            }
-            Self::Image {
-                runtime,
-                entry,
-                request,
-            } => {
-                crate::gateway::tasks::images::produce(
-                    runtime,
-                    entry,
-                    request,
-                    deadline,
-                    &Lane { tx, state },
-                    trace,
-                )
-                .await
-            }
-            Self::Transcription {
-                runtime,
-                entry,
-                request,
-            } => {
-                crate::gateway::tasks::transcription::produce(
-                    runtime,
-                    entry,
-                    request,
-                    deadline,
-                    &Lane { tx, state },
-                    trace,
-                )
-                .await
-            }
-            Self::Speech {
-                runtime,
-                entry,
-                request,
-            } => {
-                crate::gateway::tasks::speech::produce(
-                    runtime,
-                    entry,
-                    request,
-                    deadline,
-                    &Lane { tx, state },
-                    trace,
-                )
-                .await
-            }
-        }
-    }
-}
-#[allow(clippy::too_many_arguments)]
-pub(super) async fn respond_source(
-    entry: Arc<BoundEntry>,
-    request: Request,
-    source: Upstreams,
-    limits: Limits,
-    deadline: Instant,
-    shutdown: tokio_util::sync::CancellationToken,
-    permit: OwnedSemaphorePermit,
-    trace: Trace,
-) -> Result<Response, ApiError> {
-    let stream = request.delivery.streaming();
-    respond_producer(
-        Producer::Generation {
-            entry,
-            request: Box::new(request),
-            source,
-        },
-        if stream {
-            ResponseType::EventStream
-        } else {
-            ResponseType::Json
-        },
-        limits,
-        deadline,
-        shutdown,
-        permit,
-        trace,
-    )
-    .await
+    ) -> impl std::future::Future<Output = Result<(), ApiError>> + Send;
 }
 #[allow(clippy::too_many_arguments)]
 pub(super) async fn respond_producer(
-    producer: Producer,
+    producer: impl Produce,
     response_type: ResponseType,
     limits: Limits,
     deadline: Instant,
@@ -409,6 +283,10 @@ pub(super) async fn respond_producer(
             AttemptError,
             attempt::{DeadlineReason, DeliveryReason},
         };
+        let lane = Lane {
+            tx: &tx,
+            state: &worker_state,
+        };
         let result = tokio::select! {
             biased;
             _ = shutdown.cancelled() => Err(ApiError::shutdown()),
@@ -417,7 +295,7 @@ pub(super) async fn respond_producer(
                 trace.report.failure(None, &closed);
                 Err(ApiError::upstream())
             }
-            result = producer.produce(&limits, deadline, &tx, &worker_state, &mut trace) => result,
+            result = producer.produce(&limits, deadline, &lane, &mut trace) => result,
             // Generation's own attempt deadline must record upstream evidence
             // before the outer safety deadline cancels its recovery lease.
             _ = tokio::time::sleep_until(deadline) => {

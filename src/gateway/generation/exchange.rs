@@ -338,6 +338,64 @@ pub(in crate::gateway) async fn produce_chain(
     });
     Err(blocked_delay.map_or_else(ApiError::upstream, ApiError::unavailable))
 }
+/// Generation's fixed attempt chain behind one response body.
+struct GenerationExchange {
+    entry: Arc<BoundEntry>,
+    request: Box<Request>,
+    source: Upstreams,
+}
+impl body::Produce for GenerationExchange {
+    async fn produce(
+        self,
+        limits: &Limits,
+        deadline: Instant,
+        lane: &Lane<'_>,
+        trace: &mut Trace,
+    ) -> Result<(), ApiError> {
+        produce_chain(
+            self.source,
+            &self.entry,
+            &self.request,
+            limits,
+            deadline,
+            lane.tx,
+            lane.state,
+            trace,
+        )
+        .await
+    }
+}
+#[allow(clippy::too_many_arguments)]
+pub(in crate::gateway) async fn respond_source(
+    entry: Arc<BoundEntry>,
+    request: Request,
+    source: Upstreams,
+    limits: Limits,
+    deadline: Instant,
+    shutdown: tokio_util::sync::CancellationToken,
+    permit: OwnedSemaphorePermit,
+    trace: Trace,
+) -> Result<Response, ApiError> {
+    let stream = request.delivery.streaming();
+    body::respond_producer(
+        GenerationExchange {
+            entry,
+            request: Box::new(request),
+            source,
+        },
+        if stream {
+            body::ResponseType::EventStream
+        } else {
+            body::ResponseType::Json
+        },
+        limits,
+        deadline,
+        shutdown,
+        permit,
+        trace,
+    )
+    .await
+}
 pub(in crate::gateway) async fn run(
     runtime: Arc<Runtime>,
     entry: Arc<BoundEntry>,
@@ -358,7 +416,7 @@ pub(in crate::gateway) async fn run(
     })?;
     let limits = runtime.limits.clone();
     let shutdown = runtime.shutdown.clone();
-    body::respond_source(
+    respond_source(
         entry,
         request,
         Upstreams::Http {
