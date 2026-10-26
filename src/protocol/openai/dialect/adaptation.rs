@@ -168,10 +168,10 @@ pub struct Adaptation {
     pub rules: WireRules,
     pub reasoning_policy: Option<crate::protocol::reasoning::ReasoningRequestPolicy>,
     pub effort_mapping: Option<&'static crate::protocol::reasoning::ReasoningEffortMapping>,
-    /// Profile image admission is intersected with independently configured Endpoint limits.
+    /// GenerationApi image admission is intersected with independently configured Endpoint limits.
     pub images: crate::protocol::image_constraints::ImageConstraints,
     pub files: crate::protocol::file_constraints::FileConstraints,
-    pub cache: crate::protocol::cache::CacheProjection,
+    pub cache: crate::protocol::cache::CacheTargetPolicy,
     /// Stable adapter contract identity, not a network or credential locator.
     pub profile_id: &'static str,
     pub scope: Option<ReplayOrigin>,

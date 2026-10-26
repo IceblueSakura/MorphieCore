@@ -1,10 +1,9 @@
 use crate::events_support::text;
 use morphiecore::{
-    adapter::Request,
     protocol::{
-        DecodedRequest, DecodedResponse,
+        DecodedRequest, DecodedResponse, GenerationRequestEnvelope as Request,
         fidelity::FidelityRecords,
-        openai::{Adapter, Dialect, Profile, TargetCaps},
+        openai::{Dialect, GenerationApi, GenerationCodec, TargetContract},
     },
     semantic::{
         task::generation::*,
@@ -14,9 +13,9 @@ use morphiecore::{
 };
 use serde_json::{Value, json};
 
-fn adapter(dialect: Dialect) -> Adapter {
-    Adapter::new(
-        Profile::Responses,
+fn adapter(dialect: Dialect) -> GenerationCodec {
+    GenerationCodec::new(
+        GenerationApi::Responses,
         dialect,
         Some(ReplayOrigin::new("subscription-scope").unwrap()),
     )
@@ -235,9 +234,9 @@ fn native_static_directions_preserve_reasoning_phase_calls_and_usage() {
             decoded.fidelity.replay_origin(ItemId::new(1)),
             adapter.adaptation.scope.as_ref()
         );
-        let contract = TargetCaps {
+        let contract = TargetContract {
             replay_origin: adapter.adaptation.scope.clone(),
-            ..TargetCaps::full()
+            ..TargetContract::full()
         };
         assert_eq!(
             adapter.encode_response(&independent, &contract).unwrap(),
@@ -274,8 +273,8 @@ fn independent_semantic_events_encode_native_subscription_sse() {
     ]);
     for dialect in [Dialect::Grok, Dialect::Siwc] {
         let independent = response(dialect == Dialect::Siwc, false);
-        let contract = adapter(dialect).contract(&TargetCaps::full());
-        let mut encoder = EventEncoder::new(Profile::Responses, independent.metadata)
+        let contract = adapter(dialect).contract(&TargetContract::full());
+        let mut encoder = EventEncoder::new(GenerationApi::Responses, independent.metadata)
             .unwrap()
             .with_contract(contract);
         let values = events
@@ -325,7 +324,7 @@ fn subscription_identity_omission_is_named_and_retention_stays_closed() {
 }
 #[test]
 fn billing_plans_share_one_dialect_but_keep_authority_and_replay_isolated() {
-    use morphiecore::topology::ProtocolProfile;
+    use morphiecore::topology::GenerationProtocol;
     let dash = API_KEY_BINDINGS
         .iter()
         .find(|b| b.endpoint_prefix == "dashscope-flash")
@@ -343,8 +342,8 @@ fn billing_plans_share_one_dialect_but_keep_authority_and_replay_isolated() {
         assert_eq!(binding.dialect, Dialect::Bailian);
     }
     for profile in [
-        ProtocolProfile::OpenAiChat,
-        ProtocolProfile::OpenAiResponses,
+        GenerationProtocol::OpenAiChat,
+        GenerationProtocol::OpenAiResponses,
     ] {
         let a = dash.endpoint(profile).unwrap();
         let b = plan.endpoint(profile).unwrap();
@@ -360,8 +359,8 @@ fn billing_plans_share_one_dialect_but_keep_authority_and_replay_isolated() {
         assert_ne!(a.target.origin, b.target.origin);
         assert_ne!(a.credential, b.credential);
         assert_ne!(a.replay_origin(), b.replay_origin());
-        if profile == ProtocolProfile::OpenAiChat {
-            let client = Adapter::new(Profile::Chat, Dialect::MorphieCore, None);
+        if profile == GenerationProtocol::OpenAiChat {
+            let client = GenerationCodec::new(GenerationApi::Chat, Dialect::MorphieCore, None);
             let input=client.decode_client_request(br#"{"model":"m","max_completion_tokens":64,"preserve_thinking":true,"messages":[{"role":"user","content":"q"}]}"#).unwrap();
             let (da, dr) = a.encode_request_with_rules(&input).unwrap();
             let (pa, pr) = b.encode_request_with_rules(&input).unwrap();

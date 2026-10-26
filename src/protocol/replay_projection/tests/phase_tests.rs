@@ -96,7 +96,7 @@ fn phase_delivery_preserves_content_without_fabricated_owners() {
                 losses
                     .iter()
                     .any(|e| e.rule() == "generation.omit-delivery-message-phase.v1"
-                        && e.action() == "omit")
+                        && e.change().as_str() == "omit")
             );
             if protocol == ClientProtocol::Chat {
                 assert_eq!(
@@ -174,7 +174,7 @@ fn phase_stream_preserves_return_carrier_at_eof_without_changing_terminal_policy
     ] {
         for truncated in [false, true] {
             let mut attempt = Attempt::new(
-                Adapter::new(Profile::Responses, Dialect::Standard, None),
+                GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None),
                 1 << 20,
                 SseLimits::default(),
             );
@@ -242,7 +242,7 @@ fn phase_stream_preserves_return_carrier_at_eof_without_changing_terminal_policy
                         .effects()
                         .iter()
                         .any(|e| e.rule() == "generation.omit-delivery-message-phase.v1"
-                            && e.action() == "omit")
+                            && e.change().as_str() == "omit")
                 );
             } else {
                 assert!(!text.contains("mca1."));
@@ -300,7 +300,7 @@ fn unphased_streams_cannot_use_phase_grouping_to_bypass_original_chat_admission(
             }
         }
         let mut attempt = Attempt::new(
-            Adapter::new(Profile::Responses, Dialect::Standard, None),
+            GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None),
             1 << 20,
             Default::default(),
         );

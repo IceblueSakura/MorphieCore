@@ -4,7 +4,7 @@ use morphiecore::{
     protocol::{
         fidelity::FidelityRecords,
         openai::{
-            Profile,
+            GenerationApi,
             events::{EventDecoder, EventEncoder},
         },
     },
@@ -22,7 +22,7 @@ fn independently_constructed_text_ir_encodes_expected_boundaries_and_refusal() {
     e.extend(part(9, 70, PartKind::Refusal, "Cannot comply"));
     e.push(close(9, ItemLifecycle::Completed));
     e.push(terminal(StreamTerminal::Completed));
-    let wire = encode(&e, Profile::Responses, &FidelityRecords::default());
+    let wire = encode(&e, GenerationApi::Responses, &FidelityRecords::default());
     assert_eq!(
         wire.last().unwrap()["response"]["output"][0]["content"],
         json!([{"type":"output_text","text":"","annotations":[]},{"type":"refusal","refusal":"Cannot comply"}])
@@ -65,10 +65,10 @@ fn empty_failed_and_incomplete_static_event_closure_keeps_details() {
                 details: details.clone(),
             },
         ];
-        let wire = encode(&e, Profile::Responses, &FidelityRecords::default());
+        let wire = encode(&e, GenerationApi::Responses, &FidelityRecords::default());
         assert_eq!(wire.last().unwrap()["response"]["status"], status);
         assert_eq!(wire.last().unwrap()["response"]["output"], json!([]));
-        let mut d = EventDecoder::new(Profile::Responses);
+        let mut d = EventDecoder::new(GenerationApi::Responses);
         for v in wire {
             d.push(&v).unwrap();
         }
@@ -77,12 +77,12 @@ fn empty_failed_and_incomplete_static_event_closure_keeps_details() {
 }
 #[test]
 fn queued_lifecycle_has_no_chat_projection() {
-    let mut chat = EventEncoder::new(Profile::Chat, metadata()).unwrap();
+    let mut chat = EventEncoder::new(GenerationApi::Chat, metadata()).unwrap();
     assert!(
         chat.encode(&StreamEvent::Queued, &FidelityRecords::default())
             .is_err()
     );
-    let mut responses = EventEncoder::new(Profile::Responses, metadata()).unwrap();
+    let mut responses = EventEncoder::new(GenerationApi::Responses, metadata()).unwrap();
     let v = responses
         .encode(&StreamEvent::Queued, &FidelityRecords::default())
         .unwrap();

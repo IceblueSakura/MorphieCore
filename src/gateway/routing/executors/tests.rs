@@ -3,7 +3,10 @@ use crate::gateway::Limits;
 
 fn candidates() -> (BoundCandidate, BoundCandidate) {
     let gate = crate::gateway::tests::support::gateway(Limits::default());
-    let mut a = gate.state.entries[&(crate::adapter::ClientProtocol::Chat, "fixture-model".into())]
+    let mut a = gate.state.entries[&(
+        crate::protocol::ClientProtocol::Chat,
+        "fixture-model".into(),
+    )]
         .candidates[0]
         .as_ref()
         .clone();
@@ -166,8 +169,8 @@ fn health_domains_preserve_credential_target_and_pool_boundaries() {
     assert!(lease.failed(body.timeout_error(), now).is_some());
     *body.failure_head.get_mut().unwrap() = Some(ApiError::failure(429, b"", Some(9)));
     assert!(matches!(
-        body.timeout_error().fallback,
-        Some(ErrorClass::RateLimit)
+        body.timeout_error().recovery.class,
+        Some(RecoveryClass::RateLimit)
     ));
 }
 
@@ -179,7 +182,7 @@ fn recovery_backoff_is_bounded_and_success_resets_it() {
     for seconds in [1, 2, 4, 8, 16, 32, 60, 60] {
         let lease = state.acquire(&a, now).unwrap();
         let observation = lease
-            .failed(ApiError::transport(ErrorClass::Upstream), now)
+            .failed(ApiError::transport(RecoveryClass::Upstream), now)
             .unwrap();
         assert_eq!(observation.retry_after_seconds, seconds);
         drop(lease);
@@ -191,7 +194,7 @@ fn recovery_backoff_is_bounded_and_success_resets_it() {
     drop(recovered);
     let next = state.acquire(&a, now).unwrap();
     assert_eq!(
-        next.failed(ApiError::transport(ErrorClass::Server), now)
+        next.failed(ApiError::transport(RecoveryClass::Server), now)
             .unwrap()
             .retry_after_seconds,
         1
@@ -207,7 +210,7 @@ fn successful_failover_sticks_and_older_completion_cannot_restore_failure() {
     old.completed("model", Some("session"), now);
     let failing = state.acquire(&a, now).unwrap();
     failing
-        .failed(ApiError::transport(ErrorClass::Upstream), now)
+        .failed(ApiError::transport(RecoveryClass::Upstream), now)
         .unwrap();
     drop(failing);
     let good = state.acquire(&b, now).unwrap();

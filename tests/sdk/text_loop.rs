@@ -1,7 +1,5 @@
 //! Chat and Responses SDK text/tool loops through bounded codec adapters.
 use super::{ServerGuard, Suite, chat_sdk, child_process, failure, responses_wire};
-use std::time::Duration;
-
 use axum::{
     Router,
     body::{Body, Bytes},
@@ -13,7 +11,7 @@ use axum::{
 use morphiecore::{
     protocol::{
         openai::{
-            Profile, TargetCaps,
+            GenerationApi, TargetContract,
             lowering::{lower_request, lower_response},
             obfuscation::Obfuscation,
             responses::{
@@ -32,6 +30,7 @@ use morphiecore::{
     },
 };
 use serde_json::Value;
+use std::time::Duration;
 use tokio::{net::TcpListener, process::Command};
 
 const SCRIPT: &str = "tests/sdk/responses_text_loop.py";
@@ -40,8 +39,8 @@ fn origin() -> ReplayOrigin {
     ReplayOrigin::new("synthetic-loopback").unwrap()
 }
 
-fn contract() -> TargetCaps {
-    let mut contract = TargetCaps::full();
+fn contract() -> TargetContract {
+    let mut contract = TargetContract::full();
     contract.replay_origin = Some(origin());
     contract
 }
@@ -109,7 +108,7 @@ async fn handle(State(state): State<Suite>, headers: HeaderMap, body: Bytes) -> 
     let Ok(target) = lower_request(
         &decoded.task.semantic,
         &decoded.task.fidelity,
-        Profile::Responses,
+        GenerationApi::Responses,
         contract(),
     ) else {
         return failure(StatusCode::BAD_REQUEST, "request lowering", &state);
@@ -234,7 +233,7 @@ async fn handle(State(state): State<Suite>, headers: HeaderMap, body: Bytes) -> 
             &decoded.semantic,
             &decoded.fidelity,
             &decoded.metadata,
-            Profile::Responses,
+            GenerationApi::Responses,
             contract(),
         ) else {
             return failure(
@@ -356,15 +355,17 @@ async fn handle(State(state): State<Suite>, headers: HeaderMap, body: Bytes) -> 
         .unwrap()
 }
 
-async fn sdk_case(sse: bool, profile: Profile, without_opaque: bool) {
+async fn sdk_case(sse: bool, profile: GenerationApi, without_opaque: bool) {
     let suite = Suite(Default::default(), without_opaque);
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
     let observed = suite.clone();
     let server = tokio::spawn(async move {
         let router = match profile {
-            Profile::Responses => Router::new().route("/v1/responses", post(handle)),
-            Profile::Chat => Router::new().route("/v1/chat/completions", post(chat_sdk::handle)),
+            GenerationApi::Responses => Router::new().route("/v1/responses", post(handle)),
+            GenerationApi::Chat => {
+                Router::new().route("/v1/chat/completions", post(chat_sdk::handle))
+            }
         };
         axum::serve(listener, router.with_state(suite))
             .await
@@ -376,7 +377,7 @@ async fn sdk_case(sse: bool, profile: Profile, without_opaque: bool) {
     );
     command
         .args([
-            if profile == Profile::Responses {
+            if profile == GenerationApi::Responses {
                 SCRIPT
             } else {
                 "tests/sdk/chat_text_loop.py"
@@ -385,7 +386,7 @@ async fn sdk_case(sse: bool, profile: Profile, without_opaque: bool) {
             if sse { "sse" } else { "json" },
         ])
         .current_dir(env!("CARGO_MANIFEST_DIR"));
-    if profile == Profile::Responses {
+    if profile == GenerationApi::Responses {
         command.arg(if without_opaque { "readable" } else { "opaque" });
     }
     for name in [
@@ -410,7 +411,7 @@ async fn sdk_case(sse: bool, profile: Profile, without_opaque: bool) {
     );
     assert_eq!(
         observed.0.lock().unwrap().0,
-        if profile == Profile::Chat && !sse {
+        if profile == GenerationApi::Chat && !sse {
             5
         } else {
             3
@@ -418,12 +419,12 @@ async fn sdk_case(sse: bool, profile: Profile, without_opaque: bool) {
     );
     let report: Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(report["turns"], 3);
-    if profile == Profile::Responses {
+    if profile == GenerationApi::Responses {
         assert_eq!(report["opaque"], !without_opaque);
     } else {
         assert_eq!(report["custom_turns"], if sse { 0 } else { 2 });
     }
-    if sse && profile == Profile::Responses {
+    if sse && profile == GenerationApi::Responses {
         assert!(report["event_counts"][0].as_u64().unwrap() > 5);
     }
 }
@@ -433,7 +434,7 @@ async fn sdk_case(sse: bool, profile: Profile, without_opaque: bool) {
 async fn sdk_three_turn_text_json_and_sse() {
     for mode in [false, true] {
         for without_opaque in [false, true] {
-            sdk_case(mode, Profile::Responses, without_opaque).await;
+            sdk_case(mode, GenerationApi::Responses, without_opaque).await;
         }
     }
 }
@@ -442,6 +443,6 @@ async fn sdk_three_turn_text_json_and_sse() {
 #[ignore = "requires locked tests/sdk Python environment; Chat JSON/SSE synthetic loopback"]
 async fn sdk_chat_three_turn_text_json_and_sse() {
     for mode in [false, true] {
-        sdk_case(mode, Profile::Chat, false).await;
+        sdk_case(mode, GenerationApi::Chat, false).await;
     }
 }

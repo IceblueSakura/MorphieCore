@@ -1,9 +1,7 @@
 //! Native HTTP SpeechSynthesizer MP3 mapping and bounded SSE-data reduction.
 //! Source: https://help.aliyun.com/en/model-studio/qwen-audio-tts-http-api
-use crate::protocol::failure::CarrierReason;
 use crate::{
-    adapter::speech::Request,
-    protocol::{CodecError, openai::speech},
+    protocol::{CodecError, failure::CarrierReason, openai::speech, speech::Request},
     semantic::{
         task::speech_synthesis::{
             AudioReference, SpeechReport, SpeechResult, SpeechSentence, SpeechWord,

@@ -36,7 +36,7 @@ fn gateway_with_limits(origin: &str, limits: Limits) -> Gateway {
             generation: vec![Entry {
                 chat_profile: Default::default(),
                 model: "fixture-model".into(),
-                protocol: crate::adapter::ClientProtocol::Responses,
+                protocol: crate::protocol::ClientProtocol::Responses,
                 endpoint: EndpointId::new("fixture-responses").unwrap(),
             }],
             ..Default::default()

@@ -17,7 +17,7 @@ pub struct TranscriptionEndpoint {
     pub target: EndpointTarget,
     pub upstream_model: String,
     pub canonical_model: ModelId,
-    pub profile: crate::adapter::transcription::Profile,
+    pub profile: crate::adapter::transcription::UpstreamAdapter,
     pub credential: CredentialBindingId,
     pub execution: ExecutionContract,
 }

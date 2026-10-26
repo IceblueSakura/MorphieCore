@@ -5,7 +5,7 @@ use morphiecore::{
     protocol::{
         anthropic::messages::{self, Profile as MessagesProfile},
         native::ReplayTarget,
-        openai::{Adapter, Dialect, Profile},
+        openai::{Dialect, GenerationApi, GenerationCodec},
     },
     semantic::task::generation::{ContentPart, IncompleteReason, Item, Outcome},
     transport::sse::SseDecoder,
@@ -13,8 +13,8 @@ use morphiecore::{
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 
-fn openai(profile: Profile) -> UpstreamAdapter {
-    Adapter::new(profile, Dialect::Standard, None).into()
+fn openai(profile: GenerationApi) -> UpstreamAdapter {
+    GenerationCodec::new(profile, Dialect::Standard, None).into()
 }
 fn messages(model: &str) -> UpstreamAdapter {
     UpstreamAdapter::AnthropicMessages {
@@ -105,7 +105,12 @@ fn upstream_framing_literals_preserve_cr_crlf_and_multiline_data() {
 #[test]
 fn official_chat_tool_fragments_and_length_are_not_repaired() {
     for chunk in [1, 17, 8192] {
-        let attempt = decode(openai(Profile::Chat), &asset("openai/chat-tool.sse"), chunk).unwrap();
+        let attempt = decode(
+            openai(GenerationApi::Chat),
+            &asset("openai/chat-tool.sse"),
+            chunk,
+        )
+        .unwrap();
         let response = attempt.response().unwrap();
         let calls: Vec<_> = response
             .semantic
@@ -126,7 +131,7 @@ fn official_chat_tool_fragments_and_length_are_not_repaired() {
         assert_eq!(response.semantic.usage().unwrap().input_tokens, Some(76));
         assert_eq!(response.semantic.usage().unwrap().output_tokens, Some(24));
         let attempt = decode(
-            openai(Profile::Chat),
+            openai(GenerationApi::Chat),
             &asset("openai/chat-length.sse"),
             chunk,
         )
@@ -209,7 +214,7 @@ fn permissive_sdk_fixtures_do_not_override_event_grammar() {
     );
     // Vercel's synthetic custom-tool stream lacks required sequence_number fields.
     let error = decode(
-        openai(Profile::Responses),
+        openai(GenerationApi::Responses),
         &jsonl_sse("vercel/responses-custom.jsonl", Some("type")),
         13,
     )
@@ -232,7 +237,7 @@ fn permissive_sdk_fixtures_do_not_override_event_grammar() {
 
 #[test]
 fn vercel_custom_tool_output_replays_distinct_item_and_call_identity() {
-    let adapter = Adapter::new(Profile::Responses, Dialect::Standard, None);
+    let adapter = GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None);
     let source: Value = serde_json::from_slice(&asset("vercel/responses-custom.json")).unwrap();
     // Whole retained upstream responses are outside the stateless binding contract.
     // Reuse the exact output array as official returned history, not a rewritten response.
@@ -261,7 +266,7 @@ fn vercel_custom_tool_output_replays_distinct_item_and_call_identity() {
         .encode_request(
             &request,
             "public",
-            &morphiecore::protocol::openai::TargetCaps::full(),
+            &morphiecore::protocol::openai::TargetContract::full(),
         )
         .unwrap();
     assert_eq!(output["input"][0]["id"], "ct_abc123def456");
@@ -382,7 +387,7 @@ fn upstream_ingress_budgets_are_independent_and_fragmentation_invariant() {
     };
     let target = ReplayTarget::new("public-fixture", "gemini-fixture").unwrap();
     for (adapter, bytes) in [
-        (openai(Profile::Chat), asset("openai/chat-tool.sse")),
+        (openai(GenerationApi::Chat), asset("openai/chat-tool.sse")),
         (
             UpstreamAdapter::GoogleGenerateContent {
                 target: target.clone(),

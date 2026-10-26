@@ -3,7 +3,7 @@ use crate::chat_wire as wire;
 use morphiecore::{
     protocol::{
         openai::{
-            Profile, TargetCaps as Contract,
+            GenerationApi, TargetContract as Contract,
             chat::{
                 envelope,
                 sse::{ChatSseDecoder, ChatSseEncoder},
@@ -107,11 +107,11 @@ fn decoded_padding_has_an_aggregate_utf8_budget_and_poisoned_rejection() {
 fn chat_rejects_uncarried_cache_boundaries_before_client_field_filtering() {
     use morphiecore::protocol::{
         CodecError,
-        openai::{Adapter, Dialect},
+        openai::{Dialect, GenerationCodec},
     };
     // All text-array owners and standard media use the same cache-boundary guard.
     for dialect in [Dialect::Standard, Dialect::Bailian] {
-        let adapter = Adapter::new(Profile::Chat, dialect, None);
+        let adapter = GenerationCodec::new(GenerationApi::Chat, dialect, None);
         for (role, part) in [
             ("system", json!({"type":"text","text":"instruction"})),
             ("developer", json!({"type":"text","text":"instruction"})),
@@ -168,13 +168,13 @@ fn chat_rejects_uncarried_cache_boundaries_before_client_field_filtering() {
 fn chat_static_and_streamed_moderation_reports_cannot_disappear() {
     use morphiecore::protocol::{
         CodecError,
-        openai::{Adapter, Dialect},
+        openai::{Dialect, GenerationCodec},
         stream::SseError,
     };
     let report =
         json!({"input":{"type":"error","code":"moderation_unavailable","message":"synthetic"}});
     for dialect in [Dialect::Standard, Dialect::Bailian] {
-        let adapter = Adapter::new(Profile::Chat, dialect, None);
+        let adapter = GenerationCodec::new(GenerationApi::Chat, dialect, None);
         let mut source = wire::response(2);
         source["unknown_extension"] = json!({"ignored":true});
         source["moderation"] = Value::Null;
@@ -256,7 +256,7 @@ fn complete_chat_envelope_separates_delivery_and_rejects_unsupported_admission()
         &lower_request(
             &d.task.semantic,
             &d.task.fidelity,
-            Profile::Chat,
+            GenerationApi::Chat,
             Contract::full(),
         )
         .unwrap(),
@@ -264,8 +264,8 @@ fn complete_chat_envelope_separates_delivery_and_rejects_unsupported_admission()
     )
     .unwrap();
     assert_eq!(out, source);
-    let client = morphiecore::protocol::openai::Adapter::new(
-        Profile::Chat,
+    let client = morphiecore::protocol::openai::GenerationCodec::new(
+        GenerationApi::Chat,
         morphiecore::protocol::openai::Dialect::Standard,
         None,
     );
@@ -286,7 +286,7 @@ fn complete_chat_envelope_separates_delivery_and_rejects_unsupported_admission()
         &lower_request(
             &d.task.semantic,
             &d.task.fidelity,
-            Profile::Responses,
+            GenerationApi::Responses,
             Contract::full(),
         )
         .unwrap(),
@@ -356,7 +356,7 @@ fn chat_refusal_empty_and_length_have_independent_static_event_meaning() {
                 &r.semantic,
                 &r.fidelity,
                 &r.metadata,
-                Profile::Chat,
+                GenerationApi::Chat,
                 Contract::full(),
             )
             .unwrap(),
@@ -613,10 +613,10 @@ fn probability_bytes_and_empty_reports_survive_fragmentation_without_a_fake_done
 fn dashscope_reasoning_cannot_resume_after_text_or_call_publication() {
     use morphiecore::protocol::{
         CodecError,
-        openai::{Adapter, Dialect},
+        openai::{Dialect, GenerationCodec},
         stream::SseError,
     };
-    let adapter = Adapter::new(Profile::Chat, Dialect::Bailian, None);
+    let adapter = GenerationCodec::new(GenerationApi::Chat, Dialect::Bailian, None);
     let chunk = |delta: Value| {
         json!({"id":"r","object":"chat.completion.chunk","created":1,"model":"m",
         "choices":[{"index":0,"delta":delta,"finish_reason":null}]})

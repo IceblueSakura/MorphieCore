@@ -1,12 +1,12 @@
 //! Pinned OpenAI SDK through catalog-backed Chat/Responses Routers and synthetic origins.
 use crate::openai_tool_loop as fixture;
-use morphiecore::protocol::openai::Profile;
+use morphiecore::protocol::openai::GenerationApi;
 use std::time::Duration;
 
-async fn history_case(profile: Profile, recovery_stream: Option<bool>) {
+async fn history_case(profile: GenerationApi, recovery_stream: Option<bool>) {
     let (script, requests) = match profile {
-        Profile::Chat => ("tests/sdk/chat_tool_history.py", 6),
-        Profile::Responses => ("tests/sdk/responses_history.py", 12),
+        GenerationApi::Chat => ("tests/sdk/chat_tool_history.py", 6),
+        GenerationApi::Responses => ("tests/sdk/responses_history.py", 12),
     };
     let requests = if recovery_stream.is_some() {
         4
@@ -40,7 +40,7 @@ async fn history_case(profile: Profile, recovery_stream: Option<bool>) {
         if recovery_stream.is_some() { 1 } else { 2 }
     );
     assert_eq!(report["three_turn_history"], true);
-    if profile == Profile::Responses {
+    if profile == GenerationApi::Responses {
         assert_eq!(report["stored_stateless"], true);
     } else {
         assert_eq!(report["http_requests"], requests);
@@ -58,7 +58,7 @@ async fn history_case(profile: Profile, recovery_stream: Option<bool>) {
 #[tokio::test]
 #[ignore = "requires pinned OpenAI SDK; synthetic DashScope Chat JSON/SSE tool history"]
 async fn chat_tool_result_and_final_history() {
-    history_case(Profile::Chat, None).await;
+    history_case(GenerationApi::Chat, None).await;
 }
 
 #[tokio::test]
@@ -85,13 +85,13 @@ async fn chat_readable_reasoning_tool_history() {
 #[tokio::test]
 #[ignore = "requires pinned OpenAI SDK; synthetic Responses JSON/SSE stored/stateless history"]
 async fn responses_stored_and_stateless_history() {
-    history_case(Profile::Responses, None).await;
+    history_case(GenerationApi::Responses, None).await;
 }
 
 #[tokio::test]
 #[ignore = "requires pinned OpenAI SDK; synthetic Chat credential migration JSON/SSE"]
 async fn chat_sdk_tool_feedback_sticks_after_primary_recovery() {
     for stream in [false, true] {
-        history_case(Profile::Chat, Some(stream)).await;
+        history_case(GenerationApi::Chat, Some(stream)).await;
     }
 }

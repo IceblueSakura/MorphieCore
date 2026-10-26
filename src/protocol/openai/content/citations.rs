@@ -1,9 +1,12 @@
 //! Native annotation syntax stays outside the semantic model.
 //! https://github.com/openai/openai-python/blob/547ecb1e4fc233f19030736c29fee4374dfbaca1/src/openai/types/responses/response_output_text.py
-use crate::protocol::failure::{CarrierReason, ShapeReason};
-use crate::protocol::openai::content::intake::Items;
-use crate::protocol::openai::{CodecError, Profile, shape::*};
-use crate::semantic::{task::generation::*, value::Text};
+use crate::{
+    protocol::{
+        failure::{CarrierReason, ShapeReason},
+        openai::{CodecError, GenerationApi, content::intake::Items, shape::*},
+    },
+    semantic::{task::generation::*, value::Text},
+};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 #[derive(Eq, PartialEq, Serialize, Deserialize)]
@@ -220,10 +223,10 @@ pub(in crate::protocol::openai) fn check_snapshot(
 pub(crate) fn check(
     annotation: &Annotation,
     resources: &ResourceTable,
-    profile: Profile,
+    profile: GenerationApi,
 ) -> Result<(), CodecError> {
     let value = wire(annotation, resources)?;
-    if profile == Profile::Chat && !matches!(value, WireAnnotation::UrlCitation { .. }) {
+    if profile == GenerationApi::Chat && !matches!(value, WireAnnotation::UrlCitation { .. }) {
         return Err(CodecError::Unsupported(CarrierReason::Unavailable));
     }
     Ok(())
@@ -231,7 +234,7 @@ pub(crate) fn check(
 pub(crate) fn check_items(
     items: &[(ItemId, Item)],
     resources: &ResourceTable,
-    profile: Profile,
+    profile: GenerationApi,
 ) -> Result<(), CodecError> {
     for (_, item) in items {
         if let Item::Message(message) = item {

@@ -19,7 +19,7 @@ pub struct ImageEndpoint {
     pub target: EndpointTarget,
     pub upstream_model: String,
     pub canonical_model: ModelId,
-    pub profile: crate::adapter::images::Profile,
+    pub profile: crate::adapter::images::UpstreamAdapter,
     pub credential: CredentialBindingId,
     pub execution: ExecutionContract,
 }
@@ -28,7 +28,7 @@ pub struct ImageRoute {
     pub id: RouteId,
     pub model: ModelId,
     pub canonical_model: ModelId,
-    pub accounting: crate::lowering::images::AccountingPolicy,
+    pub accounting: crate::protocol::image::projection::AccountingPolicy,
     /// Exactly one target; no implicit retry, fallback or capability union.
     pub endpoint: ImageEndpoint,
 }

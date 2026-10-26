@@ -15,8 +15,10 @@ mod transcription;
 pub use transcription::{TRANSCRIPTION_BINDINGS, TranscriptionBinding};
 mod subscriptions;
 use crate::{
-    lowering::generation::ReportedFactPolicy,
-    protocol::openai::{Adapter, TargetCaps},
+    protocol::{
+        conversion::generation::ReportedFactPolicy,
+        openai::{GenerationCodec, TargetContract},
+    },
     provider::{CredentialBindingId, CredentialKind, catalog},
     topology::*,
 };
@@ -244,7 +246,7 @@ fn declared_topology_compiles() {
     }
     let binding = &MESSAGES_BINDINGS[0];
     assert!(
-        !crate::protocol::anthropic::messages::TargetCaps::new(
+        !crate::protocol::anthropic::messages::TargetContract::new(
             crate::protocol::anthropic::messages::Profile::AdaptiveTextTools,
             crate::protocol::anthropic::messages::Dialect::OpenCodeGo
         )
@@ -275,7 +277,10 @@ fn declared_topology_compiles() {
     let muse = topology.model("muse-spark-1.3-contributor").unwrap();
     let muse_endpoints = topology.route_endpoints(&muse.route);
     assert_eq!(muse_endpoints.len(), 1);
-    assert_eq!(muse_endpoints[0].protocol, ProtocolProfile::OpenAiResponses);
+    assert_eq!(
+        muse_endpoints[0].protocol,
+        GenerationProtocol::OpenAiResponses
+    );
     assert_eq!(
         muse_endpoints[0].target.path.as_str(),
         "/zen/go/v1/responses"
@@ -361,10 +366,10 @@ fn modelbest_vision_versions_use_upstream_ids_and_multimodal_chat_contracts() {
         let binding = API_KEY_BINDINGS.iter().find(|b| b.model == id).unwrap();
         assert_eq!(binding.upstream, id);
         assert_eq!(binding.canonical_model, id);
-        assert_eq!(binding.protocols, &[ProtocolProfile::OpenAiChat]);
+        assert_eq!(binding.protocols, &[GenerationProtocol::OpenAiChat]);
         let public = topology.model(id).unwrap();
         assert!(public.contract.image_input && public.contract.video_input);
-        let endpoint = binding.endpoint(ProtocolProfile::OpenAiChat).unwrap();
+        let endpoint = binding.endpoint(GenerationProtocol::OpenAiChat).unwrap();
         assert_eq!(endpoint.provider.as_str(), "modelbest");
         assert_eq!(endpoint.upstream_model, id);
         assert_eq!(endpoint.credential.as_str(), "modelbest-api-key");

@@ -2,7 +2,7 @@ use crate::events_support::*;
 use morphiecore::{
     protocol::{
         fidelity::FidelityRecords,
-        openai::{Profile, events::EventDecoder, lowering::lower_response, responses},
+        openai::{GenerationApi, events::EventDecoder, lowering::lower_response, responses},
     },
     semantic::task::generation::*,
 };
@@ -42,7 +42,7 @@ fn creator_reports_are_item_owned_bounded_and_output_only() {
         &semantic,
         &fidelity,
         &reported,
-        Profile::Responses,
+        GenerationApi::Responses,
         contract(),
     )
     .unwrap();
@@ -83,7 +83,7 @@ fn creator_reports_are_item_owned_bounded_and_output_only() {
 #[test]
 fn result_creator_snapshot_drift_cannot_be_hidden_at_done_or_terminal() {
     for terminal_drift in [false, true] {
-        let mut decoder = EventDecoder::new(Profile::Responses);
+        let mut decoder = EventDecoder::new(GenerationApi::Responses);
         decoder.push(&created()).unwrap();
         let initial = json!({"id":"result","type":"function_call_output","call_id":"c","output":"",
                 "status":"in_progress","created_by":"actor"});

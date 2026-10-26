@@ -1,16 +1,17 @@
 //! Generation input, protocol provenance, context validation and replay isolation.
-use super::{ClientProtocol, ConversionFailure};
-use crate::protocol::failure::CarrierReason;
+use super::conversion::ConversionFailure;
 use crate::{
-    lowering::generation::RepresentationError,
-    protocol::{CodecError, DecodedRequest},
+    protocol::{
+        CodecError, DecodedRequest, conversion::generation::RepresentationError,
+        failure::CarrierReason,
+    },
     semantic::{
         context::{ConversationContext, DeliveryIntent, ExecutionHints, ServicePolicy},
         value::Presence,
     },
 };
 #[derive(Clone, Debug, PartialEq)]
-pub struct Request {
+pub struct GenerationRequestEnvelope {
     pub task: DecodedRequest,
     pub model: String,
     pub context: ExecutionHints,
@@ -24,7 +25,7 @@ pub struct Request {
     /// Ignored client request field names, for diagnostics only; never encoded.
     pub(crate) ignored_fields: Vec<String>,
 }
-impl Request {
+impl GenerationRequestEnvelope {
     /// Pure typed entry; model is a public label, not an origin or runtime target.
     pub fn from_generation(
         task: crate::protocol::DecodedRequest,
@@ -53,12 +54,12 @@ impl Request {
     }
     pub fn check_semantic(
         &self,
-        contract: &crate::semantic::task::generation::GenerationSemanticContract,
+        contract: &crate::semantic::task::generation::GenerationFeatureSet,
     ) -> Result<crate::semantic::task::generation::GenerationRequirements, ConversionFailure> {
         self.task.semantic.validate().map_err(CodecError::from)?;
         contract.check(&self.task.semantic).map_err(|e| {
             ConversionFailure::from(RepresentationError::Admission(e))
-                .at(crate::lowering::generation::ConversionBoundary::RequestProject)
+                .at(crate::protocol::conversion::generation::ConversionBoundary::RequestProject)
         })
     }
     pub fn check_context(&self, standard_context: bool) -> Result<(), ConversionFailure> {
@@ -81,14 +82,14 @@ impl Request {
         Ok(())
     }
 }
-impl Request {
+impl GenerationRequestEnvelope {
     /// Transfer visible history, not another model's internal reasoning state.
     /// Only complete, demonstrably incompatible reasoning is omitted. Unattributed
     /// readable reasoning is not inferred to be foreign. Required context remains.
     pub(crate) fn without_foreign_reasoning(
         &self,
         target: Option<&crate::semantic::value::ReplayOrigin>,
-    ) -> Result<Option<Request>, CodecError> {
+    ) -> Result<Option<GenerationRequestEnvelope>, CodecError> {
         use crate::semantic::task::generation::{Item, ItemLifecycle, MessageRole};
         let fidelity = &self.task.fidelity;
         fidelity.check_target_replay(&self.task.semantic, target)?;
@@ -223,5 +224,25 @@ impl Request {
         }
         copy.task.fidelity.retain_owners(copy.task.semantic.items());
         Ok(Some(copy))
+    }
+}
+
+/// Downstream wire identity, independent of the selected upstream endpoint.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
+pub enum ClientProtocol {
+    Chat,
+    Responses,
+    Messages,
+}
+impl ClientProtocol {
+    /// Every public Generation client protocol.
+    pub const ALL: [Self; 3] = [Self::Chat, Self::Responses, Self::Messages];
+}
+impl From<crate::protocol::openai::GenerationApi> for ClientProtocol {
+    fn from(profile: crate::protocol::openai::GenerationApi) -> Self {
+        match profile {
+            crate::protocol::openai::GenerationApi::Chat => Self::Chat,
+            crate::protocol::openai::GenerationApi::Responses => Self::Responses,
+        }
     }
 }

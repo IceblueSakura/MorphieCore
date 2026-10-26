@@ -40,7 +40,7 @@ pub enum GenerationFeature {
     DocumentContext,
 }
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct GenerationSemanticContract {
+pub struct GenerationFeatureSet {
     pub instructions: bool,
     /// Instruction items after conversation content keep their position.
     pub ordered_instructions: bool,
@@ -86,7 +86,7 @@ pub struct GenerationSemanticContract {
     pub safety: bool,
     pub automatic_prefix_cache: bool,
 }
-impl GenerationSemanticContract {
+impl GenerationFeatureSet {
     /// Complete vocabulary, useful for codecs and synthetic fixtures, not model discovery.
     pub fn full() -> Self {
         Self {

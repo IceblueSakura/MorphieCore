@@ -1,9 +1,11 @@
 //! Explicit upstream cache carriers. No cache storage, session state or routing decisions.
 use super::openai::CodecError;
-use crate::protocol::failure::CarrierReason;
-use crate::semantic::{
-    context::{CacheRetention, ConversationContext, ExecutionHints},
-    value::{Presence, Text},
+use crate::{
+    protocol::failure::CarrierReason,
+    semantic::{
+        context::{CacheRetention, ConversationContext, ExecutionHints},
+        value::{Presence, Text},
+    },
 };
 use sha2::{Digest, Sha256};
 
@@ -34,7 +36,7 @@ impl std::fmt::Debug for InferredAffinity {
     }
 }
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub struct CacheProjection {
+pub struct CacheTargetPolicy {
     pub key: bool,
     pub retention: bool,
     /// Trusted opt-in after reviewing this target's default storage policy.
@@ -63,8 +65,8 @@ impl HintRule {
             Self::OmitLegacyUserBucketing => "cache.omit-legacy-user-bucketing.v1",
         }
     }
-    pub(crate) fn effect(self) -> crate::lowering::generation::Effect {
-        use crate::lowering::generation::{Change, ConversionBoundary, Effect, Field};
+    pub(crate) fn effect(self) -> crate::protocol::conversion::generation::Effect {
+        use crate::protocol::conversion::generation::{Change, ConversionBoundary, Effect, Field};
         let (field, change) = match self {
             Self::OmitIdentityHints => (Field::Identity, Change::Omit),
             Self::OmitLegacyUserBucketing => (Field::IdentityBucket, Change::Omit),
@@ -79,13 +81,13 @@ impl HintRule {
             change,
         )
     }
-    pub(crate) fn evidence(self) -> Option<crate::lowering::generation::Effect> {
+    pub(crate) fn evidence(self) -> Option<crate::protocol::conversion::generation::Effect> {
         Some(self.effect())
     }
 }
-impl CacheProjection {
+impl CacheTargetPolicy {
     /// Call only after successful projection; active options still reject.
-    pub fn losses(self, context: &ExecutionHints) -> Vec<HintRule> {
+    pub fn applied_rules(self, context: &ExecutionHints) -> Vec<HintRule> {
         [
             (
                 self.omits_day_retention(context),

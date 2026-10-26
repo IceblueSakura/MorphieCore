@@ -22,7 +22,8 @@ pub(in crate::protocol::openai) fn read(
     let resource = Resource {
         description: ResourceDescription::Audio,
         location: ResourceLocation::Inline {
-            media_type: Text::new(mime, "audio media type", 64).map_err(|_| CodecError::Limit)?,
+            media_type: Text::new(mime, "audio media type", MAX_RESOURCE_MEDIA_TYPE_BYTES)
+                .map_err(|_| CodecError::Limit)?,
             data_base64: Text::new(string(audio, "data")?, "audio data", MAX_TEXT_BYTES)
                 .map_err(|_| CodecError::invalid())?,
         },

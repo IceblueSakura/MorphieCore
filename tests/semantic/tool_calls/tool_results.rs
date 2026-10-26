@@ -1,6 +1,5 @@
 //! Tool result kind, artifact lifecycle and wire representability are independent.
-use crate::events_support::text;
-use crate::resources_support as resources;
+use crate::{events_support::text, resources_support as resources};
 use morphiecore::semantic::task::generation::*;
 use serde_json::json;
 fn call() -> (ItemId, Item) {
@@ -125,7 +124,7 @@ fn execution_error_is_a_terminal_result_not_a_generation_failure() {
 fn ordered_media_has_unique_parts_and_distinct_requirements() {
     use morphiecore::protocol::{
         fidelity::FidelityRecords,
-        openai::{Profile, TargetCaps, lowering::lower_request, responses},
+        openai::{GenerationApi, TargetContract, lowering::lower_request, responses},
     };
     let oracle = json!({"input":[
             {"type":"function_call","call_id":"c","name":"lookup","arguments":"{}"},
@@ -152,8 +151,13 @@ fn ordered_media_has_unique_parts_and_distinct_requirements() {
     // Encode independently built IR, not the decoded request.
     let outbound = request(media("https://example.invalid/a.png"), None).unwrap();
     let fidelity = FidelityRecords::default();
-    let target =
-        lower_request(&outbound, &fidelity, Profile::Responses, TargetCaps::full()).unwrap();
+    let target = lower_request(
+        &outbound,
+        &fidelity,
+        GenerationApi::Responses,
+        TargetContract::full(),
+    )
+    .unwrap();
     assert_eq!(
         responses::encode_generation(&target).unwrap()["input"],
         oracle["input"]
@@ -166,7 +170,7 @@ fn ordered_media_has_unique_parts_and_distinct_requirements() {
     let requirements = GenerationRequirements::derive(&history);
     assert_eq!(requirements.tool_result_media, 1);
     assert_eq!(requirements.image_inputs, 1);
-    let mut text_only = GenerationSemanticContract::full();
+    let mut text_only = GenerationFeatureSet::full();
     text_only.image_input = false;
     assert_eq!(
         text_only.check(&history),

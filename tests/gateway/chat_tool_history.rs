@@ -1,6 +1,6 @@
 //! DashScope Chat tool-result and final-answer history through the Router.
 use crate::openai_tool_loop as fixture;
-use morphiecore::protocol::openai::Profile;
+use morphiecore::protocol::openai::GenerationApi;
 use serde_json::{Value, json};
 
 async fn request(client: &reqwest::Client, base: &str, body: &Value, session: &str) -> Value {
@@ -174,7 +174,7 @@ async fn generated_reasoning_cannot_be_published_as_standard_chat() {
         .build()
         .unwrap();
     for stream in [false, true] {
-        let fixture = fixture::start(Profile::Chat, false).await;
+        let fixture = fixture::start(GenerationApi::Chat, false).await;
         let mut body = input(stream);
         body["messages"][0]["content"] = json!("reasoning");
         let mut response = client
@@ -218,7 +218,7 @@ async fn history_case(recover: bool) {
         let fixture = if recover {
             fixture::start_recovery().await
         } else {
-            fixture::start(Profile::Chat, false).await
+            fixture::start(GenerationApi::Chat, false).await
         };
         let mut body = input(stream);
         let initial = body.clone();

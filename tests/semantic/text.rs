@@ -15,9 +15,9 @@ mod text_profile;
 mod timestamps;
 #[test]
 fn responses_original_error_classification_is_not_the_sse_discriminator() {
-    use morphiecore::protocol::openai::{Adapter, Dialect, Profile, TargetCaps};
+    use morphiecore::protocol::openai::{Dialect, GenerationApi, GenerationCodec, TargetContract};
     use serde_json::json;
-    let adapter = Adapter::new(Profile::Responses, Dialect::OpenRouter, None);
+    let adapter = GenerationCodec::new(GenerationApi::Responses, Dialect::OpenRouter, None);
     let wire = json!({"id":"r","object":"response","model":"m","created_at":1,"status":"failed","output":[],
         "error":{"code":"server_error","message":"failed","type":"upstream_classification"}});
     let parsed = adapter
@@ -51,7 +51,7 @@ fn responses_original_error_classification_is_not_the_sse_discriminator() {
         .unwrap();
     assert_eq!(
         adapter
-            .encode_response(&response, &TargetCaps::full())
+            .encode_response(&response, &TargetContract::full())
             .unwrap()["error"],
         json!({"code":"server_error","message":"failed","type":"independent_type"})
     );

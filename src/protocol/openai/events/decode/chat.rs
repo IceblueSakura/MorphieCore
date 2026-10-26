@@ -1,6 +1,8 @@
 //! Incoming Chat chunks and their explicit framing-level DONE boundary.
-use crate::protocol::failure::{CarrierReason, ShapeReason};
-use crate::protocol::openai::events::*;
+use crate::protocol::{
+    failure::{CarrierReason, ShapeReason},
+    openai::events::*,
+};
 
 /// Chat-only chunk bookkeeping. The shared stream state stays in the decoder.
 #[derive(Default)]
@@ -172,10 +174,10 @@ impl EventDecoder {
         }
         let usage = crate::protocol::openai::accounting::usage(
             chunk.get("usage"),
-            Profile::Chat,
+            GenerationApi::Chat,
             &self.adaptation,
             &mut self.evidence,
-            crate::lowering::generation::ConversionBoundary::EventDecode,
+            crate::protocol::conversion::generation::ConversionBoundary::EventDecode,
         )?
         .ok_or(CodecError::Invalid(ShapeReason::UsageTail))?;
         self.emit(StreamEvent::Usage(usage), out)?;
@@ -708,10 +710,10 @@ impl EventDecoder {
         if let Some(value) = terminal_usage {
             let usage = crate::protocol::openai::accounting::usage(
                 Some(value),
-                Profile::Chat,
+                GenerationApi::Chat,
                 &self.adaptation,
                 &mut self.evidence,
-                crate::lowering::generation::ConversionBoundary::EventDecode,
+                crate::protocol::conversion::generation::ConversionBoundary::EventDecode,
             )?
             .ok_or(CodecError::Invalid(ShapeReason::UsageTail))?;
             self.emit(StreamEvent::Usage(usage), out)?;

@@ -3,7 +3,9 @@ mod candidates {
     //! Candidate filtering must be value-sensitive and preserve trusted ordering.
     use morphiecore::{
         execution::ExecutionPlan,
-        protocol::openai::{Adapter, Dialect, Profile, TargetCaps as Representation},
+        protocol::openai::{
+            Dialect, GenerationApi, GenerationCodec, TargetContract as Representation,
+        },
         provider::{
             AuthScheme, CredentialBindingId, EndpointPath, ProviderDefinition, ProviderId,
             TrustedOrigin,
@@ -35,8 +37,9 @@ mod candidates {
             ("a", provider("first"), vec![ImageFormat::Png]),
             ("b", provider("second"), vec![ImageFormat::Bmp]),
         ] {
-            let mut representation = Adapter::new(Profile::Responses, Dialect::MorphieCore, None)
-                .contract(&Representation::full());
+            let mut representation =
+                GenerationCodec::new(GenerationApi::Responses, Dialect::MorphieCore, None)
+                    .contract(&Representation::full());
             representation.images.inline_formats = formats;
             endpoints.push(Endpoint {
                 id: EndpointId::new(id).unwrap(),
@@ -51,7 +54,7 @@ mod candidates {
                 },
                 canonical_model: model_id.clone(),
                 task: TaskKind::Generation,
-                protocol: ProtocolProfile::OpenAiResponses,
+                protocol: GenerationProtocol::OpenAiResponses,
                 upstream_model: format!("{id}-alias"),
                 representation: representation.into(),
                 execution: ExecutionContract {
@@ -79,7 +82,7 @@ mod candidates {
             model_id.clone(),
             TaskKind::Generation,
             route.id.clone(),
-            GenerationSemanticContract::text_images(),
+            GenerationFeatureSet::text_images(),
         );
         compile(
             vec![provider("first"), provider("second")],
@@ -89,7 +92,7 @@ mod candidates {
             vec![CanonicalModel {
                 id: model_id,
                 task: TaskKind::Generation,
-                contract: GenerationSemanticContract::full(),
+                contract: GenerationFeatureSet::full(),
             }],
         )
         .unwrap()
@@ -97,7 +100,7 @@ mod candidates {
 
     #[test]
     fn full_requests_are_filtered_without_mutation_or_reordering() {
-        let client = Adapter::new(Profile::Responses, Dialect::MorphieCore, None);
+        let client = GenerationCodec::new(GenerationApi::Responses, Dialect::MorphieCore, None);
         let request=client.decode_request(&serde_json::to_vec(&json!({"model":"public","input":[{"role":"user","content":[{"type":"input_image","image_url":"data:image/bmp;base64,AQ=="}]}]})).unwrap()).unwrap();
         let before = request.clone();
         let plan =
@@ -169,7 +172,7 @@ mod candidates {
     fn dashscope_qwen_preserves_the_total_output_cap_in_preflight_and_preparation() {
         use morphiecore::execution::{admit, plan::representable, prepare};
         let topology = catalog::default_topology().unwrap();
-        let client = Adapter::new(Profile::Chat, Dialect::Standard, None);
+        let client = GenerationCodec::new(GenerationApi::Chat, Dialect::Standard, None);
         let secret = morphiecore::provider::SecretMaterial::new("synthetic").unwrap();
         for (model, binding) in [
             ("qwen3.8-flash", "dashscope-flash-chat"),
@@ -225,7 +228,7 @@ mod candidates {
     fn a_narrower_native_candidate_is_skipped_not_admitted() {
         let topology = catalog::default_topology().unwrap();
         let model = catalog::GOOGLE_BINDINGS[0].model;
-        let video = Adapter::new(Profile::Chat, Dialect::Standard, None)
+        let video = GenerationCodec::new(GenerationApi::Chat, Dialect::Standard, None)
             .decode_client_request(
                 &serde_json::to_vec(&json!({"model":model,"messages":[{"role":"user","content":[
                     {"type":"video_url","video_url":{"url":"data:video/mp4;base64,AQID"}}]}]}))
@@ -251,7 +254,7 @@ mod candidates {
     fn responses_tool_images_need_an_image_model_and_a_responses_carrier() {
         let topology = catalog::default_topology().unwrap();
         let read = |model: &str| {
-            Adapter::new(Profile::Responses, Dialect::Standard, None)
+            GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None)
                 .decode_client_request(
                     &serde_json::to_vec(&json!({"model":model,
                         "tools":[{"type":"function","name":"read","description":"Read media","strict":false,"parameters":{"type":"object"}}],
@@ -275,13 +278,16 @@ mod candidates {
                 .collect::<Vec<_>>()
         };
         assert_eq!(
-            representable(ProtocolProfile::OpenAiResponses),
+            representable(GenerationProtocol::OpenAiResponses),
             [false, false]
         );
         // Model image support does not create a Bailian function-output media carrier.
         // Its documented output is a string; the standard codec's broader array is not enough.
         // Standard Chat has no tool-result media carrier, so Chat targets reject it.
-        assert_eq!(representable(ProtocolProfile::OpenAiChat), [false, false]);
+        assert_eq!(
+            representable(GenerationProtocol::OpenAiChat),
+            [false, false]
+        );
         let text_only = topology.model("qwen3.8-flash").unwrap();
         assert!(morphiecore::execution::admit(text_only, &read("qwen3.8-flash")).is_err());
     }
@@ -290,7 +296,7 @@ mod fallback_policy {
     //! Classification and commit/attempt budgets, not Provider quality, govern fallback.
     use morphiecore::{
         execution::{DeliveryState, fallback::Transition},
-        provider::ErrorClass,
+        provider::RecoveryClass,
         topology::{FallbackPolicy, RoutePolicy},
     };
     #[test]
@@ -306,14 +312,14 @@ mod fallback_policy {
         assert!(Transition::Credential { enabled: true }.may_advance(
             &policy,
             DeliveryState::Uncommitted,
-            ErrorClass::CredentialUnavailable,
+            RecoveryClass::CredentialUnavailable,
             1,
             true,
         ));
         assert!(!Transition::Provider.may_advance(
             &policy,
             DeliveryState::Uncommitted,
-            ErrorClass::CredentialUnavailable,
+            RecoveryClass::CredentialUnavailable,
             1,
             true,
         ));
@@ -324,16 +330,16 @@ mod fallback_policy {
             assert!(!transition.may_advance(
                 &policy,
                 DeliveryState::Uncommitted,
-                ErrorClass::RateLimit,
+                RecoveryClass::RateLimit,
                 1,
                 true,
             ));
         }
         for error in [
-            ErrorClass::RateLimit,
-            ErrorClass::Server,
-            ErrorClass::Timeout,
-            ErrorClass::Upstream,
+            RecoveryClass::RateLimit,
+            RecoveryClass::Server,
+            RecoveryClass::Timeout,
+            RecoveryClass::Upstream,
         ] {
             assert!(may_advance(
                 &policy,
@@ -390,10 +396,10 @@ mod fallback_policy {
             true
         ));
         for error in [
-            ErrorClass::Authentication,
-            ErrorClass::PermissionDenied,
-            ErrorClass::InvalidRequest,
-            ErrorClass::NotFound,
+            RecoveryClass::Authentication,
+            RecoveryClass::PermissionDenied,
+            RecoveryClass::InvalidRequest,
+            RecoveryClass::NotFound,
         ] {
             assert!(!may_advance(
                 &policy,

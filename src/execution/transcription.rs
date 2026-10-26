@@ -1,16 +1,15 @@
 //! Pure preparation of a single native transcription attempt.
-use super::{AttemptError, UpstreamRequest};
+use super::{AttemptError, task::PreparedTaskRequest};
 use crate::{
-    adapter::transcription::Request,
-    provider::{CredentialKind, ProviderDefinition, SecretMaterial},
+    protocol::transcription::Request,
+    provider::{CredentialKind, ProviderDefinition},
     topology::transcription::TranscriptionRoute,
 };
 pub fn prepare(
     route: &TranscriptionRoute,
     provider: &ProviderDefinition,
-    secret: &SecretMaterial,
     request: &Request,
-) -> Result<UpstreamRequest, AttemptError> {
+) -> Result<PreparedTaskRequest, AttemptError> {
     let endpoint = &route.endpoint;
     if request.model != route.model.as_str()
         || provider.id != endpoint.provider
@@ -33,22 +32,18 @@ pub fn prepare(
         ("content-type".into(), "application/json".into()),
         ("accept".into(), "application/json".into()),
     ];
-    if endpoint.profile == crate::adapter::transcription::Profile::AliyunFlash {
+    if endpoint.profile == crate::adapter::transcription::UpstreamAdapter::AliyunFlash {
         headers.push(("x-dashscope-sse".into(), "disable".into()));
     }
-    Ok(UpstreamRequest {
-        origin: endpoint.target.origin.as_str().into(),
-        method: "POST",
-        path: endpoint.target.path.as_str().into(),
-        safe_headers: headers,
-        auth_header: provider
-            .entry(crate::provider::ProviderOperation::Transcription)
-            .map_or(provider.auth, |entry| entry.auth)
-            .auth_header(secret),
-        body: serde_json::to_vec(&value).map_err(|_| {
+    Ok(PreparedTaskRequest::new(
+        provider,
+        endpoint.target.path.clone(),
+        crate::provider::ProviderOperation::Transcription,
+        headers,
+        serde_json::to_vec(&value).map_err(|_| {
             AttemptError::Protocol(
                 crate::execution::attempt::ProtocolReason::TranscriptionSerialization,
             )
         })?,
-    })
+    ))
 }

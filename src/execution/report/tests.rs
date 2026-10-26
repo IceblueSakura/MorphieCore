@@ -1,7 +1,8 @@
 use super::*;
-use crate::{
-    lowering::generation::{Change, Field},
-    protocol::{CodecError, failure::*},
+use crate::protocol::{
+    CodecError,
+    conversion::generation::{Change, Field},
+    failure::*,
 };
 fn effect() -> Effect {
     Effect::new(
@@ -63,7 +64,9 @@ fn evidence_and_association_saturation_never_disable_acknowledgment() {
     report.begin(1);
     let mut delta = EvidenceDelta::default();
     for index in 0..100 {
-        delta.push(effect().at(crate::lowering::generation::Owner::Item { scope: 1, index }));
+        delta.push(
+            effect().at(crate::protocol::conversion::generation::Owner::Item { scope: 1, index }),
+        );
     }
     assert!(delta.omitted_entries > 0);
     let mut held = Vec::new();
@@ -132,7 +135,7 @@ fn source_cause_survives_handling_failure_and_never_replaces_http_observation() 
         Some("rate_limit_error"),
         Some("synthetic-private credit balance"),
     );
-    assert_eq!(source.kind, FailureKind::Quota);
+    assert_eq!(source.kind, SourceFailureKind::Quota);
     assert_eq!(source.basis, RecognitionBasis::QuotaPattern);
     report.failure(
         Some(ConversionBoundary::EventDecode),
@@ -146,7 +149,7 @@ fn source_cause_survives_handling_failure_and_never_replaces_http_observation() 
     assert_eq!(r.observed_status, Some(200));
     assert_eq!(r.source_failure.unwrap().status_hint.unwrap().get(), 429);
     assert!(
-        matches!(r.failure.unwrap().cause,AttemptError::Codec(CodecError::StreamFailure(e)) if e.kind==FailureKind::Quota)
+        matches!(r.failure.unwrap().cause,AttemptError::Codec(CodecError::StreamFailure(e)) if e.kind==SourceFailureKind::Quota)
     );
     assert!(matches!(
         r.handling_failure.unwrap().cause,
@@ -160,6 +163,7 @@ fn source_cause_survives_handling_failure_and_never_replaces_http_observation() 
 }
 #[test]
 fn failed_ack_does_not_certify_delivery() {
+    // A checked output is not an acknowledged delivery.
     let report = Report::default();
     report.begin(1);
     for (_, ack) in report
@@ -176,4 +180,78 @@ fn failed_ack_does_not_certify_delivery() {
     assert_eq!(r.handed_off_frames, 0);
     assert_eq!(r.evidence.entries[0].handed_off, 0);
     assert_eq!(r.abandoned_units, 1);
+}
+
+#[test]
+fn failure_codes_preserve_leaf_identity_without_debug_or_input() {
+    use crate::{
+        protocol::stream::SseError, semantic::context::ContextError, transport::sse::SseDecodeError,
+    };
+    for (cause, expected) in [
+        (
+            AttemptError::Sse(SseError::Framing(SseDecodeError::InvalidUtf8)),
+            "sse.invalid_utf8",
+        ),
+        (
+            AttemptError::Sse(SseError::Framing(SseDecodeError::UnexpectedEof)),
+            "sse.unexpected_eof",
+        ),
+        (
+            AttemptError::Codec(CodecError::Context(ContextError::Limit)),
+            "context.limit",
+        ),
+        (
+            AttemptError::Codec(CodecError::Context(ContextError::Stateful)),
+            "context.stateful_unsupported",
+        ),
+        (
+            AttemptError::Transport(crate::transport::http::TransportError::RequestConstruction),
+            "transport.request_construction",
+        ),
+        (
+            AttemptError::Transport(crate::transport::http::TransportError::Connect),
+            "transport.connect_failed",
+        ),
+    ] {
+        let value = serde_json::to_value(Failure {
+            boundary: None,
+            cause,
+        })
+        .unwrap();
+        assert_eq!(value["code"], expected);
+        assert!(value.get("reason").is_none());
+    }
+}
+
+#[test]
+fn failed_task_source_is_primary_even_without_a_codec_error() {
+    let report = Report::default();
+    report.begin(1);
+    report.update(|attempt| {
+        attempt.observed_status = Some(200);
+        attempt.source_eof = true;
+        attempt.task_outcome = Some(TaskOutcome::Failed);
+    });
+    report.source_failure(SourceFailureEvidence::envelope(
+        429,
+        RecognitionBasis::EnvelopeCode,
+        Some("rate_limit_exceeded"),
+        None,
+        None,
+    ));
+    report.failure(
+        None,
+        &AttemptError::Delivery(crate::execution::attempt::DeliveryReason::BodyConsumerClosed),
+    );
+    let attempt = report.attempt();
+    assert!(attempt.failure.is_none());
+    assert_eq!(
+        attempt.source_failure.unwrap().kind,
+        SourceFailureKind::RateLimit
+    );
+    assert_eq!(
+        attempt.handling_failure.unwrap().cause.code(),
+        "delivery.body_consumer_closed"
+    );
+    assert!(attempt.source_eof);
 }

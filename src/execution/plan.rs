@@ -49,7 +49,7 @@ pub enum PlanError {
 }
 
 /// Closed reasons never retain request data, codec messages or credential locators.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum RejectionReason {
     Streaming,
     BodyLimit,
@@ -57,6 +57,20 @@ pub enum RejectionReason {
     Image,
     ReplayScope,
     Representation,
+    Conversion(Box<crate::protocol::ConversionFailure>),
+}
+impl RejectionReason {
+    pub fn code(&self) -> &'static str {
+        match self {
+            Self::Streaming => "admission.streaming",
+            Self::BodyLimit => "admission.request_body_limit",
+            Self::Semantic(feature) => super::failure::feature_code(feature),
+            Self::Image => "admission.image",
+            Self::ReplayScope => "admission.replay_scope",
+            Self::Representation => "admission.client_representation",
+            Self::Conversion(cause) => super::failure::conversion_code(cause),
+        }
+    }
 }
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CandidateRejection {
@@ -72,13 +86,13 @@ pub const MAX_CANDIDATES: usize = crate::topology::route::MAX_ROUTE_CANDIDATES;
 /// Pure preflight; use bounded counting, not a serialized copy of every candidate body.
 pub fn representable(
     endpoint: &Endpoint,
-    request: &crate::adapter::Request,
+    request: &crate::protocol::GenerationRequestEnvelope,
 ) -> Result<(), RejectionReason> {
     representable_for_client(endpoint, request, None)
 }
 fn representable_for_client(
     endpoint: &Endpoint,
-    request: &crate::adapter::Request,
+    request: &crate::protocol::GenerationRequestEnvelope,
     client: Option<&crate::adapter::ClientAdapter>,
 ) -> Result<(), RejectionReason> {
     if (request.delivery.streaming() || endpoint.representation.forced_stream())
@@ -86,24 +100,39 @@ fn representable_for_client(
     {
         return Err(RejectionReason::Streaming);
     }
-    let value = endpoint.encode_request(request).map_err(|error| {
-        use crate::{adapter::ConversionFailure, lowering::generation::RepresentationError};
-        match error {
-            ConversionFailure { cause: crate::adapter::ConversionCause::Representation(RepresentationError::Admission(feature)), .. } => {
-                RejectionReason::Semantic(feature)
+    let value =
+        endpoint.encode_request(request).map_err(|error| {
+            use crate::protocol::{ConversionFailure, conversion::generation::RepresentationError};
+            match error {
+                ConversionFailure {
+                    cause:
+                        crate::protocol::ConversionCause::Representation(
+                            RepresentationError::Admission(feature),
+                        ),
+                    ..
+                } => RejectionReason::Semantic(feature),
+                ConversionFailure {
+                    cause:
+                        crate::protocol::ConversionCause::Representation(
+                            RepresentationError::ImageInput,
+                        ),
+                    ..
+                } => RejectionReason::Image,
+                ConversionFailure {
+                    cause:
+                        crate::protocol::ConversionCause::Representation(
+                            RepresentationError::ReplayOrigin,
+                        ),
+                    ..
+                } => RejectionReason::ReplayScope,
+                error => RejectionReason::Conversion(Box::new(error)),
             }
-            ConversionFailure { cause: crate::adapter::ConversionCause::Representation(RepresentationError::ImageInput), .. } => RejectionReason::Image,
-            ConversionFailure { cause: crate::adapter::ConversionCause::Representation(RepresentationError::ReplayOrigin), .. } => {
-                RejectionReason::ReplayScope
-            }
-            _ => RejectionReason::Representation,
-        }
-    })?;
+        })?;
     if let Some(crate::adapter::ClientAdapter::OpenAi { adapter, .. }) = client
-        && adapter.protocol == crate::protocol::openai::Profile::Chat
+        && adapter.protocol == crate::protocol::openai::GenerationApi::Chat
         && !adapter.adaptation.rules.readable_reasoning
-        && endpoint.protocol == crate::topology::ProtocolProfile::OpenAiChat
-        && let crate::lowering::target::TargetCaps::OpenAi(caps) = &endpoint.representation
+        && endpoint.protocol == crate::topology::GenerationProtocol::OpenAiChat
+        && let crate::lowering::target::TargetContract::OpenAi(caps) = &endpoint.representation
         && caps.chat_thinking_output
         && value.get("enable_thinking") != Some(&serde_json::Value::Bool(false))
     {
@@ -115,14 +144,14 @@ fn representable_for_client(
 }
 /// Sole ordered selection mechanism for library plans and activated Gateway members.
 pub fn select_candidates<'a>(
-    request: &crate::adapter::Request,
+    request: &crate::protocol::GenerationRequestEnvelope,
     policy: CandidatePolicy,
     endpoints: impl IntoIterator<Item = &'a Endpoint>,
 ) -> Result<CandidateSelection, PlanError> {
     select_candidates_for_client(request, policy, endpoints, None)
 }
 pub(crate) fn select_candidates_for_client<'a>(
-    request: &crate::adapter::Request,
+    request: &crate::protocol::GenerationRequestEnvelope,
     policy: CandidatePolicy,
     endpoints: impl IntoIterator<Item = &'a Endpoint>,
     client: Option<&crate::adapter::ClientAdapter>,
@@ -161,7 +190,7 @@ pub(crate) fn select_candidates_for_client<'a>(
 impl ExecutionPlan {
     pub fn for_request(
         topology: &CompiledTopology,
-        request: &crate::adapter::Request,
+        request: &crate::protocol::GenerationRequestEnvelope,
     ) -> Result<Self, PlanError> {
         let public = topology
             .model(&request.model)
@@ -229,17 +258,19 @@ mod tests {
 
     #[test]
     fn downstream_reasoning_requirements_filter_without_disabling_or_reordering() {
-        use crate::adapter::ClientAdapter;
-        use crate::protocol::openai::{Adapter, Dialect, Profile, TargetCaps};
+        use crate::{
+            adapter::ClientAdapter,
+            protocol::openai::{Dialect, GenerationApi, GenerationCodec, TargetContract},
+        };
         let topology = default_topology().unwrap();
         let endpoint = topology
             .endpoint(&EndpointId::new("dashscope-flash-chat").unwrap())
             .unwrap();
-        let standard = Adapter::new(Profile::Chat, Dialect::Standard, None);
-        let plain = ClientAdapter::openai(standard.clone(), TargetCaps::full());
+        let standard = GenerationCodec::new(GenerationApi::Chat, Dialect::Standard, None);
+        let plain = ClientAdapter::openai(standard.clone(), TargetContract::full());
         let readable = ClientAdapter::openai(
-            Adapter::new(Profile::Chat, Dialect::ChatReasoning, None),
-            TargetCaps::full(),
+            GenerationCodec::new(GenerationApi::Chat, Dialect::ChatReasoning, None),
+            TargetContract::full(),
         );
         let mut unknown = endpoint.clone();
         unknown.id = EndpointId::new("unspecified-output").unwrap();

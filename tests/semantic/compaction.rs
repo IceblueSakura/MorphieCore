@@ -1,17 +1,17 @@
 //! Compacted context is ordered history, not readable reasoning or disposable replay.
 use crate::events_support::*;
 use morphiecore::{
-    execution::replay::{CLIENT_ORIGIN, open_from_client, seal_event, seal_for_client},
+    execution::replay::{open_from_client, seal_event, seal_for_client},
     protocol::{
-        anthropic::messages::{client::encode_client_response, client::sse::ClientEventEncoder},
+        anthropic::messages::client::{encode_client_response, sse::ClientEventEncoder},
         fidelity::FidelityRecords,
         openai::{
-            Adapter, Dialect, Profile, TargetCaps,
+            Dialect, GenerationApi, GenerationCodec, TargetContract,
             events::{EventDecoder, EventEncoder},
             lowering::{lower_request, lower_response},
             responses,
         },
-        replay_envelope,
+        replay_envelope::{self, CLIENT_ORIGIN},
     },
     semantic::task::generation::*,
 };
@@ -34,13 +34,26 @@ fn compaction_history_keeps_identity_payload_and_order() {
     assert!(!requirements.reasoning);
     let mut fidelity = decoded.fidelity.clone();
     fidelity.bind_replay_origin(&origin()).unwrap();
-    let target =
-        lower_request(&decoded.semantic, &fidelity, Profile::Responses, contract()).unwrap();
+    let target = lower_request(
+        &decoded.semantic,
+        &fidelity,
+        GenerationApi::Responses,
+        contract(),
+    )
+    .unwrap();
     let wire = responses::encode_generation(&target).unwrap();
     assert_eq!(wire["input"][1], item);
     assert_eq!(wire["input"][0]["content"][0]["text"], "before");
     assert_eq!(wire["input"][2]["content"][0]["text"], "after");
-    assert!(lower_request(&decoded.semantic, &fidelity, Profile::Chat, contract()).is_err());
+    assert!(
+        lower_request(
+            &decoded.semantic,
+            &fidelity,
+            GenerationApi::Chat,
+            contract()
+        )
+        .is_err()
+    );
 
     // Independent IR -> wire oracle, also selected into full request history.
     let id = ItemId::new(7);
@@ -57,7 +70,7 @@ fn compaction_history_keeps_identity_payload_and_order() {
         &response,
         &records,
         &metadata,
-        Profile::Responses,
+        GenerationApi::Responses,
         contract(),
     )
     .unwrap();
@@ -73,7 +86,7 @@ fn compaction_history_keeps_identity_payload_and_order() {
         .unwrap();
     assert_eq!(history.items(), response.items());
     let wire = responses::encode_generation(
-        &lower_request(&history, &records, Profile::Responses, contract()).unwrap(),
+        &lower_request(&history, &records, GenerationApi::Responses, contract()).unwrap(),
     )
     .unwrap();
     assert_eq!(wire["input"], json!([item]));
@@ -101,18 +114,14 @@ fn compaction_history_keeps_identity_payload_and_order() {
     let idless = json!({"type":"compaction","encrypted_content":"synthetic-context"});
     assert!(responses::decode_generation(&json!({"input":[idless]})).is_ok());
     assert!(responses::decode_response(&envelope("completed", json!([idless]))).is_err());
-    assert!(
-        GenerationSemanticContract::text_images()
-            .check(&history)
-            .is_err()
-    );
+    assert!(GenerationFeatureSet::text_images().check(&history).is_err());
 }
 
 #[test]
 fn compaction_stream_requires_a_matching_closed_snapshot() {
     let item = json!({"type":"compaction","id":"cmp_1","encrypted_content":"synthetic-context"});
     let opener = json!({"type":"compaction","id":"cmp_1","encrypted_content":""});
-    let mut decoder = EventDecoder::new(Profile::Responses).with_replay_origin(origin());
+    let mut decoder = EventDecoder::new(GenerationApi::Responses).with_replay_origin(origin());
     decoder.push(&created()).unwrap();
     let opened = decoder
         .push(&json!({"type":"response.output_item.added","output_index":0,"item":opener}))
@@ -160,14 +169,14 @@ fn compaction_stream_requires_a_matching_closed_snapshot() {
     ];
     assert_eq!(opened, events[1..2]);
     assert_eq!(closed, events[2..3]);
-    let wire = encode(&events, Profile::Responses, &result.fidelity);
+    let wire = encode(&events, GenerationApi::Responses, &result.fidelity);
     assert_eq!(wire[2]["item"], opener);
     assert_eq!(wire[3]["item"], item);
     assert_eq!(wire[4]["response"]["output"], json!([item]));
 
     let mut client_caps = contract();
     client_caps.replay_origin = Some(CLIENT_ORIGIN.clone());
-    let mut client = EventEncoder::new(Profile::Responses, metadata())
+    let mut client = EventEncoder::new(GenerationApi::Responses, metadata())
         .unwrap()
         .with_contract(client_caps);
     let sealed: Vec<_> = events
@@ -188,7 +197,7 @@ fn compaction_stream_requires_a_matching_closed_snapshot() {
     assert_eq!(format, ReplayFormat::ResponsesCompaction);
     assert_eq!(payload.as_str(), "synthetic-context");
     assert_eq!(sealed[3]["item"], sealed[4]["response"]["output"][0]);
-    let mut chat = EventEncoder::new(Profile::Chat, metadata())
+    let mut chat = EventEncoder::new(GenerationApi::Chat, metadata())
         .unwrap()
         .with_contract(contract());
     chat.encode(&events[0], &result.fidelity).unwrap();
@@ -197,7 +206,7 @@ fn compaction_stream_requires_a_matching_closed_snapshot() {
     messages.encode(&events[0]).unwrap();
     assert!(messages.encode(&events[1]).is_err());
 
-    let mut truncated = EventDecoder::new(Profile::Responses).with_replay_origin(origin());
+    let mut truncated = EventDecoder::new(GenerationApi::Responses).with_replay_origin(origin());
     truncated.push(&created()).unwrap();
     truncated
         .push(&json!({"type":"response.output_item.added","output_index":0,"item":opener}))
@@ -214,9 +223,10 @@ fn compaction_stream_requires_a_matching_closed_snapshot() {
 
 #[test]
 fn compaction_replay_rejects_incompatible_or_unbound_context_without_stripping() {
-    let upstream = Adapter::new(Profile::Responses, Dialect::Standard, Some(origin()));
-    let client = Adapter::new(
-        Profile::Responses,
+    let upstream =
+        GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, Some(origin()));
+    let client = GenerationCodec::new(
+        GenerationApi::Responses,
         Dialect::Standard,
         Some(CLIENT_ORIGIN.clone()),
     );
@@ -236,7 +246,7 @@ fn compaction_replay_rejects_incompatible_or_unbound_context_without_stripping()
             &response.semantic,
             &response.fidelity,
             &response.metadata,
-            Profile::Chat,
+            GenerationApi::Chat,
             client_caps
         )
         .is_err()
@@ -252,10 +262,14 @@ fn compaction_replay_rejects_incompatible_or_unbound_context_without_stripping()
     assert_eq!(request, saved);
 
     let foreign = replay_envelope::issuer("other-provider", "other-model");
-    let adapter = Adapter::new(Profile::Responses, Dialect::Standard, Some(foreign.clone()));
-    let caps = TargetCaps {
+    let adapter = GenerationCodec::new(
+        GenerationApi::Responses,
+        Dialect::Standard,
+        Some(foreign.clone()),
+    );
+    let caps = TargetContract {
         replay_origin: Some(foreign),
-        ..TargetCaps::full()
+        ..TargetContract::full()
     };
     assert!(
         adapter
@@ -264,7 +278,7 @@ fn compaction_replay_rejects_incompatible_or_unbound_context_without_stripping()
     );
     assert!(
         upstream
-            .encode_request(&request, "synthetic", &TargetCaps::full())
+            .encode_request(&request, "synthetic", &TargetContract::full())
             .is_err()
     );
     assert_eq!(request, saved);
@@ -320,11 +334,11 @@ fn compaction_replay_rejects_incompatible_or_unbound_context_without_stripping()
             &incomplete,
             &fidelity,
             &metadata(),
-            Profile::Responses,
+            GenerationApi::Responses,
             contract()
         )
         .err(),
-        Some(morphiecore::lowering::generation::RepresentationError::ReplayPhase),
+        Some(morphiecore::protocol::conversion::generation::RepresentationError::ReplayPhase),
     );
     assert!(!format!("{:?}", content()).contains("synthetic-context"));
     let oversized = morphiecore::semantic::value::Text::new(
@@ -352,7 +366,7 @@ fn compaction_progress_and_output_creator_are_not_execution_or_request_authority
     let opener =
         json!({"type":"compaction","id":"cmp_1","encrypted_content":"","created_by":"actor"});
     let done = json!({"type":"compaction","id":"cmp_1","encrypted_content":"synthetic-context","created_by":"actor"});
-    let mut decoder = EventDecoder::new(Profile::Responses).with_replay_origin(origin());
+    let mut decoder = EventDecoder::new(GenerationApi::Responses).with_replay_origin(origin());
     decoder.push(&created()).unwrap();
     let opened = decoder
         .push(&json!({"type":"response.output_item.added","output_index":0,"item":opener}))
@@ -383,7 +397,7 @@ fn compaction_progress_and_output_creator_are_not_execution_or_request_authority
     );
     // Independent typed event -> wire expectation. Progress remains repeatable,
     // content-free and ordered; no output snapshot is invented from it.
-    let mut encoder = EventEncoder::new(Profile::Responses, metadata())
+    let mut encoder = EventEncoder::new(GenerationApi::Responses, metadata())
         .unwrap()
         .with_contract(contract());
     encoder
@@ -440,7 +454,13 @@ fn compaction_progress_and_output_creator_are_not_execution_or_request_authority
     )
     .unwrap();
     let wire = responses::encode_generation(
-        &lower_request(&request, &response.fidelity, Profile::Responses, contract()).unwrap(),
+        &lower_request(
+            &request,
+            &response.fidelity,
+            GenerationApi::Responses,
+            contract(),
+        )
+        .unwrap(),
     )
     .unwrap();
     assert!(wire["input"][0].get("created_by").is_none());

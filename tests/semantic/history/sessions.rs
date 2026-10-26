@@ -3,17 +3,20 @@
 mod facts;
 
 use morphiecore::{
-    adapter::{ClientAdapter, ConversionFailure, Request, UpstreamAdapter},
+    adapter::{ClientAdapter, UpstreamAdapter},
     execution::{
         Attempt, ResponseDelivery,
-        replay::{CLIENT_ORIGIN, open_from_client, seal_for_client},
+        replay::{open_from_client, seal_for_client},
     },
     protocol::{
-        DecodedRequest, DecodedResponse,
+        ConversionFailure, DecodedRequest, DecodedResponse, GenerationRequestEnvelope as Request,
         anthropic::messages,
         google::{generate_content, interactions},
         native::ReplayTarget,
-        openai::{Adapter, Dialect, Profile, TargetCaps, obfuscation::Obfuscation},
+        openai::{
+            Dialect, GenerationApi, GenerationCodec, TargetContract, obfuscation::Obfuscation,
+        },
+        replay_envelope::CLIENT_ORIGIN,
     },
     semantic::task::generation::*,
 };
@@ -48,12 +51,12 @@ impl Api {
     fn target(self) -> ReplayTarget {
         ReplayTarget::new("synthetic-session", MODEL).unwrap()
     }
-    fn openai(self) -> Adapter {
-        Adapter::new(
+    fn openai(self) -> GenerationCodec {
+        GenerationCodec::new(
             if matches!(self, Self::Chat) {
-                Profile::Chat
+                GenerationApi::Chat
             } else {
-                Profile::Responses
+                GenerationApi::Responses
             },
             Dialect::Standard,
             Some(
@@ -82,16 +85,16 @@ impl Api {
             return ClientAdapter::Messages;
         }
         ClientAdapter::openai(
-            Adapter::new(
+            GenerationCodec::new(
                 if matches!(self, Self::Chat) {
-                    Profile::Chat
+                    GenerationApi::Chat
                 } else {
-                    Profile::Responses
+                    GenerationApi::Responses
                 },
                 Dialect::MorphieCore,
                 None,
             ),
-            TargetCaps::full(),
+            TargetContract::full(),
         )
     }
     fn client_history(self) -> &'static str {
@@ -111,7 +114,7 @@ impl Api {
     fn encode(self, request: &Request) -> Result<(Value, Vec<String>), ConversionFailure> {
         Ok(match self {
             Self::Chat | Self::Responses => {
-                let mut caps = TargetCaps::full();
+                let mut caps = TargetContract::full();
                 caps.replay_origin = self.openai().adaptation.scope.clone();
                 let (v, r) = self
                     .openai()
@@ -119,7 +122,7 @@ impl Api {
                 (v, r.into_iter().map(str::to_owned).collect())
             }
             Self::Messages => {
-                let p = messages::TargetCaps::new(
+                let p = messages::TargetContract::new(
                     messages::Profile::AdaptiveTextTools,
                     messages::Dialect::Standard,
                 )
@@ -667,7 +670,7 @@ fn edited_returned_reasoning_cannot_reuse_the_original_replay_authority() {
             matches!(
                 error,
                 ConversionFailure {
-                    cause: morphiecore::adapter::ConversionCause::Codec(CodecError::Invalid(
+                    cause: morphiecore::protocol::ConversionCause::Codec(CodecError::Invalid(
                         morphiecore::protocol::failure::ShapeReason::InvalidValue
                     )),
                     ..

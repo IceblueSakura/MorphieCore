@@ -2,24 +2,23 @@
 use crate::protocol::failure::{CarrierReason, ShapeReason};
 mod chat;
 mod responses;
-use crate::protocol::openai::events::*;
-use crate::protocol::openai::lowering::projection;
+use crate::protocol::openai::{events::*, lowering::projection};
 use serde_json::json;
 
 pub struct EventEncoder {
-    pub(super) profile: Profile,
+    pub(super) profile: GenerationApi,
     pub(super) metadata: ResponseMetadata,
     /// None is rejection, including failures before or after semantic reduction.
     pub(super) state: Option<StreamState>,
     pub(super) fidelity: FidelityRecords,
-    pub(super) contract: TargetCaps,
+    pub(super) contract: TargetContract,
     target_locked: bool,
     sequence: u64,
     pub(super) chat_audio_pending: Vec<u8>,
-    pub(super) projection: Vec<crate::lowering::generation::Effect>,
+    pub(super) projection: Vec<crate::protocol::conversion::generation::Effect>,
 }
 impl EventEncoder {
-    pub fn new(profile: Profile, metadata: ResponseMetadata) -> Result<Self, CodecError> {
+    pub fn new(profile: GenerationApi, metadata: ResponseMetadata) -> Result<Self, CodecError> {
         metadata.validate()?;
         crate::protocol::reports::relation(&metadata.context.reports, true)?;
         validate_metadata(profile, &metadata)?;
@@ -28,7 +27,7 @@ impl EventEncoder {
             metadata,
             state: Some(StreamState::new()),
             fidelity: FidelityRecords::default(),
-            contract: TargetCaps::full(),
+            contract: TargetContract::full(),
             target_locked: false,
             sequence: 0,
             chat_audio_pending: Vec::new(),
@@ -50,7 +49,7 @@ impl EventEncoder {
             }
             metadata.validate()?;
             validate_metadata(self.profile, &metadata)?;
-            if self.profile == Profile::Responses
+            if self.profile == GenerationApi::Responses
                 && self.sequence != 0
                 && matches!(
                     self.metadata.context.reports,
@@ -68,7 +67,7 @@ impl EventEncoder {
             {
                 return Err(CodecError::invalid());
             }
-            if self.profile == Profile::Chat && self.state()?.started() {
+            if self.profile == GenerationApi::Chat && self.state()?.started() {
                 let old = &self.metadata.context;
                 if !old.system_fingerprint.is_absent()
                     && old.system_fingerprint != metadata.context.system_fingerprint
@@ -90,7 +89,7 @@ impl EventEncoder {
         }
         result
     }
-    pub fn with_contract(mut self, contract: TargetCaps) -> Self {
+    pub fn with_contract(mut self, contract: TargetContract) -> Self {
         if self.target_locked && self.contract != contract {
             self.state = None;
         } else {
@@ -109,16 +108,16 @@ impl EventEncoder {
         self.target_locked = true;
         let checked_projection = self.projection.len();
         let result = (|| {
-            if self.profile == Profile::Chat
+            if self.profile == GenerationApi::Chat
                 && (self.metadata.context.settings().is_some()
                     || self.metadata.context.instruction_messages.is_some())
             {
                 if self.contract.reported_facts
-                    == crate::lowering::generation::ReportedFactPolicy::StrictComplete
+                    == crate::protocol::conversion::generation::ReportedFactPolicy::StrictComplete
                 {
                     return Err(CodecError::Unsupported(CarrierReason::Unavailable));
                 }
-                self.record_loss(projection::LossRule::OmitChatReportedSettings);
+                self.record_loss(projection::ProjectionRule::OmitChatReportedSettings);
             }
             crate::protocol::openai::lowering::events::check_event(
                 self.state()?,
@@ -127,7 +126,7 @@ impl EventEncoder {
                 &self.contract,
             )
             .map_err(|cause| CodecError::Representation {
-                boundary: crate::lowering::generation::ConversionBoundary::EventProject,
+                boundary: crate::protocol::conversion::generation::ConversionBoundary::EventProject,
                 cause,
             })?;
             if let StreamEvent::ItemStarted { item, .. } = event {
@@ -147,7 +146,7 @@ impl EventEncoder {
             }
             // Chat summary chunks have not emitted a wire item identity yet.
             // Bind the issuer's late identity before rendering encrypted replay.
-            if self.profile == Profile::Chat
+            if self.profile == GenerationApi::Chat
                 && self.contract.adaptation.rules.structured_chat_reasoning
                 && let StreamEvent::ItemFinished {
                     item,
@@ -158,7 +157,7 @@ impl EventEncoder {
             {
                 self.fidelity.record_response_item_id(*item, id)?;
             }
-            let probabilities = if self.profile == Profile::Chat {
+            let probabilities = if self.profile == GenerationApi::Chat {
                 self.chat_probabilities(event)?
             } else {
                 None
@@ -188,23 +187,23 @@ impl EventEncoder {
             if matches!(event, StreamEvent::Terminal { .. }) {
                 self.fidelity.copy_response_records(source);
             }
-            let mut values = if self.profile == Profile::Responses {
+            let mut values = if self.profile == GenerationApi::Responses {
                 self.responses(event)?
             } else {
                 self.chat(event, probabilities)?
             };
             for v in &mut values {
-                if self.profile == Profile::Responses {
+                if self.profile == GenerationApi::Responses {
                     v["sequence_number"] = json!(self.sequence);
                     self.sequence += 1;
                 }
                 bounded(v)?;
             }
-            if self.profile == Profile::Responses
+            if self.profile == GenerationApi::Responses
                 && !values.is_empty()
                 && !self.metadata.context.system_fingerprint.is_absent()
             {
-                self.record_loss(projection::LossRule::OmitResponsesSystemFingerprint);
+                self.record_loss(projection::ProjectionRule::OmitResponsesSystemFingerprint);
             }
             Ok(values)
         })();
@@ -222,16 +221,20 @@ impl EventEncoder {
         Ok(())
     }
     /// Successful prefixes remain evidence even when a later event is rejected.
-    pub(crate) fn take_evidence(&mut self) -> crate::lowering::generation::EvidenceDelta {
+    pub(crate) fn take_evidence(
+        &mut self,
+    ) -> crate::protocol::conversion::generation::EvidenceDelta {
         std::mem::take(&mut self.projection).into_iter().collect()
     }
-    pub fn projection(&self) -> &[crate::lowering::generation::Effect] {
+    pub fn projection(&self) -> &[crate::protocol::conversion::generation::Effect] {
         &self.projection
     }
-    fn record_loss(&mut self, loss: projection::LossRule) {
+    fn record_loss(&mut self, loss: projection::ProjectionRule) {
         record_stages(
             &mut self.projection,
-            [(loss).effect(crate::lowering::generation::ConversionBoundary::ResponseProject)],
+            [(loss).effect(
+                crate::protocol::conversion::generation::ConversionBoundary::ResponseProject,
+            )],
         );
     }
     pub(super) fn state(&self) -> Result<&StreamState, CodecError> {
@@ -240,17 +243,22 @@ impl EventEncoder {
 }
 /// Event delivery re-labels every copied stage and keeps the first occurrence.
 fn record_stages(
-    projection: &mut Vec<crate::lowering::generation::Effect>,
-    stages: impl IntoIterator<Item = crate::lowering::generation::Effect>,
+    projection: &mut Vec<crate::protocol::conversion::generation::Effect>,
+    stages: impl IntoIterator<Item = crate::protocol::conversion::generation::Effect>,
 ) {
     for mut stage in stages {
-        stage = stage.with_boundary(crate::lowering::generation::ConversionBoundary::EventProject);
+        stage = stage.with_boundary(
+            crate::protocol::conversion::generation::ConversionBoundary::EventProject,
+        );
         if !projection.contains(&stage) {
             projection.push(stage);
         }
     }
 }
-fn validate_metadata(profile: Profile, metadata: &ResponseMetadata) -> Result<(), CodecError> {
+fn validate_metadata(
+    profile: GenerationApi,
+    metadata: &ResponseMetadata,
+) -> Result<(), CodecError> {
     for report in metadata.context.reports.iter() {
         if let Some(class) = report.service_class.value() {
             crate::protocol::openai::service::class_wire(*class, profile)?;
@@ -267,7 +275,7 @@ fn validate_metadata(profile: Profile, metadata: &ResponseMetadata) -> Result<()
         .created
         .as_ref()
         .ok_or(CodecError::Invalid(ShapeReason::Metadata))?;
-    if profile == Profile::Chat {
+    if profile == GenerationApi::Chat {
         crate::protocol::reports::validate_single(&metadata.context.reports)?;
         crate::protocol::openai::chat::envelope::validate_context(&metadata.context.execution)?;
         if created.as_u64().is_none() || !metadata.context.execution.metadata.is_absent() {

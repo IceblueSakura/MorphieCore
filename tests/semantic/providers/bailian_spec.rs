@@ -1,25 +1,24 @@
 use crate::events_support::text;
 use morphiecore::{
-    adapter::{ConversionFailure, Request},
     protocol::{
-        CodecError, DecodedRequest,
+        CodecError, ConversionFailure, DecodedRequest, GenerationRequestEnvelope as Request,
         fidelity::FidelityRecords,
-        openai::{Adapter, Dialect, Profile, TargetCaps},
+        openai::{Dialect, GenerationApi, GenerationCodec, TargetContract},
     },
     semantic::{task::generation::*, value::Presence},
-    topology::{ProtocolProfile, catalog::API_KEY_BINDINGS},
+    topology::{GenerationProtocol, catalog::API_KEY_BINDINGS},
 };
 use serde_json::{Value, json};
-fn client(profile: Profile) -> Adapter {
-    Adapter::new(profile, Dialect::MorphieCore, None)
+fn client(profile: GenerationApi) -> GenerationCodec {
+    GenerationCodec::new(profile, Dialect::MorphieCore, None)
 }
-fn native(profile: Profile) -> Adapter {
-    Adapter::new(profile, Dialect::Bailian, None)
+fn native(profile: GenerationApi) -> GenerationCodec {
+    GenerationCodec::new(profile, Dialect::Bailian, None)
 }
 fn chat() -> Value {
     json!({"model":"qwen3.8-flash","messages":[{"role":"user","content":"go"}]})
 }
-fn endpoint(prefix: &str, profile: ProtocolProfile) -> morphiecore::topology::Endpoint {
+fn endpoint(prefix: &str, profile: GenerationProtocol) -> morphiecore::topology::Endpoint {
     API_KEY_BINDINGS
         .iter()
         .find(|b| b.endpoint_prefix == prefix)
@@ -74,7 +73,7 @@ fn native_chat_controls_have_independent_input_and_output_oracles_without_defaul
         reasoning,
         ..Default::default()
     });
-    for adapter in [native(Profile::Chat), client(Profile::Chat)] {
+    for adapter in [native(GenerationApi::Chat), client(GenerationApi::Chat)] {
         let decoded = adapter
             .decode_client_request(wire.to_string().as_bytes())
             .unwrap();
@@ -82,8 +81,8 @@ fn native_chat_controls_have_independent_input_and_output_oracles_without_defaul
     }
     let before = expected.clone();
     assert_eq!(
-        native(Profile::Chat)
-            .encode_request(&expected, "qwen3.8-flash", &TargetCaps::full())
+        native(GenerationApi::Chat)
+            .encode_request(&expected, "qwen3.8-flash", &TargetContract::full())
             .unwrap(),
         wire
     );
@@ -98,7 +97,7 @@ fn native_chat_controls_have_independent_input_and_output_oracles_without_defaul
         "tokenplan-max",
         "aliyun-tokenplan-cn",
     ] {
-        let target = endpoint(prefix, ProtocolProfile::OpenAiChat);
+        let target = endpoint(prefix, GenerationProtocol::OpenAiChat);
         let (actual, rules) = target.encode_request_with_rules(&input).unwrap();
         let mut expected = wire.clone();
         expected["model"] = json!(target.upstream_model);
@@ -106,10 +105,10 @@ fn native_chat_controls_have_independent_input_and_output_oracles_without_defaul
         assert_eq!(actual, expected);
         assert!(rules.is_empty());
     }
-    let empty = client(Profile::Chat)
+    let empty = client(GenerationApi::Chat)
         .decode_client_request(chat().to_string().as_bytes())
         .unwrap();
-    let (out, rules) = endpoint("dashscope-flash", ProtocolProfile::OpenAiChat)
+    let (out, rules) = endpoint("dashscope-flash", GenerationProtocol::OpenAiChat)
         .encode_request_with_rules(&empty)
         .unwrap();
     for field in [
@@ -143,7 +142,7 @@ fn native_control_types_conflicts_and_unowned_fields_never_silently_disappear() 
         let mut wire = chat();
         wire[field] = value;
         assert!(
-            client(Profile::Chat)
+            client(GenerationApi::Chat)
                 .decode_client_request(wire.to_string().as_bytes())
                 .is_err(),
             "{field}"
@@ -160,7 +159,7 @@ fn native_control_types_conflicts_and_unowned_fields_never_silently_disappear() 
             .unwrap()
             .extend(controls.as_object().unwrap().clone());
         assert!(
-            client(Profile::Chat)
+            client(GenerationApi::Chat)
                 .decode_client_request(wire.to_string().as_bytes())
                 .is_err()
         );
@@ -168,7 +167,7 @@ fn native_control_types_conflicts_and_unowned_fields_never_silently_disappear() 
     let mut wire = chat();
     wire["future_extension"] = json!({"ignored":true});
     assert!(
-        client(Profile::Chat)
+        client(GenerationApi::Chat)
             .decode_client_request(wire.to_string().as_bytes())
             .is_ok()
     );
@@ -176,21 +175,21 @@ fn native_control_types_conflicts_and_unowned_fields_never_silently_disappear() 
     wire["messages"][0]["content"] =
         json!([{"type":"text","text":"go","cache_control":{"type":"ephemeral"}}]);
     assert!(
-        client(Profile::Chat)
+        client(GenerationApi::Chat)
             .decode_client_request(wire.to_string().as_bytes())
             .is_err()
     );
     wire = chat();
     wire["messages"] = json!([{"role":"assistant","content":"prefix","partial":true}]);
     assert!(
-        client(Profile::Chat)
+        client(GenerationApi::Chat)
             .decode_client_request(wire.to_string().as_bytes())
             .is_err()
     );
 }
 #[test]
 fn output_caps_sampling_and_model_specific_ignored_controls_fail_closed() {
-    let target = endpoint("dashscope-flash", ProtocolProfile::OpenAiChat);
+    let target = endpoint("dashscope-flash", GenerationProtocol::OpenAiChat);
     for (field, value) in [
         ("temperature", json!(2)),
         ("temperature", json!(0.5)),
@@ -201,7 +200,7 @@ fn output_caps_sampling_and_model_specific_ignored_controls_fail_closed() {
     ] {
         let mut wire = chat();
         wire[field] = value;
-        let input = client(Profile::Chat)
+        let input = client(GenerationApi::Chat)
             .decode_client_request(wire.to_string().as_bytes())
             .unwrap();
         assert!(target.encode_request_with_rules(&input).is_err(), "{field}");
@@ -209,7 +208,7 @@ fn output_caps_sampling_and_model_specific_ignored_controls_fail_closed() {
     let mut off = chat();
     off["enable_thinking"] = json!(false);
     off["temperature"] = json!(0.0);
-    let input = client(Profile::Chat)
+    let input = client(GenerationApi::Chat)
         .decode_client_request(off.to_string().as_bytes())
         .unwrap();
     let (wire, rules) = target.encode_request_with_rules(&input).unwrap();
@@ -222,18 +221,18 @@ fn output_caps_sampling_and_model_specific_ignored_controls_fail_closed() {
         "tokenplan-glm",
         "dashscope-kimi",
     ] {
-        let target = endpoint(prefix, ProtocolProfile::OpenAiChat);
+        let target = endpoint(prefix, GenerationProtocol::OpenAiChat);
         let mut budget = chat();
         budget["thinking_budget"] = json!(32);
-        let input = client(Profile::Chat)
+        let input = client(GenerationApi::Chat)
             .decode_client_request(budget.to_string().as_bytes())
             .unwrap();
         assert!(
-            matches!(target.encode_request_with_rules(&input),Err(ConversionFailure { cause: morphiecore::adapter::ConversionCause::Codec(CodecError::Unsupported(field)), .. }) if field == morphiecore::protocol::failure::CarrierReason::Reasoning)
+            matches!(target.encode_request_with_rules(&input),Err(ConversionFailure { cause: morphiecore::protocol::ConversionCause::Codec(CodecError::Unsupported(field)), .. }) if field == morphiecore::protocol::failure::CarrierReason::Reasoning)
         );
         let mut cap = chat();
         cap["max_completion_tokens"] = json!(64);
-        let input = client(Profile::Chat)
+        let input = client(GenerationApi::Chat)
             .decode_client_request(cap.to_string().as_bytes())
             .unwrap();
         let (wire, _) = target.encode_request_with_rules(&input).unwrap();
@@ -243,13 +242,13 @@ fn output_caps_sampling_and_model_specific_ignored_controls_fail_closed() {
     let mut legacy = chat();
     legacy["max_tokens"] = json!(64);
     assert!(
-        native(Profile::Chat)
+        native(GenerationApi::Chat)
             .decode_request(legacy.to_string().as_bytes())
             .is_err()
     );
     legacy["enable_thinking"] = json!(false);
     assert!(
-        native(Profile::Chat)
+        native(GenerationApi::Chat)
             .decode_request(legacy.to_string().as_bytes())
             .is_ok()
     );
@@ -257,7 +256,7 @@ fn output_caps_sampling_and_model_specific_ignored_controls_fail_closed() {
     legacy["model"] = json!("glm-5.3");
     legacy["max_tokens"] = json!(64);
     assert_eq!(
-        native(Profile::Chat)
+        native(GenerationApi::Chat)
             .decode_request(legacy.to_string().as_bytes())
             .unwrap()
             .task
@@ -280,10 +279,10 @@ fn qualitative_aliases_are_model_bound_and_never_budget_presets() {
         for prefix in ["dashscope-flash", "aliyun-tokenplan-cn"] {
             let mut wire = chat();
             wire["reasoning_effort"] = json!(input);
-            let request = client(Profile::Chat)
+            let request = client(GenerationApi::Chat)
                 .decode_client_request(wire.to_string().as_bytes())
                 .unwrap();
-            let (wire, rules) = endpoint(prefix, ProtocolProfile::OpenAiChat)
+            let (wire, rules) = endpoint(prefix, GenerationProtocol::OpenAiChat)
                 .encode_request_with_rules(&request)
                 .unwrap();
             assert_eq!(wire["reasoning_effort"], output);
@@ -294,7 +293,7 @@ fn qualitative_aliases_are_model_bound_and_never_budget_presets() {
     }
     let mut wire = chat();
     wire["reasoning_effort"] = json!("high");
-    let native = native(Profile::Chat)
+    let native = native(GenerationApi::Chat)
         .decode_request(wire.to_string().as_bytes())
         .unwrap();
     assert_eq!(
@@ -310,11 +309,11 @@ fn qualitative_aliases_are_model_bound_and_never_budget_presets() {
     );
     for value in ["none", "medium", "minimal"] {
         wire["reasoning_effort"] = json!(value);
-        let input = client(Profile::Chat)
+        let input = client(GenerationApi::Chat)
             .decode_client_request(wire.to_string().as_bytes())
             .unwrap();
         assert!(
-            endpoint("dashscope-glm", ProtocolProfile::OpenAiChat)
+            endpoint("dashscope-glm", GenerationProtocol::OpenAiChat)
                 .encode_request_with_rules(&input)
                 .is_err()
         );
@@ -324,20 +323,20 @@ fn qualitative_aliases_are_model_bound_and_never_budget_presets() {
 fn model_binding_and_local_delivery_prefs_cannot_be_bypassed_by_direct_native_adapters() {
     let mut wire = chat();
     wire["reasoning_effort"] = json!("medium");
-    let input = client(Profile::Chat)
+    let input = client(GenerationApi::Chat)
         .decode_client_request(wire.to_string().as_bytes())
         .unwrap();
     assert!(
-        native(Profile::Chat)
-            .encode_request(&input, "glm-5.3", &TargetCaps::full())
+        native(GenerationApi::Chat)
+            .encode_request(&input, "glm-5.3", &TargetContract::full())
             .is_err()
     );
-    let mut caps = TargetCaps::full();
-    caps.adaptation = native(Profile::Chat).adaptation;
+    let mut caps = TargetContract::full();
+    caps.adaptation = native(GenerationApi::Chat).adaptation;
     let lowered = morphiecore::protocol::openai::lowering::lower_request(
         &input.task.semantic,
         &input.task.fidelity,
-        Profile::Chat,
+        GenerationApi::Chat,
         caps,
     )
     .unwrap();
@@ -350,11 +349,11 @@ fn model_binding_and_local_delivery_prefs_cannot_be_bypassed_by_direct_native_ad
             Err(CodecError::Unsupported(field)) if field == morphiecore::protocol::failure::CarrierReason::Unavailable)
     );
     wire["reasoning_effort"] = json!("high");
-    let input = client(Profile::Chat)
+    let input = client(GenerationApi::Chat)
         .decode_client_request(wire.to_string().as_bytes())
         .unwrap();
-    let (out, rules) = native(Profile::Chat)
-        .encode_request_with_rules(&input, "qwen3.8-flash", &TargetCaps::full())
+    let (out, rules) = native(GenerationApi::Chat)
+        .encode_request_with_rules(&input, "qwen3.8-flash", &TargetContract::full())
         .unwrap();
     assert_eq!(out["reasoning_effort"], "xhigh");
     assert_eq!(rules, ["bailian.qwen3.8-flash.effort.v1"]);
@@ -362,15 +361,15 @@ fn model_binding_and_local_delivery_prefs_cannot_be_bypassed_by_direct_native_ad
     wire["model"] = json!("kimi-k3");
     wire["reasoning_effort"] = json!("none");
     for result in [
-        native(Profile::Chat).decode_request(wire.to_string().as_bytes()),
-        native(Profile::Chat).decode_client_request(wire.to_string().as_bytes()),
+        native(GenerationApi::Chat).decode_request(wire.to_string().as_bytes()),
+        native(GenerationApi::Chat).decode_client_request(wire.to_string().as_bytes()),
     ] {
         assert!(result.is_err());
     }
-    let input = client(Profile::Chat)
+    let input = client(GenerationApi::Chat)
         .decode_client_request(wire.to_string().as_bytes())
         .unwrap();
-    let (out, _) = endpoint("dashscope-kimi", ProtocolProfile::OpenAiChat)
+    let (out, _) = endpoint("dashscope-kimi", GenerationProtocol::OpenAiChat)
         .encode_request_with_rules(&input)
         .unwrap();
     assert_eq!(out["enable_thinking"], false);
@@ -378,36 +377,36 @@ fn model_binding_and_local_delivery_prefs_cannot_be_bypassed_by_direct_native_ad
     wire = chat();
     wire["stream"] = json!(true);
     wire["stream_options"] = json!({"include_usage":true,"include_obfuscation":false});
-    let input = client(Profile::Chat)
+    let input = client(GenerationApi::Chat)
         .decode_client_request(wire.to_string().as_bytes())
         .unwrap();
     let before = input.clone();
-    let (out, _) = endpoint("dashscope-flash", ProtocolProfile::OpenAiChat)
+    let (out, _) = endpoint("dashscope-flash", GenerationProtocol::OpenAiChat)
         .encode_request_with_rules(&input)
         .unwrap();
     assert_eq!(out["stream_options"], json!({"include_usage":true}));
     assert_eq!(input, before);
     assert!(
-        native(Profile::Chat)
+        native(GenerationApi::Chat)
             .decode_client_request(wire.to_string().as_bytes())
             .is_err()
     );
     let wire = json!({"model":"qwen3.8-flash","input":[
             {"type":"configuration_update","reasoning":{"effort":"low"}},{"role":"user","content":"go"}]});
-    let input = client(Profile::Responses)
+    let input = client(GenerationApi::Responses)
         .decode_client_request(wire.to_string().as_bytes())
         .unwrap();
     assert!(
-        matches!(endpoint("dashscope-flash",ProtocolProfile::OpenAiResponses).encode_request_with_rules(&input),
-            Err(ConversionFailure { cause: morphiecore::adapter::ConversionCause::Codec(CodecError::Unsupported(field)), .. }) if field == morphiecore::protocol::failure::CarrierReason::Unavailable)
+        matches!(endpoint("dashscope-flash",GenerationProtocol::OpenAiResponses).encode_request_with_rules(&input),
+            Err(ConversionFailure { cause: morphiecore::protocol::ConversionCause::Codec(CodecError::Unsupported(field)), .. }) if field == morphiecore::protocol::failure::CarrierReason::Unavailable)
     );
     assert!(
-        native(Profile::Responses)
+        native(GenerationApi::Responses)
             .decode_client_request(wire.to_string().as_bytes())
             .is_err()
     );
     let wire = json!({"model":"glm-5.3","input":"go","reasoning":{"effort":"medium"}});
-    let native = native(Profile::Responses)
+    let native = native(GenerationApi::Responses)
         .decode_request(wire.to_string().as_bytes())
         .unwrap();
     assert_eq!(
@@ -421,10 +420,10 @@ fn model_binding_and_local_delivery_prefs_cannot_be_bypassed_by_direct_native_ad
             .level,
         EffortLevel::High
     );
-    let input = client(Profile::Responses)
+    let input = client(GenerationApi::Responses)
         .decode_client_request(wire.to_string().as_bytes())
         .unwrap();
-    let (wire, rules) = endpoint("tokenplan-glm", ProtocolProfile::OpenAiResponses)
+    let (wire, rules) = endpoint("tokenplan-glm", GenerationProtocol::OpenAiResponses)
         .encode_request_with_rules(&input)
         .unwrap();
     assert_eq!(wire["reasoning"]["effort"], "high");
@@ -436,7 +435,7 @@ fn response_request() -> Value {
 }
 #[test]
 fn responses_non_strict_defaults_and_single_function_selection_have_native_oracles() {
-    let native = native(Profile::Responses)
+    let native = native(GenerationApi::Responses)
         .decode_request(response_request().to_string().as_bytes())
         .unwrap();
     assert!(
@@ -462,7 +461,7 @@ fn responses_non_strict_defaults_and_single_function_selection_have_native_oracl
         ..Default::default()
     };
     let input = request(settings);
-    let target = endpoint("dashscope-flash", ProtocolProfile::OpenAiResponses);
+    let target = endpoint("dashscope-flash", GenerationProtocol::OpenAiResponses);
     let (wire, rules) = target.encode_request_with_rules(&input).unwrap();
     let mut expected = response_request();
     expected["store"] = json!(false);
@@ -474,7 +473,7 @@ fn responses_non_strict_defaults_and_single_function_selection_have_native_oracl
     let mut source = response_request();
     source["tools"][0]["strict"] = json!(false);
     source["enable_thinking"] = json!(true);
-    let input = client(Profile::Responses)
+    let input = client(GenerationApi::Responses)
         .decode_client_request(source.to_string().as_bytes())
         .unwrap();
     let (wire, _) = target.encode_request_with_rules(&input).unwrap();
@@ -484,7 +483,7 @@ fn responses_non_strict_defaults_and_single_function_selection_have_native_oracl
 }
 #[test]
 fn responses_unlisted_guarantees_and_non_adjacent_results_reject_without_reordering() {
-    let target = endpoint("dashscope-flash", ProtocolProfile::OpenAiResponses);
+    let target = endpoint("dashscope-flash", GenerationProtocol::OpenAiResponses);
     for patch in [
         json!({"text":{"format":{"type":"json_object"}}}),
         json!({"reasoning":{"summary":"concise"}}),
@@ -498,12 +497,12 @@ fn responses_unlisted_guarantees_and_non_adjacent_results_reject_without_reorder
         wire.as_object_mut()
             .unwrap()
             .extend(patch.as_object().unwrap().clone());
-        let input = client(Profile::Responses)
+        let input = client(GenerationApi::Responses)
             .decode_client_request(wire.to_string().as_bytes())
             .unwrap();
         assert!(target.encode_request_with_rules(&input).is_err(), "{patch}");
     }
-    let strict = client(Profile::Responses)
+    let strict = client(GenerationApi::Responses)
         .decode_client_request(response_request().to_string().as_bytes())
         .unwrap();
     assert!(target.encode_request_with_rules(&strict).is_err());
@@ -512,12 +511,12 @@ fn responses_unlisted_guarantees_and_non_adjacent_results_reject_without_reorder
     let make_result =
         |id: &str| json!({"type":"function_call_output","call_id":id,"output":"done"});
     let mut wire = json!({"model":"qwen3.8-flash","input":[make_call("a"),make_call("b"),make_result("a"),make_result("b")]});
-    let input = client(Profile::Responses)
+    let input = client(GenerationApi::Responses)
         .decode_client_request(wire.to_string().as_bytes())
         .unwrap();
     let before = input.clone();
     assert!(
-        matches!(target.encode_request_with_rules(&input),Err(ConversionFailure { cause: morphiecore::adapter::ConversionCause::Codec(CodecError::Unsupported(field)), .. }) if field == morphiecore::protocol::failure::CarrierReason::Unavailable)
+        matches!(target.encode_request_with_rules(&input),Err(ConversionFailure { cause: morphiecore::protocol::ConversionCause::Codec(CodecError::Unsupported(field)), .. }) if field == morphiecore::protocol::failure::CarrierReason::Unavailable)
     );
     assert_eq!(input, before);
     wire["input"] = json!([
@@ -526,7 +525,7 @@ fn responses_unlisted_guarantees_and_non_adjacent_results_reject_without_reorder
         make_call("b"),
         make_result("b")
     ]);
-    let input = client(Profile::Responses)
+    let input = client(GenerationApi::Responses)
         .decode_client_request(wire.to_string().as_bytes())
         .unwrap();
     assert_eq!(

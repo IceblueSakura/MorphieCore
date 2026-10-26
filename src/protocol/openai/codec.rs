@@ -1,32 +1,31 @@
 //! OpenAI bidirectional adapter: one profile plus the adaptation a binding selected.
 mod request;
 pub use crate::protocol::openai::dialect::Dialect;
+use crate::protocol::{
+    CodecError, ConversionFailure, DecodedResponse,
+    openai::{self, GenerationApi, TargetContract},
+};
 use crate::{
-    adapter::{ConversionFailure, Request},
-    protocol::{
-        CodecError, DecodedResponse,
-        openai::{
-            self, Profile, TargetCaps, dialect::adaptation::Adaptation, events::EventDecoder,
-            lowering::lower_response,
-        },
+    protocol::openai::{
+        dialect::adaptation::Adaptation, events::EventDecoder, lowering::lower_response,
     },
     semantic::value::ReplayOrigin,
 };
 use serde_json::Value;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Adapter {
-    pub protocol: Profile,
+pub struct GenerationCodec {
+    pub protocol: GenerationApi,
     pub adaptation: Adaptation,
 }
-impl Adapter {
-    pub fn new(protocol: Profile, dialect: Dialect, scope: Option<ReplayOrigin>) -> Self {
+impl GenerationCodec {
+    pub fn new(protocol: GenerationApi, dialect: Dialect, scope: Option<ReplayOrigin>) -> Self {
         Self {
             protocol,
             adaptation: dialect.adaptation(protocol, scope),
         }
     }
-    pub fn contract(&self, contract: &TargetCaps) -> TargetCaps {
+    pub fn contract(&self, contract: &TargetContract) -> TargetContract {
         let mut result = contract.clone();
         result.adaptation = self.adaptation.clone();
         result.images.intersect(&self.adaptation.images);
@@ -37,11 +36,11 @@ impl Adapter {
     pub fn decode_response(&self, bytes: &[u8]) -> Result<DecodedResponse, CodecError> {
         let value = crate::protocol::json::decode(bytes)?;
         let mut decoded = match self.protocol {
-            Profile::Chat => {
+            GenerationApi::Chat => {
                 openai::chat::envelope::validate_response(&value)?;
                 openai::chat::response::decode_with(&value, &self.adaptation)?
             }
-            Profile::Responses => {
+            GenerationApi::Responses => {
                 openai::responses::envelope::validate_response_snapshot_with(
                     &value,
                     &self.adaptation,
@@ -75,7 +74,7 @@ impl Adapter {
     pub fn encode_response(
         &self,
         response: &DecodedResponse,
-        contract: &TargetCaps,
+        contract: &TargetContract,
     ) -> Result<Value, ConversionFailure> {
         let target = lower_response(
             &response.semantic,
@@ -85,8 +84,8 @@ impl Adapter {
             self.contract(contract),
         )?;
         Ok(match self.protocol {
-            Profile::Chat => openai::chat::envelope::encode_response(&target)?,
-            Profile::Responses => openai::responses::envelope::encode_response(&target)?,
+            GenerationApi::Chat => openai::chat::envelope::encode_response(&target)?,
+            GenerationApi::Responses => openai::responses::envelope::encode_response(&target)?,
         })
     }
     pub fn event_decoder(&self) -> EventDecoder {

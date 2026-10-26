@@ -4,7 +4,7 @@ use super::{
     TopologyError,
 };
 use crate::{
-    lowering::speech::SpeechCapabilities,
+    protocol::speech::projection::SpeechCapabilities,
     provider::{CredentialBindingId, CredentialKind, EndpointPath, ProviderId},
 };
 use std::collections::{BTreeMap, BTreeSet};
@@ -21,7 +21,7 @@ pub struct SpeechEndpoint {
     pub target: EndpointTarget,
     pub upstream_model: String,
     pub canonical_model: ModelId,
-    pub profile: crate::adapter::speech::Profile,
+    pub profile: crate::adapter::speech::UpstreamAdapter,
     pub capabilities: SpeechCapabilities,
     pub credential: CredentialBindingId,
     pub execution: ExecutionContract,

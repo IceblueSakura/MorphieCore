@@ -1,5 +1,7 @@
 //! Independent Chat probability and context oracles against the pinned SDK contract.
-use morphiecore::protocol::openai::{Adapter, Dialect, Profile, TargetCaps as Contract};
+use morphiecore::protocol::openai::{
+    Dialect, GenerationApi, GenerationCodec, TargetContract as Contract,
+};
 use serde_json::{Value, json};
 
 #[test]
@@ -9,7 +11,7 @@ fn audit_probability_extensions_do_not_weaken_known_field_validation() {
     p["future_token_field"] = json!({"x":true});
     p["top_logprobs"][0]["future_top_field"] = json!(42);
     let body = response(false, json!({"content":[p.clone()],"refusal":null}));
-    let decoded = adapter(Profile::Chat)
+    let decoded = adapter(GenerationApi::Chat)
         .decode_response(body.to_string().as_bytes())
         .unwrap();
     let Item::Message(message) = &decoded.semantic.items()[0].1 else {
@@ -35,15 +37,15 @@ fn audit_probability_extensions_do_not_weaken_known_field_validation() {
         p["logprob"] = bad;
         let body = response(false, json!({"content":[p.clone()],"refusal":null}));
         assert!(
-            adapter(Profile::Chat)
+            adapter(GenerationApi::Chat)
                 .decode_response(body.to_string().as_bytes())
                 .is_err()
         );
     }
 }
 
-fn adapter(profile: Profile) -> Adapter {
-    Adapter::new(profile, Dialect::Standard, None)
+fn adapter(profile: GenerationApi) -> GenerationCodec {
+    GenerationCodec::new(profile, Dialect::Standard, None)
 }
 fn probability(token: &str) -> Value {
     json!({"token":token,"logprob":-0.1234567890123456,"bytes":null,
@@ -66,15 +68,15 @@ fn chunk(delta: Value, probabilities: Value, finish: Value) -> Value {
 #[test]
 fn chat_probability_request_controls_project_and_reject_invalid_combinations() {
     let wire = json!({"model":"m","messages":[{"role":"user","content":"hi"}],"logprobs":true,"top_logprobs":2});
-    let mut request = adapter(Profile::Chat)
+    let mut request = adapter(GenerationApi::Chat)
         .decode_request(wire.to_string().as_bytes())
         .unwrap();
-    let encoded = adapter(Profile::Chat)
+    let encoded = adapter(GenerationApi::Chat)
         .encode_request(&request, "m", &Contract::full())
         .unwrap();
     assert_eq!(encoded["logprobs"], true);
     assert_eq!(encoded["top_logprobs"], 2);
-    let responses = adapter(Profile::Responses)
+    let responses = adapter(GenerationApi::Responses)
         .encode_request(&request, "m", &Contract::full())
         .unwrap();
     assert_eq!(
@@ -86,7 +88,7 @@ fn chat_probability_request_controls_project_and_reject_invalid_combinations() {
     settings.controls.top_logprobs = None;
     request.task.semantic = request.task.semantic.with_settings(settings).unwrap();
     assert!(
-        adapter(Profile::Chat)
+        adapter(GenerationApi::Chat)
             .encode_request(&request, "m", &Contract::full())
             .unwrap()
             .get("top_logprobs")
@@ -95,7 +97,7 @@ fn chat_probability_request_controls_project_and_reject_invalid_combinations() {
     let mut contract = Contract::full();
     contract.semantics.logprobs = false;
     assert!(
-        adapter(Profile::Chat)
+        adapter(GenerationApi::Chat)
             .encode_request(&request, "m", &contract)
             .is_err()
     );
@@ -103,11 +105,11 @@ fn chat_probability_request_controls_project_and_reject_invalid_combinations() {
         let mut wire = wire.clone();
         wire["logprobs"] = value.clone();
         wire.as_object_mut().unwrap().shift_remove("top_logprobs");
-        let request = adapter(Profile::Chat)
+        let request = adapter(GenerationApi::Chat)
             .decode_request(wire.to_string().as_bytes())
             .unwrap();
         assert_eq!(
-            adapter(Profile::Chat)
+            adapter(GenerationApi::Chat)
                 .encode_request(&request, "m", &Contract::full())
                 .unwrap()["logprobs"],
             value
@@ -124,7 +126,7 @@ fn chat_probability_request_controls_project_and_reject_invalid_combinations() {
         wire["logprobs"] = enabled;
         wire["top_logprobs"] = top;
         assert!(
-            adapter(Profile::Chat)
+            adapter(GenerationApi::Chat)
                 .decode_request(wire.to_string().as_bytes())
                 .is_err()
         );
@@ -135,18 +137,18 @@ fn chat_probability_request_controls_project_and_reject_invalid_combinations() {
 fn chat_probability_arrays_are_reported_even_when_empty_and_bad_owners_fail() {
     for refusal in [false, true] {
         let key = if refusal { "refusal" } else { "content" };
-        let decoded = adapter(Profile::Chat)
+        let decoded = adapter(GenerationApi::Chat)
             .decode_response(response(refusal, json!({key:[]})).to_string().as_bytes())
             .unwrap();
         assert_eq!(
-            adapter(Profile::Chat)
+            adapter(GenerationApi::Chat)
                 .encode_response(&decoded, &Contract::full())
                 .unwrap()["choices"][0]["logprobs"][key],
             json!([])
         );
         let other = if refusal { "content" } else { "refusal" };
         assert!(
-            adapter(Profile::Chat)
+            adapter(GenerationApi::Chat)
                 .decode_response(response(refusal, json!({other:[]})).to_string().as_bytes())
                 .is_err()
         );
@@ -158,7 +160,7 @@ fn chat_probability_arrays_are_reported_even_when_empty_and_bad_owners_fail() {
         json!({"token":"ok","logprob":-1,"top_logprobs":[],"bytes":[256]}),
     ] {
         assert!(
-            adapter(Profile::Chat)
+            adapter(GenerationApi::Chat)
                 .decode_response(
                     response(false, json!({"content":[probability]}))
                         .to_string()
@@ -167,7 +169,7 @@ fn chat_probability_arrays_are_reported_even_when_empty_and_bad_owners_fail() {
                 .is_err()
         );
     }
-    let mut decoder = adapter(Profile::Chat).event_decoder();
+    let mut decoder = adapter(GenerationApi::Chat).event_decoder();
     assert!(
         decoder
             .push(&chunk(

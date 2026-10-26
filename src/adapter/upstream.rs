@@ -1,11 +1,12 @@
 //! Upstream response dispatch, independent of the standard client's OpenAI profile.
-use crate::protocol::failure::CarrierReason;
 use crate::{
     protocol::{
         CodecError, DecodedResponse, ResponseMetadata, anthropic,
+        failure::CarrierReason,
         fidelity::FidelityRecords,
         openai::{
-            Adapter, Profile, chat::sse::ChatSseDecoder, responses::sse::ResponsesSseDecoder,
+            GenerationApi, GenerationCodec, chat::sse::ChatSseDecoder,
+            responses::sse::ResponsesSseDecoder,
         },
         stream::{SseError, SseLimits},
     },
@@ -16,7 +17,7 @@ const NATIVE_SCOPE: LocalScope = LocalScope::new(2);
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum UpstreamAdapter {
-    OpenAi(Box<Adapter>),
+    OpenAi(Box<GenerationCodec>),
     /// Native intake labels opaque values with the trusted Provider/model binding.
     AnthropicMessages {
         profile: anthropic::messages::Profile,
@@ -29,13 +30,13 @@ pub enum UpstreamAdapter {
         target: crate::protocol::native::ReplayTarget,
     },
 }
-impl From<Adapter> for UpstreamAdapter {
-    fn from(adapter: Adapter) -> Self {
+impl From<GenerationCodec> for UpstreamAdapter {
+    fn from(adapter: GenerationCodec) -> Self {
         Self::OpenAi(Box::new(adapter))
     }
 }
 impl UpstreamAdapter {
-    pub fn openai(&self) -> Result<&Adapter, CodecError> {
+    pub fn openai(&self) -> Result<&GenerationCodec, CodecError> {
         match self {
             Self::OpenAi(adapter) => Ok(adapter),
             Self::AnthropicMessages { .. }
@@ -46,7 +47,7 @@ impl UpstreamAdapter {
     pub fn decode_response(
         &self,
         bytes: &[u8],
-    ) -> Result<DecodedResponse, super::ConversionFailure> {
+    ) -> Result<DecodedResponse, crate::protocol::ConversionFailure> {
         let result = match self {
             Self::OpenAi(adapter) => adapter.decode_response(bytes),
             Self::AnthropicMessages { profile, target } => {
@@ -57,8 +58,8 @@ impl UpstreamAdapter {
             }
         };
         result.map_err(|error: CodecError| {
-            super::ConversionFailure::from(error)
-                .at(crate::lowering::generation::ConversionBoundary::ResponseDecode)
+            crate::protocol::ConversionFailure::from(error)
+                .at(crate::protocol::conversion::generation::ConversionBoundary::ResponseDecode)
         })
     }
     pub(crate) fn is_native(&self) -> bool {
@@ -81,13 +82,13 @@ impl UpstreamAdapter {
         };
         Ok(match self {
             Self::OpenAi(adapter) => match adapter.protocol {
-                Profile::Chat => GenerationDecoder::Chat(ChatSseDecoder::with_decoder(
+                GenerationApi::Chat => GenerationDecoder::Chat(ChatSseDecoder::with_decoder(
                     status,
                     content_type,
                     limits,
                     adapter.event_decoder(),
                 )?),
-                Profile::Responses => {
+                GenerationApi::Responses => {
                     GenerationDecoder::Responses(ResponsesSseDecoder::with_decoder(
                         status,
                         content_type,
@@ -142,7 +143,9 @@ pub(crate) enum GenerationDecoder {
     Interactions(crate::protocol::google::interactions::GenerationSseDecoder),
 }
 impl GenerationDecoder {
-    pub(crate) fn take_evidence(&mut self) -> crate::lowering::generation::EvidenceDelta {
+    pub(crate) fn take_evidence(
+        &mut self,
+    ) -> crate::protocol::conversion::generation::EvidenceDelta {
         match self {
             Self::Responses(d) => d.take_intake_evidence(),
             Self::Chat(d) => d.take_intake_evidence(),

@@ -1,13 +1,13 @@
 //! Independent wire fixtures for the selected hosted Chat adapter, not model inventory.
 use morphiecore::{
-    protocol::openai::{Adapter, Dialect, Profile, TargetCaps as Contract},
+    protocol::openai::{Dialect, GenerationApi, GenerationCodec, TargetContract as Contract},
     semantic::value::ReplayOrigin,
 };
 use serde_json::{Value, json};
 
-fn provider() -> Adapter {
-    Adapter::new(
-        Profile::Chat,
+fn provider() -> GenerationCodec {
+    GenerationCodec::new(
+        GenerationApi::Chat,
         Dialect::ModelBest,
         Some(ReplayOrigin::new("synthetic-source").unwrap()),
     )
@@ -25,7 +25,7 @@ fn modelbest_flat_reasoning_counts_and_stop_diagnostics_are_scoped_and_editable(
         .decode_response(&serde_json::to_vec(&wire).unwrap())
         .unwrap();
     assert_eq!(decoded.semantic.usage().unwrap().reasoning_tokens, Some(2));
-    let client = Adapter::new(Profile::Chat, Dialect::MorphieCore, None);
+    let client = GenerationCodec::new(GenerationApi::Chat, Dialect::MorphieCore, None);
     let delivered = client.encode_response(&decoded, &Contract::full()).unwrap();
     assert_eq!(
         delivered["usage"]["completion_tokens_details"]["reasoning_tokens"],
@@ -111,7 +111,7 @@ fn modelbest_inactive_server_shapes_do_not_erase_active_data_or_reported_counter
     let usage = decoded.semantic.usage().unwrap();
     assert_eq!(usage.input_cache_write_tokens, Some(3));
     assert_eq!(usage.input_image_tokens, Some(1));
-    let client = Adapter::new(Profile::Chat, Dialect::MorphieCore, None);
+    let client = GenerationCodec::new(GenerationApi::Chat, Dialect::MorphieCore, None);
     let delivered = client.encode_response(&decoded, &Contract::full()).unwrap();
     assert_eq!(
         delivered["usage"]["prompt_tokens_details"],

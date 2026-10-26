@@ -1,18 +1,22 @@
 //! Encoding guards also protect crate-internal callers from forged representations.
-use crate::protocol::failure::CarrierReason;
-use crate::protocol::openai::*;
-use crate::semantic::{task::generation::*, value::Text};
+use crate::{
+    protocol::{
+        failure::CarrierReason,
+        openai::{GenerationApi, GenerationCodec, *},
+    },
+    semantic::{task::generation::*, value::Text},
+};
 
 #[test]
 fn responses_final_encoding_and_managed_history_cannot_drop_participants() {
-    let request = Adapter::new(Profile::Chat, Dialect::Standard, None)
+    let request = GenerationCodec::new(GenerationApi::Chat, Dialect::Standard, None)
         .decode_client_request(br#"{"model":"synthetic","messages":[{"role":"user","name":"alice","content":"hello"}]}"#)
         .unwrap();
     let forged = RequestRepresentation {
         semantic: std::borrow::Cow::Borrowed(&request.task.semantic),
         projection: vec![],
         fidelity: &request.task.fidelity,
-        profile: Profile::Responses,
+        profile: GenerationApi::Responses,
         adaptation: Default::default(),
     };
     assert_eq!(
@@ -134,7 +138,7 @@ fn static_codecs_reject_new_domains_even_for_forged_target_handles() {
         &provider,
         &result,
     ] {
-        for profile in [Profile::Chat, Profile::Responses] {
+        for profile in [GenerationApi::Chat, GenerationApi::Responses] {
             let forged = ResponseRepresentation {
                 semantic: std::borrow::Cow::Borrowed(semantic),
                 projection: vec![],
@@ -145,8 +149,10 @@ fn static_codecs_reject_new_domains_even_for_forged_target_handles() {
                 adaptation: Default::default(),
             };
             let result = match profile {
-                Profile::Chat => crate::protocol::openai::chat::encode_response(&forged),
-                Profile::Responses => crate::protocol::openai::responses::encode_response(&forged),
+                GenerationApi::Chat => crate::protocol::openai::chat::encode_response(&forged),
+                GenerationApi::Responses => {
+                    crate::protocol::openai::responses::encode_response(&forged)
+                }
             };
             assert!(matches!(result, Err(CodecError::Unsupported(_))));
         }
@@ -223,7 +229,7 @@ fn request_codecs_enforce_result_carriers_before_rendering() {
         .unwrap();
         let media = matches!(&semantic.items()[1].1, Item::ToolResult(r) if matches!(r.output, ToolOutput::Parts(_)));
         let fidelity = FidelityRecords::default();
-        for profile in [Profile::Chat, Profile::Responses] {
+        for profile in [GenerationApi::Chat, GenerationApi::Responses] {
             let forged = RequestRepresentation {
                 semantic: std::borrow::Cow::Borrowed(&semantic),
                 projection: vec![],
@@ -232,10 +238,10 @@ fn request_codecs_enforce_result_carriers_before_rendering() {
                 adaptation: Default::default(),
             };
             let result = match profile {
-                Profile::Chat => chat::encode_generation(&forged),
-                Profile::Responses => responses::encode_generation(&forged),
+                GenerationApi::Chat => chat::encode_generation(&forged),
+                GenerationApi::Responses => responses::encode_generation(&forged),
             };
-            if media && profile == Profile::Responses {
+            if media && profile == GenerationApi::Responses {
                 assert_eq!(
                     result.unwrap()["input"][1]["output"],
                     serde_json::json!([
@@ -271,9 +277,10 @@ fn request_codecs_enforce_result_carriers_before_rendering() {
                 };
                 parts[0].cache = Some(PrefixCacheBoundary::Ttl(PrefixCacheTtl::OneHour));
                 let native_ttl = marked.clone().with_items(items).unwrap();
-                for (semantic, profile) in
-                    [(&marked, Profile::Chat), (&native_ttl, Profile::Responses)]
-                {
+                for (semantic, profile) in [
+                    (&marked, GenerationApi::Chat),
+                    (&native_ttl, GenerationApi::Responses),
+                ] {
                     let forged = RequestRepresentation {
                         semantic: std::borrow::Cow::Borrowed(semantic),
                         projection: vec![],
@@ -282,8 +289,8 @@ fn request_codecs_enforce_result_carriers_before_rendering() {
                         adaptation: Default::default(),
                     };
                     let result = match profile {
-                        Profile::Chat => chat::encode_generation(&forged),
-                        Profile::Responses => responses::encode_generation(&forged),
+                        GenerationApi::Chat => chat::encode_generation(&forged),
+                        GenerationApi::Responses => responses::encode_generation(&forged),
                     };
                     assert_eq!(
                         result,

@@ -1,20 +1,23 @@
 //! Independent identity carriers, presence and loss evidence; no provider calls.
 use morphiecore::{
-    adapter::Request,
     protocol::{
+        GenerationRequestEnvelope as Request,
         anthropic::messages::{
-            Dialect as MessagesDialect, Profile as MessagesProfile, TargetCaps as MessagesCaps,
+            Dialect as MessagesDialect, Profile as MessagesProfile, TargetContract as MessagesCaps,
         },
         native::ReplayTarget,
-        openai::{Adapter, Dialect, Profile, TargetCaps},
+        openai::{Dialect, GenerationApi, GenerationCodec, TargetContract},
     },
     semantic::value::Presence,
     topology::catalog::GOOGLE_BINDINGS,
 };
 use serde_json::{Value, json};
 
-fn source(profile: Profile, fields: Value) -> Result<Request, morphiecore::protocol::CodecError> {
-    let mut wire = if profile == Profile::Chat {
+fn source(
+    profile: GenerationApi,
+    fields: Value,
+) -> Result<Request, morphiecore::protocol::CodecError> {
+    let mut wire = if profile == GenerationApi::Chat {
         json!({"model":"m","max_completion_tokens":4096,"messages":[{"role":"user","content":"go"}]})
     } else {
         json!({"model":"m","max_output_tokens":4096,"input":"go"})
@@ -22,10 +25,12 @@ fn source(profile: Profile, fields: Value) -> Result<Request, morphiecore::proto
     wire.as_object_mut()
         .unwrap()
         .extend(fields.as_object().unwrap().clone());
-    Adapter::new(profile, Dialect::Standard, None)
+    GenerationCodec::new(profile, Dialect::Standard, None)
         .decode_client_request(wire.to_string().as_bytes())
 }
-fn messages(request: &Request) -> morphiecore::lowering::generation::Conversion<serde_json::Value> {
+fn messages(
+    request: &Request,
+) -> morphiecore::protocol::conversion::generation::Conversion<serde_json::Value> {
     MessagesCaps::new(
         MessagesProfile::AdaptiveTextTools,
         MessagesDialect::Standard,
@@ -36,14 +41,14 @@ fn messages(request: &Request) -> morphiecore::lowering::generation::Conversion<
 
 #[test]
 fn openai_preserves_independent_fields_and_checks_all_source_bounds() {
-    for profile in [Profile::Chat, Profile::Responses] {
-        let adapter = Adapter::new(profile, Dialect::Standard, None);
+    for profile in [GenerationApi::Chat, GenerationApi::Responses] {
+        let adapter = GenerationCodec::new(profile, Dialect::Standard, None);
         let fields = json!({"user":"legacy_a","safety_identifier":"usr_b","prompt_cache_key":"template_c",
             "metadata":{"user_id":"unrelated_metadata"}});
         let request = source(profile, fields.clone()).unwrap();
         let before = request.clone();
         let (wire, rules) = adapter
-            .encode_request_with_rules(&request, "m", &TargetCaps::full())
+            .encode_request_with_rules(&request, "m", &TargetContract::full())
             .unwrap();
         for key in ["user", "safety_identifier", "prompt_cache_key", "metadata"] {
             assert_eq!(wire[key], fields[key]);
@@ -51,13 +56,13 @@ fn openai_preserves_independent_fields_and_checks_all_source_bounds() {
         assert!(!rules.contains(&"generation.omit-identity-hints.v1"));
         assert!(!rules.contains(&"cache.omit-legacy-user-bucketing.v1"));
         assert_eq!(request, before);
-        let other = if profile == Profile::Chat {
-            Profile::Responses
+        let other = if profile == GenerationApi::Chat {
+            GenerationApi::Responses
         } else {
-            Profile::Chat
+            GenerationApi::Chat
         };
-        let (cross, rules) = Adapter::new(other, Dialect::Standard, None)
-            .encode_request_with_rules(&request, "m", &TargetCaps::full())
+        let (cross, rules) = GenerationCodec::new(other, Dialect::Standard, None)
+            .encode_request_with_rules(&request, "m", &TargetContract::full())
             .unwrap();
         for key in ["user", "safety_identifier", "prompt_cache_key"] {
             assert_eq!(cross[key], fields[key]);
@@ -67,14 +72,14 @@ fn openai_preserves_independent_fields_and_checks_all_source_bounds() {
         for value in [Value::Null, json!("")] {
             let present = source(profile, json!({"user":value,"safety_identifier":value})).unwrap();
             let wire = adapter
-                .encode_request(&present, "m", &TargetCaps::full())
+                .encode_request(&present, "m", &TargetContract::full())
                 .unwrap();
             assert_eq!(wire["user"], value);
             assert_eq!(wire["safety_identifier"], value);
         }
         let lone = source(profile, json!({"user":"legacy"})).unwrap();
         let wire = adapter
-            .encode_request(&lone, "m", &TargetCaps::full())
+            .encode_request(&lone, "m", &TargetContract::full())
             .unwrap();
         assert_eq!(wire["user"], "legacy");
         assert!(wire.get("safety_identifier").is_none());
@@ -83,7 +88,7 @@ fn openai_preserves_independent_fields_and_checks_all_source_bounds() {
             let good = source(profile, json!({field:"用".repeat(maximum)})).unwrap();
             assert_eq!(
                 adapter
-                    .encode_request(&good, "m", &TargetCaps::full())
+                    .encode_request(&good, "m", &TargetContract::full())
                     .unwrap()[field],
                 "用".repeat(maximum)
             );
@@ -95,7 +100,7 @@ fn openai_preserves_independent_fields_and_checks_all_source_bounds() {
                 invalid.context.identity.safety_identifier =
                     Presence::Value("x".repeat(maximum + 1));
             }
-            let mut without = TargetCaps::full();
+            let mut without = TargetContract::full();
             without.identity_hints = false;
             assert!(adapter.encode_request(&invalid, "m", &without).is_err());
         }
@@ -117,7 +122,7 @@ fn openai_preserves_independent_fields_and_checks_all_source_bounds() {
             .as_slice(),
     ] {
         assert!(
-            Adapter::new(Profile::Responses, Dialect::Standard, None)
+            GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None)
                 .decode_client_request(bytes)
                 .is_err()
         );
@@ -154,7 +159,7 @@ fn single_carriers_preserve_priority_presence_and_separate_legacy_cache_loss() {
             true,
         ),
     ] {
-        let request = source(Profile::Responses, fields.clone()).unwrap();
+        let request = source(GenerationApi::Responses, fields.clone()).unwrap();
         let before = request.clone();
         let projected = messages(&request);
         assert_eq!(
@@ -194,7 +199,7 @@ fn single_carriers_preserve_priority_presence_and_separate_legacy_cache_loss() {
         assert_eq!(request, before);
     }
     let request = source(
-        Profile::Responses,
+        GenerationApi::Responses,
         json!({"user":"legacy_a","safety_identifier":"usr_b","prompt_cache_key":"template_c"}),
     )
     .unwrap();
@@ -214,8 +219,9 @@ fn single_carriers_preserve_priority_presence_and_separate_legacy_cache_loss() {
             .evidence
             .iter()
             .any(|e| e.rule() == "cache.omit-legacy-user-bucketing.v1"
-                && e.semantic_field() == morphiecore::lowering::generation::Field::IdentityBucket
-                && e.change() == morphiecore::lowering::generation::Change::Omit)
+                && e.semantic_field()
+                    == morphiecore::protocol::conversion::generation::Field::IdentityBucket
+                && e.change() == morphiecore::protocol::conversion::generation::Change::Omit)
     );
     for private in ["usr_b", "legacy_a", "template_c"] {
         assert!(!evidence.contains(private));
@@ -243,7 +249,7 @@ fn single_carriers_preserve_priority_presence_and_separate_legacy_cache_loss() {
 
 #[test]
 fn response_identity_bounds_are_consistent_in_json_and_sse_snapshots() {
-    let adapter = Adapter::new(Profile::Responses, Dialect::Standard, None);
+    let adapter = GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None);
     for length in [64, 65, 128, 129] {
         let mut wire = crate::wire::response(2);
         wire["safety_identifier"] = json!("用".repeat(length));
@@ -254,7 +260,7 @@ fn response_identity_bounds_are_consistent_in_json_and_sse_snapshots() {
             let decoded = decoded.unwrap();
             assert_eq!(
                 adapter
-                    .encode_response(&decoded, &TargetCaps::full())
+                    .encode_response(&decoded, &TargetContract::full())
                     .unwrap()["safety_identifier"],
                 wire["safety_identifier"]
             );

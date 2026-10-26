@@ -57,7 +57,7 @@ struct EventCounts {
 #[derive(Serialize)]
 struct CandidateRecord {
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    embedding_receipts: Vec<crate::lowering::embeddings::Receipt>,
+    embedding_adaptations: Vec<crate::protocol::embedding::projection::AdaptationRecord>,
     #[serde(flatten)]
     routing: RoutingObservation,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -161,7 +161,7 @@ struct AffinityObservation {
 }
 pub(super) struct Trace {
     pub(super) report: crate::execution::report::Report,
-    embedding_receipts: Vec<crate::lowering::embeddings::Receipt>,
+    embedding_adaptations: Vec<crate::protocol::embedding::projection::AdaptationRecord>,
     generation: bool,
     pub(super) capture: Option<super::capture::Exchange>,
     pub(super) capture_attempt: usize,
@@ -225,7 +225,7 @@ impl Trace {
         Self {
             telemetry,
             report: Default::default(),
-            embedding_receipts: vec![],
+            embedding_adaptations: vec![],
             generation: false,
             capture: None,
             capture_attempt: 0,
@@ -245,7 +245,7 @@ impl Trace {
             telemetry.begin(ordinal);
         }
         self.report.begin(ordinal);
-        self.embedding_receipts.clear();
+        self.embedding_adaptations.clear();
         self.record.routing = RoutingObservation::default();
         self.capture_attempt = ordinal;
 
@@ -266,6 +266,27 @@ impl Trace {
         }
     }
     pub(super) fn end_candidate(&mut self, error_code: Option<&'static str>, advanced: bool) {
+        let observed = self.report.attempt();
+        let error_code = error_code.map(|fallback| {
+            observed
+                .source_failure
+                .as_ref()
+                .filter(|source| {
+                    source.kind != crate::protocol::failure::SourceFailureKind::Other
+                        || matches!(
+                            observed.task_outcome,
+                            Some(crate::execution::report::TaskOutcome::Failed)
+                        )
+                })
+                .map(|source| crate::execution::failure::source_code(&source.kind))
+                .or_else(|| {
+                    observed
+                        .failure
+                        .as_ref()
+                        .map(|failure| failure.cause.code())
+                })
+                .unwrap_or(fallback)
+        });
         if let Some(telemetry) = &mut self.telemetry {
             telemetry.end(error_code, advanced);
         }
@@ -274,7 +295,7 @@ impl Trace {
             && self.record.candidates.len() < crate::topology::route::MAX_ROUTE_CANDIDATES
         {
             self.record.candidates.push(CandidateRecord {
-                embedding_receipts: std::mem::take(&mut self.embedding_receipts),
+                embedding_adaptations: std::mem::take(&mut self.embedding_adaptations),
                 routing: self.record.routing,
                 reported_reasoning: self
                     .report
@@ -303,9 +324,12 @@ impl Trace {
     pub(super) fn executor_order(&mut self, label: &'static str) {
         self.record.executor_order = Some(label);
     }
-    pub(super) fn embedding_receipts(&mut self, receipts: &[crate::lowering::embeddings::Receipt]) {
+    pub(super) fn embedding_adaptations(
+        &mut self,
+        adaptations: &[crate::protocol::embedding::projection::AdaptationRecord],
+    ) {
         if self.sink.is_some() {
-            self.embedding_receipts.extend_from_slice(receipts);
+            self.embedding_adaptations.extend_from_slice(adaptations);
         }
     }
     pub(super) fn selection_skip(&mut self, reason: &'static str) {
@@ -374,15 +398,15 @@ impl Trace {
     }
     pub(super) fn decode_error(&mut self, error: &crate::execution::AttemptError) {
         let boundary = if matches!(error, crate::execution::AttemptError::Sse(_)) {
-            crate::lowering::generation::ConversionBoundary::EventDecode
+            crate::protocol::conversion::generation::ConversionBoundary::EventDecode
         } else {
-            crate::lowering::generation::ConversionBoundary::ResponseDecode
+            crate::protocol::conversion::generation::ConversionBoundary::ResponseDecode
         };
         self.report.failure(Some(boundary), error);
     }
     pub(super) fn projection_error(
         &mut self,
-        boundary: crate::lowering::generation::ConversionBoundary,
+        boundary: crate::protocol::conversion::generation::ConversionBoundary,
         error: &crate::execution::AttemptError,
     ) {
         self.report.failure(Some(boundary), error);
@@ -412,7 +436,7 @@ impl Trace {
     pub(super) fn events(
         &mut self,
         events: &[crate::semantic::task::generation::StreamEvent],
-        evidence: &crate::lowering::generation::EvidenceDelta,
+        evidence: &crate::protocol::conversion::generation::EvidenceDelta,
     ) {
         use crate::semantic::task::generation::{ItemKind, StreamEvent};
         for event in events {
@@ -469,7 +493,7 @@ impl Trace {
     pub(super) fn image_accounting(
         &mut self,
         usage: Option<&crate::semantic::task::image_generation::ImageUsage>,
-        loss: crate::lowering::images::AccountingLoss,
+        loss: crate::protocol::image::projection::AccountingLoss,
     ) {
         if self.sink.is_none() {
             return;
@@ -592,7 +616,7 @@ mod tests {
     #[test]
     fn image_accounting_observation_is_exact_opt_in_and_body_free() {
         use crate::{
-            lowering::images::{AccountingPolicy, project_response},
+            protocol::image::projection::{AccountingPolicy, project_response},
             protocol::openrouter_images,
         };
         let response=openrouter_images::decode_response(br#"{"created":1,"data":[{"b64_json":"AQID"}],"usage":{"prompt_tokens":3,"completion_tokens":5,"total_tokens":8,"cost":0.01234567890123456789}}"#).unwrap();
@@ -621,8 +645,10 @@ mod tests {
                 AttemptError,
                 report::{ResultState, View},
             },
-            lowering::generation::{Change, ConversionBoundary as B, Effect, EvidenceDelta, Field},
             protocol::CodecError,
+            protocol::conversion::generation::{
+                Change, ConversionBoundary as B, Effect, EvidenceDelta, Field,
+            },
         };
         let (tx, _rx) = mpsc::sync_channel(1);
         let sink = Sink::from_sender(tx);
@@ -651,9 +677,9 @@ mod tests {
             .find(|b| b.endpoint_prefix == "zhipu")
             .unwrap();
         let endpoint = binding
-            .endpoint(crate::topology::ProtocolProfile::OpenAiChat)
+            .endpoint(crate::topology::GenerationProtocol::OpenAiChat)
             .unwrap();
-        let request=crate::protocol::openai::Adapter::new(crate::protocol::openai::Profile::Chat,crate::protocol::openai::Dialect::MorphieCore,None).decode_request(br#"{"model":"m","messages":[{"role":"user","content":"synthetic-private-prompt"}],"reasoning_effort":"medium"}"#).unwrap();
+        let request=crate::protocol::openai::GenerationCodec::new(crate::protocol::openai::GenerationApi::Chat,crate::protocol::openai::Dialect::MorphieCore,None).decode_request(br#"{"model":"m","messages":[{"role":"user","content":"synthetic-private-prompt"}],"reasoning_effort":"medium"}"#).unwrap();
         let converted = crate::execution::attempt::prepare_with_evidence(
             &endpoint,
             &(binding.provider)(),
@@ -761,7 +787,7 @@ mod tests {
             let mut trace = Trace::new(None);
             trace.begin_candidate(1);
             trace.projection_error(
-                crate::lowering::generation::ConversionBoundary::EventEncode,
+                crate::protocol::conversion::generation::ConversionBoundary::EventEncode,
                 &AttemptError::Codec(error),
             );
             assert!(trace.report.snapshot().attempts[0].failure.is_some());
@@ -778,7 +804,7 @@ mod tests {
         let mut trace = Trace::new(None);
         trace.begin_candidate(1);
         trace.projection_error(
-            crate::lowering::generation::ConversionBoundary::EventEncode,
+            crate::protocol::conversion::generation::ConversionBoundary::EventEncode,
             &AttemptError::Codec(error),
         );
         assert!(matches!(
@@ -812,7 +838,7 @@ mod tests {
             protocol::{
                 CodecError,
                 failure::{CarrierReason, ShapeReason},
-                openai::{Adapter, Dialect, Profile},
+                openai::{Dialect, GenerationApi, GenerationCodec},
             },
             semantic::task::generation::{ItemId, PartId, StreamEvent},
         };
@@ -828,7 +854,7 @@ mod tests {
             }],
             &Default::default(),
         );
-        let error=Adapter::new(Profile::Chat,Dialect::Standard,None).decode_request(br#"{"model":"m","messages":[{"role":"user","content":"synthetic-private-body"}],"synthetic-private-field":"synthetic-private-value"}"#).unwrap_err();
+        let error=GenerationCodec::new(GenerationApi::Chat,Dialect::Standard,None).decode_request(br#"{"model":"m","messages":[{"role":"user","content":"synthetic-private-body"}],"synthetic-private-field":"synthetic-private-value"}"#).unwrap_err();
         assert!(matches!(
             error,
             CodecError::Unsupported(CarrierReason::UnknownField)
@@ -850,9 +876,57 @@ mod tests {
         }
         let wire = serde_json::to_string(&trace.report.snapshot()).unwrap();
         assert!(!wire.contains("synthetic"));
-        assert!(wire.contains("UnknownField"));
+        assert!(wire.contains("codec.unsupported.unknown_field"));
         assert_eq!(trace.record.events.event_deltas, 1);
         assert!(trace.record.first_upstream_delta_ms.is_some());
+    }
+    #[test]
+    fn recognized_source_classification_wins_over_preliminary_status_and_handling() {
+        use crate::{
+            execution::AttemptError,
+            protocol::failure::{Observation, SourceFailureEvidence},
+        };
+        let (tx, _rx) = mpsc::sync_channel(1);
+        let sink = Sink::from_sender(tx);
+        let mut trace = Trace::new(Some(&sink));
+        trace.begin_candidate(1);
+        trace.report.failure(
+            None,
+            &AttemptError::Status {
+                status: 429,
+                class: crate::provider::RecoveryClass::RateLimit,
+            },
+        );
+        trace.report.source_failure(SourceFailureEvidence::http(
+            429,
+            br#"{"error":{"code":"insufficient_quota"}}"#,
+            Observation::Complete,
+        ));
+        trace.end_candidate(Some("gateway.quota"), true);
+        assert_eq!(trace.record.candidates[0].error_code, Some("source.quota"));
+        trace.begin_candidate(2);
+        trace
+            .report
+            .source_failure(SourceFailureEvidence::http(429, b"", Observation::Complete));
+        trace.report.failure(
+            None,
+            &AttemptError::Delivery(crate::execution::attempt::DeliveryReason::BodyConsumerClosed),
+        );
+        trace.end_candidate(Some("gateway.upstream"), false);
+        assert_eq!(
+            trace.record.candidates[1].error_code,
+            Some("source.rate_limit")
+        );
+        assert!(trace.report.attempt().handling_failure.is_some());
+        trace.begin_candidate(3);
+        trace.end_candidate(
+            Some(crate::gateway::error::ErrorKind::CredentialUnavailable.diagnostic_code()),
+            true,
+        );
+        assert_eq!(
+            trace.record.candidates[2].error_code,
+            Some("gateway.credential_unavailable")
+        );
     }
     #[test]
     fn full_or_disconnected_sink_does_not_block_a_request() {

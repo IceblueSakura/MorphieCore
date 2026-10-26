@@ -3,8 +3,10 @@ use crate::{gateway::Limits, topology::FallbackPolicy};
 
 fn candidates() -> Vec<Arc<BoundCandidate>> {
     let gate = crate::gateway::tests::support::gateway(Limits::default());
-    let template = &gate.state.entries
-        [&(crate::adapter::ClientProtocol::Chat, "fixture-model".into())]
+    let template = &gate.state.entries[&(
+        crate::protocol::ClientProtocol::Chat,
+        "fixture-model".into(),
+    )]
         .candidates[0];
     [
         ("a", "a"),
@@ -36,11 +38,11 @@ fn stable_suffix_retains_all_failure_restrictions_without_charging_skips() {
     let mut chain = Chain::new(&candidates, &policy);
     chain.begin(0);
     assert!(chain.could_follow(0, 2));
-    chain.failed(0, ErrorClass::RateLimit);
+    chain.failed(0, RecoveryClass::RateLimit);
     assert_eq!(chain.skip(1), Some("failure_scope"));
     assert_eq!(chain.skip(2), None);
     chain.begin(2);
-    chain.failed(2, ErrorClass::Server);
+    chain.failed(2, RecoveryClass::Server);
     assert_eq!(chain.skip(3), Some("failure_scope"));
     assert_eq!(chain.skip(4), None);
     assert_eq!(chain.attempts, 2);
@@ -61,7 +63,7 @@ fn endpoint_pool_budget_is_runtime_and_includes_local_resolution() {
     // Either retained member can be first, but the endpoint gets one attempt.
     assert_eq!(chain.skip(1), None);
     chain.begin(1);
-    chain.failed(1, ErrorClass::CredentialUnavailable);
+    chain.failed(1, RecoveryClass::CredentialUnavailable);
     assert_eq!(chain.skip(0), Some("pool_budget"));
     // Existing local-credential transition rules do not gain Provider retry.
     assert_eq!(chain.skip(2), Some("failure_scope"));

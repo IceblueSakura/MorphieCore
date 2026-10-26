@@ -95,9 +95,9 @@ fn participant_labels_survive_selection_and_cannot_be_reattributed_under_the_sam
 }
 #[test]
 fn retained_calls_cannot_change_their_effective_participant_through_envelopes() {
-    use morphiecore::protocol::openai::{Adapter, Dialect, Profile};
+    use morphiecore::protocol::openai::{Dialect, GenerationApi, GenerationCodec};
     use serde_json::json;
-    let adapter = Adapter::new(Profile::Chat, Dialect::Standard, None);
+    let adapter = GenerationCodec::new(GenerationApi::Chat, Dialect::Standard, None);
     for custom in [false, true] {
         for (from, to) in [
             (Some("alice"), Some("bob")),

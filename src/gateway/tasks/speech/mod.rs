@@ -1,11 +1,11 @@
 //! Authenticated Speech admission and bounded static binary delivery.
 pub(in crate::gateway) mod aliyun;
-use crate::gateway::{
-    ApiError, Credentials, Runtime, SpeechEntry, StartupError, body,
-    diagnostics::{Stage, Trace},
-    ingress::admission,
-};
 use crate::{
+    gateway::{
+        ApiError, Credentials, Runtime, SpeechEntry, StartupError, body,
+        diagnostics::{Stage, Trace},
+        ingress::admission,
+    },
     protocol::openai::speech as codec,
     semantic::{
         task::speech_synthesis::SpeechRequest,
@@ -48,17 +48,18 @@ async fn ingress(runtime: Arc<Runtime>, request: Request) -> Result<Response, Ap
     if runtime.shutdown.is_cancelled() {
         return Err(ApiError::shutdown());
     }
-    let permit = runtime
-        .permits
-        .clone()
-        .try_acquire_owned()
-        .map_err(|_| ApiError::new(StatusCode::TOO_MANY_REQUESTS, "gateway_busy"))?;
+    let permit = runtime.permits.clone().try_acquire_owned().map_err(|_| {
+        ApiError::new(
+            StatusCode::TOO_MANY_REQUESTS,
+            crate::gateway::error::ErrorKind::GatewayBusy,
+        )
+    })?;
     admission::headers(request.headers(), runtime.limits.request_bytes)?;
     let bytes = tokio::select! {
         biased;
         _ = runtime.shutdown.cancelled() => return Err(ApiError::shutdown()),
         result = tokio::time::timeout(runtime.limits.body_timeout, admission::collect(request.into_body(), runtime.limits.request_bytes)) =>
-            result.map_err(|_| ApiError::new(StatusCode::REQUEST_TIMEOUT, "request_timeout"))??,
+            result.map_err(|_| ApiError::new(StatusCode::REQUEST_TIMEOUT, crate::gateway::error::ErrorKind::RequestTimeout))??,
     };
     let envelope = crate::protocol::json::decode(&bytes).map_err(|_| ApiError::invalid())?;
     let model = envelope
@@ -68,22 +69,14 @@ async fn ingress(runtime: Arc<Runtime>, request: Request) -> Result<Response, Ap
     let entry = runtime
         .speech
         .get(model)
-        .ok_or(ApiError::new(StatusCode::NOT_FOUND, "model_not_found"))?
+        .ok_or(ApiError::new(
+            StatusCode::NOT_FOUND,
+            crate::gateway::error::ErrorKind::ModelNotFound,
+        ))?
         .clone();
     let request = codec::decode_request(&bytes).map_err(|_| ApiError::invalid())?;
-    crate::lowering::speech::check_request(&request.task, &entry.route.endpoint.capabilities)
+    let prepared = crate::execution::speech::prepare(&entry.route, &entry.provider, &request)
         .map_err(|_| ApiError::invalid())?;
-    let projected = entry
-        .route
-        .endpoint
-        .profile
-        .encode_request(&request, &entry.route.endpoint.upstream_model)
-        .map_err(|_| ApiError::invalid())?;
-    crate::semantic::value::json_size(
-        &projected,
-        entry.route.endpoint.execution.request_body_limit,
-    )
-    .map_err(|_| ApiError::invalid())?;
     let deadline = Instant::now()
         + runtime.limits.exchange_timeout.min(Duration::from_millis(
             entry.route.endpoint.execution.timeout_ms,
@@ -93,6 +86,7 @@ async fn ingress(runtime: Arc<Runtime>, request: Request) -> Result<Response, Ap
             runtime: runtime.clone(),
             entry,
             request,
+            prepared,
         },
         body::ResponseType::Audio,
         runtime.limits.clone(),
@@ -106,38 +100,27 @@ async fn ingress(runtime: Arc<Runtime>, request: Request) -> Result<Response, Ap
 async fn produce(
     runtime: Arc<Runtime>,
     entry: Arc<BoundSpeech>,
-    request: crate::adapter::speech::Request,
+    request: crate::protocol::speech::Request,
+    prepared: crate::execution::task::PreparedTaskRequest,
     deadline: Instant,
     lane: &body::Lane<'_>,
     trace: &mut Trace,
 ) -> Result<(), ApiError> {
     trace.begin_candidate(1);
-    let result = produce_one(&runtime, &entry, &request, deadline, lane, trace).await;
-    trace.end_candidate(result.as_ref().err().map(|e| e.code), false);
+    let result = produce_one(&runtime, &entry, &request, prepared, deadline, lane, trace).await;
+    trace.end_candidate(result.as_ref().err().map(|e| e.diagnostic_code()), false);
     result
 }
 async fn produce_one(
     runtime: &Runtime,
     entry: &BoundSpeech,
-    request: &crate::adapter::speech::Request,
+    request: &crate::protocol::speech::Request,
+    prepared: crate::execution::task::PreparedTaskRequest,
     deadline: Instant,
     lane: &body::Lane<'_>,
     trace: &mut Trace,
 ) -> Result<(), ApiError> {
-    trace.stage(Stage::Prepare);
-    let (secret, grant) = entry.secret.resolve_for_request().await?;
-    if grant.is_some() {
-        return Err(ApiError::upstream());
-    }
-    let prepared =
-        crate::execution::speech::prepare(&entry.route, &entry.provider, &secret, request)
-            .map_err(|_| ApiError::invalid())?;
-    trace.stage(Stage::Connect);
-    let upstream = runtime
-        .transport
-        .send(prepared, deadline.saturating_duration_since(Instant::now()))
-        .await
-        .map_err(ApiError::transport)?;
+    let upstream = super::exchange::send(runtime, entry, prepared, deadline, trace).await?;
     let limit = runtime
         .limits
         .speech_bytes
@@ -178,64 +161,18 @@ async fn produce_one(
     Ok(())
 }
 pub(in crate::gateway) async fn receive(
-    mut upstream: reqwest::Response,
+    upstream: reqwest::Response,
     task: &SpeechRequest,
-    profile: crate::adapter::speech::Profile,
+    profile: crate::adapter::speech::UpstreamAdapter,
     limit: usize,
     trace: &mut Trace,
 ) -> Result<AudioArtifact, ApiError> {
-    trace.stage(Stage::ResponseHead);
-    trace.head(upstream.status().as_u16(), upstream.headers());
-    if upstream.status().as_u16() != 200 {
-        return Err(ApiError::status(upstream.status().as_u16()));
-    }
-    let headers = upstream.headers();
-    let mut types = headers.get_all("content-type").iter();
-    let media = types
-        .next()
-        .and_then(|v| v.to_str().ok())
-        .ok_or_else(ApiError::upstream)?;
+    let receiver = super::exchange::Receiver::new(upstream, limit.min(MAX_AUDIO_BYTES), trace)?;
     let encoding = profile
-        .reported_encoding(media, task)
+        .reported_encoding(receiver.media_type(), task)
         .map_err(|_| ApiError::upstream())?;
-    if types.next().is_some() || headers.contains_key("content-encoding") {
-        return Err(ApiError::upstream());
-    }
-    let limit = limit.min(MAX_AUDIO_BYTES);
-    let mut lengths = headers.get_all("content-length").iter();
-    let length = lengths
-        .next()
-        .map(|v| {
-            let raw = v.to_str().map_err(|_| ApiError::upstream())?;
-            if raw.is_empty() || !raw.bytes().all(|c| c.is_ascii_digit()) {
-                return Err(ApiError::upstream());
-            }
-            raw.parse::<u64>().map_err(|_| ApiError::upstream())
-        })
-        .transpose()?;
-    if lengths.next().is_some() || length.is_some_and(|n| n == 0 || n > limit as u64) {
-        return Err(ApiError::upstream());
-    }
-    trace.stage(Stage::Intake);
-    let mut bytes = Vec::new();
-    while let Some(chunk) = upstream.chunk().await.map_err(|e| {
-        if e.is_timeout() {
-            ApiError::timeout()
-        } else {
-            ApiError::upstream()
-        }
-    })? {
-        if bytes.len().saturating_add(chunk.len()) > limit {
-            return Err(ApiError::upstream());
-        }
-        trace.received(chunk.len());
-        bytes.extend_from_slice(&chunk);
-    }
-    trace.stage(Stage::Terminal);
-    if length.is_some_and(|n| n != bytes.len() as u64) {
-        return Err(ApiError::upstream());
-    }
-    if profile == crate::adapter::speech::Profile::Xiaomi {
+    let bytes = receiver.collect(trace).await?;
+    if profile == crate::adapter::speech::UpstreamAdapter::Xiaomi {
         let result = crate::protocol::xiaomi_audio::decode_speech(&bytes, task)
             .map_err(|_| ApiError::upstream())?;
         Ok(codec::project_result(&result)
@@ -249,7 +186,8 @@ pub(in crate::gateway) async fn receive(
 struct Exchange {
     runtime: Arc<Runtime>,
     entry: Arc<BoundSpeech>,
-    request: crate::adapter::speech::Request,
+    prepared: crate::execution::task::PreparedTaskRequest,
+    request: crate::protocol::speech::Request,
 }
 impl body::Produce for Exchange {
     fn produce(
@@ -263,6 +201,7 @@ impl body::Produce for Exchange {
             self.runtime,
             self.entry,
             self.request,
+            self.prepared,
             deadline,
             lane,
             trace,

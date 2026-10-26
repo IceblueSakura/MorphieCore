@@ -1,7 +1,11 @@
 //! Authenticated, bounded body collection and public-task admission before I/O.
-use crate::adapter::{ClientProtocol, Request};
-use crate::gateway::{ApiError, BoundEntry, Runtime};
-use crate::lowering::generation::ConversionBoundary;
+use crate::{
+    gateway::{ApiError, BoundEntry, Runtime},
+    protocol::{
+        ClientProtocol, GenerationRequestEnvelope as Request,
+        conversion::generation::ConversionBoundary,
+    },
+};
 use axum::{
     body::Body,
     http::{HeaderMap, StatusCode},
@@ -14,11 +18,12 @@ pub(super) fn acquire_permit(
     if state.shutdown.is_cancelled() {
         return Err(ApiError::shutdown());
     }
-    state
-        .permits
-        .clone()
-        .try_acquire_owned()
-        .map_err(|_| ApiError::new(StatusCode::TOO_MANY_REQUESTS, "gateway_busy"))
+    state.permits.clone().try_acquire_owned().map_err(|_| {
+        ApiError::new(
+            StatusCode::TOO_MANY_REQUESTS,
+            crate::gateway::error::ErrorKind::GatewayBusy,
+        )
+    })
 }
 pub(in crate::gateway) fn conversation(
     headers: &HeaderMap,
@@ -49,8 +54,12 @@ pub(in crate::gateway) fn conversation(
     // Authentication has already succeeded. This ID only groups this request;
     // it neither infers a conversation nor fills a cross-request cache key.
     let mut seed = [0_u8; 16];
-    getrandom::fill(&mut seed)
-        .map_err(|_| ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "entropy_unavailable"))?;
+    getrandom::fill(&mut seed).map_err(|_| {
+        ApiError::new(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            crate::gateway::error::ErrorKind::EntropyUnavailable,
+        )
+    })?;
     ConversationContext::independent_request(&format!("{:032x}", u128::from_be_bytes(seed)))
         .map_err(|_| ApiError::invalid())
 }
@@ -59,7 +68,7 @@ pub(in crate::gateway) fn headers(headers: &HeaderMap, limit: usize) -> Result<(
     let mut types = headers.get_all("content-type").iter();
     let value = types.next().ok_or(ApiError::new(
         StatusCode::UNSUPPORTED_MEDIA_TYPE,
-        "unsupported_media_type",
+        crate::gateway::error::ErrorKind::UnsupportedMediaType,
     ))?;
     if types.next().is_some() {
         return Err(ApiError::invalid());
@@ -71,7 +80,7 @@ pub(in crate::gateway) fn headers(headers: &HeaderMap, limit: usize) -> Result<(
             .and_then(|v| v.parse().ok())
             .ok_or(ApiError::new(
                 StatusCode::UNSUPPORTED_MEDIA_TYPE,
-                "unsupported_media_type",
+                crate::gateway::error::ErrorKind::UnsupportedMediaType,
             ))?;
     if media.type_() != mime::APPLICATION
         || media.subtype() != mime::JSON
@@ -82,7 +91,7 @@ pub(in crate::gateway) fn headers(headers: &HeaderMap, limit: usize) -> Result<(
     {
         return Err(ApiError::new(
             StatusCode::UNSUPPORTED_MEDIA_TYPE,
-            "unsupported_media_type",
+            crate::gateway::error::ErrorKind::UnsupportedMediaType,
         ));
     }
     if let Some(value) = headers.get("content-length") {
@@ -94,7 +103,7 @@ pub(in crate::gateway) fn headers(headers: &HeaderMap, limit: usize) -> Result<(
         if length > limit as u64 {
             return Err(ApiError::new(
                 StatusCode::PAYLOAD_TOO_LARGE,
-                "request_too_large",
+                crate::gateway::error::ErrorKind::RequestTooLarge,
             ));
         }
     }
@@ -118,7 +127,7 @@ pub(in crate::gateway) async fn collect(body: Body, limit: usize) -> Result<Vec<
         if bytes.len().saturating_add(chunk.len()) > limit {
             return Err(ApiError::new(
                 StatusCode::PAYLOAD_TOO_LARGE,
-                "request_too_large",
+                crate::gateway::error::ErrorKind::RequestTooLarge,
             ));
         }
         bytes.extend_from_slice(&chunk);
@@ -177,7 +186,7 @@ pub(in crate::gateway) fn prepare_responses(
 }
 fn prepare_in(
     state: &Runtime,
-    family: crate::adapter::ClientProtocol,
+    family: crate::protocol::ClientProtocol,
     bytes: &[u8],
     report: &crate::execution::report::Report,
     decode: impl FnOnce(&BoundEntry) -> Result<Request, crate::protocol::CodecError>,
@@ -192,7 +201,10 @@ fn prepare_in(
     let entry = state
         .entries
         .get(&(family, model.into()))
-        .ok_or(ApiError::new(StatusCode::NOT_FOUND, "model_not_found"))?
+        .ok_or(ApiError::new(
+            StatusCode::NOT_FOUND,
+            crate::gateway::error::ErrorKind::ModelNotFound,
+        ))?
         .clone();
     if value.get("session_id").is_some() {
         return Err(ApiError::invalid());

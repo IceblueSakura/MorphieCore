@@ -5,10 +5,13 @@ use super::{
     error::StartupError,
     limits::Limits,
 };
-use crate::gateway::{BoundCandidate, BoundEntry, Credentials, Gateway, Runtime, ingress::auth};
 use crate::{
-    adapter::{ClientAdapter, ClientProtocol},
-    protocol::openai::{Adapter, Profile, TargetCaps},
+    adapter::ClientAdapter,
+    gateway::{BoundCandidate, BoundEntry, Credentials, Gateway, Runtime, ingress::auth},
+    protocol::{
+        ClientProtocol,
+        openai::{GenerationApi, GenerationCodec, TargetContract},
+    },
     provider::{ProviderDefinition, SecretMaterial},
     semantic::value::ReplayOrigin,
     topology::{CompiledTopology, Endpoint, PublicModel},
@@ -197,17 +200,17 @@ fn client_adapter(
 ) -> ClientAdapter {
     let profile = match protocol {
         ClientProtocol::Messages => return ClientAdapter::Messages,
-        ClientProtocol::Chat => Profile::Chat,
-        ClientProtocol::Responses => Profile::Responses,
+        ClientProtocol::Chat => GenerationApi::Chat,
+        ClientProtocol::Responses => GenerationApi::Responses,
     };
-    let client_scope = crate::execution::replay::CLIENT_ORIGIN.clone();
-    let client = Adapter::new(profile, chat_profile.dialect(), Some(client_scope.clone()));
+    let client_scope = crate::protocol::replay_envelope::CLIENT_ORIGIN.clone();
+    let client = GenerationCodec::new(profile, chat_profile.dialect(), Some(client_scope.clone()));
     // Model input admission must not filter facts reported on the client wire
     // (e.g. empty logprobs or defaults a model cannot accept as controls).
-    let downstream = TargetCaps {
+    let downstream = TargetContract {
         replay_origin: Some(client_scope),
         reported_facts: public.reported_facts,
-        ..TargetCaps::full()
+        ..TargetContract::full()
     };
     ClientAdapter::openai(client, downstream)
 }

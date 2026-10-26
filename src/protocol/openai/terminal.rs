@@ -1,7 +1,11 @@
 //! Typed terminal details, shared by static and event codecs.
-use crate::protocol::failure::{CarrierReason, SourceFailureEvidence};
-use crate::protocol::openai::{CodecError, lowering::projection::LossRule, shape::*};
-use crate::semantic::task::generation::*;
+use crate::{
+    protocol::{
+        failure::{CarrierReason, SourceFailureEvidence},
+        openai::{CodecError, lowering::projection::ProjectionRule, shape::*},
+    },
+    semantic::task::generation::*,
+};
 use serde_json::{Map, Value, json};
 pub(super) fn decode_details(o: &Map<String, Value>) -> Result<TerminalDetails, CodecError> {
     let error = o
@@ -109,9 +113,9 @@ pub(super) fn chat_incomplete(incomplete: bool, details: &TerminalDetails) -> bo
 /// https://github.com/openai/openai-python/blob/be9d66628ad7377bd36fe5a76ae6d735843f0e76/src/openai/types/chat/chat_completion.py
 pub(super) fn terminal_losses(
     details: &TerminalDetails,
-    profile: crate::protocol::openai::Profile,
-) -> Result<Vec<LossRule>, CodecError> {
-    use crate::protocol::openai::Profile;
+    profile: crate::protocol::openai::GenerationApi,
+) -> Result<Vec<ProjectionRule>, CodecError> {
+    use crate::protocol::openai::GenerationApi;
     let mut losses = vec![];
     if details
         .refusal
@@ -121,25 +125,29 @@ pub(super) fn terminal_losses(
         return Err(CodecError::Unsupported(CarrierReason::Unavailable));
     }
     if !details.refusal.is_absent() {
-        losses.push(LossRule::OmitExplanatoryRefusalDetails);
+        losses.push(ProjectionRule::OmitExplanatoryRefusalDetails);
     }
     if !details.explanation.is_absent() {
-        losses.push(LossRule::OmitTerminalExplanation);
+        losses.push(ProjectionRule::OmitTerminalExplanation);
     }
     match (&details.completion, profile) {
         (None, _) => {}
-        (Some(CompletionCause::NaturalOrStopSequence), Profile::Chat) => {}
-        (Some(_), Profile::Chat) => losses.push(LossRule::CoarsenChatCompletionCause),
-        (Some(_), Profile::Responses) => losses.push(LossRule::OmitResponsesCompletionCause),
+        (Some(CompletionCause::NaturalOrStopSequence), GenerationApi::Chat) => {}
+        (Some(_), GenerationApi::Chat) => losses.push(ProjectionRule::CoarsenChatCompletionCause),
+        (Some(_), GenerationApi::Responses) => {
+            losses.push(ProjectionRule::OmitResponsesCompletionCause)
+        }
     }
     match (&details.incomplete, profile) {
-        (Some(IncompleteReason::ContextWindowExceeded), Profile::Chat) => {
-            losses.push(LossRule::ContextWindowAsLength)
+        (Some(IncompleteReason::ContextWindowExceeded), GenerationApi::Chat) => {
+            losses.push(ProjectionRule::ContextWindowAsLength)
         }
-        (Some(IncompleteReason::ContextWindowExceeded), Profile::Responses) => {
-            losses.push(LossRule::OmitResponsesContextWindowReason)
+        (Some(IncompleteReason::ContextWindowExceeded), GenerationApi::Responses) => {
+            losses.push(ProjectionRule::OmitResponsesContextWindowReason)
         }
-        (Some(IncompleteReason::Recitation), _) => losses.push(LossRule::RecitationAsContentFilter),
+        (Some(IncompleteReason::Recitation), _) => {
+            losses.push(ProjectionRule::RecitationAsContentFilter)
+        }
         _ => {}
     }
     Ok(losses)

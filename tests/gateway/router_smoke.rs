@@ -11,7 +11,8 @@ use axum::{
 use morphiecore::{
     gateway::Limits,
     protocol::openai::{
-        Adapter, DecodedResponse, Dialect, Profile, TargetCaps, responses::sse::ResponsesSseDecoder,
+        DecodedResponse, Dialect, GenerationApi, GenerationCodec, TargetContract,
+        responses::sse::ResponsesSseDecoder,
     },
     semantic::{
         task::generation::{Continuation, Outcome},
@@ -158,7 +159,7 @@ async fn answer(
 fn responses_delivery(body: &[u8], streaming: bool) -> DecodedResponse {
     let scope = Some(ReplayOrigin::new("fixture").unwrap());
     if !streaming {
-        return Adapter::new(Profile::Responses, Dialect::Standard, scope)
+        return GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, scope)
             .decode_response(body)
             .unwrap();
     }
@@ -344,14 +345,14 @@ async fn real_router_uses_provider_http_for_json_sse_tools_and_cross_profile() {
         .timeout(Duration::from_secs(3))
         .build()
         .unwrap();
-    for profile in [Profile::Chat, Profile::Responses] {
+    for profile in [GenerationApi::Chat, GenerationApi::Responses] {
         for stream in [false, true] {
-            let path = if profile == Profile::Chat {
+            let path = if profile == GenerationApi::Chat {
                 "/v1/chat/completions"
             } else {
                 "/v1/responses"
             };
-            let request = if profile == Profile::Chat {
+            let request = if profile == GenerationApi::Chat {
                 json!({"model":"public-model","messages":[{"role":"user","content":"lookup"}],"max_completion_tokens":32,"stream":stream,"stream_options":if stream {json!({"include_usage":true,"include_obfuscation":false})}else{Value::Null}})
             } else {
                 json!({"model":"public-model","input":"lookup","store":false,"max_output_tokens":32,"stream":stream})
@@ -385,7 +386,7 @@ async fn real_router_uses_provider_http_for_json_sse_tools_and_cross_profile() {
             if !stream {
                 let value: Value = serde_json::from_slice(&body).unwrap();
                 assert_eq!(value["model"], "public-model");
-                if profile == Profile::Chat {
+                if profile == GenerationApi::Chat {
                     assert_eq!(
                         value["choices"][0]["message"]["tool_calls"][0]["id"],
                         "call-local"
@@ -400,15 +401,15 @@ async fn real_router_uses_provider_http_for_json_sse_tools_and_cross_profile() {
                     );
                 }
             } else {
-                assert!(
-                    String::from_utf8_lossy(&body).contains(if profile == Profile::Chat {
+                assert!(String::from_utf8_lossy(&body).contains(
+                    if profile == GenerationApi::Chat {
                         "[DONE]"
                     } else {
                         "response.completed"
-                    })
-                );
+                    }
+                ));
             }
-            if profile == Profile::Responses {
+            if profile == GenerationApi::Responses {
                 let decoded = responses_delivery(&body, stream);
                 assert_eq!(decoded.semantic.outcome(), Outcome::Completed);
                 let Continuation::ToolResults(calls) = decoded.semantic.continuation() else {
@@ -418,13 +419,14 @@ async fn real_router_uses_provider_http_for_json_sse_tools_and_cross_profile() {
                     calls.iter().map(|c| c.call_id).collect::<Vec<_>>(),
                     ["c_sql", "c_lookup"]
                 );
-                let contract = TargetCaps {
+                let contract = TargetContract {
                     replay_origin: Some(ReplayOrigin::new("fixture").unwrap()),
-                    ..TargetCaps::full()
+                    ..TargetContract::full()
                 };
-                let projected = Adapter::new(Profile::Responses, Dialect::Standard, None)
-                    .encode_response(&decoded, &contract)
-                    .unwrap();
+                let projected =
+                    GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None)
+                        .encode_response(&decoded, &contract)
+                        .unwrap();
                 let token = projected["output"][0]["encrypted_content"]
                     .as_str()
                     .unwrap();
@@ -468,9 +470,10 @@ async fn real_router_uses_provider_http_for_json_sse_tools_and_cross_profile() {
                 assert_eq!(finished.semantic.usage().unwrap().total_tokens, Some(8));
 
                 let mut later = history.clone();
-                let completed = Adapter::new(Profile::Responses, Dialect::Standard, None)
-                    .encode_response(&finished, &contract)
-                    .unwrap();
+                let completed =
+                    GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None)
+                        .encode_response(&finished, &contract)
+                        .unwrap();
                 later.extend(completed["output"].as_array().unwrap().iter().cloned());
                 later.push(json!({"role":"user","content":"Continue."}));
                 let replayed = client
@@ -520,8 +523,8 @@ async fn real_router_uses_provider_http_for_json_sse_tools_and_cross_profile() {
         assert!(!text.contains("_openbridge"));
         let decoded = responses_delivery(&body, stream);
         assert_eq!(decoded.semantic.outcome(), Outcome::Completed);
-        let encoded = Adapter::new(Profile::Responses, Dialect::Standard, None)
-            .encode_response(&decoded, &TargetCaps::full())
+        let encoded = GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None)
+            .encode_response(&decoded, &TargetContract::full())
             .unwrap();
         assert_eq!(encoded["output"][1]["call_id"], "call-local");
         assert_eq!(encoded["output"][1]["arguments"], "{\"n\":1}");

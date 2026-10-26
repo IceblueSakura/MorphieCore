@@ -9,9 +9,8 @@ use axum::{
     routing::post,
 };
 use morphiecore::{
-    adapter::ClientProtocol,
     gateway::{Entry, Gateway, Limits, TaskEntries},
-    protocol::openai::Profile,
+    protocol::{ClientProtocol, openai::GenerationApi},
     provider::{SecretMaterial, TrustedOrigin},
     topology::{self, catalog::GOOGLE_BINDINGS},
 };
@@ -45,7 +44,7 @@ impl Drop for Fixture {
 }
 #[derive(Clone)]
 struct Upstream {
-    profile: Profile,
+    profile: GenerationApi,
     messages: bool,
     seen: Arc<Mutex<Vec<Value>>>,
 }
@@ -101,7 +100,7 @@ async fn answer(
         _ => panic!("unexpected history length"),
     };
     let mut thinking = json!({"thinkingLevel":"LOW"});
-    if state.profile == Profile::Responses {
+    if state.profile == GenerationApi::Responses {
         thinking["includeThoughts"] = json!(true);
     }
     assert_eq!(
@@ -141,13 +140,13 @@ async fn answer(
         )))
         .unwrap()
 }
-pub async fn start(profile: Profile, api: Api) -> Fixture {
+pub async fn start(profile: GenerationApi, api: Api) -> Fixture {
     start_with(profile, api, false).await
 }
 pub async fn start_messages(api: Api) -> Fixture {
-    start_with(Profile::Chat, api, true).await
+    start_with(GenerationApi::Chat, api, true).await
 }
-async fn start_with(profile: Profile, api: Api, messages: bool) -> Fixture {
+async fn start_with(profile: GenerationApi, api: Api, messages: bool) -> Fixture {
     let binding = &GOOGLE_BINDINGS[0];
     let seen = Arc::new(Mutex::new(Vec::new()));
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();

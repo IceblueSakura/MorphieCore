@@ -1,12 +1,12 @@
 //! Independent synthetic oracles for scoped provider boundary differences.
 use morphiecore::{
-    protocol::openai::{Adapter, Dialect, Profile, TargetCaps as Contract},
+    protocol::openai::{Dialect, GenerationApi, GenerationCodec, TargetContract as Contract},
     semantic::value::ReplayOrigin,
 };
 use serde_json::{Value, json};
-fn adapter(dialect: Dialect) -> Adapter {
-    Adapter::new(
-        Profile::Chat,
+fn adapter(dialect: Dialect) -> GenerationCodec {
+    GenerationCodec::new(
+        GenerationApi::Chat,
         dialect,
         Some(ReplayOrigin::new("synthetic-account").unwrap()),
     )
@@ -23,9 +23,9 @@ fn application_instruction_carriers_are_dialect_local_and_never_become_user() {
         execution::attempt::prepare_with_rules,
         provider::SecretMaterial,
         semantic::task::generation::{Item, MessageRole},
-        topology::{ProtocolProfile, catalog::API_KEY_BINDINGS},
+        topology::{GenerationProtocol, catalog::API_KEY_BINDINGS},
     };
-    let standard = Adapter::new(Profile::Responses, Dialect::Standard, None);
+    let standard = GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None);
     let source = standard.decode_client_request(br#"{"model":"public","instructions":"R","input":[
         {"role":"system","content":"A"},{"role":"user","content":"U"},{"role":"developer","content":"B"}]}"#).unwrap();
     let original = source.clone();
@@ -34,8 +34,11 @@ fn application_instruction_carriers_are_dialect_local_and_never_become_user() {
         .find(|b| b.endpoint_prefix == "deepseek")
         .unwrap();
     for (profile, protocol) in [
-        (Profile::Chat, ProtocolProfile::OpenAiChat),
-        (Profile::Responses, ProtocolProfile::OpenAiResponses),
+        (GenerationApi::Chat, GenerationProtocol::OpenAiChat),
+        (
+            GenerationApi::Responses,
+            GenerationProtocol::OpenAiResponses,
+        ),
     ] {
         let endpoint = binding.endpoint(protocol).unwrap();
         let (wire, rules) = endpoint.encode_request_with_rules(&source).unwrap();
@@ -51,7 +54,7 @@ fn application_instruction_carriers_are_dialect_local_and_never_become_user() {
             wire
         );
         assert_eq!(prepared_rules, rules);
-        let expected = if profile == Profile::Chat {
+        let expected = if profile == GenerationApi::Chat {
             json!([{"role":"system","content":"R"},{"role":"system","content":"A"},
                 {"role":"user","content":"U"},{"role":"system","content":"B"}])
         } else {
@@ -61,7 +64,7 @@ fn application_instruction_carriers_are_dialect_local_and_never_become_user() {
                 {"role":"system","content":"B"}])
         };
         assert_eq!(
-            wire[if profile == Profile::Chat {
+            wire[if profile == GenerationApi::Chat {
                 "messages"
             } else {
                 "input"
@@ -84,7 +87,7 @@ fn application_instruction_carriers_are_dialect_local_and_never_become_user() {
     assert_eq!(canonical["input"][2]["role"], "developer");
     // A trusted native source dialect interprets effective meaning, while a
     // public standard source remains developer regardless of requested model.
-    let native = Adapter::new(Profile::Responses, Dialect::DeepSeek, None);
+    let native = GenerationCodec::new(GenerationApi::Responses, Dialect::DeepSeek, None);
     let wire =
         br#"{"model":"deepseek-flash","input":[{"role":"developer","content":"unprivileged"}]}"#;
     let decoded = native.decode_request(wire).unwrap();
@@ -120,24 +123,27 @@ fn deepseek_never_forwards_parallel_control_or_weakens_serial_intent() {
     use morphiecore::{
         execution::attempt::prepare_with_rules,
         provider::SecretMaterial,
-        topology::{ProtocolProfile, catalog::API_KEY_BINDINGS},
+        topology::{GenerationProtocol, catalog::API_KEY_BINDINGS},
     };
     let binding = API_KEY_BINDINGS
         .iter()
         .find(|b| b.endpoint_prefix == "deepseek")
         .unwrap();
     for (profile, target) in [
-        (Profile::Chat, ProtocolProfile::OpenAiChat),
-        (Profile::Responses, ProtocolProfile::OpenAiResponses),
+        (GenerationApi::Chat, GenerationProtocol::OpenAiChat),
+        (
+            GenerationApi::Responses,
+            GenerationProtocol::OpenAiResponses,
+        ),
     ] {
-        let client = Adapter::new(profile, Dialect::Standard, None);
+        let client = GenerationCodec::new(profile, Dialect::Standard, None);
         let endpoint = binding.endpoint(target).unwrap();
         for parallel in [None, Some(true), Some(false)] {
             let mut wire = match profile {
-                Profile::Chat => {
+                GenerationApi::Chat => {
                     json!({"model":binding.model,"messages":[{"role":"user","content":"go"}]})
                 }
-                Profile::Responses => json!({"model":binding.model,"input":"go"}),
+                GenerationApi::Responses => json!({"model":binding.model,"input":"go"}),
             };
             if let Some(value) = parallel {
                 wire["parallel_tool_calls"] = json!(value);
@@ -156,9 +162,9 @@ fn deepseek_never_forwards_parallel_control_or_weakens_serial_intent() {
             if parallel == Some(false) {
                 assert!(matches!(
                     encoded,
-                    Err(morphiecore::adapter::ConversionFailure {
-                        cause: morphiecore::adapter::ConversionCause::Representation(
-                            morphiecore::lowering::generation::RepresentationError::Tools
+                    Err(morphiecore::protocol::ConversionFailure {
+                        cause: morphiecore::protocol::ConversionCause::Representation(
+                            morphiecore::protocol::conversion::generation::RepresentationError::Tools
                         ),
                         ..
                     })
@@ -205,8 +211,8 @@ fn deepseek_never_forwards_parallel_control_or_weakens_serial_intent() {
         Some(false)
     );
     for target in [
-        ProtocolProfile::OpenAiChat,
-        ProtocolProfile::OpenAiResponses,
+        GenerationProtocol::OpenAiChat,
+        GenerationProtocol::OpenAiResponses,
     ] {
         assert!(
             binding
@@ -220,17 +226,17 @@ fn deepseek_never_forwards_parallel_control_or_weakens_serial_intent() {
 
 #[test]
 fn zhipu_effort_lands_on_its_three_levels_by_a_named_rule() {
-    use morphiecore::topology::{ProtocolProfile, catalog::API_KEY_BINDINGS};
+    use morphiecore::topology::{GenerationProtocol, catalog::API_KEY_BINDINGS};
     let endpoint = API_KEY_BINDINGS
         .iter()
         .find(|binding| binding.endpoint_prefix == "zhipu")
         .unwrap()
-        .endpoint(ProtocolProfile::OpenAiChat)
+        .endpoint(GenerationProtocol::OpenAiChat)
         .unwrap();
     // glm-5.3 always thinks and takes only low, high or max (error 1210 otherwise).
     for (effort, sent) in [("medium", "high"), ("minimal", "low"), ("high", "high")] {
         let body = json!({"model":"m","messages":[{"role":"user","content":"q"}],"reasoning_effort":effort});
-        let client = Adapter::new(Profile::Chat, Dialect::MorphieCore, None);
+        let client = GenerationCodec::new(GenerationApi::Chat, Dialect::MorphieCore, None);
         let request = client.decode_request(body.to_string().as_bytes()).unwrap();
         let (wire, rules) = endpoint.encode_request_with_rules(&request).unwrap();
         assert_eq!(wire["reasoning_effort"], sent, "{effort}");
@@ -241,13 +247,15 @@ fn zhipu_effort_lands_on_its_three_levels_by_a_named_rule() {
 /// under a named rule; explicit block-binding enforcement rejects.
 #[test]
 fn messages_only_controls_leave_chat_targets_by_named_rules() {
-    use morphiecore::protocol::{CodecError, anthropic::messages::client::decode_client_request};
-    use morphiecore::topology::{ProtocolProfile, catalog::API_KEY_BINDINGS};
+    use morphiecore::{
+        protocol::{CodecError, anthropic::messages::client::decode_client_request},
+        topology::{GenerationProtocol, catalog::API_KEY_BINDINGS},
+    };
     let endpoint = API_KEY_BINDINGS
         .iter()
         .find(|binding| binding.endpoint_prefix == "dashscope-flash")
         .unwrap()
-        .endpoint(ProtocolProfile::OpenAiChat)
+        .endpoint(GenerationProtocol::OpenAiChat)
         .unwrap();
     let mut body = json!({"model":"m","max_tokens":64,
             "tools":[{"name":"read","description":"Read a file","input_schema":{"type":"object"},"eager_input_streaming":true}],
@@ -263,13 +271,15 @@ fn messages_only_controls_leave_chat_targets_by_named_rules() {
             "block_binding":{"prefix_mismatch_behavior":"error"}});
     let request = decode_client_request(body.to_string().as_bytes()).unwrap();
     assert!(matches!(endpoint.encode_request_with_rules(&request),
-            Err(morphiecore::adapter::ConversionFailure { cause: morphiecore::adapter::ConversionCause::Codec(CodecError::Unsupported(field)), .. })
+            Err(morphiecore::protocol::ConversionFailure { cause: morphiecore::protocol::ConversionCause::Codec(CodecError::Unsupported(field)), .. })
                 if matches!(field,morphiecore::protocol::failure::CarrierReason::Reasoning)));
 }
 #[test]
 fn unversioned_readable_views_are_closed_and_never_restore_deleted_reasoning() {
-    use morphiecore::semantic::task::generation::{Item, ReasoningContent};
-    use morphiecore::semantic::value::Text;
+    use morphiecore::semantic::{
+        task::generation::{Item, ReasoningContent},
+        value::Text,
+    };
     let standard = adapter(Dialect::Standard);
     let mut unknown = body();
     unknown["choices"][0]["message"]["reasoning_content"] = json!({"not":"text"});
@@ -432,12 +442,12 @@ fn unversioned_readable_views_are_closed_and_never_restore_deleted_reasoning() {
 
 #[test]
 fn queued_creation_cannot_mask_missing_progress_or_relax_standard_events() {
-    let provider = Adapter::new(Profile::Responses, Dialect::Bailian, None);
+    let provider = GenerationCodec::new(GenerationApi::Responses, Dialect::Bailian, None);
     let source = crate::wire::events(2);
     let mut queued = source[0].clone();
     queued["response"]["status"] = json!("queued");
     assert!(
-        Adapter::new(Profile::Responses, Dialect::Standard, None)
+        GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None)
             .event_decoder()
             .push(&queued)
             .is_err()
@@ -505,7 +515,7 @@ fn summary_alias_fixture() -> (Value, Vec<Value>) {
 
 #[test]
 fn reasoning_event_alias_rejects_incomplete_or_conflicting_summary_snapshots() {
-    let provider = Adapter::new(Profile::Responses, Dialect::Bailian, None);
+    let provider = GenerationCodec::new(GenerationApi::Responses, Dialect::Bailian, None);
     let (_, source) = summary_alias_fixture();
     let mut missing_done = source.clone();
     missing_done.remove(3);
@@ -525,7 +535,7 @@ fn reasoning_event_alias_rejects_incomplete_or_conflicting_summary_snapshots() {
 
 #[test]
 fn inactive_response_state_placeholders_do_not_enable_remote_state() {
-    let provider = Adapter::new(Profile::Responses, Dialect::Zhipu, None);
+    let provider = GenerationCodec::new(GenerationApi::Responses, Dialect::Zhipu, None);
     let mut value = crate::wire::response(2);
     value["previous_response_id"] = json!("");
     value["conversation_id"] = json!("");
@@ -540,7 +550,7 @@ fn inactive_response_state_placeholders_do_not_enable_remote_state() {
     assert!(encoded.get("conversation_id").is_none());
     for dialect in [Dialect::Standard, Dialect::MorphieCore, Dialect::Bailian] {
         assert!(
-            Adapter::new(Profile::Responses, dialect, None)
+            GenerationCodec::new(GenerationApi::Responses, dialect, None)
                 .decode_response(value.to_string().as_bytes())
                 .is_err()
         );
@@ -624,7 +634,7 @@ fn terminal_reasoning_fixture() -> (Value, Vec<Value>) {
 
 #[test]
 fn terminal_reasoning_snapshot_cannot_recover_missing_text_identity_or_other_lifecycles() {
-    let provider = Adapter::new(Profile::Responses, Dialect::Nvidia, None);
+    let provider = GenerationCodec::new(GenerationApi::Responses, Dialect::Nvidia, None);
     let (_, source) = terminal_reasoning_fixture();
     for (path, value) in [
         ("/response/output/0/id", json!("other")),
@@ -673,8 +683,8 @@ fn billing_view(value: &mut Value) {
 
 #[test]
 fn response_billing_view_events_match_static_and_conflicts_poison_terminal() {
-    let provider = Adapter::new(
-        Profile::Responses,
+    let provider = GenerationCodec::new(
+        GenerationApi::Responses,
         Dialect::Bailian,
         Some(ReplayOrigin::new("a").unwrap()),
     );
@@ -730,8 +740,8 @@ fn request_diagnostics_are_source_bound_not_public_facts() {
             .unwrap()["request_id"],
         "synthetic-request"
     );
-    let other = Adapter::new(
-        Profile::Chat,
+    let other = GenerationCodec::new(
+        GenerationApi::Chat,
         Dialect::Zhipu,
         Some(ReplayOrigin::new("other").unwrap()),
     );
@@ -780,7 +790,7 @@ fn request_diagnostics_are_source_bound_not_public_facts() {
 #[test]
 fn bailian_created_drift_is_chat_only_and_preserves_identity() {
     assert!(
-        !Adapter::new(Profile::Responses, Dialect::Bailian, None)
+        !GenerationCodec::new(GenerationApi::Responses, Dialect::Bailian, None)
             .adaptation
             .rules
             .chunk_created_drift
@@ -827,14 +837,14 @@ fn bailian_created_drift_is_chat_only_and_preserves_identity() {
 
 #[test]
 fn bailian_schema_alias_is_response_only_and_rejects_ambiguity() {
-    let provider = Adapter::new(Profile::Responses, Dialect::Bailian, None);
+    let provider = GenerationCodec::new(GenerationApi::Responses, Dialect::Bailian, None);
     let mut source = crate::wire::response(2);
     source["text"] = json!({"format":{
         "type":"json_schema","name":"synthetic","strict":false,"schema_":{"type":"object"}
     }});
     for dialect in [Dialect::Standard, Dialect::MorphieCore] {
         assert!(
-            Adapter::new(Profile::Responses, dialect, None)
+            GenerationCodec::new(GenerationApi::Responses, dialect, None)
                 .decode_response(source.to_string().as_bytes())
                 .is_err()
         );

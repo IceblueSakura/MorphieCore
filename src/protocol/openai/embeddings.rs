@@ -1,15 +1,22 @@
 //! OpenAI Embeddings: scoped token inputs and independent numeric/delivery representations.
 //! https://developers.openai.com/api/reference/resources/embeddings/methods/create
-pub use crate::adapter::embeddings::Encoding;
-use crate::protocol::embedding::{number, optional_count, optional_string, required, string};
+use crate::protocol::CodecError;
+pub use crate::protocol::embedding::Encoding;
 use crate::{
-    adapter::embeddings::{valid_model, *},
-    protocol::CodecError,
+    protocol::embedding::{
+        number, optional_count, optional_string, required, string, valid_model, *,
+    },
     semantic::{task::embedding::*, value::Presence},
 };
 use base64::{Engine, engine::general_purpose::STANDARD};
 use serde_json::{Value, json};
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum Dialect {
+    Standard,
+    DashScope,
+    OpenRouter,
+}
 enum Inputs {
     Text(Vec<String>),
     Tokens(Vec<Vec<u32>>),
@@ -172,11 +179,11 @@ pub fn encode_request(request: &TargetRequest, model: &str) -> Result<Value, Cod
     Ok(value)
 }
 pub fn decode_response(bytes: &[u8]) -> Result<Response, CodecError> {
-    decode_response_with(bytes, Profile::Standard, Encoding::Float)
+    decode_response_with(bytes, Dialect::Standard, Encoding::Float)
 }
 pub(crate) fn decode_response_with(
     bytes: &[u8],
-    profile: Profile,
+    profile: Dialect,
     encoding: Encoding,
 ) -> Result<Response, CodecError> {
     let value = crate::protocol::json::decode(bytes)?;
@@ -185,7 +192,7 @@ pub(crate) fn decode_response_with(
         return Err(CodecError::invalid());
     }
     let model = optional_string(map, "model")?;
-    let strict = profile == Profile::Standard;
+    let strict = profile == Dialect::Standard;
     if strict && model.is_none() {
         return Err(CodecError::invalid());
     }
@@ -234,7 +241,7 @@ pub(crate) fn decode_response_with(
             EmbeddingUsage::reported(
                 input,
                 total,
-                if profile == Profile::DashScope {
+                if profile == Dialect::DashScope {
                     AccountingBasis::InputOnly
                 } else {
                     AccountingBasis::Unspecified

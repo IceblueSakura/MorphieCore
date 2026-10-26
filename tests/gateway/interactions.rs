@@ -9,7 +9,7 @@ use axum::{
 };
 use morphiecore::{
     gateway::{Entry, Gateway, Limits},
-    protocol::openai::Profile,
+    protocol::openai::GenerationApi,
     provider::{SecretMaterial, TrustedOrigin},
     topology::{self, catalog::GOOGLE_BINDINGS},
 };
@@ -157,7 +157,7 @@ async fn stateless_json_and_sse_replay_signatures_and_cancel_upstream() {
     let gateway = Gateway::new(
         topology,
         morphiecore::gateway::TaskEntries {
-            generation: [Profile::Chat, Profile::Responses]
+            generation: [GenerationApi::Chat, GenerationApi::Responses]
                 .map(|protocol| Entry {
                     chat_profile: Default::default(),
                     model: binding.model.into(),

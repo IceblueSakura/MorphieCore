@@ -37,7 +37,7 @@ pub use content::structured::StructuredValue;
 pub use content::text::{
     Logprob, RefusalContent, TextContent, TopLogprob, compatible_logprobs, validate_logprobs,
 };
-pub use contract::{GenerationFeature, GenerationSemanticContract};
+pub use contract::{GenerationFeature, GenerationFeatureSet};
 pub use error::GenerationError;
 pub use history::continuation::{CallReference, Continuation};
 pub use history::envelope::{MessageEnvelope, MessageEnvelopeRole};

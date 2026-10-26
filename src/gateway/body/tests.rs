@@ -1,9 +1,13 @@
 //! Delivery owner tests use an instrumented HTTP body, not a second Router.
 use super::*;
-use crate::gateway::generation::exchange::{Upstreams, produce_chain, respond_source};
-use crate::gateway::{BoundCandidate, tests::responses_wire};
-use crate::{adapter::ClientProtocol, gateway::tests::support::gateway, protocol::openai::Profile};
-use crate::{adapter::Request, gateway::BoundEntry};
+use crate::{
+    gateway::{
+        BoundCandidate, BoundEntry,
+        generation::exchange::{Upstreams, produce_chain, respond_source},
+        tests::{responses_wire, support::gateway},
+    },
+    protocol::{ClientProtocol, GenerationRequestEnvelope as Request, openai::GenerationApi},
+};
 use futures_util::StreamExt;
 use std::{sync::atomic::AtomicUsize, time::Duration};
 #[allow(clippy::too_many_arguments)]
@@ -94,8 +98,11 @@ async fn response(
     stream: bool,
     deadline: Instant,
 ) -> Result<Response, ApiError> {
-    let entry =
-        gate.state.entries[&(crate::adapter::ClientProtocol::Chat, "fixture-model".into())].clone();
+    let entry = gate.state.entries[&(
+        crate::protocol::ClientProtocol::Chat,
+        "fixture-model".into(),
+    )]
+        .clone();
     let request=entry.client.as_openai().unwrap().0.decode_request(serde_json::json!({"model":"fixture-model","messages":[{"role":"user","content":"hello"}],"stream":stream,"stream_options":if stream {serde_json::json!({"include_usage":true,"include_obfuscation":false})}else{serde_json::Value::Null}}).to_string().as_bytes()).unwrap();
     let candidate = entry.candidates[0].clone();
     let mut trace = super::Trace::new(gate.state.diagnostics.as_ref());
@@ -126,31 +133,33 @@ async fn observed_response(
     stream: bool,
 ) -> Result<Response, ApiError> {
     // Test-owned codec pair, not activation of an additional public binding.
-    let mut entry = gate.state.entries
-        [&(crate::adapter::ClientProtocol::Chat, "fixture-model".into())]
+    let mut entry = gate.state.entries[&(
+        crate::protocol::ClientProtocol::Chat,
+        "fixture-model".into(),
+    )]
         .as_ref()
         .clone();
     entry.client = crate::adapter::ClientAdapter::openai(
-        crate::protocol::openai::Adapter::new(
-            Profile::Responses,
+        crate::protocol::openai::GenerationCodec::new(
+            GenerationApi::Responses,
             crate::protocol::openai::Dialect::Standard,
             None,
         ),
-        crate::protocol::openai::TargetCaps::full(),
+        crate::protocol::openai::TargetContract::full(),
     );
     let entry = Arc::new(entry);
     let template = &entry.candidates[0];
     let mut endpoint = template.endpoint.clone();
     if stream {
-        endpoint.protocol = crate::topology::ProtocolProfile::AnthropicMessages;
-        endpoint.representation = crate::protocol::anthropic::messages::TargetCaps::new(
+        endpoint.protocol = crate::topology::GenerationProtocol::AnthropicMessages;
+        endpoint.representation = crate::protocol::anthropic::messages::TargetContract::new(
             crate::protocol::anthropic::messages::Profile::AdaptiveTextTools,
             crate::protocol::anthropic::messages::Dialect::Standard,
         )
         .into();
     } else {
-        endpoint.protocol = crate::topology::ProtocolProfile::OpenAiResponses;
-        let mut caps = crate::protocol::openai::TargetCaps::full();
+        endpoint.protocol = crate::topology::GenerationProtocol::OpenAiResponses;
+        let mut caps = crate::protocol::openai::TargetContract::full();
         caps.adaptation.rules.responses_forced_stream = true;
         endpoint.representation = caps.into();
     }
@@ -276,16 +285,18 @@ async fn diagnostic_status_and_final_intake_are_from_the_original_attempt() {
         .collect();
     assert!(last.iter().any(|value| value["status"] == "incomplete"));
     assert!(!last.iter().any(|value| value["status"] == "source_eof"));
-    let mut entry = (*gate.state.entries
-        [&(crate::adapter::ClientProtocol::Chat, "fixture-model".into())])
+    let mut entry = (*gate.state.entries[&(
+        crate::protocol::ClientProtocol::Chat,
+        "fixture-model".into(),
+    )])
         .clone();
     entry.client = crate::adapter::ClientAdapter::openai(
-        crate::protocol::openai::Adapter::new(
-            Profile::Responses,
+        crate::protocol::openai::GenerationCodec::new(
+            GenerationApi::Responses,
             crate::protocol::openai::Dialect::MorphieCore,
             None,
         ),
-        crate::protocol::openai::TargetCaps::full(),
+        crate::protocol::openai::TargetContract::full(),
     );
     let entry = Arc::new(entry);
     let request = entry
@@ -295,8 +306,10 @@ async fn diagnostic_status_and_final_intake_are_from_the_original_attempt() {
         .0
         .decode_request(br#"{"model":"fixture-model","input":"hello","stream":true}"#)
         .unwrap();
-    let candidate = gate.state.entries
-        [&(crate::adapter::ClientProtocol::Chat, "fixture-model".into())]
+    let candidate = gate.state.entries[&(
+        crate::protocol::ClientProtocol::Chat,
+        "fixture-model".into(),
+    )]
         .candidates[0]
         .clone();
     let (tx, source, _, _) = upstream(200, "text/event-stream");
@@ -356,7 +369,7 @@ async fn diagnostic_status_and_final_intake_are_from_the_original_attempt() {
             .iter()
             .filter(
                 |loss| loss["rule"] == "responses.omit-system-fingerprint.v1"
-                    && loss["direction"] == "event.project"
+                    && loss["boundary"] == "event.project"
             )
             .count(),
         1
@@ -539,15 +552,18 @@ async fn failed_responses_reach_chat_clients_as_classified_failures() {
         gate: &crate::gateway::Gateway,
         upstream: reqwest::Response,
         stream: bool,
+        report: crate::execution::report::Report,
     ) -> Result<Response, ApiError> {
         // Test-owned codec pair: a Chat client over a Responses target.
-        let entry = gate.state.entries
-            [&(crate::adapter::ClientProtocol::Chat, "fixture-model".into())]
+        let entry = gate.state.entries[&(
+            crate::protocol::ClientProtocol::Chat,
+            "fixture-model".into(),
+        )]
             .clone();
         let template = &entry.candidates[0];
         let mut endpoint = template.endpoint.clone();
-        endpoint.protocol = crate::topology::ProtocolProfile::OpenAiResponses;
-        endpoint.representation = crate::protocol::openai::TargetCaps::full().into();
+        endpoint.protocol = crate::topology::GenerationProtocol::OpenAiResponses;
+        endpoint.representation = crate::protocol::openai::TargetContract::full().into();
         let candidate = Arc::new(BoundCandidate {
             endpoint,
             ..template.as_ref().clone()
@@ -561,6 +577,8 @@ async fn failed_responses_reach_chat_clients_as_classified_failures() {
                 .as_bytes(),
             )
             .unwrap();
+        let mut trace = super::Trace::new(gate.state.diagnostics.as_ref());
+        trace.report = report;
         respond(
             entry,
             candidate,
@@ -570,7 +588,7 @@ async fn failed_responses_reach_chat_clients_as_classified_failures() {
             Instant::now() + Duration::from_secs(3),
             gate.state.shutdown.clone(),
             gate.state.permits.clone().acquire_owned().await.unwrap(),
-            super::Trace::new(gate.state.diagnostics.as_ref()),
+            trace,
         )
         .await
     }
@@ -584,7 +602,8 @@ async fn failed_responses_reach_chat_clients_as_classified_failures() {
     let (tx, source, _, _) = upstream(200, "application/json");
     tx.send(Ok(failed.to_string().into())).await.unwrap();
     drop(tx);
-    let error = bounded(chat_over_responses(&gate, source, false))
+    let report = crate::execution::report::Report::default();
+    let error = bounded(chat_over_responses(&gate, source, false, report.clone()))
         .await
         .err()
         .unwrap();
@@ -595,6 +614,17 @@ async fn failed_responses_reach_chat_clients_as_classified_failures() {
         .unwrap();
     assert!(String::from_utf8_lossy(&bytes).contains(r#""code":"rate_limit_exceeded""#));
     assert!(!String::from_utf8_lossy(&bytes).contains("private upstream detail"));
+    let observed = report.attempt();
+    assert!(observed.source_eof);
+    assert!(matches!(
+        observed.task_outcome,
+        Some(crate::execution::report::TaskOutcome::Failed)
+    ));
+    assert_eq!(observed.observed_status, Some(200));
+    assert_eq!(
+        observed.source_failure.unwrap().kind,
+        crate::protocol::failure::SourceFailureKind::RateLimit
+    );
     // Streamed: published content stays, then the classified failure frame.
     let error = failed["error"].take();
     let mut events = responses_wire::response_events(failed);
@@ -609,7 +639,7 @@ async fn failed_responses_reach_chat_clients_as_classified_failures() {
     let (tx, source, _, _) = upstream(200, "text/event-stream");
     tx.send(Ok(wire.into())).await.unwrap();
     drop(tx);
-    let response = bounded(chat_over_responses(&gate, source, true))
+    let response = bounded(chat_over_responses(&gate, source, true, Default::default()))
         .await
         .unwrap();
     let mut body = response.into_body().into_data_stream();
@@ -626,7 +656,7 @@ async fn failed_responses_reach_chat_clients_as_classified_failures() {
 async fn messages_clients_get_anthropic_shapes_from_an_openai_target() {
     let gate = gateway(Limits::default());
     let entry = gate.state.entries[&(
-        crate::adapter::ClientProtocol::Messages,
+        crate::protocol::ClientProtocol::Messages,
         "fixture-model".into(),
     )]
         .clone();
@@ -857,8 +887,8 @@ async fn first_frame_precedes_terminal_and_ack_gates_upstream_progress() {
         }
         bounded(dropped).await.unwrap();
         let wire = std::str::from_utf8(&all).unwrap();
-        let mut decoder = crate::protocol::openai::Adapter::new(
-            Profile::Responses,
+        let mut decoder = crate::protocol::openai::GenerationCodec::new(
+            GenerationApi::Responses,
             crate::protocol::openai::Dialect::Standard,
             None,
         )
@@ -1043,8 +1073,11 @@ async fn queued_first_frame_timeout_preserves_the_final_public_error() {
         .await
         .unwrap();
     drop(tx);
-    let entry =
-        gate.state.entries[&(crate::adapter::ClientProtocol::Chat, "fixture-model".into())].clone();
+    let entry = gate.state.entries[&(
+        crate::protocol::ClientProtocol::Chat,
+        "fixture-model".into(),
+    )]
+        .clone();
     let request = entry
         .client
         .as_openai()
@@ -1081,8 +1114,8 @@ async fn queued_first_frame_timeout_preserves_the_final_public_error() {
     assert_eq!(snapshot.attempts[0].handed_off_frames, 0);
     let error = pending.await.unwrap_err();
     assert_eq!(error.status, 504);
-    assert_eq!(snapshot.public_code, Some(error.code));
-    assert_eq!(snapshot.public_status, Some(504));
+    assert_eq!(snapshot.failure_code, Some(error.diagnostic_code()));
+    assert_eq!(snapshot.failure_status_hint, Some(504));
 }
 
 #[tokio::test]
@@ -1192,8 +1225,10 @@ async fn source_accounting_survives_interruption_without_becoming_delivery_estim
         if mode != "cancel" {
             gate = gate.with_diagnostics(&path).unwrap();
         }
-        let entry = gate.state.entries
-            [&(crate::adapter::ClientProtocol::Chat, "fixture-model".into())]
+        let entry = gate.state.entries[&(
+            crate::protocol::ClientProtocol::Chat,
+            "fixture-model".into(),
+        )]
             .clone();
         let streaming = mode != "static";
         let request = entry.client.decode_client_request(
@@ -1307,8 +1342,11 @@ async fn source_accounting_survives_interruption_without_becoming_delivery_estim
 #[tokio::test]
 async fn attempt_wait_attribution_and_hold_deadline_are_explicit() {
     let gate = gateway(Limits::default());
-    let entry =
-        gate.state.entries[&(crate::adapter::ClientProtocol::Chat, "fixture-model".into())].clone();
+    let entry = gate.state.entries[&(
+        crate::protocol::ClientProtocol::Chat,
+        "fixture-model".into(),
+    )]
+        .clone();
     let request = entry.client.decode_client_request(
         br#"{"model":"fixture-model","messages":[{"role":"user","content":"hello"}],"stream":true,"stream_options":{"include_obfuscation":false}}"#,
     ).unwrap();
@@ -1352,8 +1390,8 @@ async fn attempt_wait_attribution_and_hold_deadline_are_explicit() {
         }
         tokio::time::advance(Duration::from_millis(50)).await;
         let error = work.await.unwrap_err();
-        assert_eq!(error.code, "upstream_timeout");
-        assert_eq!(error.health, !downstream);
+        assert_eq!(error.code(), "upstream_timeout");
+        assert_eq!(error.recovery.affects_health, !downstream);
         tokio::time::resume();
         bounded(dropped).await.unwrap();
     }
@@ -1361,12 +1399,12 @@ async fn attempt_wait_attribution_and_hold_deadline_are_explicit() {
     // upstream stays silent; there is no fabricated terminal or keepalive.
     let mut held_entry = entry.as_ref().clone();
     held_entry.client = crate::adapter::ClientAdapter::openai(
-        crate::protocol::openai::Adapter::new(
-            Profile::Responses,
+        crate::protocol::openai::GenerationCodec::new(
+            GenerationApi::Responses,
             crate::protocol::openai::Dialect::Standard,
             None,
         ),
-        crate::protocol::openai::TargetCaps::full(),
+        crate::protocol::openai::TargetContract::full(),
     );
     let candidate = &entry.candidates[0];
     let (input, source, dropped, _) = upstream(200, "text/event-stream");
@@ -1436,8 +1474,10 @@ async fn invalid_heads_and_static_overflow_fail_without_exposing_provider_data()
     {
         let gate = gateway(Limits::default());
         let (_tx, upstream, _, reads) = upstream(200, "text/event-stream; charset=iso-8859-1");
-        let entry = gate.state.entries
-            [&(crate::adapter::ClientProtocol::Chat, "fixture-model".into())]
+        let entry = gate.state.entries[&(
+            crate::protocol::ClientProtocol::Chat,
+            "fixture-model".into(),
+        )]
             .clone();
         let request=entry.client.as_openai().unwrap().0.decode_request(br#"{"model":"fixture-model","messages":[{"role":"user","content":"hello"}],"stream":true}"#).unwrap();
         let candidate = entry.candidates[0].clone();
@@ -1459,8 +1499,8 @@ async fn invalid_heads_and_static_overflow_fail_without_exposing_provider_data()
         assert_eq!(error.status, 502);
         assert_eq!(reads.load(Ordering::SeqCst), 0);
         let snapshot = report.snapshot();
-        assert_eq!(snapshot.public_code, Some(error.code));
-        assert_eq!(snapshot.public_status, Some(502));
+        assert_eq!(snapshot.failure_code, Some(error.diagnostic_code()));
+        assert_eq!(snapshot.failure_status_hint, Some(502));
         assert_eq!(
             snapshot.result,
             crate::execution::report::ResultState::Failed
@@ -1472,7 +1512,7 @@ async fn invalid_heads_and_static_overflow_fail_without_exposing_provider_data()
         ));
         assert_eq!(
             failure.boundary,
-            Some(crate::lowering::generation::ConversionBoundary::EventDecode)
+            Some(crate::protocol::conversion::generation::ConversionBoundary::EventDecode)
         );
     }
     let gate = gateway(Limits {

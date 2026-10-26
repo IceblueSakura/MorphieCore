@@ -1,9 +1,9 @@
 //! Directional request projections and independently validated incidental reports.
 use morphiecore::{
-    lowering::generation::RepresentationError,
     protocol::{
+        conversion::generation::RepresentationError,
         fidelity::FidelityRecords,
-        openai::{Profile, TargetCaps, lowering::lower_request},
+        openai::{GenerationApi, TargetContract, lowering::lower_request},
     },
     semantic::{
         task::generation::*,
@@ -13,9 +13,9 @@ use morphiecore::{
 
 #[test]
 fn requests_reject_unselected_controls_while_incidental_reports_project() {
-    use morphiecore::protocol::openai::{events::EventEncoder, lowering::lower_response};
-    use morphiecore::protocol::reasoning::{
-        ReasoningConversion, ReasoningRequestPolicy, SHARED_BUDGETS, ThinkingBudgets,
+    use morphiecore::protocol::{
+        openai::{events::EventEncoder, lowering::lower_response},
+        reasoning::{ReasoningConversion, ReasoningRequestPolicy, SHARED_BUDGETS, ThinkingBudgets},
     };
     assert_eq!(
         SHARED_BUDGETS.entries.as_ref(),
@@ -81,8 +81,8 @@ fn requests_reject_unselected_controls_while_incidental_reports_project() {
         EffortLevel::XHigh
     );
     assert_eq!(request, source);
-    let mut adapter = morphiecore::protocol::openai::Adapter::new(
-        Profile::Responses,
+    let mut adapter = morphiecore::protocol::openai::GenerationCodec::new(
+        GenerationApi::Responses,
         morphiecore::protocol::openai::Dialect::Standard,
         None,
     );
@@ -92,7 +92,7 @@ fn requests_reject_unselected_controls_while_incidental_reports_project() {
         .unwrap();
     envelope.task.semantic = request;
     let (wire, rules) = adapter
-        .encode_request_with_rules(&envelope, "m", &TargetCaps::full())
+        .encode_request_with_rules(&envelope, "m", &TargetContract::full())
         .unwrap();
     assert_eq!(wire["reasoning"]["effort"], "xhigh");
     assert_eq!(rules, ["synthetic.budget-to-effort.v1"]);
@@ -152,8 +152,8 @@ fn requests_reject_unselected_controls_while_incidental_reports_project() {
         disabled.reasoning.activation.value(),
         Some(&ReasoningActivation::Disabled)
     );
-    let mut client = morphiecore::protocol::openai::Adapter::new(
-        Profile::Chat,
+    let mut client = morphiecore::protocol::openai::GenerationCodec::new(
+        GenerationApi::Chat,
         morphiecore::protocol::openai::Dialect::Standard,
         None,
     );
@@ -166,13 +166,13 @@ fn requests_reject_unselected_controls_while_incidental_reports_project() {
     instruction.task.semantic = instruction.task.semantic.with_settings(settings).unwrap();
     assert_eq!(
         client
-            .encode_request(&instruction, "m", &TargetCaps::full())
+            .encode_request(&instruction, "m", &TargetContract::full())
             .unwrap()["messages"][0]["role"],
         "developer"
     );
     client.adaptation.rules.system_instruction_messages = true;
     let (wire, rules) = client
-        .encode_request_with_rules(&instruction, "m", &TargetCaps::full())
+        .encode_request_with_rules(&instruction, "m", &TargetContract::full())
         .unwrap();
     assert_eq!(
         wire["messages"][0],
@@ -224,24 +224,29 @@ fn requests_reject_unselected_controls_while_incidental_reports_project() {
         )
         .unwrap();
         let fidelity = FidelityRecords::default();
-        for profile in [Profile::Responses, Profile::Chat] {
-            let exact = dimension == 2 && profile == Profile::Responses;
+        for profile in [GenerationApi::Responses, GenerationApi::Chat] {
+            let exact = dimension == 2 && profile == GenerationApi::Responses;
             if exact {
                 let target =
-                    lower_request(&request, &fidelity, profile, TargetCaps::full()).unwrap();
+                    lower_request(&request, &fidelity, profile, TargetContract::full()).unwrap();
                 assert_eq!(
                     morphiecore::protocol::openai::responses::encode_generation(&target).unwrap()["reasoning"],
                     serde_json::json!({"effort":"high","summary":"auto"})
                 );
             } else {
                 assert_eq!(
-                    lower_request(&request, &fidelity, profile, TargetCaps::full()).err(),
+                    lower_request(&request, &fidelity, profile, TargetContract::full()).err(),
                     Some(RepresentationError::Reasoning)
                 );
             }
-            let target =
-                lower_response(&response, &fidelity, &metadata, profile, TargetCaps::full())
-                    .unwrap();
+            let target = lower_response(
+                &response,
+                &fidelity,
+                &metadata,
+                profile,
+                TargetContract::full(),
+            )
+            .unwrap();
             assert_eq!(
                 target
                     .projection()
@@ -254,15 +259,15 @@ fn requests_reject_unselected_controls_while_incidental_reports_project() {
                 request.settings().reasoning
             );
             let json = match profile {
-                Profile::Responses => {
+                GenerationApi::Responses => {
                     morphiecore::protocol::openai::responses::envelope::encode_response(&target)
                         .unwrap()
                 }
-                Profile::Chat => {
+                GenerationApi::Chat => {
                     morphiecore::protocol::openai::chat::envelope::encode_response(&target).unwrap()
                 }
             };
-            if profile == Profile::Responses {
+            if profile == GenerationApi::Responses {
                 assert_eq!(
                     json["reasoning"],
                     if exact {
@@ -305,7 +310,7 @@ fn requests_reject_unselected_controls_while_incidental_reports_project() {
             for frame in &frames {
                 intake.push(frame).unwrap();
             }
-            if profile == Profile::Chat {
+            if profile == GenerationApi::Chat {
                 intake.done().unwrap();
             }
             let materialized = intake.materialize().unwrap();

@@ -3,14 +3,15 @@ mod history;
 mod replay;
 mod response_records;
 use super::CodecError;
-use crate::semantic::{
-    task::generation::*,
-    value::{ReplayOrigin, Text},
+use crate::{
+    protocol::openai::{GenerationApi, dialect::adaptation::Adaptation},
+    semantic::{
+        task::generation::*,
+        value::{ReplayOrigin, Text},
+    },
 };
 use serde_json::{Map, Value};
 use std::collections::BTreeMap;
-
-use crate::protocol::openai::{Profile, dialect::adaptation::Adaptation};
 const RESPONSE_EXTRAS_BUDGET: usize = 4096;
 /// Outgoing carrier identity, not an upstream-reported fact or persistent key.
 pub(crate) fn generated_item_id(owner: ItemId) -> String {
@@ -23,10 +24,10 @@ pub(crate) fn generated_item_id(owner: ItemId) -> String {
 pub(crate) const RESPONSE_EXTRA_FIELDS: &[&str] =
     &["content_filters", "frequency_penalty", "presence_penalty"];
 pub(crate) fn declared_response_extras(
-    profile: Profile,
+    profile: GenerationApi,
     adaptation: &Adaptation,
 ) -> &'static [&'static str] {
-    if profile == Profile::Responses && adaptation.rules.response_extras {
+    if profile == GenerationApi::Responses && adaptation.rules.response_extras {
         RESPONSE_EXTRA_FIELDS
     } else {
         &[]
@@ -35,7 +36,7 @@ pub(crate) fn declared_response_extras(
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct ResponseExtras {
-    protocol: Profile,
+    protocol: GenerationApi,
     profile: &'static str,
     origin: ReplayOrigin,
     response_id: Text,

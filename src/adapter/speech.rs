@@ -1,16 +1,17 @@
-//! Typed Speech boundary; explicit audio delivery is not an SSE or latency promise.
-use crate::protocol::failure::ShapeReason;
-use crate::semantic::task::speech_synthesis::SpeechRequest;
-
+//! Speech codec dispatch and trusted admission.
+use crate::{
+    protocol::{failure::ShapeReason, speech::Request},
+    semantic::task::speech_synthesis::SpeechRequest,
+};
 /// Trusted upstream wire contract, independent of the standard client boundary.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum Profile {
+pub enum UpstreamAdapter {
     Standard,
     OpenRouterMp3,
     AliyunMp3,
     Xiaomi,
 }
-impl Profile {
+impl UpstreamAdapter {
     pub fn encode_request(
         self,
         request: &Request,
@@ -56,7 +57,7 @@ impl Profile {
     }
     pub(crate) fn supports(
         self,
-        capabilities: &crate::lowering::speech::SpeechCapabilities,
+        capabilities: &crate::protocol::speech::projection::SpeechCapabilities,
     ) -> bool {
         if self == Self::Xiaomi {
             return !capabilities.speed
@@ -72,22 +73,5 @@ impl Profile {
                     .formats
                     .iter()
                     .all(|f| *f == crate::semantic::value::AudioEncoding::Mp3)
-    }
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Request {
-    pub model: String,
-    pub task: SpeechRequest,
-    /// Preserve an explicit standard audio carrier separately from task semantics.
-    pub explicit_audio_delivery: bool,
-}
-impl Request {
-    pub fn new(model: impl Into<String>, task: SpeechRequest) -> Self {
-        Self {
-            model: model.into(),
-            task,
-            explicit_audio_delivery: false,
-        }
     }
 }

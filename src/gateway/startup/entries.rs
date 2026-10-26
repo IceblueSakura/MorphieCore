@@ -1,5 +1,8 @@
 //! Explicit task activation consumed by `Gateway::new`.
-use crate::{adapter::ClientProtocol, protocol::openai::Dialect, topology::EndpointId};
+use crate::{
+    protocol::{ClientProtocol, openai::Dialect},
+    topology::EndpointId,
+};
 /// Trusted public-model contract; independent of upstream dialects.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]

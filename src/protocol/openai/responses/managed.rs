@@ -1,10 +1,10 @@
 //! Synchronous Responses storage envelopes; no store, transport or upstream state.
-use crate::protocol::failure::CarrierReason;
 use crate::{
-    adapter::Request,
     protocol::{
-        CodecError, DecodedRequest, DecodedResponse, ResponseStorage,
-        openai::{Adapter, Profile, shape::*},
+        CodecError, DecodedRequest, DecodedResponse, GenerationRequestEnvelope as Request,
+        ResponseStorage,
+        failure::CarrierReason,
+        openai::{GenerationApi, GenerationCodec, shape::*},
     },
     semantic::value::Presence,
 };
@@ -49,11 +49,11 @@ pub(crate) fn read_storage(o: &Map<String, Value>) -> Result<Option<ResponseStor
 
 /// Compose typed stored history with the current input before combined validation.
 pub fn decode(
-    adapter: &Adapter,
+    adapter: &GenerationCodec,
     bytes: &[u8],
     history: Option<(&DecodedRequest, &DecodedResponse)>,
 ) -> Result<(Request, Options), CodecError> {
-    if adapter.protocol != Profile::Responses {
+    if adapter.protocol != GenerationApi::Responses {
         return Err(CodecError::ProfileMismatch);
     }
     let mut value = crate::protocol::json::decode(bytes)?;
@@ -241,13 +241,15 @@ pub fn input_items(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::protocol::openai::{Adapter, Dialect, Profile, TargetCaps};
-    use crate::semantic::{task::generation::*, value::Presence};
+    use crate::{
+        protocol::openai::{Dialect, GenerationApi, GenerationCodec, TargetContract},
+        semantic::{task::generation::*, value::Presence},
+    };
     use serde_json::json;
 
     #[test]
     fn continuation_decodes_ordered_history_with_current_settings_and_no_upstream_state() {
-        let adapter = Adapter::new(Profile::Responses, Dialect::Standard, None);
+        let adapter = GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None);
         let old = adapter
             .decode_client_request(br#"{"model":"synthetic","instructions":"old","input":"first"}"#)
             .unwrap();
@@ -272,7 +274,7 @@ mod tests {
         assert!(request.context.previous_response_id.is_absent());
         assert_eq!(
             adapter
-                .encode_request(&request, "selected", &TargetCaps::full())
+                .encode_request(&request, "selected", &TargetContract::full())
                 .unwrap(),
             json!({"model":"selected","store":false,"instructions":"new","input":[
                 {"type":"message","role":"user","content":[{"type":"input_text","text":"first"}]},
@@ -292,7 +294,7 @@ mod tests {
     #[test]
     fn typed_continuation_preserves_native_signed_owners_and_grouping() {
         use crate::protocol::{google::generate_content, native::ReplayTarget};
-        let adapter = Adapter::new(Profile::Responses, Dialect::Standard, None);
+        let adapter = GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None);
         let old = adapter
             .decode_client_request(br#"{"model":"m","input":"first"}"#)
             .unwrap();
@@ -319,7 +321,7 @@ mod tests {
         let mut output = decoder.finish().unwrap();
         crate::execution::replay::seal_for_client(
             &mut output,
-            &crate::execution::replay::CLIENT_ORIGIN,
+            &crate::protocol::replay_envelope::CLIENT_ORIGIN,
         )
         .unwrap();
         let before = output.clone();
@@ -442,8 +444,8 @@ mod tests {
 
     #[test]
     fn sealed_compaction_history_does_not_resurrect_output_only_creator_reports() {
-        let adapter = Adapter::new(
-            Profile::Responses,
+        let adapter = GenerationCodec::new(
+            GenerationApi::Responses,
             Dialect::Standard,
             Some(crate::semantic::value::ReplayOrigin::new("synthetic-issuer").unwrap()),
         );
@@ -454,7 +456,7 @@ mod tests {
             "status":"completed","output":[{"type":"compaction","id":"cmp","encrypted_content":"native-context","created_by":"actor"}]}"#).unwrap();
         crate::execution::replay::seal_for_client(
             &mut output,
-            &crate::execution::replay::CLIENT_ORIGIN,
+            &crate::protocol::replay_envelope::CLIENT_ORIGIN,
         )
         .unwrap();
         let (mut next, _) = decode(
@@ -478,7 +480,7 @@ mod tests {
 
     #[test]
     fn typed_history_keeps_resource_references_and_empty_envelope_boundaries() {
-        let adapter = Adapter::new(Profile::Responses, Dialect::Standard, None);
+        let adapter = GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None);
         let mut old = adapter
             .decode_client_request(
                 br#"{"model":"m","input":[{"role":"user","content":[
@@ -566,7 +568,7 @@ mod tests {
 
     #[test]
     fn retained_size_charges_empty_history_part_allocations() {
-        let adapter = Adapter::new(Profile::Responses, Dialect::Standard, None);
+        let adapter = GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None);
         let output = adapter.decode_response(br#"{"id":"r","object":"response","created_at":1,"model":"m","status":"completed","output":[]}"#).unwrap();
         let weight = |count| {
             let parts = vec![json!({"type":"output_text","text":"","annotations":[]}); count];
@@ -584,7 +586,7 @@ mod tests {
 
     #[test]
     fn input_items_have_stable_cursors_and_strict_pagination() {
-        let adapter = Adapter::new(Profile::Responses, Dialect::Standard, None);
+        let adapter = GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None);
         let resources = adapter
             .decode_client_request(
                 br#"{"model":"synthetic","input":[
@@ -636,8 +638,9 @@ mod tests {
     fn reasoning_phase_and_tool_history_match_an_independent_stateless_oracle() {
         for dialect in [Dialect::OpenRouter, Dialect::Grok, Dialect::Siwc] {
             let origin = crate::semantic::value::ReplayOrigin::new("synthetic-history").unwrap();
-            let adapter = Adapter::new(Profile::Responses, dialect, Some(origin.clone()));
-            let mut contract = TargetCaps::full();
+            let adapter =
+                GenerationCodec::new(GenerationApi::Responses, dialect, Some(origin.clone()));
+            let mut contract = TargetContract::full();
             contract.replay_origin = Some(origin);
             let mut old_wire = json!({"model":"m","instructions":"old","input":"first"});
             if dialect == Dialect::OpenRouter {

@@ -1,6 +1,6 @@
 //! Ordinary STOP, error feedback, corrective calls and signed final history through the Router.
 use crate::google_tool_fixture as fixture;
-use morphiecore::protocol::openai::Profile;
+use morphiecore::protocol::openai::GenerationApi;
 use serde_json::{Value, json};
 
 async fn complete(client: &reqwest::Client, base: &str, body: &Value) -> Value {
@@ -40,7 +40,7 @@ async fn exercise_rejected(api: fixture::Api, messages: bool) {
         let fixture = if messages {
             fixture::start_messages(api).await
         } else {
-            fixture::start(Profile::Chat, api).await
+            fixture::start(GenerationApi::Chat, api).await
         };
         let (path, body) = if messages {
             (
@@ -109,7 +109,7 @@ async fn exercise(api: fixture::Api) {
         .build()
         .unwrap();
     {
-        let profile = Profile::Responses;
+        let profile = GenerationApi::Responses;
         for stream in [false, true] {
             let fixture = fixture::start(profile, api).await;
             let function = json!({"name":"read","strict":false,"parameters":{
@@ -201,7 +201,7 @@ async fn stateless_responses_do_not_publish_success_or_store_signed_calls() {
         .unwrap();
     for api in [fixture::Api::GenerateContent, fixture::Api::Interactions] {
         for stream in [false, true] {
-            let fixture = fixture::start(Profile::Responses, api).await;
+            let fixture = fixture::start(GenerationApi::Responses, api).await;
             let mut response = client.post(format!("{}/responses", fixture.base))
                 .bearer_auth(fixture::KEY)
                 .json(&json!({"model":"gemini-3.8-flash","input":"Read.","store":false,

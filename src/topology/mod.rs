@@ -18,7 +18,7 @@ pub mod transcription;
 
 pub use compile::{CompiledTopology, TopologyError, compile};
 pub use endpoint::{Endpoint, EndpointTarget, ExecutionContract};
-pub use model::{CanonicalModel, GenerationSemanticContract};
+pub use model::{CanonicalModel, GenerationFeatureSet};
 pub use model_metadata::ModelMetadata;
 pub use route::{CandidatePolicy, FallbackPolicy, PublicModel, Route, RoutePolicy};
 
@@ -63,14 +63,14 @@ pub enum TaskKind {
 /// Wire protocol profile an endpoint speaks. Kept separate from codec types so
 /// topology stays free of protocol implementation internals.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum ProtocolProfile {
+pub enum GenerationProtocol {
     OpenAiChat,
     OpenAiResponses,
     AnthropicMessages,
     GoogleGenerateContent,
     GoogleInteractions,
 }
-impl ProtocolProfile {
+impl GenerationProtocol {
     pub fn operation(self) -> crate::provider::GenerationOperation {
         use crate::provider::GenerationOperation;
         match self {

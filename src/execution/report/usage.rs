@@ -1,6 +1,5 @@
 //! Bounded source-accounting observations, never delivery estimates or billing totals.
-use crate::lowering::generation::EvidenceDelta;
-use crate::semantic::task::generation::*;
+use crate::{protocol::conversion::generation::EvidenceDelta, semantic::task::generation::*};
 use serde::{Serialize, Serializer};
 use serde_json::{Value, json};
 
@@ -152,14 +151,14 @@ mod tests {
         use crate::{
             execution::{Attempt, report::Report},
             protocol::{
-                openai::{Adapter, Dialect, Profile},
+                openai::{Dialect, GenerationApi, GenerationCodec},
                 stream::SseLimits,
             },
         };
-        for profile in [Profile::Chat, Profile::Responses] {
+        for profile in [GenerationApi::Chat, GenerationApi::Responses] {
             for streaming in [false, true] {
                 for explicit_zero in [false, true] {
-                    let chat = profile == Profile::Chat;
+                    let chat = profile == GenerationApi::Chat;
                     let mut usage = if chat {
                         json!({"prompt_tokens":3,"completion_tokens":2,"total_tokens":5})
                     } else {
@@ -209,7 +208,7 @@ mod tests {
                         ]
                     };
                     let mut attempt = Attempt::new(
-                        Adapter::new(profile, Dialect::DeepSeek, None),
+                        GenerationCodec::new(profile, Dialect::DeepSeek, None),
                         4096,
                         SseLimits::default(),
                     );
@@ -275,7 +274,7 @@ mod tests {
         let mut policy = EvidenceDelta::default();
         policy.record_cache_write_default(
             "synthetic",
-            crate::lowering::generation::ConversionBoundary::EventDecode,
+            crate::protocol::conversion::generation::ConversionBoundary::EventDecode,
         );
         usage.observe(&source, &policy);
         assert_eq!(

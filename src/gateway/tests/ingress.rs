@@ -1,16 +1,20 @@
 //! Lowest-owner ingress checks; no real Provider I/O.
-use crate::gateway::tests::{
-    support::{KEY, gateway},
-    topology::topology,
-};
-use crate::gateway::{
-    ingress::{
-        admission,
-        http::{authenticate, handle},
+use crate::{
+    gateway::{
+        ingress::{
+            admission,
+            http::{authenticate, handle},
+        },
+        tests::{
+            support::{KEY, gateway},
+            topology::topology,
+        },
+        *,
     },
-    *,
+    protocol::ClientProtocol,
+    provider::CredentialBindingId,
+    topology::EndpointId,
 };
-use crate::{adapter::ClientProtocol, provider::CredentialBindingId, topology::EndpointId};
 use axum::{
     Router,
     http::{HeaderMap, Request as HttpRequest, StatusCode},
@@ -20,7 +24,7 @@ use std::time::Duration;
 use tower::ServiceExt;
 #[test]
 fn client_profile_cannot_depend_on_candidate_order_or_select_responses_extensions() {
-    let entries = |profiles: &[(Profile, ChatProfile)]| {
+    let entries = |profiles: &[(GenerationApi, ChatProfile)]| {
         profiles
             .iter()
             .map(|(protocol, chat_profile)| Entry {
@@ -33,14 +37,14 @@ fn client_profile_cannot_depend_on_candidate_order_or_select_responses_extension
     };
     for profiles in [
         vec![
-            (Profile::Chat, ChatProfile::Standard),
-            (Profile::Chat, ChatProfile::ReadableReasoning),
+            (GenerationApi::Chat, ChatProfile::Standard),
+            (GenerationApi::Chat, ChatProfile::ReadableReasoning),
         ],
         vec![
-            (Profile::Chat, ChatProfile::ReadableReasoning),
-            (Profile::Chat, ChatProfile::Standard),
+            (GenerationApi::Chat, ChatProfile::ReadableReasoning),
+            (GenerationApi::Chat, ChatProfile::Standard),
         ],
-        vec![(Profile::Responses, ChatProfile::ReadableReasoning)],
+        vec![(GenerationApi::Responses, ChatProfile::ReadableReasoning)],
     ] {
         assert!(
             Gateway::new(
@@ -75,12 +79,12 @@ async fn checked_intake_survives_admission_and_planning_failures_without_an_atte
     let state = Arc::get_mut(&mut gate.state).unwrap();
     let mut entry = state.entries.values().next().unwrap().as_ref().clone();
     entry.client = crate::adapter::ClientAdapter::openai(
-        crate::protocol::openai::Adapter::new(
-            Profile::Responses,
+        crate::protocol::openai::GenerationCodec::new(
+            GenerationApi::Responses,
             crate::protocol::openai::Dialect::Standard,
             None,
         ),
-        crate::protocol::openai::TargetCaps::full(),
+        crate::protocol::openai::TargetContract::full(),
     );
     entry.public.contract.tools = false;
     state.entries.insert(
@@ -108,7 +112,7 @@ async fn checked_intake_survives_admission_and_planning_failures_without_an_atte
     assert!(snapshot.attempts.is_empty());
     assert_eq!(
         snapshot.failure.unwrap().boundary,
-        Some(crate::lowering::generation::ConversionBoundary::RequestProject)
+        Some(crate::protocol::conversion::generation::ConversionBoundary::RequestProject)
     );
     let mut invalid = wire.clone();
     invalid["tools"][0]["name"] = serde_json::Value::Null;
@@ -159,8 +163,8 @@ async fn checked_intake_survives_admission_and_planning_failures_without_an_atte
     assert_eq!(error.status, 400);
     let snapshot = report.snapshot();
     assert_eq!(snapshot.result, ResultState::Failed);
-    assert_eq!(snapshot.public_code, Some(error.code));
-    assert_eq!(snapshot.public_status, Some(400));
+    assert_eq!(snapshot.failure_code, Some(error.diagnostic_code()));
+    assert_eq!(snapshot.failure_status_hint, Some(400));
     assert!(snapshot.attempts.is_empty());
     assert!(!snapshot.intake.entries.is_empty());
     assert!(matches!(
@@ -180,7 +184,7 @@ async fn activated_members_keep_route_order_with_a_shared_client_carrier() {
         .map(|id| Entry {
             chat_profile: Default::default(),
             model: "fixture-model".into(),
-            protocol: crate::adapter::ClientProtocol::Responses,
+            protocol: crate::protocol::ClientProtocol::Responses,
             endpoint: EndpointId::new(id).unwrap(),
         })
         .collect();
@@ -203,7 +207,7 @@ async fn activated_members_keep_route_order_with_a_shared_client_carrier() {
     )
     .unwrap();
     let entry = &gate.state.entries[&(
-        crate::adapter::ClientProtocol::Responses,
+        crate::protocol::ClientProtocol::Responses,
         "fixture-model".into(),
     )];
     assert_eq!(
@@ -215,7 +219,7 @@ async fn activated_members_keep_route_order_with_a_shared_client_carrier() {
             .adaptation
             .scope
             .as_ref(),
-        Some(&*crate::execution::replay::CLIENT_ORIGIN)
+        Some(&*crate::protocol::replay_envelope::CLIENT_ORIGIN)
     );
     let request = entry
         .client
@@ -256,7 +260,7 @@ fn ingress_unwraps_only_the_candidate_compatible_opaque_and_never_selects_a_targ
             generation: vec![Entry {
                 chat_profile: Default::default(),
                 model: "fixture-model".into(),
-                protocol: crate::adapter::ClientProtocol::Responses,
+                protocol: crate::protocol::ClientProtocol::Responses,
                 endpoint: EndpointId::new("fixture-responses").unwrap(),
             }],
             ..Default::default()
@@ -279,7 +283,7 @@ fn ingress_unwraps_only_the_candidate_compatible_opaque_and_never_selects_a_targ
         ("fixture", "other", false),
     ] {
         let mut issuer = gate.state.entries[&(
-            crate::adapter::ClientProtocol::Responses,
+            crate::protocol::ClientProtocol::Responses,
             "fixture-model".into(),
         )]
             .candidates[0]
@@ -336,7 +340,7 @@ async fn model_request_limits_do_not_suppress_client_reported_facts() {
             generation: vec![Entry {
                 chat_profile: Default::default(),
                 model: "limited-model".into(),
-                protocol: crate::adapter::ClientProtocol::Responses,
+                protocol: crate::protocol::ClientProtocol::Responses,
                 endpoint: EndpointId::new("limited-responses").unwrap(),
             }],
             ..Default::default()
@@ -354,7 +358,7 @@ async fn model_request_limits_do_not_suppress_client_reported_facts() {
     )
     .unwrap();
     let entry = &gate.state.entries[&(
-        crate::adapter::ClientProtocol::Responses,
+        crate::protocol::ClientProtocol::Responses,
         "limited-model".into(),
     )];
     let request = entry
@@ -386,8 +390,8 @@ async fn model_request_limits_do_not_suppress_client_reported_facts() {
             )
             .is_err()
     );
-    let provider = Adapter {
-        protocol: Profile::Responses,
+    let provider = GenerationCodec {
+        protocol: GenerationApi::Responses,
         adaptation: entry.candidates[0]
             .endpoint
             .representation
@@ -477,8 +481,10 @@ async fn diagnostics_only_record_authenticated_requests_and_never_expose_headers
 }
 #[tokio::test]
 async fn authenticated_agent_is_fixed_before_optional_capture() {
-    use crate::gateway::ingress::auth::{Auth, AuthenticatedAgent};
-    use crate::gateway::ingress::correlation::RequestId;
+    use crate::gateway::ingress::{
+        auth::{Auth, AuthenticatedAgent},
+        correlation::RequestId,
+    };
     use axum::extract::Extension;
     const OTHER: &str = "synthetic-second-client-token-00002";
     for (diagnostics, capture) in [(false, false), (false, true), (true, false), (true, true)] {
@@ -775,7 +781,7 @@ fn clients_only_resolve_public_labels_and_cannot_select_a_provider() {
     let gate = Gateway::new(
         topology(),
         TaskEntries {
-            generation: [Profile::Chat, Profile::Responses]
+            generation: [GenerationApi::Chat, GenerationApi::Responses]
                 .into_iter()
                 .map(|protocol| Entry {
                     chat_profile: Default::default(),
@@ -798,15 +804,15 @@ fn clients_only_resolve_public_labels_and_cannot_select_a_provider() {
         None,
     )
     .unwrap();
-    for profile in [Profile::Chat, Profile::Responses] {
-        let original = if profile == Profile::Chat {
+    for profile in [GenerationApi::Chat, GenerationApi::Responses] {
+        let original = if profile == GenerationApi::Chat {
             serde_json::json!({"model":"fixture-model","messages":[{"role":"user","content":"hi"}]})
         } else {
             serde_json::json!({"model":"fixture-model","input":"hi"})
         };
         let (base, admitted) = admission::prepare(
             &gate.state,
-            crate::adapter::ClientProtocol::from(profile),
+            crate::protocol::ClientProtocol::from(profile),
             &serde_json::to_vec(&original).unwrap(),
             &crate::execution::report::Report::default(),
         )
@@ -824,7 +830,7 @@ fn clients_only_resolve_public_labels_and_cannot_select_a_provider() {
             wire[field] = value;
             let (entry, request) = admission::prepare(
                 &gate.state,
-                crate::adapter::ClientProtocol::from(profile),
+                crate::protocol::ClientProtocol::from(profile),
                 &serde_json::to_vec(&wire).unwrap(),
                 &crate::execution::report::Report::default(),
             )
@@ -836,7 +842,7 @@ fn clients_only_resolve_public_labels_and_cannot_select_a_provider() {
                 base.candidates[0].endpoint.id
             );
         }
-        let (nested, unknown_kind) = if profile == Profile::Chat {
+        let (nested, unknown_kind) = if profile == GenerationApi::Chat {
             (
                 serde_json::json!({"model":"fixture-model","messages":[{"role":"user","content":"hi","x_trace":1}]}),
                 serde_json::json!({"model":"fixture-model","messages":[{"role":"critic","content":"hi"}]}),
@@ -849,7 +855,7 @@ fn clients_only_resolve_public_labels_and_cannot_select_a_provider() {
         };
         let (_, request) = admission::prepare(
             &gate.state,
-            crate::adapter::ClientProtocol::from(profile),
+            crate::protocol::ClientProtocol::from(profile),
             &serde_json::to_vec(&nested).unwrap(),
             &crate::execution::report::Report::default(),
         )
@@ -859,7 +865,7 @@ fn clients_only_resolve_public_labels_and_cannot_select_a_provider() {
         assert!(
             admission::prepare(
                 &gate.state,
-                crate::adapter::ClientProtocol::from(profile),
+                crate::protocol::ClientProtocol::from(profile),
                 &serde_json::to_vec(&unknown_kind).unwrap(),
                 &crate::execution::report::Report::default()
             )
@@ -870,7 +876,7 @@ fn clients_only_resolve_public_labels_and_cannot_select_a_provider() {
         assert_eq!(
             admission::prepare(
                 &gate.state,
-                crate::adapter::ClientProtocol::from(profile),
+                crate::protocol::ClientProtocol::from(profile),
                 &serde_json::to_vec(&wire).unwrap(),
                 &crate::execution::report::Report::default()
             )
@@ -936,7 +942,7 @@ fn entries_cannot_escape_compiled_route_or_credential_ownership() {
             generation: vec![Entry {
                 chat_profile: Default::default(),
                 model: "fixture-model".into(),
-                protocol: crate::adapter::ClientProtocol::Chat,
+                protocol: crate::protocol::ClientProtocol::Chat,
                 endpoint: EndpointId::new("limited-responses").unwrap(),
             }],
             ..Default::default()
@@ -960,7 +966,7 @@ fn entries_cannot_escape_compiled_route_or_credential_ownership() {
             generation: vec![Entry {
                 chat_profile: Default::default(),
                 model: "fixture-model".into(),
-                protocol: crate::adapter::ClientProtocol::Chat,
+                protocol: crate::protocol::ClientProtocol::Chat,
                 endpoint: EndpointId::new("fixture-chat").unwrap(),
             }],
             ..Default::default()
@@ -1025,7 +1031,7 @@ fn entries_cannot_escape_compiled_route_or_credential_ownership() {
                     .map(|id| Entry {
                         chat_profile: Default::default(),
                         model: "fixture-model".into(),
-                        protocol: crate::adapter::ClientProtocol::Chat,
+                        protocol: crate::protocol::ClientProtocol::Chat,
                         endpoint: EndpointId::new(id).unwrap(),
                     })
                     .collect(),
@@ -1041,8 +1047,10 @@ fn entries_cannot_escape_compiled_route_or_credential_ownership() {
         );
         if endpoints.len() == 1 {
             let bound = bound.unwrap();
-            let candidates = &bound.state.entries
-                [&(crate::adapter::ClientProtocol::Chat, "fixture-model".into())]
+            let candidates = &bound.state.entries[&(
+                crate::protocol::ClientProtocol::Chat,
+                "fixture-model".into(),
+            )]
                 .candidates;
             assert_eq!(candidates.len(), 64);
             assert!(

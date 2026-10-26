@@ -1,13 +1,17 @@
 //! Function-call content carriers shared by Chat and Responses.
-use crate::protocol::failure::CarrierReason;
-use crate::protocol::openai::{CodecError, Profile, shape::*};
-use crate::semantic::task::generation::*;
+use crate::{
+    protocol::{
+        failure::CarrierReason,
+        openai::{CodecError, GenerationApi, shape::*},
+    },
+    semantic::task::generation::*,
+};
 use serde_json::{Map, Value};
 
-pub(in crate::protocol::openai) fn strict_default(profile: Profile) -> StrictDefault {
+pub(in crate::protocol::openai) fn strict_default(profile: GenerationApi) -> StrictDefault {
     match profile {
-        Profile::Chat => StrictDefault::NonStrict,
-        Profile::Responses => StrictDefault::NormalizeSchema,
+        GenerationApi::Chat => StrictDefault::NonStrict,
+        GenerationApi::Responses => StrictDefault::NormalizeSchema,
     }
 }
 pub(in crate::protocol::openai) fn reject_chat_orchestration(
@@ -29,13 +33,13 @@ pub(in crate::protocol::openai) fn reject_chat_orchestration(
 }
 pub(in crate::protocol::openai) fn tool_call(
     o: &Map<String, Value>,
-    profile: Profile,
+    profile: GenerationApi,
     item_status: Option<&str>,
     replay: bool,
     direction: DecodeDirection,
 ) -> Result<ToolCall, CodecError> {
     let (f, id) = match profile {
-        Profile::Chat => {
+        GenerationApi::Chat => {
             reject_chat_orchestration(o)?;
             direction.fields(o, &["id", "type", "function", "index"])?;
             if string(o, "type")? != "function" {
@@ -53,7 +57,7 @@ pub(in crate::protocol::openai) fn tool_call(
             )?;
             (f, string(o, "id")?)
         }
-        Profile::Responses => {
+        GenerationApi::Responses => {
             direction.fields(
                 o,
                 if replay {
@@ -100,7 +104,7 @@ pub(in crate::protocol::openai) fn tool_call(
     }
     // Function-call status is optional/nullable, unlike complete message status.
     // https://github.com/openai/openai-python/blob/be9d66628ad7377bd36fe5a76ae6d735843f0e76/src/openai/types/responses/response_function_tool_call.py
-    let status = if profile == Profile::Chat || o.get("status").is_some_and(Value::is_null) {
+    let status = if profile == GenerationApi::Chat || o.get("status").is_some_and(Value::is_null) {
         ItemLifecycle::Completed
     } else {
         crate::protocol::openai::responses::items::status(o, ItemLifecycle::Completed)?
@@ -112,7 +116,7 @@ pub(in crate::protocol::openai) fn tool_call(
         name: text(string(f, "name")?, "function name", 128)?,
         arguments: raw_string(f, "arguments")?.into(),
         status,
-        context: if profile == Profile::Responses {
+        context: if profile == GenerationApi::Responses {
             crate::protocol::openai::responses::items::call_context(o, direction)?
         } else {
             CallContext::default()

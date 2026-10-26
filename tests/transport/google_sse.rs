@@ -4,7 +4,9 @@ use morphiecore::{
     execution::{Attempt, ResponseDelivery},
     protocol::{
         native::ReplayTarget,
-        openai::{Adapter, Dialect, Profile, TargetCaps, obfuscation::Obfuscation},
+        openai::{
+            Dialect, GenerationApi, GenerationCodec, TargetContract, obfuscation::Obfuscation,
+        },
         stream::SseLimits,
     },
     semantic::{
@@ -36,7 +38,7 @@ fn incomplete_frames(parts: Value) -> Vec<u8> {
 }
 fn deliver(
     bytes: &[u8],
-    profile: Profile,
+    profile: GenerationApi,
     stream: bool,
 ) -> Result<Value, morphiecore::execution::AttemptError> {
     let target = ReplayTarget::new("synthetic-google", "gemini-synthetic").unwrap();
@@ -47,8 +49,8 @@ fn deliver(
     );
     let mut delivery = ResponseDelivery::new(
         morphiecore::adapter::ClientAdapter::openai(
-            Adapter::new(profile, Dialect::MorphieCore, None),
-            TargetCaps::full(),
+            GenerationCodec::new(profile, Dialect::MorphieCore, None),
+            TargetContract::full(),
         ),
         "public",
         SseLimits::default(),
@@ -94,7 +96,7 @@ fn signed_text_and_partial_outputs_keep_replay_and_terminal_contracts() {
     let empty = incomplete_frames(json!([{"text":"","thoughtSignature":"U0lH"}]));
     for stream in [false, true] {
         assert!(matches!(
-            deliver(&empty, Profile::Responses, stream)
+            deliver(&empty, GenerationApi::Responses, stream)
                 .unwrap_err()
                 .codec(),
             Some(morphiecore::protocol::CodecError::Unsupported(
@@ -114,13 +116,13 @@ fn signed_text_and_partial_outputs_keep_replay_and_terminal_contracts() {
     let mut response = attempt.response().unwrap().clone();
     morphiecore::execution::replay::seal_for_client(
         &mut response,
-        &morphiecore::execution::replay::CLIENT_ORIGIN,
+        &morphiecore::protocol::replay_envelope::CLIENT_ORIGIN,
     )
     .unwrap();
-    let client = Adapter::new(
-        Profile::Responses,
+    let client = GenerationCodec::new(
+        GenerationApi::Responses,
         Dialect::Standard,
-        Some(morphiecore::execution::replay::CLIENT_ORIGIN.clone()),
+        Some(morphiecore::protocol::replay_envelope::CLIENT_ORIGIN.clone()),
     );
     let old = client
         .decode_client_request(br#"{"model":"m","input":"go"}"#)
@@ -157,15 +159,15 @@ fn signed_text_and_partial_outputs_keep_replay_and_terminal_contracts() {
         .is_err()
     );
     let partial = b"data: {\"responseId\":\"resp\",\"modelVersion\":\"gemini-synthetic\",\"candidates\":[{\"index\":0,\"content\":{\"role\":\"model\",\"parts\":[{\"text\":\"partial\"}]},\"finishReason\":\"MAX_TOKENS\"}],\"usageMetadata\":{\"promptTokenCount\":1,\"candidatesTokenCount\":1,\"totalTokenCount\":2}}\n\n";
-    let json = deliver(partial, Profile::Responses, false).unwrap();
+    let json = deliver(partial, GenerationApi::Responses, false).unwrap();
     assert_eq!(json["status"], "incomplete");
     assert_eq!(json["incomplete_details"]["reason"], "max_output_tokens");
     assert_eq!(json["output"][0]["content"][0]["text"], "partial");
-    let sse = deliver(partial, Profile::Responses, true).unwrap();
+    let sse = deliver(partial, GenerationApi::Responses, true).unwrap();
     let sse = sse.as_str().unwrap();
     assert!(sse.contains("event: response.incomplete\n"));
     assert!(!sse.contains("event: response.completed\n"));
-    let chat = deliver(partial, Profile::Chat, false).unwrap();
+    let chat = deliver(partial, GenerationApi::Chat, false).unwrap();
     assert_eq!(chat["choices"][0]["finish_reason"], "length");
     assert_eq!(chat["choices"][0]["message"]["content"], "partial");
 }
@@ -175,7 +177,7 @@ fn readable_reasoning_after_content_still_cannot_reach_chat() {
     let late_thought =
         incomplete_frames(json!([{"text":"Reading."},{"text":"Plan","thought":true}]));
     for stream in [false, true] {
-        assert!(deliver(&late_thought, Profile::Chat, stream).is_err());
+        assert!(deliver(&late_thought, GenerationApi::Chat, stream).is_err());
     }
-    assert!(deliver(&late_thought, Profile::Responses, false).is_ok());
+    assert!(deliver(&late_thought, GenerationApi::Responses, false).is_ok());
 }

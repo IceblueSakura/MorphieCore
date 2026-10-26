@@ -1,8 +1,8 @@
 //! Native Messages bindings. Directory bootstrap activates one only when `models` lists it.
 use crate::{
-    protocol::anthropic::messages::{Carriers, Dialect, Profile, TargetCaps},
+    protocol::anthropic::messages::{Carriers, Dialect, Profile, TargetContract},
     provider::{CredentialBindingId, CredentialKind, ProviderDefinition, catalog},
-    semantic::task::generation::GenerationSemanticContract,
+    semantic::task::generation::GenerationFeatureSet,
     topology::*,
 };
 pub struct MessagesBinding {
@@ -21,7 +21,7 @@ pub const MESSAGES_BINDINGS: &[MessagesBinding] = &[MessagesBinding {
     developer: "Anthropic",
 }];
 /// Reviewed native Haiku inputs and pi's ordered agent profile.
-fn haiku_contract(mut contract: GenerationSemanticContract) -> GenerationSemanticContract {
+fn haiku_contract(mut contract: GenerationFeatureSet) -> GenerationFeatureSet {
     contract.strict_tools = true;
     contract.tool_examples = true;
     contract.document_context = true;
@@ -44,7 +44,8 @@ impl MessagesBinding {
     }
     pub fn endpoint(&self) -> Endpoint {
         let provider = self.provider();
-        let mut representation = TargetCaps::new(Profile::AdaptiveTextTools, Dialect::OpenCodeGo);
+        let mut representation =
+            TargetContract::new(Profile::AdaptiveTextTools, Dialect::OpenCodeGo);
         // Preserve the pinned OpenCode Messages fallback as binding policy.
         // https://github.com/anomalyco/opencode/blob/e5a557efeee02c94486d391afc48f24a49ebc9a5/packages/ai/src/protocols/anthropic-messages.ts
         representation.default_output_tokens = Some(32_000);
@@ -70,7 +71,7 @@ impl MessagesBinding {
                 path,
             },
             task: TaskKind::Generation,
-            protocol: ProtocolProfile::AnthropicMessages,
+            protocol: GenerationProtocol::AnthropicMessages,
             upstream_model: self.upstream.into(),
             canonical_model: ModelId::new(self.model).expect("static model"),
             representation: representation.into(),

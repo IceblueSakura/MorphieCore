@@ -1,13 +1,13 @@
 //! Independent inline-file wire oracles; no file parser, credentials or network.
 use crate::resources_support as resources;
 use morphiecore::{
-    protocol::openai::{Adapter, Dialect, Profile, TargetCaps as Contract},
+    protocol::openai::{Dialect, GenerationApi, GenerationCodec, TargetContract as Contract},
     semantic::task::generation::*,
 };
 use serde_json::{Value, json};
 
-fn adapter() -> Adapter {
-    Adapter::new(Profile::Responses, Dialect::Standard, None)
+fn adapter() -> GenerationCodec {
+    GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None)
 }
 fn wire(parts: Value) -> Value {
     json!({"model":"synthetic","input":[{"role":"user","content":parts}]})
@@ -17,7 +17,7 @@ fn file() -> Value {
 }
 fn decode(
     parts: Value,
-) -> Result<morphiecore::adapter::Request, morphiecore::protocol::CodecError> {
+) -> Result<morphiecore::protocol::GenerationRequestEnvelope, morphiecore::protocol::CodecError> {
     adapter().decode_request(&serde_json::to_vec(&wire(parts)).unwrap())
 }
 
@@ -76,12 +76,12 @@ fn typed_request(values: Vec<Resource>) -> Result<GenerationRequest, GenerationE
 fn encode_typed(
     request: &GenerationRequest,
     contract: Contract,
-) -> Result<Value, morphiecore::lowering::generation::RepresentationError> {
+) -> Result<Value, morphiecore::protocol::conversion::generation::RepresentationError> {
     let fidelity = morphiecore::protocol::fidelity::FidelityRecords::default();
     let target = morphiecore::protocol::openai::lowering::lower_request(
         request,
         &fidelity,
-        Profile::Responses,
+        GenerationApi::Responses,
         contract,
     )?;
     Ok(morphiecore::protocol::openai::responses::encode_generation(&target).unwrap())
@@ -89,7 +89,7 @@ fn encode_typed(
 
 #[test]
 fn chat_file_part_is_an_inline_pdf_without_detail_or_provider_id() {
-    let chat = Adapter::new(Profile::Chat, Dialect::Standard, None);
+    let chat = GenerationCodec::new(GenerationApi::Chat, Dialect::Standard, None);
     let chat_wire = json!({"model":"synthetic","messages":[{"role":"user","content":[
             {"type":"file","file":{"file_data":"data:application/pdf;base64,AQID","filename":"synthetic.pdf"}},
             {"type":"text","text":"Summarize."}]}]});
@@ -283,7 +283,13 @@ fn request_lifetime_boundaries_have_independent_ir_and_reject_unrelated_ttls() {
     .unwrap();
     // The exact boundary does not need source fidelity or a copied 30m default.
     let fidelity = Default::default();
-    let target = lower_request(&request, &fidelity, Profile::Responses, Contract::full()).unwrap();
+    let target = lower_request(
+        &request,
+        &fidelity,
+        GenerationApi::Responses,
+        Contract::full(),
+    )
+    .unwrap();
     let wire = morphiecore::protocol::openai::responses::encode_generation(&target).unwrap();
     assert_eq!(
         wire["input"][0],
@@ -298,7 +304,7 @@ fn request_lifetime_boundaries_have_independent_ir_and_reject_unrelated_ttls() {
         lower_request(
             &ungrouped,
             &Default::default(),
-            Profile::Chat,
+            GenerationApi::Chat,
             Contract::full()
         )
         .err(),
@@ -333,7 +339,7 @@ fn request_lifetime_boundaries_have_independent_ir_and_reject_unrelated_ttls() {
         lower_request(
             &native_ttl,
             &Default::default(),
-            Profile::Responses,
+            GenerationApi::Responses,
             Contract::full()
         )
         .err(),
@@ -375,13 +381,13 @@ fn inline_file_media_need_their_input_modality() {
     let semantic = &decoded.task.semantic;
     let needs = GenerationRequirements::derive(semantic);
     assert_eq!((needs.file_inputs, needs.audio_inputs), (1, 1));
-    let mut files_only = GenerationSemanticContract::full();
+    let mut files_only = GenerationFeatureSet::full();
     files_only.audio_input = false;
     assert_eq!(
         files_only.check(semantic),
         Err(GenerationFeature::AudioInput)
     );
-    assert!(GenerationSemanticContract::full().check(semantic).is_ok());
+    assert!(GenerationFeatureSet::full().check(semantic).is_ok());
     // A PDF needs only file input.
     let pdf = decode(json!([file()])).unwrap();
     let needs = GenerationRequirements::derive(&pdf.task.semantic);
@@ -434,7 +440,7 @@ fn responses_instructions_reject_media_and_preserve_text() {
         .encode_request(&decoded, "synthetic", &Contract::full())
         .unwrap();
     assert_eq!(output["input"][0], input[0]);
-    let chat = Adapter::new(Profile::Chat, Dialect::Standard, None);
+    let chat = GenerationCodec::new(GenerationApi::Chat, Dialect::Standard, None);
     assert_eq!(
         chat.encode_request(&decoded, "synthetic", &Contract::full())
             .unwrap()["messages"][0],

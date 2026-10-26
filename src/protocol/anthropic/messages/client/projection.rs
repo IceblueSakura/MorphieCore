@@ -1,7 +1,13 @@
 //! Client Messages delivery projection, named losses and JSON rendering.
-use crate::protocol::failure::{CarrierReason, ShapeReason};
-use crate::protocol::{CodecError, DecodedResponse, anthropic::messages as wire, replay_envelope};
-use crate::semantic::{task::generation::*, value::Presence};
+use crate::{
+    protocol::{
+        CodecError, DecodedResponse,
+        anthropic::messages as wire,
+        failure::{CarrierReason, ShapeReason},
+        replay_envelope,
+    },
+    semantic::{task::generation::*, value::Presence},
+};
 use serde_json::Value;
 use std::borrow::Cow;
 
@@ -17,7 +23,13 @@ impl GoogleTerminalPolicy {
         self,
         source: &GenerationResponse,
         direction: &'static str,
-    ) -> Result<Option<(TerminalDetails, crate::lowering::generation::Effect)>, CodecError> {
+    ) -> Result<
+        Option<(
+            TerminalDetails,
+            crate::protocol::conversion::generation::Effect,
+        )>,
+        CodecError,
+    > {
         source.details().validate(source.outcome())?;
         if source.outcome() != Outcome::Completed {
             return Ok(None);
@@ -59,12 +71,12 @@ impl GoogleTerminalPolicy {
         details.completion = completion;
         Ok(Some((
             details,
-            crate::lowering::generation::Effect::Field {
-                rule: crate::lowering::generation::RuleId::new(rule),
+            crate::protocol::conversion::generation::Effect::Field {
+                rule: crate::protocol::conversion::generation::RuleId::new(rule),
                 field: ("generation.completion_cause").into(),
-                direction: (direction).into(),
-                action: (action).into(),
-                owner: crate::lowering::generation::Owner::Root,
+                boundary: (direction).into(),
+                change: (action).into(),
+                owner: crate::protocol::conversion::generation::Owner::Root,
             },
         )))
     }
@@ -124,13 +136,13 @@ pub(super) fn project_reasoning(
 pub(super) fn reasoning_loss(
     item: ItemId,
     direction: &'static str,
-) -> crate::lowering::generation::Effect {
-    crate::lowering::generation::Effect::Field {
+) -> crate::protocol::conversion::generation::Effect {
+    crate::protocol::conversion::generation::Effect::Field {
         rule: "messages.readable-reasoning.v1".into(),
-        field: crate::lowering::generation::Field::DeliveredProjection,
-        direction: direction.into(),
-        action: "approximate".into(),
-        owner: crate::lowering::generation::Owner::item(item),
+        field: crate::protocol::conversion::generation::Field::DeliveredProjection,
+        boundary: direction.into(),
+        change: "approximate".into(),
+        owner: crate::protocol::conversion::generation::Owner::item(item),
     }
 }
 
@@ -199,7 +211,7 @@ pub(crate) fn project_snapshot(response: &mut DecodedResponse) -> Result<(), Cod
 }
 pub(crate) fn metadata_losses(
     metadata: &crate::protocol::ResponseMetadata,
-) -> Vec<crate::lowering::generation::Effect> {
+) -> Vec<crate::protocol::conversion::generation::Effect> {
     let mut losses = vec![];
     if metadata
         .context
@@ -208,39 +220,45 @@ pub(crate) fn metadata_losses(
         .any(|r| r.settings.is_some())
         || metadata.context.instruction_messages.is_some()
     {
-        losses.push(crate::lowering::generation::Effect::Field {
-            rule: crate::lowering::generation::RuleId::new("messages.omit-incidental-settings.v1"),
+        losses.push(crate::protocol::conversion::generation::Effect::Field {
+            rule: crate::protocol::conversion::generation::RuleId::new(
+                "messages.omit-incidental-settings.v1",
+            ),
             field: ("response.reported.settings").into(),
-            direction: ("response.project").into(),
-            action: ("omit").into(),
-            owner: crate::lowering::generation::Owner::Root,
+            boundary: ("response.project").into(),
+            change: ("omit").into(),
+            owner: crate::protocol::conversion::generation::Owner::Root,
         });
     }
     if !metadata.context.system_fingerprint.is_absent() {
-        losses.push(crate::lowering::generation::Effect::Field {
-            rule: crate::lowering::generation::RuleId::new("messages.omit-system-fingerprint.v1"),
+        losses.push(crate::protocol::conversion::generation::Effect::Field {
+            rule: crate::protocol::conversion::generation::RuleId::new(
+                "messages.omit-system-fingerprint.v1",
+            ),
             field: ("response.context.system_fingerprint").into(),
-            direction: ("response.project").into(),
-            action: ("omit").into(),
-            owner: crate::lowering::generation::Owner::Root,
+            boundary: ("response.project").into(),
+            change: ("omit").into(),
+            owner: crate::protocol::conversion::generation::Owner::Root,
         });
     }
     losses
 }
 /// Messages has no refusal content block; `stop_reason: "refusal"` reports classifier
 /// intervention, not a model-authored refusal message, so the text is kept as text.
-pub(crate) fn refusal_loss(direction: &'static str) -> crate::lowering::generation::Effect {
-    crate::lowering::generation::Effect::Field {
-        rule: crate::lowering::generation::RuleId::new("messages.refusal-as-text.v1"),
+pub(crate) fn refusal_loss(
+    direction: &'static str,
+) -> crate::protocol::conversion::generation::Effect {
+    crate::protocol::conversion::generation::Effect::Field {
+        rule: crate::protocol::conversion::generation::RuleId::new("messages.refusal-as-text.v1"),
         field: ("generation.content.refusal").into(),
-        direction: (direction).into(),
-        action: ("approximate").into(),
-        owner: crate::lowering::generation::Owner::Root,
+        boundary: (direction).into(),
+        change: ("approximate").into(),
+        owner: crate::protocol::conversion::generation::Owner::Root,
     }
 }
 pub(crate) fn content_losses(
     response: &GenerationResponse,
-) -> Vec<crate::lowering::generation::Effect> {
+) -> Vec<crate::protocol::conversion::generation::Effect> {
     let mut losses = Vec::new();
     for (id, item) in response.items() {
         if let Item::Reasoning(reasoning) = item
@@ -269,22 +287,26 @@ pub(crate) fn content_losses(
     losses.extend(refusal.then(|| refusal_loss("response.project")));
     losses
 }
-pub(super) fn explanation_loss(direction: &'static str) -> crate::lowering::generation::Effect {
-    crate::lowering::generation::Effect::Field {
-        rule: crate::lowering::generation::RuleId::new("messages.omit-terminal-explanation.v1"),
+pub(super) fn explanation_loss(
+    direction: &'static str,
+) -> crate::protocol::conversion::generation::Effect {
+    crate::protocol::conversion::generation::Effect::Field {
+        rule: crate::protocol::conversion::generation::RuleId::new(
+            "messages.omit-terminal-explanation.v1",
+        ),
         field: ("generation.terminal.explanation").into(),
-        direction: (direction).into(),
-        action: ("omit").into(),
-        owner: crate::lowering::generation::Owner::Root,
+        boundary: (direction).into(),
+        change: ("omit").into(),
+        owner: crate::protocol::conversion::generation::Owner::Root,
     }
 }
 /// Shared by JSON and SSE delivery. Lost report detail/scope and a changed scalar usage
-/// view are independent receipts; a report without a selected view records only the former.
+/// view are independent adaptations; a report without a selected view records only the former.
 pub(crate) fn report_losses(
     source: &UsageReport,
     selected: Option<&UsageReport>,
     direction: &'static str,
-) -> Vec<crate::lowering::generation::Effect> {
+) -> Vec<crate::protocol::conversion::generation::Effect> {
     if selected == Some(source) {
         return vec![];
     }
@@ -300,13 +322,13 @@ pub(crate) fn report_losses(
     }
     losses
 }
-pub(crate) fn usage_loss() -> crate::lowering::generation::Effect {
-    crate::lowering::generation::Effect::Field {
-        rule: crate::lowering::generation::RuleId::new("messages.usage-view.v1"),
+pub(crate) fn usage_loss() -> crate::protocol::conversion::generation::Effect {
+    crate::protocol::conversion::generation::Effect::Field {
+        rule: crate::protocol::conversion::generation::RuleId::new("messages.usage-view.v1"),
         field: ("generation.usage").into(),
-        direction: ("response.project").into(),
-        action: crate::lowering::generation::Change::Normalize,
-        owner: crate::lowering::generation::Owner::Root,
+        boundary: ("response.project").into(),
+        change: crate::protocol::conversion::generation::Change::Normalize,
+        owner: crate::protocol::conversion::generation::Owner::Root,
     }
 }
 pub(super) fn tool_input(call: &ToolCall) -> Result<Value, CodecError> {

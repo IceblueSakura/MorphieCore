@@ -1,9 +1,11 @@
 //! Named wire mappings and classified router facts. No provider identity branches.
 //! Shared readers receive an explicit direction; modeled values remain strict.
-use crate::protocol::failure::{CarrierReason, ShapeReason};
-use crate::protocol::openai::DecodeDirection;
-use crate::protocol::openai::dialect::adaptation::Adaptation;
-use crate::protocol::openai::{CodecError, Profile, shape::bounded};
+use crate::protocol::{
+    failure::{CarrierReason, ShapeReason},
+    openai::{
+        CodecError, DecodeDirection, GenerationApi, dialect::adaptation::Adaptation, shape::bounded,
+    },
+};
 use serde_json::{Map, Value};
 use std::{borrow::Cow, collections::BTreeMap};
 
@@ -31,7 +33,7 @@ fn take(o: &mut Map<String, Value>, name: &str, path: &str, extras: &mut Extras)
     }
 }
 /// Only the explicit billing schema is opaque fidelity; token counts remain typed.
-fn extract(o: &mut Map<String, Value>, profile: Profile) -> Result<Extras, CodecError> {
+fn extract(o: &mut Map<String, Value>, profile: GenerationApi) -> Result<Extras, CodecError> {
     let mut extras = Extras::new();
     if let Some(value) = o.get("provider") {
         if !(value.is_null() || value.as_str().is_some_and(|s| !s.is_empty())) {
@@ -85,7 +87,7 @@ fn extract(o: &mut Map<String, Value>, profile: Profile) -> Result<Extras, Codec
         }
     }
     // Never turn an unrepresentable multi-candidate response into one candidate.
-    if profile == Profile::Chat
+    if profile == GenerationApi::Chat
         && let Some(choices) = o.get_mut("choices").and_then(Value::as_array_mut)
         && choices.len() == 1
         && let Some(choice) = choices[0].as_object_mut()
@@ -293,7 +295,7 @@ pub(crate) fn decode_message(o: &mut Map<String, Value>) -> Result<(), CodecErro
 }
 pub(crate) fn decode<'a>(
     value: &'a Value,
-    profile: Profile,
+    profile: GenerationApi,
     adaptation: &Adaptation,
     direction: DecodeDirection,
 ) -> Result<(Cow<'a, Value>, Extras), CodecError> {
@@ -320,7 +322,7 @@ pub(crate) fn decode<'a>(
     let o = value
         .as_object_mut()
         .ok_or(CodecError::Invalid(ShapeReason::Object))?;
-    if profile == Profile::Responses
+    if profile == GenerationApi::Responses
         && adaptation.rules.responses_reported_schema_alias
         && let Some(format) = o
             .get_mut("text")
@@ -336,10 +338,10 @@ pub(crate) fn decode<'a>(
         let schema = format.shift_remove("schema_").expect("checked alias");
         format.insert("schema".into(), schema);
     }
-    if profile == Profile::Chat && adaptation.rules.chat_inference_response_shape {
+    if profile == GenerationApi::Chat && adaptation.rules.chat_inference_response_shape {
         crate::protocol::openai::dialect::inference_shapes::decode(o, direction)?;
     }
-    if profile == Profile::Responses && adaptation.rules.responses_inactive_state {
+    if profile == GenerationApi::Responses && adaptation.rules.responses_inactive_state {
         if o.get("previous_response_id").and_then(Value::as_str) == Some("") {
             o.insert("previous_response_id".into(), Value::Null);
         }
@@ -350,7 +352,7 @@ pub(crate) fn decode<'a>(
             return Err(CodecError::Unsupported(CarrierReason::Unavailable));
         }
     }
-    if profile == Profile::Responses && adaptation.rules.responses_billing_view {
+    if profile == GenerationApi::Responses && adaptation.rules.responses_billing_view {
         response_billing_view(o, direction)?;
     }
     let mut extras = if adaptation.rules.routing_extras {
@@ -358,7 +360,7 @@ pub(crate) fn decode<'a>(
     } else {
         Extras::new()
     };
-    if profile == Profile::Responses {
+    if profile == GenerationApi::Responses {
         if adaptation.rules.responses_access_programs {
             crate::protocol::openai::dialect::accounting_shapes::programs(
                 o,
@@ -388,7 +390,7 @@ pub(crate) fn decode<'a>(
         }
         check_budget(&extras)?;
     }
-    if profile == Profile::Chat {
+    if profile == GenerationApi::Chat {
         if adaptation.rules.reported_request_id {
             if o.get("request_id")
                 .is_some_and(|v| !v.is_null() && !v.as_str().is_some_and(|s| !s.is_empty()))
@@ -431,7 +433,7 @@ pub(crate) fn decode<'a>(
         }
     }
     check_budget(&extras)?;
-    if profile == Profile::Chat
+    if profile == GenerationApi::Chat
         && adaptation.rules.accept_reasoning_alias
         && let Some(choices) = o.get_mut("choices").and_then(Value::as_array_mut)
     {
@@ -443,7 +445,7 @@ pub(crate) fn decode<'a>(
             }
         }
     }
-    if profile == Profile::Responses
+    if profile == GenerationApi::Responses
         && (adaptation.rules.responses_reasoning_format
             || adaptation.rules.responses_reasoning_text_shorthand)
         && let Some(items) = o.get_mut("output").and_then(Value::as_array_mut)

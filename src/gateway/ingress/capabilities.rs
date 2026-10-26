@@ -1,9 +1,11 @@
 //! Partial gateway-boundary declarations, not model-effectiveness or full-loop promises.
 use crate::{
-    adapter::{ClientAdapter, ClientProtocol},
+    adapter::ClientAdapter,
     gateway::{ApiError, BoundEntry, Runtime, StartupError},
-    lowering::generation::ReportedFactPolicy,
-    protocol::openai::lowering::projection::LossRule,
+    protocol::{
+        ClientProtocol, conversion::generation::ReportedFactPolicy,
+        openai::lowering::projection::ProjectionRule,
+    },
 };
 use axum::{body::Body, extract::State, http::HeaderValue, response::Response};
 use bytes::Bytes;
@@ -57,12 +59,12 @@ struct EmbeddingContract<'a> {
     max_token_ids: usize,
     usage_may_be_estimated: bool,
     default_dimensions: usize,
-    dimensions: &'a crate::lowering::embeddings::DimensionSupport,
+    dimensions: &'a crate::protocol::embedding::projection::DimensionSupport,
     max_inputs: usize,
     max_inputs_at_default_dimensions: usize,
     max_vector_values: usize,
     max_text_bytes: usize,
-    upstream_encodings: crate::lowering::embeddings::EncodingSupport,
+    upstream_encodings: crate::protocol::embedding::projection::EncodingSupport,
     output_encodings: [&'static str; 2],
 }
 impl<'a> Entry<'a> {
@@ -70,9 +72,9 @@ impl<'a> Entry<'a> {
         model: &'a str,
         entry: &'a crate::gateway::tasks::embeddings::BoundEmbedding,
     ) -> Self {
-        use crate::{
-            adapter::embeddings::*,
-            lowering::embeddings::{ReportPolicy, Rule, UserPolicy},
+        use crate::protocol::embedding::{
+            projection::{ReportPolicy, Rule, UserPolicy},
+            *,
         };
         let contract = &entry.route.endpoint.contract;
         let mut rounding = Case::new(
@@ -188,15 +190,14 @@ impl<'a> Entry<'a> {
             }
         }
         if protocol == ClientProtocol::Messages {
-            let native_all = |supports: fn(
-                &crate::semantic::task::generation::GenerationSemanticContract,
-            ) -> bool| {
-                entry.candidates.iter().all(|candidate| {
-                    candidate.endpoint.protocol
-                        == crate::topology::ProtocolProfile::AnthropicMessages
-                        && supports(candidate.endpoint.representation.semantics())
-                })
-            };
+            let native_all =
+                |supports: fn(&crate::semantic::task::generation::GenerationFeatureSet) -> bool| {
+                    entry.candidates.iter().all(|candidate| {
+                        candidate.endpoint.protocol
+                            == crate::topology::GenerationProtocol::AnthropicMessages
+                            && supports(candidate.endpoint.representation.semantics())
+                    })
+                };
             for (admitted, supported, feature, domain) in [
                 (
                     entry.public.contract.tool_examples,
@@ -249,9 +250,9 @@ impl<'a> Entry<'a> {
                     "independent_reasoning_controls_without_carrier"
                 },
                 if protocol == ClientProtocol::Chat {
-                    LossRule::OmitChatReportedSettings
+                    ProjectionRule::OmitChatReportedSettings
                 } else {
-                    LossRule::OmitReportedReasoningControls
+                    ProjectionRule::OmitReportedReasoningControls
                 }
                 .name(),
                 adapter.contract(contract).reported_facts != ReportedFactPolicy::StrictComplete,
@@ -338,11 +339,12 @@ impl<'a> Entry<'a> {
             );
             match (exact, protocol) {
                 (false, ClientProtocol::Chat) => {
-                    case.rules.push(LossRule::CoarsenChatCompletionCause.name());
+                    case.rules
+                        .push(ProjectionRule::CoarsenChatCompletionCause.name());
                 }
                 (false, ClientProtocol::Responses) => {
                     case.rules
-                        .push(LossRule::OmitResponsesCompletionCause.name());
+                        .push(ProjectionRule::OmitResponsesCompletionCause.name());
                 }
                 _ => {}
             }

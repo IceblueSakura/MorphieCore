@@ -1,7 +1,7 @@
 //! Explicit image-only product binding, never inferred from Chat vision admission.
 use crate::{
-    adapter::images::Profile,
-    lowering::images::AccountingPolicy,
+    adapter::images::UpstreamAdapter,
+    protocol::image::projection::AccountingPolicy,
     provider::{CredentialBindingId, CredentialKind, ProviderOperation, catalog},
     topology::{
         EndpointId, EndpointTarget, ExecutionContract, ModelId, ModelMetadata, RouteId,
@@ -63,7 +63,7 @@ impl ImageBinding {
                 },
                 upstream_model: self.upstream.into(),
                 canonical_model: canonical,
-                profile: Profile::OpenRouterFlare,
+                profile: UpstreamAdapter::OpenRouterFlare,
                 credential: self.credential(),
                 execution: ExecutionContract {
                     streaming: false,

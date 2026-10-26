@@ -1,11 +1,12 @@
 //! Bounded execution-owned evidence. Observations never authorize routing or delivery.
 use super::AttemptError;
-use crate::lowering::generation::{
-    ConversionBoundary, Coverage, Effect, EvidenceDelta, MAX_EFFECTS, MAX_EVIDENCE_BYTES,
+use crate::protocol::{
+    conversion::generation::{
+        ConversionBoundary, Coverage, Effect, EvidenceDelta, MAX_EFFECTS, MAX_EVIDENCE_BYTES,
+    },
+    diagnostics::{AdaptationNotice, FailureCategory, NoticeFailure},
+    failure::{Observation, SourceFailureEvidence},
 };
-use crate::protocol::diagnostics::{AdaptationNotice, FailureCategory, NoticeFailure};
-use crate::protocol::failure::Observation;
-use crate::protocol::failure::SourceFailureEvidence;
 use bytes::Bytes;
 use serde::{Serialize, Serializer, ser::SerializeStruct};
 use std::sync::{Arc, Mutex};
@@ -41,51 +42,9 @@ impl Serialize for Failure {
     fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
         let mut s = s.serialize_struct("Failure", 3)?;
         s.serialize_field("boundary", &self.boundary)?;
-        s.serialize_field("reason", &safe_reason(&self.cause))?;
+        s.serialize_field("code", self.cause.code())?;
         s.serialize_field("locus", &self.cause.locus())?;
         s.end()
-    }
-}
-fn safe_reason(error: &AttemptError) -> String {
-    use crate::{
-        adapter::ConversionFailure,
-        protocol::{CodecError, stream::SseError},
-    };
-    fn codec(error: &CodecError) -> String {
-        match error {
-            CodecError::Representation { cause, .. } => format!("representation.{cause:?}"),
-            CodecError::Invalid(reason) => format!("invalid.{reason:?}"),
-            CodecError::Unsupported(reason) => format!("unsupported.{reason:?}"),
-            CodecError::Semantic(e) => format!("semantic.{e:?}"),
-            CodecError::Event(e) => format!("event.{e:?}"),
-            CodecError::Context(_) => "context".into(),
-            CodecError::StreamFailure(e) => format!("source.{:?}", e.kind),
-            CodecError::ProfileMismatch => "profile_mismatch".into(),
-            CodecError::Limit => "value_limit".into(),
-            CodecError::Resource(r) => format!("resource.{r:?}"),
-        }
-    }
-    match error {
-        AttemptError::Codec(e)
-        | AttemptError::Adapter(ConversionFailure {
-            cause: crate::adapter::ConversionCause::Codec(e),
-            ..
-        })
-        | AttemptError::Sse(SseError::Codec(e)) => codec(e),
-        AttemptError::Representation(e)
-        | AttemptError::Adapter(ConversionFailure {
-            cause: crate::adapter::ConversionCause::Representation(e),
-            ..
-        }) => format!("representation.{e:?}"),
-        AttemptError::Sse(_) => "framing".into(),
-        AttemptError::Protocol(r) => format!("protocol.{r:?}"),
-        AttemptError::Delivery(r) => format!("delivery.{r:?}"),
-        AttemptError::Transport(r) => format!("transport.{r:?}"),
-        AttemptError::Status { class, .. } => format!("status.{class:?}"),
-        AttemptError::Lifecycle(r) => format!("lifecycle.{r:?}"),
-        AttemptError::Limit => "execution_limit".into(),
-        AttemptError::Resource(r) => format!("resource.{r:?}"),
-        AttemptError::Deadline(r) => format!("deadline.{r:?}"),
     }
 }
 #[derive(Clone, Debug, Serialize)]
@@ -170,7 +129,7 @@ impl From<crate::semantic::task::generation::Outcome> for TaskOutcome {
 pub struct AttemptReport {
     pub ordinal: usize,
     pub source_usage: SourceUsage,
-    pub reported_settings: Option<crate::lowering::generation::ReasoningControls>,
+    pub reported_settings: Option<crate::protocol::conversion::generation::ReasoningControls>,
     pub prepared: bool,
     pub send_started: bool,
     pub observed_status: Option<u16>,
@@ -181,9 +140,11 @@ pub struct AttemptReport {
     pub published: bool,
     pub encoding_finalized: bool,
     pub task_outcome: Option<TaskOutcome>,
-    pub public_code: Option<&'static str>,
-    pub public_status: Option<u16>,
-    pub policy_class: Option<crate::provider::ErrorClass>,
+    /// Internal failure classification, not a claim that an error was published.
+    pub failure_code: Option<&'static str>,
+    /// Gateway presentation hint before client-protocol rendering; not a response head.
+    pub failure_status_hint: Option<u16>,
+    pub policy_class: Option<crate::provider::RecoveryClass>,
     pub health_failure: bool,
     pub advanced: bool,
     pub source_eof: bool,
@@ -200,8 +161,10 @@ pub struct AttemptReport {
 }
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct RequestReport {
-    pub public_code: Option<&'static str>,
-    pub public_status: Option<u16>,
+    /// Internal request failure; the actual native error may use another code/type.
+    pub failure_code: Option<&'static str>,
+    /// Not the downstream HTTP status (an SSE error can travel inside HTTP 200).
+    pub failure_status_hint: Option<u16>,
     #[serde(serialize_with = "serialize_planning_failure")]
     pub planning_failure: Option<super::plan::PlanError>,
     pub intake: Evidence,
@@ -226,13 +189,13 @@ fn serialize_planning_failure<S: Serializer>(
         PlanError::TaskMismatch => ("task_mismatch", vec![]),
         PlanError::InvalidRequest => ("invalid_request", vec![]),
         PlanError::CandidateLimit => ("candidate_limit", vec![]),
-        PlanError::CandidateRejected(reason) => ("candidate_rejected", vec![format!("{reason:?}")]),
+        PlanError::CandidateRejected(reason) => ("candidate_rejected", vec![reason.code()]),
         PlanError::NoCandidate { rejections } => (
             "no_candidate",
             rejections
                 .iter()
                 .take(super::plan::MAX_CANDIDATES)
-                .map(|r| format!("{:?}", r.reason))
+                .map(|r| r.reason.code())
                 .collect(),
         ),
     };
@@ -245,10 +208,10 @@ impl Report {
     fn with<T>(&self, f: impl FnOnce(&mut RequestReport) -> T) -> T {
         f(&mut self.0.lock().unwrap_or_else(|p| p.into_inner()))
     }
-    pub fn public_failure(&self, code: &'static str, status: u16) {
+    pub fn request_failure(&self, code: &'static str, status: u16) {
         self.with(|r| {
-            r.public_code = Some(code);
-            r.public_status = Some(status);
+            r.failure_code = Some(code);
+            r.failure_status_hint = Some(status);
             if r.result == ResultState::Pending {
                 r.result = ResultState::Failed;
             }
@@ -299,10 +262,11 @@ impl Report {
                 cause: error.clone(),
             };
             if let Some(a) = r.attempts.last_mut() {
+                let source_already_observed = a.source_failure.is_some();
                 if let Some(source) = error.source_failure() {
                     a.source_failure.get_or_insert(source);
                 }
-                if a.failure.is_none() {
+                if a.failure.is_none() && !source_already_observed {
                     a.failure = Some(failure)
                 } else if a.handling_failure.is_none() {
                     a.handling_failure = Some(failure)

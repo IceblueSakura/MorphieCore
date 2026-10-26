@@ -1,7 +1,7 @@
 //! Delivery snapshots, coalescing barriers and bounded wire output.
 use super::*;
 use crate::{
-    protocol::openai::{Adapter, Dialect, Profile, TargetCaps},
+    protocol::openai::{Dialect, GenerationApi, GenerationCodec, TargetContract},
     semantic::value::Presence,
 };
 use serde_json::{Value, json};
@@ -26,14 +26,14 @@ fn coalesce_events(
 
 #[test]
 fn finalized_json_still_needs_handoff_and_cannot_resume_after_rejection() {
-    let adapter = Adapter::new(Profile::Responses, Dialect::Standard, None);
+    let adapter = GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None);
     let mut attempt = Attempt::new(adapter.clone(), 4096, Default::default());
     attempt.begin(200, "application/json").unwrap();
     attempt.push(br#"{"id":"r","object":"response","created_at":1,"model":"m","status":"completed","output":[]}"#).unwrap();
     attempt.finish().unwrap();
     for reject in [false, true] {
         let mut delivery = ResponseDelivery::new(
-            ClientAdapter::openai(adapter.clone(), TargetCaps::full()),
+            ClientAdapter::openai(adapter.clone(), TargetContract::full()),
             "public",
             Default::default(),
             StreamOptions::default(),
@@ -84,11 +84,11 @@ fn finalized_json_still_needs_handoff_and_cannot_resume_after_rejection() {
 #[test]
 fn prepared_batches_keep_the_metadata_snapshot_from_their_intake() {
     // A later report must not become visible in an earlier pending batch.
-    let adapter = Adapter::new(Profile::Chat, Dialect::Standard, None);
+    let adapter = GenerationCodec::new(GenerationApi::Chat, Dialect::Standard, None);
     let mut attempt = Attempt::new(adapter.clone(), 4096, Default::default());
     attempt.begin(200, "text/event-stream").unwrap();
     let mut delivery = ResponseDelivery::new(
-        ClientAdapter::openai(adapter, TargetCaps::full()),
+        ClientAdapter::openai(adapter, TargetContract::full()),
         "public",
         Default::default(),
         StreamOptions {
@@ -145,14 +145,14 @@ fn prepared_batches_keep_the_metadata_snapshot_from_their_intake() {
 #[test]
 fn lifecycle_reports_freeze_opening_batches_and_charge_both_observations() {
     use crate::semantic::context::{ReportPhase, ServiceClass};
-    let mut adapter = Adapter::new(Profile::Responses, Dialect::OpenRouter, None);
+    let mut adapter = GenerationCodec::new(GenerationApi::Responses, Dialect::OpenRouter, None);
     adapter.adaptation.rules.responses_lifecycle_reports = true;
     let mut attempt = Attempt::new(adapter, 65536, Default::default());
     attempt.begin(200, "text/event-stream").unwrap();
     let mut delivery = ResponseDelivery::new(
         ClientAdapter::openai(
-            Adapter::new(Profile::Responses, Dialect::MorphieCore, None),
-            TargetCaps::full(),
+            GenerationCodec::new(GenerationApi::Responses, Dialect::MorphieCore, None),
+            TargetContract::full(),
         ),
         "public",
         Default::default(),
@@ -238,11 +238,11 @@ fn lifecycle_reports_freeze_opening_batches_and_charge_both_observations() {
 fn classified_failure_after_opening_has_no_invented_terminal_reports() {
     // A classified failure after a native Responses opening has no upstream
     // terminal report. A standard error must not invent a failed Response.
-    let adapter = Adapter::new(Profile::Responses, Dialect::Standard, None);
+    let adapter = GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None);
     let mut attempt = Attempt::new(adapter.clone(), 65536, Default::default());
     attempt.begin(200, "text/event-stream").unwrap();
     let mut failure_delivery = ResponseDelivery::new(
-        ClientAdapter::openai(adapter, TargetCaps::full()),
+        ClientAdapter::openai(adapter, TargetContract::full()),
         "public",
         Default::default(),
         StreamOptions::default(),
@@ -288,11 +288,11 @@ fn classified_response_errors_obey_remaining_budgets_and_poison_failed_delivery(
         "code":"server_is_overloaded","message":"x".repeat(4096),"param":null
     }});
     let make = |limits, started| {
-        let adapter = Adapter::new(Profile::Responses, Dialect::Standard, None);
+        let adapter = GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None);
         let mut attempt = Attempt::new(adapter.clone(), 65536, Default::default());
         attempt.begin(200, "text/event-stream").unwrap();
         let mut delivery = ResponseDelivery::new(
-            ClientAdapter::openai(adapter, TargetCaps::full()),
+            ClientAdapter::openai(adapter, TargetContract::full()),
             "public",
             limits,
             StreamOptions::default(),
@@ -414,20 +414,20 @@ fn coalescing_preserves_first_content_barriers_and_attempt_isolation() {
         ClientProtocol::Responses,
         ClientProtocol::Messages,
     ] {
-        let source = Adapter::new(Profile::Chat, Dialect::Standard, None);
+        let source = GenerationCodec::new(GenerationApi::Chat, Dialect::Standard, None);
         let client = match protocol {
             ClientProtocol::Messages => ClientAdapter::Messages,
             _ => ClientAdapter::openai(
-                Adapter::new(
+                GenerationCodec::new(
                     if protocol == ClientProtocol::Chat {
-                        Profile::Chat
+                        GenerationApi::Chat
                     } else {
-                        Profile::Responses
+                        GenerationApi::Responses
                     },
                     Dialect::Standard,
                     None,
                 ),
-                TargetCaps::full(),
+                TargetContract::full(),
             ),
         };
         let mut attempt = Attempt::new(source, 65536, Default::default());
@@ -552,7 +552,7 @@ fn coalescing_preserves_first_content_barriers_and_attempt_isolation() {
         );
         if protocol == ClientProtocol::Responses {
             let mut other = Attempt::new(
-                Adapter::new(Profile::Chat, Dialect::Standard, None),
+                GenerationCodec::new(GenerationApi::Chat, Dialect::Standard, None),
                 4096,
                 Default::default(),
             );
@@ -594,15 +594,15 @@ fn coalescing_respects_escaped_frame_and_pending_memory_limits() {
             ..policy
         };
         let mut attempt = Attempt::new(
-            Adapter::new(Profile::Chat, Dialect::Standard, None),
+            GenerationCodec::new(GenerationApi::Chat, Dialect::Standard, None),
             65536,
             Default::default(),
         );
         attempt.begin(200, "text/event-stream").unwrap();
         let mut delivery = ResponseDelivery::new(
             ClientAdapter::openai(
-                Adapter::new(Profile::Chat, Dialect::Standard, None),
-                TargetCaps::full(),
+                GenerationCodec::new(GenerationApi::Chat, Dialect::Standard, None),
+                TargetContract::full(),
             ),
             &"\\".repeat(256),
             SseLimits {
@@ -661,8 +661,10 @@ fn coalescing_respects_escaped_frame_and_pending_memory_limits() {
 
 #[test]
 fn assessment_only_safety_reports_are_omitted_and_blocking_reports_reject() {
-    use crate::adapter::{ClientProtocol, UpstreamAdapter};
-    use crate::protocol::native::ReplayTarget;
+    use crate::{
+        adapter::UpstreamAdapter,
+        protocol::{ClientProtocol, native::ReplayTarget},
+    };
     let wire = |blocked: bool| {
         let body = json!({"responseId":"r","modelVersion":"fixture-model","candidates":[{
             "content":{"role":"model","parts":[{"text":"OK"}]},"finishReason":"MAX_TOKENS",
@@ -683,16 +685,16 @@ fn assessment_only_safety_reports_are_omitted_and_blocking_reports_reject() {
         let client = match protocol {
             ClientProtocol::Messages => ClientAdapter::Messages,
             _ => ClientAdapter::openai(
-                Adapter::new(
+                GenerationCodec::new(
                     if protocol == ClientProtocol::Chat {
-                        Profile::Chat
+                        GenerationApi::Chat
                     } else {
-                        Profile::Responses
+                        GenerationApi::Responses
                     },
                     Dialect::Standard,
                     None,
                 ),
-                TargetCaps::full(),
+                TargetContract::full(),
             ),
         };
         let mut delivery = ResponseDelivery::new(

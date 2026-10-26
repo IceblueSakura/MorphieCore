@@ -1,16 +1,19 @@
 use super::*;
-use crate::protocol::failure::CarrierReason;
 use crate::{
-    adapter::{ClientAdapter, ClientProtocol},
+    adapter::ClientAdapter,
     execution::{
         Attempt, ResponseDelivery,
-        replay::{CLIENT_ORIGIN, open_from_client, seal_for_client},
+        replay::{open_from_client, seal_for_client},
     },
     protocol::{
+        ClientProtocol,
+        failure::CarrierReason,
         google::generate_content::{GenerationSseDecoder, encode_generation_request},
         native::ReplayTarget,
-        openai::{Adapter, Dialect, Profile, TargetCaps, obfuscation::Obfuscation},
-        replay_envelope,
+        openai::{
+            Dialect, GenerationApi, GenerationCodec, TargetContract, obfuscation::Obfuscation,
+        },
+        replay_envelope::{self, CLIENT_ORIGIN},
         stream::SseLimits,
     },
     semantic::value::Text,
@@ -69,16 +72,16 @@ fn decode_source_wire(wire: &str) -> (DecodedResponse, Vec<StreamEvent>) {
 fn client(protocol: ClientProtocol) -> ClientAdapter {
     let mut client = match protocol {
         ClientProtocol::Chat | ClientProtocol::Responses => ClientAdapter::openai(
-            Adapter::new(
+            GenerationCodec::new(
                 if protocol == ClientProtocol::Chat {
-                    Profile::Chat
+                    GenerationApi::Chat
                 } else {
-                    Profile::Responses
+                    GenerationApi::Responses
                 },
                 Dialect::Standard,
                 None,
             ),
-            TargetCaps::full(),
+            TargetContract::full(),
         ),
         ClientProtocol::Messages => ClientAdapter::Messages,
     };
@@ -208,7 +211,7 @@ fn foreign_signed_text_drops_only_replay_and_affected_call_aliases() {
         .fidelity
         .record_response_item_id(call_id, "fc_fixture")
         .unwrap();
-    let request = crate::adapter::Request::from_generation(
+    let request = crate::protocol::GenerationRequestEnvelope::from_generation(
         crate::protocol::DecodedRequest {
             evidence: Default::default(),
             semantic: GenerationRequest::new(items, GenerationControls::default()).unwrap(),
@@ -354,7 +357,7 @@ fn native_history_validates_deleted_anchors_before_partial_attachments() {
         crate::protocol::native::native_reasoning_history(&request, &fidelity, &target(), &[]),
         Err(CodecError::Semantic(GenerationError::InvalidMessageGroup))
     ));
-    let request = crate::adapter::Request::from_generation(
+    let request = crate::protocol::GenerationRequestEnvelope::from_generation(
         crate::protocol::DecodedRequest {
             evidence: Default::default(),
             semantic: request,
@@ -378,7 +381,7 @@ fn ordinary_reasoning_cannot_hide_an_unrestored_carrier() {
         matches!(client.decode_client_request(input.to_string().as_bytes()),
         Err(CodecError::Unsupported(reason)) if reason == CarrierReason::Replay)
     );
-    let raw = Adapter::new(Profile::Responses, Dialect::Standard, None);
+    let raw = GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None);
     let mut request = raw.decode_request(input.to_string().as_bytes()).unwrap();
     assert!(matches!(
         open_from_client(&mut request),
@@ -394,7 +397,7 @@ fn opening_revalidates_the_inner_attachment_format_for_the_actual_part_owner() {
         (ReplayFormat::GoogleGenerateContentSignature, true),
         (ReplayFormat::GoogleInteractionsV1FunctionCall, false),
     ] {
-        let mut request = Adapter::new(Profile::Chat, Dialect::Standard, None)
+        let mut request = GenerationCodec::new(GenerationApi::Chat, Dialect::Standard, None)
             .decode_request(
                 json!({"model":"public","messages":[
                     {"role":"user","content":"go"},

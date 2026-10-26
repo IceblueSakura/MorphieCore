@@ -1,7 +1,8 @@
 //! Neutral ingress context, independent of Provider selection and real I/O.
-use crate::adapter::ClientProtocol;
-use crate::gateway::ingress::admission;
-use crate::gateway::*;
+use crate::{
+    gateway::{ingress::admission, *},
+    protocol::ClientProtocol,
+};
 use axum::{
     body::Body,
     http::{Request, StatusCode},

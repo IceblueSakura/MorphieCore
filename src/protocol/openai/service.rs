@@ -2,19 +2,21 @@
 //! Chat excludes `ultrafast`; request and reported vocabularies remain independent.
 //! https://github.com/openai/openai-python/blob/be9d66628ad7377bd36fe5a76ae6d735843f0e76/src/openai/types/chat/completion_create_params.py
 use super::{
-    CodecError, Profile,
+    CodecError, GenerationApi,
     shape::{put_presence, read_presence},
 };
-use crate::protocol::failure::CarrierReason;
-use crate::semantic::{
-    context::{ServiceClass, ServicePolicy},
-    value::Presence,
+use crate::{
+    protocol::failure::CarrierReason,
+    semantic::{
+        context::{ServiceClass, ServicePolicy},
+        value::Presence,
+    },
 };
 use serde_json::{Map, Value, json};
 
 pub(super) fn read_policy(
     o: &Map<String, Value>,
-    profile: Profile,
+    profile: GenerationApi,
 ) -> Result<Presence<ServicePolicy>, CodecError> {
     read_presence(o, "service_tier", |v| {
         Ok(match v.as_str() {
@@ -24,7 +26,7 @@ pub(super) fn read_policy(
             Some("fast") => ServicePolicy::FastProcessing,
             Some("priority") => ServicePolicy::PriorityProcessing,
             Some("scale") => ServicePolicy::ScaleProcessing,
-            Some("ultrafast") if profile == Profile::Responses => {
+            Some("ultrafast") if profile == GenerationApi::Responses => {
                 ServicePolicy::UltraFastProcessing
             }
             _ => {
@@ -35,7 +37,7 @@ pub(super) fn read_policy(
 }
 pub(super) fn policy_wire(
     policy: ServicePolicy,
-    profile: Profile,
+    profile: GenerationApi,
 ) -> Result<&'static str, CodecError> {
     Ok(match policy {
         ServicePolicy::ProjectConfigured => "auto",
@@ -44,7 +46,7 @@ pub(super) fn policy_wire(
         ServicePolicy::FastProcessing => "fast",
         ServicePolicy::PriorityProcessing => "priority",
         ServicePolicy::ScaleProcessing => "scale",
-        ServicePolicy::UltraFastProcessing if profile == Profile::Responses => "ultrafast",
+        ServicePolicy::UltraFastProcessing if profile == GenerationApi::Responses => "ultrafast",
         _ => {
             return Err(CodecError::Unsupported(CarrierReason::Unavailable));
         }
@@ -53,7 +55,7 @@ pub(super) fn policy_wire(
 pub(super) fn write_policy(
     o: &mut Map<String, Value>,
     policy: &Presence<ServicePolicy>,
-    profile: Profile,
+    profile: GenerationApi,
 ) -> Result<(), CodecError> {
     if let Some(value) = policy.value() {
         policy_wire(*value, profile)?;
@@ -65,7 +67,7 @@ pub(super) fn write_policy(
 }
 pub(super) fn read_class(
     o: &Map<String, Value>,
-    profile: Profile,
+    profile: GenerationApi,
 ) -> Result<Presence<ServiceClass>, CodecError> {
     read_presence(o, "service_tier", |v| {
         Ok(match v.as_str() {
@@ -75,7 +77,9 @@ pub(super) fn read_class(
             Some("fast") => ServiceClass::FastProcessing,
             Some("priority") => ServiceClass::PriorityProcessing,
             Some("scale") => ServiceClass::ScaleProcessing,
-            Some("ultrafast") if profile == Profile::Responses => ServiceClass::UltraFastProcessing,
+            Some("ultrafast") if profile == GenerationApi::Responses => {
+                ServiceClass::UltraFastProcessing
+            }
             _ => {
                 return Err(CodecError::invalid());
             }
@@ -84,7 +88,7 @@ pub(super) fn read_class(
 }
 pub(super) fn class_wire(
     class: ServiceClass,
-    profile: Profile,
+    profile: GenerationApi,
 ) -> Result<&'static str, CodecError> {
     Ok(match class {
         ServiceClass::ConfiguredProcessing => "auto",
@@ -93,7 +97,7 @@ pub(super) fn class_wire(
         ServiceClass::FastProcessing => "fast",
         ServiceClass::PriorityProcessing => "priority",
         ServiceClass::ScaleProcessing => "scale",
-        ServiceClass::UltraFastProcessing if profile == Profile::Responses => "ultrafast",
+        ServiceClass::UltraFastProcessing if profile == GenerationApi::Responses => "ultrafast",
         _ => {
             return Err(CodecError::Unsupported(CarrierReason::Unavailable));
         }
@@ -102,7 +106,7 @@ pub(super) fn class_wire(
 pub(super) fn write_class(
     o: &mut Map<String, Value>,
     class: &Presence<ServiceClass>,
-    profile: Profile,
+    profile: GenerationApi,
 ) -> Result<(), CodecError> {
     if let Some(value) = class.value() {
         class_wire(*value, profile)?;

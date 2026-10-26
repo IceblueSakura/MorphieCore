@@ -1,8 +1,10 @@
 //! Shared item/resource construction during OpenAI content intake.
-use crate::protocol::failure::ShapeReason;
-use crate::protocol::openai::{CodecError, shape::DecodeDirection};
 use crate::{
-    protocol::fidelity::FidelityRecords,
+    protocol::{
+        failure::ShapeReason,
+        fidelity::FidelityRecords,
+        openai::{CodecError, shape::DecodeDirection},
+    },
     semantic::{task::generation::*, value::Text},
 };
 use serde_json::{Map, Value};
@@ -14,7 +16,7 @@ pub(in crate::protocol::openai) struct Items<'a> {
     pub resources: ResourceTable,
     pub message_owners: Vec<(ItemId, ItemId)>,
     pub fidelity: FidelityRecords,
-    pub evidence: crate::lowering::generation::EvidenceDelta,
+    pub evidence: crate::protocol::conversion::generation::EvidenceDelta,
     scope: LocalScope,
     next_item: u64,
     next_part: u64,

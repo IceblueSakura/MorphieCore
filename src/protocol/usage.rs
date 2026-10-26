@@ -1,7 +1,6 @@
 //! Shared bounded readers for native usage breakdowns; native names stay here.
 use super::CodecError;
-use crate::protocol::failure::ShapeReason;
-use crate::semantic::task::generation::*;
+use crate::{protocol::failure::ShapeReason, semantic::task::generation::*};
 use serde_json::Value;
 
 pub(crate) fn modality_tokens(
@@ -91,12 +90,16 @@ pub(crate) fn grounding_counts(value: &Value) -> Result<Vec<ToolUseCount>, Codec
         .collect()
 }
 
-pub(crate) fn report_loss(direction: &'static str) -> crate::lowering::generation::Effect {
-    crate::lowering::generation::Effect::Field {
-        rule: crate::lowering::generation::RuleId::new("generation.usage-report-view.v1"),
+pub(crate) fn report_loss(
+    direction: &'static str,
+) -> crate::protocol::conversion::generation::Effect {
+    crate::protocol::conversion::generation::Effect::Field {
+        rule: crate::protocol::conversion::generation::RuleId::new(
+            "generation.usage-report-view.v1",
+        ),
         field: ("generation.usage.reports").into(),
-        direction: (direction).into(),
-        action: ("project").into(),
-        owner: crate::lowering::generation::Owner::Root,
+        boundary: (direction).into(),
+        change: ("project").into(),
+        owner: crate::protocol::conversion::generation::Owner::Root,
     }
 }

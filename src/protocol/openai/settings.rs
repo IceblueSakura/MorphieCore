@@ -1,9 +1,13 @@
 //! Task settings shared by request parsing and provider-reported response echoes.
-use crate::protocol::failure::CarrierReason;
-use crate::protocol::openai::{CodecError, Profile, function_tools, reasoning, shape::*};
-use crate::semantic::{
-    task::generation::*,
-    value::{Presence, Text},
+use crate::{
+    protocol::{
+        failure::CarrierReason,
+        openai::{CodecError, GenerationApi, function_tools, reasoning, shape::*},
+    },
+    semantic::{
+        task::generation::*,
+        value::{Presence, Text},
+    },
 };
 use serde_json::{Map, Value, json};
 pub(super) const FIELDS: &[&str] = &[
@@ -24,7 +28,7 @@ pub(super) const FIELDS: &[&str] = &[
 /// settings remain request-local even when the wire lacks an exact root carrier.
 pub(super) fn instruction_content(
     root: &RootInstructions,
-    profile: Profile,
+    profile: GenerationApi,
 ) -> Result<Value, CodecError> {
     if let Some(text) = root.plain_text() {
         return Ok(json!(text.as_str()));
@@ -32,12 +36,12 @@ pub(super) fn instruction_content(
     let mut parts = vec![];
     for part in &root.parts {
         let mut value = json!({
-            "type": if profile == Profile::Chat { "text" } else { "input_text" },
+            "type": if profile == GenerationApi::Chat { "text" } else { "input_text" },
             "text": part.text.as_str(),
         });
         match part.cache {
             None => {}
-            Some(PrefixCacheBoundary::RequestLifetime) if profile == Profile::Responses => {
+            Some(PrefixCacheBoundary::RequestLifetime) if profile == GenerationApi::Responses => {
                 value["prompt_cache_breakpoint"] = json!({"mode":"explicit"});
             }
             _ => {
@@ -114,7 +118,7 @@ pub(super) fn read(
         s.text.verbosity = read_presence(t, "verbosity", verbosity)?;
         Ok(())
     })?;
-    function_tools::read_settings(o, Profile::Responses, &mut s, direction)?;
+    function_tools::read_settings(o, GenerationApi::Responses, &mut s, direction)?;
     s.validate()?;
     Ok(s)
 }
@@ -243,8 +247,8 @@ pub(super) fn write(s: &GenerationSettings, o: &mut Map<String, Value>) -> Resul
             }),
         );
     }
-    function_tools::write_settings(s, Profile::Responses, o)?;
-    reasoning::write_request(s, o, Profile::Responses)?;
+    function_tools::write_settings(s, GenerationApi::Responses, o)?;
+    reasoning::write_request(s, o, GenerationApi::Responses)?;
     if s.controls.logprobs == crate::semantic::value::Presence::Value(true) {
         let a = o.entry("include").or_insert_with(|| json!([]));
         a.as_array_mut()

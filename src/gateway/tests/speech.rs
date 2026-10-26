@@ -1,21 +1,21 @@
 //! Binary intake checks use synthetic bodies, not additional production Routers.
-use crate::adapter::speech::Profile;
-use crate::gateway::{
-    *,
-    {
-        tasks::{speech, speech::aliyun as aliyun_speech},
+use crate::{
+    adapter::speech::UpstreamAdapter,
+    gateway::{
+        tasks::speech::{self, aliyun as aliyun_speech},
         tests::support::source,
+        *,
     },
+    semantic::task::speech_synthesis::SpeechRequest,
 };
-use crate::semantic::task::speech_synthesis::SpeechRequest;
 use axum::body::Bytes;
 
 #[tokio::test]
 async fn cancelling_binary_collection_drops_unfinished_upstream() {
     let task = SpeechRequest::new("synthetic", "alloy").unwrap();
     for (profile, media) in [
-        (Profile::Standard, "audio/mpeg"),
-        (Profile::Xiaomi, "application/json"),
+        (UpstreamAdapter::Standard, "audio/mpeg"),
+        (UpstreamAdapter::Xiaomi, "application/json"),
     ] {
         let mut trace = diagnostics::Trace::new(None);
         let (_tx, response, dropped) = source(200, media);
@@ -37,7 +37,7 @@ async fn json_speech_waits_for_eof_before_decoding_audio() {
     let mut pending = Box::pin(speech::receive(
         response,
         &task,
-        Profile::Xiaomi,
+        UpstreamAdapter::Xiaomi,
         4096,
         &mut trace,
     ));

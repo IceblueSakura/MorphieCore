@@ -1,16 +1,13 @@
 //! Prepare one trusted Speech operation. No I/O, retry or ambient authority.
-use super::{AttemptError, UpstreamRequest};
+use super::{AttemptError, task::PreparedTaskRequest};
 use crate::{
-    adapter::speech::Request,
-    provider::{ProviderDefinition, SecretMaterial},
-    topology::speech::SpeechRoute,
+    protocol::speech::Request, provider::ProviderDefinition, topology::speech::SpeechRoute,
 };
 pub fn prepare(
     route: &SpeechRoute,
     provider: &ProviderDefinition,
-    secret: &SecretMaterial,
     request: &Request,
-) -> Result<UpstreamRequest, AttemptError> {
+) -> Result<PreparedTaskRequest, AttemptError> {
     if request.model != route.model.as_str()
         || provider.id != route.endpoint.provider
         || provider.origin != route.endpoint.target.origin
@@ -20,9 +17,10 @@ pub fn prepare(
             crate::execution::attempt::ProtocolReason::SpeechBindingMismatch,
         ));
     }
-    crate::lowering::speech::check_request(&request.task, &route.endpoint.capabilities).map_err(
-        |_| AttemptError::Protocol(crate::execution::attempt::ProtocolReason::SpeechAdmission),
-    )?;
+    crate::protocol::speech::projection::check_request(&request.task, &route.endpoint.capabilities)
+        .map_err(|_| {
+            AttemptError::Protocol(crate::execution::attempt::ProtocolReason::SpeechAdmission)
+        })?;
     let value = route
         .endpoint
         .profile
@@ -33,22 +31,18 @@ pub fn prepare(
     if route.endpoint.profile.upstream_sse() {
         headers.push(("accept".into(), "text/event-stream".into()));
         headers.push(("x-dashscope-sse".into(), "enable".into()));
-    } else if route.endpoint.profile == crate::adapter::speech::Profile::Xiaomi {
+    } else if route.endpoint.profile == crate::adapter::speech::UpstreamAdapter::Xiaomi {
         headers.push(("accept".into(), "application/json".into()));
     } else {
         headers.push(("accept".into(), "application/octet-stream".into()));
     }
-    Ok(UpstreamRequest {
-        origin: route.endpoint.target.origin.as_str().into(),
-        method: "POST",
-        path: route.endpoint.target.path.as_str().into(),
-        safe_headers: headers,
-        auth_header: provider
-            .entry(crate::provider::ProviderOperation::Speech)
-            .map_or(provider.auth, |entry| entry.auth)
-            .auth_header(secret),
-        body: serde_json::to_vec(&value).map_err(|_| {
+    Ok(PreparedTaskRequest::new(
+        provider,
+        route.endpoint.target.path.clone(),
+        crate::provider::ProviderOperation::Speech,
+        headers,
+        serde_json::to_vec(&value).map_err(|_| {
             AttemptError::Protocol(crate::execution::attempt::ProtocolReason::SpeechSerialization)
         })?,
-    })
+    ))
 }

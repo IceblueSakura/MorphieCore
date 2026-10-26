@@ -1,9 +1,14 @@
 //! Responses item mapping shared by input history, static output and event codecs.
-use crate::protocol::failure::{CarrierReason, ShapeReason};
-use crate::protocol::openai::{CodecError, Profile, shape::*};
-use crate::protocol::openai::{content::call::tool_call, content::intake::Items};
 use crate::{
-    protocol::fidelity::FidelityRecords,
+    protocol::{
+        failure::{CarrierReason, ShapeReason},
+        fidelity::FidelityRecords,
+        openai::{
+            CodecError, GenerationApi,
+            content::{call::tool_call, intake::Items},
+            shape::*,
+        },
+    },
     semantic::{task::generation::*, value::Text},
 };
 use serde_json::{Map, Value, json};
@@ -147,7 +152,7 @@ fn input_parts(
             "input_image" => {
                 let resource = crate::protocol::openai::content::image::read(
                     o,
-                    Profile::Responses,
+                    GenerationApi::Responses,
                     direction,
                 )?;
                 let id = b.part_id()?;
@@ -320,7 +325,7 @@ pub(in crate::protocol::openai) fn decode_items(
         let item = match typ {
             Some("function_call") => Item::ToolCall(tool_call(
                 o,
-                Profile::Responses,
+                GenerationApi::Responses,
                 response.then_some(item_status),
                 !response,
                 direction,
@@ -527,7 +532,7 @@ pub(in crate::protocol::openai) fn decode_items(
                                 ContentPart::Resource(b.resource(
                                     crate::protocol::openai::content::image::read(
                                         p,
-                                        Profile::Responses,
+                                        GenerationApi::Responses,
                                         direction,
                                     )?,
                                 )?)
@@ -637,7 +642,7 @@ fn media_part(
     let resource = resource.media(resources).expect("validated resource");
     let mut v = match resource.kind() {
         ResourceKind::Image => {
-            crate::protocol::openai::content::image::write(resource, Profile::Responses)
+            crate::protocol::openai::content::image::write(resource, GenerationApi::Responses)
         }
         ResourceKind::File => crate::protocol::openai::content::file::write(resource),
         ResourceKind::Video => crate::protocol::openai::content::video::write_responses(resource),

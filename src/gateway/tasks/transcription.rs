@@ -1,10 +1,10 @@
 //! Authenticated file transcription, bounded native JSON intake and standard projection.
-use crate::gateway::{
-    ApiError, Credentials, Runtime, StartupError, TranscriptionEntry, body,
-    diagnostics::{Stage, Trace},
-    ingress::admission,
-};
 use crate::{
+    gateway::{
+        ApiError, Credentials, Runtime, StartupError, TranscriptionEntry, body,
+        diagnostics::{Stage, Trace},
+        ingress::admission,
+    },
     protocol::openai::transcription as codec,
     semantic::task::speech_recognition::RecognitionResult,
     topology::{CompiledTopology, transcription::TranscriptionRoute},
@@ -48,7 +48,7 @@ fn upload_head(headers: &HeaderMap, limit: usize) -> Result<(String, Option<u64>
         .and_then(|v| v.to_str().ok())
         .ok_or(ApiError::new(
             StatusCode::UNSUPPORTED_MEDIA_TYPE,
-            "unsupported_media_type",
+            crate::gateway::error::ErrorKind::UnsupportedMediaType,
         ))?;
     let media: mime::Mime = raw.parse().map_err(|_| ApiError::invalid())?;
     if raw.len() > 256
@@ -75,7 +75,7 @@ fn upload_head(headers: &HeaderMap, limit: usize) -> Result<(String, Option<u64>
     if length.is_some_and(|n| n > limit as u64) {
         return Err(ApiError::new(
             StatusCode::PAYLOAD_TOO_LARGE,
-            "request_too_large",
+            crate::gateway::error::ErrorKind::RequestTooLarge,
         ));
     }
     Ok((raw.into(), length))
@@ -85,18 +85,19 @@ async fn ingress(runtime: Arc<Runtime>, request: Request) -> Result<Response, Ap
     if runtime.shutdown.is_cancelled() {
         return Err(ApiError::shutdown());
     }
-    let permit = runtime
-        .permits
-        .clone()
-        .try_acquire_owned()
-        .map_err(|_| ApiError::new(StatusCode::TOO_MANY_REQUESTS, "gateway_busy"))?;
+    let permit = runtime.permits.clone().try_acquire_owned().map_err(|_| {
+        ApiError::new(
+            StatusCode::TOO_MANY_REQUESTS,
+            crate::gateway::error::ErrorKind::GatewayBusy,
+        )
+    })?;
     let limit = runtime.limits.transcription_request_bytes;
     let (media, length) = upload_head(request.headers(), limit)?;
     let bytes = tokio::select! {
         biased;
         _=runtime.shutdown.cancelled()=>return Err(ApiError::shutdown()),
         result=tokio::time::timeout(runtime.limits.body_timeout,admission::collect(request.into_body(),limit))=>
-            result.map_err(|_|ApiError::new(StatusCode::REQUEST_TIMEOUT,"request_timeout"))??,
+            result.map_err(|_|ApiError::new(StatusCode::REQUEST_TIMEOUT,crate::gateway::error::ErrorKind::RequestTimeout))??,
     };
     if length.is_some_and(|n| n != bytes.len() as u64) {
         return Err(ApiError::invalid());
@@ -107,19 +108,14 @@ async fn ingress(runtime: Arc<Runtime>, request: Request) -> Result<Response, Ap
     let entry = runtime
         .transcriptions
         .get(&request.model)
-        .ok_or(ApiError::new(StatusCode::NOT_FOUND, "model_not_found"))?
+        .ok_or(ApiError::new(
+            StatusCode::NOT_FOUND,
+            crate::gateway::error::ErrorKind::ModelNotFound,
+        ))?
         .clone();
-    let projected = entry
-        .route
-        .endpoint
-        .profile
-        .encode_request(&request, &entry.route.endpoint.upstream_model)
-        .map_err(|_| ApiError::invalid())?;
-    crate::semantic::value::json_size(
-        &projected,
-        entry.route.endpoint.execution.request_body_limit,
-    )
-    .map_err(|_| ApiError::invalid())?;
+    let prepared =
+        crate::execution::transcription::prepare(&entry.route, &entry.provider, &request)
+            .map_err(|_| ApiError::invalid())?;
     let deadline = Instant::now()
         + runtime.limits.exchange_timeout.min(Duration::from_millis(
             entry.route.endpoint.execution.timeout_ms,
@@ -128,7 +124,7 @@ async fn ingress(runtime: Arc<Runtime>, request: Request) -> Result<Response, Ap
         Exchange {
             runtime: runtime.clone(),
             entry,
-            request,
+            prepared,
         },
         body::ResponseType::Json,
         runtime.limits.clone(),
@@ -142,38 +138,25 @@ async fn ingress(runtime: Arc<Runtime>, request: Request) -> Result<Response, Ap
 async fn produce(
     runtime: Arc<Runtime>,
     entry: Arc<BoundTranscription>,
-    request: crate::adapter::transcription::Request,
+    prepared: crate::execution::task::PreparedTaskRequest,
     deadline: Instant,
     lane: &body::Lane<'_>,
     trace: &mut Trace,
 ) -> Result<(), ApiError> {
     trace.begin_candidate(1);
-    let result = produce_one(&runtime, &entry, &request, deadline, lane, trace).await;
-    trace.end_candidate(result.as_ref().err().map(|e| e.code), false);
+    let result = produce_one(&runtime, &entry, prepared, deadline, lane, trace).await;
+    trace.end_candidate(result.as_ref().err().map(|e| e.diagnostic_code()), false);
     result
 }
 async fn produce_one(
     runtime: &Runtime,
     entry: &BoundTranscription,
-    request: &crate::adapter::transcription::Request,
+    prepared: crate::execution::task::PreparedTaskRequest,
     deadline: Instant,
     lane: &body::Lane<'_>,
     trace: &mut Trace,
 ) -> Result<(), ApiError> {
-    trace.stage(Stage::Prepare);
-    let (secret, grant) = entry.secret.resolve_for_request().await?;
-    if grant.is_some() {
-        return Err(ApiError::upstream());
-    }
-    let prepared =
-        crate::execution::transcription::prepare(&entry.route, &entry.provider, &secret, request)
-            .map_err(|_| ApiError::invalid())?;
-    trace.stage(Stage::Connect);
-    let upstream = runtime
-        .transport
-        .send(prepared, deadline.saturating_duration_since(Instant::now()))
-        .await
-        .map_err(ApiError::transport)?;
+    let upstream = super::exchange::send(runtime, entry, prepared, deadline, trace).await?;
     let result = receive(
         upstream,
         entry.route.endpoint.profile,
@@ -196,65 +179,14 @@ async fn produce_one(
     Ok(())
 }
 pub(in crate::gateway) async fn receive(
-    mut upstream: reqwest::Response,
-    profile: crate::adapter::transcription::Profile,
+    upstream: reqwest::Response,
+    profile: crate::adapter::transcription::UpstreamAdapter,
     limit: usize,
     trace: &mut Trace,
 ) -> Result<RecognitionResult, ApiError> {
-    trace.stage(Stage::ResponseHead);
-    trace.head(upstream.status().as_u16(), upstream.headers());
-    if upstream.status().as_u16() != 200 {
-        return Err(ApiError::status(upstream.status().as_u16()));
-    }
-    let headers = upstream.headers();
-    let mut types = headers.get_all("content-type").iter();
-    let media: mime::Mime = types
-        .next()
-        .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.parse().ok())
-        .ok_or_else(ApiError::upstream)?;
-    if types.next().is_some()
-        || media.essence_str() != "application/json"
-        || headers.contains_key("content-encoding")
-        || media
-            .params()
-            .any(|(k, v)| k != mime::CHARSET || v != mime::UTF_8)
-    {
-        return Err(ApiError::upstream());
-    }
-    let mut lengths = headers.get_all("content-length").iter();
-    let length = lengths
-        .next()
-        .map(|v| {
-            let raw = v.to_str().map_err(|_| ApiError::upstream())?;
-            if raw.is_empty() || !raw.bytes().all(|b| b.is_ascii_digit()) {
-                return Err(ApiError::upstream());
-            }
-            raw.parse::<u64>().map_err(|_| ApiError::upstream())
-        })
-        .transpose()?;
-    if lengths.next().is_some() || length.is_some_and(|n| n == 0 || n > limit as u64) {
-        return Err(ApiError::upstream());
-    }
-    trace.stage(Stage::Intake);
-    let mut bytes = Vec::new();
-    while let Some(chunk) = upstream.chunk().await.map_err(|e| {
-        if e.is_timeout() {
-            ApiError::timeout()
-        } else {
-            ApiError::upstream()
-        }
-    })? {
-        if bytes.len().saturating_add(chunk.len()) > limit {
-            return Err(ApiError::upstream());
-        }
-        trace.received(chunk.len());
-        bytes.extend_from_slice(&chunk);
-    }
-    trace.stage(Stage::Terminal);
-    if length.is_some_and(|n| n != bytes.len() as u64) {
-        return Err(ApiError::upstream());
-    }
+    let receiver = super::exchange::Receiver::new(upstream, limit, trace)?;
+    receiver.require_media("application/json")?;
+    let bytes = receiver.collect(trace).await?;
     profile
         .decode_response(&bytes)
         .map_err(|_| ApiError::upstream())
@@ -263,7 +195,7 @@ pub(in crate::gateway) async fn receive(
 struct Exchange {
     runtime: Arc<Runtime>,
     entry: Arc<BoundTranscription>,
-    request: crate::adapter::transcription::Request,
+    prepared: crate::execution::task::PreparedTaskRequest,
 }
 impl body::Produce for Exchange {
     fn produce(
@@ -276,7 +208,7 @@ impl body::Produce for Exchange {
         produce(
             self.runtime,
             self.entry,
-            self.request,
+            self.prepared,
             deadline,
             lane,
             trace,

@@ -1,29 +1,33 @@
 //! Chat and Responses token accounting over one typed `Usage`.
 //! The two profiles name the same counters differently; aliases are named rules.
-use crate::protocol::failure::{CarrierReason, ShapeReason};
-use crate::protocol::openai::{CodecError, Profile, shape::*};
-use crate::semantic::task::generation::*;
+use crate::{
+    protocol::{
+        failure::{CarrierReason, ShapeReason},
+        openai::{CodecError, GenerationApi, shape::*},
+    },
+    semantic::task::generation::*,
+};
 use serde_json::{Map, Value, json};
 
 pub(super) fn usage(
     value: Option<&Value>,
-    profile: Profile,
+    profile: GenerationApi,
     adaptation: &crate::protocol::openai::dialect::adaptation::Adaptation,
-    evidence: &mut crate::lowering::generation::EvidenceDelta,
-    boundary: crate::lowering::generation::ConversionBoundary,
+    evidence: &mut crate::protocol::conversion::generation::EvidenceDelta,
+    boundary: crate::protocol::conversion::generation::ConversionBoundary,
 ) -> Result<Option<Usage>, CodecError> {
     let Some(value) = value.filter(|value| !value.is_null()) else {
         return Ok(None);
     };
     let usage = object(value)?;
     let (input_key, output_key, input_details, output_details) = match profile {
-        Profile::Chat => (
+        GenerationApi::Chat => (
             "prompt_tokens",
             "completion_tokens",
             "prompt_tokens_details",
             "completion_tokens_details",
         ),
-        Profile::Responses => (
+        GenerationApi::Responses => (
             "input_tokens",
             "output_tokens",
             "input_tokens_details",
@@ -37,11 +41,11 @@ pub(super) fn usage(
         input_details,
         output_details,
     ];
-    let cache_aliases = profile == Profile::Chat && adaptation.rules.chat_cache_usage_aliases;
+    let cache_aliases = profile == GenerationApi::Chat && adaptation.rules.chat_cache_usage_aliases;
     if cache_aliases {
         allowed.extend(["prompt_cache_hit_tokens", "prompt_cache_miss_tokens"]);
     }
-    if profile == Profile::Chat && adaptation.rules.chat_reasoning_usage_alias {
+    if profile == GenerationApi::Chat && adaptation.rules.chat_reasoning_usage_alias {
         allowed.push("reasoning_tokens");
     }
     DecodeDirection::Upstream.fields(usage, &allowed)?;
@@ -53,45 +57,51 @@ pub(super) fn usage(
         output_tokens: Some(count(usage, output_key)?),
         total_tokens: Some(count(usage, "total_tokens")?),
         cached_input_tokens: detail(usage, input_details, "cached_tokens")?,
-        input_image_tokens: if profile == Profile::Chat || adaptation.rules.responses_image_usage {
+        input_image_tokens: if profile == GenerationApi::Chat
+            || adaptation.rules.responses_image_usage
+        {
             detail(usage, input_details, "image_tokens")?
         } else {
             None
         },
-        input_audio_tokens: if profile == Profile::Chat {
+        input_audio_tokens: if profile == GenerationApi::Chat {
             detail(usage, input_details, "audio_tokens")?
         } else {
             None
         },
-        output_audio_tokens: if profile == Profile::Chat {
+        output_audio_tokens: if profile == GenerationApi::Chat {
             detail(usage, output_details, "audio_tokens")?
         } else {
             None
         },
         input_cache_write_tokens: detail(usage, input_details, "cache_write_tokens")?,
         reasoning_tokens: detail(usage, output_details, "reasoning_tokens")?,
-        input_text_tokens: if profile == Profile::Chat || adaptation.rules.responses_text_usage {
+        input_text_tokens: if profile == GenerationApi::Chat
+            || adaptation.rules.responses_text_usage
+        {
             detail(usage, input_details, "text_tokens")?
         } else {
             None
         },
-        output_text_tokens: if profile == Profile::Chat || adaptation.rules.responses_text_usage {
+        output_text_tokens: if profile == GenerationApi::Chat
+            || adaptation.rules.responses_text_usage
+        {
             detail(usage, output_details, "text_tokens")?
         } else {
             None
         },
-        accepted_prediction_tokens: if profile == Profile::Chat {
+        accepted_prediction_tokens: if profile == GenerationApi::Chat {
             detail(usage, output_details, "accepted_prediction_tokens")?
         } else {
             None
         },
-        rejected_prediction_tokens: if profile == Profile::Chat {
+        rejected_prediction_tokens: if profile == GenerationApi::Chat {
             detail(usage, output_details, "rejected_prediction_tokens")?
         } else {
             None
         },
     };
-    if profile == Profile::Chat
+    if profile == GenerationApi::Chat
         && adaptation.rules.chat_reasoning_usage_alias
         && let Some(value) = usage.get("reasoning_tokens")
     {
@@ -213,16 +223,16 @@ fn detail(
 
 pub(super) fn encode_usage(
     usage: Usage,
-    profile: Profile,
+    profile: GenerationApi,
     rules: &crate::protocol::openai::dialect::adaptation::WireRules,
 ) -> Value {
     let mut value = match profile {
-        Profile::Chat => json!({
+        GenerationApi::Chat => json!({
             "prompt_tokens": usage.input_tokens,
             "completion_tokens": usage.output_tokens,
             "total_tokens": usage.total_tokens
         }),
-        Profile::Responses => json!({
+        GenerationApi::Responses => json!({
             "input_tokens": usage.input_tokens,
             "output_tokens": usage.output_tokens,
             "total_tokens": usage.total_tokens
@@ -230,7 +240,7 @@ pub(super) fn encode_usage(
     };
     let object = value.as_object_mut().expect("usage object");
     if let Some(cached) = usage.cached_input_tokens {
-        let key = if profile == Profile::Chat {
+        let key = if profile == GenerationApi::Chat {
             "prompt_tokens_details"
         } else {
             "input_tokens_details"
@@ -239,23 +249,23 @@ pub(super) fn encode_usage(
     }
     if let Some(written) = usage.input_cache_write_tokens {
         let details = object
-            .entry(if profile == Profile::Chat {
+            .entry(if profile == GenerationApi::Chat {
                 "prompt_tokens_details"
             } else {
                 "input_tokens_details"
             })
             .or_insert_with(|| json!({}));
-        details[if profile == Profile::Chat && rules.chat_inference_response_shape {
+        details[if profile == GenerationApi::Chat && rules.chat_inference_response_shape {
             "created_cache_tokens"
         } else {
             "cache_write_tokens"
         }] = json!(written);
     }
     if let Some(reasoning) = usage.reasoning_tokens {
-        if profile == Profile::Chat && rules.chat_reasoning_usage_alias {
+        if profile == GenerationApi::Chat && rules.chat_reasoning_usage_alias {
             object.insert("reasoning_tokens".into(), json!(reasoning));
         } else {
-            let key = if profile == Profile::Chat {
+            let key = if profile == GenerationApi::Chat {
                 "completion_tokens_details"
             } else {
                 "output_tokens_details"
@@ -265,13 +275,13 @@ pub(super) fn encode_usage(
     }
     if let Some(images) = usage.input_image_tokens {
         // Chat owns this standard detail; Responses requires an explicit extension.
-        let key = if profile == Profile::Chat {
+        let key = if profile == GenerationApi::Chat {
             "prompt_tokens_details"
         } else {
             "input_tokens_details"
         };
         let details = object.entry(key).or_insert_with(|| json!({}));
-        if profile == Profile::Chat && rules.chat_inference_response_shape {
+        if profile == GenerationApi::Chat && rules.chat_inference_response_shape {
             details["multimodal_tokens"] = json!({"image":images});
         } else {
             details["image_tokens"] = json!(images);
@@ -279,7 +289,7 @@ pub(super) fn encode_usage(
     }
     for (details, count) in [
         (
-            if profile == Profile::Chat {
+            if profile == GenerationApi::Chat {
                 "prompt_tokens_details"
             } else {
                 "input_tokens_details"
@@ -287,7 +297,7 @@ pub(super) fn encode_usage(
             usage.input_text_tokens,
         ),
         (
-            if profile == Profile::Chat {
+            if profile == GenerationApi::Chat {
                 "completion_tokens_details"
             } else {
                 "output_tokens_details"
@@ -299,7 +309,7 @@ pub(super) fn encode_usage(
             object.entry(details).or_insert_with(|| json!({}))["text_tokens"] = json!(count);
         }
     }
-    if profile == Profile::Chat {
+    if profile == GenerationApi::Chat {
         for (details, count) in [
             ("prompt_tokens_details", usage.input_audio_tokens),
             ("completion_tokens_details", usage.output_audio_tokens),
@@ -325,7 +335,7 @@ pub(super) fn encode_usage(
             }
         }
     }
-    if profile == Profile::Responses
+    if profile == GenerationApi::Responses
         && rules.responses_billing_view
         && (usage.input_image_tokens.is_some()
             || usage.input_text_tokens.is_some()

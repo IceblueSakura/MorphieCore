@@ -1,15 +1,15 @@
 //! Pinned SDK tool correction and signed final-history return through one Google candidate.
 use crate::google_tool_fixture as fixture;
-use morphiecore::protocol::openai::Profile;
+use morphiecore::protocol::openai::GenerationApi;
 use std::time::Duration;
 
 async fn exercise(api: fixture::Api, api_name: &str) {
     for (profile, name, count) in [
-        (Profile::Chat, "chat-json", 1),
-        (Profile::Chat, "chat-sse", 1),
-        (Profile::Responses, "responses", 8),
-        (Profile::Chat, "messages-json", 1),
-        (Profile::Chat, "messages-sse", 1),
+        (GenerationApi::Chat, "chat-json", 1),
+        (GenerationApi::Chat, "chat-sse", 1),
+        (GenerationApi::Responses, "responses", 8),
+        (GenerationApi::Chat, "messages-json", 1),
+        (GenerationApi::Chat, "messages-sse", 1),
     ] {
         let messages = name.starts_with("messages-");
         let fixture = if messages {

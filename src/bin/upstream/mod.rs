@@ -324,7 +324,7 @@ async fn run(
         .send(prepared, Duration::from_secs(target.timeout_seconds))
         .await
         .map_err(|e| {
-            if e == morphiecore::provider::ErrorClass::Timeout {
+            if e == morphiecore::transport::http::TransportError::Timeout {
                 Error::Timeout
             } else {
                 Error::Network

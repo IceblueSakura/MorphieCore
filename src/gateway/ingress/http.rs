@@ -1,7 +1,9 @@
 //! HTTP ingress owns authentication ordering, request deadlines and listener lifecycle.
-use crate::adapter::ClientProtocol;
-use crate::gateway::{
-    ApiError, Gateway, Runtime, diagnostics::Trace, generation::exchange, ingress::admission,
+use crate::{
+    gateway::{
+        ApiError, Gateway, Runtime, diagnostics::Trace, generation::exchange, ingress::admission,
+    },
+    protocol::ClientProtocol,
 };
 use axum::{
     Router,
@@ -58,13 +60,19 @@ impl Gateway {
             .fallback(|uri: axum::http::Uri| async move {
                 ingress_error(
                     uri.path(),
-                    ApiError::new(StatusCode::NOT_FOUND, "not_found"),
+                    ApiError::new(
+                        StatusCode::NOT_FOUND,
+                        crate::gateway::error::ErrorKind::NotFound,
+                    ),
                 )
             })
             .method_not_allowed_fallback(|uri: axum::http::Uri| async move {
                 ingress_error(
                     uri.path(),
-                    ApiError::new(StatusCode::METHOD_NOT_ALLOWED, "method_not_allowed"),
+                    ApiError::new(
+                        StatusCode::METHOD_NOT_ALLOWED,
+                        crate::gateway::error::ErrorKind::MethodNotAllowed,
+                    ),
                 )
             })
             .layer(middleware::from_fn_with_state(
@@ -114,7 +122,10 @@ pub(in crate::gateway) async fn authenticate(
     let Some(agent) = state.auth.authenticate(request.headers()) else {
         return ingress_error(
             request.uri().path(),
-            ApiError::new(StatusCode::UNAUTHORIZED, "unauthorized"),
+            ApiError::new(
+                StatusCode::UNAUTHORIZED,
+                crate::gateway::error::ErrorKind::Unauthorized,
+            ),
         );
     };
     let request_id = state.request_ids.next();
@@ -180,7 +191,7 @@ struct Admitted {
     permit: tokio::sync::OwnedSemaphorePermit,
     conversation: crate::semantic::context::ConversationContext,
     entry: Arc<crate::gateway::BoundEntry>,
-    request: crate::adapter::Request,
+    request: crate::protocol::GenerationRequestEnvelope,
     history: Option<Box<crate::gateway::generation::history::Pending>>,
 }
 /// Bounded admission: concurrency, headers, body, then codec and task checks.
@@ -239,7 +250,7 @@ async fn read_body(
                     ),
                 );
                 trace.outcome(Outcome::Timeout);
-                ApiError::new(StatusCode::REQUEST_TIMEOUT, "request_timeout")
+                ApiError::new(StatusCode::REQUEST_TIMEOUT, crate::gateway::error::ErrorKind::RequestTimeout)
             })?
         }
     }
@@ -262,7 +273,7 @@ pub(in crate::gateway) async fn handle(
         Err(error) => {
             trace
                 .report
-                .public_failure(error.code, error.status.as_u16());
+                .request_failure(error.diagnostic_code(), error.status.as_u16());
             return Err(error);
         }
     };

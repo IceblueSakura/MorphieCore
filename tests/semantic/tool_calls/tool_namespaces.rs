@@ -1,6 +1,8 @@
 //! Namespace expectations are independent of the encoder and provider catalog.
 use morphiecore::{
-    protocol::openai::{Profile, TargetCaps as Contract, lowering::lower_request, responses},
+    protocol::openai::{
+        GenerationApi, TargetContract as Contract, lowering::lower_request, responses,
+    },
     semantic::{task::generation::*, value::Text},
 };
 use serde_json::json;
@@ -18,7 +20,7 @@ fn grouped_definitions_and_qualified_selection_are_not_flattened() {
     let representation = lower_request(
         &decoded.semantic,
         &decoded.fidelity,
-        Profile::Responses,
+        GenerationApi::Responses,
         Contract::full(),
     )
     .unwrap();
@@ -29,7 +31,7 @@ fn grouped_definitions_and_qualified_selection_are_not_flattened() {
         lower_request(
             &decoded.semantic,
             &decoded.fidelity,
-            Profile::Chat,
+            GenerationApi::Chat,
             Contract::full(),
         )
         .is_err()
@@ -49,7 +51,7 @@ fn grouped_definitions_and_qualified_selection_are_not_flattened() {
         lower_request(
             &selected,
             &decoded.fidelity,
-            Profile::Responses,
+            GenerationApi::Responses,
             Contract::full()
         )
         .is_err()

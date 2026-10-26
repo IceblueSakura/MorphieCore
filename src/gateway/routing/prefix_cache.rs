@@ -110,7 +110,7 @@ pub(in crate::gateway) struct Selection {
 }
 fn target_prefixes(
     candidate: &crate::gateway::BoundCandidate,
-    request: &crate::adapter::Request,
+    request: &crate::protocol::GenerationRequestEnvelope,
 ) -> Option<Vec<Digest>> {
     let profile = candidate.endpoint.adapter().ok()?.openai().ok()?.protocol;
     let wire = candidate.endpoint.encode_request(request).ok()?;
@@ -119,7 +119,7 @@ fn target_prefixes(
 pub(in crate::gateway) fn choose(
     index: &Index,
     candidate: &crate::gateway::BoundCandidate,
-    request: &crate::adapter::Request,
+    request: &crate::protocol::GenerationRequestEnvelope,
     trace: &mut crate::gateway::diagnostics::Trace,
 ) -> Option<Selection> {
     use sha2::{Digest as _, Sha256};
@@ -188,8 +188,8 @@ impl Selection {
     pub(in crate::gateway) fn project(
         &self,
         candidate: &crate::gateway::BoundCandidate,
-        source: &crate::adapter::Request,
-    ) -> Option<crate::adapter::Request> {
+        source: &crate::protocol::GenerationRequestEnvelope,
+    ) -> Option<crate::protocol::GenerationRequestEnvelope> {
         let mut local = source.clone();
         local.inferred_affinity = Some(self.hint);
         crate::execution::plan::representable(&candidate.endpoint, &local).ok()?;
@@ -199,7 +199,7 @@ impl Selection {
         &self,
         index: &Index,
         candidate: &crate::gateway::BoundCandidate,
-        successor: Option<&crate::adapter::Request>,
+        successor: Option<&crate::protocol::GenerationRequestEnvelope>,
     ) {
         let mut prefixes = vec![self.prefix];
         if let Some(prefix) = successor
@@ -217,7 +217,10 @@ mod tests {
     use super::*;
     use crate::semantic::context::ConversationContext;
 
-    fn request(entry: &crate::gateway::BoundEntry, seed: &str) -> crate::adapter::Request {
+    fn request(
+        entry: &crate::gateway::BoundEntry,
+        seed: &str,
+    ) -> crate::protocol::GenerationRequestEnvelope {
         let mut request = entry.client.as_openai().unwrap().0.decode_request(
             br#"{"model":"fixture-model","messages":[{"role":"system","content":"rules"},{"role":"user","content":"hello"}]}"#
         ).unwrap();
@@ -231,8 +234,10 @@ mod tests {
     #[test]
     fn candidate_hints_never_mutate_identity_or_cross_the_fixed_scope() {
         let gate = crate::gateway::tests::support::gateway(crate::gateway::Limits::default());
-        let entry =
-            &gate.state.entries[&(crate::adapter::ClientProtocol::Chat, "fixture-model".into())];
+        let entry = &gate.state.entries[&(
+            crate::protocol::ClientProtocol::Chat,
+            "fixture-model".into(),
+        )];
         let candidate = &entry.candidates[0];
         let first = request(entry, "one");
         let saved = first.clone();

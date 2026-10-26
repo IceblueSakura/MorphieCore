@@ -1,17 +1,12 @@
 //! Independent generateContent wire expectations: streamed intake and the next request.
-use morphiecore::protocol::{
-    CodecError as Failure,
-    failure::{CarrierReason as Carrier, ShapeReason as Shape},
-    stream::SseError as WireFailure,
-};
 use morphiecore::{
-    adapter::Request,
     protocol::{
-        DecodedResponse,
+        CodecError as Failure, DecodedResponse, GenerationRequestEnvelope as Request,
+        failure::{CarrierReason as Carrier, ShapeReason as Shape},
         google::generate_content::{GenerationSseDecoder, encode_generation_request},
         native::ReplayTarget,
-        openai::{Adapter, Dialect, Profile},
-        stream::SseLimits,
+        openai::{Dialect, GenerationApi, GenerationCodec},
+        stream::{SseError as WireFailure, SseLimits},
     },
     semantic::{
         task::generation::*,
@@ -208,7 +203,7 @@ fn source_usage_keeps_tool_input_modalities_and_default_zero_provenance() {
 fn cross_format_reasoning_is_removed_before_grouping_but_partial_values_reject() {
     use morphiecore::protocol::{fidelity::FidelityRecords, replay_envelope::issuer};
     let source = client(
-        Profile::Responses,
+        GenerationApi::Responses,
         json!({"model":"m","input":[
         {"role":"user","content":"first"},{"role":"user","content":"next"}]}),
     );
@@ -288,7 +283,7 @@ fn stream_maps_thoughts_text_calls_and_owned_signatures() {
         json!([{"text":"","thoughtSignature":"U0lH"}])
     );
     let missing = client(
-        Profile::Chat,
+        GenerationApi::Chat,
         json!({"model":"public","messages":[{"role":"user","content":"continue"}]}),
     )
     .task
@@ -326,18 +321,18 @@ fn stream_maps_thoughts_text_calls_and_owned_signatures() {
         Some(CompletionCause::NaturalOrStopSequence)
     );
     assert!(
-        Adapter::new(Profile::Chat, Dialect::MorphieCore, None)
+        GenerationCodec::new(GenerationApi::Chat, Dialect::MorphieCore, None)
             .encode_response(
                 &observed,
-                &morphiecore::protocol::openai::TargetCaps::full()
+                &morphiecore::protocol::openai::TargetContract::full()
             )
             .is_err()
     );
     assert!(
-        Adapter::new(Profile::Responses, Dialect::MorphieCore, None)
+        GenerationCodec::new(GenerationApi::Responses, Dialect::MorphieCore, None)
             .encode_response(
                 &observed,
-                &morphiecore::protocol::openai::TargetCaps::full()
+                &morphiecore::protocol::openai::TargetContract::full()
             )
             .is_err()
     );
@@ -481,18 +476,20 @@ fn stream_maps_thoughts_text_calls_and_owned_signatures() {
             &denied.semantic,
             &denied.fidelity,
             &denied.metadata,
-            Profile::Responses,
-            morphiecore::protocol::openai::TargetCaps::full()
+            GenerationApi::Responses,
+            morphiecore::protocol::openai::TargetContract::full()
         )
         .err()
         .unwrap(),
-        morphiecore::lowering::generation::RepresentationError::Safety
+        morphiecore::protocol::conversion::generation::RepresentationError::Safety
     );
     let mut metadata = denied.metadata.clone();
     metadata.created = Some(1.into());
-    let mut openai =
-        morphiecore::protocol::openai::events::EventEncoder::new(Profile::Responses, metadata)
-            .unwrap();
+    let mut openai = morphiecore::protocol::openai::events::EventEncoder::new(
+        GenerationApi::Responses,
+        metadata,
+    )
+    .unwrap();
     openai
         .encode(&StreamEvent::Started, &denied.fidelity)
         .unwrap();
@@ -1070,7 +1067,7 @@ fn stream_rejects_unidentified_calls_late_chunks_and_unfinished_eof() {
 }
 
 fn next_request(observed: &DecodedResponse) -> GenerationRequest {
-    let source: Request = Adapter::new(Profile::Responses, Dialect::Standard, None)
+    let source: Request = GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None)
         .decode_request(
             json!({"model":"gemini","max_output_tokens":1024,
                 "reasoning":{"effort":"high","summary":"auto"},
@@ -1121,7 +1118,7 @@ fn next_request_restores_signatures_on_their_parts_in_any_item_order() {
                 {"text":"","thoughtSignature":"U0lH"}]},"finishReason":"STOP"}]}),
     ]))
     .unwrap();
-    let source = client(Profile::Responses, json!({"model":"m","input":"go"}));
+    let source = client(GenerationApi::Responses, json!({"model":"m","input":"go"}));
     let history = ClientManaged::new(source.task.semantic.settings().clone())
         .unwrap()
         .select_request(&source.task.semantic)
@@ -1218,7 +1215,7 @@ fn next_request_restores_signatures_on_their_parts_in_any_item_order() {
     assert!(encode_generation_request(&constrained, &observed.fidelity, &target(), None).is_err());
     let schema = json!({"type":"object","properties":{"ok":{"type":"boolean"}},"required":["ok"],"additionalProperties":false});
     let source = client(
-        Profile::Chat,
+        GenerationApi::Chat,
         json!({
             "model":"public","messages":[{"role":"user","content":"go"}],
             "response_format":{"type":"json_schema","json_schema":{"name":"answer","schema":schema,"strict":true}},
@@ -1254,7 +1251,7 @@ fn next_request_restores_signatures_on_their_parts_in_any_item_order() {
     );
     let mut endpoint = morphiecore::topology::catalog::GOOGLE_BINDINGS[0].endpoint();
     assert!(endpoint.encode_request_with_rules(&source).is_err());
-    endpoint.representation = morphiecore::protocol::google::generate_content::TargetCaps {
+    endpoint.representation = morphiecore::protocol::google::generate_content::TargetContract {
         semantics: morphiecore::protocol::google::generate_content::representation_contract(),
         ..Default::default()
     }
@@ -1351,7 +1348,7 @@ fn next_request_restores_signatures_on_their_parts_in_any_item_order() {
     )
     .unwrap();
     let mut cached = client(
-        Profile::Responses,
+        GenerationApi::Responses,
         json!({"model":"public","input":"question","max_output_tokens":16}),
     );
     cached.task.semantic = cached
@@ -1492,11 +1489,11 @@ fn next_request_restores_signatures_on_their_parts_in_any_item_order() {
             .is_ok()
     );
     assert!(
-        Adapter::new(Profile::Responses, Dialect::Standard, None)
+        GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None)
             .encode_request(
                 &cached,
                 "upstream",
-                &morphiecore::protocol::openai::TargetCaps::full()
+                &morphiecore::protocol::openai::TargetContract::full()
             )
             .is_err()
     );
@@ -1514,7 +1511,7 @@ fn next_request_restores_signatures_on_their_parts_in_any_item_order() {
         .is_err()
     );
     let mut policy = client(
-        Profile::Responses,
+        GenerationApi::Responses,
         json!({"model":"public","input":"question","max_output_tokens":16}),
     );
     let mut settings = policy.task.semantic.settings().clone();
@@ -1567,11 +1564,11 @@ fn next_request_restores_signatures_on_their_parts_in_any_item_order() {
             .is_ok()
     );
     assert!(
-        Adapter::new(Profile::Responses, Dialect::Standard, None)
+        GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None)
             .encode_request(
                 &policy,
                 "upstream",
-                &morphiecore::protocol::openai::TargetCaps::full()
+                &morphiecore::protocol::openai::TargetContract::full()
             )
             .is_err()
     );
@@ -1599,8 +1596,8 @@ fn next_request_restores_signatures_on_their_parts_in_any_item_order() {
     );
 }
 
-fn client(profile: Profile, body: Value) -> Request {
-    Adapter::new(profile, Dialect::Standard, None)
+fn client(profile: GenerationApi, body: Value) -> Request {
+    GenerationCodec::new(profile, Dialect::Standard, None)
         .decode_request(body.to_string().as_bytes())
         .unwrap()
 }
@@ -1608,7 +1605,7 @@ fn client(profile: Profile, body: Value) -> Request {
 #[test]
 fn user_media_become_inline_or_file_data_parts() {
     let request = client(
-        Profile::Chat,
+        GenerationApi::Chat,
         json!({"model":"gemini","messages":[{"role":"user","content":[
             {"type":"image_url","image_url":{"url":"https://example.invalid/a.png"}},
             {"type":"image_url","image_url":{"url":"data:image/png;base64,BwgJ"}},
@@ -1638,7 +1635,7 @@ fn user_media_become_inline_or_file_data_parts() {
         "data:image/gif;base64,AQID",
     ] {
         let invalid = client(
-            Profile::Chat,
+            GenerationApi::Chat,
             json!({"model":"gemini","messages":[{"role":"user","content":[
                 {"type":"image_url","image_url":{"url":url}}]}]}),
         );
@@ -1664,7 +1661,10 @@ fn unproven_tool_media_linkage_rejects_instead_of_fabricating_display_names() {
                 {"type":"input_image","image_url":image}]}],
             "tools":[{"type":"function","name":"shot","strict":false,"parameters":{"type":"object"}}]})
     };
-    let request = client(Profile::Responses, input("data:image/png;base64,AQID"));
+    let request = client(
+        GenerationApi::Responses,
+        input("data:image/png;base64,AQID"),
+    );
     assert!(
         encode_generation_request(
             &request.task.semantic,
@@ -1676,7 +1676,7 @@ fn unproven_tool_media_linkage_rejects_instead_of_fabricating_display_names() {
     );
     let mut detailed = input("data:image/png;base64,AQID");
     detailed["input"][1]["output"][1]["detail"] = json!("auto");
-    let detailed = client(Profile::Responses, detailed);
+    let detailed = client(GenerationApi::Responses, detailed);
     assert!(
         encode_generation_request(
             &detailed.task.semantic,
@@ -1687,7 +1687,7 @@ fn unproven_tool_media_linkage_rejects_instead_of_fabricating_display_names() {
         .is_err()
     );
     let named = client(
-        Profile::Responses,
+        GenerationApi::Responses,
         json!({"model":"gemini","input":[
         {"role":"user","content":[{"type":"input_file","filename":"report.pdf",
         "file_data":"data:application/pdf;base64,AQID"}]}]}),
@@ -1697,7 +1697,10 @@ fn unproven_tool_media_linkage_rejects_instead_of_fabricating_display_names() {
             .is_err()
     );
     // FunctionResponsePart has no fileData.
-    let remote = client(Profile::Responses, input("https://example.invalid/a.png"));
+    let remote = client(
+        GenerationApi::Responses,
+        input("https://example.invalid/a.png"),
+    );
     assert!(
         encode_generation_request(
             &remote.task.semantic,
@@ -1707,7 +1710,10 @@ fn unproven_tool_media_linkage_rejects_instead_of_fabricating_display_names() {
         )
         .is_err()
     );
-    let unsupported = client(Profile::Responses, input("data:image/gif;base64,AQID"));
+    let unsupported = client(
+        GenerationApi::Responses,
+        input("data:image/gif;base64,AQID"),
+    );
     assert!(
         encode_generation_request(
             &unsupported.task.semantic,
@@ -1721,7 +1727,7 @@ fn unproven_tool_media_linkage_rejects_instead_of_fabricating_display_names() {
     let part = |part: Value| {
         let mut body = input("data:image/png;base64,AQID");
         body["input"][1]["output"] = json!([part]);
-        client(Profile::Responses, body)
+        client(GenerationApi::Responses, body)
     };
     let pdf = part(json!({"type":"input_file","file_data":"data:application/pdf;base64,BAUG"}));
     assert!(
@@ -2025,7 +2031,7 @@ fn request_maps_tool_choice_effort_and_leading_instructions() {
         body.as_object_mut()
             .unwrap()
             .extend(extra.as_object().unwrap().clone());
-        let request = client(Profile::Chat, body);
+        let request = client(GenerationApi::Chat, body);
         let (wire, rules) = encode_generation_request(
             &request.task.semantic,
             &request.task.fidelity,
@@ -2080,7 +2086,7 @@ fn request_maps_tool_choice_effort_and_leading_instructions() {
 #[test]
 fn google_composes_only_the_leading_instruction_prefix_without_hoisting_history() {
     let request = client(
-        Profile::Responses,
+        GenerationApi::Responses,
         json!({"model":"gemini","instructions":"root",
         "input":[{"role":"system","content":[{"type":"input_text","text":"A"},{"type":"input_text","text":"B"}]},
             {"role":"developer","content":"C"},{"role":"user","content":"go"}]}),

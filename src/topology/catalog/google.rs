@@ -41,7 +41,7 @@ impl GoogleBinding {
             },
         })
     }
-    fn accepted_contract(&self) -> GenerationSemanticContract {
+    fn accepted_contract(&self) -> GenerationFeatureSet {
         let mut contract = generate_content::semantic_contract();
         // The existing Interactions candidate retains its official image-result carrier.
         contract.tool_result_media = true;
@@ -82,11 +82,11 @@ impl GoogleBinding {
                 path,
             },
             task: TaskKind::Generation,
-            protocol: ProtocolProfile::GoogleGenerateContent,
+            protocol: GenerationProtocol::GoogleGenerateContent,
             upstream_model: self.upstream.into(),
             canonical_model: ModelId::new(self.model).expect("static model"),
-            representation: generate_content::TargetCaps {
-                semantics: GenerationSemanticContract {
+            representation: generate_content::TargetContract {
+                semantics: GenerationFeatureSet {
                     temperature: !ignored_sampling,
                     top_p: !ignored_sampling,
                     ..generate_content::semantic_contract()
@@ -129,14 +129,14 @@ impl GoogleBinding {
         let mut endpoint = self.endpoint();
         endpoint.id =
             EndpointId::new(&format!("google-{}-interactions", self.model)).expect("static id");
-        endpoint.protocol = ProtocolProfile::GoogleInteractions;
+        endpoint.protocol = GenerationProtocol::GoogleInteractions;
         endpoint.target.path = self
             .provider()
             .generation_entry(crate::provider::GenerationOperation::GoogleInteractions)
             .expect("declared path")
             .path
             .clone();
-        endpoint.representation = interactions::TargetCaps {
+        endpoint.representation = interactions::TargetContract {
             sampling: if self.model == "gemini-3.8-flash" {
                 crate::protocol::google::SamplingPolicy::Ignored
             } else {

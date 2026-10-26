@@ -8,7 +8,7 @@ pub mod projection;
 mod request;
 mod response;
 
-pub use crate::lowering::generation::{ReportedFactPolicy, RepresentationError};
-pub use crate::protocol::openai::TargetCaps;
+pub use crate::protocol::conversion::generation::{ReportedFactPolicy, RepresentationError};
+pub use crate::protocol::openai::TargetContract;
 pub use request::{check, lower_request};
 pub use response::{lower_response, require_reported_facts};

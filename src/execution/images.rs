@@ -1,15 +1,11 @@
 //! Preparation for one compiled static image route. No I/O or implicit target selection.
-use super::{AttemptError, UpstreamRequest};
-use crate::{
-    provider::{ProviderDefinition, SecretMaterial},
-    topology::images::ImageRoute,
-};
+use super::{AttemptError, task::PreparedTaskRequest};
+use crate::{provider::ProviderDefinition, topology::images::ImageRoute};
 pub fn prepare(
     route: &ImageRoute,
     provider: &ProviderDefinition,
-    secret: &SecretMaterial,
-    request: &crate::adapter::images::Request,
-) -> Result<UpstreamRequest, AttemptError> {
+    request: &crate::protocol::image::Request,
+) -> Result<PreparedTaskRequest, AttemptError> {
     if request.model != route.model.as_str()
         || provider.id != route.endpoint.provider
         || provider.origin != route.endpoint.target.origin
@@ -24,20 +20,16 @@ pub fn prepare(
         .encode_request(request, &route.endpoint.upstream_model)?;
     crate::semantic::value::json_size(&value, route.endpoint.execution.request_body_limit)
         .map_err(|_| AttemptError::Limit)?;
-    Ok(UpstreamRequest {
-        origin: route.endpoint.target.origin.as_str().into(),
-        method: "POST",
-        path: route.endpoint.target.path.as_str().into(),
-        safe_headers: vec![
+    Ok(PreparedTaskRequest::new(
+        provider,
+        route.endpoint.target.path.clone(),
+        crate::provider::ProviderOperation::Images,
+        vec![
             ("content-type".into(), "application/json".into()),
             ("accept".into(), "application/json".into()),
         ],
-        auth_header: provider
-            .entry(crate::provider::ProviderOperation::Images)
-            .map_or(provider.auth, |entry| entry.auth)
-            .auth_header(secret),
-        body: serde_json::to_vec(&value).map_err(|_| {
+        serde_json::to_vec(&value).map_err(|_| {
             AttemptError::Protocol(crate::execution::attempt::ProtocolReason::ImageSerialization)
         })?,
-    })
+    ))
 }

@@ -1,7 +1,8 @@
 //! Explicit reasoning adaptation selected by trusted bindings.
-use crate::protocol::CodecError;
-use crate::protocol::failure::CarrierReason;
-use crate::semantic::{task::generation::*, value::Presence};
+use crate::{
+    protocol::{CodecError, failure::CarrierReason},
+    semantic::{task::generation::*, value::Presence},
+};
 use std::borrow::Cow;
 
 /// Explicit numeric presets, not official token equivalents of qualitative effort.
@@ -134,7 +135,7 @@ impl ReasoningRequestPolicy {
         &self,
         source: &GenerationRequest,
         target: &GenerationRequest,
-    ) -> Result<crate::lowering::generation::Effect, CodecError> {
+    ) -> Result<crate::protocol::conversion::generation::Effect, CodecError> {
         let preset_tokens = match &self.conversion {
             ReasoningConversion::BudgetToEffort { table, .. } => target
                 .settings()
@@ -145,12 +146,12 @@ impl ReasoningRequestPolicy {
             ReasoningConversion::EffortToBudget { .. } => target.reasoning().budget_tokens,
             _ => None,
         };
-        Ok(crate::lowering::generation::Effect::Reasoning {
-            rule: crate::lowering::generation::RuleId::new(self.rule),
-            input: crate::lowering::generation::ReasoningControls::request(source),
-            output: crate::lowering::generation::ReasoningControls::request(target),
+        Ok(crate::protocol::conversion::generation::Effect::Reasoning {
+            rule: crate::protocol::conversion::generation::RuleId::new(self.rule),
+            input: crate::protocol::conversion::generation::ReasoningControls::request(source),
+            output: crate::protocol::conversion::generation::ReasoningControls::request(target),
             preset_tokens,
-            owner: crate::lowering::generation::Owner::Root,
+            owner: crate::protocol::conversion::generation::Owner::Root,
         })
     }
     pub fn project_request(

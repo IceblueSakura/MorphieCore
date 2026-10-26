@@ -582,8 +582,10 @@ fn known_upstream_fields_stay_strict() {
 
 #[test]
 fn incremental_native_events_reduce_to_the_independent_static_semantics() {
-    use morphiecore::protocol::anthropic::messages::GenerationSseDecoder;
-    use morphiecore::semantic::task::generation::{StreamState, materialize, reduce};
+    use morphiecore::{
+        protocol::anthropic::messages::GenerationSseDecoder,
+        semantic::task::generation::{StreamState, materialize, reduce},
+    };
     let target = ReplayTarget::new("synthetic-provider", "synthetic-model").unwrap();
     for variant in 0..4 {
         let mut native = frames();
@@ -653,7 +655,8 @@ fn native_events_deliver_both_clients_and_keep_terminal_behind_eof() {
         execution::ResponseDelivery,
         protocol::{
             openai::{
-                Adapter, Dialect, Profile as ClientProfile, TargetCaps, obfuscation::Obfuscation,
+                Dialect, GenerationApi as ClientProfile, GenerationCodec, TargetContract,
+                obfuscation::Obfuscation,
             },
             replay_envelope,
         },
@@ -663,9 +666,9 @@ fn native_events_deliver_both_clients_and_keep_terminal_behind_eof() {
         for incomplete in [false, true] {
             let target = ReplayTarget::new("synthetic-provider", "synthetic-model").unwrap();
             let mut attempt = native_attempt(target);
-            let client = Adapter::new(profile, Dialect::MorphieCore, None);
+            let client = GenerationCodec::new(profile, Dialect::MorphieCore, None);
             let mut delivery = ResponseDelivery::new(
-                morphiecore::adapter::ClientAdapter::openai(client.clone(), TargetCaps::full()),
+                morphiecore::adapter::ClientAdapter::openai(client.clone(), TargetContract::full()),
                 "public",
                 SseLimits::default(),
                 morphiecore::semantic::context::StreamOptions {
@@ -782,7 +785,7 @@ fn native_events_deliver_both_clients_and_keep_terminal_behind_eof() {
             // The same native SSE intake can also supply a non-streaming client.
             let native = attempt.response().unwrap().clone();
             let mut json_delivery = ResponseDelivery::new(
-                morphiecore::adapter::ClientAdapter::openai(client.clone(), TargetCaps::full()),
+                morphiecore::adapter::ClientAdapter::openai(client.clone(), TargetContract::full()),
                 "public",
                 SseLimits::default(),
                 Default::default(),
@@ -1066,10 +1069,12 @@ fn eager_partial_input_cannot_relax_duplicates_limits_or_honest_eof() {
 }
 #[test]
 fn typed_native_partial_values_reject_every_json_or_opening_carrier_without_panicking() {
-    use morphiecore::protocol::anthropic::messages::{
-        Block, CacheMarked, Event, InputMessage, MessageContent, Role,
+    use morphiecore::{
+        protocol::anthropic::messages::{
+            Block, CacheMarked, Event, InputMessage, MessageContent, Role,
+        },
+        semantic::value::Presence,
     };
-    use morphiecore::semantic::value::Presence;
     let profile = Profile::AdaptiveTextTools;
     let partial = Block::PartialToolUse {
         id: "c".into(),

@@ -1,10 +1,9 @@
 //! Incremental native semantic mapping over the same strict wire reducer as aggregation.
-use crate::protocol::anthropic::messages::sse::MessageSseDecoder;
-use crate::protocol::anthropic::messages::{Block, Delta, Event, Message};
-use crate::protocol::failure::{RecognitionBasis, SourceFailureEvidence};
 use crate::{
     protocol::{
         CodecError, ResponseMetadata,
+        anthropic::messages::{Block, Delta, Event, Message, sse::MessageSseDecoder},
+        failure::{RecognitionBasis, SourceFailureEvidence},
         fidelity::FidelityRecords,
         native::ReplayTarget,
         stream::{SseError, SseLimits},
@@ -18,13 +17,15 @@ pub struct GenerationSseDecoder {
     target: ReplayTarget,
     metadata: Option<ResponseMetadata>,
     fidelity: FidelityRecords,
-    evidence: crate::lowering::generation::EvidenceDelta,
+    evidence: crate::protocol::conversion::generation::EvidenceDelta,
     part_started: bool,
     json_delta: bool,
     rejected: bool,
 }
 impl GenerationSseDecoder {
-    pub(crate) fn take_intake_evidence(&mut self) -> crate::lowering::generation::EvidenceDelta {
+    pub(crate) fn take_intake_evidence(
+        &mut self,
+    ) -> crate::protocol::conversion::generation::EvidenceDelta {
         std::mem::take(&mut self.evidence)
     }
     pub fn new(
@@ -283,7 +284,7 @@ impl GenerationSseDecoder {
                 let message = self.wire.message().ok_or(CodecError::invalid())?;
                 if message.input_transformations {
                     self.evidence.record_input_transformations(
-                        crate::lowering::generation::ConversionBoundary::EventDecode,
+                        crate::protocol::conversion::generation::ConversionBoundary::EventDecode,
                     );
                 }
                 out.push(StreamEvent::UsageReport(

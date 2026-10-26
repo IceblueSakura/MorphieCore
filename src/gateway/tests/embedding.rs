@@ -1,6 +1,9 @@
 //! Synthetic body and activation checks at the embedding owner; no live egress.
-use crate::adapter::embeddings::{Encoding, Profile};
-use crate::gateway::{diagnostics::Trace, tests::support::source};
+use crate::{
+    adapter::embeddings::UpstreamAdapter,
+    gateway::{diagnostics::Trace, tests::support::source},
+    protocol::embedding::Encoding,
+};
 use bytes::Bytes;
 const RESULT: &[u8] = br#"{"object":"list","model":"synthetic","data":[{"object":"embedding","index":0,"embedding":[0.5,1]}],"usage":{"prompt_tokens":1,"total_tokens":1}}"#;
 
@@ -18,14 +21,14 @@ async fn failed_embedding_heads_do_not_wait_for_optional_error_bodies() {
                 response,
                 4096,
                 &mut trace,
-                Profile::Google,
+                UpstreamAdapter::Google,
                 Encoding::Float,
             ),
         )
         .await
         .unwrap()
         .unwrap_err();
-        assert_eq!(error.code, code);
+        assert_eq!(error.code(), code);
         assert_eq!(error.retry_after, Some(3));
         dropped.await.unwrap();
     }
@@ -40,7 +43,7 @@ async fn embedding_body_requires_eof_and_rejects_bad_heads_reads_and_limits() {
         response,
         4096,
         &mut trace,
-        Profile::Standard,
+        UpstreamAdapter::Standard,
         Encoding::Float,
     ));
     assert!(futures_util::poll!(&mut pending).is_pending());
@@ -92,7 +95,7 @@ async fn embedding_body_requires_eof_and_rejects_bad_heads_reads_and_limits() {
                 response,
                 if case == 6 { 2 } else { 4096 },
                 &mut trace,
-                Profile::Standard,
+                UpstreamAdapter::Standard,
                 Encoding::Float,
             )
             .await
@@ -131,7 +134,7 @@ async fn cancelled_embedding_intake_releases_its_body_without_a_result() {
         response,
         4096,
         &mut trace,
-        Profile::Standard,
+        UpstreamAdapter::Standard,
         Encoding::Float,
     ));
     assert!(futures_util::poll!(&mut pending).is_pending());

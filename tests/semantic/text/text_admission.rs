@@ -1,14 +1,14 @@
 //! Admission regressions for the existing text subset, not the whole SDK union.
-use morphiecore::protocol::openai::{Adapter, Dialect, Profile};
+use morphiecore::protocol::openai::{Dialect, GenerationApi, GenerationCodec};
 use serde_json::json;
 
 #[test]
 fn nullable_reasoning_effort_and_optional_function_headers_follow_their_own_schema() {
-    let adapter = Adapter::new(Profile::Chat, Dialect::Standard, None);
+    let adapter = GenerationCodec::new(GenerationApi::Chat, Dialect::Standard, None);
     let wire =
         json!({"model":"m","messages":[{"role":"user","content":"hi"}],"reasoning_effort":null});
     let decoded = adapter.decode_request(wire.to_string().as_bytes()).unwrap();
-    let contract = morphiecore::protocol::openai::TargetCaps::full();
+    let contract = morphiecore::protocol::openai::TargetContract::full();
     assert!(
         adapter
             .encode_request(&decoded, "m", &contract)
@@ -18,7 +18,7 @@ fn nullable_reasoning_effort_and_optional_function_headers_follow_their_own_sche
             .is_null()
     );
     let wire = json!({"id":"r","object":"response","created_at":0,"model":"m","status":"completed","output":[{"id":null,"type":"function_call","call_id":"call","name":"lookup","arguments":"{}","status":null}]});
-    let decoded = Adapter::new(Profile::Responses, Dialect::Standard, None)
+    let decoded = GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None)
         .decode_response(wire.to_string().as_bytes())
         .unwrap();
     assert!(
@@ -75,7 +75,7 @@ fn known_unrepresentable_event_fields_and_changed_bound_metadata_fail_early() {
             },
         },
     ] {
-        let mut encoder = EventEncoder::new(Profile::Chat, metadata.clone()).unwrap();
+        let mut encoder = EventEncoder::new(GenerationApi::Chat, metadata.clone()).unwrap();
         encoder.encode(&StreamEvent::Started, &fidelity).unwrap();
         assert!(
             encoder
@@ -98,7 +98,7 @@ fn known_unrepresentable_event_fields_and_changed_bound_metadata_fail_early() {
         .latest_mut()
         .expect("report")
         .service_class = Presence::Value(ServiceClass::StandardProcessing);
-    let mut encoder = EventEncoder::new(Profile::Chat, metadata.clone()).unwrap();
+    let mut encoder = EventEncoder::new(GenerationApi::Chat, metadata.clone()).unwrap();
     encoder.encode(&StreamEvent::Started, &fidelity).unwrap();
     metadata
         .context
@@ -109,7 +109,7 @@ fn known_unrepresentable_event_fields_and_changed_bound_metadata_fail_early() {
     assert!(encoder.update_metadata(metadata).is_err());
     assert!(encoder.finish().is_err());
     use morphiecore::protocol::{
-        openai::{Adapter, Dialect},
+        openai::{Dialect, GenerationCodec},
         reasoning::ReasoningEffortMapping,
     };
     static MANY_TO_ONE: ReasoningEffortMapping = ReasoningEffortMapping {
@@ -123,7 +123,7 @@ fn known_unrepresentable_event_fields_and_changed_bound_metadata_fail_early() {
             (EffortLevel::XHigh, EffortLevel::High),
         ],
     };
-    let mut adapter = Adapter::new(Profile::Responses, Dialect::Standard, None);
+    let mut adapter = GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None);
     adapter.adaptation.effort_mapping = Some(&MANY_TO_ONE);
     let mut decoder = adapter.event_decoder();
     decoder
@@ -139,7 +139,8 @@ fn known_unrepresentable_event_fields_and_changed_bound_metadata_fail_early() {
             .is_err()
     );
     assert!(decoder.materialize().is_err());
-    let mut decoder = morphiecore::protocol::openai::events::EventDecoder::new(Profile::Responses);
+    let mut decoder =
+        morphiecore::protocol::openai::events::EventDecoder::new(GenerationApi::Responses);
     let mut created = json!({"type":"response.created","response":{
             "id":"r","object":"response","created_at":1,"model":"m","status":"in_progress",
             "instructions":[{"role":"developer","content":"A"}],"output":[]}});

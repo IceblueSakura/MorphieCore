@@ -1,16 +1,15 @@
 //! Native target projection and dialect policy; no OpenAI profile or wire switches.
 use super::{Profile, RequestRule};
-use crate::protocol::failure::CarrierReason;
 use crate::{
-    adapter::{ConversionFailure, Request},
     protocol::{
-        CodecError,
-        cache::CacheProjection,
+        CodecError, ConversionFailure, GenerationRequestEnvelope as Request,
+        cache::CacheTargetPolicy,
+        failure::CarrierReason,
         native::{ReplayTarget, group_client_history, normalize_stateless_defaults},
     },
     semantic::{
         context::ExecutionHints,
-        task::generation::{GenerationSemanticContract, ToolDefinition},
+        task::generation::{GenerationFeatureSet, ToolDefinition},
         value::Presence,
     },
 };
@@ -56,12 +55,12 @@ pub enum SamplingPolicy {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct TargetCaps {
+pub struct TargetContract {
     pub profile: Profile,
     pub dialect: Dialect,
-    pub semantics: GenerationSemanticContract,
+    pub semantics: GenerationFeatureSet,
     pub model_limits: crate::protocol::model_limits::ModelLimits,
-    pub cache: CacheProjection,
+    pub cache: CacheTargetPolicy,
     pub reasoning_policy: Option<crate::protocol::reasoning::ReasoningRequestPolicy>,
     pub reasoning_as_text: bool,
     pub carriers: super::Carriers,
@@ -71,7 +70,7 @@ pub struct TargetCaps {
     pub default_output_tokens: Option<u64>,
     pub automatic_cache_default: Option<crate::semantic::task::generation::PrefixCacheTtl>,
 }
-impl TargetCaps {
+impl TargetContract {
     pub fn new(profile: Profile, dialect: Dialect) -> Self {
         Self {
             profile,
@@ -85,7 +84,7 @@ impl TargetCaps {
             manual_thinking: true,
             default_output_tokens: None,
             automatic_cache_default: None,
-            cache: CacheProjection {
+            cache: CacheTargetPolicy {
                 session_id: dialect == Dialect::OpenCodeGo,
                 ..Default::default()
             },
@@ -141,7 +140,10 @@ impl TargetCaps {
         &self,
         request: &Request,
         target: &ReplayTarget,
-    ) -> Result<crate::lowering::generation::Conversion<serde_json::Value>, ConversionFailure> {
+    ) -> Result<
+        crate::protocol::conversion::generation::Conversion<serde_json::Value>,
+        ConversionFailure,
+    > {
         let result = (|| {
             self.validate()?;
             request.task.semantic.validate().map_err(CodecError::from)?;
@@ -225,11 +227,13 @@ impl TargetCaps {
                     .clone()
                     .with_settings(settings)
                     .map_err(CodecError::from)?;
-                Some(crate::lowering::generation::Effect::MessagesVerbosity {
-                    input: verbosity,
-                    output: Presence::Absent,
-                    owner: crate::lowering::generation::Owner::Root,
-                })
+                Some(
+                    crate::protocol::conversion::generation::Effect::MessagesVerbosity {
+                        input: verbosity,
+                        output: Presence::Absent,
+                        owner: crate::protocol::conversion::generation::Owner::Root,
+                    },
+                )
             };
             let request = projected.as_ref();
             if !self.manual_thinking && request.task.semantic.reasoning().budget_tokens.is_some() {
@@ -336,7 +340,7 @@ impl TargetCaps {
             selected.extend(carrier_rules);
             selected.extend(
                 self.cache
-                    .losses(&request.context)
+                    .applied_rules(&request.context)
                     .into_iter()
                     .chain(attribution.losses)
                     .map(RequestRule::Hint),
@@ -357,8 +361,8 @@ impl TargetCaps {
             super::shape::bounded(&projection.value)?;
             Ok(projection)
         })();
-        result.map_err(|error: crate::adapter::ConversionFailure| {
-            error.at(crate::lowering::generation::ConversionBoundary::RequestEncode)
+        result.map_err(|error: crate::protocol::ConversionFailure| {
+            error.at(crate::protocol::conversion::generation::ConversionBoundary::RequestEncode)
         })
     }
     /// Fixed headers plus the betas the encoded body actually uses.

@@ -1,12 +1,10 @@
 //! Upstream responses ignore unknown keys while known keys stay strict; requests stay closed.
-use crate::wire;
-use morphiecore::protocol::openai::{Adapter, Dialect, Profile};
+use crate::{chat_wire, wire};
+use morphiecore::protocol::openai::{Dialect, GenerationApi, GenerationCodec};
 use serde_json::{Value, json};
 
-use crate::chat_wire;
-
-fn adapter(profile: Profile) -> Adapter {
-    Adapter::new(profile, Dialect::Standard, None)
+fn adapter(profile: GenerationApi) -> GenerationCodec {
+    GenerationCodec::new(profile, Dialect::Standard, None)
 }
 fn future() -> Value {
     json!({"synthetic":["future",1,null]})
@@ -21,7 +19,7 @@ fn add(value: &mut Value, pointer: &str) {
 
 #[test]
 fn responses_static_response_ignores_unknown_keys_at_every_level() {
-    let a = adapter(Profile::Responses);
+    let a = adapter(GenerationApi::Responses);
     let plain = wire::response(1);
     let mut extended = plain.clone();
     extended["usage"]["prompt_cache_hit_tokens"] = json!({"future":true});
@@ -50,7 +48,7 @@ fn responses_static_response_ignores_unknown_keys_at_every_level() {
 
 #[test]
 fn chat_static_response_ignores_unknown_keys_at_every_level() {
-    let a = adapter(Profile::Chat);
+    let a = adapter(GenerationApi::Chat);
     for turn in [1, 2] {
         let plain = chat_wire::response(turn);
         let mut extended = plain.clone();
@@ -69,7 +67,7 @@ fn chat_static_response_ignores_unknown_keys_at_every_level() {
 }
 
 fn stream(
-    a: &Adapter,
+    a: &GenerationCodec,
     chat: bool,
     frames: &[Value],
 ) -> Vec<morphiecore::semantic::task::generation::StreamEvent> {
@@ -88,7 +86,7 @@ fn stream(
 
 #[test]
 fn responses_events_ignore_unknown_keys() {
-    let a = adapter(Profile::Responses);
+    let a = adapter(GenerationApi::Responses);
     let plain = wire::events(1);
     let mut extended = plain.clone();
     for frame in &mut extended {
@@ -104,7 +102,7 @@ fn responses_events_ignore_unknown_keys() {
 
 #[test]
 fn chat_chunks_ignore_unknown_keys() {
-    let a = adapter(Profile::Chat);
+    let a = adapter(GenerationApi::Chat);
     for turn in [1, 2] {
         let plain = chat_wire::events(turn);
         let mut extended = plain.clone();
@@ -121,7 +119,7 @@ fn chat_chunks_ignore_unknown_keys() {
 
 #[test]
 fn known_upstream_fields_stay_strict() {
-    let a = adapter(Profile::Responses);
+    let a = adapter(GenerationApi::Responses);
     for (pointer, value) in [
         ("/usage/input_tokens", json!("3")),
         ("/status", json!("synthetic_status")),
@@ -145,11 +143,11 @@ fn client_text_history_shorthand_does_not_relax_annotations() {
         protocol::{
             CodecError,
             fidelity::FidelityRecords,
-            openai::{TargetCaps, lowering::lower_request},
+            openai::{TargetContract, lowering::lower_request},
         },
         semantic::{task::generation::*, value::Text},
     };
-    let a = adapter(Profile::Responses);
+    let a = adapter(GenerationApi::Responses);
     let mut history = json!({"model":"m","input":[{"role":"assistant","content":[{"type":"output_text","text":"hello"}]}]});
     let decoded = a
         .decode_client_request(history.to_string().as_bytes())
@@ -178,8 +176,13 @@ fn client_text_history_shorthand_does_not_relax_annotations() {
     );
     // Independently constructed IR emits the official array, not the shorthand.
     let fidelity = FidelityRecords::default();
-    let target =
-        lower_request(&expected, &fidelity, Profile::Responses, TargetCaps::full()).unwrap();
+    let target = lower_request(
+        &expected,
+        &fidelity,
+        GenerationApi::Responses,
+        TargetContract::full(),
+    )
+    .unwrap();
     let encoded = morphiecore::protocol::openai::responses::encode_generation(&target).unwrap();
     assert_eq!(
         encoded["input"][0]["content"][0],
@@ -209,7 +212,8 @@ fn client_text_history_shorthand_does_not_relax_annotations() {
         .unwrap();
     assert!(cited.task.evidence.is_empty());
     assert_eq!(
-        a.encode_request(&cited, "m", &TargetCaps::full()).unwrap()["input"][0]["content"][0]["annotations"],
+        a.encode_request(&cited, "m", &TargetContract::full())
+            .unwrap()["input"][0]["content"][0]["annotations"],
         history["input"][0]["content"][0]["annotations"]
     );
     let mut upstream = wire::response(1);
@@ -230,14 +234,14 @@ fn downstream_requests_still_reject_unmodeled_fields() {
     let mut body = wire::request(false);
     body["future_control"] = json!(true);
     assert!(
-        adapter(Profile::Responses)
+        adapter(GenerationApi::Responses)
             .decode_request(body.to_string().as_bytes())
             .is_err()
     );
     let body =
         json!({"model":"m","messages":[{"role":"user","content":"hi"}],"future_control":true});
     assert!(
-        adapter(Profile::Chat)
+        adapter(GenerationApi::Chat)
             .decode_request(body.to_string().as_bytes())
             .is_err()
     );

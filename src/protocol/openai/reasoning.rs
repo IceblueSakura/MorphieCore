@@ -1,14 +1,18 @@
 //! Responses reasoning object and readable reasoning items.
-use crate::protocol::failure::CarrierReason;
-use crate::protocol::openai::{
-    CodecError, Profile,
-    shape::{DecodeDirection, object, put_presence, read_presence, string, text},
-};
-use crate::semantic::task::generation::{
-    ConfigurationUpdate, EffortControl, EffortLevel, EffortScope, GenerationSettings,
-    ItemLifecycle, MAX_TEXT_BYTES, PartId, ReasoningActivation, ReasoningContent, ReasoningContext,
-    ReasoningDisplay, ReasoningItem, ReasoningMode, ReasoningPresence, ReasoningRequest,
-    ReasoningSummary, ReplayFormat, ReplayValue,
+use crate::{
+    protocol::{
+        failure::CarrierReason,
+        openai::{
+            CodecError, GenerationApi,
+            shape::{DecodeDirection, object, put_presence, read_presence, string, text},
+        },
+    },
+    semantic::task::generation::{
+        ConfigurationUpdate, EffortControl, EffortLevel, EffortScope, GenerationSettings,
+        ItemLifecycle, MAX_TEXT_BYTES, PartId, ReasoningActivation, ReasoningContent,
+        ReasoningContext, ReasoningDisplay, ReasoningItem, ReasoningMode, ReasoningPresence,
+        ReasoningRequest, ReasoningSummary, ReplayFormat, ReplayValue,
+    },
 };
 use serde_json::{Map, Value, json};
 
@@ -162,14 +166,14 @@ fn read_effort(
 pub(super) fn write_request(
     settings: &GenerationSettings,
     o: &mut Map<String, Value>,
-    profile: Profile,
+    profile: GenerationApi,
 ) -> Result<(), CodecError> {
     settings.validate()?;
     let value = &settings.reasoning;
     if requires_extended_controls(settings) || !value.read_history.is_absent() {
         return Err(CodecError::Unsupported(CarrierReason::Reasoning));
     }
-    if profile == Profile::Responses
+    if profile == GenerationApi::Responses
         && value.presentation.visibility.value() == Some(&ReasoningDisplay::Omitted)
     {
         // Typed control intent cannot be replaced by absence or null. This also
@@ -193,7 +197,7 @@ pub(super) fn write_request(
     if value.presence() == ReasoningPresence::Absent && settings.effort.is_absent() {
         return Ok(());
     }
-    if profile == Profile::Chat {
+    if profile == GenerationApi::Chat {
         put_effort(o, "reasoning_effort");
         return Ok(());
     }

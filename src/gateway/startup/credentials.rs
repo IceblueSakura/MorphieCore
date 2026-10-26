@@ -1,9 +1,9 @@
 //! Trusted credential sources; no account selection from business data.
 #[cfg(test)]
 mod binding_tests;
-use crate::gateway::StartupError;
 use crate::{
     credential::{AccessBinding, AccessGrant, ApiKeyAccess},
+    gateway::StartupError,
     provider::{CredentialBindingId, CredentialKind, SecretMaterial},
 };
 use std::{collections::BTreeMap, sync::Arc};
@@ -97,14 +97,14 @@ fn unavailable(error: crate::credential::CredentialError) -> crate::gateway::Api
     use crate::credential::CredentialError as Error;
     let mut response = crate::gateway::ApiError::new(
         axum::http::StatusCode::SERVICE_UNAVAILABLE,
-        "credential_unavailable",
+        crate::gateway::error::ErrorKind::CredentialUnavailable,
     );
     if matches!(
         error,
         Error::KeyUnavailable | Error::LoginRequired | Error::Expired
     ) {
-        response.fallback = Some(crate::provider::ErrorClass::CredentialUnavailable);
-        response.health = true;
+        response.recovery.class = Some(crate::provider::RecoveryClass::CredentialUnavailable);
+        response.recovery.affects_health = true;
     }
     response
 }

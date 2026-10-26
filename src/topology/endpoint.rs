@@ -1,23 +1,23 @@
 //! One fixed upstream target: trusted origin + relative entry for a task,
 //! protocol profile and upstream model binding.
-use crate::protocol::failure::CarrierReason;
-
 use crate::{
-    lowering::target::TargetCaps,
+    lowering::target::TargetContract,
+    protocol::failure::CarrierReason,
     provider::{
-        EndpointPath, ProviderId, TrustedOrigin, auth::CredentialBindingId, auth::CredentialKind,
+        EndpointPath, ProviderId, TrustedOrigin,
+        auth::{CredentialBindingId, CredentialKind},
     },
-    topology::{EndpointId, ProtocolProfile, TaskKind},
+    topology::{EndpointId, GenerationProtocol, TaskKind},
 };
 
 /// Messages tool and replay controls on another protocol's target. Eager argument
 /// streaming only changes delivery granularity; tolerant `drop_block` only relaxes a
 /// check other targets do not make. Explicit enforcement has no carrier and rejects.
 fn omit_messages_controls(
-    request: &crate::adapter::Request,
+    request: &crate::protocol::GenerationRequestEnvelope,
 ) -> Result<
     (
-        std::borrow::Cow<'_, crate::adapter::Request>,
+        std::borrow::Cow<'_, crate::protocol::GenerationRequestEnvelope>,
         Vec<&'static str>,
     ),
     crate::protocol::CodecError,
@@ -80,13 +80,13 @@ pub struct Endpoint {
     pub provider: ProviderId,
     pub target: EndpointTarget,
     pub task: TaskKind,
-    pub protocol: ProtocolProfile,
+    pub protocol: GenerationProtocol,
     /// Exact Provider spelling, bound at compile time and injected at attempt time.
     /// Different Providers may spell the same canonical model differently.
     pub upstream_model: String,
     /// Shared semantic identity; neither a public label nor a Provider selector.
     pub canonical_model: super::ModelId,
-    pub representation: TargetCaps,
+    pub representation: TargetContract,
     pub execution: ExecutionContract,
     pub credential: CredentialBindingId,
 }
@@ -106,14 +106,14 @@ impl Endpoint {
             adapter::UpstreamAdapter,
             protocol::{
                 CodecError,
-                openai::{Adapter, Profile},
+                openai::{GenerationApi, GenerationCodec},
             },
         };
         let reasoning_policy = match &self.representation {
-            TargetCaps::OpenAi(caps) => caps.adaptation.reasoning_policy.as_ref(),
-            TargetCaps::AnthropicMessages(caps) => caps.reasoning_policy.as_ref(),
-            TargetCaps::GoogleGenerateContent(caps) => caps.reasoning_policy.as_ref(),
-            TargetCaps::GoogleInteractions(caps) => caps.reasoning_policy.as_ref(),
+            TargetContract::OpenAi(caps) => caps.adaptation.reasoning_policy.as_ref(),
+            TargetContract::AnthropicMessages(caps) => caps.reasoning_policy.as_ref(),
+            TargetContract::GoogleGenerateContent(caps) => caps.reasoning_policy.as_ref(),
+            TargetContract::GoogleInteractions(caps) => caps.reasoning_policy.as_ref(),
         };
         if let Some(policy) = reasoning_policy {
             policy.validate()?;
@@ -122,7 +122,7 @@ impl Endpoint {
             }
         }
         Ok(match (&self.protocol, &self.representation) {
-            (ProtocolProfile::AnthropicMessages, TargetCaps::AnthropicMessages(caps)) => {
+            (GenerationProtocol::AnthropicMessages, TargetContract::AnthropicMessages(caps)) => {
                 UpstreamAdapter::AnthropicMessages {
                     profile: caps.profile,
                     target: crate::protocol::native::ReplayTarget::new(
@@ -132,16 +132,17 @@ impl Endpoint {
                     .with_origin(self.replay_origin()),
                 }
             }
-            (ProtocolProfile::GoogleGenerateContent, TargetCaps::GoogleGenerateContent(_)) => {
-                UpstreamAdapter::GoogleGenerateContent {
-                    target: crate::protocol::native::ReplayTarget::new(
-                        self.provider.as_str(),
-                        &self.upstream_model,
-                    )?
-                    .with_origin(self.replay_origin()),
-                }
-            }
-            (ProtocolProfile::GoogleInteractions, TargetCaps::GoogleInteractions(_)) => {
+            (
+                GenerationProtocol::GoogleGenerateContent,
+                TargetContract::GoogleGenerateContent(_),
+            ) => UpstreamAdapter::GoogleGenerateContent {
+                target: crate::protocol::native::ReplayTarget::new(
+                    self.provider.as_str(),
+                    &self.upstream_model,
+                )?
+                .with_origin(self.replay_origin()),
+            },
+            (GenerationProtocol::GoogleInteractions, TargetContract::GoogleInteractions(_)) => {
                 UpstreamAdapter::GoogleInteractions {
                     target: crate::protocol::native::ReplayTarget::new(
                         self.provider.as_str(),
@@ -151,8 +152,8 @@ impl Endpoint {
                 }
             }
             (
-                ProtocolProfile::OpenAiChat | ProtocolProfile::OpenAiResponses,
-                TargetCaps::OpenAi(caps),
+                GenerationProtocol::OpenAiChat | GenerationProtocol::OpenAiResponses,
+                TargetContract::OpenAi(caps),
             ) => {
                 if let Some(mapping) = caps.adaptation.effort_mapping {
                     mapping.validate()?;
@@ -160,11 +161,11 @@ impl Endpoint {
                         return Err(CodecError::invalid());
                     }
                 }
-                UpstreamAdapter::OpenAi(Box::new(Adapter {
-                    protocol: if self.protocol == ProtocolProfile::OpenAiChat {
-                        Profile::Chat
+                UpstreamAdapter::OpenAi(Box::new(GenerationCodec {
+                    protocol: if self.protocol == GenerationProtocol::OpenAiChat {
+                        GenerationApi::Chat
                     } else {
-                        Profile::Responses
+                        GenerationApi::Responses
                     },
                     adaptation: crate::protocol::openai::dialect::adaptation::Adaptation {
                         scope: Some(self.replay_origin()),
@@ -178,16 +179,16 @@ impl Endpoint {
     /// Candidate-private upstream body for this binding's protocol and model.
     pub fn encode_request(
         &self,
-        request: &crate::adapter::Request,
-    ) -> Result<serde_json::Value, crate::adapter::ConversionFailure> {
+        request: &crate::protocol::GenerationRequestEnvelope,
+    ) -> Result<serde_json::Value, crate::protocol::ConversionFailure> {
         self.encode_request_with_evidence(request)
             .map(|projection| projection.value)
     }
     /// The body plus the names of the degradable rules applied to it.
     pub fn encode_request_with_rules(
         &self,
-        request: &crate::adapter::Request,
-    ) -> Result<(serde_json::Value, Vec<&'static str>), crate::adapter::ConversionFailure> {
+        request: &crate::protocol::GenerationRequestEnvelope,
+    ) -> Result<(serde_json::Value, Vec<&'static str>), crate::protocol::ConversionFailure> {
         self.encode_request_with_evidence(request)
             .map(|projection| {
                 let rules = projection.evidence.rule_names();
@@ -196,68 +197,70 @@ impl Endpoint {
     }
     pub(crate) fn encode_request_with_evidence(
         &self,
-        request: &crate::adapter::Request,
+        request: &crate::protocol::GenerationRequestEnvelope,
     ) -> Result<
-        crate::lowering::generation::Conversion<serde_json::Value>,
-        crate::adapter::ConversionFailure,
+        crate::protocol::conversion::generation::Conversion<serde_json::Value>,
+        crate::protocol::ConversionFailure,
     > {
         let result = (|| {
             use crate::adapter::UpstreamAdapter;
             let (request, omitted) = match &self.representation {
-                TargetCaps::AnthropicMessages(_) => (std::borrow::Cow::Borrowed(request), vec![]),
+                TargetContract::AnthropicMessages(_) => {
+                    (std::borrow::Cow::Borrowed(request), vec![])
+                }
                 _ => omit_messages_controls(request)?,
             };
             let request = request.as_ref();
             let mut projection = match (self.adapter()?, &self.representation) {
-                (UpstreamAdapter::OpenAi(adapter), TargetCaps::OpenAi(caps)) => {
+                (UpstreamAdapter::OpenAi(adapter), TargetContract::OpenAi(caps)) => {
                     let mut contract = caps.as_ref().clone();
                     contract.replay_origin = contract.replay_origin.map(|_| self.replay_origin());
                     adapter.encode_request_with_evidence(request, &self.upstream_model, &contract)
                 }
                 (
                     UpstreamAdapter::AnthropicMessages { target, .. },
-                    TargetCaps::AnthropicMessages(caps),
+                    TargetContract::AnthropicMessages(caps),
                 ) => caps.encode_request(request, &target),
                 (
                     UpstreamAdapter::GoogleGenerateContent { target },
-                    TargetCaps::GoogleGenerateContent(caps),
+                    TargetContract::GoogleGenerateContent(caps),
                 ) => caps.encode_request(request, &target),
                 (
                     UpstreamAdapter::GoogleInteractions { target },
-                    TargetCaps::GoogleInteractions(caps),
+                    TargetContract::GoogleInteractions(caps),
                 ) => caps.encode_request(request, &target),
                 _ => Err(crate::protocol::CodecError::ProfileMismatch.into()),
             }?;
             for rule in omitted {
                 projection
                     .evidence
-                    .push(crate::lowering::generation::Effect::new(
+                    .push(crate::protocol::conversion::generation::Effect::new(
                         rule,
-                        crate::lowering::generation::Field::ToolResultError,
-                        crate::lowering::generation::ConversionBoundary::RequestProject,
-                        crate::lowering::generation::Change::Approximate,
+                        crate::protocol::conversion::generation::Field::ToolResultError,
+                        crate::protocol::conversion::generation::ConversionBoundary::RequestProject,
+                        crate::protocol::conversion::generation::Change::Approximate,
                     ));
             }
             Ok(projection)
         })();
-        result.map_err(|error: crate::adapter::ConversionFailure| {
-            error.at(crate::lowering::generation::ConversionBoundary::RequestEncode)
+        result.map_err(|error: crate::protocol::ConversionFailure| {
+            error.at(crate::protocol::conversion::generation::ConversionBoundary::RequestEncode)
         })
     }
     /// Closed Provider header projection; no inbound header map or runtime target selection.
     pub(crate) fn request_headers(
         &self,
-        request: &crate::adapter::Request,
+        request: &crate::protocol::GenerationRequestEnvelope,
         body: &serde_json::Value,
     ) -> Result<Vec<(String, String)>, crate::protocol::CodecError> {
         match &self.representation {
-            TargetCaps::OpenAi(caps) => self
+            TargetContract::OpenAi(caps) => self
                 .adapter()?
                 .openai()?
                 .request_headers(request, caps.cache),
-            TargetCaps::AnthropicMessages(caps) => caps.request_headers(request, body),
-            TargetCaps::GoogleGenerateContent(caps) => Ok(caps.request_headers()),
-            TargetCaps::GoogleInteractions(caps) => Ok(caps.request_headers()),
+            TargetContract::AnthropicMessages(caps) => caps.request_headers(request, body),
+            TargetContract::GoogleGenerateContent(caps) => Ok(caps.request_headers()),
+            TargetContract::GoogleInteractions(caps) => Ok(caps.request_headers()),
         }
     }
     /// The target path the Provider's declared operation entry implies for this binding:
@@ -274,7 +277,7 @@ impl Endpoint {
     /// selects SSE framing with a fixed query, never business input.
     pub(crate) fn request_path(&self) -> String {
         match self.protocol {
-            ProtocolProfile::GoogleGenerateContent => {
+            GenerationProtocol::GoogleGenerateContent => {
                 format!("{}?alt=sse", self.target.path.as_str())
             }
             _ => self.target.path.as_str().into(),

@@ -1,15 +1,18 @@
 //! Untrusted client Messages: registered fields, protected controls and IR admission.
-use crate::protocol::anthropic::messages::{
-    Block, OutputConfig, Role, Selection, TextContent as WireText, Tool, ToolChoice as WireChoice,
-    items::{Intake, text},
-    service, settings,
-    shape::{self, label, object, parse, required, string},
-    wire,
-};
-use crate::protocol::failure::CarrierReason;
 use crate::{
-    adapter::Request,
-    protocol::{CodecError, DecodedRequest, fidelity::FidelityRecords},
+    protocol::{
+        CodecError, DecodedRequest, GenerationRequestEnvelope as Request,
+        anthropic::messages::{
+            Block, OutputConfig, Role, Selection, TextContent as WireText, Tool,
+            ToolChoice as WireChoice,
+            items::{Intake, text},
+            service, settings,
+            shape::{self, label, object, parse, required, string},
+            wire,
+        },
+        failure::CarrierReason,
+        fidelity::FidelityRecords,
+    },
     semantic::{task::generation::*, value::Presence},
 };
 use serde_json::{Value, json};
@@ -423,7 +426,7 @@ pub fn decode_client_request(bytes: &[u8]) -> Result<Request, CodecError> {
     let mut fidelity = FidelityRecords::default();
     let semantic = GenerationRequest::from_resources(items, settings, intake.resources)?;
     crate::protocol::anthropic::messages::items::validate_cache(&semantic)?;
-    fidelity.bind_replay_origin(&crate::execution::replay::CLIENT_ORIGIN)?;
+    fidelity.bind_replay_origin(&crate::protocol::replay_envelope::CLIENT_ORIGIN)?;
     let mut request = Request::from_generation(
         DecodedRequest {
             evidence: Default::default(),
@@ -434,7 +437,7 @@ pub fn decode_client_request(bytes: &[u8]) -> Result<Request, CodecError> {
     )?;
     request.context.identity.user = wire::request::read_user_id(&o)?;
     request.service_policy = service::read_policy(&o)?;
-    request.source = Some(crate::adapter::ClientProtocol::Messages);
+    request.source = Some(crate::protocol::ClientProtocol::Messages);
     if let Some(stream) = o.get("stream") {
         request.delivery.stream = Presence::Value(stream.as_bool().ok_or(CodecError::invalid())?);
     }

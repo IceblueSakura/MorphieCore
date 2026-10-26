@@ -1,5 +1,5 @@
 //! Selected phase projection. Source history and protected semantic edits stay intact.
-use crate::{lowering::generation::Effect, semantic::task::generation::*};
+use crate::{protocol::conversion::generation::Effect, semantic::task::generation::*};
 
 pub(crate) fn has_phase(items: &[(ItemId, Item)]) -> bool {
     items
@@ -9,21 +9,23 @@ pub(crate) fn has_phase(items: &[(ItemId, Item)]) -> bool {
 
 pub(crate) fn omission(rule: &'static str) -> Effect {
     Effect::Field {
-        rule: crate::lowering::generation::RuleId::new(rule),
+        rule: crate::protocol::conversion::generation::RuleId::new(rule),
         field: ("generation.message.phase").into(),
-        direction: ("request.encode").into(),
-        action: ("omit").into(),
-        owner: crate::lowering::generation::Owner::Root,
+        boundary: ("request.encode").into(),
+        change: ("omit").into(),
+        owner: crate::protocol::conversion::generation::Owner::Root,
     }
 }
 
 pub(crate) fn delivery_omission(direction: &'static str) -> Effect {
     Effect::Field {
-        rule: crate::lowering::generation::RuleId::new("generation.omit-delivery-message-phase.v1"),
+        rule: crate::protocol::conversion::generation::RuleId::new(
+            "generation.omit-delivery-message-phase.v1",
+        ),
         field: ("generation.message.phase").into(),
-        direction: (direction).into(),
-        action: ("omit").into(),
-        owner: crate::lowering::generation::Owner::Root,
+        boundary: (direction).into(),
+        change: ("omit").into(),
+        owner: crate::protocol::conversion::generation::Owner::Root,
     }
 }
 

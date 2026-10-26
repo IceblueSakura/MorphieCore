@@ -1,8 +1,9 @@
 //! SSE-only upstream delivery is independent of client JSON/SSE selection.
 use super::responses_wire as wire;
-use crate::gateway::generation::exchange;
-use crate::gateway::*;
-use crate::protocol::openai::Profile;
+use crate::{
+    gateway::{generation::exchange, *},
+    protocol::openai::GenerationApi,
+};
 use axum::body::to_bytes;
 use serde_json::json;
 use std::time::Duration;
@@ -32,14 +33,17 @@ async fn consume(
 ) -> Option<Vec<u8>> {
     use futures_util::StreamExt;
     let gate = crate::gateway::tests::support::gateway(Limits::default());
-    let original =
-        gate.state.entries[&(crate::adapter::ClientProtocol::Chat, "fixture-model".into())].clone();
+    let original = gate.state.entries[&(
+        crate::protocol::ClientProtocol::Chat,
+        "fixture-model".into(),
+    )]
+        .clone();
     let base = &original.candidates[0];
-    let adapter = Adapter::new(Profile::Responses, dialect, None);
+    let adapter = GenerationCodec::new(GenerationApi::Responses, dialect, None);
     let mut endpoint = base.endpoint.clone();
-    endpoint.protocol = crate::topology::ProtocolProfile::OpenAiResponses;
+    endpoint.protocol = crate::topology::GenerationProtocol::OpenAiResponses;
     endpoint.representation = adapter
-        .contract(&crate::protocol::openai::TargetCaps::full())
+        .contract(&crate::protocol::openai::TargetContract::full())
         .into();
     let candidate = Arc::new(BoundCandidate {
         endpoint,
@@ -53,12 +57,12 @@ async fn consume(
     let entry = Arc::new(BoundEntry {
         public: original.public.clone(),
         client: crate::adapter::ClientAdapter::openai(
-            Adapter::new(
-                Profile::Responses,
+            GenerationCodec::new(
+                GenerationApi::Responses,
                 crate::protocol::openai::Dialect::MorphieCore,
                 None,
             ),
-            crate::protocol::openai::TargetCaps::full(),
+            crate::protocol::openai::TargetContract::full(),
         ),
         policy: original.policy.clone(),
         candidates: vec![candidate.clone()],
@@ -240,8 +244,8 @@ async fn missing_media_is_not_enabled_for_standard_or_other_responses_profiles()
         );
     }
     assert!(
-        !Adapter::new(
-            Profile::Chat,
+        !GenerationCodec::new(
+            GenerationApi::Chat,
             crate::protocol::openai::Dialect::Standard,
             None
         )

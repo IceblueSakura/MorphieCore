@@ -44,7 +44,7 @@ pub const SUBSCRIPTION_BINDINGS: &[SubscriptionBinding] = &[
     },
 ];
 impl SubscriptionBinding {
-    fn contract(&self) -> GenerationSemanticContract {
+    fn contract(&self) -> GenerationFeatureSet {
         let mut contract = models::contract(self.model);
         if self.profile == "openai" {
             contract.max_output_tokens = false;
@@ -83,19 +83,19 @@ impl SubscriptionBinding {
     pub fn endpoint(&self) -> Endpoint {
         let provider = (self.provider)();
         let scope = crate::protocol::replay_envelope::issuer(provider.id.as_str(), self.upstream);
-        let adapter = Adapter::new(
-            crate::protocol::openai::Profile::Responses,
+        let adapter = GenerationCodec::new(
+            crate::protocol::openai::GenerationApi::Responses,
             self.dialect,
             Some(scope.clone()),
         );
-        let contract = TargetCaps {
+        let contract = TargetContract {
             semantics: self.contract(),
             replay_origin: Some(scope),
             cache: adapter.adaptation.cache,
             identity_hints: false,
             standard_context: false,
             prediction: false,
-            ..TargetCaps::full()
+            ..TargetContract::full()
         };
         let path = provider
             .generation_entry(crate::provider::GenerationOperation::Responses)
@@ -111,7 +111,7 @@ impl SubscriptionBinding {
                 path,
             },
             task: TaskKind::Generation,
-            protocol: ProtocolProfile::OpenAiResponses,
+            protocol: GenerationProtocol::OpenAiResponses,
             upstream_model: self.upstream.into(),
             representation: adapter.contract(&contract).into(),
             execution: ExecutionContract {

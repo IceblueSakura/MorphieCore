@@ -2,7 +2,7 @@
 //! Sources: https://help.aliyun.com/en/model-studio/token-plan-personal-overview
 //! https://help.aliyun.com/en/model-studio/fun-asr-flash-recorded-speech-recognition-http-api
 use crate::{
-    adapter::transcription::Profile,
+    adapter::transcription::UpstreamAdapter,
     provider::{
         CredentialBindingId, CredentialKind, ProviderDefinition, ProviderOperation, catalog,
     },
@@ -19,7 +19,7 @@ pub struct TranscriptionBinding {
     pub endpoint_id: &'static str,
     pub released_at: u64,
     pub developer: &'static str,
-    pub profile: Profile,
+    pub profile: UpstreamAdapter,
 }
 pub const TRANSCRIPTION_BINDINGS: &[TranscriptionBinding] = &[
     TranscriptionBinding {
@@ -31,7 +31,7 @@ pub const TRANSCRIPTION_BINDINGS: &[TranscriptionBinding] = &[
         // https://mimo.mi.com/docs/updates/model (2026-06-02).
         released_at: 1_780_358_400,
         developer: "Xiaomi",
-        profile: Profile::Xiaomi,
+        profile: UpstreamAdapter::Xiaomi,
     },
     TranscriptionBinding {
         model: "qwen-audio-3.0-asr-flash",
@@ -43,7 +43,7 @@ pub const TRANSCRIPTION_BINDINGS: &[TranscriptionBinding] = &[
         // https://help.aliyun.com/zh/model-studio/newly-released-models
         released_at: 1_785_369_600,
         developer: "Alibaba",
-        profile: Profile::AliyunFlash,
+        profile: UpstreamAdapter::AliyunFlash,
     },
     TranscriptionBinding {
         model: "qwen-audio-3.0-asr-flash",
@@ -53,7 +53,7 @@ pub const TRANSCRIPTION_BINDINGS: &[TranscriptionBinding] = &[
         endpoint_id: "dashscope-qwen-asr",
         released_at: 1_785_369_600,
         developer: "Alibaba",
-        profile: Profile::AliyunFlash,
+        profile: UpstreamAdapter::AliyunFlash,
     },
 ];
 impl TranscriptionBinding {

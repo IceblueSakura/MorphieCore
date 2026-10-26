@@ -2,13 +2,18 @@
 //! Readable deltas stream; an opaque value (already sealed for the client) arrives
 //! as one `signature_delta` when its thinking block closes. A reasoning block opens on
 //! its first delta or at its end, so a redacted value can still open `redacted_thinking`.
-use crate::protocol::failure::{CarrierReason, ShapeReason};
-use crate::semantic::{context::ServiceClass, value::Presence};
 use crate::{
-    protocol::CodecError,
-    semantic::task::generation::{
-        InteractionProgress, ItemId, ItemKind, Outcome, PartId, PartKind, StreamEvent,
-        StreamTerminal, UsageReport, UsageScope, UsageStage,
+    protocol::{
+        CodecError,
+        failure::{CarrierReason, ShapeReason},
+    },
+    semantic::{
+        context::ServiceClass,
+        task::generation::{
+            InteractionProgress, ItemId, ItemKind, Outcome, PartId, PartKind, StreamEvent,
+            StreamTerminal, UsageReport, UsageScope, UsageStage,
+        },
+        value::Presence,
     },
 };
 use bytes::Bytes;
@@ -44,7 +49,7 @@ impl OpenItem {
 }
 pub struct ClientEventEncoder {
     notice: Option<crate::protocol::diagnostics::AdaptationNotice>,
-    losses: Vec<crate::lowering::generation::Effect>,
+    losses: Vec<crate::protocol::conversion::generation::Effect>,
     id: String,
     model: String,
     started: bool,
@@ -150,7 +155,7 @@ impl ClientEventEncoder {
                 && self.service_class != class
             {
                 return Err(CodecError::Unsupported(CarrierReason::Field(
-                    crate::lowering::generation::Field::ServiceClass,
+                    crate::protocol::conversion::generation::Field::ServiceClass,
                 )));
             }
             self.service_class = class;
@@ -732,11 +737,13 @@ impl ClientEventEncoder {
             Err(CodecError::invalid())
         }
     }
-    pub(crate) fn take_evidence(&mut self) -> crate::lowering::generation::EvidenceDelta {
+    pub(crate) fn take_evidence(
+        &mut self,
+    ) -> crate::protocol::conversion::generation::EvidenceDelta {
         std::mem::take(&mut self.losses).into_iter().collect()
     }
     #[cfg(test)]
-    pub(crate) fn losses(&self) -> &[crate::lowering::generation::Effect] {
+    pub(crate) fn losses(&self) -> &[crate::protocol::conversion::generation::Effect] {
         &self.losses
     }
     /// End the stream with Anthropic's `error` event (`{"type":"error","error":…}`).

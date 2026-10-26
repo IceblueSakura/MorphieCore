@@ -8,7 +8,7 @@ use axum::{
 };
 use morphiecore::{
     gateway::{ChatProfile, Entry, Gateway, Limits, TaskEntries},
-    protocol::openai::Profile,
+    protocol::openai::GenerationApi,
     provider::{SecretMaterial, TrustedOrigin},
     topology::{self, catalog},
 };
@@ -44,7 +44,7 @@ impl Drop for DropSignal {
 }
 #[derive(Clone)]
 struct StateData {
-    profile: Profile,
+    profile: GenerationApi,
     seen: Arc<Mutex<Vec<Value>>>,
     control: Arc<Control>,
     recovery: Option<Arc<crate::credential_recovery::Recovery>>,
@@ -56,16 +56,16 @@ impl Drop for Fixture {
         }
     }
 }
-fn snapshot(profile: Profile, turn: usize, reasoning: bool) -> Value {
+fn snapshot(profile: GenerationApi, turn: usize, reasoning: bool) -> Value {
     match profile {
-        Profile::Chat => chat::snapshot(turn, reasoning),
-        Profile::Responses => responses::snapshot(turn),
+        GenerationApi::Chat => chat::snapshot(turn, reasoning),
+        GenerationApi::Responses => responses::snapshot(turn),
     }
 }
-fn events(profile: Profile, turn: usize, reasoning: bool) -> Vec<Value> {
+fn events(profile: GenerationApi, turn: usize, reasoning: bool) -> Vec<Value> {
     match profile {
-        Profile::Chat => chat::events(turn, reasoning),
-        Profile::Responses => responses::events(turn),
+        GenerationApi::Chat => chat::events(turn, reasoning),
+        GenerationApi::Responses => responses::events(turn),
     }
 }
 async fn answer(
@@ -98,10 +98,10 @@ async fn answer(
         assert!(body.get(field).is_none(), "unexpected {field}");
     }
     let turn = match profile {
-        Profile::Chat => chat::assert_request(&body),
-        Profile::Responses => responses::assert_request(&body),
+        GenerationApi::Chat => chat::assert_request(&body),
+        GenerationApi::Responses => responses::assert_request(&body),
     };
-    let chat = profile == Profile::Chat;
+    let chat = profile == GenerationApi::Chat;
     let history = body[if chat { "messages" } else { "input" }]
         .as_array()
         .unwrap();
@@ -186,17 +186,24 @@ async fn answer(
         )))
         .unwrap()
 }
-pub async fn start(profile: Profile, fallback: bool) -> Fixture {
+pub async fn start(profile: GenerationApi, fallback: bool) -> Fixture {
     start_with_recovery(profile, fallback, false, ChatProfile::Standard, false).await
 }
 
 pub async fn start_recovery() -> Fixture {
-    start_with_recovery(Profile::Chat, false, true, ChatProfile::Standard, false).await
+    start_with_recovery(
+        GenerationApi::Chat,
+        false,
+        true,
+        ChatProfile::Standard,
+        false,
+    )
+    .await
 }
 
 pub async fn start_readable() -> Fixture {
     start_with_recovery(
-        Profile::Chat,
+        GenerationApi::Chat,
         false,
         false,
         ChatProfile::ReadableReasoning,
@@ -207,11 +214,18 @@ pub async fn start_readable() -> Fixture {
 
 #[allow(dead_code)] // Only the Router target exercises pre-dispatch rejection.
 pub async fn start_standard_thinking() -> Fixture {
-    start_with_recovery(Profile::Chat, false, false, ChatProfile::Standard, true).await
+    start_with_recovery(
+        GenerationApi::Chat,
+        false,
+        false,
+        ChatProfile::Standard,
+        true,
+    )
+    .await
 }
 
 async fn start_with_recovery(
-    profile: Profile,
+    profile: GenerationApi,
     fallback: bool,
     recover: bool,
     chat_profile: ChatProfile,
@@ -238,8 +252,8 @@ async fn start_with_recovery(
     let mut entries = Vec::new();
     let mut credentials = BTreeMap::new();
     let (label, id) = match profile {
-        Profile::Chat => ("qwen3.8-flash", "dashscope-flash-chat"),
-        Profile::Responses => ("gpt-6-luna", "openrouter-responses"),
+        GenerationApi::Chat => ("qwen3.8-flash", "dashscope-flash-chat"),
+        GenerationApi::Responses => ("gpt-6-luna", "openrouter-responses"),
     };
     let mut endpoint = catalog
         .endpoint(&topology::EndpointId::new(id).unwrap())

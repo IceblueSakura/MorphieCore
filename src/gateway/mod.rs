@@ -13,10 +13,15 @@ mod tasks;
 mod tests;
 pub use crate::execution::delivery::DeltaCoalescing;
 #[cfg(test)]
-use crate::{
-    protocol::openai::{Adapter, Profile, TargetCaps},
-    provider::{ProviderDefinition, SecretMaterial},
-};
+use crate::protocol::openai::GenerationApi;
+#[cfg(test)]
+use crate::protocol::openai::GenerationCodec;
+#[cfg(test)]
+use crate::protocol::openai::TargetContract;
+#[cfg(test)]
+use crate::provider::ProviderDefinition;
+#[cfg(test)]
+use crate::provider::SecretMaterial;
 pub use capture::{CaptureConfig, CaptureStatus, Selection as CaptureSelection};
 use error::ApiError;
 use runtime::{BoundCandidate, BoundEntry, Runtime};

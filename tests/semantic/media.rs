@@ -8,12 +8,12 @@ mod embeddings {
     use serde_json::json;
 
     fn policy(
-        encoding: morphiecore::adapter::embeddings::Encoding,
-    ) -> morphiecore::lowering::embeddings::DeliveryPolicy {
-        morphiecore::lowering::embeddings::DeliveryPolicy {
+        encoding: morphiecore::protocol::embedding::Encoding,
+    ) -> morphiecore::protocol::embedding::projection::DeliveryPolicy {
+        morphiecore::protocol::embedding::projection::DeliveryPolicy {
             model: "public-vector".into(),
             encoding,
-            reports: morphiecore::lowering::embeddings::ReportPolicy::Strict,
+            reports: morphiecore::protocol::embedding::projection::ReportPolicy::Strict,
             estimated_input_tokens: std::num::NonZeroU64::new(2).unwrap(),
         }
     }
@@ -104,15 +104,18 @@ mod embeddings {
     #[test]
     fn dashscope_input_only_usage_is_a_named_basis_not_missing_fact_inference() {
         use morphiecore::{
-            adapter::embeddings::{Encoding, Profile},
-            lowering::embeddings::{Rule, project_response},
+            adapter::embeddings::UpstreamAdapter,
+            protocol::embedding::{
+                Encoding,
+                projection::{Rule, project_response},
+            },
         };
         let wire = br#"{"object":"list","model":"synthetic-qwen","id":"synthetic-request-id",
         "data":[{"object":"embedding","index":0,"embedding":[0.5,-0.125]}],
         "usage":{"total_tokens":7}}"#;
         assert!(embeddings::decode_response(wire).is_err());
-        assert!(Profile::OpenRouter.decode_response(wire).is_ok());
-        let response = Profile::DashScope.decode_response(wire).unwrap();
+        assert!(UpstreamAdapter::OpenRouter.decode_response(wire).is_ok());
+        let response = UpstreamAdapter::DashScope.decode_response(wire).unwrap();
         assert!(!format!("{response:?}").contains("synthetic-request-id"));
         assert_eq!(response.id, Some("synthetic-request-id".into()));
         let usage = response.task.usage().unwrap();
@@ -123,7 +126,7 @@ mod embeddings {
         let projected = project_response(&response, &policy(Encoding::Float)).unwrap();
         assert_eq!(
             projected
-                .receipts
+                .adaptations
                 .iter()
                 .map(|r| r.rule)
                 .collect::<Vec<_>>(),
@@ -145,7 +148,7 @@ mod embeddings {
             let mut invalid: serde_json::Value = serde_json::from_slice(wire).unwrap();
             invalid["usage"] = usage;
             assert!(
-                Profile::DashScope
+                UpstreamAdapter::DashScope
                     .decode_response(&serde_json::to_vec(&invalid).unwrap())
                     .is_err()
             );
@@ -158,8 +161,11 @@ mod embeddings {
     #[test]
     fn decimal_delivery_rounds_directly_to_binary32_and_preserves_source() {
         use morphiecore::{
-            adapter::embeddings::{Encoding, Profile},
-            lowering::embeddings::{Rule, project_response},
+            adapter::embeddings::UpstreamAdapter,
+            protocol::embedding::{
+                Encoding,
+                projection::{Rule, project_response},
+            },
         };
         for (decimal, bits) in [
             ("0.1", 0x3dcccccd),
@@ -178,10 +184,12 @@ mod embeddings {
             let wire = format!(
                 r#"{{"object":"list","model":"reported","data":[{{"object":"embedding","index":0,"embedding":[{decimal}]}}],"usage":{{"prompt_tokens":1,"total_tokens":1}}}}"#
             );
-            let source = Profile::Standard.decode_response(wire.as_bytes()).unwrap();
+            let source = UpstreamAdapter::Standard
+                .decode_response(wire.as_bytes())
+                .unwrap();
             let snapshot = source.clone();
             let float = project_response(&source, &policy(Encoding::Float)).unwrap();
-            assert!(float.receipts.is_empty());
+            assert!(float.adaptations.is_empty());
             assert_eq!(float.response.vectors(), source.vectors());
             assert_eq!(Some(float.response.model()), source.model());
             let projected = project_response(&source, &policy(Encoding::Base64)).unwrap();
@@ -193,7 +201,7 @@ mod embeddings {
             );
             assert_eq!(
                 projected
-                    .receipts
+                    .adaptations
                     .iter()
                     .map(|r| r.rule)
                     .collect::<Vec<_>>(),
@@ -207,7 +215,7 @@ mod embeddings {
             "3.4028236e38",
             "-3.4028236e38",
         ] {
-            let source = morphiecore::adapter::embeddings::Response {
+            let source = morphiecore::protocol::embedding::Response {
                 model: Some("reported".into()),
                 id: None,
                 task: EmbeddingResponse::new(
@@ -230,8 +238,8 @@ mod embeddings {
     #[test]
     fn binary_carriers_have_independent_bytes_and_binary64_visible_json() {
         use morphiecore::{
-            adapter::embeddings::{Encoding, Profile},
-            lowering::embeddings::project_response,
+            adapter::embeddings::UpstreamAdapter,
+            protocol::embedding::{Encoding, projection::project_response},
         };
         for (encoded, bits, json_number) in [
             ("AAAAAA==", 0, "0.0"),
@@ -240,7 +248,7 @@ mod embeddings {
             ("zczMPQ==", 0x3dcccccd, "0.10000000149011612"),
         ] {
             let wire = json!({"object":"list","model":"reported","data":[{"object":"embedding","index":0,"embedding":encoded}],"usage":{"prompt_tokens":1,"total_tokens":1}});
-            let source = Profile::Standard
+            let source = UpstreamAdapter::Standard
                 .decode_response_as(&serde_json::to_vec(&wire).unwrap(), Encoding::Base64)
                 .unwrap();
             assert_eq!(
@@ -249,7 +257,7 @@ mod embeddings {
             );
             for encoding in [Encoding::Float, Encoding::Base64] {
                 let projected = project_response(&source, &policy(encoding)).unwrap();
-                assert!(projected.receipts.is_empty());
+                assert!(projected.adaptations.is_empty());
                 let output = embeddings::encode_response_as(&projected.response, encoding).unwrap();
                 assert_eq!(
                     output["data"][0]["embedding"],
@@ -274,14 +282,14 @@ mod embeddings {
         ] {
             let wire = json!({"object":"list","model":"reported","data":[{"object":"embedding","index":0,"embedding":bad}],"usage":{"prompt_tokens":1,"total_tokens":1}});
             assert!(
-                Profile::Standard
+                UpstreamAdapter::Standard
                     .decode_response_as(&serde_json::to_vec(&wire).unwrap(), Encoding::Base64)
                     .is_err(),
                 "{bad}"
             );
         }
         let decimal = EmbeddingVector::new(0, vec!["0.1".parse().unwrap()]).unwrap();
-        let response = morphiecore::adapter::embeddings::Response {
+        let response = morphiecore::protocol::embedding::Response {
             model: Some("reported".into()),
             id: None,
             task: EmbeddingResponse::new(vec![decimal], Some(EmbeddingUsage::new(1, 1).unwrap()))
@@ -302,19 +310,22 @@ mod embeddings {
     #[test]
     fn target_expectations_resolve_defaults_and_do_not_weaken_wire_validation() {
         use morphiecore::{
-            adapter::embeddings::{Encoding, Profile, Request},
-            lowering::embeddings::{Contract, DimensionSupport, EncodingSupport},
+            adapter::embeddings::UpstreamAdapter,
+            protocol::embedding::{
+                Encoding, Request,
+                projection::{Contract, DimensionSupport, EncodingSupport},
+            },
         };
         let mut contract = Contract {
             max_inputs: 128,
             default_dimensions: 1536,
             dimensions: DimensionSupport::UpTo(1536),
             encodings: EncodingSupport::Base64,
-            user: morphiecore::lowering::embeddings::UserPolicy::Reject,
+            user: morphiecore::protocol::embedding::projection::UserPolicy::Reject,
             tokenizer: None,
             max_input_tokens: None,
             joint_text: false,
-            reports: morphiecore::lowering::embeddings::ReportPolicy::Strict,
+            reports: morphiecore::protocol::embedding::projection::ReportPolicy::Strict,
         };
         let mut request = Request::new(
             "selected",
@@ -339,22 +350,26 @@ mod embeddings {
         assert!(contract.prepare(&request).is_err());
         let wire = br#"{"object":"list","model":"reported","unknown":{},"data":[{"object":"embedding","index":0,"embedding":[0.1],"unknown":true}],"usage":{"prompt_tokens":1,"total_tokens":1,"unknown":[]} }"#;
         assert!(
-            Profile::Standard
+            UpstreamAdapter::Standard
                 .decode_response_as(wire, Encoding::Float)
                 .is_ok()
         );
         assert!(
-            Profile::Standard
+            UpstreamAdapter::Standard
                 .decode_response_as(wire, Encoding::Base64)
                 .is_err()
         );
         let bad = String::from_utf8(wire.to_vec())
             .unwrap()
             .replace("\"prompt_tokens\":1", "\"prompt_tokens\":null");
-        assert!(Profile::Standard.decode_response(bad.as_bytes()).is_err());
+        assert!(
+            UpstreamAdapter::Standard
+                .decode_response(bad.as_bytes())
+                .is_err()
+        );
         request.task = EmbeddingRequest::text(vec!["x".into()]).unwrap();
         let expected = contract.prepare(&request).unwrap().expectation;
-        let response = Profile::Standard.decode_response(wire).unwrap();
+        let response = UpstreamAdapter::Standard.decode_response(wire).unwrap();
         assert!(
             expected.validate_response(&response).is_err(),
             "omitted default width must still match"
@@ -363,9 +378,9 @@ mod embeddings {
 
     #[test]
     fn unreported_usage_requires_an_explicit_compatibility_policy() {
-        use morphiecore::{
-            adapter::embeddings::{Encoding, Response},
-            lowering::embeddings::{ReportPolicy, Rule, project_response},
+        use morphiecore::protocol::embedding::{
+            Encoding, Response,
+            projection::{ReportPolicy, Rule, project_response},
         };
         for vector in [
             EmbeddingVector::new(0, vec!["0.1".parse().unwrap()]).unwrap(),
@@ -384,7 +399,7 @@ mod embeddings {
                 let projected = project_response(&source, &compatible).unwrap();
                 assert!(
                     projected
-                        .receipts
+                        .adaptations
                         .iter()
                         .any(|r| r.rule == Rule::EstimateUsage)
                 );
@@ -457,7 +472,7 @@ mod image_binding {
             vec![topology::CanonicalModel {
                 id: route.canonical_model.clone(),
                 task: topology::TaskKind::Generation,
-                contract: topology::GenerationSemanticContract::full(),
+                contract: topology::GenerationFeatureSet::full(),
             }],
         )
         .unwrap();
@@ -472,18 +487,15 @@ mod image_binding {
             .unwrap();
         assert!(compiled.model("public-image").is_none());
         let route = compiled.image_route("public-image").unwrap();
-        let request = morphiecore::adapter::images::Request::new(
+        let request = morphiecore::protocol::image::Request::new(
             "public-image",
             morphiecore::semantic::task::image_generation::ImageGenerationRequest::new("square")
                 .unwrap(),
         );
-        let prepared = prepare(
-            route,
-            &provider(),
-            &SecretMaterial::new("synthetic-key").unwrap(),
-            &request,
-        )
-        .unwrap();
+        let prepared = prepare(route, &provider(), &request)
+            .unwrap()
+            .authorize(&provider(), &SecretMaterial::new("synthetic-key").unwrap())
+            .unwrap();
         assert_eq!(prepared.origin, ORIGIN);
         assert_eq!(prepared.path, "/images/generations");
         assert_eq!(
@@ -493,21 +505,13 @@ mod image_binding {
         assert!(!format!("{prepared:?}").contains("synthetic-key"));
         let mut changed = request;
         changed.model = "another-label".into();
-        assert!(
-            prepare(
-                route,
-                &provider(),
-                &SecretMaterial::new("synthetic-key").unwrap(),
-                &changed
-            )
-            .is_err()
-        );
+        assert!(prepare(route, &provider(), &changed).is_err());
     }
 }
 mod image_controls {
     //! Independent static generation controls, not provider capability inference.
     use morphiecore::{
-        adapter::images::Profile,
+        adapter::images::UpstreamAdapter,
         protocol::{openai::images, openrouter_images},
         semantic::{
             task::image_generation::*,
@@ -560,7 +564,7 @@ mod image_controls {
             height: 1024,
         }));
         assert!(
-            Profile::OpenRouterFlare
+            UpstreamAdapter::OpenRouterFlare
                 .encode_request(&request, "openai/gpt-image-2.5-flare")
                 .is_err()
         );
@@ -568,7 +572,7 @@ mod image_controls {
         request.task.format = Presence::Value(ImageFormat::Webp);
         request.task.compression = Presence::Value(80);
         assert!(
-            Profile::OpenRouterFlare
+            UpstreamAdapter::OpenRouterFlare
                 .encode_request(&request, "openai/gpt-image-2.5-flare")
                 .is_err()
         );
@@ -653,8 +657,11 @@ mod image_generation {
 }
 mod openrouter_images {
     use morphiecore::{
-        lowering::images::{AccountingPolicy, project_response},
-        protocol::{openai::images, openrouter_images},
+        protocol::{
+            image::projection::{AccountingPolicy, project_response},
+            openai::images,
+            openrouter_images,
+        },
         semantic::value::Presence,
     };
     use serde_json::json;
@@ -695,8 +702,7 @@ mod openrouter_images {
 }
 mod speech {
     use morphiecore::{
-        adapter::speech::Request,
-        protocol::openai::speech,
+        protocol::{openai::speech, speech::Request},
         semantic::{
             task::speech_synthesis::SpeechRequest,
             value::{AudioEncoding, MAX_AUDIO_BYTES},
@@ -819,10 +825,7 @@ mod speech {
     }
 }
 mod tokenplan_speech {
-    use morphiecore::{
-        adapter::speech::Request,
-        protocol::{aliyun_speech, openai::speech},
-    };
+    use morphiecore::protocol::{aliyun_speech, openai::speech, speech::Request};
     use serde_json::json;
 
     #[test]
@@ -870,7 +873,10 @@ mod tokenplan_speech {
         )
         .unwrap();
         let secret = SecretMaterial::new("synthetic-only").unwrap();
-        let wire = prepare(route, provider, &secret, &request).unwrap();
+        let wire = prepare(route, provider, &request)
+            .unwrap()
+            .authorize(provider, &secret)
+            .unwrap();
         assert_eq!(
             wire.origin,
             "https://token-plan.cn-beijing.maas.aliyuncs.com"
@@ -893,16 +899,15 @@ mod tokenplan_speech {
         assert!(topology.model("qwen-audio-3.0-tts-plus").is_none());
         let mut changed = route.clone();
         changed.endpoint.execution.streaming = false;
-        assert!(prepare(&changed, provider, &secret, &request).is_err());
+        assert!(prepare(&changed, provider, &request).is_err());
         let mut foreign_voice = request;
         foreign_voice.task.set_voice("longanhuan_v3.6").unwrap();
-        assert!(prepare(route, provider, &secret, &foreign_voice).is_err());
+        assert!(prepare(route, provider, &foreign_voice).is_err());
     }
 }
 mod tokenplan_asr {
     use morphiecore::{
-        adapter::transcription::Request,
-        protocol::{aliyun_asr, openai::transcription},
+        protocol::{aliyun_asr, openai::transcription, transcription::Request},
         semantic::task::speech_recognition::{AudioInput, InputFormat, RecognitionRequest},
     };
     use serde_json::json;

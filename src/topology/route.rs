@@ -1,8 +1,8 @@
 //! Fixed route ordering and the public model contract.
 
 use crate::{
-    lowering::generation::ReportedFactPolicy,
-    topology::GenerationSemanticContract,
+    protocol::conversion::generation::ReportedFactPolicy,
+    topology::GenerationFeatureSet,
     topology::{EndpointId, ModelId, RouteId, TaskKind},
 };
 
@@ -75,7 +75,7 @@ pub struct PublicModel {
     pub canonical_model: ModelId,
     pub task: TaskKind,
     pub route: RouteId,
-    pub contract: GenerationSemanticContract,
+    pub contract: GenerationFeatureSet,
     /// Public context admission is not a property of model intelligence.
     pub standard_context: bool,
     pub reported_facts: ReportedFactPolicy,

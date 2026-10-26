@@ -1,7 +1,7 @@
 //! One bounded Router gate for exact prefixes, final handoff and both cache carriers.
-use crate::gateway::*;
 use crate::{
-    protocol::openai::{Dialect, TargetCaps as Contract},
+    gateway::*,
+    protocol::openai::{Dialect, TargetContract as Contract},
     provider::*,
     topology::*,
 };
@@ -107,7 +107,7 @@ fn response(body: &Value, chat: bool) -> axum::response::Response {
         .collect();
     ([("content-type", "text/event-stream")], wire).into_response()
 }
-fn gateway(origin: &str, profile: Profile, dialect: Dialect) -> Gateway {
+fn gateway(origin: &str, profile: GenerationApi, dialect: Dialect) -> Gateway {
     let provider = ProviderDefinition {
         id: ProviderId::new("fixture").unwrap(),
         origin: TrustedOrigin::parse(origin).unwrap(),
@@ -143,14 +143,14 @@ fn gateway(origin: &str, profile: Profile, dialect: Dialect) -> Gateway {
                 .clone(),
         },
         task: TaskKind::Generation,
-        protocol: if profile == Profile::Chat {
-            ProtocolProfile::OpenAiChat
+        protocol: if profile == GenerationApi::Chat {
+            GenerationProtocol::OpenAiChat
         } else {
-            ProtocolProfile::OpenAiResponses
+            GenerationProtocol::OpenAiResponses
         },
         upstream_model: "upstream".into(),
         canonical_model: ModelId::new("canonical").unwrap(),
-        representation: Adapter::new(profile, dialect, None)
+        representation: GenerationCodec::new(profile, dialect, None)
             .contract(&Contract::full())
             .into(),
         execution: ExecutionContract {
@@ -177,12 +177,12 @@ fn gateway(origin: &str, profile: Profile, dialect: Dialect) -> Gateway {
             ModelId::new("canonical").unwrap(),
             TaskKind::Generation,
             RouteId::new("route").unwrap(),
-            GenerationSemanticContract::full(),
+            GenerationFeatureSet::full(),
         )],
         vec![CanonicalModel {
             id: ModelId::new("canonical").unwrap(),
             task: TaskKind::Generation,
-            contract: GenerationSemanticContract::full(),
+            contract: GenerationFeatureSet::full(),
         }],
     )
     .unwrap()
@@ -215,12 +215,16 @@ fn gateway(origin: &str, profile: Profile, dialect: Dialect) -> Gateway {
     )
     .unwrap()
 }
-async fn send(gate: &Gateway, profile: Profile, body: &Value) -> Result<bytes::Bytes, axum::Error> {
+async fn send(
+    gate: &Gateway,
+    profile: GenerationApi,
+    body: &Value,
+) -> Result<bytes::Bytes, axum::Error> {
     let mut body = body.clone();
     if body["stream"] != true {
         body.as_object_mut().unwrap().shift_remove("stream_options");
     }
-    let path = if profile == Profile::Chat {
+    let path = if profile == GenerationApi::Chat {
         "/v1/chat/completions"
     } else {
         "/v1/responses"
@@ -257,31 +261,31 @@ async fn implicit_affinity_preserves_full_requests_and_only_publishes_complete_t
             async move { response(&body,body.get("messages").is_some()) }
         }));
         let _listener = Listener(tokio::spawn(async move { axum::serve(listener,router).await.unwrap(); }));
-        for (profile,dialect) in [(Profile::Responses,Dialect::Standard),(Profile::Chat,Dialect::OpenCodeGo)] {
+        for (profile,dialect) in [(GenerationApi::Responses,Dialect::Standard),(GenerationApi::Chat,Dialect::OpenCodeGo)] {
             let gate = gateway(&origin,profile,dialect);
-            let field = if profile == Profile::Chat { "messages" } else { "input" };
+            let field = if profile == GenerationApi::Chat { "messages" } else { "input" };
             for (tools,first_stream) in [(false,false),(true,true)] {
                 let mut body = json!({"model":"public","stream":first_stream,
                     "stream_options":{"include_obfuscation":false},"max_output_tokens":32});
-                if profile == Profile::Chat {
+                if profile == GenerationApi::Chat {
                     body.as_object_mut().unwrap().shift_remove("max_output_tokens");
                     body["max_completion_tokens"] = json!(32);
                 }
                 body[field] = json!([{"role":"user","content":if tools { "use lookup" } else { "hello" }}]);
-                if tools { body["tools"] = if profile == Profile::Chat {
+                if tools { body["tools"] = if profile == GenerationApi::Chat {
                     json!([{"type":"function","function":{"name":"lookup","parameters":{"type":"object"},"strict":false}}])
                 } else { json!([{"type":"function","name":"lookup","parameters":{"type":"object"},"strict":false}]) }; }
                 send(&gate,profile,&body).await.unwrap();
                 let (head,wire) = observed.lock().unwrap().last().unwrap().clone();
-                let carrier = if profile == Profile::Chat { json!(head["x-opencode-session"].to_str().unwrap()) } else { wire["prompt_cache_key"].clone() };
+                let carrier = if profile == GenerationApi::Chat { json!(head["x-opencode-session"].to_str().unwrap()) } else { wire["prompt_cache_key"].clone() };
                 let output = if tools {
-                    if profile == Profile::Chat { json!({"role":"assistant","content":null,"tool_calls":[{"id":"call","type":"function","function":{"name":"lookup","arguments":"{\"n\":1}"}}]}) }
+                    if profile == GenerationApi::Chat { json!({"role":"assistant","content":null,"tool_calls":[{"id":"call","type":"function","function":{"name":"lookup","arguments":"{\"n\":1}"}}]}) }
                     else { json!({"type":"function_call","id":"fc","call_id":"call","name":"lookup","arguments":"{\"n\":1}","status":"completed"}) }
-                } else if profile == Profile::Chat { json!({"role":"assistant","content":"ok"}) }
+                } else if profile == GenerationApi::Chat { json!({"role":"assistant","content":"ok"}) }
                     else { json!({"type":"message","id":"msg","role":"assistant","status":"completed","content":[{"type":"output_text","text":"ok","annotations":[],"logprobs":[]}]}) };
                 body[field].as_array_mut().unwrap().push(output);
                 body[field].as_array_mut().unwrap().push(if tools {
-                    if profile == Profile::Chat { json!({"role":"tool","tool_call_id":"call","content":"1"}) }
+                    if profile == GenerationApi::Chat { json!({"role":"tool","tool_call_id":"call","content":"1"}) }
                     else { json!({"type":"function_call_output","call_id":"call","output":"1"}) }
                 } else { json!({"role":"user","content":"continue"}) });
                 body["stream"] = json!(!first_stream);
@@ -292,12 +296,12 @@ async fn implicit_affinity_preserves_full_requests_and_only_publishes_complete_t
                 assert_eq!(next["tools"],body["tools"]);
                 assert_eq!(next["model"],"upstream");
                 assert!(next.get("session_id").is_none());
-                assert_eq!(carrier,if profile == Profile::Chat { json!(next_head["x-opencode-session"].to_str().unwrap()) } else { next["prompt_cache_key"].clone() });
+                assert_eq!(carrier,if profile == GenerationApi::Chat { json!(next_head["x-opencode-session"].to_str().unwrap()) } else { next["prompt_cache_key"].clone() });
                 let mut edited = body.clone();
                 edited[field][0]["content"] = json!("edited prefix");
                 send(&gate,profile,&edited).await.unwrap();
                 let (last_head,last) = observed.lock().unwrap().last().unwrap().clone();
-                assert_ne!(carrier,if profile == Profile::Chat { json!(last_head["x-opencode-session"].to_str().unwrap()) } else { last["prompt_cache_key"].clone() });
+                assert_ne!(carrier,if profile == GenerationApi::Chat { json!(last_head["x-opencode-session"].to_str().unwrap()) } else { last["prompt_cache_key"].clone() });
             }
             let mut broken = json!({"model":"public","stream":true,"stream_options":{"include_obfuscation":false},"metadata":{"mode":"truncated"}});
             broken[field] = json!([{"role":"user","content":"new failed prefix"}]);
@@ -310,7 +314,7 @@ async fn implicit_affinity_preserves_full_requests_and_only_publishes_complete_t
             tokio::time::resume();
             assert!(send(&gate,profile,&broken).await.is_err());
             let (second_head,second) = observed.lock().unwrap().last().unwrap().clone();
-            if profile == Profile::Chat {
+            if profile == GenerationApi::Chat {
                 assert_ne!(first_head["x-opencode-session"], second_head["x-opencode-session"]);
             } else {
                 assert_ne!(first["prompt_cache_key"],second["prompt_cache_key"]);

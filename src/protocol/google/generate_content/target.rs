@@ -1,20 +1,17 @@
 //! Target capabilities and binding admission for `generateContent`.
 use super::{RequestRule, request::encode_with_identity};
-use crate::protocol::failure::CarrierReason;
 use crate::{
-    adapter::{ConversionFailure, Request},
     protocol::{
-        CodecError,
-        cache::CacheProjection,
+        CodecError, ConversionFailure, GenerationRequestEnvelope as Request,
+        cache::CacheTargetPolicy,
+        failure::CarrierReason,
         native::{ReplayTarget, normalize_stateless_defaults},
     },
-    semantic::{
-        context::ExecutionHints, task::generation::GenerationSemanticContract, value::Presence,
-    },
+    semantic::{context::ExecutionHints, task::generation::GenerationFeatureSet, value::Presence},
 };
 
-pub fn semantic_contract() -> GenerationSemanticContract {
-    GenerationSemanticContract {
+pub fn semantic_contract() -> GenerationFeatureSet {
+    GenerationFeatureSet {
         compaction: false,
         instructions: true,
         // A leading instruction prefix, never instructions after conversation content.
@@ -61,7 +58,7 @@ pub fn semantic_contract() -> GenerationSemanticContract {
 }
 
 /// Pure codec support does not activate a model or widen a public promise.
-pub fn representation_contract() -> GenerationSemanticContract {
+pub fn representation_contract() -> GenerationFeatureSet {
     let mut contract = semantic_contract();
     contract.structured_tool_results = true;
     contract.structured_output = true;
@@ -77,13 +74,13 @@ pub fn representation_contract() -> GenerationSemanticContract {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct TargetCaps {
-    pub semantics: GenerationSemanticContract,
+pub struct TargetContract {
+    pub semantics: GenerationFeatureSet,
     pub sampling: super::super::SamplingPolicy,
     pub model_limits: crate::protocol::model_limits::ModelLimits,
     /// Supplied by the boundary; pure codecs never read a clock.
     pub resource_time: Option<std::time::SystemTime>,
-    pub cache: CacheProjection,
+    pub cache: CacheTargetPolicy,
     pub reasoning_policy: Option<crate::protocol::reasoning::ReasoningRequestPolicy>,
     /// Model-selected numeric carrier, independent of a configured conversion fallback.
     pub native_thinking_budget: bool,
@@ -91,14 +88,14 @@ pub struct TargetCaps {
     /// Selected downstream terminal projection; native source facts stay unchanged.
     pub messages_terminal_projection: bool,
 }
-impl Default for TargetCaps {
+impl Default for TargetContract {
     fn default() -> Self {
         Self {
             semantics: semantic_contract(),
             sampling: super::super::SamplingPolicy::Native,
             model_limits: Default::default(),
             resource_time: None,
-            cache: CacheProjection::default(),
+            cache: CacheTargetPolicy::default(),
             reasoning_policy: None,
             native_thinking_budget: false,
             reasoning_as_text: false,
@@ -106,7 +103,7 @@ impl Default for TargetCaps {
         }
     }
 }
-impl TargetCaps {
+impl TargetContract {
     fn admits_budget(&self) -> bool {
         self.native_thinking_budget
             || self.reasoning_policy.as_ref().is_some_and(|policy| {
@@ -139,9 +136,12 @@ impl TargetCaps {
         &self,
         request: &Request,
         target: &ReplayTarget,
-    ) -> Result<crate::lowering::generation::Conversion<serde_json::Value>, ConversionFailure> {
+    ) -> Result<
+        crate::protocol::conversion::generation::Conversion<serde_json::Value>,
+        ConversionFailure,
+    > {
         let result = (|| {
-            use crate::lowering::generation::Effect as Loss;
+            use crate::protocol::conversion::generation::Effect;
             let mut projected = std::borrow::Cow::Borrowed(request);
             let mut reasoning_rule = None;
             let mut controls = vec![];
@@ -250,7 +250,7 @@ impl TargetCaps {
             }
             rules.extend(
                 self.cache
-                    .losses(&request.context)
+                    .applied_rules(&request.context)
                     .into_iter()
                     .chain(attribution.losses)
                     .map(RequestRule::Hint),
@@ -264,14 +264,14 @@ impl TargetCaps {
                     RequestRule::OmitMessagePhase => {
                         controls.push(crate::protocol::phase::omission(rule.name()))
                     }
-                    RequestRule::OmitVerbosity => controls.push(Loss::Verbosity {
-                        rule: crate::lowering::generation::RuleId::new(rule.name()),
+                    RequestRule::OmitVerbosity => controls.push(Effect::Verbosity {
+                        rule: crate::protocol::conversion::generation::RuleId::new(rule.name()),
                         input: request.task.semantic.text_options().verbosity.clone(),
                         output: Presence::Absent,
-                        owner: crate::lowering::generation::Owner::Root,
+                        owner: crate::protocol::conversion::generation::Owner::Root,
                     }),
-                    RequestRule::SummarizeReasoning => controls.push(Loss::Summary {
-                        rule: crate::lowering::generation::RuleId::new(rule.name()),
+                    RequestRule::SummarizeReasoning => controls.push(Effect::Summary {
+                        rule: crate::protocol::conversion::generation::RuleId::new(rule.name()),
                         input: request
                             .task
                             .semantic
@@ -280,12 +280,12 @@ impl TargetCaps {
                             .summary
                             .clone(),
                         output: ReasoningDisplay::Summary,
-                        owner: crate::lowering::generation::Owner::Root,
+                        owner: crate::protocol::conversion::generation::Owner::Root,
                     }),
                     _ => {}
                 }
             }
-            let mut evidence: crate::lowering::generation::EvidenceDelta =
+            let mut evidence: crate::protocol::conversion::generation::EvidenceDelta =
                 controls.into_iter().collect();
             for rule in rules {
                 if !evidence.contains_rule(rule.name()) {
@@ -294,13 +294,13 @@ impl TargetCaps {
             }
             // A reasoning policy already supplied the rich, checked control receipt above.
             let _ = reasoning_rule;
-            Ok(crate::lowering::generation::Conversion {
+            Ok(crate::protocol::conversion::generation::Conversion {
                 value: wire,
                 evidence,
             })
         })();
-        result.map_err(|error: crate::adapter::ConversionFailure| {
-            error.at(crate::lowering::generation::ConversionBoundary::RequestEncode)
+        result.map_err(|error: crate::protocol::ConversionFailure| {
+            error.at(crate::protocol::conversion::generation::ConversionBoundary::RequestEncode)
         })
     }
     pub(crate) fn request_headers(&self) -> Vec<(String, String)> {

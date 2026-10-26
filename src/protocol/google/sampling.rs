@@ -1,7 +1,6 @@
 //! Trusted model/API sampling policy; never inferred from request model labels.
-use crate::protocol::failure::CarrierReason;
 use crate::{
-    lowering::generation::Effect, protocol::CodecError,
+    protocol::{CodecError, conversion::generation::Effect, failure::CarrierReason},
     semantic::task::generation::GenerationRequest,
 };
 
@@ -38,11 +37,11 @@ pub(super) fn project(
     Ok(Some((
         request.clone().with_settings(settings)?,
         Effect::Sampling {
-            rule: crate::lowering::generation::RuleId::new(rule),
+            rule: crate::protocol::conversion::generation::RuleId::new(rule),
             temperature,
             top_p,
             top_k,
-            owner: crate::lowering::generation::Owner::Root,
+            owner: crate::protocol::conversion::generation::Owner::Root,
         },
     )))
 }
@@ -71,11 +70,11 @@ mod tests {
         assert_eq!(
             loss,
             Effect::Sampling {
-                rule: crate::lowering::generation::RuleId::new("fixture.omit-sampling"),
+                rule: crate::protocol::conversion::generation::RuleId::new("fixture.omit-sampling"),
                 temperature: false,
                 top_p: false,
                 top_k: true,
-                owner: crate::lowering::generation::Owner::Root,
+                owner: crate::protocol::conversion::generation::Owner::Root,
             }
         );
         assert_eq!(projected.controls().top_k, None);

@@ -544,7 +544,7 @@ Unselected safety/retention loss, group-shared→isolated context loss, remote m
 
 Reuse the existing `Text`, meaningful `Presence`, exact-number/strict-JSON utilities and appropriate inert media leaves. Extract neutral leaves only when actually shared. Do not directly reuse Generation's `StructuredValue` limits/error type, `ContentPart` (which lacks JSON evidence), `Item`/`ResourceTable`, `GenerationSettings`, `UsageReports`, replay fidelity or completion estimator. Their Generation-specific validation would both reject valid Decision content and admit unrelated semantics.
 
-Use the patterns in [Generation request ownership](../src/semantic/task/generation/request/mod.rs), [typed content](../src/semantic/task/generation/content/item.rs), [Embedding source/delivery separation](../src/adapter/embeddings.rs) and [request-bound Embedding expectations](../src/lowering/embeddings.rs). A small Decision request/evidence/question/result module family plus protocol codecs and Decision-specific lowering is sufficient; no universal task framework or repository-wide rewrite is proposed.
+Use the patterns in [Generation request ownership](../src/semantic/task/generation/request/mod.rs), [typed content](../src/semantic/task/generation/content/item.rs), [Embedding source/delivery separation](../src/adapter/embeddings.rs) and [request-bound Embedding expectations](../src/protocol/embedding/projection.rs). A small Decision request/evidence/question/result module family plus protocol codecs and Decision-specific lowering is sufficient; no universal task framework or repository-wide rewrite is proposed.
 
 Independent design oracles must discriminate these cases before implementation:
 
@@ -1010,7 +1010,7 @@ Reasoning generation does not promise raw thinking disclosure. Activation modes,
 
 These states do not change runtime admission. A request outside the published common subset may still pass existing candidate checks; `non_uniform` and `not_assessed` are not new rejection policies. Neither a positive descriptor nor an adaptation list proves an entire Agent loop.
 
-Keep canonical publication facts, trusted binding limits and downstream effective contracts in their existing owners, outside the semantic request IR. Generate the enhanced summary and detailed capabilities from one compiled contract snapshot aligned with validation/lowering. Sharing a type name is insufficient: do not publish `GenerationSemanticContract::full()` or raw admission booleans as effective support, and do not maintain a second handwritten capability registry.
+Keep canonical publication facts, trusted binding limits and downstream effective contracts in their existing owners, outside the semantic request IR. Generate the enhanced summary and detailed capabilities from one compiled contract snapshot aligned with validation/lowering. Sharing a type name is insufficient: do not publish `GenerationFeatureSet::full()` or raw admission booleans as effective support, and do not maintain a second handwritten capability registry.
 
 #### Enhanced model example
 

@@ -1,6 +1,6 @@
 //! Billing views must promote independent modality facts, never replay stale counters.
 use morphiecore::{
-    protocol::openai::{Adapter, Dialect, Profile, TargetCaps as Contract},
+    protocol::openai::{Dialect, GenerationApi, GenerationCodec, TargetContract as Contract},
     semantic::task::generation::Usage,
 };
 use serde_json::{Value, json};
@@ -18,7 +18,7 @@ fn expected_usage() -> Value {
 }
 #[test]
 fn modality_billing_view_promotes_typed_facts_and_edits_cannot_restore_the_view() {
-    let provider = Adapter::new(Profile::Responses, Dialect::Bailian, None);
+    let provider = GenerationCodec::new(GenerationApi::Responses, Dialect::Bailian, None);
     let mut decoded = provider
         .decode_response(&serde_json::to_vec(&fixture()).unwrap())
         .unwrap();
@@ -31,12 +31,12 @@ fn modality_billing_view_promotes_typed_facts_and_edits_cannot_restore_the_view(
         ),
         (Some(7), Some(3), Some(2))
     );
-    let client = Adapter::new(Profile::Responses, Dialect::MorphieCore, None);
+    let client = GenerationCodec::new(GenerationApi::Responses, Dialect::MorphieCore, None);
     assert_eq!(
         client.encode_response(&decoded, &Contract::full()).unwrap()["usage"],
         expected_usage()
     );
-    let standard = Adapter::new(Profile::Responses, Dialect::Standard, None)
+    let standard = GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None)
         .encode_response(&decoded, &Contract::full())
         .unwrap();
     assert_eq!(

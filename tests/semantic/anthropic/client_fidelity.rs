@@ -1,11 +1,10 @@
 use morphiecore::{
     protocol::{
         CodecError, DecodedResponse,
-        anthropic::messages::{
-            client::sse::ClientEventEncoder,
-            client::{decode_client_request, encode_client_response},
+        anthropic::messages::client::{
+            decode_client_request, encode_client_response, sse::ClientEventEncoder,
         },
-        openai::{Adapter, Dialect, Profile},
+        openai::{Dialect, GenerationApi, GenerationCodec},
     },
     semantic::{task::generation::*, value::Presence},
 };
@@ -57,8 +56,7 @@ fn response() -> DecodedResponse {
 }
 #[test]
 fn unsigned_reasoning_projection_keeps_bytes_and_returned_history() {
-    use morphiecore::adapter::ClientAdapter;
-    use morphiecore::semantic::value::Text;
+    use morphiecore::{adapter::ClientAdapter, semantic::value::Text};
     let text = |s| Text::allowing_empty(s, "test", MAX_TEXT_BYTES).unwrap();
     let mut source = response();
     let mut usage = Usage::operation(2, 3, 5);
@@ -110,11 +108,11 @@ fn unsigned_reasoning_projection_keeps_bytes_and_returned_history() {
         .as_bytes(),
     )
     .unwrap();
-    let upstream = Adapter::new(Profile::Chat, Dialect::Bailian, None)
+    let upstream = GenerationCodec::new(GenerationApi::Chat, Dialect::Bailian, None)
         .encode_request(
             &request,
             "m",
-            &morphiecore::protocol::openai::TargetCaps::full(),
+            &morphiecore::protocol::openai::TargetContract::full(),
         )
         .unwrap();
     assert_eq!(
@@ -368,7 +366,7 @@ fn leading_instructions_compose_once_and_effort_boundaries_split_same_role_histo
         |s: &str| morphiecore::semantic::value::Text::allowing_empty(s, "fixture", 128).unwrap();
     let target = ReplayTarget::new("synthetic", "m").unwrap();
     let profile = messages::Profile::AdaptiveTextTools;
-    let mut caps = messages::TargetCaps::new(profile, messages::Dialect::Standard);
+    let mut caps = messages::TargetContract::new(profile, messages::Dialect::Standard);
     caps.semantics = profile.representation_contract();
     caps.carriers = Carriers::all();
     for root in [None, Some(text("root"))] {
@@ -408,7 +406,7 @@ fn leading_instructions_compose_once_and_effort_boundaries_split_same_role_histo
             }),
         ));
         let semantic = GenerationRequest::from_settings(items, settings).unwrap();
-        let request = morphiecore::adapter::Request::from_generation(
+        let request = morphiecore::protocol::GenerationRequestEnvelope::from_generation(
             morphiecore::protocol::DecodedRequest {
                 evidence: Default::default(),
                 semantic,
@@ -505,7 +503,7 @@ fn leading_instructions_compose_once_and_effort_boundaries_split_same_role_histo
         ])
         .unwrap();
     assert!(matches!(caps.encode_request(&partial, &target),
-        Err(morphiecore::adapter::ConversionFailure { cause: morphiecore::adapter::ConversionCause::Codec(
+        Err(morphiecore::protocol::ConversionFailure { cause: morphiecore::protocol::ConversionCause::Codec(
             morphiecore::protocol::CodecError::Unsupported(reason)), .. })
             if matches!(reason,morphiecore::protocol::failure::CarrierReason::Unavailable)));
 }
@@ -778,7 +776,7 @@ fn messages_tool_examples_keep_order_presence_and_tool_change_owners() {
         .value;
     assert_eq!(wire["tools"], body["tools"]);
     assert_eq!(wire["messages"], body["messages"]);
-    let mut caps = morphiecore::protocol::anthropic::messages::TargetCaps::new(
+    let mut caps = morphiecore::protocol::anthropic::messages::TargetContract::new(
         profile,
         morphiecore::protocol::anthropic::messages::Dialect::Standard,
     );
@@ -788,7 +786,7 @@ fn messages_tool_examples_keep_order_presence_and_tool_change_owners() {
     caps.encode_request(&decoded, &target).unwrap();
     caps.carriers.tool_changes = false;
     assert!(matches!(caps.encode_request(&decoded, &target),
-        Err(morphiecore::adapter::ConversionFailure { cause: morphiecore::adapter::ConversionCause::Codec(CodecError::Unsupported(label)), .. })
+        Err(morphiecore::protocol::ConversionFailure { cause: morphiecore::protocol::ConversionCause::Codec(CodecError::Unsupported(label)), .. })
             if matches!(label,morphiecore::protocol::failure::CarrierReason::Tools)));
     for (present, expected) in [(false, None), (true, Some(vec![]))] {
         let mut simple = body.clone();
@@ -828,13 +826,13 @@ fn messages_tool_examples_keep_order_presence_and_tool_change_owners() {
     assert!(GenerationRequirements::derive(&only_inline).tool_examples);
     let bound = morphiecore::topology::catalog::MESSAGES_BINDINGS[0].endpoint();
     assert!(bound.representation.semantics().tool_examples);
-    for profile in [Profile::Chat, Profile::Responses] {
+    for profile in [GenerationApi::Chat, GenerationApi::Responses] {
         assert!(
-            Adapter::new(profile, Dialect::Standard, None)
+            GenerationCodec::new(profile, Dialect::Standard, None)
                 .encode_request(
                     &decoded,
                     "m",
-                    &morphiecore::protocol::openai::TargetCaps::full()
+                    &morphiecore::protocol::openai::TargetContract::full()
                 )
                 .is_err()
         );
@@ -1040,7 +1038,7 @@ fn messages_final_usage_requires_reported_counts_and_unambiguous_cache_categorie
             .service_class = Presence::Value(class);
         assert!(matches!(encode_client_response(&wrong_service, "m"),
             Err(morphiecore::protocol::CodecError::Unsupported(reason))
-                if reason == morphiecore::protocol::failure::CarrierReason::Field(morphiecore::lowering::generation::Field::ServiceClass)));
+                if reason == morphiecore::protocol::failure::CarrierReason::Field(morphiecore::protocol::conversion::generation::Field::ServiceClass)));
     }
     for terminal_class in [
         Presence::Absent,
@@ -1624,7 +1622,7 @@ fn pi_haiku_profile_keeps_carriers_or_records_rules() {
     assert_eq!(items[9], &effort(EffortLevel::Medium));
 
     let target = ReplayTarget::new("synthetic", "synthetic").unwrap();
-    let mut caps = anthropic::messages::TargetCaps::new(
+    let mut caps = anthropic::messages::TargetContract::new(
         anthropic::messages::Profile::AdaptiveTextTools,
         anthropic::messages::Dialect::Standard,
     );
@@ -1633,13 +1631,13 @@ fn pi_haiku_profile_keeps_carriers_or_records_rules() {
     let exact = caps.encode_request(&decoded, &target).unwrap();
     assert_eq!(
         exact.evidence.iter().cloned().collect::<Vec<_>>(),
-        [morphiecore::lowering::generation::Effect::new(
+        [morphiecore::protocol::conversion::generation::Effect::new(
             "messages.normalize-tool-arguments.v1",
-            morphiecore::lowering::generation::Field::ToolArguments,
-            morphiecore::lowering::generation::ConversionBoundary::RequestEncode,
-            morphiecore::lowering::generation::Change::Normalize
+            morphiecore::protocol::conversion::generation::Field::ToolArguments,
+            morphiecore::protocol::conversion::generation::ConversionBoundary::RequestEncode,
+            morphiecore::protocol::conversion::generation::Change::Normalize
         )
-        .at(morphiecore::lowering::generation::Owner::Item { scope: 0, index: 3 })]
+        .at(morphiecore::protocol::conversion::generation::Owner::Item { scope: 0, index: 3 })]
     );
     let wire = &exact.value;
     assert_eq!(wire["thinking"], body["thinking"]);
@@ -1665,7 +1663,7 @@ fn pi_haiku_profile_keeps_carriers_or_records_rules() {
     limited.model_limits.allowed_effort = Some(vec![EffortLevel::High, EffortLevel::Medium].into());
     let before = decoded.clone();
     assert!(matches!(limited.encode_request(&decoded, &target),
-        Err(morphiecore::adapter::ConversionFailure { cause: morphiecore::adapter::ConversionCause::Codec(
+        Err(morphiecore::protocol::ConversionFailure { cause: morphiecore::protocol::ConversionCause::Codec(
             morphiecore::protocol::CodecError::Unsupported(value)), .. }) if value == morphiecore::protocol::failure::CarrierReason::Unavailable));
     limited.carriers.message_effort = false;
     let flattened = limited.encode_request(&decoded, &target).unwrap();
@@ -1839,7 +1837,7 @@ fn client_intake_carries_caps_and_rejects_active_fields_it_cannot_carry() {
             ToolDefinition::Function(t) if t.strict == FunctionStrictness::Explicit(true)));
     use morphiecore::protocol::{anthropic, native::ReplayTarget};
     let target = ReplayTarget::new("synthetic", "synthetic").unwrap();
-    let mut caps = anthropic::messages::TargetCaps::new(
+    let mut caps = anthropic::messages::TargetContract::new(
         anthropic::messages::Profile::AdaptiveTextTools,
         anthropic::messages::Dialect::Standard,
     );
@@ -1866,11 +1864,11 @@ fn client_intake_carries_caps_and_rejects_active_fields_it_cannot_carry() {
             .is_err()
     );
     assert!(
-        Adapter::new(Profile::Responses, Dialect::Standard, None)
+        GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None)
             .encode_request(
                 &manual,
                 "synthetic",
-                &morphiecore::protocol::openai::TargetCaps::full()
+                &morphiecore::protocol::openai::TargetContract::full()
             )
             .is_err()
     );
@@ -2001,7 +1999,7 @@ fn client_intake_carries_caps_and_rejects_active_fields_it_cannot_carry() {
     }
 
     // The client-facing Chat dialect accepts the deprecated cap spelling.
-    let chat = Adapter::new(Profile::Chat, Dialect::MorphieCore, None);
+    let chat = GenerationCodec::new(GenerationApi::Chat, Dialect::MorphieCore, None);
     let decode = |body: &serde_json::Value| chat.decode_client_request(body.to_string().as_bytes());
     // Empty stop values request no stop control.
     let body = json!({"model":"m","max_tokens":7,"stop":"","functions":[],
@@ -2036,7 +2034,7 @@ fn client_intake_carries_caps_and_rejects_active_fields_it_cannot_carry() {
         .encode_request(
             &decoded,
             "m",
-            &morphiecore::protocol::openai::TargetCaps::full(),
+            &morphiecore::protocol::openai::TargetContract::full(),
         )
         .unwrap();
     assert_eq!(wire["prediction"], prediction["prediction"]);
@@ -2072,7 +2070,7 @@ fn client_intake_carries_caps_and_rejects_active_fields_it_cannot_carry() {
         .encode_request(
             &controlled,
             "m",
-            &morphiecore::protocol::openai::TargetCaps::full(),
+            &morphiecore::protocol::openai::TargetContract::full(),
         )
         .unwrap();
     assert_eq!(wire["stop"], json!(["END", "DONE"]));
@@ -2133,7 +2131,7 @@ fn client_intake_carries_caps_and_rejects_active_fields_it_cannot_carry() {
         .encode_request(
             &refused,
             "m",
-            &morphiecore::protocol::openai::TargetCaps::full(),
+            &morphiecore::protocol::openai::TargetContract::full(),
         )
         .unwrap();
     assert_eq!(

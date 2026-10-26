@@ -1,5 +1,7 @@
-use crate::adapter::transcription::Profile;
-use crate::gateway::{diagnostics::Trace, tasks::transcription, tests::support::source};
+use crate::{
+    adapter::transcription::UpstreamAdapter,
+    gateway::{diagnostics::Trace, tasks::transcription, tests::support::source},
+};
 use bytes::Bytes;
 const RESULT: &[u8] =
     br#"{"request_id":"synthetic","output":{"text":"Hi."},"usage":{"duration":1}}"#;
@@ -7,8 +9,8 @@ const RESULT: &[u8] =
 async fn transcription_json_requires_eof_and_rejects_bad_heads_and_reads() {
     let mut trace = Trace::new(None);
     for (profile, result) in [
-        (Profile::AliyunFlash, RESULT),
-        (Profile::Xiaomi, br#"{"choices":[{"index":0,"finish_reason":"stop","message":{"role":"assistant","content":"Hi."}}]}"#.as_slice()),
+        (UpstreamAdapter::AliyunFlash, RESULT),
+        (UpstreamAdapter::Xiaomi, br#"{"choices":[{"index":0,"finish_reason":"stop","message":{"role":"assistant","content":"Hi."}}]}"#.as_slice()),
     ] {
     let (tx, response, dropped) = source(200, "application/json");
     tx.send(Ok(Bytes::copy_from_slice(result))).await.unwrap();
@@ -60,7 +62,7 @@ async fn transcription_json_requires_eof_and_rejects_bad_heads_and_reads() {
         assert!(
             transcription::receive(
                 response,
-                Profile::AliyunFlash,
+                UpstreamAdapter::AliyunFlash,
                 if case == 5 { 2 } else { 4096 },
                 &mut trace
             )
@@ -76,7 +78,7 @@ async fn cancelled_transcription_releases_upstream() {
     let (_tx, response, dropped) = source(200, "application/json");
     let mut pending = Box::pin(transcription::receive(
         response,
-        Profile::Xiaomi,
+        UpstreamAdapter::Xiaomi,
         4096,
         &mut trace,
     ));

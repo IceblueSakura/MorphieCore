@@ -1,22 +1,24 @@
 //! Cache affinity is Provider functionality, not gateway sessions or route selection.
-use morphiecore::protocol::openai::{Adapter, Dialect, Profile, TargetCaps as Contract};
+use morphiecore::protocol::openai::{
+    Dialect, GenerationApi, GenerationCodec, TargetContract as Contract,
+};
 use serde_json::{Value, json};
 
 #[test]
 fn extended_retention_omission_is_explicit_value_specific_and_target_local() {
     use morphiecore::{
-        protocol::cache::CacheProjection,
+        protocol::cache::CacheTargetPolicy,
         semantic::{context::CacheRetention, value::Presence},
     };
-    assert!(!CacheProjection::all().omit_day_retention);
+    assert!(!CacheTargetPolicy::all().omit_day_retention);
     let mut approved = Contract::full();
     approved.cache.omit_day_retention = true;
-    for profile in [Profile::Chat, Profile::Responses] {
+    for profile in [GenerationApi::Chat, GenerationApi::Responses] {
         let body = match profile {
-            Profile::Chat => {
+            GenerationApi::Chat => {
                 json!({"model":"fixture","messages":[{"role":"user","content":"go"}],"prompt_cache_retention":"24h"})
             }
-            Profile::Responses => {
+            GenerationApi::Responses => {
                 json!({"model":"fixture","input":"go","prompt_cache_retention":"24h"})
             }
         };
@@ -28,7 +30,7 @@ fn extended_retention_omission_is_explicit_value_specific_and_target_local() {
             Presence::Value(CacheRetention::Day)
         );
         let before = source.clone();
-        let target = Adapter::new(profile, Dialect::OpenRouter, None);
+        let target = GenerationCodec::new(profile, Dialect::OpenRouter, None);
         assert!(
             target
                 .encode_request(&source, "target", &Contract::full())
@@ -57,17 +59,17 @@ fn extended_retention_omission_is_explicit_value_specific_and_target_local() {
             assert!(target.encode_request(&source, "target", &approved).is_err());
         }
     }
-    let mut policy = CacheProjection::all();
-    let selected = CacheProjection {
+    let mut policy = CacheTargetPolicy::all();
+    let selected = CacheTargetPolicy {
         omit_day_retention: true,
         ..Default::default()
     };
     policy.intersect(selected);
-    policy.intersect(CacheProjection::default());
+    policy.intersect(CacheTargetPolicy::default());
     assert!(policy.omit_day_retention);
     assert!(!policy.retention);
     let mut reverse = selected;
-    reverse.intersect(CacheProjection::all());
+    reverse.intersect(CacheTargetPolicy::all());
     assert_eq!(policy, reverse);
     // A failed projection does not erase a control before rejecting another one.
     let mut context = morphiecore::semantic::context::ExecutionHints::default();
@@ -81,15 +83,15 @@ fn extended_retention_omission_is_explicit_value_specific_and_target_local() {
     assert!(selected.project(&mut context).is_err());
     assert_eq!(context, before);
 }
-fn client(p: Profile) -> Adapter {
-    Adapter::new(p, Dialect::MorphieCore, None)
+fn client(p: GenerationApi) -> GenerationCodec {
+    GenerationCodec::new(p, Dialect::MorphieCore, None)
 }
-fn request(p: Profile) -> Value {
+fn request(p: GenerationApi) -> Value {
     match p {
-        Profile::Responses => {
+        GenerationApi::Responses => {
             json!({"model":"public","input":[{"role":"user","content":[{"type":"input_text","text":"stable prefix"},{"type":"input_image","image_url":"https://example.invalid/image","detail":"auto"}]}]})
         }
-        Profile::Chat => {
+        GenerationApi::Chat => {
             json!({"model":"public","messages":[{"role":"user","content":[{"type":"text","text":"stable prefix"},{"type":"image_url","image_url":{"url":"https://example.invalid/image","detail":"auto"}}]}]})
         }
     }
@@ -97,35 +99,36 @@ fn request(p: Profile) -> Value {
 
 #[test]
 fn scoped_session_and_standard_cache_key_remain_independent_on_both_wires() {
-    let mut empty = request(Profile::Chat);
+    let mut empty = request(GenerationApi::Chat);
     empty["prompt_cache_options"] = json!({});
-    let decoded = client(Profile::Chat)
+    let decoded = client(GenerationApi::Chat)
         .decode_request(empty.to_string().as_bytes())
         .unwrap();
     let saved = decoded.context.clone();
-    let (without_options, rules) = Adapter::new(Profile::Chat, Dialect::DeepSeek, None)
-        .encode_request_with_rules(&decoded, "upstream", &Contract::full())
-        .unwrap();
+    let (without_options, rules) =
+        GenerationCodec::new(GenerationApi::Chat, Dialect::DeepSeek, None)
+            .encode_request_with_rules(&decoded, "upstream", &Contract::full())
+            .unwrap();
     assert!(without_options.get("prompt_cache_options").is_none());
     assert!(rules.contains(&"cache.omit-inactive-options.v1"));
     assert_eq!(decoded.context, saved);
     empty["prompt_cache_options"] = Value::Null;
     assert!(
-        client(Profile::Chat)
+        client(GenerationApi::Chat)
             .decode_client_request(empty.to_string().as_bytes())
             .is_err()
     );
     let mut invalid = decoded.clone();
     invalid.context.cache.prompt_cache_options = morphiecore::semantic::value::Presence::Null;
     assert!(
-        Adapter::new(Profile::Chat, Dialect::DeepSeek, None)
+        GenerationCodec::new(GenerationApi::Chat, Dialect::DeepSeek, None)
             .encode_request(&invalid, "upstream", &Contract::full())
             .is_err()
     );
     let mut advisory = decoded.clone();
     advisory.context.cache.prompt_cache_key =
         morphiecore::semantic::value::Presence::Value("synthetic".into());
-    let (wire, rules) = Adapter::new(Profile::Chat, Dialect::DeepSeek, None)
+    let (wire, rules) = GenerationCodec::new(GenerationApi::Chat, Dialect::DeepSeek, None)
         .encode_request_with_rules(&advisory, "upstream", &Contract::full())
         .unwrap();
     assert!(wire.get("prompt_cache_key").is_none());
@@ -136,11 +139,11 @@ fn scoped_session_and_standard_cache_key_remain_independent_on_both_wires() {
     );
     let saved = advisory.clone();
     assert!(
-        Adapter::new(Profile::Chat, Dialect::DeepSeek, None)
+        GenerationCodec::new(GenerationApi::Chat, Dialect::DeepSeek, None)
             .encode_request(&advisory, "upstream", &Contract::full())
             .is_err()
     );
-    let (wire, rules) = Adapter::new(Profile::Chat, Dialect::Standard, None)
+    let (wire, rules) = GenerationCodec::new(GenerationApi::Chat, Dialect::Standard, None)
         .encode_request_with_rules(&advisory, "upstream", &Contract::full())
         .unwrap();
     assert_eq!(wire["prompt_cache_retention"], "in_memory");
@@ -153,20 +156,20 @@ fn scoped_session_and_standard_cache_key_remain_independent_on_both_wires() {
         morphiecore::semantic::value::Presence::Value("synthetic-user".into());
     let mut without = Contract::full();
     without.identity_hints = false;
-    let (wire, rules) = Adapter::new(Profile::Chat, Dialect::Standard, None)
+    let (wire, rules) = GenerationCodec::new(GenerationApi::Chat, Dialect::Standard, None)
         .encode_request_with_rules(&identified, "upstream", &without)
         .unwrap();
     assert!(wire.get("safety_identifier").is_none());
     assert!(rules.contains(&"generation.omit-identity-hints.v1"));
-    let (wire, rules) = Adapter::new(Profile::Chat, Dialect::Standard, None)
+    let (wire, rules) = GenerationCodec::new(GenerationApi::Chat, Dialect::Standard, None)
         .encode_request_with_rules(&identified, "upstream", &Contract::full())
         .unwrap();
     assert_eq!(wire["safety_identifier"], "synthetic-user");
     assert!(!rules.contains(&"generation.omit-identity-hints.v1"));
     use morphiecore::protocol::anthropic::messages::{
-        Dialect as MessagesDialect, Profile as MessagesProfile, RequestRule, TargetCaps,
+        Dialect as MessagesDialect, Profile as MessagesProfile, RequestRule, TargetContract,
     };
-    let text_only = client(Profile::Chat)
+    let text_only = client(GenerationApi::Chat)
         .decode_request(
             json!({"model":"public","max_completion_tokens":4096,"messages":[{"role":"user","content":"hello"}],
                     "safety_identifier":"synthetic-user"})
@@ -174,7 +177,7 @@ fn scoped_session_and_standard_cache_key_remain_independent_on_both_wires() {
             .as_bytes(),
         )
         .unwrap();
-    let native = TargetCaps::new(
+    let native = TargetContract::new(
         MessagesProfile::AdaptiveTextTools,
         MessagesDialect::Standard,
     )
@@ -188,28 +191,28 @@ fn scoped_session_and_standard_cache_key_remain_independent_on_both_wires() {
         RequestRule::Hint(morphiecore::protocol::cache::HintRule::OmitIdentityHints).name()
     ));
     empty["prompt_cache_options"] = json!({"mode":"explicit"});
-    let active = client(Profile::Chat)
+    let active = client(GenerationApi::Chat)
         .decode_request(empty.to_string().as_bytes())
         .unwrap();
     assert!(
-        Adapter::new(Profile::Chat, Dialect::DeepSeek, None)
+        GenerationCodec::new(GenerationApi::Chat, Dialect::DeepSeek, None)
             .encode_request(&active, "upstream", &Contract::full())
             .is_err()
     );
     empty["prompt_cache_options"] = json!({"prewarm":true});
     assert!(
-        client(Profile::Chat)
+        client(GenerationApi::Chat)
             .decode_client_request(empty.to_string().as_bytes())
             .is_err()
     );
-    for p in [Profile::Chat, Profile::Responses] {
+    for p in [GenerationApi::Chat, GenerationApi::Responses] {
         let mut wire = request(p);
         wire["prompt_cache_key"] = json!("key-a");
         wire["session_id"] = json!("session-b");
         let req = client(p)
             .decode_request(&serde_json::to_vec(&wire).unwrap())
             .unwrap();
-        let target = Adapter::new(p, Dialect::OpenRouter, None);
+        let target = GenerationCodec::new(p, Dialect::OpenRouter, None);
         let out = target
             .encode_request(&req, "upstream", &Contract::full())
             .unwrap();
@@ -224,12 +227,12 @@ fn scoped_session_and_standard_cache_key_remain_independent_on_both_wires() {
         assert!(erased.get("session_id").is_none());
         assert!(erased.get("prompt_cache_key").is_none());
         assert!(
-            Adapter::new(p, Dialect::Standard, None)
+            GenerationCodec::new(p, Dialect::Standard, None)
                 .decode_request(&serde_json::to_vec(&wire).unwrap())
                 .is_err()
         );
         assert!(
-            Adapter::new(p, Dialect::DeepSeek, None)
+            GenerationCodec::new(p, Dialect::DeepSeek, None)
                 .encode_request(&req, "upstream", &Contract::full())
                 .is_err()
         );

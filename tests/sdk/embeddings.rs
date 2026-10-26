@@ -1,6 +1,6 @@
 //! Pinned SDK defaults and explicit output encodings through the production Router.
 use crate::{child_process, embedding_loop::Fixture};
-use morphiecore::lowering::embeddings::EncodingSupport;
+use morphiecore::protocol::embedding::projection::EncodingSupport;
 #[tokio::test]
 #[ignore = "requires pinned OpenAI SDK; synthetic float-only/base64-only/both upstreams"]
 async fn embeddings_sdk_default_float_and_base64() {

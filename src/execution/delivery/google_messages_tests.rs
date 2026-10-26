@@ -1,17 +1,24 @@
 //! Independent native wires and guarded Messages terminal projection at real EOF.
 use super::*;
-use crate::protocol::failure::CarrierReason;
 use crate::{
     protocol::{
         anthropic::messages::client::GoogleTerminalPolicy,
-        openai::{Adapter, Dialect, Profile, TargetCaps},
+        failure::CarrierReason,
+        openai::{Dialect, GenerationApi, GenerationCodec, TargetContract},
     },
     semantic::{task::generation::*, value::Presence},
     topology::{Endpoint, catalog::GOOGLE_BINDINGS},
 };
 use serde_json::{Value, json};
 
-fn fixture(interactions: bool, calls: bool) -> (Endpoint, crate::adapter::Request, Vec<Value>) {
+fn fixture(
+    interactions: bool,
+    calls: bool,
+) -> (
+    Endpoint,
+    crate::protocol::GenerationRequestEnvelope,
+    Vec<Value>,
+) {
     let binding = &GOOGLE_BINDINGS[0];
     let endpoint = if interactions {
         binding.interactions_endpoint()
@@ -63,7 +70,10 @@ fn fixture(interactions: bool, calls: bool) -> (Endpoint, crate::adapter::Reques
     }
     (endpoint, request, frames)
 }
-fn delivery(endpoint: &Endpoint, request: &crate::adapter::Request) -> ResponseDelivery {
+fn delivery(
+    endpoint: &Endpoint,
+    request: &crate::protocol::GenerationRequestEnvelope,
+) -> ResponseDelivery {
     ResponseDelivery::new(
         ClientAdapter::Messages,
         "public",
@@ -124,16 +134,16 @@ fn feed(
 
 #[test]
 fn stateless_clients_reject_hidden_signatures_without_fabricated_reasoning() {
-    use crate::protocol::openai::{Adapter, Dialect, Profile, TargetCaps};
+    use crate::protocol::openai::{Dialect, GenerationApi, GenerationCodec, TargetContract};
     for client in [
         ClientAdapter::Messages,
         ClientAdapter::openai(
-            Adapter::new(Profile::Chat, Dialect::Standard, None),
-            TargetCaps::full(),
+            GenerationCodec::new(GenerationApi::Chat, Dialect::Standard, None),
+            TargetContract::full(),
         ),
         ClientAdapter::openai(
-            Adapter::new(Profile::Chat, Dialect::ChatReasoning, None),
-            TargetCaps::full(),
+            GenerationCodec::new(GenerationApi::Chat, Dialect::ChatReasoning, None),
+            TargetContract::full(),
         ),
     ] {
         for interactions in [false, true] {
@@ -332,7 +342,7 @@ fn google_messages_terminals_keep_source_facts_and_ordered_calls() {
                 if let Some(rule) = rule {
                     assert_eq!(losses[0].rule(), rule);
                     assert_eq!(
-                        losses[0].direction(),
+                        losses[0].boundary().as_str(),
                         if stream {
                             "event.project"
                         } else {
@@ -352,12 +362,12 @@ fn google_finish_explanation_omission_keeps_incomplete_source_and_requires_recei
     for client in [
         ClientAdapter::Messages,
         ClientAdapter::openai(
-            Adapter::new(Profile::Chat, Dialect::MorphieCore, None),
-            TargetCaps::full(),
+            GenerationCodec::new(GenerationApi::Chat, Dialect::MorphieCore, None),
+            TargetContract::full(),
         ),
         ClientAdapter::openai(
-            Adapter::new(Profile::Responses, Dialect::MorphieCore, None),
-            TargetCaps::full(),
+            GenerationCodec::new(GenerationApi::Responses, Dialect::MorphieCore, None),
+            TargetContract::full(),
         ),
     ] {
         for stream in [false, true] {
@@ -444,7 +454,7 @@ fn google_finish_explanation_omission_keeps_incomplete_source_and_requires_recei
                 .collect();
             assert_eq!(reports.len(), 1);
             assert_eq!(
-                reports[0].direction(),
+                reports[0].boundary().as_str(),
                 if stream {
                     if client.protocol() == ClientProtocol::Messages {
                         "event.encode"
@@ -455,7 +465,7 @@ fn google_finish_explanation_omission_keeps_incomplete_source_and_requires_recei
                     "response.project"
                 }
             );
-            assert_eq!(reports[0].action(), "omit");
+            assert_eq!(reports[0].change().as_str(), "omit");
             if stream {
                 let (retained, _) = delivery.snapshot(&attempt).unwrap();
                 assert!(retained.semantic.details().explanation.is_absent());
@@ -468,7 +478,7 @@ fn google_finish_explanation_omission_keeps_incomplete_source_and_requires_recei
 #[test]
 fn google_service_reports_keep_processing_meaning_in_clients_and_reject_capacity_targets() {
     for interactions in [false, true] {
-        for profile in [Profile::Chat, Profile::Responses] {
+        for profile in [GenerationApi::Chat, GenerationApi::Responses] {
             for stream in [false, true] {
                 let (endpoint, request, mut frames) = fixture(interactions, false);
                 if interactions {
@@ -486,8 +496,8 @@ fn google_service_reports_keep_processing_meaning_in_clients_and_reject_capacity
                 source.begin(200, "text/event-stream").unwrap();
                 let mut client = ResponseDelivery::new(
                     ClientAdapter::openai(
-                        Adapter::new(profile, Dialect::MorphieCore, None),
-                        TargetCaps::full(),
+                        GenerationCodec::new(profile, Dialect::MorphieCore, None),
+                        TargetContract::full(),
                     ),
                     "public",
                     Default::default(),
@@ -527,7 +537,9 @@ fn google_service_reports_keep_processing_meaning_in_clients_and_reject_capacity
                     matches!(
                         error.codec(),
                         Some(crate::protocol::CodecError::Unsupported(
-                            CarrierReason::Field(crate::lowering::generation::Field::ServiceClass)
+                            CarrierReason::Field(
+                                crate::protocol::conversion::generation::Field::ServiceClass
+                            )
                         ))
                     ),
                     "{error:?}"
@@ -538,7 +550,9 @@ fn google_service_reports_keep_processing_meaning_in_clients_and_reject_capacity
                     matches!(
                         error.codec(),
                         Some(crate::protocol::CodecError::Unsupported(
-                            CarrierReason::Field(crate::lowering::generation::Field::ServiceClass)
+                            CarrierReason::Field(
+                                crate::protocol::conversion::generation::Field::ServiceClass
+                            )
                         ))
                     ),
                     "{error:?}"
@@ -571,12 +585,12 @@ fn google_messages_projection_requires_context_and_never_repairs_failure() {
         attempt.finish().unwrap();
         let chat = ResponseDelivery::new(
             ClientAdapter::openai(
-                crate::protocol::openai::Adapter::new(
-                    crate::protocol::openai::Profile::Chat,
+                crate::protocol::openai::GenerationCodec::new(
+                    crate::protocol::openai::GenerationApi::Chat,
                     crate::protocol::openai::Dialect::MorphieCore,
                     None,
                 ),
-                crate::protocol::openai::TargetCaps::full(),
+                crate::protocol::openai::TargetContract::full(),
             ),
             "public",
             Default::default(),
@@ -605,10 +619,10 @@ fn google_messages_projection_requires_context_and_never_repairs_failure() {
             }
             if guard == "disabled" {
                 match &mut selected.representation {
-                    crate::lowering::target::TargetCaps::GoogleGenerateContent(c) => {
+                    crate::lowering::target::TargetContract::GoogleGenerateContent(c) => {
                         c.messages_terminal_projection = false
                     }
-                    crate::lowering::target::TargetCaps::GoogleInteractions(c) => {
+                    crate::lowering::target::TargetContract::GoogleInteractions(c) => {
                         c.messages_terminal_projection = false
                     }
                     _ => unreachable!(),
@@ -729,6 +743,6 @@ fn google_messages_projection_requires_context_and_never_repairs_failure() {
     assert!(value["usage"].get("cache_read_input_tokens").is_none());
     assert_eq!(attempt.response().unwrap(), &source);
     assert!(d.effects().iter().any(|effect| effect.semantic_field()
-        == crate::lowering::generation::Field::InputTokens
-        && effect.change() == crate::lowering::generation::Change::Estimate));
+        == crate::protocol::conversion::generation::Field::InputTokens
+        && effect.change() == crate::protocol::conversion::generation::Change::Estimate));
 }

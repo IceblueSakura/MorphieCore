@@ -1,14 +1,12 @@
 //! Final typed SIWC admission, before cache projection or wire encoding.
-use crate::adapter::Request;
-use crate::protocol::failure::CarrierReason;
 use crate::{
-    protocol::CodecError,
+    protocol::{CodecError, GenerationRequestEnvelope as Request, failure::CarrierReason},
     semantic::task::generation::{Item, ToolDefinition},
 };
 
 pub(in crate::protocol::openai) fn check(
     request: &Request,
-    cache: crate::protocol::cache::CacheProjection,
+    cache: crate::protocol::cache::CacheTargetPolicy,
 ) -> Result<(), CodecError> {
     let context = &request.context;
     let controls = request.task.semantic.controls();

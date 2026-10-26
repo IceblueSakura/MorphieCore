@@ -3,17 +3,19 @@ use crate::protocol::failure::CarrierReason;
 mod coalescing;
 mod completion;
 use crate::{
-    adapter::{ClientAdapter, ClientEncoder, ClientProtocol},
-    execution::{Attempt, AttemptError, Lifecycle},
+    adapter::{ClientAdapter, ClientEncoder},
+    execution::{
+        Attempt, AttemptError, Lifecycle,
+        report::{EncodedBatch, Report, View},
+    },
     protocol::{
-        CodecError, ResponseMetadata, fidelity::FidelityRecords, openai::obfuscation::Obfuscation,
+        ClientProtocol, CodecError, ResponseMetadata,
+        conversion::generation::{Effect, EvidenceDelta},
+        fidelity::FidelityRecords,
+        openai::obfuscation::Obfuscation,
         stream::SseLimits,
     },
     semantic::{context::StreamOptions, task::generation::StreamEvent},
-};
-use crate::{
-    execution::report::{EncodedBatch, Report, View},
-    lowering::generation::{Effect, EvidenceDelta},
 };
 use bytes::Bytes;
 pub use coalescing::DeltaCoalescing;
@@ -117,7 +119,7 @@ impl ResponseDelivery {
         options: StreamOptions,
         padding: Obfuscation,
     ) -> Self {
-        client.bind_replay_origin(&super::replay::CLIENT_ORIGIN);
+        client.bind_replay_origin(&crate::protocol::replay_envelope::CLIENT_ORIGIN);
         let report = Report::default();
         report.begin(1);
         Self {
@@ -157,7 +159,7 @@ impl ResponseDelivery {
     pub(crate) fn with_request(
         mut self,
         endpoint: &crate::topology::Endpoint,
-        request: &crate::adapter::Request,
+        request: &crate::protocol::GenerationRequestEnvelope,
     ) -> Self {
         self.presentation = Some(Arc::new(crate::protocol::GenerationDelivery {
             settings: if self.client.protocol() == ClientProtocol::Responses {
@@ -346,14 +348,17 @@ impl ResponseDelivery {
     ) -> Result<
         (
             crate::protocol::DecodedResponse,
-            Vec<crate::lowering::generation::Effect>,
+            Vec<crate::protocol::conversion::generation::Effect>,
         ),
         AttemptError,
     > {
         let mut decoded = attempt.response()?.clone();
         decoded.evidence = EvidenceDelta::default();
         decoded.metadata = self.metadata(attempt)?;
-        super::replay::seal_for_client(&mut decoded, &super::replay::CLIENT_ORIGIN)?;
+        super::replay::seal_for_client(
+            &mut decoded,
+            &crate::protocol::replay_envelope::CLIENT_ORIGIN,
+        )?;
         let mut losses = if attempt.is_native() {
             self.client.project_native(&mut decoded)?
         } else {
@@ -388,8 +393,8 @@ impl ResponseDelivery {
     pub(crate) fn cache_successor(
         &mut self,
         attempt: &Attempt,
-        request: &crate::adapter::Request,
-    ) -> Option<crate::adapter::Request> {
+        request: &crate::protocol::GenerationRequestEnvelope,
+    ) -> Option<crate::protocol::GenerationRequestEnvelope> {
         if self.phase == ProjectionPhase::Rejected
             || self.is_messages()
             || self.lifecycle.state() != crate::execution::DeliveryState::Terminal
@@ -471,17 +476,17 @@ impl ResponseDelivery {
             for (index, (missing, field, rule)) in [
                 (
                     source.is_none_or(|s| s.tools.is_none()),
-                    crate::lowering::generation::Field::Tools,
+                    crate::protocol::conversion::generation::Field::Tools,
                     "responses.complete-required-tools.v1",
                 ),
                 (
                     source.is_none_or(|s| s.tool_choice.is_none()),
-                    crate::lowering::generation::Field::ToolChoice,
+                    crate::protocol::conversion::generation::Field::ToolChoice,
                     "responses.complete-required-tool-choice.v1",
                 ),
                 (
                     source.is_none_or(|s| s.parallel_tool_calls.is_none()),
-                    crate::lowering::generation::Field::ParallelTools,
+                    crate::protocol::conversion::generation::Field::ParallelTools,
                     "responses.complete-required-parallel-tools.v1",
                 ),
             ]
@@ -490,16 +495,16 @@ impl ResponseDelivery {
             {
                 if missing {
                     let change = if self.request_settings_present[index] {
-                        crate::lowering::generation::Change::InferFromRequest
+                        crate::protocol::conversion::generation::Change::InferFromRequest
                     } else {
-                        crate::lowering::generation::Change::Default(
-                            crate::lowering::generation::DefaultBasis::SelectedPolicy,
+                        crate::protocol::conversion::generation::Change::Default(
+                            crate::protocol::conversion::generation::DefaultBasis::SelectedPolicy,
                         )
                     };
                     evidence.push(Effect::new(
                         rule,
                         field,
-                        crate::lowering::generation::ConversionBoundary::ResponseProject,
+                        crate::protocol::conversion::generation::ConversionBoundary::ResponseProject,
                         change,
                     ));
                 }
@@ -758,7 +763,11 @@ impl ResponseDelivery {
             .iter()
             .cloned()
             .map(|event| {
-                super::replay::seal_event(event, &super::replay::CLIENT_ORIGIN, &context.fidelity)
+                super::replay::seal_event(
+                    event,
+                    &crate::protocol::replay_envelope::CLIENT_ORIGIN,
+                    &context.fidelity,
+                )
             })
             .collect::<Result<_, _>>()?;
         let evidence = self
@@ -814,7 +823,7 @@ impl ResponseDelivery {
             if self.client.protocol() == ClientProtocol::Chat && !self.options.usage() {
                 evidence.retain(|effect| {
                     !effect.semantic_field().is_usage()
-                        || effect.change() == crate::lowering::generation::Change::Omit
+                        || effect.change() == crate::protocol::conversion::generation::Change::Omit
                 });
                 if prepared
                     .events
@@ -823,9 +832,9 @@ impl ResponseDelivery {
                 {
                     evidence.push(Effect::new(
                         "chat.omit-unrequested-usage.v1",
-                        crate::lowering::generation::Field::UsageReports,
-                        crate::lowering::generation::ConversionBoundary::EventEncode,
-                        crate::lowering::generation::Change::Omit,
+                        crate::protocol::conversion::generation::Field::UsageReports,
+                        crate::protocol::conversion::generation::ConversionBoundary::EventEncode,
+                        crate::protocol::conversion::generation::Change::Omit,
                     ));
                 }
             }

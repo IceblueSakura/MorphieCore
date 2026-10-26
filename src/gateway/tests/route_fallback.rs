@@ -1,7 +1,7 @@
 //! One Router smoke exercises independent targets, request preservation and visibility.
-use crate::gateway::*;
 use crate::{
-    protocol::openai::TargetCaps as Representation,
+    gateway::*,
+    protocol::openai::TargetContract as Representation,
     provider::{
         AuthScheme, CredentialBindingId, CredentialKind, EndpointPath, ProviderId, TrustedOrigin,
     },
@@ -199,10 +199,10 @@ async fn ordered_route_only_falls_back_before_visible_delivery() {
                         .clone(),
                 },
                 task: TaskKind::Generation,
-                protocol: ProtocolProfile::OpenAiResponses,
+                protocol: GenerationProtocol::OpenAiResponses,
                 upstream_model: format!("{id}-alias"),
-                representation: Adapter::new(
-                    Profile::Responses,
+                representation: GenerationCodec::new(
+                    GenerationApi::Responses,
                     crate::protocol::openai::Dialect::MorphieCore,
                     None,
                 )
@@ -236,7 +236,7 @@ async fn ordered_route_only_falls_back_before_visible_delivery() {
             ModelId::new("canonical").unwrap(),
             TaskKind::Generation,
             route.id.clone(),
-            GenerationSemanticContract::text_images(),
+            GenerationFeatureSet::text_images(),
         );
         let topology = compile(
             providers,
@@ -246,7 +246,7 @@ async fn ordered_route_only_falls_back_before_visible_delivery() {
             vec![CanonicalModel {
                 id: ModelId::new("canonical").unwrap(),
                 task: TaskKind::Generation,
-                contract: GenerationSemanticContract::full(),
+                contract: GenerationFeatureSet::full(),
             }],
         )
         .unwrap()
@@ -265,7 +265,7 @@ async fn ordered_route_only_falls_back_before_visible_delivery() {
                     .map(|id| Entry {
                         chat_profile: Default::default(),
                         model: "public".into(),
-                        protocol: crate::adapter::ClientProtocol::Responses,
+                        protocol: crate::protocol::ClientProtocol::Responses,
                         endpoint: EndpointId::new(id).unwrap(),
                     })
                     .collect(),
@@ -344,7 +344,7 @@ async fn ordered_route_only_falls_back_before_visible_delivery() {
                 // A legal suffix blocked solely by health returns local
                 // availability, not the last upstream failure.
                 let entry = &gateway.state.entries
-                    [&(crate::adapter::ClientProtocol::Responses, "public".into())];
+                    [&(crate::protocol::ClientProtocol::Responses, "public".into())];
                 let b = entry
                     .candidates
                     .iter()
@@ -381,11 +381,11 @@ async fn ordered_route_only_falls_back_before_visible_delivery() {
                     .collect();
                 let recovered = &records[0]["generation"];
                 assert_eq!(recovered["result"], "succeeded");
-                assert!(recovered["public_code"].is_null());
+                assert!(recovered["failure_code"].is_null());
                 assert_eq!(recovered["attempts"][0]["advanced"], true);
                 let blocked = records.last().unwrap();
-                assert_eq!(blocked["generation"]["public_code"], "upstream_unavailable");
-                assert_eq!(blocked["generation"]["public_status"], 503);
+                assert_eq!(blocked["generation"]["failure_code"], "gateway.unavailable");
+                assert_eq!(blocked["generation"]["failure_status_hint"], 503);
                 assert_eq!(
                     blocked["generation"]["attempts"].as_array().unwrap().len(),
                     1
@@ -466,7 +466,7 @@ async fn recovery_ownership_spans_final_handoff_and_distinguishes_deadlines() {
             generation: vec![Entry {
                 chat_profile: Default::default(),
                 model: "fixture-model".into(),
-                protocol: crate::adapter::ClientProtocol::Chat,
+                protocol: crate::protocol::ClientProtocol::Chat,
                 endpoint: EndpointId::new("fixture-chat").unwrap(),
             }],
             ..Default::default()

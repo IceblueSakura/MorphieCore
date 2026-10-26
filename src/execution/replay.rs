@@ -1,17 +1,16 @@
 //! Client boundary for owner-local opaque state. Envelopes label compatibility, not
 //! authenticity or target authority. Foreign history transfer remains candidate-local.
 use crate::{
-    adapter::Request,
-    protocol::{CodecError, DecodedResponse, fidelity::FidelityRecords, replay_envelope},
+    protocol::{
+        CodecError, DecodedResponse, GenerationRequestEnvelope as Request,
+        fidelity::FidelityRecords, replay_envelope,
+    },
     semantic::{
         task::generation::{Item, ItemKind, ItemReplay, ReplayFormat, ReplayValue, StreamEvent},
         value::ReplayOrigin,
     },
 };
-use std::{collections::BTreeMap, sync::LazyLock};
-
-pub static CLIENT_ORIGIN: LazyLock<ReplayOrigin> =
-    LazyLock::new(|| ReplayOrigin::new("client").expect("static origin"));
+use std::collections::BTreeMap;
 
 fn seal_as(
     value: &ReplayValue,

@@ -1,10 +1,9 @@
 use crate::events_support::{metadata, text};
 use morphiecore::{
-    adapter::Request,
     protocol::{
-        DecodedRequest,
+        DecodedRequest, GenerationRequestEnvelope as Request,
         fidelity::FidelityRecords,
-        openai::{Adapter, Dialect, Profile, TargetCaps},
+        openai::{Dialect, GenerationApi, GenerationCodec, TargetContract},
     },
     semantic::{task::generation::*, value::Presence},
 };
@@ -24,7 +23,7 @@ fn message(role: MessageRole, part: u64, value: &str) -> Item {
 }
 #[test]
 fn native_history_reading_has_independent_input_and_output_oracles() {
-    let adapter = Adapter::new(Profile::Chat, Dialect::Bailian, None);
+    let adapter = GenerationCodec::new(GenerationApi::Chat, Dialect::Bailian, None);
     for enabled in [false, true] {
         let wire = json!({"model":"m","preserve_thinking":enabled,"messages":[
                 {"role":"assistant","reasoning_content":"old thought","content":"old answer"},
@@ -32,7 +31,7 @@ fn native_history_reading_has_independent_input_and_output_oracles() {
         let input = adapter
             .decode_client_request(wire.to_string().as_bytes())
             .unwrap();
-        let public = Adapter::new(Profile::Chat, Dialect::MorphieCore, None)
+        let public = GenerationCodec::new(GenerationApi::Chat, Dialect::MorphieCore, None)
             .decode_client_request(wire.to_string().as_bytes())
             .unwrap();
         assert_eq!(
@@ -43,7 +42,7 @@ fn native_history_reading_has_independent_input_and_output_oracles() {
             .iter()
             .find(|binding| binding.endpoint_prefix == "dashscope-flash")
             .unwrap()
-            .endpoint(morphiecore::topology::ProtocolProfile::OpenAiChat)
+            .endpoint(morphiecore::topology::GenerationProtocol::OpenAiChat)
             .unwrap();
         let (prepared, losses) = endpoint.encode_request_with_rules(&public).unwrap();
         assert_eq!(prepared["preserve_thinking"], enabled);
@@ -91,14 +90,14 @@ fn native_history_reading_has_independent_input_and_output_oracles() {
         .unwrap();
         let before = request.clone();
         let (encoded, rules) = adapter
-            .encode_request_with_rules(&request, "m", &TargetCaps::full())
+            .encode_request_with_rules(&request, "m", &TargetContract::full())
             .unwrap();
         assert_eq!(encoded, wire);
         assert!(rules.is_empty());
         assert_eq!(request, before);
         assert!(
-            Adapter::new(Profile::Responses, Dialect::OpenRouter, None)
-                .encode_request(&request, "m", &TargetCaps::full())
+            GenerationCodec::new(GenerationApi::Responses, Dialect::OpenRouter, None)
+                .encode_request(&request, "m", &TargetContract::full())
                 .is_err()
         );
     }
@@ -117,7 +116,7 @@ fn native_history_reading_has_independent_input_and_output_oracles() {
 }
 #[test]
 fn native_static_reasoning_and_usage_have_independent_delivery_expectations() {
-    let adapter = Adapter::new(Profile::Chat, Dialect::Bailian, None);
+    let adapter = GenerationCodec::new(GenerationApi::Chat, Dialect::Bailian, None);
     let wire = json!({"id":"r","object":"chat.completion","created":0,"model":"synthetic",
             "choices":[{"index":0,"message":{"role":"assistant","content":"answer","reasoning_content":"thought"},
                 "finish_reason":"stop"}],
@@ -166,7 +165,7 @@ fn native_static_reasoning_and_usage_have_independent_delivery_expectations() {
         metadata: metadata(),
     };
     let encoded = adapter
-        .encode_response(&output, &TargetCaps::full())
+        .encode_response(&output, &TargetContract::full())
         .unwrap();
     assert_eq!(encoded, wire);
 }

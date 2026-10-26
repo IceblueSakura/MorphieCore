@@ -1,16 +1,20 @@
 //! Complete stateless Responses envelopes. Execution hints never become task instructions.
-use crate::protocol::failure::{CarrierReason, ShapeReason};
-use crate::protocol::openai::content::intake::Items;
-use crate::protocol::openai::{
-    CodecError, DecodedRequest, Profile, RequestRepresentation, ResponseMetadata,
-    context::{CACHE_FIELDS, EXEC_FIELDS, check_access_programs, timestamp},
-    settings,
-    shape::*,
-};
-use crate::semantic::{
-    context::{ExecutionHints, ResponseContext, ServicePolicy},
-    task::generation::*,
-    value::Presence,
+use crate::{
+    protocol::{
+        failure::{CarrierReason, ShapeReason},
+        openai::{
+            CodecError, DecodedRequest, GenerationApi, RequestRepresentation, ResponseMetadata,
+            content::intake::Items,
+            context::{CACHE_FIELDS, EXEC_FIELDS, check_access_programs, timestamp},
+            settings,
+            shape::*,
+        },
+    },
+    semantic::{
+        context::{ExecutionHints, ResponseContext, ServicePolicy},
+        task::generation::*,
+        value::Presence,
+    },
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
@@ -64,7 +68,7 @@ impl RequestContext {
         text(&self.model, "model", 256)?;
         self.delivery.validate()?;
         if let Some(policy) = self.service_policy.value() {
-            super::super::service::policy_wire(*policy, Profile::Responses)?;
+            super::super::service::policy_wire(*policy, GenerationApi::Responses)?;
         }
         Ok(self.execution.validate()?)
     }
@@ -106,8 +110,8 @@ pub(in crate::protocol::openai) fn decode_request_with_history(
             stream: read_presence(o, "stream", |v| v.as_bool().ok_or(CodecError::invalid()))?,
             options: read_presence(o, "stream_options", |v| StreamOptions::read(v, direction))?,
         },
-        execution: ExecutionHints::read(o, Profile::Responses, direction)?,
-        service_policy: super::super::service::read_policy(o, Profile::Responses)?,
+        execution: ExecutionHints::read(o, GenerationApi::Responses, direction)?,
+        service_policy: super::super::service::read_policy(o, GenerationApi::Responses)?,
     };
     context.validate()?;
     let task: Map<_, _> = o
@@ -130,30 +134,30 @@ pub fn encode_request(
     context: &RequestContext,
 ) -> Result<Value, CodecError> {
     context.validate()?;
-    if target.profile != Profile::Responses {
+    if target.profile != GenerationApi::Responses {
         return Err(CodecError::ProfileMismatch);
     }
     if target.adaptation.rules.bailian_requests {
         crate::protocol::openai::dialect::bailian::check_semantic(
             target.semantic(),
-            Profile::Responses,
+            GenerationApi::Responses,
             &context.model,
         )?;
         crate::protocol::openai::dialect::bailian::check_native_effort(
             target.semantic().settings(),
             &context.model,
-            Profile::Responses,
+            GenerationApi::Responses,
         )?;
         crate::protocol::openai::dialect::bailian::check_context(
             &context.execution,
             &context.service_policy,
-            Profile::Responses,
+            GenerationApi::Responses,
         )?;
     }
     let mut v = crate::protocol::openai::responses::encode_generation(target)?;
     let o = v.as_object_mut().expect("object");
     context.execution.write(o)?;
-    super::super::service::write_policy(o, &context.service_policy, Profile::Responses)?;
+    super::super::service::write_policy(o, &context.service_policy, GenerationApi::Responses)?;
     o.insert("store".into(), json!(false));
     o.insert("model".into(), json!(context.model));
     put_presence(o, "stream", &context.delivery.stream, |s| json!(s));
@@ -221,14 +225,18 @@ impl ResponseContext {
                 },
                 crate::semantic::context::ResponseReport {
                     settings: s,
-                    service_class: super::super::service::read_class(o, Profile::Responses)?,
+                    service_class: super::super::service::read_class(o, GenerationApi::Responses)?,
                 },
             ),
             instruction_messages,
-            execution: ExecutionHints::read(&execution, Profile::Responses, direction)?,
+            execution: ExecutionHints::read(&execution, GenerationApi::Responses, direction)?,
             completed_at: read_presence(o, "completed_at", timestamp)?,
             cache_diagnostics: read_presence(o, "prompt_cache_diagnostics", |v| {
-                serde_json::from_value(v.clone()).map_err(|_| CodecError::invalid())
+                serde_json::from_value::<crate::protocol::openai::context::wire::CacheDiagnostics>(
+                    v.clone(),
+                )
+                .map(|value| (&value).into())
+                .map_err(|_| CodecError::invalid())
             })?,
             // Responses wire has no `system_fingerprint` position; the field is
             // Chat-only and rejected on Responses bodies by `response_fields`.
@@ -248,7 +256,7 @@ impl ResponseContext {
             settings::write(s, o)?;
         }
         self.execution.write(o)?;
-        super::super::service::write_class(o, self.service_class(), Profile::Responses)?;
+        super::super::service::write_class(o, self.service_class(), GenerationApi::Responses)?;
         if let Some(messages) = &self.instruction_messages {
             o.insert(
                 "instructions".into(),
@@ -269,7 +277,7 @@ impl ResponseContext {
             o,
             "prompt_cache_diagnostics",
             &self.cache_diagnostics,
-            |v| json!(v),
+            |v| json!(crate::protocol::openai::context::wire::CacheDiagnostics::from(v)),
         );
         Ok(())
     }
@@ -298,7 +306,7 @@ pub fn encode_response(
 /// Record classified response extras into fidelity for same-origin re-encode.
 /// The SDK-derived `output_text` view is ignored, never validated or restored.
 pub(crate) fn record_vendor_shapes(
-    profile: Profile,
+    profile: GenerationApi,
     adaptation: &crate::protocol::openai::dialect::adaptation::Adaptation,
     o: &Map<String, Value>,
     fidelity: &mut crate::protocol::fidelity::FidelityRecords,
@@ -309,7 +317,7 @@ pub(crate) fn record_vendor_shapes(
 /// Same-origin re-encode of classified vendor extras; never standard semantics.
 pub(crate) fn write_response_extras(
     fidelity: &crate::protocol::fidelity::FidelityRecords,
-    profile: Profile,
+    profile: GenerationApi,
     adaptation: &crate::protocol::openai::dialect::adaptation::Adaptation,
     semantic: &GenerationResponse,
     response_id: &str,
@@ -344,7 +352,7 @@ pub(crate) fn validate_response_snapshot_with(
     // task codec. Required identity, items and state rejection remain intact.
     let (v, _) = crate::protocol::openai::dialect::adapter_shapes::decode(
         v,
-        Profile::Responses,
+        GenerationApi::Responses,
         adaptation,
         direction,
     )?;

@@ -105,14 +105,14 @@ mod message_envelopes {
     #[test]
     fn chat_sse_delivers_calls_and_a_real_responses_terminal() {
         use morphiecore::protocol::openai::{
-            Profile,
+            GenerationApi,
             events::{EventDecoder, EventEncoder},
         };
         let chunk = |delta, finish| {
             json!({"id":"r","object":"chat.completion.chunk",
         "created":0,"model":"synthetic","choices":[{"index":0,"delta":delta,"finish_reason":finish}]})
         };
-        let mut decoder = EventDecoder::new(Profile::Chat);
+        let mut decoder = EventDecoder::new(GenerationApi::Chat);
         let mut events = vec![];
         for wire in [
             chunk(
@@ -132,7 +132,7 @@ mod message_envelopes {
         events.extend(decoder.done().unwrap());
         let source = decoder.materialize().unwrap();
         // As in a static message, a refusal cannot carry calls.
-        let mut refused = EventDecoder::new(Profile::Chat);
+        let mut refused = EventDecoder::new(GenerationApi::Chat);
         refused
             .push(&chunk(
                 json!({"role":"assistant","refusal":"no","tool_calls":[
@@ -148,7 +148,8 @@ mod message_envelopes {
                 morphiecore::protocol::failure::ShapeReason::InvalidValue
             )
         );
-        let mut encoder = EventEncoder::new(Profile::Responses, source.metadata.clone()).unwrap();
+        let mut encoder =
+            EventEncoder::new(GenerationApi::Responses, source.metadata.clone()).unwrap();
         let mut wire = vec![];
         for event in &events {
             wire.extend(encoder.encode(event, &source.fidelity).unwrap());
@@ -163,7 +164,7 @@ mod message_envelopes {
             wire.last().unwrap()["response"]["output"][1]["arguments"],
             "{ \"x\": 1 }"
         );
-        let mut consumer = EventDecoder::new(Profile::Responses);
+        let mut consumer = EventDecoder::new(GenerationApi::Responses);
         for value in wire {
             consumer.push(&value).unwrap();
         }
@@ -180,7 +181,7 @@ mod message_envelopes {
                 .iter()
                 .any(|event| matches!(event, StreamEvent::MessageEnvelope(_)))
         );
-        for profile in [Profile::Chat, Profile::Responses] {
+        for profile in [GenerationApi::Chat, GenerationApi::Responses] {
             let mut encoder = EventEncoder::new(profile, source.metadata.clone()).unwrap();
             let mut consumer = EventDecoder::new(profile);
             for event in &events {
@@ -189,7 +190,7 @@ mod message_envelopes {
                 }
             }
             encoder.finish().unwrap();
-            if profile == Profile::Chat {
+            if profile == GenerationApi::Chat {
                 consumer.done().unwrap();
             }
             let response = consumer.materialize().unwrap();
@@ -226,7 +227,7 @@ mod message_ownership_owner {
     use morphiecore::{
         protocol::{
             fidelity::FidelityRecords,
-            openai::{Profile, TargetCaps as Contract, lowering::lower_request},
+            openai::{GenerationApi, TargetContract as Contract, lowering::lower_request},
         },
         semantic::{task::generation::*, value::Text},
     };
@@ -244,7 +245,7 @@ mod message_ownership_owner {
             request.message_envelopes()[0].members(),
             [ItemId::new(1), ItemId::new(3)]
         );
-        for profile in [Profile::Chat, Profile::Responses] {
+        for profile in [GenerationApi::Chat, GenerationApi::Responses] {
             assert!(
                 lower_request(
                     &request,
@@ -320,7 +321,7 @@ mod phase {
     use crate::events_support::*;
     use morphiecore::{
         protocol::openai::{
-            CodecError, DecodedRequest, Profile, events::EventDecoder, responses::envelope,
+            CodecError, DecodedRequest, GenerationApi, events::EventDecoder, responses::envelope,
         },
         semantic::task::generation::*,
     };
@@ -346,9 +347,9 @@ mod phase {
             anthropic,
             google::{generate_content as google, interactions},
             native::ReplayTarget,
-            openai::{Adapter, Dialect, TargetCaps},
+            openai::{Dialect, GenerationCodec, TargetContract},
         };
-        let client = Adapter::new(Profile::Responses, Dialect::Standard, None);
+        let client = GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None);
         let source = json!({"model":"fixture","max_output_tokens":64,"input":[
             {"role":"user","content":"go"},
             {"role":"assistant","content":"checking","phase":"commentary"},
@@ -359,9 +360,9 @@ mod phase {
             .decode_request(source.to_string().as_bytes())
             .unwrap();
         let saved = request.clone();
-        let chat = Adapter::new(Profile::Chat, Dialect::Standard, None);
+        let chat = GenerationCodec::new(GenerationApi::Chat, Dialect::Standard, None);
         let (wire, rules) = chat
-            .encode_request_with_rules(&request, "target", &TargetCaps::full())
+            .encode_request_with_rules(&request, "target", &TargetContract::full())
             .unwrap();
         assert_eq!(
             wire["messages"],
@@ -380,7 +381,7 @@ mod phase {
             1
         );
         let target = ReplayTarget::new("fixture", "target").unwrap();
-        let messages = anthropic::messages::TargetCaps::new(
+        let messages = anthropic::messages::TargetContract::new(
             anthropic::messages::Profile::AdaptiveTextTools,
             anthropic::messages::Dialect::Standard,
         )
@@ -424,7 +425,7 @@ mod phase {
             ])
         );
         let exact = client
-            .encode_request(&request, "target", &TargetCaps::full())
+            .encode_request(&request, "target", &TargetContract::full())
             .unwrap();
         assert_eq!(exact["input"][1]["phase"], "commentary");
         assert_eq!(exact["input"][2]["phase"], "final_answer");
@@ -490,7 +491,7 @@ mod phase {
 
     #[test]
     fn event_snapshots_preserve_phase_and_conflicts_fail() {
-        let mut d = EventDecoder::new(Profile::Responses);
+        let mut d = EventDecoder::new(GenerationApi::Responses);
         for v in stream(Some(json!("commentary")), Some(json!("commentary"))) {
             d.push(&v).unwrap();
         }
@@ -505,7 +506,7 @@ mod phase {
             (Some(json!("commentary")), Some(json!("final_answer"))),
             (None, Some(json!("final_answer"))),
         ] {
-            let mut d = EventDecoder::new(Profile::Responses);
+            let mut d = EventDecoder::new(GenerationApi::Responses);
             let mut values = stream(started, done);
             let failed = values.split_off(6);
             for v in values {

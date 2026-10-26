@@ -6,13 +6,13 @@ use crate::{
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct DecodedRequest {
-    pub evidence: crate::lowering::generation::EvidenceDelta,
+    pub evidence: crate::protocol::conversion::generation::EvidenceDelta,
     pub semantic: GenerationRequest,
     pub fidelity: FidelityRecords,
 }
 #[derive(Clone, Debug, PartialEq)]
 pub struct DecodedResponse {
-    pub evidence: crate::lowering::generation::EvidenceDelta,
+    pub evidence: crate::protocol::conversion::generation::EvidenceDelta,
     pub semantic: GenerationResponse,
     pub fidelity: FidelityRecords,
     pub metadata: ResponseMetadata,
@@ -100,9 +100,9 @@ impl ResponseStorage {
 pub enum CodecError {
     #[error("{cause}")]
     Representation {
-        boundary: crate::lowering::generation::ConversionBoundary,
+        boundary: crate::protocol::conversion::generation::ConversionBoundary,
         #[source]
-        cause: crate::lowering::generation::RepresentationError,
+        cause: crate::protocol::conversion::generation::RepresentationError,
     },
     #[error(transparent)]
     Context(#[from] crate::semantic::context::ContextError),

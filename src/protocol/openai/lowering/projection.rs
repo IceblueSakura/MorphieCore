@@ -1,11 +1,13 @@
 //! Bounded, body-free evidence for the selected response projection rules.
-use crate::protocol::openai::lowering::RepresentationError;
-use crate::{protocol::openai::Profile, semantic::task::generation::Usage};
+use crate::{
+    protocol::openai::{GenerationApi, lowering::RepresentationError},
+    semantic::task::generation::Usage,
+};
 
 pub const MAX_PROJECTION_STAGES: usize = 16;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum LossRule {
+pub enum ProjectionRule {
     OmitPrediction,
     OmitOpeningReport,
     UsageReportView,
@@ -30,7 +32,7 @@ pub enum LossRule {
     OmitExplanatoryRefusalDetails,
     OmitTerminalExplanation,
 }
-impl LossRule {
+impl ProjectionRule {
     pub const fn name(self) -> &'static str {
         match self {
             Self::OmitPrediction => "generation.omit-prediction.v1",
@@ -64,7 +66,7 @@ impl LossRule {
             Self::OmitTerminalExplanation => "openai.omit-terminal-explanation.v1",
         }
     }
-    pub const fn owner(self) -> &'static str {
+    pub const fn field(self) -> &'static str {
         match self {
             Self::OmitPrediction => "generation.prediction",
             Self::OmitOpeningReport => "response.reports.opening",
@@ -102,8 +104,8 @@ impl LossRule {
 /// This changes reported echoes only, never request admission or generated items.
 pub(crate) fn reported_settings(
     metadata: &mut crate::protocol::ResponseMetadata,
-    profile: Profile,
-) -> Result<Option<LossRule>, RepresentationError> {
+    profile: GenerationApi,
+) -> Result<Option<ProjectionRule>, RepresentationError> {
     use crate::semantic::{task::generation::*, value::Presence};
     metadata
         .context
@@ -119,7 +121,7 @@ pub(crate) fn reported_settings(
     {
         return Err(RepresentationError::Safety);
     }
-    if profile == Profile::Chat {
+    if profile == GenerationApi::Chat {
         let had_settings = metadata
             .context
             .reports
@@ -133,7 +135,7 @@ pub(crate) fn reported_settings(
         }
         metadata.context.instruction_messages = None;
         metadata.instruction_fidelity = Default::default();
-        return Ok(had_settings.then_some(LossRule::OmitChatReportedSettings));
+        return Ok(had_settings.then_some(ProjectionRule::OmitChatReportedSettings));
     }
     let mut changed = false;
     for report in metadata.context.reports.iter_mut() {
@@ -179,14 +181,14 @@ pub(crate) fn reported_settings(
         settings.validate()?;
         changed |= before != *settings;
     }
-    Ok(changed.then_some(LossRule::OmitReportedReasoningControls))
+    Ok(changed.then_some(ProjectionRule::OmitReportedReasoningControls))
 }
-impl LossRule {
+impl ProjectionRule {
     pub(crate) fn effect(
         self,
-        boundary: crate::lowering::generation::ConversionBoundary,
-    ) -> crate::lowering::generation::Effect {
-        use crate::lowering::generation::{Change, Effect};
+        boundary: crate::protocol::conversion::generation::ConversionBoundary,
+    ) -> crate::protocol::conversion::generation::Effect {
+        use crate::protocol::conversion::generation::{Change, Effect};
         let change = match self {
             Self::RegroupChatMessageItems
             | Self::CoarsenChatCompletionCause
@@ -194,7 +196,7 @@ impl LossRule {
             | Self::ContextWindowAsLength => Change::Approximate,
             _ => Change::Omit,
         };
-        Effect::new(self.name(), self.owner().into(), boundary, change)
+        Effect::new(self.name(), self.field().into(), boundary, change)
     }
 }
 
@@ -204,44 +206,44 @@ impl LossRule {
 pub(crate) fn responses_usage(
     mut usage: Usage,
     rules: &crate::protocol::openai::dialect::adaptation::WireRules,
-) -> Result<(Usage, Vec<LossRule>), RepresentationError> {
+) -> Result<(Usage, Vec<ProjectionRule>), RepresentationError> {
     usage.validate()?;
     let mut losses = Vec::new();
     for (value, carrier, rule) in [
         (
             &mut usage.input_image_tokens,
             rules.responses_image_usage,
-            LossRule::OmitResponsesInputImageTokens,
+            ProjectionRule::OmitResponsesInputImageTokens,
         ),
         (
             &mut usage.input_text_tokens,
             rules.responses_text_usage,
-            LossRule::OmitResponsesInputTextTokens,
+            ProjectionRule::OmitResponsesInputTextTokens,
         ),
         (
             &mut usage.output_text_tokens,
             rules.responses_text_usage,
-            LossRule::OmitResponsesOutputTextTokens,
+            ProjectionRule::OmitResponsesOutputTextTokens,
         ),
         (
             &mut usage.input_audio_tokens,
             false,
-            LossRule::OmitResponsesInputAudioTokens,
+            ProjectionRule::OmitResponsesInputAudioTokens,
         ),
         (
             &mut usage.output_audio_tokens,
             false,
-            LossRule::OmitResponsesOutputAudioTokens,
+            ProjectionRule::OmitResponsesOutputAudioTokens,
         ),
         (
             &mut usage.accepted_prediction_tokens,
             false,
-            LossRule::OmitResponsesAcceptedPredictionTokens,
+            ProjectionRule::OmitResponsesAcceptedPredictionTokens,
         ),
         (
             &mut usage.rejected_prediction_tokens,
             false,
-            LossRule::OmitResponsesRejectedPredictionTokens,
+            ProjectionRule::OmitResponsesRejectedPredictionTokens,
         ),
     ] {
         if !carrier && value.take().is_some() {
@@ -292,15 +294,15 @@ mod tests {
         settings.reasoning.budget_tokens = Some(2048);
         let mut chat = metadata(settings.clone());
         assert_eq!(
-            reported_settings(&mut chat, Profile::Chat),
-            Ok(Some(LossRule::OmitChatReportedSettings))
+            reported_settings(&mut chat, GenerationApi::Chat),
+            Ok(Some(ProjectionRule::OmitChatReportedSettings))
         );
         assert!(chat.context.settings().is_none());
 
         let mut responses = metadata(settings.clone());
         assert_eq!(
-            reported_settings(&mut responses, Profile::Responses),
-            Ok(Some(LossRule::OmitReportedReasoningControls))
+            reported_settings(&mut responses, GenerationApi::Responses),
+            Ok(Some(ProjectionRule::OmitReportedReasoningControls))
         );
         let kept = responses.context.settings().unwrap();
         assert_eq!(kept.reasoning.budget_tokens, None);
@@ -320,14 +322,17 @@ mod tests {
             }),
             ..Default::default()
         });
-        assert_eq!(reported_settings(&mut exact, Profile::Responses), Ok(None));
+        assert_eq!(
+            reported_settings(&mut exact, GenerationApi::Responses),
+            Ok(None)
+        );
 
         let mut safety = settings;
         safety.safety = vec![SafetySetting {
             category: SafetyCategory::Harassment,
             threshold: SafetyThreshold::BlockNone,
         }];
-        for profile in [Profile::Chat, Profile::Responses] {
+        for profile in [GenerationApi::Chat, GenerationApi::Responses] {
             assert_eq!(
                 reported_settings(&mut metadata(safety.clone()), profile),
                 Err(RepresentationError::Safety)

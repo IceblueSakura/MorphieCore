@@ -4,7 +4,7 @@ use morphiecore::{
     protocol::{
         fidelity::FidelityRecords,
         openai::{
-            Profile,
+            GenerationApi,
             events::{EventDecoder, EventEncoder},
         },
     },
@@ -15,7 +15,7 @@ use serde_json::json;
 #[test]
 fn function_done_name_echo_must_match_its_existing_call_owner() {
     for name in [json!("lookup"), json!("different"), json!(null)] {
-        let mut decoder = EventDecoder::new(Profile::Responses);
+        let mut decoder = EventDecoder::new(GenerationApi::Responses);
         decoder.push(&created()).unwrap();
         decoder.push(&json!({"type":"response.output_item.added","output_index":0,"item":call_item("fc","c","{}","in_progress")})).unwrap();
         let result=decoder.push(&json!({"type":"response.function_call_arguments.done","output_index":0,"item_id":"fc","name":name,"arguments":"{}"}));
@@ -35,7 +35,7 @@ fn function_done_supplies_missing_argument_suffix_but_never_rewrites() {
         (vec![r#"{"a":1}"#], None),
         (vec!["{}"], None),
     ] {
-        let mut decoder = EventDecoder::new(Profile::Responses);
+        let mut decoder = EventDecoder::new(GenerationApi::Responses);
         decoder.push(&created()).unwrap();
         decoder.push(&json!({"type":"response.output_item.added","output_index":0,"item":call_item("fc","c","","in_progress")})).unwrap();
         for delta in &deltas {
@@ -102,7 +102,7 @@ fn non_success_terminals_keep_partial_output_and_error_is_not_materializable() {
             };
             assert_eq!(call.arguments.as_raw(), Some("{"));
             assert_eq!(response.continuation(), Continuation::Unreported);
-            let mut encoder = EventEncoder::new(Profile::Responses, metadata()).unwrap();
+            let mut encoder = EventEncoder::new(GenerationApi::Responses, metadata()).unwrap();
             let source = FidelityRecords::default();
             for event in &events[..events.len() - 1] {
                 encoder.encode(event, &source).unwrap();
@@ -111,7 +111,11 @@ fn non_success_terminals_keep_partial_output_and_error_is_not_materializable() {
             assert!(encoder.finish().is_err());
             continue;
         }
-        let wire = encode(&events, Profile::Responses, &FidelityRecords::default());
+        let wire = encode(
+            &events,
+            GenerationApi::Responses,
+            &FidelityRecords::default(),
+        );
         assert_eq!(
             wire.last().unwrap()["response"]["output"][0]["arguments"],
             "{"
@@ -120,7 +124,7 @@ fn non_success_terminals_keep_partial_output_and_error_is_not_materializable() {
             wire.last().unwrap()["response"]["output"][0]["status"],
             "in_progress"
         );
-        let mut d = EventDecoder::new(Profile::Responses);
+        let mut d = EventDecoder::new(GenerationApi::Responses);
         for v in wire {
             d.push(&v).unwrap();
         }
@@ -128,7 +132,7 @@ fn non_success_terminals_keep_partial_output_and_error_is_not_materializable() {
         assert_ne!(response.outcome(), Outcome::Completed);
         assert_eq!(response.continuation(), Continuation::Unreported);
     }
-    let mut d = EventDecoder::new(Profile::Responses);
+    let mut d = EventDecoder::new(GenerationApi::Responses);
     d.push(&json!({"type":"error","code":"server_error","message":"synthetic error","param":null}))
         .unwrap();
     assert!(d.finish().is_ok());
@@ -136,7 +140,7 @@ fn non_success_terminals_keep_partial_output_and_error_is_not_materializable() {
 }
 #[test]
 fn event_encoder_rejects_duplicate_terminal_and_unrepresentable_chat_grouping() {
-    let mut e = EventEncoder::new(Profile::Responses, metadata()).unwrap();
+    let mut e = EventEncoder::new(GenerationApi::Responses, metadata()).unwrap();
     let f = FidelityRecords::default();
     assert!(
         e.finish().is_err(),
@@ -150,7 +154,7 @@ fn event_encoder_rejects_duplicate_terminal_and_unrepresentable_chat_grouping() 
         e.finish().is_err(),
         "a rejected completed stream stays rejected"
     );
-    let mut e = EventEncoder::new(Profile::Chat, metadata()).unwrap();
+    let mut e = EventEncoder::new(GenerationApi::Chat, metadata()).unwrap();
     e.encode(&StreamEvent::Started, &f).unwrap();
     e.encode(&start(1, ItemKind::Message { phase: None }), &f)
         .unwrap();

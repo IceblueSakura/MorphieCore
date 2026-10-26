@@ -1,7 +1,9 @@
 //! Responses event grammar and exact terminal snapshot verification.
 use super::*;
-use crate::protocol::failure::{CarrierReason, ShapeReason};
-use crate::protocol::openai::events::responses_wire::*;
+use crate::protocol::{
+    failure::{CarrierReason, ShapeReason},
+    openai::events::responses_wire::*,
+};
 
 /// Snapshot-only bookkeeping. The shared stream state stays in the decoder.
 #[derive(Default)]
@@ -343,8 +345,8 @@ impl EventDecoder {
                 rule,
                 input,
                 output,
-                crate::lowering::generation::ConversionBoundary::EventDecode,
-                crate::lowering::generation::Owner::item(item),
+                crate::protocol::conversion::generation::ConversionBoundary::EventDecode,
+                crate::protocol::conversion::generation::Owner::item(item),
             );
         }
         self.fidelity
@@ -1308,9 +1310,10 @@ mod snapshot_tests {
 #[cfg(test)]
 mod mapping_evidence_tests {
     use super::*;
-    use crate::{
-        lowering::generation::{Change, ConversionBoundary as B, Field, Owner},
-        protocol::{openai::dialect::adaptation::Adaptation, reasoning::ReasoningEffortMapping},
+    use crate::protocol::{
+        conversion::generation::{Change, ConversionBoundary as B, Field, Owner},
+        openai::dialect::adaptation::Adaptation,
+        reasoning::ReasoningEffortMapping,
     };
     #[test]
     fn response_and_configuration_aliases_keep_event_boundary_and_distinct_owners() {
@@ -1328,7 +1331,7 @@ mod mapping_evidence_tests {
             }),
             ..Default::default()
         };
-        let mut decoder = EventDecoder::new(Profile::Responses).with_adaptation(adaptation);
+        let mut decoder = EventDecoder::new(GenerationApi::Responses).with_adaptation(adaptation);
         decoder.push(&serde_json::json!({"type":"response.created","sequence_number":0,"response":{"id":"r","object":"response","created_at":1,"model":"synthetic","status":"in_progress","output":[],"reasoning":{"effort":"xhigh"}}})).unwrap();
         let root = decoder.take_evidence();
         assert_eq!(root.len(), 1);

@@ -1,14 +1,9 @@
 //! Google label admission agrees between preflight and prepared wire bytes.
 use morphiecore::{
-    adapter::ConversionFailure,
-    execution::{
-        AttemptError,
-        plan::{RejectionReason, representable},
-        prepare,
-    },
+    execution::{AttemptError, plan::representable, prepare},
     protocol::{
-        CodecError,
-        openai::{Adapter, Dialect, Profile},
+        CodecError, ConversionFailure,
+        openai::{Dialect, GenerationApi, GenerationCodec},
     },
     provider::SecretMaterial,
     topology::catalog::GOOGLE_BINDINGS,
@@ -32,7 +27,7 @@ fn google_safety_labels_are_bounded_unicode_without_repair_or_fallback() {
         ("ǅ".into(), false),
         ("🧪".into(), false),
     ] {
-        let request = Adapter::new(Profile::Responses, Dialect::Standard, None)
+        let request = GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None)
             .decode_request(
                 json!({"model":binding.model,"input":"go","max_output_tokens":4096,
                 "user":"valid_fallback","safety_identifier":value})
@@ -55,13 +50,13 @@ fn google_safety_labels_are_bounded_unicode_without_repair_or_fallback() {
             assert_eq!(wire["generationConfig"]["maxOutputTokens"], 4096);
         } else {
             assert_eq!(
-                representable(&endpoint, &request),
-                Err(RejectionReason::Representation)
+                representable(&endpoint, &request).unwrap_err().code(),
+                "codec.invalid.invalid_value"
             );
             assert!(matches!(
                 endpoint.encode_request(&request),
                 Err(ConversionFailure {
-                    cause: morphiecore::adapter::ConversionCause::Codec(CodecError::Invalid(
+                    cause: morphiecore::protocol::ConversionCause::Codec(CodecError::Invalid(
                         morphiecore::protocol::failure::ShapeReason::InvalidValue
                     )),
                     ..
@@ -69,8 +64,8 @@ fn google_safety_labels_are_bounded_unicode_without_repair_or_fallback() {
             ));
             assert!(matches!(
                 prepared,
-                Err(AttemptError::Adapter(ConversionFailure {
-                    cause: morphiecore::adapter::ConversionCause::Codec(CodecError::Invalid(
+                Err(AttemptError::Conversion(ConversionFailure {
+                    cause: morphiecore::protocol::ConversionCause::Codec(CodecError::Invalid(
                         morphiecore::protocol::failure::ShapeReason::InvalidValue
                     )),
                     ..

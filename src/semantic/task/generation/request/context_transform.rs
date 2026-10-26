@@ -1,4 +1,4 @@
-//! Atomic caller-supplied edits and content-free receipts, not a history store.
+//! Atomic caller-supplied edits and content-free adaptations, not a history store.
 use super::*;
 use std::collections::{BTreeMap, BTreeSet};
 

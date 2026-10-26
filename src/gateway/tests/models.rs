@@ -119,7 +119,7 @@ async fn activated_protocols_are_deduplicated_and_images_share_the_directory() {
     let gate = Gateway::new(
         crate::gateway::tests::topology::topology(),
         TaskEntries {
-            generation: crate::adapter::ClientProtocol::ALL
+            generation: crate::protocol::ClientProtocol::ALL
                 .into_iter()
                 .map(|protocol| Entry {
                     chat_profile: Default::default(),
@@ -374,7 +374,7 @@ fn aliases(count: usize, metadata: bool) -> crate::topology::CompiledTopology {
         },
         topology::{
             CanonicalModel, Endpoint, EndpointId, EndpointTarget, ExecutionContract,
-            GenerationSemanticContract, ModelId, ProtocolProfile, PublicModel, Route, RouteId,
+            GenerationFeatureSet, GenerationProtocol, ModelId, PublicModel, Route, RouteId,
             TaskKind, compile,
         },
     };
@@ -406,9 +406,9 @@ fn aliases(count: usize, metadata: bool) -> crate::topology::CompiledTopology {
                 .clone(),
         },
         task: TaskKind::Generation,
-        protocol: ProtocolProfile::OpenAiChat,
+        protocol: GenerationProtocol::OpenAiChat,
         upstream_model: "private-synthetic-model".into(),
-        representation: TargetCaps::full().into(),
+        representation: TargetContract::full().into(),
         execution: ExecutionContract {
             streaming: true,
             retry_before_commit: false,
@@ -432,7 +432,7 @@ fn aliases(count: usize, metadata: bool) -> crate::topology::CompiledTopology {
                 canonical.clone(),
                 TaskKind::Generation,
                 route.id.clone(),
-                GenerationSemanticContract::full(),
+                GenerationFeatureSet::full(),
             )
         })
         .collect();
@@ -444,7 +444,7 @@ fn aliases(count: usize, metadata: bool) -> crate::topology::CompiledTopology {
         vec![CanonicalModel {
             id: canonical.clone(),
             task: TaskKind::Generation,
-            contract: GenerationSemanticContract::full(),
+            contract: GenerationFeatureSet::full(),
         }],
     )
     .unwrap();
@@ -536,9 +536,13 @@ fn local_directory_encodes_empty_and_alias_views_with_inclusive_resource_limits(
     let crate::adapter::ClientAdapter::OpenAi { contract, .. } = &mut entry.client else {
         panic!("OpenAI entry")
     };
-    contract.reported_facts = crate::lowering::generation::ReportedFactPolicy::StrictComplete;
+    contract.reported_facts =
+        crate::protocol::conversion::generation::ReportedFactPolicy::StrictComplete;
     let entries = BTreeMap::from([(
-        (crate::adapter::ClientProtocol::Chat, "fixture-model".into()),
+        (
+            crate::protocol::ClientProtocol::Chat,
+            "fixture-model".into(),
+        ),
         Arc::new(entry),
     )]);
     let view = CapabilityView::bind(&entries, &BTreeMap::new(), 256 << 10).unwrap();

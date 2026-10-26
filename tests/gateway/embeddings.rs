@@ -3,7 +3,7 @@ use super::{
     embedding_loop::{CLIENT_KEY, Fixture},
     filesystem,
 };
-use morphiecore::lowering::embeddings::EncodingSupport;
+use morphiecore::protocol::embedding::projection::EncodingSupport;
 use serde_json::{Value, json};
 #[tokio::test]
 async fn embedding_encodings_receipts_capture_and_effective_width() {
@@ -155,13 +155,13 @@ async fn embedding_encodings_receipts_capture_and_effective_width() {
                     json!({"rule":"embedding.float-json-to-binary32.v1","direction":"delivery"}),
                 );
             }
-            assert_eq!(candidate["embedding_receipts"], json!(expected));
+            assert_eq!(candidate["embedding_adaptations"], json!(expected));
         }
         assert!(
             candidates
                 .iter()
                 .skip(3)
-                .all(|candidate| candidate.get("embedding_receipts").is_none())
+                .all(|candidate| candidate.get("embedding_adaptations").is_none())
         );
         assert!(
             !diagnostics.contains("\"first\"")
@@ -378,16 +378,16 @@ async fn google_embedding_projection_reports_errors_and_one_attempt() {
         .collect();
     assert_eq!(candidates.len(), 8);
     for candidate in candidates.iter().take(2) {
-        let receipts = candidate["embedding_receipts"].as_array().unwrap();
+        let adaptations = candidate["embedding_adaptations"].as_array().unwrap();
         for rule in [
             "embedding.omit-user-hint.v1",
             "embedding.bound-model-label.v1",
             "embedding.input-only-total-from-prompt.v1",
         ] {
-            assert_eq!(receipts.iter().filter(|r| r["rule"] == rule).count(), 1);
+            assert_eq!(adaptations.iter().filter(|r| r["rule"] == rule).count(), 1);
         }
     }
-    let details = candidates[3]["embedding_receipts"].as_array().unwrap();
+    let details = candidates[3]["embedding_adaptations"].as_array().unwrap();
     assert!(
         details
             .iter()

@@ -133,6 +133,6 @@ async fn redirects_are_not_followed_server_errors_are_not_retried_and_timeouts_a
             .send(request("/stall"), Duration::from_millis(30))
             .await
             .unwrap_err(),
-        ErrorClass::Timeout
+        TransportError::Timeout
     );
 }

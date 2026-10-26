@@ -1,9 +1,7 @@
 //! Qwen ASR Flash native synchronous HTTP mapping, not Chat-compatible ASR.
 //! Source: https://help.aliyun.com/en/model-studio/fun-asr-flash-recorded-speech-recognition-http-api
-use crate::protocol::failure::CarrierReason;
 use crate::{
-    adapter::transcription::Request,
-    protocol::CodecError,
+    protocol::{CodecError, failure::CarrierReason, transcription::Request},
     semantic::task::speech_recognition::{
         InputFormat, RecognitionReport, RecognitionResult, RecognizedSentence, RecognizedWord,
     },

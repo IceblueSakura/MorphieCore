@@ -4,9 +4,9 @@ use axum::{
     Router, body::Body, extract::State, http::HeaderMap, response::Response, routing::post,
 };
 use morphiecore::{
-    adapter::embeddings::Profile,
+    adapter::embeddings::UpstreamAdapter,
     gateway::{EmbeddingEntry, Gateway, Limits, TaskEntries},
-    lowering::embeddings::EncodingSupport,
+    protocol::embedding::projection::EncodingSupport,
     provider::{
         AuthScheme, CredentialBindingId, ProviderDefinition, ProviderId, SecretMaterial,
         TrustedOrigin,
@@ -36,7 +36,7 @@ impl Drop for Fixture {
 #[derive(Clone)]
 struct Upstream {
     seen: Arc<Mutex<Vec<Value>>>,
-    profile: Profile,
+    profile: UpstreamAdapter,
     default_dimensions: usize,
 }
 async fn answer(
@@ -53,7 +53,7 @@ async fn answer(
     ] {
         assert!(!headers.contains_key(name));
     }
-    if state.profile == Profile::Google {
+    if state.profile == UpstreamAdapter::Google {
         assert_eq!(
             headers["x-goog-api-key"],
             "synthetic-embedding-upstream-key-0001"
@@ -154,7 +154,7 @@ async fn answer(
         .rev()
         .map(|index| json!({"object":"embedding","index":index,"embedding":values}))
         .collect();
-    let usage = if state.profile == Profile::DashScope {
+    let usage = if state.profile == UpstreamAdapter::DashScope {
         json!({"total_tokens":7})
     } else {
         json!({"prompt_tokens":7,"total_tokens":7})
@@ -226,11 +226,14 @@ impl Fixture {
         route.endpoint.contract.encodings = encodings;
         route.endpoint.contract.default_dimensions = default_dimensions;
         route.endpoint.contract.dimensions =
-            morphiecore::lowering::embeddings::DimensionSupport::UpTo(default_dimensions.max(16));
+            morphiecore::protocol::embedding::projection::DimensionSupport::UpTo(
+                default_dimensions.max(16),
+            );
         route.endpoint.contract.max_inputs = max_inputs;
         route.endpoint.contract.reports =
-            morphiecore::lowering::embeddings::ReportPolicy::Compatible;
-        route.endpoint.contract.user = morphiecore::lowering::embeddings::UserPolicy::Omit;
+            morphiecore::protocol::embedding::projection::ReportPolicy::Compatible;
+        route.endpoint.contract.user =
+            morphiecore::protocol::embedding::projection::UserPolicy::Omit;
         route.endpoint.contract.tokenizer = if google {
             None
         } else {
@@ -239,11 +242,11 @@ impl Fixture {
         route.endpoint.contract.max_input_tokens = Some(8192);
         route.endpoint.execution.response_body_limit = 1 << 20;
         route.endpoint.profile = if google {
-            Profile::Google
+            UpstreamAdapter::Google
         } else if encodings == EncodingSupport::Float {
-            Profile::DashScope
+            UpstreamAdapter::DashScope
         } else {
-            Profile::OpenRouter
+            UpstreamAdapter::OpenRouter
         };
         let seen = Arc::new(Mutex::new(vec![]));
         let router = Router::new()

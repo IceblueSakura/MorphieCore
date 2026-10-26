@@ -296,7 +296,7 @@ fn provider_observations_are_not_implicitly_admitted_by_existing_product_contrac
     .unwrap();
     let request =
         GenerationRequest::new(response.items().to_vec(), GenerationControls::default()).unwrap();
-    let contract = morphiecore::protocol::openai::TargetCaps::full().semantics;
+    let contract = morphiecore::protocol::openai::TargetContract::full().semantics;
     assert!(contract.check(&request).is_err());
     assert!(contract.check_response(&response).is_err());
 }
@@ -344,13 +344,13 @@ fn stream_alias_conflicts_and_existing_call_capability_checks_remain_strict() {
         },
         replay: None,
     };
-    let mut contract = morphiecore::protocol::openai::TargetCaps::full();
+    let mut contract = morphiecore::protocol::openai::TargetContract::full();
     contract.semantics.tools = false;
     assert!(
         morphiecore::protocol::openai::lowering::events::check_event(
             &state,
             &call,
-            morphiecore::protocol::openai::Profile::Chat,
+            morphiecore::protocol::openai::GenerationApi::Chat,
             &contract
         )
         .is_err()

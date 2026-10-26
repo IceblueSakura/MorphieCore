@@ -1,10 +1,9 @@
 use morphiecore::{
-    adapter::Request,
     protocol::{
-        CodecError, DecodedRequest,
+        CodecError, DecodedRequest, GenerationRequestEnvelope as Request,
         anthropic::{
             self,
-            messages::{Dialect, Profile, SamplingPolicy, TargetCaps},
+            messages::{Dialect, Profile, SamplingPolicy, TargetContract},
         },
         fidelity::FidelityRecords,
         native::ReplayTarget,
@@ -18,8 +17,8 @@ use serde_json::{Value, json};
 fn target() -> ReplayTarget {
     ReplayTarget::new("synthetic-native", "m").unwrap()
 }
-fn caps() -> TargetCaps {
-    let mut caps = TargetCaps::new(Profile::AdaptiveTextTools, Dialect::Standard);
+fn caps() -> TargetContract {
+    let mut caps = TargetContract::new(Profile::AdaptiveTextTools, Dialect::Standard);
     caps.semantics = Profile::AdaptiveTextTools.representation_contract();
     caps
 }
@@ -145,7 +144,7 @@ fn configured_fallback_never_replaces_supported_native_allocation_or_visibility(
     assert_eq!(result.value["output_config"]["effort"], "medium");
     assert!(result.evidence.iter().all(|rule| !matches!(
         rule,
-        morphiecore::lowering::generation::Effect::Reasoning { .. }
+        morphiecore::protocol::conversion::generation::Effect::Reasoning { .. }
     )));
     assert_eq!(request, before);
     let mut settings = request.task.semantic.settings().clone();
@@ -162,7 +161,7 @@ fn configured_fallback_never_replaces_supported_native_allocation_or_visibility(
 
 #[test]
 fn model_maximum_checks_inserted_default_without_replacing_explicit_caps() {
-    use morphiecore::adapter::ConversionFailure;
+    use morphiecore::protocol::ConversionFailure;
     assert_eq!(caps().default_output_tokens, None);
     let mut request = typed(None);
     let mut settings = request.task.semantic.settings().clone();
@@ -171,14 +170,14 @@ fn model_maximum_checks_inserted_default_without_replacing_explicit_caps() {
     let before = request.clone();
     let mut limited = caps();
     assert!(matches!(limited.encode_request(&request, &target()),
-        Err(ConversionFailure { cause: morphiecore::adapter::ConversionCause::Codec(CodecError::Unsupported(value)), .. })
+        Err(ConversionFailure { cause: morphiecore::protocol::ConversionCause::Codec(CodecError::Unsupported(value)), .. })
             if value == morphiecore::protocol::failure::CarrierReason::Unavailable));
     limited.default_output_tokens = Some(32_000);
     limited.model_limits.maximum_output_tokens = Some(31_999);
     assert!(matches!(
         limited.encode_request(&request, &target()),
         Err(ConversionFailure {
-            cause: morphiecore::adapter::ConversionCause::Codec(CodecError::Invalid(
+            cause: morphiecore::protocol::ConversionCause::Codec(CodecError::Invalid(
                 morphiecore::protocol::failure::ShapeReason::InvalidValue
             )),
             ..
@@ -208,13 +207,13 @@ fn model_maximum_checks_inserted_default_without_replacing_explicit_caps() {
     );
     limited.model_limits.maximum_output_tokens = Some(4095);
     assert!(matches!(limited.encode_request(&explicit, &target()),
-        Err(ConversionFailure { cause: morphiecore::adapter::ConversionCause::Codec(CodecError::Unsupported(value)), .. })
+        Err(ConversionFailure { cause: morphiecore::protocol::ConversionCause::Codec(CodecError::Unsupported(value)), .. })
             if value == morphiecore::protocol::failure::CarrierReason::Unavailable));
     limited.default_output_tokens = Some(0);
     assert!(matches!(
         limited.encode_request(&explicit, &target()),
         Err(ConversionFailure {
-            cause: morphiecore::adapter::ConversionCause::Codec(CodecError::Invalid(
+            cause: morphiecore::protocol::ConversionCause::Codec(CodecError::Invalid(
                 morphiecore::protocol::failure::ShapeReason::InvalidValue
             )),
             ..
@@ -227,14 +226,14 @@ fn model_maximum_checks_inserted_default_without_replacing_explicit_caps() {
         4096
     );
     assert!(matches!(limited.encode_request(&request, &target()),
-        Err(ConversionFailure { cause: morphiecore::adapter::ConversionCause::Codec(CodecError::Unsupported(value)), .. })
+        Err(ConversionFailure { cause: morphiecore::protocol::ConversionCause::Codec(CodecError::Unsupported(value)), .. })
             if value == morphiecore::protocol::failure::CarrierReason::Unavailable));
 }
 #[test]
 fn output_defaults_check_budgets_after_selected_conversions() {
-    use morphiecore::{
-        adapter::ConversionFailure,
-        protocol::reasoning::{ReasoningConversion, ReasoningRequestPolicy, SHARED_BUDGETS},
+    use morphiecore::protocol::{
+        ConversionFailure,
+        reasoning::{ReasoningConversion, ReasoningRequestPolicy, SHARED_BUDGETS},
     };
     let mut request = typed(Some(2048));
     let mut settings = request.task.semantic.settings().clone();
@@ -246,7 +245,7 @@ fn output_defaults_check_budgets_after_selected_conversions() {
     assert!(matches!(
         target_caps.encode_request(&request, &target()),
         Err(ConversionFailure {
-            cause: morphiecore::adapter::ConversionCause::Codec(CodecError::Invalid(
+            cause: morphiecore::protocol::ConversionCause::Codec(CodecError::Invalid(
                 morphiecore::protocol::failure::ShapeReason::InvalidValue
             )),
             ..
@@ -283,7 +282,7 @@ fn output_defaults_check_budgets_after_selected_conversions() {
     );
     target_caps.model_limits.allowed_effort = Some(vec![EffortLevel::High].into());
     assert!(matches!(target_caps.encode_request(&request, &target()),
-        Err(ConversionFailure { cause: morphiecore::adapter::ConversionCause::Codec(CodecError::Unsupported(value)), .. }) if value == morphiecore::protocol::failure::CarrierReason::Unavailable));
+        Err(ConversionFailure { cause: morphiecore::protocol::ConversionCause::Codec(CodecError::Unsupported(value)), .. }) if value == morphiecore::protocol::failure::CarrierReason::Unavailable));
     assert_eq!(request, before);
 
     let mut settings = typed(None).task.semantic.settings().clone();
@@ -310,7 +309,7 @@ fn output_defaults_check_budgets_after_selected_conversions() {
     assert!(exact.value["thinking"].get("budget_tokens").is_none());
     assert!(exact.evidence.iter().all(|rule| !matches!(
         rule,
-        morphiecore::lowering::generation::Effect::Reasoning { .. }
+        morphiecore::protocol::conversion::generation::Effect::Reasoning { .. }
     )));
     assert_eq!(qualitative, original);
     // Only the non-native reasoning-scoped effort needs the configured numeric fallback.
@@ -329,7 +328,7 @@ fn output_defaults_check_budgets_after_selected_conversions() {
     assert!(matches!(
         target_caps.encode_request(&qualitative, &target()),
         Err(ConversionFailure {
-            cause: morphiecore::adapter::ConversionCause::Codec(CodecError::Invalid(
+            cause: morphiecore::protocol::ConversionCause::Codec(CodecError::Invalid(
                 morphiecore::protocol::failure::ShapeReason::InvalidValue
             )),
             ..
@@ -362,7 +361,7 @@ fn ordinary_budgets_preserve_numeric_intent_and_native_strict_relation() {
     assert_eq!(native.value["max_tokens"], 4096);
     assert!(native.evidence.iter().all(|r| !matches!(
         r,
-        morphiecore::lowering::generation::Effect::Reasoning { .. }
+        morphiecore::protocol::conversion::generation::Effect::Reasoning { .. }
     )));
     assert_eq!(request, before);
     for (budget, cap) in [
@@ -483,8 +482,8 @@ fn native_identity_keeps_presence_and_bounds_with_selected_cross_projection() {
     }
     let plain = caps().encode_request(&typed(None), &target()).unwrap();
     assert!(plain.value.get("metadata").is_none());
-    let openai = morphiecore::protocol::openai::Adapter::new(
-        morphiecore::protocol::openai::Profile::Chat,
+    let openai = morphiecore::protocol::openai::GenerationCodec::new(
+        morphiecore::protocol::openai::GenerationApi::Chat,
         morphiecore::protocol::openai::Dialect::Standard,
         None,
     );

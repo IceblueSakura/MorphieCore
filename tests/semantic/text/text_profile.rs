@@ -2,7 +2,7 @@
 use crate::wire;
 use morphiecore::{
     protocol::openai::{
-        DecodedRequest, Profile, TargetCaps as Contract, chat,
+        DecodedRequest, GenerationApi, TargetContract as Contract, chat,
         events::EventDecoder,
         lowering::{lower_request, lower_response},
         responses::{self, envelope},
@@ -26,13 +26,19 @@ fn text(s: &str) -> Text {
 }
 fn request_wire(d: &DecodedRequest) -> Value {
     responses::encode_generation(
-        &lower_request(&d.semantic, &d.fidelity, Profile::Responses, contract()).unwrap(),
+        &lower_request(
+            &d.semantic,
+            &d.fidelity,
+            GenerationApi::Responses,
+            contract(),
+        )
+        .unwrap(),
     )
     .unwrap()
 }
 fn chat_wire(d: &DecodedRequest) -> Value {
     chat::encode_generation(
-        &lower_request(&d.semantic, &d.fidelity, Profile::Chat, contract()).unwrap(),
+        &lower_request(&d.semantic, &d.fidelity, GenerationApi::Chat, contract()).unwrap(),
     )
     .unwrap()
 }
@@ -41,9 +47,9 @@ fn chat_wire(d: &DecodedRequest) -> Value {
 fn audit_protected_response_details_and_access_policy_are_not_ignored() {
     use morphiecore::protocol::{
         CodecError,
-        openai::{Adapter, Dialect},
+        openai::{Dialect, GenerationCodec},
     };
-    let adapter = Adapter::new(Profile::Responses, Dialect::Standard, None);
+    let adapter = GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None);
     let mut body = json!({"id":"r","object":"response","created_at":1,"model":"m",
             "status":"failed","output":[],"error":{"code":"misalignment_policy_violation","message":"blocked"}});
     assert_eq!(
@@ -79,7 +85,7 @@ fn audit_protected_response_details_and_access_policy_are_not_ignored() {
         let mut values = wire::events(2);
         let index = if late { values.len() - 1 } else { 0 };
         values[index]["response"]["access_programs"] = json!({"cyber":"standard"});
-        let mut decoder = EventDecoder::new(Profile::Responses);
+        let mut decoder = EventDecoder::new(GenerationApi::Responses);
         let mut rejected = false;
         for value in &values {
             match decoder.push(value) {
@@ -182,7 +188,7 @@ fn response_format_shells_map_to_one_owner_with_independent_shapes() {
         );
         let mut limited = contract();
         limited.semantics.structured_output = false;
-        for profile in [Profile::Chat, Profile::Responses] {
+        for profile in [GenerationApi::Chat, GenerationApi::Responses] {
             assert_eq!(
                 lower_request(&d.semantic, &d.fidelity, profile, limited.clone()).is_err(),
                 structured
@@ -204,7 +210,7 @@ fn response_format_shells_map_to_one_owner_with_independent_shapes() {
     assert_eq!(chat_wire(&d)["verbosity"], "low");
     let mut limited = contract();
     limited.semantics.verbosity = false;
-    assert!(lower_request(&d.semantic, &d.fidelity, Profile::Chat, limited).is_err());
+    assert!(lower_request(&d.semantic, &d.fidelity, GenerationApi::Chat, limited).is_err());
     let mut invalid = source;
     invalid["verbosity"] = json!("loud");
     assert!(chat::decode_generation(&invalid).is_err());
@@ -214,22 +220,22 @@ fn response_format_shells_map_to_one_owner_with_independent_shapes() {
 fn request_formats_reject_known_nulls_without_rejecting_nullable_reports() {
     use morphiecore::protocol::{
         CodecError,
-        openai::{Adapter, Dialect},
+        openai::{Dialect, GenerationCodec},
     };
-    for profile in [Profile::Chat, Profile::Responses] {
-        let adapter = Adapter::new(profile, Dialect::Standard, None);
-        let baseline = if profile == Profile::Chat {
+    for profile in [GenerationApi::Chat, GenerationApi::Responses] {
+        let adapter = GenerationCodec::new(profile, Dialect::Standard, None);
+        let baseline = if profile == GenerationApi::Chat {
             json!({"model":"m","messages":[{"role":"user","content":"go"}]})
         } else {
             json!({"model":"m","input":"go"})
         };
-        let field = if profile == Profile::Chat {
+        let field = if profile == GenerationApi::Chat {
             "response_format"
         } else {
             "text"
         };
         let mut null = baseline.clone();
-        null[field] = if profile == Profile::Chat {
+        null[field] = if profile == GenerationApi::Chat {
             Value::Null
         } else {
             json!({"format":null})
@@ -253,7 +259,7 @@ fn request_formats_reject_known_nulls_without_rejecting_nullable_reports() {
                 } else {
                     schema.as_object_mut().unwrap().remove("description");
                 }
-                body[field] = if profile == Profile::Chat {
+                body[field] = if profile == GenerationApi::Chat {
                     let mut inner = schema.clone();
                     inner.as_object_mut().unwrap().remove("type");
                     json!({"type":"json_schema","json_schema":inner})
@@ -353,7 +359,7 @@ fn instruction_status_is_checked_in_history_and_reported_echoes() {
                         &d.semantic,
                         &d.fidelity,
                         &d.metadata,
-                        Profile::Responses,
+                        GenerationApi::Responses,
                         contract(),
                     )
                     .unwrap(),
@@ -395,7 +401,7 @@ fn custom_tools_and_text_array_results_are_not_function_arguments() {
     assert_eq!(out["input"][0]["input"], "  not JSON,\nnot executed  ");
     assert!(out["input"][0].get("arguments").is_none());
     assert_eq!(out["input"][1]["output"], "changed");
-    let chat = lower_request(&d.semantic, &d.fidelity, Profile::Chat, contract()).unwrap();
+    let chat = lower_request(&d.semantic, &d.fidelity, GenerationApi::Chat, contract()).unwrap();
     let encoded = morphiecore::protocol::openai::chat::encode_generation(&chat).unwrap();
     assert_eq!(
         encoded["messages"][0]["tool_calls"],
@@ -441,7 +447,7 @@ fn custom_tools_and_text_array_results_are_not_function_arguments() {
     let target = lower_request(
         &decoded.semantic,
         &decoded.fidelity,
-        Profile::Chat,
+        GenerationApi::Chat,
         contract(),
     )
     .unwrap();
@@ -451,7 +457,15 @@ fn custom_tools_and_text_array_results_are_not_function_arguments() {
     );
     let mut denied = contract();
     denied.semantics.custom_tools = false;
-    assert!(lower_request(&decoded.semantic, &decoded.fidelity, Profile::Chat, denied).is_err());
+    assert!(
+        lower_request(
+            &decoded.semantic,
+            &decoded.fidelity,
+            GenerationApi::Chat,
+            denied
+        )
+        .is_err()
+    );
     let mut malformed = chat_wire.clone();
     malformed["messages"][0]["tool_calls"][1]["function"] = json!({"name":"sql","arguments":"{}"});
     assert!(morphiecore::protocol::openai::chat::decode_generation(&malformed).is_err());
@@ -465,7 +479,7 @@ fn custom_tools_and_text_array_results_are_not_function_arguments() {
     let target = lower_request(
         &decoded.semantic,
         &decoded.fidelity,
-        Profile::Chat,
+        GenerationApi::Chat,
         contract(),
     )
     .unwrap();
@@ -485,7 +499,7 @@ fn custom_tools_and_text_array_results_are_not_function_arguments() {
         &response.semantic,
         &response.fidelity,
         &response.metadata,
-        Profile::Chat,
+        GenerationApi::Chat,
         contract(),
     )
     .unwrap();
@@ -493,9 +507,11 @@ fn custom_tools_and_text_array_results_are_not_function_arguments() {
         morphiecore::protocol::openai::chat::encode_response(&target).unwrap()["choices"][0]["message"],
         response_wire["choices"][0]["message"]
     );
-    let mut stream =
-        morphiecore::protocol::openai::events::EventEncoder::new(Profile::Chat, response.metadata)
-            .unwrap();
+    let mut stream = morphiecore::protocol::openai::events::EventEncoder::new(
+        GenerationApi::Chat,
+        response.metadata,
+    )
+    .unwrap();
     stream
         .encode(&StreamEvent::Started, &Default::default())
         .unwrap();
@@ -514,8 +530,8 @@ fn custom_tools_and_text_array_results_are_not_function_arguments() {
             )
             .is_err()
     );
-    let adapter = morphiecore::protocol::openai::Adapter::new(
-        Profile::Chat,
+    let adapter = morphiecore::protocol::openai::GenerationCodec::new(
+        GenerationApi::Chat,
         morphiecore::protocol::openai::Dialect::Standard,
         None,
     );
@@ -538,9 +554,11 @@ fn custom_tools_and_text_array_results_are_not_function_arguments() {
         forced
             .encode_request_with_rules(&json_request, "m", &contract())
             .unwrap_err(),
-        morphiecore::adapter::ConversionFailure {
-            boundary: Some(morphiecore::lowering::generation::ConversionBoundary::RequestEncode),
-            cause: morphiecore::adapter::ConversionCause::Codec(
+        morphiecore::protocol::ConversionFailure {
+            boundary: Some(
+                morphiecore::protocol::conversion::generation::ConversionBoundary::RequestEncode
+            ),
+            cause: morphiecore::protocol::ConversionCause::Codec(
                 morphiecore::protocol::CodecError::Unsupported(
                     morphiecore::protocol::failure::CarrierReason::Tools
                 )
@@ -576,11 +594,11 @@ fn reported_text_container_presence_is_not_request_intent() {
         protocol::{
             CodecError,
             fidelity::FidelityRecords,
-            openai::{Adapter, Dialect, ResponseMetadata, events::EventEncoder},
+            openai::{Dialect, GenerationCodec, ResponseMetadata, events::EventEncoder},
         },
         semantic::context::{ResponseContext, ResponseReport, ResponseReports},
     };
-    let adapter = Adapter::new(Profile::Responses, Dialect::Standard, None);
+    let adapter = GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None);
     for (wire_text, options) in [
         (None, TextOptions::default()),
         (
@@ -653,7 +671,7 @@ fn reported_text_container_presence_is_not_request_intent() {
             &response,
             &fidelity,
             &metadata,
-            Profile::Responses,
+            GenerationApi::Responses,
             contract(),
         )
         .unwrap();
@@ -665,7 +683,7 @@ fn reported_text_container_presence_is_not_request_intent() {
                 .iter()
                 .all(|stage| !stage.change().is_loss())
         );
-        let mut encoder = EventEncoder::new(Profile::Responses, metadata).unwrap();
+        let mut encoder = EventEncoder::new(GenerationApi::Responses, metadata).unwrap();
         for event in [
             StreamEvent::Started,
             StreamEvent::Terminal {
@@ -817,7 +835,7 @@ fn probabilities_annotations_and_snapshots_cannot_rewrite_observed_values() {
                     json!("resurrected");
             }
         }
-        let mut d = EventDecoder::new(Profile::Responses).with_replay_origin(origin());
+        let mut d = EventDecoder::new(GenerationApi::Responses).with_replay_origin(origin());
         assert!(values.iter().any(|v| d.push(v).is_err()), "{field}");
         assert!(d.finish().is_err());
     }
@@ -828,7 +846,7 @@ fn responses_round_trip(request: &Value) -> Value {
         &lower_request(
             &d.task.semantic,
             &d.task.fidelity,
-            Profile::Responses,
+            GenerationApi::Responses,
             contract(),
         )
         .unwrap(),
@@ -843,7 +861,7 @@ fn response_round_trip(response: &Value) -> Value {
             &d.semantic,
             &d.fidelity,
             &d.metadata,
-            Profile::Responses,
+            GenerationApi::Responses,
             contract(),
         )
         .unwrap(),
@@ -856,16 +874,16 @@ fn reported_cache_context_is_an_independent_response_fact() {
     response["prompt_cache_options"] = json!({"ttl":"30m","future":true});
     let decoded = responses::decode_response(&response).unwrap();
     assert_eq!(
-        serde_json::to_value(
-            &decoded
-                .metadata
-                .context
-                .execution
-                .cache
-                .prompt_cache_options
-        )
-        .unwrap(),
-        json!({"ttl":"30m"})
+        decoded
+            .metadata
+            .context
+            .execution
+            .cache
+            .prompt_cache_options,
+        Presence::Value(morphiecore::semantic::context::CacheOptions {
+            ttl: Presence::Value(morphiecore::semantic::context::CacheTtl::ThirtyMinutes),
+            ..Default::default()
+        })
     );
     assert_eq!(
         response_round_trip(&response)["prompt_cache_options"],
@@ -903,8 +921,10 @@ fn reported_cache_context_is_an_independent_response_fact() {
         responses_round_trip(&wire::request(false))["service_tier"],
         json!("auto")
     );
-    use morphiecore::semantic::context::{ServiceClass, ServicePolicy};
-    use morphiecore::semantic::value::Presence;
+    use morphiecore::semantic::{
+        context::{ServiceClass, ServicePolicy},
+        value::Presence,
+    };
     let mut requested = envelope::decode_request(&wire::request(false)).unwrap();
     assert_eq!(
         requested.context.service_policy,
@@ -918,8 +938,8 @@ fn reported_cache_context_is_an_independent_response_fact() {
     let target = lower_request(
         &requested.task.semantic,
         &requested.task.fidelity,
-        Profile::Responses,
-        morphiecore::protocol::openai::TargetCaps::full(),
+        GenerationApi::Responses,
+        morphiecore::protocol::openai::TargetContract::full(),
     )
     .unwrap();
     assert_eq!(
@@ -948,8 +968,8 @@ fn reported_cache_context_is_an_independent_response_fact() {
             &reported.semantic,
             &reported.fidelity,
             &reported.metadata,
-            Profile::Responses,
-            morphiecore::protocol::openai::TargetCaps::full(),
+            GenerationApi::Responses,
+            morphiecore::protocol::openai::TargetContract::full(),
         )
         .unwrap();
         assert_eq!(

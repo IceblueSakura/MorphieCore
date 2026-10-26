@@ -34,7 +34,10 @@ pub(in crate::gateway) struct Store {
     max_bytes: usize,
 }
 fn missing() -> ApiError {
-    ApiError::new(StatusCode::NOT_FOUND, "response_not_found")
+    ApiError::new(
+        StatusCode::NOT_FOUND,
+        crate::gateway::error::ErrorKind::ResponseNotFound,
+    )
 }
 impl Store {
     pub fn new(limits: &Limits) -> Self {
@@ -82,13 +85,13 @@ impl Store {
         {
             return Err(ApiError::new(
                 StatusCode::TOO_MANY_REQUESTS,
-                "history_capacity_exceeded",
+                crate::gateway::error::ErrorKind::HistoryCapacity,
             ));
         }
         if entries.contains_key(&snapshot.id) {
             return Err(ApiError::new(
                 StatusCode::INTERNAL_SERVER_ERROR,
-                "response_id_collision",
+                crate::gateway::error::ErrorKind::ResponseIdCollision,
             ));
         }
         let id = snapshot.id.clone();
@@ -169,8 +172,12 @@ impl Pending {
         store: Arc<Store>,
     ) -> Result<Self, ApiError> {
         let mut seed = [0; 16];
-        getrandom::fill(&mut seed)
-            .map_err(|_| ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "entropy_unavailable"))?;
+        getrandom::fill(&mut seed).map_err(|_| {
+            ApiError::new(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                crate::gateway::error::ErrorKind::EntropyUnavailable,
+            )
+        })?;
         Ok(Self {
             id: format!("resp_mc_{:032x}", u128::from_be_bytes(seed)),
             options,
@@ -183,11 +190,11 @@ impl Pending {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::protocol::openai::{Adapter, Dialect, Profile};
+    use crate::protocol::openai::{Dialect, GenerationApi, GenerationCodec};
     use std::time::Duration;
 
     fn snapshot(id: &str) -> Snapshot {
-        let adapter = Adapter::new(Profile::Responses, Dialect::Standard, None);
+        let adapter = GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None);
         let input = adapter
             .decode_client_request(br#"{"model":"synthetic","input":"first"}"#)
             .unwrap()

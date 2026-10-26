@@ -1,10 +1,10 @@
 //! Messages structured output: one IR owner with a native and an OpenAI carrier.
 
 use morphiecore::{
-    adapter::Request,
     protocol::{
+        GenerationRequestEnvelope as Request,
         anthropic::messages::client::decode_client_request,
-        openai::{Adapter, Dialect, Profile, TargetCaps},
+        openai::{Dialect, GenerationApi, GenerationCodec, TargetContract},
     },
     semantic::{context::ConversationContext, task::generation::*},
     topology::catalog,
@@ -28,7 +28,7 @@ fn chat(format: Value) -> Request {
     let raw = json!({"model":"m","response_format":format,
             "messages":[{"role":"user","content":"go"}]});
     grouped(
-        Adapter::new(Profile::Chat, Dialect::Standard, None)
+        GenerationCodec::new(GenerationApi::Chat, Dialect::Standard, None)
             .decode_client_request(raw.to_string().as_bytes())
             .unwrap(),
     )
@@ -53,8 +53,8 @@ fn messages_format_is_an_unnamed_strict_schema_with_native_and_openai_carriers()
     let (wire, rules) = endpoint.encode_request_with_rules(&source).unwrap();
     assert_eq!(wire["output_config"], json!({"format":format}));
     assert_eq!(rules, ["messages.default-automatic-cache.v1"]);
-    let (wire, rules) = Adapter::new(Profile::Chat, Dialect::Standard, None)
-        .encode_request_with_rules(&source, "synthetic", &TargetCaps::full())
+    let (wire, rules) = GenerationCodec::new(GenerationApi::Chat, Dialect::Standard, None)
+        .encode_request_with_rules(&source, "synthetic", &TargetContract::full())
         .unwrap();
     assert_eq!(
         wire["response_format"],
@@ -62,7 +62,7 @@ fn messages_format_is_an_unnamed_strict_schema_with_native_and_openai_carriers()
     );
     assert!(rules.contains(&"openai.default-schema-name.v1"));
 
-    let responses = Adapter::new(Profile::Responses, Dialect::Standard, None);
+    let responses = GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None);
     let raw = json!({"model":"m","input":"go","max_output_tokens":8,
             "text":{"verbosity":"low","format":{"type":"json_schema","name":"answer","schema":schema(),"strict":true}},
             "reasoning":{"effort":"none"},
@@ -88,11 +88,11 @@ fn messages_format_is_an_unnamed_strict_schema_with_native_and_openai_carriers()
     assert_eq!(wire["output_config"], json!({"format":format}));
     assert!(rules.contains(&"messages.omit-verbosity.v1"));
     use morphiecore::{
-        lowering::generation::Effect,
+        protocol::conversion::generation::Effect,
         protocol::{anthropic, native::ReplayTarget},
         semantic::value::Presence,
     };
-    let caps = anthropic::messages::TargetCaps::new(
+    let caps = anthropic::messages::TargetContract::new(
         anthropic::messages::Profile::AdaptiveTextTools,
         anthropic::messages::Dialect::Standard,
     );
@@ -106,14 +106,14 @@ fn messages_format_is_an_unnamed_strict_schema_with_native_and_openai_carriers()
         [
             Effect::new(
                 "messages.omit-schema-name.v1",
-                morphiecore::lowering::generation::Field::SchemaName,
-                morphiecore::lowering::generation::ConversionBoundary::RequestProject,
-                morphiecore::lowering::generation::Change::Omit
+                morphiecore::protocol::conversion::generation::Field::SchemaName,
+                morphiecore::protocol::conversion::generation::ConversionBoundary::RequestProject,
+                morphiecore::protocol::conversion::generation::Change::Omit
             ),
             Effect::MessagesVerbosity {
                 input: Presence::Value(Verbosity::Low),
                 output: Presence::Absent,
-                owner: morphiecore::lowering::generation::Owner::Root,
+                owner: morphiecore::protocol::conversion::generation::Owner::Root,
             }
         ]
     );
@@ -121,7 +121,7 @@ fn messages_format_is_an_unnamed_strict_schema_with_native_and_openai_carriers()
     assert_eq!(receipt.rule(), "messages.omit-verbosity.v1");
     assert_eq!(receipt.field(), "generation.text.verbosity");
     assert_eq!(
-        (receipt.direction(), receipt.action()),
+        (receipt.boundary().as_str(), receipt.change().as_str()),
         ("request.project", "omit")
     );
     let mut constrained = caps;
@@ -130,7 +130,7 @@ fn messages_format_is_an_unnamed_strict_schema_with_native_and_openai_carriers()
     assert_eq!(source, saved);
     assert_eq!(
         responses
-            .encode_request(&source, "m", &TargetCaps::full())
+            .encode_request(&source, "m", &TargetContract::full())
             .unwrap()["text"],
         raw["text"]
     );

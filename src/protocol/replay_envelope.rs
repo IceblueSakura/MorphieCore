@@ -12,6 +12,10 @@ use std::borrow::Cow;
 
 const PREFIX: &str = "mc1.";
 
+/// Client-source compatibility label, not execution or storage authorization.
+pub static CLIENT_ORIGIN: std::sync::LazyLock<ReplayOrigin> =
+    std::sync::LazyLock::new(|| ReplayOrigin::new("client").expect("static origin"));
+
 /// Stable compatibility label; neither credentials nor public aliases participate.
 pub fn issuer(provider: &str, model: &str) -> ReplayOrigin {
     fingerprint(&[provider, model])

@@ -1,15 +1,16 @@
 //! Attempt preparation and bounded intake. Wire projection belongs to adapters;
 //! transport I/O and downstream commit belong to their respective owners.
-use crate::protocol::failure::{CarrierReason, SourceFailureEvidence};
 use crate::{
-    adapter::{ConversionFailure, GenerationDecoder, Request, UpstreamAdapter},
-    lowering::generation::RepresentationError,
+    adapter::{GenerationDecoder, UpstreamAdapter},
     protocol::{
-        CodecError, DecodedResponse, ResponseMetadata,
+        CodecError, ConversionFailure, DecodedResponse, GenerationRequestEnvelope as Request,
+        ResponseMetadata,
+        conversion::generation::RepresentationError,
+        failure::{CarrierReason, SourceFailureEvidence},
         fidelity::FidelityRecords,
         stream::{SseError, SseLimits},
     },
-    provider::{ErrorClass, ProviderDefinition, SecretMaterial, StatusClass, classify_status},
+    provider::{ProviderDefinition, RecoveryClass, SecretMaterial, StatusClass, classify_status},
     semantic::task::generation::{GenerationRequirements, StreamEvent},
     topology::{Endpoint, PublicModel},
 };
@@ -25,15 +26,15 @@ pub enum AttemptError {
     #[error(transparent)]
     Codec(#[from] CodecError),
     #[error(transparent)]
-    Adapter(#[from] ConversionFailure),
+    Conversion(#[from] ConversionFailure),
     #[error(transparent)]
     Sse(#[from] SseError),
     #[error(transparent)]
     Lifecycle(#[from] super::lifecycle::LifecycleError),
     #[error("upstream returned HTTP {status}")]
-    Status { status: u16, class: ErrorClass },
+    Status { status: u16, class: RecoveryClass },
     #[error("transport failure")]
-    Transport(ErrorClass),
+    Transport(crate::transport::http::TransportError),
     #[error("protocol boundary: {0}")]
     Protocol(ProtocolReason),
     #[error("bounded body or stream budget exceeded")]
@@ -46,8 +47,8 @@ impl AttemptError {
         match self {
             Self::Codec(e)
             | Self::Sse(SseError::Codec(e))
-            | Self::Adapter(ConversionFailure {
-                cause: crate::adapter::ConversionCause::Codec(e),
+            | Self::Conversion(ConversionFailure {
+                cause: crate::protocol::ConversionCause::Codec(e),
                 ..
             }) => Some(e),
             _ => None,
@@ -56,8 +57,8 @@ impl AttemptError {
     pub fn representation(&self) -> Option<&RepresentationError> {
         match self {
             Self::Representation(e)
-            | Self::Adapter(ConversionFailure {
-                cause: crate::adapter::ConversionCause::Representation(e),
+            | Self::Conversion(ConversionFailure {
+                cause: crate::protocol::ConversionCause::Representation(e),
                 ..
             }) => Some(e),
             _ => match self.codec() {
@@ -66,26 +67,26 @@ impl AttemptError {
             },
         }
     }
-    pub fn locus(&self) -> Option<crate::lowering::generation::SemanticLocus> {
-        if let Self::Adapter(e) = self
+    pub fn locus(&self) -> Option<crate::protocol::conversion::generation::SemanticLocus> {
+        if let Self::Conversion(e) = self
             && e.locus.is_some()
         {
             return e.locus;
         }
         match self.codec() {
             Some(CodecError::Unsupported(CarrierReason::Field(field))) => {
-                Some(crate::lowering::generation::SemanticLocus {
+                Some(crate::protocol::conversion::generation::SemanticLocus {
                     field: *field,
-                    owner: crate::lowering::generation::Owner::Root,
+                    owner: crate::protocol::conversion::generation::Owner::Root,
                 })
             }
             _ => None,
         }
     }
 
-    pub fn boundary(&self) -> Option<crate::lowering::generation::ConversionBoundary> {
+    pub fn boundary(&self) -> Option<crate::protocol::conversion::generation::ConversionBoundary> {
         match self {
-            Self::Adapter(e) => e.boundary,
+            Self::Conversion(e) => e.boundary,
             Self::Codec(CodecError::Representation { boundary, .. })
             | Self::Sse(SseError::Codec(CodecError::Representation { boundary, .. })) => {
                 Some(*boundary)
@@ -97,8 +98,8 @@ impl AttemptError {
         match self {
             Self::Codec(CodecError::StreamFailure(e))
             | Self::Sse(SseError::Codec(CodecError::StreamFailure(e))) => Some(*e),
-            Self::Adapter(crate::adapter::ConversionFailure {
-                cause: crate::adapter::ConversionCause::Codec(CodecError::StreamFailure(e)),
+            Self::Conversion(crate::protocol::ConversionFailure {
+                cause: crate::protocol::ConversionCause::Codec(CodecError::StreamFailure(e)),
                 ..
             }) => Some(*e),
             _ => None,
@@ -138,6 +139,7 @@ pub enum ProtocolReason {
     TranscriptionSerialization,
     UndeclaredOperation,
     UnexpectedResponseMediaType,
+    ResponseLength,
 }
 impl std::fmt::Display for ProtocolReason {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -198,7 +200,7 @@ pub fn admit(
     let mut contract = public.contract.clone();
     // Messages tool errors have an explicit candidate-local projection on
     // non-native targets; admission must not erase them for native candidates.
-    if request.source == Some(crate::adapter::ClientProtocol::Messages) {
+    if request.source == Some(crate::protocol::ClientProtocol::Messages) {
         contract.tool_result_errors = true;
     }
     Ok(request.check_semantic(&contract)?)
@@ -255,7 +257,7 @@ pub(crate) fn prepare_with_evidence(
     provider: &ProviderDefinition,
     secret: &SecretMaterial,
     request: &Request,
-) -> Result<crate::lowering::generation::Conversion<UpstreamRequest>, AttemptError> {
+) -> Result<crate::protocol::conversion::generation::Conversion<UpstreamRequest>, AttemptError> {
     let auth = operation_auth(endpoint, provider)?;
     let streaming = request.delivery.streaming() || endpoint.representation.forced_stream();
     if streaming && !endpoint.execution.streaming {
@@ -284,7 +286,7 @@ pub(crate) fn prepare_with_evidence(
         ),
     ];
     safe_headers.extend(endpoint.request_headers(request, &value)?);
-    Ok(crate::lowering::generation::Conversion {
+    Ok(crate::protocol::conversion::generation::Conversion {
         value: UpstreamRequest {
             origin: endpoint.target.origin.as_str().into(),
             method: "POST",
@@ -324,7 +326,7 @@ impl Attempt {
 /// Holds bounded decoder state, not a replay log. A terminal is withheld until
 /// strict EOF validation so a truncated/trailing-invalid body cannot emit success.
 pub struct Attempt {
-    evidence: crate::lowering::generation::EvidenceDelta,
+    evidence: crate::protocol::conversion::generation::EvidenceDelta,
     identity: std::sync::Arc<()>,
     adapter: UpstreamAdapter,
     body_limit: usize,
@@ -338,9 +340,9 @@ impl Attempt {
         self.adapter.is_native()
     }
     pub(crate) fn is_responses(&self) -> bool {
-        self.adapter
-            .openai()
-            .is_ok_and(|adapter| adapter.protocol == crate::protocol::openai::Profile::Responses)
+        self.adapter.openai().is_ok_and(|adapter| {
+            adapter.protocol == crate::protocol::openai::GenerationApi::Responses
+        })
     }
     pub(crate) fn messages_terminal_source(
         &self,
@@ -447,7 +449,7 @@ impl Attempt {
     }
     /// Drain effects from successfully returned source units, including EOF.
     /// Rejection preserves any earlier undrained evidence, never a failed unit's delta.
-    pub fn take_evidence(&mut self) -> crate::lowering::generation::EvidenceDelta {
+    pub fn take_evidence(&mut self) -> crate::protocol::conversion::generation::EvidenceDelta {
         std::mem::take(&mut self.evidence)
     }
     pub(crate) fn identity(&self) -> &std::sync::Arc<()> {
@@ -564,7 +566,9 @@ mod identity_tests {
         execution::ResponseDelivery,
         protocol::{
             native::ReplayTarget,
-            openai::{Adapter, Dialect, Profile, TargetCaps, obfuscation::Obfuscation},
+            openai::{
+                Dialect, GenerationApi, GenerationCodec, TargetContract, obfuscation::Obfuscation,
+            },
         },
         semantic::context::StreamOptions,
     };
@@ -652,8 +656,8 @@ mod identity_tests {
         let delivery = || {
             ResponseDelivery::new(
                 crate::adapter::ClientAdapter::openai(
-                    Adapter::new(Profile::Responses, Dialect::MorphieCore, None),
-                    TargetCaps::full(),
+                    GenerationCodec::new(GenerationApi::Responses, Dialect::MorphieCore, None),
+                    TargetContract::full(),
                 ),
                 "public",
                 SseLimits::default(),
@@ -697,8 +701,11 @@ mod identity_tests {
         let mut without_id = observed.metadata.clone();
         without_id.created = Some(1.into());
         assert!(
-            crate::protocol::openai::events::EventEncoder::new(Profile::Responses, without_id,)
-                .is_err()
+            crate::protocol::openai::events::EventEncoder::new(
+                GenerationApi::Responses,
+                without_id,
+            )
+            .is_err()
         );
     }
 

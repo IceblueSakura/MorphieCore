@@ -1,10 +1,8 @@
 //! Independent MiMo Speech and Transcription codecs over the Chat JSON envelope.
 //! Sources: https://mimo.mi.com/docs/en-US/api/audio/tts
 //! https://mimo.mi.com/docs/en-US/api/audio/Speech-Recognition
-use crate::protocol::failure::CarrierReason;
-
 use crate::{
-    protocol::CodecError,
+    protocol::{CodecError, failure::CarrierReason},
     semantic::{
         task::{
             speech_recognition::{InputFormat, RecognitionReport, RecognitionResult},
@@ -35,7 +33,7 @@ pub const FORMATS: &[AudioEncoding] = &[
 ];
 
 pub fn encode_speech(
-    request: &crate::adapter::speech::Request,
+    request: &crate::protocol::speech::Request,
     model: &str,
 ) -> Result<Value, CodecError> {
     super::openai::speech::validate_request(request)?;
@@ -68,7 +66,7 @@ pub fn encode_speech(
 }
 
 pub fn encode_transcription(
-    request: &crate::adapter::transcription::Request,
+    request: &crate::protocol::transcription::Request,
     model: &str,
 ) -> Result<Value, CodecError> {
     request.task.validate().map_err(|_| CodecError::invalid())?;
@@ -241,7 +239,7 @@ mod tests {
     fn speech_wire_oracle_and_honest_terminal() {
         let mut task = SpeechRequest::new("Hello.", "Chloe").unwrap();
         task.instructions = Some("Speak gently.".into());
-        let request = crate::adapter::speech::Request::new("mimo-v2.5-tts", task.clone());
+        let request = crate::protocol::speech::Request::new("mimo-v2.5-tts", task.clone());
         assert_eq!(
             encode_speech(&request, "mimo-v2.5-tts").unwrap(),
             json!({"model":"mimo-v2.5-tts","messages":[
@@ -281,7 +279,7 @@ mod tests {
             AudioInput::new(bytes::Bytes::from_static(b"abc"), InputFormat::Wav).unwrap(),
         );
         task.language = Some("en".into());
-        let mut request = crate::adapter::transcription::Request {
+        let mut request = crate::protocol::transcription::Request {
             model: "mimo-v2.5-asr".into(),
             task,
         };

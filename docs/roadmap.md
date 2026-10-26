@@ -34,7 +34,6 @@ This page owns current scope, priorities, dependencies and exit gates. Start wit
 - [Pending decisions](#pending-decisions)
   - [Ownership and projection decisions](#ownership-and-projection-decisions)
   - [Scheduling and product decisions](#scheduling-and-product-decisions)
-  - [Structure and boundary decisions](#structure-and-boundary-decisions)
 - [Deferred work](#deferred-work)
   - [Deferred Generation semantics](#deferred-generation-semantics)
   - [Deferred cache prewarming](#deferred-cache-prewarming)
@@ -51,7 +50,9 @@ This page owns current scope, priorities, dependencies and exit gates. Start wit
 
 ## Current status
 
-**Current handoff (2026-10-25):** the selected Generation Text implementation is closed after the overall correctness, lifecycle, evidence and redundancy review. Unified [domain evidence](architecture.md#domain-evidence-interface) and [local telemetry](architecture.md#observability) are implemented, not pending migrations. The [closure checks](development.md#text-and-sse-integration-baseline) and separately bounded [current-host/Provider reacceptance](refs/2026-10-17-generation-contracts.md#current-host-closure-recheck-2026-10-25) pass with explicit exclusions. Stage 4 now contains Decision, Embedding, Audio, Images, Files/Uploads and Video at equal priority; no further operation, routing feature or deployment is activated by this handoff.
+**Current handoff (2026-10-26):** the selected Generation Text implementation is closed after the overall correctness, lifecycle, evidence and redundancy review. Unified [domain evidence](architecture.md#domain-evidence-interface) and [local telemetry](architecture.md#observability) are implemented, not pending migrations. The [closure checks](development.md#text-and-sse-integration-baseline) and separately bounded [current-host/Provider reacceptance](refs/2026-10-17-generation-contracts.md#current-host-closure-recheck-2026-10-25) pass with explicit exclusions. Stage 4 now contains Decision, Embedding, Audio, Images, Files/Uploads and Video at equal priority; no further operation, routing feature or deployment is activated by this handoff.
+
+The selected 2026-10-26 structure/vocabulary maintenance is complete. [Architecture](architecture.md#domain-vocabulary-and-failure-contracts) owns the implemented contracts; [verification evidence](development.md#verification-gates) separates offline, SDK and installed-client checks. No new API, binding, Google classification, retry policy or diagnostic-extension certification follows.
 
 | Area | State | Next step |
 |---|---|---|
@@ -439,7 +440,7 @@ P8 policy selection is complete. Responses normalization-default strictness neve
 
 Terminal causes remain separate from turn progress and tool continuation. Chat and Responses use the [selected terminal approximations](architecture.md#selected-request-approximations); Google `STOP` remains a source fact and Chat delivers `stop`. Messages retains its strict rejection rules, with only the selected [Google delivery profile](architecture.md#google-messages-terminal-projection) applied to eligible copies. Selected answer/history loops have [stage-3 acceptance](#stage-3-work-plan); codec probes and synthetic smokes alone establish neither full-request admission nor real acceptance. The [Messages gateway smoke](../tests/gateway/anthropic.rs) remains synthetic JSON/SSE evidence for owner-local markers and signed tool-result/final-answer history, not a real-client or Provider gate.
 
-Exchange capture covers authenticated client boundaries and Generation upstream I/O, not frozen standalone tasks. Unsafe units are explicitly incomplete or omitted, never raw fallbacks; capture counters do not establish semantic completion or durable retention.
+Exchange capture covers authenticated client boundaries and the selected Generation/standalone upstream exchanges. Unsafe units are explicitly incomplete or omitted, never raw fallbacks; capture counters do not establish semantic completion or durable retention.
 
 ### P7 boundary review
 
@@ -499,6 +500,7 @@ Minimal counterexamples and pinned sources are in [Generation contract boundarie
 |---|---|
 | Complete citations and source identity | **Stage 5.** Licence/quote/request-source owners and complete Messages citations remain unselected. The local [point-anchor correction](architecture.md#citation-point-anchors) is selected separately and does not resolve the [1C design](api-expansion-design.md#1c-design-messages-citations) |
 | Execution controls and reports | **Unscheduled beyond the selected local repairs.** Geography, access programs and broader safety/review details still need bounded owners. Production closure selects protected budget/dispatch rejection and explanatory refusal reports, not their execution. Continuation execution stays excluded |
+| Google error-envelope semantics | **Paused; unselected.** Keep each API's current extraction/classification. Canonical-status and Interactions URI error mappings require their own source-backed semantic decision, not a shared parser inferred from similar field names |
 | Google probability report owners | **Paused; unselected.** Keep the [remaining proposals](api-expansion-design.md#google-output-report-owners-unselected) and [streaming evidence](refs/2026-10-17-generation-contracts.md#streamed-score-scope-2026-10-20). Terminal explanations are now selected separately; nonempty URL-context reports, hosted tools and complete citations remain excluded |
 | Google service report mappings | **Selected concrete reports implemented.** The [source check](refs/2026-10-17-generation-contracts.md#google-text-report-source-recheck-2026-10-21) establishes the selected v1 carriers and processing classes. Unproven defaults/transitions still reject; wider service semantics and model fallback remain unselected |
 
@@ -516,18 +518,6 @@ Minimal counterexamples and pinned sources are in [Generation contract boundarie
 | Server-side compaction | Stage-5 backlog, unscheduled. Keep the explicit `/responses/compact` operation separate from automatic triggers and existing compaction-item replay | Compaction execution, not existing replay or stages 1–4 |
 | Batch | Stage-5 backlog, unscheduled. Select native job execution, durable acceptance/reconciliation and supported task/resource dependencies | Batch API and execution |
 | Realtime | Stage-5 backlog, unscheduled. Choose a client scenario and official contract before deciding session ownership, transport, interruption and recovery | Realtime |
-
-### Structure and boundary decisions
-
-Raised by the 2026-10-26 code-quality review. The behavior-neutral consolidations from that review are implemented; each item below either changes observable behavior or revises an accepted ownership boundary, so it needs a user selection. Each selection is an independent slice with the full offline baseline and, where the boundary is connected, the SDK gate.
-
-| Question | Current state | Recommendation and exit condition |
-|---|---|---|
-| Standalone task exchange pipeline | Images, Speech, Transcription and Embeddings each reimplement admission, bounded receive and encoding (`gateway/tasks/*`, about 450 duplicated lines) and have diverged: only Embeddings keeps `Retry-After` on upstream failures and captures exchanges; Images skips Content-Length checks; Images, Speech and Transcription encode the request twice | Share one task exchange owner and align all tasks to the Embeddings behavior (prepare once, authorize after credential resolution, classified failures with `Retry-After`, capture). Exit: focused per-task assertions for each aligned behavior; frozen-scope maintenance only, no new operations |
-| Evidence vocabulary location | `lowering::generation` holds conversion evidence, boundaries and representation errors that `protocol` depends on (209 references), while top-level `lowering` also dispatches over every protocol. This revises the accepted [domain evidence interface](architecture.md#domain-evidence-interface) owner | Move the vocabulary to `protocol::evidence` and leave `lowering` for cross-protocol dispatch. Exit: no `protocol → lowering` dependency; Architecture layer table updated |
-| OpenAI target naming and upward dependencies | Candidate-local OpenAI encoding lives in `openai/adapter` plus `openai/target.rs` and `openai/lowering/`, while Anthropic and Google use `*/target.rs`; 11 protocol files import `crate::adapter` | Fold into `openai/target/` with the same role names as other vendors and remove `protocol → adapter` imports. Exit: pure move, no behavior change, ownership table updated |
-| Protocol spelling in semantic context | `semantic/context.rs` derives OpenAI wire spelling (`prompt_cache_key`, `"24h"`, `"30m"`) and `protocol/openai/context.rs` reuses those semantic types as wire DTOs, contrary to codec-owned spelling | Move serde spelling into OpenAI codec DTOs with explicit wire→IR/IR→wire mapping. Exit: independent directional assertions for the moved fields; semantic types carry no serde wire names |
-| Small behavior inconsistencies | (a) OpenAI image/input-audio media types are capped at 64 bytes while other resources use `MAX_RESOURCE_MEDIA_TYPE_BYTES` (256). (b) generateContent stream errors honor only numeric `code`; Interactions maps string gRPC statuses. (c) Static Chat accepts `finish_reason: "tool_calls"` without calls; Chat SSE requires calls | (a) Use the shared 256-byte bound. (b) Share one Google failure table for both APIs. (c) Share one Chat finish-reason decoder and require calls in both directions. Exit: one owner per rule with focused negative cases |
 
 ## Deferred work
 

@@ -1,7 +1,7 @@
 //! Explicit Speech bindings; product admission never follows Chat activation.
 use crate::{
-    adapter::speech::Profile,
-    lowering::speech::SpeechCapabilities,
+    adapter::speech::UpstreamAdapter,
+    protocol::speech::projection::SpeechCapabilities,
     provider::{CredentialBindingId, CredentialKind, ProviderOperation, catalog},
     semantic::value::AudioEncoding,
     topology::{
@@ -12,7 +12,7 @@ use crate::{
 pub struct SpeechBinding {
     pub provider: fn() -> crate::provider::ProviderDefinition,
     pub identity: &'static str,
-    pub profile: Profile,
+    pub profile: UpstreamAdapter,
     pub model: &'static str,
     pub upstream: &'static str,
     pub voices: &'static [&'static str],
@@ -26,7 +26,7 @@ pub const SPEECH_BINDINGS: &[SpeechBinding] = &[
     SpeechBinding {
         provider: catalog::xiaomi,
         identity: "xiaomi-speech",
-        profile: Profile::Xiaomi,
+        profile: UpstreamAdapter::Xiaomi,
         model: "mimo-v2.5-tts",
         upstream: "mimo-v2.5-tts",
         voices: crate::protocol::xiaomi_audio::VOICES,
@@ -37,7 +37,7 @@ pub const SPEECH_BINDINGS: &[SpeechBinding] = &[
     SpeechBinding {
         provider: catalog::openrouter,
         identity: "openrouter-qwen-speech",
-        profile: Profile::OpenRouterMp3,
+        profile: UpstreamAdapter::OpenRouterMp3,
         model: "qwen-audio-3.0-tts-flash",
         upstream: "qwen/qwen-audio-3.0-tts-flash",
         voices: &["loongjohn", "longanhuan_v3.6"],
@@ -49,7 +49,7 @@ pub const SPEECH_BINDINGS: &[SpeechBinding] = &[
     SpeechBinding {
         provider: catalog::aliyun_tokenplan_cn,
         identity: "tokenplan-qwen-speech",
-        profile: Profile::AliyunMp3,
+        profile: UpstreamAdapter::AliyunMp3,
         model: "qwen-audio-3.0-tts-plus",
         upstream: "qwen-audio-3.0-tts-plus",
         // https://help.aliyun.com/en/model-studio/qwen-audio-tts-voice-list
@@ -103,12 +103,12 @@ impl SpeechBinding {
                 profile: self.profile,
                 capabilities: SpeechCapabilities {
                     voices: self.voices.iter().map(|v| (*v).into()).collect(),
-                    formats: if self.profile == Profile::Xiaomi {
+                    formats: if self.profile == UpstreamAdapter::Xiaomi {
                         crate::protocol::xiaomi_audio::FORMATS.to_vec()
                     } else {
                         vec![AudioEncoding::Mp3]
                     },
-                    instructions: self.profile == Profile::Xiaomi,
+                    instructions: self.profile == UpstreamAdapter::Xiaomi,
                     speed: false,
                 },
                 credential: self.credential(),

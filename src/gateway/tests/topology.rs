@@ -1,6 +1,6 @@
 //! Small ingress fixture independent of product registration and publication data.
 use crate::{
-    protocol::openai::{Adapter, Dialect, Profile, TargetCaps},
+    protocol::openai::{Dialect, GenerationApi, GenerationCodec, TargetContract},
     provider::{
         AuthScheme, CredentialBindingId, CredentialKind, EndpointPath, ProviderDefinition,
         ProviderId, TrustedOrigin,
@@ -8,7 +8,7 @@ use crate::{
     semantic::value::ReplayOrigin,
     topology::{
         self, CanonicalModel, CompiledTopology, Endpoint, EndpointId, EndpointTarget,
-        ExecutionContract, GenerationSemanticContract, ModelId, ModelMetadata, ProtocolProfile,
+        ExecutionContract, GenerationFeatureSet, GenerationProtocol, ModelId, ModelMetadata,
         PublicModel, Route, RouteId, TaskKind,
     },
 };
@@ -52,30 +52,31 @@ pub(crate) fn topology_at(origin: &str) -> CompiledTopology {
     let endpoints = [
         (
             "fixture-chat",
-            Profile::Chat,
-            ProtocolProfile::OpenAiChat,
+            GenerationApi::Chat,
+            GenerationProtocol::OpenAiChat,
             false,
         ),
         (
             "fixture-responses",
-            Profile::Responses,
-            ProtocolProfile::OpenAiResponses,
+            GenerationApi::Responses,
+            GenerationProtocol::OpenAiResponses,
             false,
         ),
         (
             "limited-responses",
-            Profile::Responses,
-            ProtocolProfile::OpenAiResponses,
+            GenerationApi::Responses,
+            GenerationProtocol::OpenAiResponses,
             true,
         ),
     ]
     .into_iter()
     .map(|(id, profile, protocol, limited)| {
         let scope = ReplayOrigin::new("synthetic-source").unwrap();
-        let mut representation = TargetCaps {
-            adaptation: Adapter::new(profile, Dialect::MorphieCore, Some(scope.clone())).adaptation,
+        let mut representation = TargetContract {
+            adaptation: GenerationCodec::new(profile, Dialect::MorphieCore, Some(scope.clone()))
+                .adaptation,
             replay_origin: Some(scope),
-            ..TargetCaps::full()
+            ..TargetContract::full()
         };
         representation.semantics.temperature = !limited;
         Endpoint {
@@ -83,7 +84,7 @@ pub(crate) fn topology_at(origin: &str) -> CompiledTopology {
             provider: provider.id.clone(),
             target: EndpointTarget {
                 origin: provider.origin.clone(),
-                path: if profile == Profile::Chat {
+                path: if profile == GenerationApi::Chat {
                     provider
                         .entry(crate::provider::ProviderOperation::ChatCompletions)
                         .unwrap()
@@ -128,7 +129,7 @@ pub(crate) fn topology_at(origin: &str) -> CompiledTopology {
     ]
     .into_iter()
     .map(|(id, route)| {
-        let mut contract = GenerationSemanticContract::full();
+        let mut contract = GenerationFeatureSet::full();
         contract.temperature = id != "limited-model";
         PublicModel::new(
             ModelId::new(id).unwrap(),
@@ -149,7 +150,7 @@ pub(crate) fn topology_at(origin: &str) -> CompiledTopology {
         vec![CanonicalModel {
             id: canonical.clone(),
             task: TaskKind::Generation,
-            contract: GenerationSemanticContract::full(),
+            contract: GenerationFeatureSet::full(),
         }],
     )
     .unwrap()
@@ -162,7 +163,7 @@ pub(crate) fn topology_at(origin: &str) -> CompiledTopology {
             id: RouteId::new("fixture-images").unwrap(),
             model: image.clone(),
             canonical_model: image.clone(),
-            accounting: crate::lowering::images::AccountingPolicy::Strict,
+            accounting: crate::protocol::image::projection::AccountingPolicy::Strict,
             endpoint: topology::images::ImageEndpoint {
                 id: EndpointId::new("fixture-images").unwrap(),
                 provider: provider.id,
@@ -172,7 +173,7 @@ pub(crate) fn topology_at(origin: &str) -> CompiledTopology {
                 },
                 upstream_model: "private-image".into(),
                 canonical_model: image.clone(),
-                profile: crate::adapter::images::Profile::GptImage,
+                profile: crate::adapter::images::UpstreamAdapter::GptImage,
                 credential: CredentialBindingId::new("fixture-key").unwrap(),
                 execution: ExecutionContract {
                     streaming: false,

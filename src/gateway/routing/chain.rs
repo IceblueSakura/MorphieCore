@@ -2,7 +2,7 @@
 use crate::{
     execution::{DeliveryState, fallback::Transition},
     gateway::BoundCandidate,
-    provider::ErrorClass,
+    provider::RecoveryClass,
     topology::{EndpointId, RoutePolicy},
 };
 use std::{collections::HashMap, sync::Arc};
@@ -12,7 +12,7 @@ pub(in crate::gateway) struct Chain<'a> {
     policy: &'a RoutePolicy,
     pub attempts: usize,
     endpoint_attempts: HashMap<EndpointId, usize>,
-    failures: Vec<(usize, ErrorClass)>,
+    failures: Vec<(usize, RecoveryClass)>,
 }
 impl<'a> Chain<'a> {
     pub fn new(candidates: &'a [Arc<BoundCandidate>], policy: &'a RoutePolicy) -> Self {
@@ -64,7 +64,7 @@ impl<'a> Chain<'a> {
             .entry(self.candidates[index].endpoint.id.clone())
             .or_default() += 1;
     }
-    pub fn failed(&mut self, index: usize, class: ErrorClass) {
+    pub fn failed(&mut self, index: usize, class: RecoveryClass) {
         self.failures.push((index, class));
     }
     /// Hold lifecycle frames only while a later candidate could legally answer
@@ -80,7 +80,7 @@ impl<'a> Chain<'a> {
             .may_advance(
                 self.policy,
                 DeliveryState::Uncommitted,
-                ErrorClass::Upstream,
+                RecoveryClass::Upstream,
                 self.attempts,
                 true,
             )

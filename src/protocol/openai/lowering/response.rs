@@ -1,6 +1,6 @@
 //! Response fact requirements and projection before static or event delivery.
 use super::{
-    ReportedFactPolicy, RepresentationError, TargetCaps,
+    ReportedFactPolicy, RepresentationError, TargetContract,
     checks::{
         check_tool_selection, check_usage, represent_reasoning, text_items, validate_wire_ids,
     },
@@ -10,7 +10,7 @@ use crate::{
     protocol::{
         ResponseMetadata,
         fidelity::FidelityRecords,
-        openai::{Profile, ResponseRepresentation},
+        openai::{GenerationApi, ResponseRepresentation},
     },
     semantic::task::generation::*,
 };
@@ -20,7 +20,7 @@ use crate::{
 pub fn require_reported_facts(
     r: &GenerationResponse,
     metadata: &ResponseMetadata,
-    c: &TargetCaps,
+    c: &TargetContract,
 ) -> Result<(), RepresentationError> {
     if c.reported_facts != ReportedFactPolicy::StrictComplete {
         return Ok(());
@@ -49,8 +49,8 @@ pub fn lower_response<'a>(
     r: &'a GenerationResponse,
     fidelity: &'a FidelityRecords,
     metadata: &'a ResponseMetadata,
-    profile: Profile,
-    c: TargetCaps,
+    profile: GenerationApi,
+    c: TargetContract,
 ) -> Result<ResponseRepresentation<'a>, RepresentationError> {
     if r.items()
         .iter()
@@ -71,18 +71,25 @@ pub fn lower_response<'a>(
     let mut semantic = std::borrow::Cow::Borrowed(r);
     let mut projection: Vec<_> = terminal_losses
         .into_iter()
-        .map(|loss| (loss).effect(crate::lowering::generation::ConversionBoundary::ResponseProject))
+        .map(|loss| {
+            (loss).effect(
+                crate::protocol::conversion::generation::ConversionBoundary::ResponseProject,
+            )
+        })
         .collect();
     if let Some(loss) = projection::reported_settings(metadata.to_mut(), profile)? {
         if c.reported_facts == ReportedFactPolicy::StrictComplete {
             return Err(RepresentationError::ReportedFacts);
         }
-        projection
-            .push((loss).effect(crate::lowering::generation::ConversionBoundary::ResponseProject));
+        projection.push(
+            (loss).effect(
+                crate::protocol::conversion::generation::ConversionBoundary::ResponseProject,
+            ),
+        );
     }
     crate::protocol::reports::relation(&metadata.context.reports, true)
         .map_err(|_| RepresentationError::Metadata)?;
-    if profile == Profile::Responses
+    if profile == GenerationApi::Responses
         && crate::protocol::reports::terminal_view(&mut metadata.to_mut().context.reports)
             .map_err(|_| RepresentationError::Metadata)?
     {
@@ -90,23 +97,28 @@ pub fn lower_response<'a>(
             return Err(RepresentationError::ReportedFacts);
         }
         projection.push(
-            (projection::LossRule::OmitOpeningReport)
-                .effect(crate::lowering::generation::ConversionBoundary::ResponseProject),
+            (projection::ProjectionRule::OmitOpeningReport).effect(
+                crate::protocol::conversion::generation::ConversionBoundary::ResponseProject,
+            ),
         );
     }
-    if profile == Profile::Responses && !metadata.context.system_fingerprint.is_absent() {
+    if profile == GenerationApi::Responses && !metadata.context.system_fingerprint.is_absent() {
         metadata.to_mut().context.system_fingerprint = crate::semantic::value::Presence::Absent;
         projection.push(
-            (projection::LossRule::OmitResponsesSystemFingerprint)
-                .effect(crate::lowering::generation::ConversionBoundary::ResponseProject),
+            (projection::ProjectionRule::OmitResponsesSystemFingerprint).effect(
+                crate::protocol::conversion::generation::ConversionBoundary::ResponseProject,
+            ),
         );
     }
     if let Some((groups, loss)) =
         message_groups::project(r.items(), r.message_envelopes(), profile)?
     {
         semantic = std::borrow::Cow::Owned(r.clone().with_message_envelopes(groups)?);
-        projection
-            .push((loss).effect(crate::lowering::generation::ConversionBoundary::ResponseProject));
+        projection.push(
+            (loss).effect(
+                crate::protocol::conversion::generation::ConversionBoundary::ResponseProject,
+            ),
+        );
     }
     if r.usage_reports().has_unrepresented_details() {
         if c.reported_facts == ReportedFactPolicy::StrictComplete {
@@ -114,19 +126,22 @@ pub fn lower_response<'a>(
         }
         semantic = std::borrow::Cow::Owned(semantic.into_owned().with_usage(r.usage())?);
         projection.push(
-            (projection::LossRule::UsageReportView)
-                .effect(crate::lowering::generation::ConversionBoundary::ResponseProject),
+            (projection::ProjectionRule::UsageReportView).effect(
+                crate::protocol::conversion::generation::ConversionBoundary::ResponseProject,
+            ),
         );
     }
     if let Some(usage) = r.usage() {
         let (projected, losses) = match profile {
-            Profile::Chat => (usage, vec![]),
-            Profile::Responses => projection::responses_usage(usage, &c.adaptation.rules)?,
+            GenerationApi::Chat => (usage, vec![]),
+            GenerationApi::Responses => projection::responses_usage(usage, &c.adaptation.rules)?,
         };
         if !losses.is_empty() {
             semantic = std::borrow::Cow::Owned(semantic.into_owned().with_usage(Some(projected))?);
             projection.extend(losses.into_iter().map(|loss| {
-                (loss).effect(crate::lowering::generation::ConversionBoundary::ResponseProject)
+                (loss).effect(
+                    crate::protocol::conversion::generation::ConversionBoundary::ResponseProject,
+                )
             }));
         }
     }
@@ -153,8 +168,8 @@ fn validate_response(
     r: &GenerationResponse,
     fidelity: &FidelityRecords,
     metadata: &ResponseMetadata,
-    profile: Profile,
-    c: &TargetCaps,
+    profile: GenerationApi,
+    c: &TargetContract,
 ) -> Result<(), RepresentationError> {
     if let Some(settings) = metadata.context.settings() {
         settings.validate()?;
@@ -174,7 +189,7 @@ fn validate_response(
         return Err(RepresentationError::UnmigratedSemantic);
     }
     require_reported_facts(r, metadata, c)?;
-    if profile == Profile::Responses
+    if profile == GenerationApi::Responses
         && metadata.context.settings().is_some_and(|s| {
             s.reasoning.presentation.visibility.value() == Some(&ReasoningDisplay::Omitted)
         })
@@ -184,7 +199,7 @@ fn validate_response(
     if let Some(usage) = r.usage() {
         check_usage(usage, profile, &c.adaptation.rules)?;
     }
-    if profile == Profile::Chat
+    if profile == GenerationApi::Chat
         && !c.adaptation.rules.readable_reasoning
         && r.items()
             .iter()
@@ -193,7 +208,7 @@ fn validate_response(
         return Err(RepresentationError::Reasoning);
     }
     // Phase labels are Responses-only; reject instead of dropping the label.
-    if profile == Profile::Chat
+    if profile == GenerationApi::Chat
         && r.items()
             .iter()
             .any(|(_, i)| matches!(i, Item::Message(m) if m.phase.is_some()))
@@ -221,7 +236,7 @@ fn validate_response(
     } else {
         ItemLifecycle::Completed
     };
-    if profile == Profile::Chat
+    if profile == GenerationApi::Chat
         && r.items().iter().any(|(_, item)| {
             let completed_replay_owner = c.adaptation.rules.structured_chat_reasoning
                 && chat_status == ItemLifecycle::Incomplete
@@ -232,21 +247,21 @@ fn validate_response(
     {
         return Err(RepresentationError::Terminal);
     }
-    if (profile == Profile::Responses && !r.message_envelopes().is_empty())
-        || (profile == Profile::Chat
+    if (profile == GenerationApi::Responses && !r.message_envelopes().is_empty())
+        || (profile == GenerationApi::Chat
             && !crate::protocol::openai::chat::owners::contiguous(r.items(), r.message_envelopes()))
     {
         return Err(RepresentationError::MessageGrouping);
     }
     text_items(r.items(), profile, false, r.resources())?;
     let owners = crate::protocol::openai::chat::owners::owners(r.items(), r.message_envelopes());
-    if profile == Profile::Chat && chat_message_count(r.items(), &owners) != 1 {
+    if profile == GenerationApi::Chat && chat_message_count(r.items(), &owners) != 1 {
         return Err(RepresentationError::MessageGrouping);
     }
     if metadata.validate().is_err() {
         return Err(RepresentationError::Metadata);
     }
-    if profile == Profile::Chat
+    if profile == GenerationApi::Chat
         && (matches!(r.outcome(), Outcome::Failed | Outcome::Cancelled)
             || r.details().error.is_some()
             || !crate::protocol::openai::terminal::chat_incomplete(
@@ -260,7 +275,7 @@ fn validate_response(
         crate::protocol::openai::service::class_wire(*class, profile)
             .map_err(|_| RepresentationError::Metadata)?;
     }
-    if profile == Profile::Chat
+    if profile == GenerationApi::Chat
         && crate::protocol::openai::chat::envelope::validate_context(&metadata.context.execution)
             .is_err()
     {
@@ -269,7 +284,7 @@ fn validate_response(
     if metadata
         .created
         .as_ref()
-        .is_none_or(|created| profile == Profile::Chat && created.as_u64().is_none())
+        .is_none_or(|created| profile == GenerationApi::Chat && created.as_u64().is_none())
     {
         return Err(RepresentationError::Metadata);
     }

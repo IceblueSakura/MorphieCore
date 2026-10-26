@@ -1,8 +1,9 @@
 //! Direct IR → Interactions steps; no generateContent wire translation.
 use super::items::steps;
-use crate::protocol::failure::CarrierReason;
 use crate::{
-    protocol::{CodecError, fidelity::FidelityRecords, native::ReplayTarget},
+    protocol::{
+        CodecError, failure::CarrierReason, fidelity::FidelityRecords, native::ReplayTarget,
+    },
     semantic::{task::generation::*, value::Presence},
 };
 use serde_json::{Map, Value, json};
@@ -23,8 +24,13 @@ pub enum RequestRule {
     JoinInstructionParts,
 }
 impl RequestRule {
-    pub(crate) fn effect(self, request: &GenerationRequest) -> crate::lowering::generation::Effect {
-        use crate::lowering::generation::{Change, ConversionBoundary as B, Effect, Field, Owner};
+    pub(crate) fn effect(
+        self,
+        request: &GenerationRequest,
+    ) -> crate::protocol::conversion::generation::Effect {
+        use crate::protocol::conversion::generation::{
+            Change, ConversionBoundary as B, Effect, Field, Owner,
+        };
         let (field, change) = match self {
             Self::Hint(hint) => return hint.effect(),
             Self::JoinInstructionParts => (Field::InstructionAuthority, Change::Approximate),

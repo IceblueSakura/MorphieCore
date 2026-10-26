@@ -1,13 +1,13 @@
 //! Public protocol boundaries reject private attachments without weakening typed IR.
 use crate::{events_support as event, wire};
 use morphiecore::{
-    protocol::openai::{Adapter, Dialect, Profile, TargetCaps as Contract},
+    protocol::openai::{Dialect, GenerationApi, GenerationCodec, TargetContract as Contract},
     semantic::{task::generation::*, value::ReplayOrigin},
 };
 use serde_json::{Value, json};
-fn client(dialect: Dialect) -> Adapter {
-    Adapter::new(
-        Profile::Responses,
+fn client(dialect: Dialect) -> GenerationCodec {
+    GenerationCodec::new(
+        GenerationApi::Responses,
         dialect,
         Some(ReplayOrigin::new("synthetic-client").unwrap()),
     )

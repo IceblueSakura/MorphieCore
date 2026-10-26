@@ -1,14 +1,16 @@
 //! Source-derived contracts with independent directional expectations.
 //! Sources and scope: docs/refs/2026-10-23-stable-protocol-contracts.md.
-use morphiecore::protocol::{
-    anthropic::messages::client::decode_client_request,
-    openai::{Adapter, Dialect, Profile, TargetCaps},
+use morphiecore::{
+    protocol::{
+        anthropic::messages::client::decode_client_request,
+        openai::{Dialect, GenerationApi, GenerationCodec, TargetContract},
+    },
+    semantic::{task::generation::*, value::Text},
 };
-use morphiecore::semantic::{task::generation::*, value::Text};
 use serde_json::{Value, json};
 
-fn adapter(profile: Profile) -> Adapter {
-    Adapter::new(profile, Dialect::Standard, None)
+fn adapter(profile: GenerationApi) -> GenerationCodec {
+    GenerationCodec::new(profile, Dialect::Standard, None)
 }
 fn messages() -> Value {
     json!({"model":"public", "max_tokens":32, "messages":[{"role":"user","content":"Hello"}]})
@@ -18,15 +20,15 @@ fn messages() -> Value {
 fn legacy_and_current_instruction_roles_have_one_ir_meaning_and_canonical_output() {
     // Pinned OpenAI Chat types call both roles developer-provided instructions.
     // The selected current-standard profile canonicalizes mixed roles in place.
-    for profile in [Profile::Chat, Profile::Responses] {
+    for profile in [GenerationApi::Chat, GenerationApi::Responses] {
         let source_items = json!([
             {"role":"system","content":"A"},
             {"role":"user","content":"U"},
             {"role":"developer","content":"B"},
         ]);
         let wire = match profile {
-            Profile::Chat => json!({"model":"public","messages":source_items}),
-            Profile::Responses => json!({"model":"public","input":source_items}),
+            GenerationApi::Chat => json!({"model":"public","messages":source_items}),
+            GenerationApi::Responses => json!({"model":"public","input":source_items}),
         };
         let client = adapter(profile);
         let source = client
@@ -65,11 +67,11 @@ fn legacy_and_current_instruction_roles_have_one_ir_meaning_and_canonical_output
             ),
         ];
         assert_eq!(source.task.semantic.items(), expected);
-        for target in [Profile::Chat, Profile::Responses] {
+        for target in [GenerationApi::Chat, GenerationApi::Responses] {
             let value = adapter(target)
-                .encode_request(&source, "m", &TargetCaps::full())
+                .encode_request(&source, "m", &TargetContract::full())
                 .unwrap();
-            let items = &value[if target == Profile::Chat {
+            let items = &value[if target == GenerationApi::Chat {
                 "messages"
             } else {
                 "input"
@@ -86,7 +88,7 @@ fn legacy_and_current_instruction_roles_have_one_ir_meaning_and_canonical_output
             json!([{"type":"image_url","image_url":{"url":"https://example.invalid/a.png"}}]),
         ] {
             let mut bad = wire.clone();
-            bad[if profile == Profile::Chat {
+            bad[if profile == GenerationApi::Chat {
                 "messages"
             } else {
                 "input"
@@ -125,31 +127,31 @@ fn messages_root_forms_share_request_scope_without_becoming_history() {
         &Presence::Value(RootInstructions::from(Text::new("R", "test", 32).unwrap()))
     );
     for request in [&string, &block] {
-        let chat = adapter(Profile::Chat)
-            .encode_request(request, "m", &TargetCaps::full())
+        let chat = adapter(GenerationApi::Chat)
+            .encode_request(request, "m", &TargetContract::full())
             .unwrap();
         assert_eq!(
             chat["messages"][0],
             json!({"role":"developer","content":"R"})
         );
-        let response = adapter(Profile::Responses)
-            .encode_request(request, "m", &TargetCaps::full())
+        let response = adapter(GenerationApi::Responses)
+            .encode_request(request, "m", &TargetContract::full())
             .unwrap();
         assert_eq!(response["instructions"], "R");
         assert_eq!(response["input"].as_array().unwrap().len(), 1);
     }
     source["system"] = json!([{"type":"text","text":"R"},{"type":"text","text":"S"}]);
     let multipart = decode_client_request(source.to_string().as_bytes()).unwrap();
-    let chat = adapter(Profile::Chat)
-        .encode_request(&multipart, "m", &TargetCaps::full())
+    let chat = adapter(GenerationApi::Chat)
+        .encode_request(&multipart, "m", &TargetContract::full())
         .unwrap();
     assert_eq!(
         chat["messages"][0],
         json!({"role":"developer","content":[
         {"type":"text","text":"R"},{"type":"text","text":"S"}]})
     );
-    let response = adapter(Profile::Responses)
-        .encode_request(&multipart, "m", &TargetCaps::full())
+    let response = adapter(GenerationApi::Responses)
+        .encode_request(&multipart, "m", &TargetContract::full())
         .unwrap();
     assert!(response.get("instructions").is_none());
     assert_eq!(
@@ -173,13 +175,13 @@ fn messages_root_forms_share_request_scope_without_becoming_history() {
     let cached = decode_client_request(source.to_string().as_bytes()).unwrap();
     assert!(GenerationRequirements::derive(&cached.task.semantic).explicit_cache);
     assert!(
-        adapter(Profile::Chat)
-            .encode_request(&cached, "m", &TargetCaps::full())
+        adapter(GenerationApi::Chat)
+            .encode_request(&cached, "m", &TargetContract::full())
             .is_err()
     );
     assert!(
-        adapter(Profile::Responses)
-            .encode_request(&cached, "m", &TargetCaps::full())
+        adapter(GenerationApi::Responses)
+            .encode_request(&cached, "m", &TargetContract::full())
             .is_err()
     );
     let mut boundary = block.clone();
@@ -189,8 +191,8 @@ fn messages_root_forms_share_request_scope_without_becoming_history() {
     };
     root.parts[0].cache = Some(PrefixCacheBoundary::RequestLifetime);
     boundary.task.semantic = boundary.task.semantic.with_settings(settings).unwrap();
-    let response = adapter(Profile::Responses)
-        .encode_request(&boundary, "m", &TargetCaps::full())
+    let response = adapter(GenerationApi::Responses)
+        .encode_request(&boundary, "m", &TargetContract::full())
         .unwrap();
     assert!(response.get("instructions").is_none());
     assert_eq!(
@@ -203,7 +205,7 @@ fn messages_root_forms_share_request_scope_without_becoming_history() {
 
 #[test]
 fn managed_continuation_replaces_root_but_retains_ordered_application_instructions() {
-    let client = adapter(Profile::Responses);
+    let client = adapter(GenerationApi::Responses);
     let output = client.decode_response(br#"{"id":"r","object":"response","created_at":1,
         "model":"public","status":"completed","output":[{"type":"message","id":"a","role":"assistant",
         "status":"completed","content":[{"type":"output_text","text":"ok","annotations":[]}]}]}"#).unwrap();
@@ -230,7 +232,7 @@ fn managed_continuation_replaces_root_but_retains_ordered_application_instructio
                 .decode_client_history(next.to_string().as_bytes(), Some((&source.task, &output)))
                 .unwrap();
             let value = client
-                .encode_request(&combined, "m", &TargetCaps::full())
+                .encode_request(&combined, "m", &TargetContract::full())
                 .unwrap();
             assert_eq!(value.get("instructions"), root.as_ref());
             let instructions: Vec<_> = value["input"]
@@ -277,7 +279,7 @@ fn managed_continuation_replaces_root_but_retains_ordered_application_instructio
 
 #[test]
 fn responses_stream_options_follow_directional_field_policy() {
-    let adapter = adapter(Profile::Responses);
+    let adapter = adapter(GenerationApi::Responses);
     let mut wire = json!({"model":"public","input":"go","stream":true,
         "stream_options":{"include_obfuscation":false}});
     let original = adapter
@@ -314,8 +316,8 @@ fn responses_stream_options_follow_directional_field_policy() {
 
 #[test]
 fn chat_function_contract_distinguishes_omission_null_and_target_name_grammar() {
-    let chat = adapter(Profile::Chat);
-    let responses = adapter(Profile::Responses);
+    let chat = adapter(GenerationApi::Chat);
+    let responses = adapter(GenerationApi::Responses);
     let base = json!({"model":"public","messages":[{"role":"user","content":"go","name":"participant with spaces"}],
         "tools":[{"type":"function","function":{"name":"lookup","strict":null}}]});
     chat.decode_client_request(base.to_string().as_bytes())
@@ -365,7 +367,7 @@ fn chat_function_contract_distinguishes_omission_null_and_target_name_grammar() 
             .decode_client_request(native.to_string().as_bytes())
             .unwrap();
         assert_eq!(
-            chat.encode_request(&request, "public", &TargetCaps::full())
+            chat.encode_request(&request, "public", &TargetContract::full())
                 .is_ok(),
             valid
         );
@@ -374,8 +376,8 @@ fn chat_function_contract_distinguishes_omission_null_and_target_name_grammar() 
 
 #[test]
 fn public_chat_profiles_keep_controls_and_returned_reasoning_explicit() {
-    let standard = adapter(Profile::Chat);
-    let readable = Adapter::new(Profile::Chat, Dialect::ChatReasoning, None);
+    let standard = adapter(GenerationApi::Chat);
+    let readable = GenerationCodec::new(GenerationApi::Chat, Dialect::ChatReasoning, None);
     let base = json!({"model":"public","messages":[{"role":"user","content":"go"}],
         "reasoning_effort":"low"});
     for codec in [&standard, &readable] {
@@ -448,7 +450,7 @@ fn public_chat_profiles_keep_controls_and_returned_reasoning_explicit() {
 
 #[test]
 fn prediction_survives_same_protocol_projection() {
-    let adapter = adapter(Profile::Chat);
+    let adapter = adapter(GenerationApi::Chat);
     let wire = json!({"model":"public", "messages":[{"role":"user","content":"Edit"}],
         "prediction":{"type":"content","content":"hello"}});
     let request = adapter
@@ -468,18 +470,18 @@ fn prediction_survives_same_protocol_projection() {
     assert!(request.task.evidence.is_empty());
     let original = request.clone();
     let output = adapter
-        .encode_request(&request, "public", &TargetCaps::full())
+        .encode_request(&request, "public", &TargetContract::full())
         .unwrap();
     assert_eq!(output["prediction"], wire["prediction"]);
-    let mut restricted = TargetCaps::full();
+    let mut restricted = TargetContract::full();
     restricted.prediction = false;
     let (omitted, rules) = adapter
         .encode_request_with_rules(&request, "public", &restricted)
         .unwrap();
     assert!(omitted.get("prediction").is_none());
     assert!(rules.contains(&"generation.omit-prediction.v1"));
-    let (omitted, rules) = self::adapter(Profile::Responses)
-        .encode_request_with_rules(&request, "public", &TargetCaps::full())
+    let (omitted, rules) = self::adapter(GenerationApi::Responses)
+        .encode_request_with_rules(&request, "public", &TargetContract::full())
         .unwrap();
     assert!(omitted.get("prediction").is_none());
     assert!(rules.contains(&"generation.omit-prediction.v1"));
@@ -496,7 +498,7 @@ fn prediction_survives_same_protocol_projection() {
         .with_settings(settings.clone())
         .unwrap();
     let (wire, rules) = adapter
-        .encode_request_with_rules(&edited, "public", &TargetCaps::full())
+        .encode_request_with_rules(&edited, "public", &TargetContract::full())
         .unwrap();
     assert_eq!(
         wire["prediction"],
@@ -520,7 +522,7 @@ fn prediction_survives_same_protocol_projection() {
 
 #[test]
 fn named_chat_participant_survives_same_protocol_projection() {
-    let adapter = adapter(Profile::Chat);
+    let adapter = adapter(GenerationApi::Chat);
     let wire = json!({"model":"public", "messages":[
         {"role":"system","name":"policy","content":"Be precise"},
         {"role":"developer","name":"author","content":[{"type":"text","text":"First"},{"type":"text","text":" second"}]},
@@ -560,14 +562,14 @@ fn named_chat_participant_survives_same_protocol_projection() {
     );
     let before = request.clone();
     let output = adapter
-        .encode_request(&request, "public", &TargetCaps::full())
+        .encode_request(&request, "public", &TargetContract::full())
         .unwrap();
     let mut expected_messages = wire["messages"].clone();
     expected_messages[0]["role"] = json!("developer");
     assert_eq!(output["messages"], expected_messages);
     assert!(
-        self::adapter(Profile::Responses)
-            .encode_request(&request, "public", &TargetCaps::full())
+        self::adapter(GenerationApi::Responses)
+            .encode_request(&request, "public", &TargetContract::full())
             .is_err()
     );
     assert_eq!(request, before);
@@ -626,7 +628,13 @@ fn independently_owned_participants_encode_exactly_or_reject_without_a_carrier()
     .unwrap();
     let before = semantic.clone();
     let fidelity = FidelityRecords::default();
-    let target = lower_request(&semantic, &fidelity, Profile::Chat, TargetCaps::full()).unwrap();
+    let target = lower_request(
+        &semantic,
+        &fidelity,
+        GenerationApi::Chat,
+        TargetContract::full(),
+    )
+    .unwrap();
     assert_eq!(
         chat::encode_generation(&target).unwrap()["messages"],
         json!([
@@ -676,7 +684,15 @@ fn independently_owned_participants_encode_exactly_or_reject_without_a_carrier()
             ),
             Err(GenerationError::InvalidResponse)
         );
-        assert!(lower_request(&named, &fidelity, Profile::Responses, TargetCaps::full()).is_err());
+        assert!(
+            lower_request(
+                &named,
+                &fidelity,
+                GenerationApi::Responses,
+                TargetContract::full()
+            )
+            .is_err()
+        );
         assert!(
             Messages::AdaptiveTextTools
                 .encode_generation_request(&named, &fidelity, &native)
@@ -718,14 +734,14 @@ fn independently_owned_participants_encode_exactly_or_reject_without_a_carrier()
 
 #[test]
 fn responses_omitted_strict_can_reach_native_best_effort_fallback() {
-    let adapter = adapter(Profile::Responses);
+    let adapter = adapter(GenerationApi::Responses);
     let mut wire = json!({"model":"public","input":"Choose", "tools":[{"type":"function","name":"choose",
         "strict":false,"parameters":{"type":"object","properties":{"x":{"oneOf":[{"type":"string"},{"type":"integer"}]}}}}]});
     let explicit_false = adapter
         .decode_client_request(wire.to_string().as_bytes())
         .unwrap();
     adapter
-        .encode_request(&explicit_false, "public", &TargetCaps::full())
+        .encode_request(&explicit_false, "public", &TargetContract::full())
         .expect("ordinary non-strict schema");
     wire["tools"][0]["strict"] = json!(true);
     let explicit_true = adapter
@@ -733,7 +749,7 @@ fn responses_omitted_strict_can_reach_native_best_effort_fallback() {
         .unwrap();
     assert!(
         adapter
-            .encode_request(&explicit_true, "public", &TargetCaps::full())
+            .encode_request(&explicit_true, "public", &TargetContract::full())
             .is_err(),
         "explicit guarantee must not weaken"
     );
@@ -742,7 +758,7 @@ fn responses_omitted_strict_can_reach_native_best_effort_fallback() {
         .decode_client_request(wire.to_string().as_bytes())
         .unwrap();
     let output = adapter
-        .encode_request(&omitted, "public", &TargetCaps::full())
+        .encode_request(&omitted, "public", &TargetContract::full())
         .expect("official normalization-with-fallback policy");
     assert_eq!(
         output["tools"][0]["parameters"],
@@ -789,7 +805,7 @@ fn messages_accepts_direct_only_function_tools() {
         .expect("direct is not hosted tool execution");
     assert_eq!(direct.task.semantic, omitted.task.semantic);
     let native = morphiecore::protocol::native::ReplayTarget::new("synthetic", "model").unwrap();
-    let encoded = morphiecore::protocol::anthropic::messages::TargetCaps::new(
+    let encoded = morphiecore::protocol::anthropic::messages::TargetContract::new(
         morphiecore::protocol::anthropic::messages::Profile::AdaptiveTextTools,
         morphiecore::protocol::anthropic::messages::Dialect::Standard,
     )

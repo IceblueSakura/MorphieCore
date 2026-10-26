@@ -1,14 +1,20 @@
 //! Whole Chat completion decode and encode, including non-success terminals.
-use crate::protocol::failure::{CarrierReason, ShapeReason};
-use crate::protocol::openai::{
-    CodecError, DecodedResponse, Profile, ResponseRepresentation, accounting, chat, context,
-    shape::*, terminal::*,
+use crate::{
+    protocol::{
+        failure::{CarrierReason, ShapeReason},
+        openai::{
+            CodecError, DecodedResponse, GenerationApi, ResponseRepresentation, accounting, chat,
+            content::intake::Items,
+            context,
+            lowering::carriers::{
+                check_item_carriers, check_message_carriers, check_response_carriers,
+            },
+            shape::*,
+            terminal::*,
+        },
+    },
+    semantic::task::generation::*,
 };
-use crate::protocol::openai::{
-    content::intake::Items,
-    lowering::carriers::{check_item_carriers, check_message_carriers, check_response_carriers},
-};
-use crate::semantic::task::generation::*;
 use serde_json::{Value, json};
 
 pub fn decode(v: &Value) -> Result<DecodedResponse, CodecError> {
@@ -20,7 +26,7 @@ pub(crate) fn decode_with(
 ) -> Result<DecodedResponse, CodecError> {
     let (v, extras) = crate::protocol::openai::dialect::adapter_shapes::decode(
         v,
-        Profile::Chat,
+        GenerationApi::Chat,
         adaptation,
         DecodeDirection::Upstream,
     )?;
@@ -90,10 +96,10 @@ pub(crate) fn decode_with(
     }
     let usage = accounting::usage(
         o.get("usage"),
-        Profile::Chat,
+        GenerationApi::Chat,
         adaptation,
         &mut b.evidence,
-        crate::lowering::generation::ConversionBoundary::ResponseDecode,
+        crate::protocol::conversion::generation::ConversionBoundary::ResponseDecode,
     )?;
     let groups = chat::owners::envelopes(&b.message_owners)?;
     let semantic = GenerationResponse::from_resources(b.items, outcome, b.resources)?
@@ -124,13 +130,13 @@ pub(crate) fn decode_with(
     }
     let metadata = context::metadata(
         o,
-        Profile::Chat,
+        GenerationApi::Chat,
         adaptation,
         &mut b.evidence,
-        crate::lowering::generation::ConversionBoundary::ResponseDecode,
+        crate::protocol::conversion::generation::ConversionBoundary::ResponseDecode,
     )?;
     b.fidelity.capture_routing_extras(
-        Profile::Chat,
+        GenerationApi::Chat,
         adaptation,
         extras,
         &semantic,
@@ -145,7 +151,7 @@ pub(crate) fn decode_with(
 }
 
 pub fn encode(target: &ResponseRepresentation<'_>) -> Result<Value, CodecError> {
-    if target.profile != Profile::Chat {
+    if target.profile != GenerationApi::Chat {
         return Err(CodecError::ProfileMismatch);
     }
     if target
@@ -170,7 +176,7 @@ pub fn encode(target: &ResponseRepresentation<'_>) -> Result<Value, CodecError> 
     check_message_carriers(
         target.semantic.items(),
         target.semantic.message_envelopes(),
-        Profile::Chat,
+        GenerationApi::Chat,
     )?;
     let mut messages = chat::items::encode_items_with(
         target.semantic.items(),
@@ -194,7 +200,7 @@ pub fn encode(target: &ResponseRepresentation<'_>) -> Result<Value, CodecError> 
     let mut value = json!({"id":m.id,"object":"chat.completion","created":created,"model":m.model,
         "choices":[{"index":0,"message":message,"finish_reason":finish}],
         "usage":m.delivery.as_ref().and_then(|d| d.usage).or_else(|| target.semantic.usage())
-            .map(|usage| accounting::encode_usage(usage, Profile::Chat, &target.adaptation.rules))});
+            .map(|usage| accounting::encode_usage(usage, GenerationApi::Chat, &target.adaptation.rules))});
     if let Some(probabilities) =
         crate::protocol::openai::chat::logprobs::choice(target.semantic.items())?
     {
@@ -215,7 +221,7 @@ pub fn encode(target: &ResponseRepresentation<'_>) -> Result<Value, CodecError> 
     crate::protocol::openai::service::write_class(
         value.as_object_mut().expect("object"),
         m.context.service_class(),
-        Profile::Chat,
+        GenerationApi::Chat,
     )?;
     crate::protocol::openai::responses::envelope::write_response_extras(
         target.fidelity,

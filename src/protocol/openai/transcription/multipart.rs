@@ -1,7 +1,6 @@
 //! Bounded standard multipart parsing. No filesystem access, URLs or audio decoding.
 use crate::{
-    adapter::transcription::Request,
-    protocol::CodecError,
+    protocol::{CodecError, transcription::Request},
     semantic::task::speech_recognition::{
         AudioInput, InputFormat, MAX_INPUT_BYTES, RecognitionRequest,
     },

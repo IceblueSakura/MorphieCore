@@ -1,12 +1,16 @@
 //! Complete single-candidate Chat envelopes; task mapping stays in `chat`.
-use crate::protocol::failure::CarrierReason;
-use crate::protocol::openai::{
-    CodecError, DecodedRequest, DecodedResponse, RequestRepresentation, ResponseRepresentation,
-    chat, shape::*, validate_identity,
-};
-use crate::semantic::{
-    context::{CacheHints, ClientIdentityHints, ExecutionHints, ServicePolicy, StreamOptions},
-    value::Presence,
+use crate::{
+    protocol::{
+        failure::CarrierReason,
+        openai::{
+            CodecError, DecodedRequest, DecodedResponse, RequestRepresentation,
+            ResponseRepresentation, chat, shape::*, validate_identity,
+        },
+    },
+    semantic::{
+        context::{CacheHints, ClientIdentityHints, ExecutionHints, ServicePolicy, StreamOptions},
+        value::Presence,
+    },
 };
 use serde_json::{Map, Value, json};
 
@@ -61,7 +65,10 @@ impl RequestContext {
             options.validate()?;
         }
         if let Some(policy) = self.service_policy.value() {
-            super::super::service::policy_wire(*policy, super::super::Profile::Chat)?;
+            super::super::service::policy_wire(
+                *policy,
+                crate::protocol::openai::GenerationApi::Chat,
+            )?;
         }
         validate_context(&ExecutionHints {
             cache: self.cache.clone(),
@@ -145,7 +152,7 @@ pub(crate) fn decode_request_with(
         ])
         .collect();
     direction.fields(o, &allowed)?;
-    let hints = ExecutionHints::read(o, crate::protocol::openai::Profile::Chat, direction)?;
+    let hints = ExecutionHints::read(o, crate::protocol::openai::GenerationApi::Chat, direction)?;
     let context = RequestContext {
         model: string(o, "model")?.into(),
         n: read_presence(o, "n", |v| v.as_u64().ok_or(CodecError::invalid()))?,
@@ -154,7 +161,10 @@ pub(crate) fn decode_request_with(
         cache: hints.cache,
         identity: hints.identity,
         metadata: hints.metadata,
-        service_policy: super::super::service::read_policy(o, super::super::Profile::Chat)?,
+        service_policy: super::super::service::read_policy(
+            o,
+            crate::protocol::openai::GenerationApi::Chat,
+        )?,
     };
     context.validate()?;
     let task: Map<_, _> = o
@@ -185,13 +195,13 @@ pub fn encode_request(
     if target.adaptation.rules.bailian_requests {
         crate::protocol::openai::dialect::bailian::check_semantic(
             target.semantic(),
-            super::super::Profile::Chat,
+            crate::protocol::openai::GenerationApi::Chat,
             &context.model,
         )?;
         crate::protocol::openai::dialect::bailian::check_native_effort(
             target.semantic().settings(),
             &context.model,
-            super::super::Profile::Chat,
+            crate::protocol::openai::GenerationApi::Chat,
         )?;
         if !context.metadata.is_absent() || !context.service_policy.is_absent() {
             return Err(CodecError::Unsupported(CarrierReason::Unavailable));
@@ -221,14 +231,20 @@ pub fn encode_request(
         );
     }
     context.cache.write(o)?;
-    let Value::Object(identity) =
-        serde_json::to_value(&context.identity).map_err(|_| CodecError::invalid())?
+    let Value::Object(identity) = serde_json::to_value(
+        crate::protocol::openai::context::wire::ClientIdentityHints::from(&context.identity),
+    )
+    .map_err(|_| CodecError::invalid())?
     else {
         unreachable!()
     };
     o.extend(identity);
     put_presence(o, "metadata", &context.metadata, |v| json!(v));
-    super::super::service::write_policy(o, &context.service_policy, super::super::Profile::Chat)?;
+    super::super::service::write_policy(
+        o,
+        &context.service_policy,
+        crate::protocol::openai::GenerationApi::Chat,
+    )?;
     bounded(&v)?;
     Ok(v)
 }

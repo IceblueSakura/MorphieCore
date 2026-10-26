@@ -1,7 +1,9 @@
 //! Responses event coordinates, item snapshots and wire rendering.
 use super::*;
-use crate::protocol::failure::{CarrierReason, ShapeReason};
-use crate::protocol::openai::events::responses_wire::*;
+use crate::protocol::{
+    failure::{CarrierReason, ShapeReason},
+    openai::events::responses_wire::*,
+};
 
 impl EventEncoder {
     fn index(&self, id: ItemId) -> Result<usize, CodecError> {
@@ -64,13 +66,13 @@ impl EventEncoder {
             .map_err(|_| CodecError::Unsupported(CarrierReason::Unavailable))?;
         if loss.is_some()
             && self.contract.reported_facts
-                == crate::lowering::generation::ReportedFactPolicy::StrictComplete
+                == crate::protocol::conversion::generation::ReportedFactPolicy::StrictComplete
         {
             return Err(CodecError::Unsupported(CarrierReason::Unavailable));
         }
         let fingerprint = if !delivered.context.system_fingerprint.is_absent() {
             delivered.context.system_fingerprint = crate::semantic::value::Presence::Absent;
-            Some(projection::LossRule::OmitResponsesSystemFingerprint)
+            Some(projection::ProjectionRule::OmitResponsesSystemFingerprint)
         } else {
             None
         };
@@ -408,7 +410,7 @@ impl EventEncoder {
                     &response,
                     &self.fidelity,
                     &metadata,
-                    Profile::Responses,
+                    GenerationApi::Responses,
                     self.contract.clone(),
                 )
                 .map_err(|_| CodecError::Unsupported(CarrierReason::Terminal))?;

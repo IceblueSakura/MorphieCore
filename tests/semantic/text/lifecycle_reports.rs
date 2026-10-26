@@ -3,8 +3,8 @@ use morphiecore::{
     protocol::{
         fidelity::FidelityRecords,
         openai::{
-            Adapter, Dialect, Profile, ResponseMetadata, TargetCaps, events::EventEncoder,
-            lowering::lower_response,
+            Dialect, GenerationApi, GenerationCodec, ResponseMetadata, TargetContract,
+            events::EventEncoder, lowering::lower_response,
         },
     },
     semantic::{
@@ -15,8 +15,8 @@ use morphiecore::{
 };
 use serde_json::{Value, json};
 
-fn adapter() -> Adapter {
-    let mut adapter = Adapter::new(Profile::Responses, Dialect::OpenRouter, None);
+fn adapter() -> GenerationCodec {
+    let mut adapter = GenerationCodec::new(GenerationApi::Responses, Dialect::OpenRouter, None);
     adapter.adaptation.rules.responses_lifecycle_reports = true;
     adapter
 }
@@ -147,8 +147,8 @@ fn each_resolution_is_closed_phase_local_and_source_checked() {
         decoder.push(&first).unwrap();
         decoder.push(&last).unwrap();
         decoder.finish().unwrap();
-        let mut strict =
-            Adapter::new(Profile::Responses, Dialect::OpenRouter, None).event_decoder();
+        let mut strict = GenerationCodec::new(GenerationApi::Responses, Dialect::OpenRouter, None)
+            .event_decoder();
         strict.push(&first).unwrap();
         assert_eq!(
             strict.push(&last).unwrap_err(),
@@ -255,7 +255,7 @@ fn nullable_report_mode_remains_an_explicit_observation_in_json_and_sse() {
         },
     ));
     let fidelity = FidelityRecords::default();
-    let mut encoder = EventEncoder::new(Profile::Responses, source.clone()).unwrap();
+    let mut encoder = EventEncoder::new(GenerationApi::Responses, source.clone()).unwrap();
     encoder.encode(&StreamEvent::Started, &fidelity).unwrap();
     let frames = encoder
         .encode(
@@ -273,8 +273,8 @@ fn nullable_report_mode_remains_an_explicit_observation_in_json_and_sse() {
         &response,
         &fidelity,
         &source,
-        Profile::Responses,
-        TargetCaps::full(),
+        GenerationApi::Responses,
+        TargetContract::full(),
     )
     .unwrap();
     let wire =
@@ -303,7 +303,7 @@ fn independently_constructed_reports_use_phase_carriers_and_terminal_snapshots()
         terminal: StreamTerminal::Completed,
         details: Default::default(),
     };
-    let mut encoder = EventEncoder::new(Profile::Responses, original.clone()).unwrap();
+    let mut encoder = EventEncoder::new(GenerationApi::Responses, original.clone()).unwrap();
     let opening = encoder.encode(&StreamEvent::Started, &fidelity).unwrap();
     assert_eq!(
         opening[0]["response"]["reasoning"],
@@ -326,8 +326,8 @@ fn independently_constructed_reports_use_phase_carriers_and_terminal_snapshots()
         &response,
         &fidelity,
         &original,
-        Profile::Responses,
-        TargetCaps::full(),
+        GenerationApi::Responses,
+        TargetContract::full(),
     )
     .unwrap();
     let json =
@@ -344,11 +344,21 @@ fn independently_constructed_reports_use_phase_carriers_and_terminal_snapshots()
             .any(|s| { s.rule() == "responses.terminal-report-snapshot.v1" })
     );
     assert_eq!(original.context.reports, lifecycle());
-    let mut strict = TargetCaps::full();
-    strict.reported_facts = morphiecore::lowering::generation::ReportedFactPolicy::StrictComplete;
-    assert!(lower_response(&response, &fidelity, &original, Profile::Responses, strict).is_err());
+    let mut strict = TargetContract::full();
+    strict.reported_facts =
+        morphiecore::protocol::conversion::generation::ReportedFactPolicy::StrictComplete;
     assert!(
-        EventEncoder::new(Profile::Chat, original).is_err(),
+        lower_response(
+            &response,
+            &fidelity,
+            &original,
+            GenerationApi::Responses,
+            strict
+        )
+        .is_err()
+    );
+    assert!(
+        EventEncoder::new(GenerationApi::Chat, original).is_err(),
         "no cross-protocol tier drift"
     );
 }
@@ -383,7 +393,7 @@ fn terminal_absence_never_inherits_opening_and_terminal_only_never_invents_openi
     assert!(m.context.settings().is_none());
     assert!(m.context.service_class().is_absent());
     let mut encoder = EventEncoder::new(
-        Profile::Responses,
+        GenerationApi::Responses,
         metadata(ResponseReports::phased(ReportPhase::Terminal, report(true))),
     )
     .unwrap();
@@ -398,7 +408,7 @@ fn terminal_absence_never_inherits_opening_and_terminal_only_never_invents_openi
 fn emitted_reports_cannot_be_rewritten_and_both_slots_count_toward_the_bound() {
     for opening_event in [StreamEvent::Started, StreamEvent::Queued] {
         let mut encoder = EventEncoder::new(
-            Profile::Responses,
+            GenerationApi::Responses,
             metadata(ResponseReports::phased(ReportPhase::Terminal, report(true))),
         )
         .unwrap();
@@ -412,7 +422,7 @@ fn emitted_reports_cannot_be_rewritten_and_both_slots_count_toward_the_bound() {
         assert!(encoder.finish().is_err());
     }
     let opening = metadata(ResponseReports::phased(ReportPhase::Opening, report(false)));
-    let mut encoder = EventEncoder::new(Profile::Responses, opening.clone()).unwrap();
+    let mut encoder = EventEncoder::new(GenerationApi::Responses, opening.clone()).unwrap();
     encoder
         .encode(&StreamEvent::Started, &FidelityRecords::default())
         .unwrap();

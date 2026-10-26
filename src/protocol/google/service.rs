@@ -1,7 +1,9 @@
 //! Native reported processing classes, separate from request policy and accounting.
-use crate::protocol::failure::{CarrierReason, ShapeReason};
 use crate::{
-    protocol::CodecError,
+    protocol::{
+        CodecError,
+        failure::{CarrierReason, ShapeReason},
+    },
     semantic::{context::ServiceClass, value::Presence},
 };
 use serde_json::{Map, Value};
@@ -18,7 +20,7 @@ pub(super) fn read(
             "priority" => ServiceClass::PriorityProcessing,
             _ => {
                 return Err(CodecError::Unsupported(CarrierReason::Field(
-                    crate::lowering::generation::Field::ServiceClass,
+                    crate::protocol::conversion::generation::Field::ServiceClass,
                 )));
             }
         }),

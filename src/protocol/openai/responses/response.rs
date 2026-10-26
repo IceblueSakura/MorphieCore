@@ -1,14 +1,21 @@
 //! Whole Responses snapshot decode and encode, including non-success terminals.
-use crate::protocol::failure::{CarrierReason, ShapeReason};
-use crate::protocol::openai::{
-    CodecError, DecodedResponse, Profile, ResponseRepresentation, accounting, context, responses,
-    shape::*, terminal::*,
+use crate::{
+    protocol::{
+        failure::{CarrierReason, ShapeReason},
+        openai::{
+            CodecError, DecodedResponse, GenerationApi, ResponseRepresentation, accounting,
+            content::intake::Items,
+            context,
+            lowering::carriers::{
+                check_item_carriers, check_message_carriers, check_response_carriers,
+            },
+            responses,
+            shape::*,
+            terminal::*,
+        },
+    },
+    semantic::task::generation::*,
 };
-use crate::protocol::openai::{
-    content::intake::Items,
-    lowering::carriers::{check_item_carriers, check_message_carriers, check_response_carriers},
-};
-use crate::semantic::task::generation::*;
 use serde_json::{Value, json};
 
 pub fn decode(v: &Value) -> Result<DecodedResponse, CodecError> {
@@ -20,7 +27,7 @@ pub(crate) fn decode_with(
 ) -> Result<DecodedResponse, CodecError> {
     let (v, extras) = crate::protocol::openai::dialect::adapter_shapes::decode(
         v,
-        Profile::Responses,
+        GenerationApi::Responses,
         adaptation,
         DecodeDirection::Upstream,
     )?;
@@ -70,24 +77,24 @@ pub(crate) fn decode_with(
                     mapping.rule,
                     input,
                     output,
-                    crate::lowering::generation::ConversionBoundary::ResponseDecode,
-                    crate::lowering::generation::Owner::item(*owner),
+                    crate::protocol::conversion::generation::ConversionBoundary::ResponseDecode,
+                    crate::protocol::conversion::generation::Owner::item(*owner),
                 );
             }
         }
     }
     let usage = accounting::usage(
         o.get("usage"),
-        Profile::Responses,
+        GenerationApi::Responses,
         adaptation,
         &mut b.evidence,
-        crate::lowering::generation::ConversionBoundary::ResponseDecode,
+        crate::protocol::conversion::generation::ConversionBoundary::ResponseDecode,
     )?;
     let semantic = GenerationResponse::from_resources(b.items, outcome, b.resources)?
         .with_usage(usage)?
         .with_details(decode_details(o)?)?;
     crate::protocol::openai::responses::envelope::record_vendor_shapes(
-        Profile::Responses,
+        GenerationApi::Responses,
         adaptation,
         o,
         &mut b.fidelity,
@@ -95,13 +102,13 @@ pub(crate) fn decode_with(
     )?;
     let metadata = context::metadata(
         o,
-        Profile::Responses,
+        GenerationApi::Responses,
         adaptation,
         &mut b.evidence,
-        crate::lowering::generation::ConversionBoundary::ResponseDecode,
+        crate::protocol::conversion::generation::ConversionBoundary::ResponseDecode,
     )?;
     b.fidelity.capture_routing_extras(
-        Profile::Responses,
+        GenerationApi::Responses,
         adaptation,
         extras,
         &semantic,
@@ -115,7 +122,7 @@ pub(crate) fn decode_with(
     })
 }
 pub fn encode(target: &ResponseRepresentation<'_>) -> Result<Value, CodecError> {
-    if target.profile != Profile::Responses {
+    if target.profile != GenerationApi::Responses {
         return Err(CodecError::ProfileMismatch);
     }
     if target.semantic.items().iter().any(|(_, item)| {
@@ -145,7 +152,7 @@ pub fn encode(target: &ResponseRepresentation<'_>) -> Result<Value, CodecError> 
     check_message_carriers(
         target.semantic.items(),
         target.semantic.message_envelopes(),
-        Profile::Responses,
+        GenerationApi::Responses,
     )?;
     let output = responses::items::encode_items(
         target.semantic.items(),
@@ -170,7 +177,7 @@ pub fn encode(target: &ResponseRepresentation<'_>) -> Result<Value, CodecError> 
                 &target.adaptation.rules,
             )
             .map(|(usage, _)| {
-                accounting::encode_usage(usage, Profile::Responses, &target.adaptation.rules)
+                accounting::encode_usage(usage, GenerationApi::Responses, &target.adaptation.rules)
             })
             .map_err(|_| CodecError::Unsupported(CarrierReason::Usage))
         })

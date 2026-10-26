@@ -1,6 +1,6 @@
 //! Error reports and execution facts have independent presence and admission.
 use morphiecore::{
-    protocol::openai::{Profile, chat::envelope as chat_envelope, responses::envelope},
+    protocol::openai::{GenerationApi, chat::envelope as chat_envelope, responses::envelope},
     semantic::{task::generation::*, value::Text},
 };
 
@@ -61,14 +61,14 @@ fn not_executed_and_execution_failure_remain_distinct_with_the_same_feedback() {
 }
 #[test]
 fn standard_codecs_cannot_silently_omit_an_error_report() {
-    for profile in [Profile::Chat, Profile::Responses] {
+    for profile in [GenerationApi::Chat, GenerationApi::Responses] {
         let body = match profile {
-            Profile::Chat => br#"{"model":"synthetic","messages":[{"role":"assistant","tool_calls":[{"id":"c","type":"function","function":{"name":"lookup","arguments":"{}"}}]},{"role":"tool","tool_call_id":"c","content":"feedback"}]}"#.as_slice(),
-            Profile::Responses => br#"{"model":"synthetic","input":[{"type":"function_call","call_id":"c","name":"lookup","arguments":"{}"},{"type":"function_call_output","call_id":"c","output":"feedback"}]}"#.as_slice(),
+            GenerationApi::Chat => br#"{"model":"synthetic","messages":[{"role":"assistant","tool_calls":[{"id":"c","type":"function","function":{"name":"lookup","arguments":"{}"}}]},{"role":"tool","tool_call_id":"c","content":"feedback"}]}"#.as_slice(),
+            GenerationApi::Responses => br#"{"model":"synthetic","input":[{"type":"function_call","call_id":"c","name":"lookup","arguments":"{}"},{"type":"function_call_output","call_id":"c","output":"feedback"}]}"#.as_slice(),
         };
         let mut decoded = match profile {
-            Profile::Chat => chat_envelope::decode_request_bytes(body).unwrap().task,
-            Profile::Responses => envelope::decode_request_bytes(body).unwrap().task,
+            GenerationApi::Chat => chat_envelope::decode_request_bytes(body).unwrap().task,
+            GenerationApi::Responses => envelope::decode_request_bytes(body).unwrap().task,
         };
         let mut items = decoded.semantic.items().to_vec();
         let result = items
@@ -85,7 +85,7 @@ fn standard_codecs_cannot_silently_omit_an_error_report() {
                 &decoded.semantic,
                 &decoded.fidelity,
                 profile,
-                morphiecore::protocol::openai::TargetCaps::full(),
+                morphiecore::protocol::openai::TargetContract::full(),
             )
             .is_err()
         );

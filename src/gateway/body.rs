@@ -2,10 +2,12 @@
 //! each candidate owns a fresh decoder/delivery, and visibility forbids advancement.
 #[cfg(test)]
 mod tests;
-use crate::execution::ResponseDelivery;
-use crate::gateway::{
-    ApiError, Limits,
-    diagnostics::{Outcome, Stage, Trace},
+use crate::{
+    execution::ResponseDelivery,
+    gateway::{
+        ApiError, Limits,
+        diagnostics::{Outcome, Stage, Trace},
+    },
 };
 use axum::{
     body::{Body, Bytes},
@@ -64,7 +66,7 @@ impl Status {
         if let Some(failure) = *self.failure_head.lock().expect("failure head") {
             failure
         } else if self.waiting_upstream.load(Ordering::Acquire) {
-            ApiError::transport(crate::provider::ErrorClass::Timeout)
+            ApiError::transport(crate::provider::RecoveryClass::Timeout)
         } else {
             ApiError::timeout()
         }
@@ -313,10 +315,10 @@ pub(super) async fn respond_producer(
             Err(error) => {
                 trace
                     .report
-                    .public_failure(error.code, error.status.as_u16());
-                trace.outcome(match error.code {
-                    "upstream_timeout" => Outcome::Timeout,
-                    "shutting_down" => Outcome::Shutdown,
+                    .request_failure(error.diagnostic_code(), error.status.as_u16());
+                trace.outcome(match error.kind {
+                    crate::gateway::error::ErrorKind::Timeout => Outcome::Timeout,
+                    crate::gateway::error::ErrorKind::Shutdown => Outcome::Shutdown,
                     _ => Outcome::Error,
                 });
                 *worker_state.error.lock().expect("delivery status") = Some(error);

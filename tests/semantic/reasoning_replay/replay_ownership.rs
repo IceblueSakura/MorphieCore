@@ -4,7 +4,7 @@ use morphiecore::{
     protocol::{
         fidelity::FidelityRecords,
         openai::{
-            Profile,
+            GenerationApi,
             lowering::{lower_request, lower_response},
             responses,
         },
@@ -22,7 +22,7 @@ fn request(values: Value) -> morphiecore::protocol::openai::DecodedRequest {
     decoded
 }
 fn encode(r: &GenerationRequest, f: &FidelityRecords) -> Result<Value, ()> {
-    let lowered = lower_request(r, f, Profile::Responses, contract()).map_err(|_| ())?;
+    let lowered = lower_request(r, f, GenerationApi::Responses, contract()).map_err(|_| ())?;
     responses::encode_generation(&lowered).map_err(|_| ())
 }
 
@@ -56,8 +56,14 @@ fn partial_output_is_reportable_but_incomplete_owner_cannot_be_replayed() {
         .unwrap();
         d.fidelity.bind_replay_origin(&origin()).unwrap();
         let m = metadata();
-        let projected =
-            lower_response(&d.semantic, &d.fidelity, &m, Profile::Responses, contract()).unwrap();
+        let projected = lower_response(
+            &d.semantic,
+            &d.fidelity,
+            &m,
+            GenerationApi::Responses,
+            contract(),
+        )
+        .unwrap();
         assert_eq!(
             responses::encode_response(&projected).unwrap()["output"][0]["encrypted_content"],
             "synthetic-token"

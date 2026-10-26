@@ -1,18 +1,20 @@
 //! Chat data-only SSE over shared bounded framing, strict JSON and Generation event codecs.
 //! EOF is not DONE. Body I/O, cancellation and downstream commit belong to the caller.
-use crate::protocol::{
-    openai::{
-        CodecError, DecodedResponse, Profile, ResponseMetadata,
-        chat::envelope as chat_envelope,
-        events::{EventDecoder, EventEncoder},
-        obfuscation::{Obfuscation, charge_padding, pad_payload},
-    },
-    stream::{SseError, SseLimits, validate_http},
-};
-use crate::semantic::context::StreamOptions;
 use crate::{
-    protocol::{fidelity::FidelityRecords, openai::TargetCaps},
-    semantic::task::generation::{MAX_TOTAL_BYTES, StreamEvent},
+    protocol::{
+        fidelity::FidelityRecords,
+        openai::{
+            CodecError, DecodedResponse, GenerationApi, ResponseMetadata, TargetContract,
+            chat::envelope as chat_envelope,
+            events::{EventDecoder, EventEncoder},
+            obfuscation::{Obfuscation, charge_padding, pad_payload},
+        },
+        stream::{SseError, SseLimits, validate_http},
+    },
+    semantic::{
+        context::StreamOptions,
+        task::generation::{MAX_TOTAL_BYTES, StreamEvent},
+    },
     transport::sse::{SseDecoder, SseEvent},
 };
 use bytes::Bytes;
@@ -29,7 +31,9 @@ pub struct ChatSseDecoder {
     rejected: bool,
 }
 impl ChatSseDecoder {
-    pub(crate) fn take_intake_evidence(&mut self) -> crate::lowering::generation::EvidenceDelta {
+    pub(crate) fn take_intake_evidence(
+        &mut self,
+    ) -> crate::protocol::conversion::generation::EvidenceDelta {
         self.codec.take_evidence()
     }
     pub fn new(status: u16, content_type: &str, limits: SseLimits) -> Result<Self, SseError> {
@@ -37,7 +41,7 @@ impl ChatSseDecoder {
         validate_http(status, content_type)?;
         Ok(Self {
             framing: SseDecoder::new(limits.max_event_bytes),
-            codec: EventDecoder::new(Profile::Chat),
+            codec: EventDecoder::new(GenerationApi::Chat),
             limits,
             wire_bytes: 0,
             events: 0,
@@ -53,7 +57,7 @@ impl ChatSseDecoder {
         limits: SseLimits,
         codec: EventDecoder,
     ) -> Result<Self, SseError> {
-        if codec.profile() != Profile::Chat {
+        if codec.profile() != GenerationApi::Chat {
             return Err(CodecError::ProfileMismatch.into());
         }
         let mut decoder = Self::new(status, content_type, limits)?;
@@ -179,17 +183,19 @@ impl ChatSseEncoder {
     pub(crate) fn set_notice(&mut self, notice: crate::protocol::diagnostics::AdaptationNotice) {
         self.notice = Some(notice);
     }
-    pub(crate) fn take_evidence(&mut self) -> crate::lowering::generation::EvidenceDelta {
+    pub(crate) fn take_evidence(
+        &mut self,
+    ) -> crate::protocol::conversion::generation::EvidenceDelta {
         self.codec.take_evidence()
     }
     #[cfg(test)]
-    pub(crate) fn projection(&self) -> &[crate::lowering::generation::Effect] {
+    pub(crate) fn projection(&self) -> &[crate::protocol::conversion::generation::Effect] {
         self.codec.projection()
     }
     /// Enabled obfuscation requires a caller-supplied seed; no random/credential source is used here.
     pub fn new(
         metadata: ResponseMetadata,
-        contract: TargetCaps,
+        contract: TargetContract,
         limits: SseLimits,
         options: StreamOptions,
         padding: Obfuscation,
@@ -209,7 +215,7 @@ impl ChatSseEncoder {
         }
         Ok(Self {
             notice: None,
-            codec: EventEncoder::new(Profile::Chat, metadata)?.with_contract(contract),
+            codec: EventEncoder::new(GenerationApi::Chat, metadata)?.with_contract(contract),
             limits,
             options,
             padding,

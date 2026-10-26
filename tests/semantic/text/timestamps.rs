@@ -1,9 +1,11 @@
 //! Independent timestamp admission and typed edits, without Provider or Gateway bindings.
 use morphiecore::{
-    lowering::generation::RepresentationError,
-    protocol::openai::{
-        Profile, TargetCaps as Contract, events::EventEncoder, lowering::lower_response,
-        responses::envelope,
+    protocol::{
+        conversion::generation::RepresentationError,
+        openai::{
+            GenerationApi, TargetContract as Contract, events::EventEncoder,
+            lowering::lower_response, responses::envelope,
+        },
     },
     semantic::value::Presence,
 };
@@ -35,11 +37,11 @@ fn timestamp_typed_edits_cannot_bypass_context_lowering_or_event_encoding() {
                 &decoded.semantic,
                 &decoded.fidelity,
                 &metadata,
-                Profile::Responses,
+                GenerationApi::Responses,
                 Contract::full()
             ),
             Err(RepresentationError::Metadata)
         ));
-        assert!(EventEncoder::new(Profile::Responses, metadata).is_err());
+        assert!(EventEncoder::new(GenerationApi::Responses, metadata).is_err());
     }
 }

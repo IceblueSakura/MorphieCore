@@ -7,7 +7,8 @@ use super::{
     tasks::{embeddings, images, speech, transcription},
 };
 use crate::{
-    adapter::{ClientAdapter, ClientProtocol},
+    adapter::ClientAdapter,
+    protocol::ClientProtocol,
     provider::ProviderDefinition,
     topology::{Endpoint, PublicModel},
     transport::http::HttpTransport,
@@ -35,7 +36,7 @@ pub(super) struct BoundEntry {
 impl BoundEntry {
     pub(super) fn eligible(
         &self,
-        request: &crate::adapter::Request,
+        request: &crate::protocol::GenerationRequestEnvelope,
     ) -> Result<Vec<Arc<BoundCandidate>>, crate::execution::plan::PlanError> {
         let selected = crate::execution::plan::select_candidates_for_client(
             request,

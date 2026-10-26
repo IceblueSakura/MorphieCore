@@ -4,7 +4,7 @@ use morphiecore::{
     protocol::{
         fidelity::FidelityRecords,
         openai::{
-            Profile, TargetCaps as Contract,
+            GenerationApi, TargetContract as Contract,
             events::{EventDecoder, EventEncoder},
             lowering::{lower_request, lower_response},
             responses,
@@ -35,10 +35,10 @@ fn typed_disabled_summary_is_valid_semantics_without_a_responses_carrier() {
         Some(&ReasoningDisplay::Omitted)
     );
     let fidelity = FidelityRecords::default();
-    for profile in [Profile::Responses, Profile::Chat] {
+    for profile in [GenerationApi::Responses, GenerationApi::Chat] {
         assert!(matches!(
             lower_request(&request, &fidelity, profile, Contract::full()),
-            Err(morphiecore::lowering::generation::RepresentationError::Reasoning)
+            Err(morphiecore::protocol::conversion::generation::RepresentationError::Reasoning)
         ));
     }
     let mut reported = metadata();
@@ -53,7 +53,7 @@ fn typed_disabled_summary_is_valid_semantics_without_a_responses_carrier() {
         &response,
         &fidelity,
         &reported,
-        Profile::Responses,
+        GenerationApi::Responses,
         Contract::full(),
     )
     .unwrap();
@@ -73,7 +73,7 @@ fn typed_disabled_summary_is_valid_semantics_without_a_responses_carrier() {
             .summary(),
         None
     );
-    let mut encoder = EventEncoder::new(Profile::Responses, reported).unwrap();
+    let mut encoder = EventEncoder::new(GenerationApi::Responses, reported).unwrap();
     let wire = encoder.encode(&StreamEvent::Started, &fidelity).unwrap();
     assert_eq!(wire[0]["response"]["reasoning"]["effort"], "none");
     assert!(wire[0]["response"]["reasoning"].get("summary").is_none());
@@ -116,8 +116,13 @@ fn standard_summary_presence_and_deprecated_alias_have_independent_wire_expectat
         )
         .unwrap();
         let fidelity = FidelityRecords::default();
-        let target =
-            lower_request(&request, &fidelity, Profile::Responses, Contract::full()).unwrap();
+        let target = lower_request(
+            &request,
+            &fidelity,
+            GenerationApi::Responses,
+            Contract::full(),
+        )
+        .unwrap();
         assert_eq!(
             responses::encode_generation(&target).unwrap()["reasoning"],
             wire
@@ -136,7 +141,7 @@ fn standard_summary_presence_and_deprecated_alias_have_independent_wire_expectat
         let target = lower_request(
             &decoded.semantic,
             &decoded.fidelity,
-            Profile::Responses,
+            GenerationApi::Responses,
             Contract::full(),
         )
         .unwrap();
@@ -153,14 +158,14 @@ fn standard_summary_presence_and_deprecated_alias_have_independent_wire_expectat
 
 #[test]
 fn unsupported_snapshot_content_is_not_silently_dropped() {
-    let mut d = EventDecoder::new(Profile::Responses);
+    let mut d = EventDecoder::new(GenerationApi::Responses);
     d.push(&created()).unwrap();
     d.push(&json!({"type":"response.output_item.added","output_index":0,"item":{"id":"rs","type":"reasoning","status":"in_progress","summary":[]}})).unwrap();
     assert!(d.push(&json!({"type":"response.output_item.done","output_index":0,"item":reasoning("completed")})).is_err());
 }
 #[test]
 fn encoder_rejects_unbound_replay_before_emitting_it() {
-    let mut encoder = EventEncoder::new(Profile::Responses, metadata()).unwrap();
+    let mut encoder = EventEncoder::new(GenerationApi::Responses, metadata()).unwrap();
     let f = FidelityRecords::default();
     encoder.encode(&StreamEvent::Started, &f).unwrap();
     assert!(
@@ -188,7 +193,7 @@ fn configuration_update_is_an_ordered_effort_item_not_a_settings_patch() {
         &lower_request(
             &decoded.semantic,
             &decoded.fidelity,
-            Profile::Responses,
+            GenerationApi::Responses,
             contract(),
         )
         .unwrap(),
@@ -208,7 +213,13 @@ fn configuration_update_is_an_ordered_effort_item_not_a_settings_patch() {
     });
     let replaced = decoded.semantic.clone().with_items(items).unwrap();
     let replaced_wire = responses::encode_generation(
-        &lower_request(&replaced, &decoded.fidelity, Profile::Responses, contract()).unwrap(),
+        &lower_request(
+            &replaced,
+            &decoded.fidelity,
+            GenerationApi::Responses,
+            contract(),
+        )
+        .unwrap(),
     )
     .unwrap();
     assert_eq!(
@@ -219,7 +230,13 @@ fn configuration_update_is_an_ordered_effort_item_not_a_settings_patch() {
         .retain_items(|_, item| !matches!(item, Item::ConfigurationUpdate(_)))
         .unwrap();
     let deleted_wire = responses::encode_generation(
-        &lower_request(&deleted, &decoded.fidelity, Profile::Responses, contract()).unwrap(),
+        &lower_request(
+            &deleted,
+            &decoded.fidelity,
+            GenerationApi::Responses,
+            contract(),
+        )
+        .unwrap(),
     )
     .unwrap();
     assert_eq!(deleted_wire["input"].as_array().unwrap().len(), 1);
@@ -238,7 +255,7 @@ fn configuration_update_is_an_ordered_effort_item_not_a_settings_patch() {
         lower_request(
             &decoded.semantic,
             &decoded.fidelity,
-            Profile::Chat,
+            GenerationApi::Chat,
             contract()
         )
         .is_err()
@@ -257,13 +274,13 @@ fn configuration_update_is_an_ordered_effort_item_not_a_settings_patch() {
             level: EffortLevel::Max
         })
     );
-    let mut d = EventDecoder::new(Profile::Responses);
+    let mut d = EventDecoder::new(GenerationApi::Responses);
     d.push(&created()).unwrap();
     let item = json!({"id":"cu","type":"configuration_update","reasoning":{"effort":"low"}});
     d.push(&json!({"type":"response.output_item.added","output_index":0,"item":item}))
         .unwrap();
     assert!(d.push(&json!({"type":"response.output_item.done","output_index":0,"item":{"id":"cu","type":"configuration_update","reasoning":{"effort":"high"}}})).is_err());
-    let mut ok = EventDecoder::new(Profile::Responses);
+    let mut ok = EventDecoder::new(GenerationApi::Responses);
     ok.push(&created()).unwrap();
     ok.push(&json!({"type":"response.output_item.added","output_index":0,"item":item.clone()}))
         .unwrap();
@@ -283,7 +300,7 @@ fn configuration_update_is_an_ordered_effort_item_not_a_settings_patch() {
         })
     );
     use morphiecore::protocol::{
-        openai::{Adapter, Dialect},
+        openai::{Dialect, GenerationCodec},
         reasoning::ReasoningEffortMapping,
     };
     static MAPPING: ReasoningEffortMapping = ReasoningEffortMapping {
@@ -301,7 +318,7 @@ fn configuration_update_is_an_ordered_effort_item_not_a_settings_patch() {
             (EffortLevel::High, EffortLevel::High),
         ],
     };
-    let mut adapter = Adapter::new(Profile::Responses, Dialect::Standard, None);
+    let mut adapter = GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None);
     adapter.adaptation.effort_mapping = Some(&MAPPING);
     let mut source = source;
     source["model"] = json!("m");
@@ -318,9 +335,9 @@ fn configuration_update_is_an_ordered_effort_item_not_a_settings_patch() {
     limited.model_limits.allowed_effort = Some(vec![EffortLevel::Low].into());
     assert!(matches!(
         adapter.encode_request(&request, "m", &limited),
-        Err(morphiecore::adapter::ConversionFailure {
-            cause: morphiecore::adapter::ConversionCause::Representation(
-                morphiecore::lowering::generation::RepresentationError::Controls
+        Err(morphiecore::protocol::ConversionFailure {
+            cause: morphiecore::protocol::ConversionCause::Representation(
+                morphiecore::protocol::conversion::generation::RepresentationError::Controls
             ),
             ..
         })

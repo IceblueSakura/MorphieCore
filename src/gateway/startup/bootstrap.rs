@@ -18,7 +18,7 @@ use crate::{
     semantic::value::{JsonLimits, parse_json},
 };
 #[cfg(test)]
-use crate::{protocol::openai::Profile, topology::catalog};
+use crate::{protocol::openai::GenerationApi, topology::catalog};
 use std::{
     net::SocketAddr,
     path::{Path, PathBuf},

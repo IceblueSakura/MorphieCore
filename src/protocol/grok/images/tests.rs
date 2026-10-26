@@ -1,8 +1,10 @@
 use super::*;
-use crate::protocol::failure::ShapeReason;
 use crate::{
-    adapter::images::Profile,
-    lowering::images::{AccountingPolicy, project_response},
+    adapter::images::UpstreamAdapter,
+    protocol::{
+        failure::ShapeReason,
+        image::projection::{AccountingPolicy, project_response},
+    },
 };
 
 const MODEL: &str = "grok-imagine-image-2.0";
@@ -13,7 +15,7 @@ fn request() -> Request {
     )
 }
 fn decode(value: Value) -> Result<ImageGenerationResponse, CodecError> {
-    Profile::GrokImagineImage2.decode_response(&serde_json::to_vec(&value).unwrap())
+    UpstreamAdapter::GrokImagineImage2.decode_response(&serde_json::to_vec(&value).unwrap())
 }
 
 #[test]
@@ -24,7 +26,7 @@ fn request_projection_has_an_independent_wire_oracle() {
     source.identity.user = Presence::Value("fixture-user".into());
     let before = source.clone();
     assert_eq!(
-        Profile::GrokImagineImage2
+        UpstreamAdapter::GrokImagineImage2
             .encode_request(&source, MODEL)
             .unwrap(),
         json!({

@@ -2,10 +2,10 @@
 //! only to the Provider/model that issued it.
 use crate::wire;
 use morphiecore::{
-    execution::replay::{CLIENT_ORIGIN, open_from_client, seal_event, seal_for_client},
+    execution::replay::{open_from_client, seal_event, seal_for_client},
     protocol::{
-        openai::{Adapter, Dialect, Profile, TargetCaps as Contract},
-        replay_envelope,
+        openai::{Dialect, GenerationApi, GenerationCodec, TargetContract as Contract},
+        replay_envelope::{self, CLIENT_ORIGIN},
     },
     semantic::{
         task::generation::{Item, ReplayFormat, StreamEvent},
@@ -17,8 +17,12 @@ use serde_json::{Value, json};
 fn origin(label: &str) -> ReplayOrigin {
     ReplayOrigin::new(label).unwrap()
 }
-fn upstream(label: &str) -> Adapter {
-    Adapter::new(Profile::Responses, Dialect::Standard, Some(origin(label)))
+fn upstream(label: &str) -> GenerationCodec {
+    GenerationCodec::new(
+        GenerationApi::Responses,
+        Dialect::Standard,
+        Some(origin(label)),
+    )
 }
 fn contract(label: &str) -> Contract {
     Contract {
@@ -26,9 +30,9 @@ fn contract(label: &str) -> Contract {
         ..Contract::full()
     }
 }
-fn client() -> Adapter {
-    Adapter::new(
-        Profile::Responses,
+fn client() -> GenerationCodec {
+    GenerationCodec::new(
+        GenerationApi::Responses,
         Dialect::Standard,
         Some(CLIENT_ORIGIN.clone()),
     )
@@ -125,7 +129,7 @@ fn another_target_gets_visible_history_without_foreign_thinking() {
     assert_eq!(rules, ["responses.transfer-visible-history.v1"]);
     assert_eq!(request, before);
     let target = morphiecore::protocol::native::ReplayTarget::new("other", "model-b").unwrap();
-    let native = morphiecore::protocol::anthropic::messages::TargetCaps::new(
+    let native = morphiecore::protocol::anthropic::messages::TargetContract::new(
         morphiecore::protocol::anthropic::messages::Profile::AdaptiveTextTools,
         morphiecore::protocol::anthropic::messages::Dialect::Standard,
     );
@@ -199,9 +203,11 @@ fn tool_turn_transfer_keeps_real_results_and_forgets_paired_wire_ids_only() {
         upstream("other/model-b")
             .encode_request(&mixed, "model-b", &contract("other/model-b"))
             .unwrap_err(),
-        morphiecore::adapter::ConversionFailure {
-            boundary: Some(morphiecore::lowering::generation::ConversionBoundary::RequestEncode),
-            cause: morphiecore::adapter::ConversionCause::Codec(
+        morphiecore::protocol::ConversionFailure {
+            boundary: Some(
+                morphiecore::protocol::conversion::generation::ConversionBoundary::RequestEncode
+            ),
+            cause: morphiecore::protocol::ConversionCause::Codec(
                 morphiecore::protocol::CodecError::Unsupported(
                     morphiecore::protocol::failure::CarrierReason::Replay
                 )
@@ -314,9 +320,9 @@ fn foreign_and_malformed_opaque_only_items_are_removed() {
     }
 }
 
-fn chat_client() -> Adapter {
-    Adapter::new(
-        Profile::Chat,
+fn chat_client() -> GenerationCodec {
+    GenerationCodec::new(
+        GenerationApi::Chat,
         Dialect::MorphieCore,
         Some(CLIENT_ORIGIN.clone()),
     )
@@ -460,7 +466,7 @@ fn chat_details_keep_item_boundaries_and_survive_pi_and_opencode_replays() {
     );
 
     let mut decoder = issuer.event_decoder();
-    let mut encoder = EventEncoder::new(Profile::Chat, decoded.metadata.clone())
+    let mut encoder = EventEncoder::new(GenerationApi::Chat, decoded.metadata.clone())
         .unwrap()
         .with_contract(client_contract);
     let mut deltas = vec![];

@@ -1,41 +1,44 @@
 //! Protocol-owned endpoint capabilities, not a client protocol or execution policy.
-use crate::protocol::openai::TargetCaps as OpenAiCaps;
 use crate::{
     protocol::{
-        anthropic, cache::CacheProjection, google::generate_content as google_generate_content,
-        google::interactions as google_interactions,
+        anthropic,
+        cache::CacheTargetPolicy,
+        google::{
+            generate_content as google_generate_content, interactions as google_interactions,
+        },
+        openai::TargetContract as OpenAiCaps,
     },
-    semantic::task::generation::GenerationSemanticContract,
+    semantic::task::generation::GenerationFeatureSet,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum TargetCaps {
+pub enum TargetContract {
     OpenAi(Box<OpenAiCaps>),
-    AnthropicMessages(Box<anthropic::messages::TargetCaps>),
-    GoogleGenerateContent(Box<google_generate_content::TargetCaps>),
-    GoogleInteractions(Box<google_interactions::TargetCaps>),
+    AnthropicMessages(Box<anthropic::messages::TargetContract>),
+    GoogleGenerateContent(Box<google_generate_content::TargetContract>),
+    GoogleInteractions(Box<google_interactions::TargetContract>),
 }
-impl From<OpenAiCaps> for TargetCaps {
+impl From<OpenAiCaps> for TargetContract {
     fn from(value: OpenAiCaps) -> Self {
         Self::OpenAi(Box::new(value))
     }
 }
-impl From<anthropic::messages::TargetCaps> for TargetCaps {
-    fn from(value: anthropic::messages::TargetCaps) -> Self {
+impl From<anthropic::messages::TargetContract> for TargetContract {
+    fn from(value: anthropic::messages::TargetContract) -> Self {
         Self::AnthropicMessages(Box::new(value))
     }
 }
-impl From<google_generate_content::TargetCaps> for TargetCaps {
-    fn from(value: google_generate_content::TargetCaps) -> Self {
+impl From<google_generate_content::TargetContract> for TargetContract {
+    fn from(value: google_generate_content::TargetContract) -> Self {
         Self::GoogleGenerateContent(Box::new(value))
     }
 }
-impl From<google_interactions::TargetCaps> for TargetCaps {
-    fn from(value: google_interactions::TargetCaps) -> Self {
+impl From<google_interactions::TargetContract> for TargetContract {
+    fn from(value: google_interactions::TargetContract) -> Self {
         Self::GoogleInteractions(Box::new(value))
     }
 }
-impl TargetCaps {
+impl TargetContract {
     pub fn model_limits(&self) -> &crate::protocol::model_limits::ModelLimits {
         match self {
             Self::OpenAi(c) => &c.model_limits,
@@ -64,19 +67,19 @@ impl TargetCaps {
             _ => None,
         }
     }
-    pub fn messages(&self) -> Option<&anthropic::messages::TargetCaps> {
+    pub fn messages(&self) -> Option<&anthropic::messages::TargetContract> {
         match self {
             Self::AnthropicMessages(c) => Some(c),
             _ => None,
         }
     }
-    pub fn messages_mut(&mut self) -> Option<&mut anthropic::messages::TargetCaps> {
+    pub fn messages_mut(&mut self) -> Option<&mut anthropic::messages::TargetContract> {
         match self {
             Self::AnthropicMessages(c) => Some(c),
             _ => None,
         }
     }
-    pub fn semantics(&self) -> &GenerationSemanticContract {
+    pub fn semantics(&self) -> &GenerationFeatureSet {
         match self {
             Self::OpenAi(c) => &c.semantics,
             Self::AnthropicMessages(c) => &c.semantics,
@@ -86,7 +89,7 @@ impl TargetCaps {
     }
     pub(crate) fn messages_terminal_policy(
         &self,
-        request: &crate::adapter::Request,
+        request: &crate::protocol::GenerationRequestEnvelope,
     ) -> Option<anthropic::messages::client::GoogleTerminalPolicy> {
         // Both Google encoders forward nonempty stop controls unchanged and never
         // insert defaults. Absence here is therefore an effective-request fact.
@@ -111,7 +114,7 @@ impl TargetCaps {
     }
     /// Accepted request features after selected adaptation, not native support.
     /// Value/mode restrictions still belong to the shared target encoder.
-    pub(crate) fn accepted_semantics(&self) -> GenerationSemanticContract {
+    pub(crate) fn accepted_semantics(&self) -> GenerationFeatureSet {
         use crate::{
             protocol::reasoning::ReasoningConversion, semantic::task::generation::EffortScope,
         };
@@ -153,7 +156,7 @@ impl TargetCaps {
         }
         contract
     }
-    pub fn cache(&self) -> CacheProjection {
+    pub fn cache(&self) -> CacheTargetPolicy {
         match self {
             Self::OpenAi(c) => c.cache,
             Self::AnthropicMessages(c) => c.cache,

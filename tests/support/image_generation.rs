@@ -19,7 +19,7 @@ pub fn binding(origin: &str) -> (ProviderEntry, ImageRoute) {
             id: RouteId::new("image-route").unwrap(),
             model: ModelId::new("public-image").unwrap(),
             canonical_model: canonical.clone(),
-            accounting: morphiecore::lowering::images::AccountingPolicy::Strict,
+            accounting: morphiecore::protocol::image::projection::AccountingPolicy::Strict,
             endpoint: ImageEndpoint {
                 id: EndpointId::new("image-endpoint").unwrap(),
                 provider,
@@ -29,7 +29,7 @@ pub fn binding(origin: &str) -> (ProviderEntry, ImageRoute) {
                 },
                 upstream_model: "private-image".into(),
                 canonical_model: canonical,
-                profile: morphiecore::adapter::images::Profile::GptImage,
+                profile: morphiecore::adapter::images::UpstreamAdapter::GptImage,
                 credential: CredentialBindingId::new("fixture-key").unwrap(),
                 execution: ExecutionContract {
                     streaming: false,

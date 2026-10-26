@@ -1,7 +1,7 @@
 //! Shared OpenAI representation constraints used by request, response and event lowering.
 use super::RepresentationError;
 use crate::{
-    protocol::{fidelity::FidelityRecords, openai::Profile},
+    protocol::{fidelity::FidelityRecords, openai::GenerationApi},
     semantic::task::generation::*,
 };
 
@@ -9,7 +9,7 @@ use crate::{
 /// Even zero is reported: never omit it or invent undeclared prediction positions.
 pub(super) fn check_usage(
     usage: Usage,
-    profile: Profile,
+    profile: GenerationApi,
     rules: &crate::protocol::openai::dialect::adaptation::WireRules,
 ) -> Result<(), RepresentationError> {
     usage.validate()?;
@@ -22,13 +22,13 @@ pub(super) fn check_usage(
     {
         return Err(RepresentationError::UsageProjection);
     }
-    if profile == Profile::Responses
+    if profile == GenerationApi::Responses
         && usage.input_image_tokens.is_some()
         && !rules.responses_image_usage
     {
         return Err(RepresentationError::UsageDetails);
     }
-    if profile == Profile::Responses
+    if profile == GenerationApi::Responses
         && ((usage.input_text_tokens.is_some() || usage.output_text_tokens.is_some())
             && !rules.responses_text_usage
             || usage.accepted_prediction_tokens.is_some()
@@ -71,7 +71,7 @@ pub(super) fn represent_reasoning(
     settings: &GenerationSettings,
     items: &[(ItemId, Item)],
     fidelity: &FidelityRecords,
-    profile: Profile,
+    profile: GenerationApi,
     origin: Option<&crate::semantic::value::ReplayOrigin>,
     adaptation: &crate::protocol::openai::dialect::adaptation::Adaptation,
     history: Option<&GenerationRequest>,
@@ -80,7 +80,7 @@ pub(super) fn represent_reasoning(
     let controls = &settings.reasoning;
     let request = history.is_some();
     if !controls.read_history.is_absent()
-        && (profile != Profile::Chat || !adaptation.rules.chat_preserve_thinking)
+        && (profile != GenerationApi::Chat || !adaptation.rules.chat_preserve_thinking)
     {
         return Err(RepresentationError::Reasoning);
     }
@@ -91,7 +91,7 @@ pub(super) fn represent_reasoning(
     ) {
         return Err(RepresentationError::Reasoning);
     }
-    if profile == Profile::Responses
+    if profile == GenerationApi::Responses
         && controls.presentation.visibility.value() == Some(&ReasoningDisplay::Omitted)
     {
         return Err(RepresentationError::Reasoning);
@@ -102,13 +102,13 @@ pub(super) fn represent_reasoning(
             return Err(RepresentationError::Tools);
         }
         if let Item::ConfigurationUpdate(update) = item
-            && (profile != Profile::Responses
+            && (profile != GenerationApi::Responses
                 || crate::protocol::openai::reasoning::effort_label(update).is_err())
         {
             return Err(RepresentationError::Reasoning);
         }
         if let Item::Compaction(value) = item {
-            if profile != Profile::Responses {
+            if profile != GenerationApi::Responses {
                 return Err(RepresentationError::UnmigratedSemantic);
             }
             if !fidelity.compaction_matches(*id, value, origin) {
@@ -125,13 +125,14 @@ pub(super) fn represent_reasoning(
             if value.format() != ReplayFormat::ResponsesEncrypted {
                 return Err(RepresentationError::ReplayFormat);
             }
-            if (profile == Profile::Chat || request) && r.status != ItemLifecycle::Completed {
+            if (profile == GenerationApi::Chat || request) && r.status != ItemLifecycle::Completed {
                 return Err(RepresentationError::Terminal);
             }
         }
         if let Item::Reasoning(reasoning) = item
             && let Some(replay) = &reasoning.replay
-            && (profile != Profile::Responses && !(profile == Profile::Chat && structured_chat)
+            && (profile != GenerationApi::Responses
+                && !(profile == GenerationApi::Chat && structured_chat)
                 || !history.map_or_else(
                     || fidelity.replay_matches(*id, reasoning, origin),
                     |request| fidelity.replay_matches_request(*id, reasoning, origin, request),
@@ -139,7 +140,7 @@ pub(super) fn represent_reasoning(
                 || replay.replay_token().is_none()
                     && (request
                         || reasoning.status == ItemLifecycle::Completed
-                        || profile == Profile::Chat))
+                        || profile == GenerationApi::Chat))
         {
             return Err(RepresentationError::ReplayOrigin);
         }
@@ -159,7 +160,7 @@ pub(super) fn represent_reasoning(
         && adaptation.rules.thinking_controls
         && controls.budget_tokens.is_some()
         && controls.mode == crate::semantic::value::Presence::Value(ReasoningMode::Budgeted);
-    if profile == Profile::Chat
+    if profile == GenerationApi::Chat
         && (!controls.context.is_absent() || !controls.mode.is_absent() && !native_budget)
     {
         return Err(RepresentationError::Reasoning);
@@ -171,35 +172,35 @@ pub(super) fn represent_reasoning(
             && !native_budget
             || !controls.presentation.is_absent());
     if has_reasoning_items
-        && profile != Profile::Responses
-        && !(profile == Profile::Chat
+        && profile != GenerationApi::Responses
+        && !(profile == GenerationApi::Chat
             && (adaptation.rules.readable_reasoning && chat_reasoning_shape(items)
                 || structured_chat && structured_chat_reasoning_shape(items)))
     {
         return Err(RepresentationError::Reasoning);
     }
-    if controls.encrypted_output() && profile != Profile::Responses {
+    if controls.encrypted_output() && profile != GenerationApi::Responses {
         return Err(RepresentationError::Reasoning);
     }
-    if profile == Profile::Chat && chat_control {
+    if profile == GenerationApi::Chat && chat_control {
         return Err(RepresentationError::Reasoning);
     }
     Ok(())
 }
 pub(super) fn text_items(
     items: &[(ItemId, Item)],
-    profile: Profile,
+    profile: GenerationApi,
     request: bool,
     resources: &ResourceTable,
 ) -> Result<(), RepresentationError> {
     crate::protocol::openai::content::citations::check_items(items, resources, profile)
         .map_err(|_| RepresentationError::TextMetadata)?;
     for (_, i) in items {
-        if i.participant().is_some() && (!request || profile != Profile::Chat) {
+        if i.participant().is_some() && (!request || profile != GenerationApi::Chat) {
             return Err(RepresentationError::UnmigratedSemantic);
         }
         if !request
-            && profile == Profile::Chat
+            && profile == GenerationApi::Chat
             && matches!(i, Item::ToolResult(_) | Item::CustomResult(_))
         {
             return Err(RepresentationError::Tools);
@@ -233,7 +234,7 @@ pub(super) fn text_items(
         {
             return Err(RepresentationError::Tools);
         }
-        if profile == Profile::Chat {
+        if profile == GenerationApi::Chat {
             match i {
                 Item::CustomCall(c) if !c.context.is_direct() => {
                     return Err(RepresentationError::Tools);
@@ -270,7 +271,7 @@ pub(super) fn text_items(
                                     crate::protocol::openai::content::citations::check(
                                         a,
                                         resources,
-                                        Profile::Chat,
+                                        GenerationApi::Chat,
                                     )
                                     .is_err()
                                 })
@@ -289,21 +290,21 @@ pub(super) fn text_items(
                 let probs = match &part.content {
                     ContentPart::Text(t) => t.logprobs(),
                     ContentPart::Refusal(t) => {
-                        if profile == Profile::Responses && !t.logprobs().is_absent() {
+                        if profile == GenerationApi::Responses && !t.logprobs().is_absent() {
                             return Err(RepresentationError::TextMetadata);
                         }
                         t.logprobs()
                     }
                     _ => continue,
                 };
-                if profile == Profile::Chat
+                if profile == GenerationApi::Chat
                     && let Some(probs) = probs.value()
                 {
                     crate::protocol::openai::chat::logprobs::validate(probs)
                         .map_err(|_| RepresentationError::TextMetadata)?;
                 }
             }
-            if profile == Profile::Responses
+            if profile == GenerationApi::Responses
                 && m.parts.iter().any(|p| {
                     matches!(&p.content, ContentPart::Text(t)
                         if t.logprobs().value().is_some_and(|v| !v.iter().all(complete_logprob)))
@@ -313,8 +314,8 @@ pub(super) fn text_items(
             }
             if m.parts.iter().any(|p| match &p.content {
                 ContentPart::Text(_) | ContentPart::Refusal(_) => false,
-                ContentPart::Audio(_) => profile != Profile::Chat,
-                ContentPart::AudioReference(_) => profile != Profile::Chat || !request,
+                ContentPart::Audio(_) => profile != GenerationApi::Chat,
+                ContentPart::AudioReference(_) => profile != GenerationApi::Chat || !request,
                 ContentPart::Resource(resource) => {
                     let Ok(resource) = resource.media(resources) else {
                         return true;
@@ -336,12 +337,12 @@ pub(super) fn text_items(
                             // Chat files are inline PDFs only and have no detail slot.
                             // https://developers.openai.com/api/docs/guides/file-inputs
                             ResourceKind::File => match profile {
-                                Profile::Responses => matches!(
+                                GenerationApi::Responses => matches!(
                                     resource.location,
                                     ResourceLocation::OpaqueReference(_)
                                         | ResourceLocation::NamespacedReference { .. }
                                 ),
-                                Profile::Chat => {
+                                GenerationApi::Chat => {
                                     m.role != MessageRole::User
                                         || !matches!(
                                             resource.location,
@@ -361,7 +362,7 @@ pub(super) fn text_items(
                                     )
                             }
                             ResourceKind::Audio => {
-                                profile != Profile::Chat
+                                profile != GenerationApi::Chat
                                     || m.role != MessageRole::User
                                     || !crate::protocol::openai::content::input_audio::representable(
                                         resource,
@@ -372,7 +373,7 @@ pub(super) fn text_items(
             }) {
                 return Err(RepresentationError::UnmigratedSemantic);
             }
-            if profile == Profile::Chat {
+            if profile == GenerationApi::Chat {
                 let audio = m
                     .parts
                     .iter()
@@ -402,7 +403,7 @@ pub(super) fn text_items(
                     return Err(RepresentationError::MessageGrouping);
                 }
             }
-            if profile == Profile::Chat
+            if profile == GenerationApi::Chat
                 && m.parts
                     .iter()
                     .filter(|p| {
@@ -478,7 +479,11 @@ fn structured_chat_reasoning_shape(items: &[(ItemId, Item)]) -> bool {
         !empty_text && (!r.parts.is_empty() || r.replay.is_some()) && followed
     })
 }
-fn result_representable(result: &ToolResult, profile: Profile, resources: &ResourceTable) -> bool {
+fn result_representable(
+    result: &ToolResult,
+    profile: GenerationApi,
+    resources: &ResourceTable,
+) -> bool {
     let unsupported_media = match &result.output {
         ToolOutput::Parts(parts) => parts.iter().any(|part| {
             matches!(&part.content, InputPart::Resource(r)
@@ -493,6 +498,6 @@ fn result_representable(result: &ToolResult, profile: Profile, resources: &Resou
     result.execution.is_none()
         && result.is_error.is_none()
         && !matches!(result.output, ToolOutput::Structured(_))
-        && (profile != Profile::Chat || result.output.is_text_only())
+        && (profile != GenerationApi::Chat || result.output.is_text_only())
         && !unsupported_media
 }

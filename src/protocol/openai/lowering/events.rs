@@ -1,12 +1,17 @@
 //! Incremental representability checks against one immutable output target.
-use crate::protocol::openai::lowering::{RepresentationError, TargetCaps};
-use crate::{protocol::openai::Profile, semantic::task::generation::*};
+use crate::{
+    protocol::openai::{
+        GenerationApi,
+        lowering::{RepresentationError, TargetContract},
+    },
+    semantic::task::generation::*,
+};
 
 pub fn check_event(
     state: &StreamState,
     event: &StreamEvent,
-    profile: Profile,
-    contract: &TargetCaps,
+    profile: GenerationApi,
+    contract: &TargetContract,
 ) -> Result<(), RepresentationError> {
     if matches!(event, StreamEvent::SafetyReport(_)) || !state.safety_reports().is_empty() {
         return Err(RepresentationError::Safety);
@@ -22,7 +27,7 @@ pub fn check_event(
         _ => None,
     };
     if let Some(usage) = usage {
-        let projected = if profile == Profile::Chat {
+        let projected = if profile == GenerationApi::Chat {
             usage
         } else {
             super::projection::responses_usage(usage, &contract.adaptation.rules)?.0
@@ -83,12 +88,12 @@ pub fn check_event(
             return Err(RepresentationError::Reasoning);
         }
         StreamEvent::PartInterrupted { .. } | StreamEvent::CompactionProgress { .. }
-            if profile != Profile::Responses =>
+            if profile != GenerationApi::Responses =>
         {
             return Err(RepresentationError::UnmigratedSemantic);
         }
         StreamEvent::ResourceDeclared { resource, .. } => {
-            if profile != Profile::Responses
+            if profile != GenerationApi::Responses
                 && !crate::protocol::openai::content::citations::context(resource)
             {
                 return Err(RepresentationError::UnmigratedSemantic);
@@ -117,7 +122,7 @@ pub fn check_event(
         StreamEvent::Terminal {
             terminal: StreamTerminal::Cancelled,
             ..
-        } if profile == Profile::Responses => {
+        } if profile == GenerationApi::Responses => {
             // The static status exists, but the pinned standard stream union
             // has no cancellation event. Never invent one or report failure/success.
             // https://github.com/openai/openai-python/blob/be9d66628ad7377bd36fe5a76ae6d735843f0e76/src/openai/types/responses/response_stream_event.py
@@ -128,7 +133,7 @@ pub fn check_event(
             ..
         }
         | StreamEvent::AudioDelta { .. }
-            if profile != Profile::Chat || !contract.semantics.audio_output =>
+            if profile != GenerationApi::Chat || !contract.semantics.audio_output =>
         {
             return Err(RepresentationError::UnmigratedSemantic);
         }
@@ -142,7 +147,7 @@ pub fn check_event(
         StreamEvent::ItemStarted { kind, replay, .. } => {
             match kind {
                 ItemKind::Compaction
-                    if profile != Profile::Responses || !contract.semantics.compaction =>
+                    if profile != GenerationApi::Responses || !contract.semantics.compaction =>
                 {
                     return Err(RepresentationError::UnmigratedSemantic);
                 }
@@ -163,7 +168,7 @@ pub fn check_event(
                 {
                     return Err(RepresentationError::UnmigratedSemantic);
                 }
-                ItemKind::Message { phase: Some(_) } if profile == Profile::Chat => {
+                ItemKind::Message { phase: Some(_) } if profile == GenerationApi::Chat => {
                     return Err(RepresentationError::UnmigratedSemantic);
                 }
                 ItemKind::ToolCall {
@@ -173,12 +178,12 @@ pub fn check_event(
                     return Err(RepresentationError::Tools);
                 }
                 ItemKind::ToolCall { context, .. }
-                    if profile == Profile::Chat && !context.is_direct() =>
+                    if profile == GenerationApi::Chat && !context.is_direct() =>
                 {
                     return Err(RepresentationError::Tools);
                 }
                 ItemKind::ConfigurationUpdate(update)
-                    if profile != Profile::Responses
+                    if profile != GenerationApi::Responses
                         || !contract.semantics.reasoning
                         || super::super::reasoning::effort_label(update).is_err() =>
                 {
@@ -188,20 +193,20 @@ pub fn check_event(
                 // message and single text part are validated at the terminal.
                 ItemKind::Reasoning
                     if !contract.semantics.reasoning
-                        || (profile == Profile::Chat
+                        || (profile == GenerationApi::Chat
                             && !contract.adaptation.rules.readable_reasoning) =>
                 {
                     return Err(RepresentationError::Reasoning);
                 }
                 ItemKind::CustomCall { .. }
-                    if profile != Profile::Responses
+                    if profile != GenerationApi::Responses
                         || !contract.semantics.tools
                         || !contract.semantics.custom_tools =>
                 {
                     return Err(RepresentationError::Tools);
                 }
                 ItemKind::Program { .. } | ItemKind::ProgramOutput { .. }
-                    if profile != Profile::Responses || !contract.semantics.tools =>
+                    if profile != GenerationApi::Responses || !contract.semantics.tools =>
                 {
                     return Err(RepresentationError::Tools);
                 }
@@ -209,7 +214,7 @@ pub fn check_event(
                     return Err(RepresentationError::Tools);
                 }
                 ItemKind::Message { .. }
-                    if profile == Profile::Chat
+                    if profile == GenerationApi::Chat
                         && state.items().iter().any(|i| {
                             matches!(i.kind, ItemKind::Message { .. } | ItemKind::ToolCall { .. })
                         }) =>
@@ -228,7 +233,7 @@ pub fn check_event(
         StreamEvent::ItemFinished { replay, .. }
             if replay.as_ref().is_some_and(|r| {
                 !r.permits(contract.replay_origin.as_ref())
-                    || profile == Profile::Chat && r.value.replay_token().is_none()
+                    || profile == GenerationApi::Chat && r.value.replay_token().is_none()
             }) =>
         {
             return Err(RepresentationError::ReplayOrigin);
@@ -237,15 +242,15 @@ pub fn check_event(
             status,
             replay: Some(_),
             ..
-        } if profile == Profile::Chat && *status != ItemLifecycle::Completed => {
+        } if profile == GenerationApi::Chat && *status != ItemLifecycle::Completed => {
             return Err(RepresentationError::Terminal);
         }
         StreamEvent::AnnotationAdded { .. }
-            if profile == Profile::Chat || !contract.semantics.text_metadata =>
+            if profile == GenerationApi::Chat || !contract.semantics.text_metadata =>
         {
             return Err(RepresentationError::TextMetadata);
         }
-        StreamEvent::Queued if profile != Profile::Responses => {
+        StreamEvent::Queued if profile != GenerationApi::Responses => {
             return Err(RepresentationError::Lifecycle);
         }
         StreamEvent::Delta {
@@ -262,7 +267,7 @@ pub fn check_event(
             logprobs,
         } => {
             probability_target(state, *item, *part, logprobs, profile, contract)?;
-            if profile == Profile::Chat {
+            if profile == GenerationApi::Chat {
                 let old = &state.part(*item, *part)?.logprobs;
                 if let Some(old) = old.value()
                     && old != logprobs
@@ -278,7 +283,7 @@ pub fn check_event(
             logprobs,
         } => {
             if !annotations.is_empty()
-                && (profile == Profile::Chat || !contract.semantics.text_metadata)
+                && (profile == GenerationApi::Chat || !contract.semantics.text_metadata)
             {
                 return Err(RepresentationError::TextMetadata);
             }
@@ -292,7 +297,7 @@ pub fn check_event(
                     contract,
                 )?;
             }
-            if profile == Profile::Chat
+            if profile == GenerationApi::Chat
                 && let Some(old) = state.part(*item, *part)?.logprobs.value()
                 && logprobs.value() != Some(old)
             {
@@ -301,7 +306,7 @@ pub fn check_event(
             }
         }
         StreamEvent::PartStarted { item, kind, .. }
-            if profile == Profile::Chat
+            if profile == GenerationApi::Chat
                 && matches!(state.item(*item)?.kind, ItemKind::Message { .. })
                 && state.item(*item)?.parts.iter().any(|p| {
                     *kind != PartKind::Audio
@@ -311,7 +316,7 @@ pub fn check_event(
             return Err(RepresentationError::MessageGrouping);
         }
         StreamEvent::Terminal { terminal, details }
-            if profile == Profile::Chat
+            if profile == GenerationApi::Chat
                 && (matches!(
                     terminal,
                     StreamTerminal::Failed | StreamTerminal::Cancelled | StreamTerminal::Error
@@ -330,10 +335,10 @@ fn check_result(
     state: &StreamState,
     result: &ToolResult,
     custom: bool,
-    profile: Profile,
-    contract: &TargetCaps,
+    profile: GenerationApi,
+    contract: &TargetContract,
 ) -> Result<(), RepresentationError> {
-    if profile != Profile::Responses {
+    if profile != GenerationApi::Responses {
         return Err(RepresentationError::Tools);
     }
     let item = if custom {
@@ -355,16 +360,16 @@ fn probability_target(
     item: ItemId,
     part: PartId,
     logprobs: &[Logprob],
-    profile: Profile,
-    contract: &TargetCaps,
+    profile: GenerationApi,
+    contract: &TargetContract,
 ) -> Result<(), RepresentationError> {
     if !contract.semantics.logprobs
         || !contract.semantics.text_metadata
-        || profile == Profile::Responses && state.part(item, part)?.kind == PartKind::Refusal
+        || profile == GenerationApi::Responses && state.part(item, part)?.kind == PartKind::Refusal
     {
         return Err(RepresentationError::TextMetadata);
     }
-    if profile == Profile::Chat {
+    if profile == GenerationApi::Chat {
         crate::protocol::openai::chat::logprobs::validate(logprobs)
             .map_err(|_| RepresentationError::TextMetadata)?;
     }

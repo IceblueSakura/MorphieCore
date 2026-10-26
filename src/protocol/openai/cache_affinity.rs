@@ -1,5 +1,5 @@
 //! Bounded digests of final target prompts, never history or replay proofs.
-use super::Profile;
+use super::GenerationApi;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 
@@ -7,11 +7,11 @@ pub(crate) const MAX_CHECKPOINTS: usize = 32;
 pub(crate) const MAX_PROMPT_BYTES: usize = 256 << 10;
 
 /// Only call after final target encoding/validation. This does not grant admission.
-pub(crate) fn prefixes(wire: &Value, profile: Profile) -> Option<Vec<[u8; 32]>> {
+pub(crate) fn prefixes(wire: &Value, profile: GenerationApi) -> Option<Vec<[u8; 32]>> {
     crate::semantic::value::json_size(wire, MAX_PROMPT_BYTES).ok()?;
     let field = match profile {
-        Profile::Chat => "messages",
-        Profile::Responses => "input",
+        GenerationApi::Chat => "messages",
+        GenerationApi::Responses => "input",
     };
     let items = wire.get(field)?.as_array()?;
     if items.is_empty() || !items.iter().all(|v| supported(v, profile)) {
@@ -36,7 +36,7 @@ pub(crate) fn prefixes(wire: &Value, profile: Profile) -> Option<Vec<[u8; 32]>> 
     }
     let mut hash = Sha256::new();
     hash.update(b"MorphieCore.cache-prefix.v1\0");
-    hash.update([if profile == Profile::Chat { 0 } else { 1 }]);
+    hash.update([if profile == GenerationApi::Chat { 0 } else { 1 }]);
     charge(&mut hash, &Value::Object(base))?;
     let mut checkpoints = std::collections::VecDeque::with_capacity(MAX_CHECKPOINTS);
     for item in items {
@@ -65,12 +65,12 @@ fn text_parts(value: Option<&Value>, kinds: &[&str]) -> bool {
         _ => false,
     }
 }
-fn supported(value: &Value, profile: Profile) -> bool {
+fn supported(value: &Value, profile: GenerationApi) -> bool {
     if value.get("status").is_some_and(|s| s != "completed") {
         return false;
     }
     match profile {
-        Profile::Chat => {
+        GenerationApi::Chat => {
             matches!(
                 value.get("role").and_then(Value::as_str),
                 Some("system" | "developer" | "user" | "assistant" | "tool")
@@ -98,7 +98,7 @@ fn supported(value: &Value, profile: Profile) -> bool {
                         })
                 })
         }
-        Profile::Responses => match value.get("type").and_then(Value::as_str) {
+        GenerationApi::Responses => match value.get("type").and_then(Value::as_str) {
             None | Some("message") => {
                 text_parts(value.get("content"), &["input_text", "output_text"])
             }
@@ -129,7 +129,7 @@ mod tests {
             .as_array_mut()
             .unwrap()
             .push(json!({"role":"assistant","content":"answer"}));
-        let one = prefixes(&first, Profile::Chat).unwrap();
+        let one = prefixes(&first, GenerationApi::Chat).unwrap();
         assert_eq!(
             one[0]
                 .iter()
@@ -137,37 +137,43 @@ mod tests {
                 .collect::<String>(),
             "fd9a9169570377a30c62a05dd35d1d307fbe342fa0f59355d8561614a2a46e84"
         );
-        let two = prefixes(&next, Profile::Chat).unwrap();
+        let two = prefixes(&next, GenerationApi::Chat).unwrap();
         assert_eq!(one.len(), 1);
         assert_eq!(two.len(), 2);
         assert_eq!(one[0], two[0]);
         for field in ["stream", "stream_options", "prompt_cache_key", "metadata"] {
             let mut edited = next.clone();
             edited[field] = json!(null);
-            assert_eq!(two, prefixes(&edited, Profile::Chat).unwrap());
+            assert_eq!(two, prefixes(&edited, GenerationApi::Chat).unwrap());
         }
         for field in ["instructions", "tools", "temperature"] {
             let mut edited = next.clone();
             edited[field] = json!("changed");
-            assert_ne!(two, prefixes(&edited, Profile::Chat).unwrap());
+            assert_ne!(two, prefixes(&edited, GenerationApi::Chat).unwrap());
         }
         next["messages"][0]["content"] = json!("edited");
-        assert_ne!(one[0], prefixes(&next, Profile::Chat).unwrap()[0]);
+        assert_ne!(one[0], prefixes(&next, GenerationApi::Chat).unwrap()[0]);
     }
 
     #[test]
     fn order_precision_identity_and_resource_boundaries_are_not_erased() {
         let base = br#"{"model":"upstream","input":[{"type":"function_call","call_id":"call","name":"lookup","arguments":"{\"z\":1.000000000000000001,\"a\":2}"}]}"#;
         let value: Value = serde_json::from_slice(base).unwrap();
-        let original = prefixes(&value, Profile::Responses).unwrap();
+        let original = prefixes(&value, GenerationApi::Responses).unwrap();
         for arguments in [r#"{"a":2,"z":1.000000000000000001}"#, r#"{"z":1.0,"a":2}"#] {
             let mut edited = value.clone();
             edited["input"][0]["arguments"] = json!(arguments);
-            assert_ne!(original, prefixes(&edited, Profile::Responses).unwrap());
+            assert_ne!(
+                original,
+                prefixes(&edited, GenerationApi::Responses).unwrap()
+            );
         }
         let mut edited = value;
         edited["input"][0]["call_id"] = json!("another");
-        assert_ne!(original, prefixes(&edited, Profile::Responses).unwrap());
+        assert_ne!(
+            original,
+            prefixes(&edited, GenerationApi::Responses).unwrap()
+        );
         for content in [
             json!([{"type":"input_image","image_url":"https://example.invalid/image"}]),
             json!([{"type":"input_file","file_data":"AQID"}]),
@@ -175,7 +181,7 @@ mod tests {
             assert!(
                 prefixes(
                     &json!({"input":[{"type":"message","role":"user","content":content}]}),
-                    Profile::Responses
+                    GenerationApi::Responses
                 )
                 .is_none()
             );
@@ -183,20 +189,20 @@ mod tests {
         assert!(
             prefixes(
                 &json!({"input":[{"type":"reasoning","encrypted_content":"synthetic"}]}),
-                Profile::Responses
+                GenerationApi::Responses
             )
             .is_none()
         );
         assert!(
             prefixes(
                 &json!({"messages":[{"role":"user","content":"x".repeat(MAX_PROMPT_BYTES)}]}),
-                Profile::Chat
+                GenerationApi::Chat
             )
             .is_none()
         );
         let many = json!({"input":(0..100).map(|n|json!({"type":"message","role":"user","content":n.to_string()})).collect::<Vec<_>>()});
         assert_eq!(
-            prefixes(&many, Profile::Responses).unwrap().len(),
+            prefixes(&many, GenerationApi::Responses).unwrap().len(),
             MAX_CHECKPOINTS
         );
     }

@@ -1,8 +1,12 @@
 //! Final carrier constraints used by OpenAI request and response encoders.
 //! Callers retain their original validation stages after target projection.
-use crate::protocol::failure::CarrierReason;
-use crate::protocol::openai::{CodecError, Profile};
-use crate::semantic::task::generation::*;
+use crate::{
+    protocol::{
+        failure::CarrierReason,
+        openai::{CodecError, GenerationApi},
+    },
+    semantic::task::generation::*,
+};
 
 pub(in crate::protocol::openai) fn check_response_carriers(
     response: &GenerationResponse,
@@ -86,25 +90,26 @@ pub(in crate::protocol::openai) fn check_item_carriers(
 pub(in crate::protocol::openai) fn check_message_carriers(
     items: &[(ItemId, Item)],
     groups: &[MessageEnvelope],
-    profile: Profile,
+    profile: GenerationApi,
 ) -> Result<(), CodecError> {
-    if profile != Profile::Chat && items.iter().any(|(_, i)| i.participant().is_some()) {
+    if profile != GenerationApi::Chat && items.iter().any(|(_, i)| i.participant().is_some()) {
         return Err(CodecError::Unsupported(CarrierReason::Unavailable));
     }
     if items.iter().any(|(_, item)| {
-        item.cache_boundaries()
-            .any(|cache| profile == Profile::Chat || matches!(cache, PrefixCacheBoundary::Ttl(_)))
+        item.cache_boundaries().any(|cache| {
+            profile == GenerationApi::Chat || matches!(cache, PrefixCacheBoundary::Ttl(_))
+        })
     }) {
         return Err(CodecError::Unsupported(CarrierReason::Unavailable));
     }
-    if profile == Profile::Chat
+    if profile == GenerationApi::Chat
         && items
             .iter()
             .any(|(_, item)| matches!(item, Item::Compaction(_)))
     {
         return Err(CodecError::Unsupported(CarrierReason::Unavailable));
     }
-    if profile == Profile::Responses && !groups.is_empty() {
+    if profile == GenerationApi::Responses && !groups.is_empty() {
         return Err(CodecError::Unsupported(CarrierReason::Unavailable));
     }
     for group in groups {

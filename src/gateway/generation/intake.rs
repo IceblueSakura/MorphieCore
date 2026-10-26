@@ -1,15 +1,18 @@
 //! One attempt's bounded upstream I/O and semantic projection, never candidate selection.
-use crate::gateway::{
-    ApiError, BoundCandidate, BoundEntry, Limits,
-    body::{Lane, send_frames},
-    diagnostics::{Stage, Trace},
-};
-use crate::lowering::generation::ConversionBoundary;
-use crate::protocol::failure::{Observation, SourceFailureEvidence};
 use crate::{
-    adapter::Request,
     execution::{Attempt, ResponseDelivery},
-    protocol::{openai::obfuscation::Obfuscation, stream::SseLimits},
+    gateway::{
+        ApiError, BoundCandidate, BoundEntry, Limits,
+        body::{Lane, send_frames},
+        diagnostics::{Stage, Trace},
+    },
+    protocol::{
+        GenerationRequestEnvelope as Request,
+        conversion::generation::ConversionBoundary,
+        failure::{Observation, SourceFailureEvidence},
+        openai::obfuscation::Obfuscation,
+        stream::SseLimits,
+    },
 };
 use bytes::Bytes;
 /// While another candidate could still answer, lifecycle-only frames wait for the
@@ -145,9 +148,9 @@ async fn produce(
                 continue;
             }
             chunk = upstream.chunk() => chunk.map_err(|e| {
-                let class=if e.is_timeout(){crate::provider::ErrorClass::Timeout}else{crate::provider::ErrorClass::Upstream};
+                let class=if e.is_timeout(){crate::transport::http::TransportError::Timeout}else{crate::transport::http::TransportError::Read};
                 trace.report.failure(None,&crate::execution::AttemptError::Transport(class));
-                ApiError::transport(class)
+                ApiError::transport(class.recovery_class())
             })?,
         };
         lane.state
@@ -184,7 +187,9 @@ async fn produce(
                     // An invalid or truncated upstream reply may fail over while unpublished.
                     let Some(failure) = error.source_failure().and_then(ApiError::source_failure)
                     else {
-                        return Err(ApiError::transport(crate::provider::ErrorClass::Upstream));
+                        return Err(ApiError::transport(
+                            crate::provider::RecoveryClass::Upstream,
+                        ));
                     };
                     return fail_classified(lane, delivery, stream, failure, trace).await;
                 }
@@ -255,17 +260,8 @@ async fn produce(
     trace.stage(Stage::Terminal);
     attempt.finish().map_err(|error| {
         trace.decode_error(&error);
-        ApiError::transport(crate::provider::ErrorClass::Upstream)
+        ApiError::transport(crate::provider::RecoveryClass::Upstream)
     })?;
-    // Chat and Messages have no failed-response carrier; an upstream-reported
-    // failure reaches them like an in-band stream error.
-    if !delivery.carries_failed_responses()
-        && let Some(failure) = attempt
-            .reported_failure()
-            .and_then(ApiError::source_failure)
-    {
-        return fail_classified(lane, delivery, stream, failure, trace).await;
-    }
     let evidence = attempt.take_evidence();
     // Stream reports were observed with their source-unit provenance. Re-reading
     // the materialized response after draining those deltas would lose that basis.
@@ -286,6 +282,16 @@ async fn produce(
             .metadata()
             .and_then(|metadata| metadata.context.settings()),
     );
+    // A valid failed task still established source facts and EOF. Client error
+    // presentation must not erase them or become the authoritative source cause.
+    if let Some(source) = attempt.reported_failure() {
+        trace.report.source_failure(source);
+        if !delivery.carries_failed_responses()
+            && let Some(failure) = ApiError::source_failure(source)
+        {
+            return fail_classified(lane, delivery, stream, failure, trace).await;
+        }
+    }
     trace.stage(Stage::Projection);
     if stream {
         flush_pending(lane, delivery, trace).await?;
@@ -434,13 +440,12 @@ pub(in crate::gateway) async fn produce_candidate(
             Observation::Pending,
         ));
         let (body, observation) = error_body(upstream, trace).await;
-        trace
-            .report
-            .source_failure(SourceFailureEvidence::http(status, &body, observation));
+        let source = SourceFailureEvidence::http(status, &body, observation);
+        trace.report.source_failure(source);
         lane.state
             .waiting_upstream
             .store(false, std::sync::atomic::Ordering::Release);
-        return Err(ApiError::failure(status, &body, retry_after));
+        return Err(ApiError::classified(status, source.kind, retry_after));
     }
     // A 2xx that is not an API reply (an HTML page, a missing or foreign type)
     // fails over like a 5xx.
@@ -452,7 +457,7 @@ pub(in crate::gateway) async fn produce_candidate(
                 crate::execution::attempt::ProtocolReason::UnexpectedResponseMediaType,
             ),
         );
-        ApiError::transport(crate::provider::ErrorClass::Upstream)
+        ApiError::transport(crate::provider::RecoveryClass::Upstream)
     };
     let mut content_types = upstream.headers().get_all("content-type").iter();
     let content_type = match (content_types.next(), content_types.next()) {
@@ -507,7 +512,7 @@ pub(in crate::gateway) async fn produce_candidate(
         getrandom::fill(&mut seed).map_err(|_| {
             ApiError::new(
                 axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-                "entropy_unavailable",
+                crate::gateway::error::ErrorKind::EntropyUnavailable,
             )
         })?;
         Obfuscation::Seeded(seed)
@@ -540,7 +545,7 @@ pub(in crate::gateway) async fn produce_candidate(
     )
     .await;
     if let Err(error) = result
-        && error.health
+        && error.recovery.affects_health
     {
         // Error delivery can itself stall or be cancelled. Preserve the failure
         // before flushing pending output, not only when this future returns.

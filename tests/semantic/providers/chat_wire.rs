@@ -1,6 +1,6 @@
 //! Explicit Chat dialect mappings over one semantic model.
 use morphiecore::{
-    protocol::openai::{Adapter, Dialect, Profile, TargetCaps as Contract, chat},
+    protocol::openai::{Dialect, GenerationApi, GenerationCodec, TargetContract as Contract, chat},
     semantic::{task::generation::*, value::Text},
 };
 use serde_json::{Value, json};
@@ -81,11 +81,11 @@ fn chat_text_arrays_keep_order_and_follow_typed_edits() {
         );
     }
 }
-fn vendor() -> Adapter {
-    Adapter::new(Profile::Chat, Dialect::Xiaomi, None)
+fn vendor() -> GenerationCodec {
+    GenerationCodec::new(GenerationApi::Chat, Dialect::Xiaomi, None)
 }
-fn client() -> Adapter {
-    Adapter::new(Profile::Chat, Dialect::MorphieCore, None)
+fn client() -> GenerationCodec {
+    GenerationCodec::new(GenerationApi::Chat, Dialect::MorphieCore, None)
 }
 fn response(content: &str) -> Value {
     json!({"id":"c1","object":"chat.completion","created":1,"model":"m",
@@ -98,9 +98,9 @@ fn chunk(delta: Value, finish: Value) -> Value {
 }
 #[test]
 fn aliases_are_normalized_without_losing_counts_or_masking_disagreement() {
-    let adapter = Adapter::new(Profile::Chat, Dialect::DeepSeek, None);
+    let adapter = GenerationCodec::new(GenerationApi::Chat, Dialect::DeepSeek, None);
     let mut body = response("pong");
-    let standard = Adapter::new(Profile::Chat, Dialect::Standard, None);
+    let standard = GenerationCodec::new(GenerationApi::Chat, Dialect::Standard, None);
     let mut unknown = body.clone();
     unknown["usage"]["prompt_cache_hit_tokens"] = json!({"not":"a count"});
     unknown["usage"]["prompt_cache_miss_tokens"] = json!(9);

@@ -2,7 +2,7 @@
 use morphiecore::{
     protocol::{
         openai::{
-            Adapter, Dialect, Profile, TargetCaps as Contract,
+            Dialect, GenerationApi, GenerationCodec, TargetContract as Contract,
             chat::sse::{ChatSseDecoder, ChatSseEncoder},
             events::EventEncoder,
             obfuscation::Obfuscation,
@@ -16,8 +16,8 @@ use morphiecore::{
 };
 use serde_json::{Value, json};
 
-fn adapter(profile: Profile, dialect: Dialect, scope: &str) -> Adapter {
-    Adapter::new(profile, dialect, Some(ReplayOrigin::new(scope).unwrap()))
+fn adapter(profile: GenerationApi, dialect: Dialect, scope: &str) -> GenerationCodec {
+    GenerationCodec::new(profile, dialect, Some(ReplayOrigin::new(scope).unwrap()))
 }
 fn chat() -> Value {
     json!({"id":"r1","object":"chat.completion","created":2,"model":"openai/gpt-6-luna",
@@ -29,7 +29,7 @@ fn chat() -> Value {
 }
 #[test]
 fn router_rejects_unknown_or_unowned_shapes_and_never_masks_invalid_usage() {
-    let source = adapter(Profile::Chat, Dialect::OpenRouter, "source");
+    let source = adapter(GenerationApi::Chat, Dialect::OpenRouter, "source");
     for (pointer, value) in [
         ("/usage/cost", json!("not-money")),
         ("/usage/prompt_tokens", json!(-1)),
@@ -50,7 +50,7 @@ fn router_rejects_unknown_or_unowned_shapes_and_never_masks_invalid_usage() {
     body["choices"][0]["message"]["reasoning_content"] = json!("conflict");
     assert!(source.decode_response(body.to_string().as_bytes()).is_err());
     assert!(
-        Adapter::new(Profile::Chat, Dialect::OpenRouter, None)
+        GenerationCodec::new(GenerationApi::Chat, Dialect::OpenRouter, None)
             .decode_response(chat().to_string().as_bytes())
             .is_err()
     );
@@ -97,7 +97,7 @@ fn responses_done_trailer_requires_a_real_terminal_and_cannot_repeat() {
             200,
             "text/event-stream",
             SseLimits::default(),
-            adapter(Profile::Responses, dialect, "source").event_decoder(),
+            adapter(GenerationApi::Responses, dialect, "source").event_decoder(),
         )
         .unwrap();
         let mut remaining = wire.as_bytes();
@@ -118,7 +118,7 @@ fn responses_done_trailer_requires_a_real_terminal_and_cannot_repeat() {
 
 #[test]
 fn router_reasoning_format_is_a_checked_marker_not_an_opaque_escape() {
-    let source = adapter(Profile::Responses, Dialect::OpenRouter, "source");
+    let source = adapter(GenerationApi::Responses, Dialect::OpenRouter, "source");
     let mut body = json!({"id":"r","object":"response","created_at":1,"model":"m","status":"completed","output":[
         {"type":"reasoning","id":"rs","status":"completed","summary":[],"encrypted_content":"synthetic","format":"openai-responses-v1"}
     ],"usage":{"input_tokens":1,"output_tokens":1,"total_tokens":2,"cost_details":{"upstream_inference_input_cost":0.01,"upstream_inference_output_cost":0.02}}});
@@ -153,7 +153,7 @@ fn router_reasoning_format_is_a_checked_marker_not_an_opaque_escape() {
 
 #[test]
 fn router_repeated_finish_usage_is_content_free_and_matches_static() {
-    let source = adapter(Profile::Chat, Dialect::OpenRouter, "source");
+    let source = adapter(GenerationApi::Chat, Dialect::OpenRouter, "source");
     let mut tail = chunk(json!({"role":"assistant","content":""}), json!("stop"));
     tail["usage"] = chat()["usage"].clone();
     let frames = vec![
@@ -192,7 +192,7 @@ fn router_repeated_finish_usage_is_content_free_and_matches_static() {
             .encode_response(&expected, &Contract::full())
             .unwrap()
     );
-    let mut encoder = EventEncoder::new(Profile::Chat, decoded.metadata.clone())
+    let mut encoder = EventEncoder::new(GenerationApi::Chat, decoded.metadata.clone())
         .unwrap()
         .with_contract(source.contract(&Contract::full()));
     let mut encoded = vec![];

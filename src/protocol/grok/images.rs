@@ -2,8 +2,7 @@
 //! Sources checked 2026-10-22: https://docs.x.ai/developers/model-capabilities/images/generation
 //! https://docs.x.ai/developers/rest-api-reference/inference/images.md
 use crate::{
-    adapter::images::Request,
-    protocol::{CodecError, openai::images::image_data},
+    protocol::{CodecError, image::Request, openai::images::image_data},
     semantic::{
         task::image_generation::*,
         value::{ImageFormat, Presence},

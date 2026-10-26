@@ -36,7 +36,7 @@ fn managed_keys_enforce_domain_kind_and_epoch_without_network() {
         .unwrap();
     let error = source.resolve().err().unwrap();
     assert_eq!(error.status, axum::http::StatusCode::SERVICE_UNAVAILABLE);
-    assert_eq!(error.code, "credential_unavailable");
+    assert_eq!(error.code(), "credential_unavailable");
     assert_eq!(snapshot.expose(), "synthetic-old");
     let fresh = Source::ManagedKey(manager.bind_api_key("alpha", "one").unwrap());
     assert_ne!(fresh.provenance(), provenance);

@@ -1,12 +1,13 @@
 //! Frozen standalone task endpoints. Each public model binds one catalog route,
 //! its Provider and a single API key, and makes one attempt.
 pub(in crate::gateway) mod embeddings;
+mod exchange;
 pub(in crate::gateway) mod images;
 pub(in crate::gateway) mod speech;
 pub(in crate::gateway) mod transcription;
 
-use crate::gateway::{Credentials, StartupError, startup::credentials};
 use crate::{
+    gateway::{Credentials, StartupError, startup::credentials},
     provider::{CredentialBindingId, CredentialKind, ProviderDefinition, ProviderId},
     topology::{
         CompiledTopology, embeddings::EmbeddingRoute, images::ImageRoute, speech::SpeechRoute,

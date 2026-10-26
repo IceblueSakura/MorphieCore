@@ -1,11 +1,11 @@
 //! Independent oracles for the function-tool migration, without providers or production routing.
 use crate::events_support::{apply, close, created, encode, envelope, metadata, start, terminal};
 use morphiecore::{
-    lowering::generation::RepresentationError,
     protocol::{
+        conversion::generation::RepresentationError,
         fidelity::FidelityRecords,
         openai::{
-            DecodedRequest, Profile, TargetCaps as Contract, chat, events,
+            DecodedRequest, GenerationApi, TargetContract as Contract, chat, events,
             lowering::{lower_request, lower_response},
             responses,
         },
@@ -29,11 +29,11 @@ fn chat_history() -> Value {
     ],"tools":[{"type":"function","function":{"name":"weather","description":"","parameters":{"type":"object","properties":{"city":{"type":"string"}}},"strict":false}}],
     "tool_choice":{"type":"function","function":{"name":"weather"}},"parallel_tool_calls":false})
 }
-fn request_wire(d: &DecodedRequest, profile: Profile) -> Value {
+fn request_wire(d: &DecodedRequest, profile: GenerationApi) -> Value {
     let t = lower_request(&d.semantic, &d.fidelity, profile, Contract::full()).unwrap();
     match profile {
-        Profile::Chat => chat::encode_generation(&t).unwrap(),
-        Profile::Responses => responses::encode_generation(&t).unwrap(),
+        GenerationApi::Chat => chat::encode_generation(&t).unwrap(),
+        GenerationApi::Responses => responses::encode_generation(&t).unwrap(),
     }
 }
 #[test]
@@ -48,7 +48,7 @@ fn audit_non_strict_defaults_use_exact_explicit_false_on_responses() {
     );
     let before = decoded.semantic.clone();
     assert_eq!(
-        request_wire(&decoded, Profile::Responses)["tools"],
+        request_wire(&decoded, GenerationApi::Responses)["tools"],
         json!([{
             "type":"function","name":"lookup","strict":false,
             "parameters":{"type":"object","properties":{"key":{"type":"string"}}}
@@ -56,7 +56,7 @@ fn audit_non_strict_defaults_use_exact_explicit_false_on_responses() {
     );
     assert_eq!(decoded.semantic, before);
     assert_eq!(
-        request_wire(&decoded, Profile::Chat)["tools"],
+        request_wire(&decoded, GenerationApi::Chat)["tools"],
         source["tools"]
     );
     let normalized = responses::decode_generation(&json!({"input":"go","tools":[{
@@ -68,7 +68,7 @@ fn audit_non_strict_defaults_use_exact_explicit_false_on_responses() {
         lower_request(
             &normalized.semantic,
             &normalized.fidelity,
-            Profile::Chat,
+            GenerationApi::Chat,
             Contract::full()
         ),
         Err(RepresentationError::StrictDefault)
@@ -128,18 +128,21 @@ fn chat_tool_text_arrays_preserve_parts_and_project_only_final_ir() {
                 lower_request(
                     &cached.semantic,
                     &cached.fidelity,
-                    Profile::Chat,
+                    GenerationApi::Chat,
                     Contract::full()
                 )
                 .is_err()
             );
         }
-        assert_eq!(request_wire(&decoded, Profile::Chat), c);
-        assert_eq!(request_wire(&decoded, Profile::Responses), r);
+        assert_eq!(request_wire(&decoded, GenerationApi::Chat), c);
+        assert_eq!(request_wire(&decoded, GenerationApi::Responses), r);
         let independent = responses::decode_generation(&r).unwrap();
-        assert_eq!(request_wire(&independent, Profile::Responses), r);
+        assert_eq!(request_wire(&independent, GenerationApi::Responses), r);
         // Responses call items have no Chat carrier-message association.
-        let projected = request_wire(&responses::decode_generation(&r).unwrap(), Profile::Chat);
+        let projected = request_wire(
+            &responses::decode_generation(&r).unwrap(),
+            GenerationApi::Chat,
+        );
         let result = projected["messages"].as_array().unwrap().last().unwrap();
         assert_eq!(result["tool_call_id"], "call_a");
         assert_eq!(result["content"], parts);
@@ -153,7 +156,7 @@ fn chat_tool_text_arrays_preserve_parts_and_project_only_final_ir() {
         ]);
         decoded.semantic = decoded.semantic.with_items(items).unwrap();
         assert_eq!(
-            request_wire(&decoded, Profile::Chat)["messages"][3]["content"],
+            request_wire(&decoded, GenerationApi::Chat)["messages"][3]["content"],
             json!([{"type":"text","text":"replacement"},{"type":"text","text":"inserted"}])
         );
         let mut items = decoded.semantic.items().to_vec();
@@ -163,7 +166,7 @@ fn chat_tool_text_arrays_preserve_parts_and_project_only_final_ir() {
         result.output = ToolOutput::Parts(vec![]);
         decoded.semantic = decoded.semantic.with_items(items).unwrap();
         assert_eq!(
-            request_wire(&decoded, Profile::Chat)["messages"][3]["content"],
+            request_wire(&decoded, GenerationApi::Chat)["messages"][3]["content"],
             json!([])
         );
     }
@@ -200,20 +203,27 @@ fn chat_allowed_functions_use_their_own_shell_and_keep_selection_authoritative()
                 }]
             })
         );
-        assert_eq!(request_wire(&d, Profile::Chat), c);
-        assert_eq!(request_wire(&d, Profile::Responses), r);
+        assert_eq!(request_wire(&d, GenerationApi::Chat), c);
+        assert_eq!(request_wire(&d, GenerationApi::Responses), r);
         assert_eq!(
-            request_wire(&responses::decode_generation(&r).unwrap(), Profile::Chat)["tool_choice"],
+            request_wire(
+                &responses::decode_generation(&r).unwrap(),
+                GenerationApi::Chat
+            )["tool_choice"],
             c["tool_choice"]
         );
         let mut s = d.semantic.settings().clone();
         s.tool_choice = Some(ToolChoice::None);
         d.semantic = d.semantic.with_settings(s).unwrap();
-        assert_eq!(request_wire(&d, Profile::Chat)["tool_choice"], "none");
+        assert_eq!(request_wire(&d, GenerationApi::Chat)["tool_choice"], "none");
         let mut s = d.semantic.settings().clone();
         s.tool_choice = None;
         d.semantic = d.semantic.with_settings(s).unwrap();
-        assert!(request_wire(&d, Profile::Chat).get("tool_choice").is_none());
+        assert!(
+            request_wire(&d, GenerationApi::Chat)
+                .get("tool_choice")
+                .is_none()
+        );
         for refs in [
             json!([]),
             json!([{"type":"function","function":{"name":"absent"}}]),
@@ -237,7 +247,13 @@ fn bounded_values_fidelity_collisions_and_codec_profile_mismatch_fail() {
     f.record_response_item_id(ItemId::new(1), "same").unwrap();
     assert!(f.record_response_item_id(ItemId::new(2), "same").is_err());
     let d = chat::decode_generation(&chat_history()).unwrap();
-    let t = lower_request(&d.semantic, &d.fidelity, Profile::Chat, Contract::full()).unwrap();
+    let t = lower_request(
+        &d.semantic,
+        &d.fidelity,
+        GenerationApi::Chat,
+        Contract::full(),
+    )
+    .unwrap();
     assert!(responses::encode_generation(&t).is_err());
 }
 
@@ -290,8 +306,8 @@ fn semantic_construction_cannot_bypass_identifier_or_control_validation() {
 }
 #[test]
 fn active_tool_dispatch_and_instruction_lifecycle_round_trip_without_chat_projection() {
-    use morphiecore::protocol::openai::{Adapter, Dialect};
-    let adapter = Adapter::new(Profile::Chat, Dialect::MorphieCore, None);
+    use morphiecore::protocol::openai::{Dialect, GenerationCodec};
+    let adapter = GenerationCodec::new(GenerationApi::Chat, Dialect::MorphieCore, None);
     let decode = |value: &Value| adapter.decode_client_request(value.to_string().as_bytes());
     let mut ignored = chat_history();
     ignored["model"] = json!("m");
@@ -365,7 +381,7 @@ fn active_tool_dispatch_and_instruction_lifecycle_round_trip_without_chat_projec
         tool.dispatch.allowed_callers,
         Some(vec![CallerMode::Programmatic])
     );
-    let encoded = request_wire(&decoded, Profile::Responses);
+    let encoded = request_wire(&decoded, GenerationApi::Responses);
     assert_eq!(encoded["input"][0]["status"], json!("in_progress"));
     assert_eq!(encoded["input"][0]["id"], json!("ins"));
     // An input instruction message has no id field; none is minted for it.
@@ -373,7 +389,7 @@ fn active_tool_dispatch_and_instruction_lifecycle_round_trip_without_chat_projec
     unnamed["input"][0].as_object_mut().unwrap().remove("id");
     let unnamed = request_wire(
         &responses::decode_generation(&unnamed).unwrap(),
-        Profile::Responses,
+        GenerationApi::Responses,
     );
     assert_eq!(unnamed["input"][0]["status"], json!("in_progress"));
     assert!(unnamed["input"][0].get("id").is_none());
@@ -383,7 +399,7 @@ fn active_tool_dispatch_and_instruction_lifecycle_round_trip_without_chat_projec
             {"role":"assistant","content":[{"type":"input_text","text":"hello"}]},
             {"role":"user","content":"again"}]}))
     .unwrap();
-    let assistant = request_wire(&assistant, Profile::Responses);
+    let assistant = request_wire(&assistant, GenerationApi::Responses);
     assert_eq!(
         assistant["input"][1]["content"][0]["type"],
         json!("output_text")
@@ -397,7 +413,7 @@ fn active_tool_dispatch_and_instruction_lifecycle_round_trip_without_chat_projec
         lower_request(
             &decoded.semantic,
             &decoded.fidelity,
-            Profile::Chat,
+            GenerationApi::Chat,
             Contract::full()
         )
         .is_err()
@@ -410,7 +426,7 @@ fn active_tool_dispatch_and_instruction_lifecycle_round_trip_without_chat_projec
     };
     assert_eq!(instruction.status, None);
     assert!(
-        request_wire(&completed, Profile::Responses)["input"][0]
+        request_wire(&completed, GenerationApi::Responses)["input"][0]
             .get("status")
             .is_none()
     );
@@ -470,7 +486,12 @@ fn program_output_requires_terminal_status_and_complete_opaque_fields() {
 fn program_items_have_no_chat_projection() {
     let d = responses::decode_generation(&program_history()).unwrap();
     assert!(matches!(
-        lower_request(&d.semantic, &d.fidelity, Profile::Chat, Contract::full()),
+        lower_request(
+            &d.semantic,
+            &d.fidelity,
+            GenerationApi::Chat,
+            Contract::full()
+        ),
         Err(RepresentationError::Tools)
     ));
     let r = GenerationResponse::new(
@@ -483,12 +504,12 @@ fn program_items_have_no_chat_projection() {
             &r,
             &FidelityRecords::default(),
             &metadata(),
-            Profile::Chat,
+            GenerationApi::Chat,
             Contract::full()
         ),
         Err(RepresentationError::Tools)
     ));
-    let mut e = events::EventEncoder::new(Profile::Chat, metadata()).unwrap();
+    let mut e = events::EventEncoder::new(GenerationApi::Chat, metadata()).unwrap();
     assert!(
         e.encode(&start(1, program_kind()), &FidelityRecords::default())
             .is_err()
@@ -514,7 +535,7 @@ fn program_items_are_atomic_event_items_with_owner_bound_snapshots() {
     ));
     e.push(close(2, ItemLifecycle::Completed));
     e.push(terminal(StreamTerminal::Completed));
-    let wire = encode(&e, Profile::Responses, &FidelityRecords::default());
+    let wire = encode(&e, GenerationApi::Responses, &FidelityRecords::default());
     let added: Vec<_> = wire
         .iter()
         .filter(|v| v["type"] == "response.output_item.added")
@@ -554,7 +575,7 @@ fn program_items_are_atomic_event_items_with_owner_bound_snapshots() {
 }
 #[test]
 fn program_event_stream_decodes_and_changed_or_unfinished_snapshots_fail() {
-    let mut d = events::EventDecoder::new(Profile::Responses);
+    let mut d = events::EventDecoder::new(GenerationApi::Responses);
     d.push(&created()).unwrap();
     d.push(&json!({"type":"response.output_item.added","output_index":0,"item":{"id":"pg_1","type":"program","call_id":"call_p","code":"c()","fingerprint":"fp-1"}})).unwrap();
     d.push(&json!({"type":"response.output_item.done","output_index":0,"item":{"id":"pg_1","type":"program","call_id":"call_p","code":"c()","fingerprint":"fp-1"}})).unwrap();
@@ -570,19 +591,19 @@ fn program_event_stream_decodes_and_changed_or_unfinished_snapshots_fail() {
     assert_eq!(r.outcome(), Outcome::Completed);
     assert_eq!(r.continuation(), Continuation::Unreported);
     assert_eq!(r.items()[1].1, program_items()[1].1);
-    let mut d = events::EventDecoder::new(Profile::Responses);
+    let mut d = events::EventDecoder::new(GenerationApi::Responses);
     d.push(&created()).unwrap();
     d.push(&json!({"type":"response.output_item.added","output_index":0,"item":{"id":"pg_1","type":"program","call_id":"call_p","code":"c()","fingerprint":"fp-1"}})).unwrap();
     assert!(d
         .push(&json!({"type":"response.output_item.done","output_index":0,"item":{"id":"pg_1","type":"program","call_id":"call_p","code":"c()","fingerprint":"fp-OTHER"}}))
         .is_err());
-    let mut d = events::EventDecoder::new(Profile::Responses);
+    let mut d = events::EventDecoder::new(GenerationApi::Responses);
     d.push(&created()).unwrap();
     d.push(&json!({"type":"response.output_item.added","output_index":0,"item":{"id":"pg_2","type":"program_output","call_id":"call_p","result":"1"}})).unwrap();
     assert!(d
         .push(&json!({"type":"response.output_item.done","output_index":0,"item":{"id":"pg_2","type":"program_output","call_id":"call_p","result":"1"}}))
         .is_err());
-    let mut d = events::EventDecoder::new(Profile::Responses);
+    let mut d = events::EventDecoder::new(GenerationApi::Responses);
     d.push(&created()).unwrap();
     assert!(d
         .push(&json!({"type":"response.output_item.added","output_index":0,"item":{"id":"pg_2","type":"program_output","call_id":"call_p","result":"1","status":"completed"}}))

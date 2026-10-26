@@ -1,6 +1,6 @@
 //! A named unreported-probability rule must not weaken complete SSE or fabricate facts.
 use morphiecore::protocol::openai::{
-    Adapter, Dialect, Profile, responses::sse::ResponsesSseDecoder,
+    Dialect, GenerationApi, GenerationCodec, responses::sse::ResponsesSseDecoder,
 };
 use serde_json::{Value, json};
 fn fixture() -> (Value, Vec<Value>) {
@@ -44,7 +44,7 @@ fn decoder(dialect: Dialect) -> ResponsesSseDecoder {
         200,
         "text/event-stream",
         Default::default(),
-        Adapter::new(Profile::Responses, dialect, None).event_decoder(),
+        GenerationCodec::new(GenerationApi::Responses, dialect, None).event_decoder(),
     )
     .unwrap()
 }

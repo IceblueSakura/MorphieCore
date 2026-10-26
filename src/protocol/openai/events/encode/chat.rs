@@ -1,6 +1,5 @@
 //! Outgoing Chat chunks: message ownership, probabilities, deltas and finish reasons.
-use crate::protocol::failure::CarrierReason;
-use crate::protocol::openai::events::*;
+use crate::protocol::{failure::CarrierReason, openai::events::*};
 use serde_json::json;
 impl EventEncoder {
     fn chunk(&self, mut delta: Value, finish: Value) -> Value {
@@ -29,7 +28,7 @@ impl EventEncoder {
         crate::protocol::openai::service::write_class(
             value.as_object_mut().expect("object"),
             self.metadata.context.service_class(),
-            Profile::Chat,
+            GenerationApi::Chat,
         )
         .expect("validated reported service");
         value
@@ -163,7 +162,7 @@ impl EventEncoder {
             &response,
             &self.fidelity,
             &self.metadata,
-            Profile::Chat,
+            GenerationApi::Chat,
             self.contract.clone(),
         )
         .map_err(|_| CodecError::Unsupported(CarrierReason::Terminal))?;
@@ -186,7 +185,7 @@ impl EventEncoder {
             };
             v["usage"] = crate::protocol::openai::accounting::encode_usage(
                 usage,
-                Profile::Chat,
+                GenerationApi::Chat,
                 &self.contract.adaptation.rules,
             );
             chunks.push(v);
@@ -194,7 +193,7 @@ impl EventEncoder {
         let last = chunks.last_mut().expect("terminal chunk");
         crate::protocol::openai::responses::envelope::write_response_extras(
             &self.fidelity,
-            Profile::Chat,
+            GenerationApi::Chat,
             &self.contract.adaptation,
             target.semantic(),
             self.metadata.required_id()?,

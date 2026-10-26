@@ -1,13 +1,13 @@
 //! Published tool calls prevent replay; transport EOF owns success and stored publication.
 use crate::openai_tool_loop as fixture;
-use morphiecore::protocol::openai::Profile;
+use morphiecore::protocol::openai::GenerationApi;
 use serde_json::{Value, json};
 
 #[tokio::test]
 async fn tool_publication_withholds_success_until_eof_and_never_replays() {
     use std::time::Duration;
-    for profile in [Profile::Chat, Profile::Responses] {
-        let chat = profile == Profile::Chat;
+    for profile in [GenerationApi::Chat, GenerationApi::Responses] {
+        let chat = profile == GenerationApi::Chat;
         for mode in ["hold", "cut", "cancel", "terminal-cut"] {
             let fixture = fixture::start(profile, true).await;
             let client = reqwest::Client::builder()

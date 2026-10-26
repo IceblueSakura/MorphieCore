@@ -2,8 +2,7 @@
 //! Sources: https://developers.openai.com/api/reference/resources/audio/subresources/speech/methods/create
 //! https://developers.openai.com/api/docs/guides/text-to-speech
 use crate::{
-    adapter::speech::Request,
-    protocol::CodecError,
+    protocol::{CodecError, speech::Request},
     semantic::{
         task::speech_synthesis::{SpeechRequest, Speed},
         value::{AudioArtifact, AudioEncoding},
@@ -165,6 +164,6 @@ pub fn response_content_type(artifact: &AudioArtifact) -> &'static str {
 /// The source result remains available to typed consumers and is never mutated.
 pub fn project_result(
     result: &crate::semantic::task::speech_synthesis::SpeechResult,
-) -> Result<crate::lowering::speech::BinaryProjection, CodecError> {
-    crate::lowering::speech::project_binary(result).map_err(|_| CodecError::invalid())
+) -> Result<crate::protocol::speech::projection::BinaryProjection, CodecError> {
+    crate::protocol::speech::projection::project_binary(result).map_err(|_| CodecError::invalid())
 }

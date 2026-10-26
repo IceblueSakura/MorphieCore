@@ -1,13 +1,13 @@
 //! Response closure and pending tool results are independent; neither executes tools.
 use crate::events_support::{call_item, envelope};
 use morphiecore::{
-    protocol::openai::{Adapter, Dialect, Profile, TargetCaps as Contract},
+    protocol::openai::{Dialect, GenerationApi, GenerationCodec, TargetContract as Contract},
     semantic::task::generation::*,
 };
 use serde_json::{Value, json};
 
-fn adapter() -> Adapter {
-    Adapter::new(Profile::Responses, Dialect::Standard, None)
+fn adapter() -> GenerationCodec {
+    GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None)
 }
 fn decode(status: &str, output: Value) -> morphiecore::protocol::openai::DecodedResponse {
     adapter()
@@ -87,7 +87,7 @@ fn program_results_resolve_by_identity_and_edits_recompute_dependencies() {
 
 #[test]
 fn chat_retains_its_wire_finish_consistency_after_outcome_separation() {
-    let chat = Adapter::new(Profile::Chat, Dialect::Standard, None);
+    let chat = GenerationCodec::new(GenerationApi::Chat, Dialect::Standard, None);
     let response = |finish: &str, message: Value| json!({"id":"r","object":"chat.completion","created":0,"model":"synthetic","choices":[{"index":0,"message":message,"finish_reason":finish}]});
     let wire = response("tool_calls", json!({"role":"assistant","content":"done"}));
     assert!(chat.decode_response(wire.to_string().as_bytes()).is_err());

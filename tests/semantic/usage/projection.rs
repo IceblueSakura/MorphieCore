@@ -3,7 +3,7 @@ use crate::events_support::{metadata, text};
 use morphiecore::{
     protocol::{
         fidelity::FidelityRecords,
-        openai::{Profile, TargetCaps as Contract, chat, lowering::lower_response},
+        openai::{GenerationApi, TargetContract as Contract, chat, lowering::lower_response},
     },
     semantic::task::generation::*,
 };
@@ -48,7 +48,7 @@ fn canonical_report_events_reach_terminal_carriers_without_rewriting_source_fact
     });
     let original = report.clone();
     let fidelity = FidelityRecords::default();
-    for profile in [Profile::Chat, Profile::Responses] {
+    for profile in [GenerationApi::Chat, GenerationApi::Responses] {
         let mut encoder = EventEncoder::new(profile, metadata()).unwrap();
         for event in text_events() {
             encoder.encode(&event, &fidelity).unwrap();
@@ -66,7 +66,7 @@ fn canonical_report_events_reach_terminal_carriers_without_rewriting_source_fact
             )
             .unwrap();
         encoder.finish().unwrap();
-        if profile == Profile::Chat {
+        if profile == GenerationApi::Chat {
             let usage = frames
                 .iter()
                 .filter_map(|frame| frame.get("usage"))
@@ -102,8 +102,14 @@ fn canonical_modalities_use_exact_chat_carriers_without_report_loss() {
     let before = source.clone();
     let fidelity = FidelityRecords::default();
     let meta = metadata();
-    let target =
-        lower_response(&source, &fidelity, &meta, Profile::Chat, Contract::full()).unwrap();
+    let target = lower_response(
+        &source,
+        &fidelity,
+        &meta,
+        GenerationApi::Chat,
+        Contract::full(),
+    )
+    .unwrap();
     assert!(
         !target
             .projection()
@@ -150,7 +156,7 @@ fn responses_fingerprint_projection_is_explicit_and_keeps_source_metadata() {
             &source,
             &fidelity,
             &meta,
-            Profile::Responses,
+            GenerationApi::Responses,
             Contract::full(),
         )
         .unwrap();
@@ -167,7 +173,7 @@ fn responses_fingerprint_projection_is_explicit_and_keeps_source_metadata() {
             usize::from(!fingerprint.is_absent())
         );
         let back = projected
-            .reproject(Profile::Chat, Contract::full())
+            .reproject(GenerationApi::Chat, Contract::full())
             .unwrap();
         assert!(
             chat::encode_response(&back)
@@ -175,8 +181,14 @@ fn responses_fingerprint_projection_is_explicit_and_keeps_source_metadata() {
                 .get("system_fingerprint")
                 .is_none()
         );
-        let native =
-            lower_response(&source, &fidelity, &meta, Profile::Chat, Contract::full()).unwrap();
+        let native = lower_response(
+            &source,
+            &fidelity,
+            &meta,
+            GenerationApi::Chat,
+            Contract::full(),
+        )
+        .unwrap();
         assert_eq!(
             chat::encode_response(&native)
                 .unwrap()
@@ -184,7 +196,7 @@ fn responses_fingerprint_projection_is_explicit_and_keeps_source_metadata() {
                 .is_some(),
             !fingerprint.is_absent()
         );
-        let mut encoder = EventEncoder::new(Profile::Responses, meta.clone()).unwrap();
+        let mut encoder = EventEncoder::new(GenerationApi::Responses, meta.clone()).unwrap();
         for event in text_events() {
             encoder.encode(&event, &fidelity).unwrap();
         }
@@ -196,7 +208,7 @@ fn responses_fingerprint_projection_is_explicit_and_keeps_source_metadata() {
                 .count(),
             usize::from(!fingerprint.is_absent())
         );
-        let mut failed = EventEncoder::new(Profile::Responses, meta.clone()).unwrap();
+        let mut failed = EventEncoder::new(GenerationApi::Responses, meta.clone()).unwrap();
         for event in text_events() {
             failed.encode(&event, &fidelity).unwrap();
         }
@@ -236,29 +248,31 @@ fn responses_fingerprint_projection_is_explicit_and_keeps_source_metadata() {
                 &source,
                 &fidelity,
                 &meta,
-                Profile::Responses,
+                GenerationApi::Responses,
                 Contract::full()
             )
             .is_err()
         );
-        assert!(EventEncoder::new(Profile::Responses, meta).is_err());
+        assert!(EventEncoder::new(GenerationApi::Responses, meta).is_err());
     }
 }
 
 #[test]
 fn projection_stage_overflow_is_rejected() {
     use morphiecore::{
-        lowering::generation::RepresentationError,
+        protocol::conversion::generation::RepresentationError,
         protocol::openai::{ResponseRepresentation, lowering::projection::MAX_PROJECTION_STAGES},
     };
     fn descend(value: &ResponseRepresentation<'_>, remaining: usize) {
         if remaining == 0 {
             assert!(matches!(
-                value.reproject(Profile::Chat, Contract::full()),
+                value.reproject(GenerationApi::Chat, Contract::full()),
                 Err(RepresentationError::ProjectionLimit)
             ));
         } else {
-            let next = value.reproject(Profile::Chat, Contract::full()).unwrap();
+            let next = value
+                .reproject(GenerationApi::Chat, Contract::full())
+                .unwrap();
             descend(&next, remaining - 1);
         }
     }
@@ -269,7 +283,7 @@ fn projection_stage_overflow_is_rejected() {
         &source,
         &fidelity,
         &metadata,
-        Profile::Chat,
+        GenerationApi::Chat,
         Contract::full(),
     )
     .unwrap();
@@ -294,7 +308,7 @@ fn text_events() -> Vec<StreamEvent> {
 #[test]
 fn a_stream_cannot_switch_target_policy_after_publication() {
     use morphiecore::protocol::openai::events::EventEncoder;
-    let mut encoder = EventEncoder::new(Profile::Chat, metadata()).unwrap();
+    let mut encoder = EventEncoder::new(GenerationApi::Chat, metadata()).unwrap();
     let fidelity = FidelityRecords::default();
     encoder.encode(&StreamEvent::Started, &fidelity).unwrap();
     let mut contract = Contract::full();
@@ -360,14 +374,14 @@ fn accounting_loss_cannot_hide_group_phase_replay_or_resource_rejections() {
                 &changed,
                 &fidelity,
                 &metadata,
-                Profile::Chat,
+                GenerationApi::Chat,
                 Contract::full()
             )
             .is_err()
         );
         assert_eq!(changed.usage(), original.usage());
     }
-    for profile in [Profile::Chat, Profile::Responses] {
+    for profile in [GenerationApi::Chat, GenerationApi::Responses] {
         let request =
             GenerationRequest::new(original.items().to_vec(), GenerationControls::default())
                 .unwrap();

@@ -2,8 +2,8 @@
 //! `chat`/`responses` own one whole request and response each; `accounting` and
 //! `context` hold what both profiles report identically. `events` owns payload
 //! state/grammar; SSE framing stays with each protocol.
-pub mod adapter;
-pub use adapter::Adapter;
+pub mod codec;
+pub use codec::GenerationCodec;
 pub use dialect::Dialect;
 pub(crate) mod cache_affinity;
 pub mod chat;
@@ -13,7 +13,7 @@ pub mod events;
 pub mod lowering;
 pub mod responses;
 mod target;
-pub use target::TargetCaps;
+pub use target::TargetContract;
 pub(crate) mod accounting;
 mod shape;
 pub(crate) use context::validate_identity;
@@ -41,7 +41,7 @@ use crate::{
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum Profile {
+pub enum GenerationApi {
     Chat,
     Responses,
 }
@@ -50,18 +50,18 @@ pub struct RequestRepresentation<'a> {
     pub(crate) adaptation: crate::protocol::openai::dialect::adaptation::Adaptation,
     pub(crate) semantic: std::borrow::Cow<'a, GenerationRequest>,
     pub(crate) fidelity: &'a FidelityRecords,
-    pub(crate) profile: Profile,
-    pub(crate) projection: Vec<crate::lowering::generation::Effect>,
+    pub(crate) profile: GenerationApi,
+    pub(crate) projection: Vec<crate::protocol::conversion::generation::Effect>,
 }
 impl RequestRepresentation<'_> {
     /// Final candidate-local value; a changed input or target needs fresh lowering.
     pub fn semantic(&self) -> &GenerationRequest {
         &self.semantic
     }
-    pub fn projection(&self) -> &[crate::lowering::generation::Effect] {
+    pub fn projection(&self) -> &[crate::protocol::conversion::generation::Effect] {
         &self.projection
     }
-    pub fn profile(&self) -> Profile {
+    pub fn profile(&self) -> GenerationApi {
         self.profile
     }
     pub fn requirements(&self) -> crate::semantic::task::generation::GenerationRequirements {
@@ -73,8 +73,8 @@ pub struct ResponseRepresentation<'a> {
     pub(crate) semantic: std::borrow::Cow<'a, GenerationResponse>,
     pub(crate) fidelity: &'a FidelityRecords,
     pub(crate) metadata: std::borrow::Cow<'a, ResponseMetadata>,
-    pub(crate) profile: Profile,
-    pub(crate) projection: Vec<crate::lowering::generation::Effect>,
+    pub(crate) profile: GenerationApi,
+    pub(crate) projection: Vec<crate::protocol::conversion::generation::Effect>,
     pub(crate) projection_steps: usize,
 }
 impl ResponseRepresentation<'_> {
@@ -84,7 +84,7 @@ impl ResponseRepresentation<'_> {
     pub fn metadata(&self) -> &ResponseMetadata {
         &self.metadata
     }
-    pub fn projection(&self) -> &[crate::lowering::generation::Effect] {
+    pub fn projection(&self) -> &[crate::protocol::conversion::generation::Effect] {
         &self.projection
     }
     pub fn requirements(
@@ -96,9 +96,12 @@ impl ResponseRepresentation<'_> {
     /// original to restore information omitted by an earlier stage.
     pub fn reproject(
         &self,
-        profile: Profile,
-        contract: crate::protocol::openai::TargetCaps,
-    ) -> Result<ResponseRepresentation<'_>, crate::lowering::generation::RepresentationError> {
+        profile: GenerationApi,
+        contract: crate::protocol::openai::TargetContract,
+    ) -> Result<
+        ResponseRepresentation<'_>,
+        crate::protocol::conversion::generation::RepresentationError,
+    > {
         use crate::protocol::openai::lowering::{
             self as generation, projection::MAX_PROJECTION_STAGES,
         };

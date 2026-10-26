@@ -1,12 +1,10 @@
 //! Bounded Interactions step intake; terminals are released only after strict EOF.
 //! Source: <https://ai.google.dev/gemini-api/docs/interactions/streaming>.
 use super::{accounting::usage, replay::Signed};
-use crate::protocol::failure::{
-    CarrierReason, RecognitionBasis, ShapeReason, SourceFailureEvidence,
-};
 use crate::{
     protocol::{
         CodecError, DecodedResponse, ResponseMetadata,
+        failure::{CarrierReason, RecognitionBasis, ShapeReason, SourceFailureEvidence},
         fidelity::FidelityRecords,
         native::ReplayTarget,
         stream::{SseError, SseLimits},
@@ -355,7 +353,7 @@ impl GenerationSseDecoder {
                 if o.contains_key("service_tier") {
                     super::super::service::read(o, "service_tier")?;
                     return Err(CodecError::Unsupported(CarrierReason::Field(
-                        crate::lowering::generation::Field::ServiceClass,
+                        crate::protocol::conversion::generation::Field::ServiceClass,
                     ))
                     .into());
                 }

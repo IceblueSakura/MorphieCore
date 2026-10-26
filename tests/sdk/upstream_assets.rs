@@ -18,7 +18,9 @@ use morphiecore::{
     protocol::{
         anthropic::messages::Profile as MessagesProfile,
         native::ReplayTarget,
-        openai::{Adapter, Dialect, Profile, TargetCaps, obfuscation::Obfuscation},
+        openai::{
+            Dialect, GenerationApi, GenerationCodec, TargetContract, obfuscation::Obfuscation,
+        },
         stream::SseLimits,
     },
     semantic::{context::StreamOptions, task::generation::Item, value::Presence},
@@ -57,8 +59,8 @@ async fn handle(
         ClientAdapter::Messages
     } else {
         ClientAdapter::openai(
-            Adapter::new(Profile::Chat, Dialect::Standard, None),
-            TargetCaps::full(),
+            GenerationCodec::new(GenerationApi::Chat, Dialect::Standard, None),
+            TargetContract::full(),
         )
     };
     let request = client.decode_client_request(&body).unwrap();
@@ -97,7 +99,7 @@ async fn handle(
         )
     } else {
         (
-            Adapter::new(Profile::Chat, Dialect::Standard, None).into(),
+            GenerationCodec::new(GenerationApi::Chat, Dialect::Standard, None).into(),
             asset(if feedback {
                 "openai/chat-length.sse"
             } else {

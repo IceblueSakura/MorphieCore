@@ -1,11 +1,14 @@
 //! Fixed attempt-chain coordination. HTTP body publication and handoff stay in body.
-use crate::gateway::{
-    ApiError, BoundCandidate, BoundEntry, Limits, Runtime,
-    body::{self, Lane, Message, Status},
-    diagnostics::{Stage, Trace},
-    generation::intake,
+use crate::{
+    gateway::{
+        ApiError, BoundCandidate, BoundEntry, Limits, Runtime,
+        body::{self, Lane, Message, Status},
+        diagnostics::{Stage, Trace},
+        generation::intake,
+        routing::chain::Chain,
+    },
+    protocol::GenerationRequestEnvelope as Request,
 };
-use crate::{adapter::Request, gateway::routing::chain::Chain};
 use axum::response::Response;
 use std::{
     borrow::Cow,
@@ -31,7 +34,7 @@ impl HealthAttempt<'_> {
             .expect("upstream failure")
             .take();
         self.lease.as_ref()?.failed(
-            if error.health {
+            if error.recovery.affects_health {
                 error
             } else {
                 observed.unwrap_or(error)
@@ -109,7 +112,7 @@ async fn send_attempt<'r>(
     )
     .map_err(|error| {
         trace.report.failure(
-            Some(crate::lowering::generation::ConversionBoundary::RequestEncode),
+            Some(crate::protocol::conversion::generation::ConversionBoundary::RequestEncode),
             &error,
         );
         ApiError::invalid()
@@ -150,7 +153,7 @@ async fn send_attempt<'r>(
             trace
                 .report
                 .failure(None, &crate::execution::AttemptError::Transport(class));
-            ApiError::transport(class)
+            ApiError::transport(class.recovery_class())
         })?;
     state.waiting_upstream.store(false, Ordering::Release);
     trace.affinity_carriers(key_sent, session_sent);
@@ -317,26 +320,26 @@ pub(in crate::gateway) async fn produce_chain(
             }
             Err(error) => {
                 trace.report.update(|a| {
-                    a.public_code = Some(error.code);
-                    a.public_status = Some(error.status.as_u16());
-                    a.policy_class = error.fallback;
-                    a.health_failure = error.health;
+                    a.failure_code = Some(error.diagnostic_code());
+                    a.failure_status_hint = Some(error.status.as_u16());
+                    a.policy_class = error.recovery.class;
+                    a.health_failure = error.recovery.affects_health;
                 });
                 if let Some(observation) = health.failed(error) {
                     trace.health(observation);
                 }
                 drop(health);
-                if let Some(class) = error.fallback {
+                if let Some(class) = error.recovery.class {
                     chain.failed(index, class);
                 }
                 let advance = !state.published.load(Ordering::Acquire)
-                    && error.fallback.is_some()
+                    && error.recovery.class.is_some()
                     && Instant::now() < deadline
                     && (index + 1..candidates.len()).any(|next| chain.skip(next).is_none());
                 if !advance {
                     trace.selection_stop(if state.published.load(Ordering::Acquire) {
                         "published"
-                    } else if error.fallback.is_none() {
+                    } else if error.recovery.class.is_none() {
                         "not_retryable"
                     } else if Instant::now() >= deadline {
                         "deadline"
@@ -345,12 +348,12 @@ pub(in crate::gateway) async fn produce_chain(
                     } else {
                         "no_successor"
                     });
-                    trace.end_candidate(Some(error.code), false);
+                    trace.end_candidate(Some(error.diagnostic_code()), false);
                     return Err(error);
                 }
                 // Permission to advance is not an observed successor attempt.
                 trace.report.end(false);
-                pending_error = Some(error.code);
+                pending_error = Some(error.diagnostic_code());
             }
         }
     }
@@ -439,7 +442,7 @@ pub(in crate::gateway) async fn run(
         trace.report.planning_failure(cause);
         trace
             .report
-            .public_failure(error.code, error.status.as_u16());
+            .request_failure(error.diagnostic_code(), error.status.as_u16());
         trace.outcome(crate::gateway::diagnostics::Outcome::Error);
         error
     })?;
@@ -496,7 +499,7 @@ fn interrupted_error_delivery_keeps_only_observed_upstream_failure() {
         state: &state,
     };
     *state.failure_head.lock().unwrap() =
-        Some(ApiError::transport(crate::provider::ErrorClass::Server));
+        Some(ApiError::transport(crate::provider::RecoveryClass::Server));
     // A downstream cancellation after the error was observed must not erase it.
     drop(attempt);
     assert!(

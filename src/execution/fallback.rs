@@ -1,7 +1,7 @@
 //! Pure fixed-route advancement: transport and downstream visibility own observations.
 use super::DeliveryState;
 use crate::{
-    provider::ErrorClass,
+    provider::RecoveryClass,
     topology::{Endpoint, FallbackPolicy, RoutePolicy},
 };
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -26,7 +26,7 @@ impl Transition {
         self,
         policy: &RoutePolicy,
         state: DeliveryState,
-        error: ErrorClass,
+        error: RecoveryClass,
         attempts: usize,
         budget_remaining: bool,
     ) -> bool {
@@ -42,25 +42,27 @@ impl Transition {
                 enabled
                     && matches!(
                         error,
-                        ErrorClass::CredentialUnavailable
-                            | ErrorClass::Quota
-                            | ErrorClass::Server
-                            | ErrorClass::Timeout
-                            | ErrorClass::Upstream
+                        RecoveryClass::CredentialUnavailable
+                            | RecoveryClass::Quota
+                            | RecoveryClass::Server
+                            | RecoveryClass::Timeout
+                            | RecoveryClass::Upstream
                     )
             }
-            Self::SameProvider if matches!(error, ErrorClass::RateLimit | ErrorClass::Quota) => {
+            Self::SameProvider
+                if matches!(error, RecoveryClass::RateLimit | RecoveryClass::Quota) =>
+            {
                 false
             }
             Self::SameProvider | Self::Provider => {
                 policy.fallback == FallbackPolicy::BeforeCommit
                     && matches!(
                         error,
-                        ErrorClass::RateLimit
-                            | ErrorClass::Quota
-                            | ErrorClass::Server
-                            | ErrorClass::Timeout
-                            | ErrorClass::Upstream
+                        RecoveryClass::RateLimit
+                            | RecoveryClass::Quota
+                            | RecoveryClass::Server
+                            | RecoveryClass::Timeout
+                            | RecoveryClass::Upstream
                     )
             }
         }

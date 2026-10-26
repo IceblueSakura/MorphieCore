@@ -1,5 +1,5 @@
 //! Pure source-error meaning and closed conversion rejection vocabulary.
-use crate::lowering::generation::Field;
+use crate::protocol::conversion::generation::Field;
 use serde::Serialize;
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -126,7 +126,7 @@ impl ProtocolStatusHint {
 }
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 pub struct SourceFailureEvidence {
-    pub kind: FailureKind,
+    pub kind: SourceFailureKind,
     pub basis: RecognitionBasis,
     pub status_hint: Option<ProtocolStatusHint>,
     pub observation: Observation,
@@ -177,7 +177,7 @@ impl SourceFailureEvidence {
 /// What an agent loop does next with a failed turn: compact, stop, wait or retry.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize)]
 #[serde(rename_all = "snake_case")]
-pub enum FailureKind {
+pub enum SourceFailureKind {
     ContextOverflow,
     Quota,
     RateLimit,
@@ -217,10 +217,10 @@ const QUOTA: &[&str] = &[
 /// Classify a failed upstream reply from its status and the `code`, `type` and
 /// `message` of an OpenAI-compatible or Anthropic error body. Overflow wording
 /// counts only on request errors, so throttling text never reads as overflow.
-pub fn classify_failure(status: u16, body: &[u8]) -> FailureKind {
+pub fn classify_failure(status: u16, body: &[u8]) -> SourceFailureKind {
     recognize_failure(status, body).0
 }
-fn recognize_failure(status: u16, body: &[u8]) -> (FailureKind, RecognitionBasis) {
+fn recognize_failure(status: u16, body: &[u8]) -> (SourceFailureKind, RecognitionBasis) {
     let value: serde_json::Value = serde_json::from_slice(body).unwrap_or_default();
     let error = match value.get("error") {
         Some(serde_json::Value::String(message)) => serde_json::json!({ "message": message }),
@@ -259,23 +259,23 @@ fn recognize_failure(status: u16, body: &[u8]) -> (FailureKind, RecognitionBasis
         }
     };
     match status {
-        401 | 403 => (FailureKind::Other, RecognitionBasis::Status),
-        402 => (FailureKind::Quota, RecognitionBasis::Status),
+        401 | 403 => (SourceFailureKind::Other, RecognitionBasis::Status),
+        402 => (SourceFailureKind::Quota, RecognitionBasis::Status),
         400..=499 if has(QUOTA) => (
-            FailureKind::Quota,
+            SourceFailureKind::Quota,
             matched_basis(QUOTA, RecognitionBasis::QuotaPattern),
         ),
-        429 => (FailureKind::RateLimit, RecognitionBasis::Status),
+        429 => (SourceFailureKind::RateLimit, RecognitionBasis::Status),
         400 | 413 | 422 if has(OVERFLOW) => (
-            FailureKind::ContextOverflow,
+            SourceFailureKind::ContextOverflow,
             matched_basis(OVERFLOW, RecognitionBasis::ContextPattern),
         ),
-        503 | 529 => (FailureKind::Overloaded, RecognitionBasis::Status),
+        503 | 529 => (SourceFailureKind::Overloaded, RecognitionBasis::Status),
         500..=599 if has(&["overloaded"]) => (
-            FailureKind::Overloaded,
+            SourceFailureKind::Overloaded,
             matched_basis(&["overloaded"], RecognitionBasis::OverloadPattern),
         ),
-        _ => (FailureKind::Other, RecognitionBasis::Unrecognized),
+        _ => (SourceFailureKind::Other, RecognitionBasis::Unrecognized),
     }
 }
 
@@ -291,7 +291,7 @@ mod tests {
         );
         assert_eq!(
             (quota.kind, quota.basis),
-            (FailureKind::Quota, RecognitionBasis::EnvelopeCode)
+            (SourceFailureKind::Quota, RecognitionBasis::EnvelopeCode)
         );
         assert!(quota.status_hint.is_none());
         let message = SourceFailureEvidence::envelope(
@@ -303,7 +303,7 @@ mod tests {
         );
         assert_eq!(
             (message.kind, message.basis),
-            (FailureKind::Quota, RecognitionBasis::QuotaPattern)
+            (SourceFailureKind::Quota, RecognitionBasis::QuotaPattern)
         );
         assert_eq!(message.status_hint.unwrap().get(), 429);
         let throttle = SourceFailureEvidence::envelope(
@@ -315,7 +315,7 @@ mod tests {
         );
         assert_eq!(
             (throttle.kind, throttle.basis),
-            (FailureKind::RateLimit, RecognitionBasis::EnvelopeType)
+            (SourceFailureKind::RateLimit, RecognitionBasis::EnvelopeType)
         );
         let auth = SourceFailureEvidence::http(
             401,
@@ -324,7 +324,7 @@ mod tests {
         );
         assert_eq!(
             (auth.kind, auth.basis),
-            (FailureKind::Other, RecognitionBasis::Status)
+            (SourceFailureKind::Other, RecognitionBasis::Status)
         );
     }
 }

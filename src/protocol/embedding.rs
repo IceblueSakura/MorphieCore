@@ -1,4 +1,7 @@
 //! Shared scalar validation for standalone embedding codecs, not a wire schema.
+mod envelope;
+pub use envelope::*;
+pub mod projection;
 use crate::protocol::CodecError;
 use serde_json::{Map, Value};
 pub(crate) fn required<'a>(

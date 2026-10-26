@@ -1,21 +1,26 @@
 //! Reported context and the executed-context wire codec shared by both OpenAI profiles.
 //! A context hint is never a task instruction, and each profile owns its field set.
-use crate::protocol::failure::{CarrierReason, ShapeReason};
-use crate::protocol::openai::{CodecError, Profile, ResponseMetadata, shape::*};
-use crate::semantic::{
-    context::{CacheHints, ExecutionHints},
-    task::generation::*,
+pub(in crate::protocol::openai) mod wire;
+use crate::{
+    protocol::{
+        failure::{CarrierReason, ShapeReason},
+        openai::{CodecError, GenerationApi, ResponseMetadata, shape::*},
+    },
+    semantic::{
+        context::{CacheHints, ExecutionHints},
+        task::generation::*,
+    },
 };
 use serde_json::{Map, Number, Value};
 
 pub(super) fn metadata(
     o: &Map<String, Value>,
-    profile: Profile,
+    profile: GenerationApi,
     adaptation: &crate::protocol::openai::dialect::adaptation::Adaptation,
-    evidence: &mut crate::lowering::generation::EvidenceDelta,
-    boundary: crate::lowering::generation::ConversionBoundary,
+    evidence: &mut crate::protocol::conversion::generation::EvidenceDelta,
+    boundary: crate::protocol::conversion::generation::ConversionBoundary,
 ) -> Result<ResponseMetadata, CodecError> {
-    let created_key = if profile == Profile::Chat {
+    let created_key = if profile == GenerationApi::Chat {
         "created"
     } else {
         "created_at"
@@ -30,7 +35,7 @@ pub(super) fn metadata(
         o.get(created_key)
             .ok_or(CodecError::Invalid(ShapeReason::Metadata))?,
     )?;
-    let (mut context, instruction_fidelity) = if profile == Profile::Responses {
+    let (mut context, instruction_fidelity) = if profile == GenerationApi::Responses {
         crate::semantic::context::ResponseContext::read(o, DecodeDirection::Upstream)?
     } else {
         (
@@ -39,14 +44,14 @@ pub(super) fn metadata(
                     crate::semantic::context::ResponseReport {
                         service_class: crate::protocol::openai::service::read_class(
                             o,
-                            Profile::Chat,
+                            GenerationApi::Chat,
                         )?,
                         ..Default::default()
                     },
                 ),
                 execution: crate::semantic::context::ExecutionHints::read(
                     o,
-                    Profile::Chat,
+                    GenerationApi::Chat,
                     DecodeDirection::Upstream,
                 )?,
                 system_fingerprint: read_presence(o, "system_fingerprint", |v| {
@@ -84,17 +89,17 @@ pub(super) fn metadata(
                         level: mapped,
                     },
                     boundary,
-                    crate::lowering::generation::Owner::Root,
+                    crate::protocol::conversion::generation::Owner::Root,
                 );
             }
         }
     }
-    if profile == Profile::Chat {
+    if profile == GenerationApi::Chat {
         crate::protocol::openai::chat::envelope::validate_context(&context.execution)?;
     }
     Ok(ResponseMetadata {
         delivery: None,
-        storage: if profile == Profile::Responses {
+        storage: if profile == GenerationApi::Responses {
             crate::protocol::openai::responses::managed::read_storage(o)?
         } else {
             None
@@ -120,7 +125,8 @@ impl CacheHints {
         o: &mut Map<String, Value>,
     ) -> Result<(), CodecError> {
         self.validate()?;
-        let Value::Object(v) = serde_json::to_value(self).map_err(|_| CodecError::invalid())?
+        let Value::Object(v) = serde_json::to_value(wire::CacheHints::from(self))
+            .map_err(|_| CodecError::invalid())?
         else {
             unreachable!()
         };
@@ -152,10 +158,10 @@ pub(in crate::protocol::openai) fn check_access_programs(
 impl ExecutionHints {
     pub(in crate::protocol::openai) fn read(
         o: &Map<String, Value>,
-        profile: Profile,
+        profile: GenerationApi,
         direction: DecodeDirection<'_>,
     ) -> Result<Self, CodecError> {
-        if profile == Profile::Responses {
+        if profile == GenerationApi::Responses {
             check_access_programs(o)?;
         }
         let mut fields: Map<_, _> = o
@@ -164,7 +170,7 @@ impl ExecutionHints {
                 k.as_str() != "service_tier"
                     && (CACHE_FIELDS.contains(&k.as_str())
                         // Chat `store` persists completions; only false/null is admitted.
-                        || if profile == Profile::Chat {
+                        || if profile == GenerationApi::Chat {
                             matches!(k.as_str(), "metadata" | "store")
                         } else {
                             EXEC_FIELDS.contains(&k.as_str())
@@ -187,7 +193,7 @@ impl ExecutionHints {
             .filter(|v| !v.is_null())
         {
             let options = options.as_object_mut().ok_or(CodecError::invalid())?;
-            let allowed: &[&str] = if profile == Profile::Chat {
+            let allowed: &[&str] = if profile == GenerationApi::Chat {
                 if direction.client()
                     && ["comparison_response_id", "prewarm"]
                         .iter()
@@ -202,8 +208,9 @@ impl ExecutionHints {
             direction.fields(options, allowed)?;
             options.retain(|key, _| allowed.contains(&key.as_str()));
         }
-        let hints: Self =
+        let hints: wire::ExecutionHints =
             serde_json::from_value(Value::Object(fields)).map_err(|_| CodecError::invalid())?;
+        let hints = Self::from(&hints);
         hints.validate()?;
         validate_identity(&hints.identity)?;
         Ok(hints)
@@ -214,7 +221,8 @@ impl ExecutionHints {
     ) -> Result<(), CodecError> {
         self.validate()?;
         validate_identity(&self.identity)?;
-        let Value::Object(v) = serde_json::to_value(self).map_err(|_| CodecError::invalid())?
+        let Value::Object(v) = serde_json::to_value(wire::ExecutionHints::from(self))
+            .map_err(|_| CodecError::invalid())?
         else {
             unreachable!()
         };
@@ -233,6 +241,7 @@ pub(in crate::protocol::openai) fn timestamp(v: &Value) -> Result<Number, CodecE
 pub(crate) fn validate_identity(
     identity: &crate::semantic::context::ClientIdentityHints,
 ) -> Result<(), CodecError> {
+    // Identity bounds are protocol-specific; the semantic owner has its own ceiling.
     identity.validate()?;
     for (value, maximum) in [(&identity.user, 256), (&identity.safety_identifier, 128)] {
         if value
@@ -243,4 +252,95 @@ pub(crate) fn validate_identity(
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::semantic::{context::*, value::Presence};
+    use serde_json::json;
+
+    #[test]
+    fn context_wire_intake_preserves_explicit_presence_and_enum_meaning() {
+        let value = json!({
+            "prompt_cache_key":"",
+            "prompt_cache_retention":"24h",
+            "prompt_cache_options":{"mode":"explicit","ttl":"30m","prewarm":false,"comparison_response_id":null},
+            "safety_identifier":null,"user":"","metadata":{},"store":false
+        });
+        let hints = ExecutionHints::read(
+            value.as_object().unwrap(),
+            GenerationApi::Responses,
+            DecodeDirection::Request,
+        )
+        .unwrap();
+        assert_eq!(hints.cache.prompt_cache_key, Presence::Value(String::new()));
+        assert_eq!(
+            hints.cache.prompt_cache_retention,
+            Presence::Value(CacheRetention::Day)
+        );
+        let options = hints.cache.prompt_cache_options.value().unwrap();
+        assert_eq!(options.mode, Presence::Value(CacheMode::Explicit));
+        assert_eq!(options.ttl, Presence::Value(CacheTtl::ThirtyMinutes));
+        assert_eq!(options.prewarm, Presence::Value(false));
+        assert_eq!(options.comparison_response_id, Presence::Null);
+        assert_eq!(hints.identity.safety_identifier, Presence::Null);
+        assert!(hints.background.is_absent());
+        for invalid in [
+            json!({"prompt_cache_options":null}),
+            json!({"prompt_cache_retention":"Day"}),
+            json!({"prompt_cache_options":{"ttl":"ThirtyMinutes"}}),
+        ] {
+            assert!(
+                ExecutionHints::read(
+                    invalid.as_object().unwrap(),
+                    GenerationApi::Responses,
+                    DecodeDirection::Request
+                )
+                .is_err()
+            );
+        }
+    }
+
+    #[test]
+    fn context_wire_output_is_explicit_and_not_semantic_serde() {
+        let hints = ExecutionHints {
+            cache: CacheHints {
+                prompt_cache_retention: Presence::Value(CacheRetention::InMemory),
+                prompt_cache_options: Presence::Value(CacheOptions {
+                    mode: Presence::Value(CacheMode::Implicit),
+                    ttl: Presence::Value(CacheTtl::ThirtyMinutes),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+            identity: ClientIdentityHints {
+                user: Presence::Null,
+                ..Default::default()
+            },
+            background: Presence::Value(false),
+            ..Default::default()
+        };
+        let mut output = Map::new();
+        hints.write(&mut output).unwrap();
+        assert_eq!(
+            Value::Object(output),
+            json!({
+                "prompt_cache_retention":"in_memory",
+                "prompt_cache_options":{"mode":"implicit","ttl":"30m"},
+                "user":null,"background":false
+            })
+        );
+        let report = CacheDiagnostics::CacheMiss {
+            reason: CacheMissReason::ToolsChanged,
+            cache_missed_tokens: 0,
+            comparison_reusable_tokens: Presence::Null,
+        };
+        assert_eq!(
+            serde_json::to_value(wire::CacheDiagnostics::from(&report)).unwrap(),
+            json!({
+                "type":"cache_miss","reason":"tools_changed","cache_missed_tokens":0,"comparison_reusable_tokens":null
+            })
+        );
+    }
 }

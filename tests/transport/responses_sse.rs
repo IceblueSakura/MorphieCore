@@ -1,11 +1,10 @@
 //! Offline HTTP/SSE framing acceptance for the stateless Responses text profile.
 use crate::wire;
-
 use morphiecore::{
     protocol::{
         fidelity::FidelityRecords,
         openai::{
-            Profile, TargetCaps,
+            GenerationApi, TargetContract,
             events::EventDecoder,
             obfuscation::Obfuscation,
             responses::sse::{ResponsesSseDecoder, ResponsesSseEncoder, encode_frame},
@@ -364,7 +363,7 @@ fn byte_event_and_wire_limits_cannot_be_evaded_by_fragmentation() {
 
 #[test]
 fn rejected_metadata_update_poisoned_stream_cannot_emit_success() {
-    let mut decoder = EventDecoder::new(Profile::Responses).with_replay_origin(origin());
+    let mut decoder = EventDecoder::new(GenerationApi::Responses).with_replay_origin(origin());
     assert!(decoder.finish().is_err());
     assert!(
         decoder.done().is_err(),
@@ -374,7 +373,7 @@ fn rejected_metadata_update_poisoned_stream_cannot_emit_success() {
     let metadata = decoder.metadata().unwrap().clone();
     let mut encoder = ResponsesSseEncoder::new(
         metadata.clone(),
-        TargetCaps::full(),
+        TargetContract::full(),
         SseLimits::default(),
         Obfuscation::Disabled,
     )
@@ -401,7 +400,7 @@ fn rejected_metadata_update_poisoned_stream_cannot_emit_success() {
 
     let mut encoder = ResponsesSseEncoder::new(
         metadata.clone(),
-        TargetCaps::full(),
+        TargetContract::full(),
         SseLimits::default(),
         Obfuscation::Disabled,
     )
@@ -427,14 +426,14 @@ fn empty_terminal_summary_requires_real_closed_items_and_exact_nonempty_snapshot
     use morphiecore::{
         execution::Attempt,
         protocol::{
-            openai::{Adapter, Dialect, Profile},
+            openai::{Dialect, GenerationApi, GenerationCodec},
             stream::SseLimits,
         },
         semantic::value::ReplayOrigin,
     };
     let adapter = |dialect, scope| {
-        Adapter::new(
-            Profile::Responses,
+        GenerationCodec::new(
+            GenerationApi::Responses,
             dialect,
             Some(ReplayOrigin::new(scope).unwrap()),
         )
@@ -486,11 +485,11 @@ fn empty_terminal_summary_requires_real_closed_items_and_exact_nonempty_snapshot
 #[test]
 fn subscription_dialects_keep_raw_call_fragments_final_replay_and_strict_eof() {
     use morphiecore::{
-        protocol::openai::{Adapter, Dialect},
+        protocol::openai::{Dialect, GenerationCodec},
         semantic::task::generation::*,
     };
     for (dialect, grouped) in [(Dialect::Grok, false), (Dialect::Siwc, true)] {
-        let adapter = Adapter::new(Profile::Responses, dialect, Some(origin()));
+        let adapter = GenerationCodec::new(GenerationApi::Responses, dialect, Some(origin()));
         let events = wire::response_events(wire::subscription_response(grouped));
         for failure in ["none", "cipher", "item_done", "terminal", "done_trailer"] {
             let mut values = events.clone();

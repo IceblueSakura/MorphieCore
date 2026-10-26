@@ -262,11 +262,11 @@ fn document_context_preserves_per_use_presence_in_messages_and_tool_history() {
         // The same closed capability applies when context appears only in tool results.
         let before = input.clone();
         for profile in [
-            morphiecore::protocol::openai::Profile::Chat,
-            morphiecore::protocol::openai::Profile::Responses,
+            morphiecore::protocol::openai::GenerationApi::Chat,
+            morphiecore::protocol::openai::GenerationApi::Responses,
         ] {
             assert!(
-                morphiecore::protocol::openai::Adapter::new(
+                morphiecore::protocol::openai::GenerationCodec::new(
                     profile,
                     morphiecore::protocol::openai::Dialect::Standard,
                     None,
@@ -274,7 +274,7 @@ fn document_context_preserves_per_use_presence_in_messages_and_tool_history() {
                 .encode_request(
                     &input,
                     "m",
-                    &morphiecore::protocol::openai::TargetCaps::full()
+                    &morphiecore::protocol::openai::TargetContract::full()
                 )
                 .is_err()
             );
@@ -455,8 +455,10 @@ fn images_and_documents_map_to_inert_resources_and_back() {
 
 #[test]
 fn image_size_policy_belongs_to_each_use_not_the_resource_or_fidelity() {
-    use morphiecore::protocol::openai::{Profile as OpenAI, TargetCaps, lowering};
-    use morphiecore::semantic::value::Text;
+    use morphiecore::{
+        protocol::openai::{GenerationApi as OpenAI, TargetContract, lowering},
+        semantic::value::Text,
+    };
     let id = ResourceId::new(1);
     let image = |part, size_policy| {
         Part::new(
@@ -602,8 +604,13 @@ fn image_size_policy_belongs_to_each_use_not_the_resource_or_fidelity() {
         let original = request.clone();
         for profile in [OpenAI::Chat, OpenAI::Responses] {
             assert_eq!(
-                lowering::lower_request(&request, &Default::default(), profile, TargetCaps::full())
-                    .err(),
+                lowering::lower_request(
+                    &request,
+                    &Default::default(),
+                    profile,
+                    TargetContract::full()
+                )
+                .err(),
                 Some(lowering::RepresentationError::ImageInput),
                 "{profile:?}"
             );
@@ -686,9 +693,9 @@ fn unrepresentable_sources_and_uncalibrated_options_fail_without_losing_filename
         )
         .is_ok()
     );
-    use morphiecore::protocol::openai::{Adapter, Dialect, Profile as Client};
+    use morphiecore::protocol::openai::{Dialect, GenerationApi as Client, GenerationCodec};
     let endpoint = catalog::MESSAGES_BINDINGS[0].endpoint();
-    let chat = Adapter::new(Client::Chat, Dialect::Standard, None);
+    let chat = GenerationCodec::new(Client::Chat, Dialect::Standard, None);
     let decode = |content: Value| {
         let mut request = chat
             .decode_client_request(
@@ -747,7 +754,7 @@ fn unrepresentable_sources_and_uncalibrated_options_fail_without_losing_filename
     let later = ordered(json!([{"role":"user","content":"go"},
             {"role":"developer","content":"Be brief."}]));
     let mut closed = endpoint.clone();
-    closed.representation = morphiecore::protocol::anthropic::messages::TargetCaps::new(
+    closed.representation = morphiecore::protocol::anthropic::messages::TargetContract::new(
         Profile::AdaptiveTextTools,
         morphiecore::protocol::anthropic::messages::Dialect::OpenCodeGo,
     )
@@ -776,7 +783,7 @@ fn unrepresentable_sources_and_uncalibrated_options_fail_without_losing_filename
         decode(json!([{"type":"video_url","video_url":{"url":"data:video/mp4;base64,AQID"}}]));
     assert!(endpoint.encode_request_with_rules(&video).is_err());
     assert_eq!(
-            Adapter::new(Client::Responses, Dialect::Standard, None)
+            GenerationCodec::new(Client::Responses, Dialect::Standard, None)
                 .decode_client_request(
                     json!({"model":"m","input":[
                     {"role":"developer","content":[{"type":"input_image","image_url":"data:image/png;base64,AQID"}]},
@@ -808,7 +815,7 @@ fn unrepresentable_sources_and_uncalibrated_options_fail_without_losing_filename
         .encode_request_with_rules(&messages("downsize"))
         .unwrap();
     assert_eq!(wire["messages"][0]["content"], json!([image]));
-    let full = morphiecore::protocol::openai::TargetCaps::full();
+    let full = morphiecore::protocol::openai::TargetContract::full();
     assert!(
         chat.encode_request(&messages("downsize"), "synthetic", &full)
             .is_ok()

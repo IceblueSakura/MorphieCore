@@ -5,9 +5,8 @@ mod schema_admission {
         protocol::{
             anthropic::messages::client::decode_client_request as decode_messages,
             openai::{
-                Adapter, Dialect, Profile, TargetCaps,
-                lowering::lower_request,
-                responses::{self},
+                Dialect, GenerationApi, GenerationCodec, TargetContract, lowering::lower_request,
+                responses,
             },
         },
         semantic::task::generation::*,
@@ -33,8 +32,11 @@ mod schema_admission {
             ToolDefinition::Function(tool) => tool.parameters.clone().unwrap(),
             _ => panic!(),
         };
-        for (profile, body) in [(Profile::Chat, chat), (Profile::Responses, responses)] {
-            let request = Adapter::new(profile, Dialect::Standard, None)
+        for (profile, body) in [
+            (GenerationApi::Chat, chat),
+            (GenerationApi::Responses, responses),
+        ] {
+            let request = GenerationCodec::new(profile, Dialect::Standard, None)
                 .decode_client_request(body.to_string().as_bytes())
                 .unwrap();
             assert_eq!(
@@ -90,10 +92,15 @@ mod schema_admission {
         let responses = lower_request(
             &d.semantic,
             &d.fidelity,
-            Profile::Responses,
-            TargetCaps::full(),
+            GenerationApi::Responses,
+            TargetContract::full(),
         );
-        let chat = lower_request(&d.semantic, &d.fidelity, Profile::Chat, TargetCaps::full());
+        let chat = lower_request(
+            &d.semantic,
+            &d.fidelity,
+            GenerationApi::Chat,
+            TargetContract::full(),
+        );
         assert_eq!(responses.is_ok(), chat.is_ok());
         responses.is_ok()
     }
@@ -136,8 +143,8 @@ mod schema_admission {
             lower_request(
                 &d.semantic,
                 &d.fidelity,
-                Profile::Responses,
-                TargetCaps::full(),
+                GenerationApi::Responses,
+                TargetContract::full(),
             )
             .is_ok()
         };
@@ -158,7 +165,7 @@ mod schema_admission {
         let requirements = GenerationRequirements::derive(&normalized.semantic);
         assert!(requirements.normalization_default_tools);
         assert!(!requirements.strict_function_tools);
-        let mut contract = GenerationSemanticContract::full();
+        let mut contract = GenerationFeatureSet::full();
         contract.strict_tools = false;
         assert!(contract.check(&normalized.semantic).is_ok());
         let mut without_normalization = contract.clone();
@@ -195,8 +202,8 @@ mod schema_admission {
             &lower_request(
                 &d.semantic,
                 &d.fidelity,
-                Profile::Responses,
-                TargetCaps::full(),
+                GenerationApi::Responses,
+                TargetContract::full(),
             )
             .unwrap(),
         )

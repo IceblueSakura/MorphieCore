@@ -1,7 +1,9 @@
 //! Bounded private health domains and exact-executor conversation preferences.
 //! Recovery uses foreground request ownership, never background calls or queues.
-use crate::gateway::{ApiError, BoundCandidate};
-use crate::provider::ErrorClass;
+use crate::{
+    gateway::{ApiError, BoundCandidate},
+    provider::RecoveryClass,
+};
 use sha2::{Digest, Sha256};
 use std::{
     collections::HashMap,
@@ -248,16 +250,18 @@ impl Lease<'_> {
         true
     }
     pub(in crate::gateway) fn failed(&self, error: ApiError, now: Instant) -> Option<Observation> {
-        if !error.health {
+        if !error.recovery.affects_health {
             return None;
         }
-        let (index, scope, transient) = match error.fallback? {
-            ErrorClass::CredentialUnavailable | ErrorClass::Authentication => {
+        let (index, scope, transient) = match error.recovery.class? {
+            RecoveryClass::CredentialUnavailable | RecoveryClass::Authentication => {
                 (0, "credential", false)
             }
-            ErrorClass::PermissionDenied | ErrorClass::Quota => (1, "target", false),
-            ErrorClass::RateLimit => (2, "pool", false),
-            ErrorClass::Server | ErrorClass::Timeout | ErrorClass::Upstream => (1, "target", true),
+            RecoveryClass::PermissionDenied | RecoveryClass::Quota => (1, "target", false),
+            RecoveryClass::RateLimit => (2, "pool", false),
+            RecoveryClass::Server | RecoveryClass::Timeout | RecoveryClass::Upstream => {
+                (1, "target", true)
+            }
             _ => return None,
         };
         let mut state = self.owner.state.lock().expect("executor state");

@@ -1,17 +1,17 @@
 //! Pure HTTP/SSE boundary for the stateless Responses profile.
 //! Socket I/O, authentication, cancellation and commit remain caller responsibilities.
 //! One consume call yields at most one framed payload; it never buffers a whole wire stream.
-use crate::protocol::failure::ShapeReason;
-use crate::protocol::openai::{
-    CodecError, DecodedResponse, Profile, ResponseMetadata,
-    events::{EventDecoder, EventEncoder},
-};
-use crate::protocol::{
-    openai::obfuscation::{Obfuscation, charge_padding, pad_payload},
-    stream::{SseError, SseLimits, validate_http},
-};
 use crate::{
-    protocol::{fidelity::FidelityRecords, openai::TargetCaps},
+    protocol::{
+        failure::ShapeReason,
+        fidelity::FidelityRecords,
+        openai::{
+            CodecError, DecodedResponse, GenerationApi, ResponseMetadata, TargetContract,
+            events::{EventDecoder, EventEncoder},
+            obfuscation::{Obfuscation, charge_padding, pad_payload},
+        },
+        stream::{SseError, SseLimits, validate_http},
+    },
     semantic::{
         task::generation::*,
         value::{ReplayOrigin, json_size},
@@ -32,7 +32,9 @@ pub struct ResponsesSseDecoder {
     rejected: bool,
 }
 impl ResponsesSseDecoder {
-    pub(crate) fn take_intake_evidence(&mut self) -> crate::lowering::generation::EvidenceDelta {
+    pub(crate) fn take_intake_evidence(
+        &mut self,
+    ) -> crate::protocol::conversion::generation::EvidenceDelta {
         self.codec.take_evidence()
     }
     pub fn new(
@@ -43,7 +45,7 @@ impl ResponsesSseDecoder {
     ) -> Result<Self, SseError> {
         limits.validate()?;
         validate_http(status, content_type)?;
-        let mut codec = EventDecoder::new(Profile::Responses);
+        let mut codec = EventDecoder::new(GenerationApi::Responses);
         if let Some(origin) = origin {
             codec = codec.with_replay_origin(origin);
         }
@@ -65,7 +67,7 @@ impl ResponsesSseDecoder {
         limits: SseLimits,
         codec: EventDecoder,
     ) -> Result<Self, SseError> {
-        if codec.profile() != Profile::Responses {
+        if codec.profile() != GenerationApi::Responses {
             return Err(CodecError::ProfileMismatch.into());
         }
         let mut decoder = Self::new(status, content_type, limits, None)?;
@@ -189,16 +191,18 @@ impl ResponsesSseEncoder {
     pub(crate) fn set_notice(&mut self, notice: crate::protocol::diagnostics::AdaptationNotice) {
         self.notice = Some(notice);
     }
-    pub(crate) fn take_evidence(&mut self) -> crate::lowering::generation::EvidenceDelta {
+    pub(crate) fn take_evidence(
+        &mut self,
+    ) -> crate::protocol::conversion::generation::EvidenceDelta {
         self.codec.take_evidence()
     }
     #[cfg(test)]
-    pub(crate) fn projection(&self) -> &[crate::lowering::generation::Effect] {
+    pub(crate) fn projection(&self) -> &[crate::protocol::conversion::generation::Effect] {
         self.codec.projection()
     }
     pub fn new(
         metadata: ResponseMetadata,
-        contract: TargetCaps,
+        contract: TargetContract,
         limits: SseLimits,
         padding: Obfuscation,
     ) -> Result<Self, SseError> {
@@ -206,7 +210,7 @@ impl ResponsesSseEncoder {
         metadata.context.validate().map_err(CodecError::from)?;
         Ok(Self {
             notice: None,
-            codec: EventEncoder::new(Profile::Responses, metadata)?.with_contract(contract),
+            codec: EventEncoder::new(GenerationApi::Responses, metadata)?.with_contract(contract),
             limits,
             wire_bytes: 0,
             events: 0,

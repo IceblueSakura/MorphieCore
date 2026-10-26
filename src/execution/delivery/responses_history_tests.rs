@@ -1,13 +1,13 @@
 //! Native signatures remain typed stored history, never fabricated public reasoning.
 use super::*;
-use crate::protocol::failure::CarrierReason;
 use crate::{
     adapter::UpstreamAdapter,
     protocol::{
         ResponseStorage,
+        failure::CarrierReason,
         google::generate_content::encode_generation_request,
         native::ReplayTarget,
-        openai::{Adapter, Dialect, Profile, TargetCaps, responses::managed},
+        openai::{Dialect, GenerationApi, GenerationCodec, TargetContract, responses::managed},
     },
     semantic::{task::generation::*, value::Presence},
 };
@@ -16,11 +16,11 @@ use serde_json::{Value, json};
 fn target() -> ReplayTarget {
     ReplayTarget::new("synthetic-google", "synthetic-model").unwrap()
 }
-fn client() -> Adapter {
-    Adapter::new(
-        Profile::Responses,
+fn client() -> GenerationCodec {
+    GenerationCodec::new(
+        GenerationApi::Responses,
         Dialect::Standard,
-        Some(super::super::replay::CLIENT_ORIGIN.clone()),
+        Some(crate::protocol::replay_envelope::CLIENT_ORIGIN.clone()),
     )
 }
 fn setup(store: Option<bool>) -> (Attempt, ResponseDelivery) {
@@ -31,7 +31,7 @@ fn setup(store: Option<bool>) -> (Attempt, ResponseDelivery) {
     );
     attempt.begin(200, "text/event-stream").unwrap();
     let mut delivery = ResponseDelivery::new(
-        ClientAdapter::openai(client(), TargetCaps::full()),
+        ClientAdapter::openai(client(), TargetContract::full()),
         "public",
         SseLimits::default(),
         StreamOptions::default(),
@@ -179,16 +179,19 @@ fn stateless_responses_reject_hidden_signatures_and_poison_delivery() {
     push(&mut attempt);
     attempt.finish().unwrap();
     let mut source = attempt.response().unwrap().clone();
-    super::super::replay::seal_for_client(&mut source, &super::super::replay::CLIENT_ORIGIN)
-        .unwrap();
+    super::super::replay::seal_for_client(
+        &mut source,
+        &crate::protocol::replay_envelope::CLIENT_ORIGIN,
+    )
+    .unwrap();
     source.metadata.storage = Some(ResponseStorage {
         store: Presence::Value(true),
         ..Default::default()
     });
-    let client = ClientAdapter::openai(client(), TargetCaps::full());
+    let client = ClientAdapter::openai(client(), TargetContract::full());
     assert!(
         matches!(client.snapshot(source),
-        Err(crate::adapter::ConversionFailure { cause: crate::adapter::ConversionCause::Codec(CodecError::Unsupported(reason)), .. })
+        Err(crate::protocol::ConversionFailure { cause: crate::protocol::ConversionCause::Codec(CodecError::Unsupported(reason)), .. })
             if matches!(reason,CarrierReason::Replay)),
         "reported storage does not authorize execution-owned retention"
     );
@@ -207,7 +210,7 @@ fn stateless_responses_reject_hidden_signatures_and_poison_delivery() {
             };
             assert!(
                 matches!(result, Err(AttemptError::Codec(CodecError::Unsupported(reason)))
-                    | Err(AttemptError::Adapter(crate::adapter::ConversionFailure { cause: crate::adapter::ConversionCause::Codec(CodecError::Unsupported(reason)), .. }))
+                    | Err(AttemptError::Conversion(crate::protocol::ConversionFailure { cause: crate::protocol::ConversionCause::Codec(CodecError::Unsupported(reason)), .. }))
                     if matches!(reason,CarrierReason::Replay)),
                 "{result:?}"
             );

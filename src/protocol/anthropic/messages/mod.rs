@@ -10,7 +10,7 @@ pub mod sse;
 pub use sse::{GenerationSseDecoder, MessageSseDecoder};
 mod target;
 pub use carriers::Carriers;
-pub use target::{Dialect, SamplingPolicy, TargetCaps};
+pub use target::{Dialect, SamplingPolicy, TargetContract};
 mod items;
 mod media;
 mod request;
@@ -36,11 +36,9 @@ pub enum Profile {
 }
 impl Profile {
     /// Default binding admission, kept separate from codec carrier availability.
-    pub fn semantic_contract(
-        self,
-    ) -> crate::semantic::task::generation::GenerationSemanticContract {
-        use crate::semantic::task::generation::GenerationSemanticContract;
-        GenerationSemanticContract {
+    pub fn semantic_contract(self) -> crate::semantic::task::generation::GenerationFeatureSet {
+        use crate::semantic::task::generation::GenerationFeatureSet;
+        GenerationFeatureSet {
             compaction: false,
             instructions: true,
             // Mid-conversation system messages need model-level binding evidence.
@@ -88,7 +86,7 @@ impl Profile {
     /// Codec support does not activate strict tools on an existing binding.
     pub fn representation_contract(
         self,
-    ) -> crate::semantic::task::generation::GenerationSemanticContract {
+    ) -> crate::semantic::task::generation::GenerationFeatureSet {
         let mut contract = self.semantic_contract();
         contract.strict_tools = true;
         contract.tool_examples = true;

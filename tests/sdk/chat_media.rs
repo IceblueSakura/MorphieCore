@@ -10,8 +10,8 @@ use axum::{
 use morphiecore::{
     protocol::{
         openai::{
-            Adapter, Dialect, Profile, TargetCaps as Contract, chat::sse::ChatSseEncoder,
-            obfuscation::Obfuscation,
+            Dialect, GenerationApi, GenerationCodec, TargetContract as Contract,
+            chat::sse::ChatSseEncoder, obfuscation::Obfuscation,
         },
         stream::SseLimits,
     },
@@ -23,8 +23,8 @@ use std::{
     time::Duration,
 };
 use tokio::{net::TcpListener, process::Command};
-fn adapter() -> Adapter {
-    Adapter::new(Profile::Chat, Dialect::Standard, Some(origin()))
+fn adapter() -> GenerationCodec {
+    GenerationCodec::new(GenerationApi::Chat, Dialect::Standard, Some(origin()))
 }
 fn origin() -> ReplayOrigin {
     ReplayOrigin::new("synthetic-audio-origin").unwrap()

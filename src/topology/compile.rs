@@ -3,8 +3,7 @@
 use crate::{
     provider::ProviderDefinition,
     topology::{
-        CanonicalModel, Endpoint, EndpointId, GenerationSemanticContract, PublicModel, Route,
-        RouteId,
+        CanonicalModel, Endpoint, EndpointId, GenerationFeatureSet, PublicModel, Route, RouteId,
     },
 };
 use std::collections::BTreeMap;
@@ -58,8 +57,8 @@ pub enum TopologyError {
 /// `promise` must be pointwise implied by `endpoint`. Whether a narrower promise
 /// is published is a route policy decision made in trusted configuration.
 fn promised(
-    semantic: &GenerationSemanticContract,
-    endpoint: &crate::lowering::target::TargetCaps,
+    semantic: &GenerationFeatureSet,
+    endpoint: &crate::lowering::target::TargetContract,
 ) -> bool {
     endpoint.accepted_semantics().supports(semantic)
 }
@@ -310,7 +309,7 @@ fn compile_deployments(
                 return Err(TopologyError::CanonicalModelMismatch);
             }
             let native = match endpoint.protocol {
-                super::ProtocolProfile::AnthropicMessages => {
+                super::GenerationProtocol::AnthropicMessages => {
                     let mut ceiling =
                         crate::protocol::anthropic::messages::Profile::AdaptiveTextTools
                             .semantic_contract();
@@ -324,10 +323,10 @@ fn compile_deployments(
                     ceiling.tool_changes = true;
                     Some(ceiling)
                 }
-                super::ProtocolProfile::GoogleGenerateContent => {
+                super::GenerationProtocol::GoogleGenerateContent => {
                     Some(crate::protocol::google::generate_content::semantic_contract())
                 }
-                super::ProtocolProfile::GoogleInteractions => {
+                super::GenerationProtocol::GoogleInteractions => {
                     Some(crate::protocol::google::interactions::semantic_contract())
                 }
                 _ => None,
@@ -372,13 +371,13 @@ fn compile_deployments(
 mod tests {
     use super::*;
     use crate::{
-        protocol::openai::TargetCaps,
+        protocol::openai::TargetContract,
         provider::{
             CredentialBindingId, CredentialKind, EndpointPath, ProviderDefinition, ProviderId,
             TrustedOrigin, auth::AuthScheme,
         },
         topology::{
-            Endpoint, EndpointTarget, ExecutionContract, ModelId, ProtocolProfile, TaskKind,
+            Endpoint, EndpointTarget, ExecutionContract, GenerationProtocol, ModelId, TaskKind,
         },
     };
 
@@ -408,7 +407,7 @@ mod tests {
         }
     }
 
-    fn endpoint(protocol: ProtocolProfile) -> Endpoint {
+    fn endpoint(protocol: GenerationProtocol) -> Endpoint {
         let definition = provider();
         let path = definition
             .generation_entry(protocol.operation())
@@ -426,7 +425,7 @@ mod tests {
             protocol,
             upstream_model: "fixture-model".into(),
             canonical_model: ModelId::new("fixture-model").unwrap(),
-            representation: TargetCaps::full().into(),
+            representation: TargetContract::full().into(),
             execution: ExecutionContract {
                 streaming: true,
                 retry_before_commit: false,
@@ -452,10 +451,10 @@ mod tests {
         CanonicalModel {
             id: ModelId::new("fixture-model").unwrap(),
             task: TaskKind::Generation,
-            contract: GenerationSemanticContract::full(),
+            contract: GenerationFeatureSet::full(),
         }
     }
-    fn model(contract: TargetCaps) -> PublicModel {
+    fn model(contract: TargetContract) -> PublicModel {
         PublicModel::new(
             ModelId::new("fixture-model").unwrap(),
             ModelId::new("fixture-model").unwrap(),
@@ -490,7 +489,7 @@ mod tests {
         ] {
             let mut provider = provider();
             provider.auth = AuthScheme::OAuthBearer("openai");
-            let mut endpoint = endpoint(ProtocolProfile::OpenAiResponses);
+            let mut endpoint = endpoint(GenerationProtocol::OpenAiResponses);
             endpoint.execution.credential_kind = CredentialKind::OAuth("openai");
             let mut providers = vec![provider.clone()];
             let mut endpoints = vec![endpoint.clone()];
@@ -516,7 +515,7 @@ mod tests {
                     providers,
                     endpoints,
                     vec![route],
-                    vec![model(TargetCaps::full())],
+                    vec![model(TargetContract::full())],
                     vec![canonical()]
                 )
                 .is_ok(),
@@ -530,14 +529,14 @@ mod tests {
     fn canonical_binding_and_public_semantics_cannot_be_reinterpreted_by_a_route() {
         let mut other = canonical();
         other.id = ModelId::new("another-model").unwrap();
-        let mut target = endpoint(ProtocolProfile::OpenAiChat);
+        let mut target = endpoint(GenerationProtocol::OpenAiChat);
         target.canonical_model = other.id.clone();
         assert_eq!(
             compile(
                 vec![provider()],
                 vec![target],
                 vec![route()],
-                vec![model(TargetCaps::full())],
+                vec![model(TargetContract::full())],
                 vec![canonical(), other]
             ),
             Err(TopologyError::CanonicalModelMismatch)
@@ -545,9 +544,9 @@ mod tests {
         assert_eq!(
             compile(
                 vec![provider()],
-                vec![endpoint(ProtocolProfile::OpenAiChat)],
+                vec![endpoint(GenerationProtocol::OpenAiChat)],
                 vec![route()],
-                vec![model(TargetCaps::full())],
+                vec![model(TargetContract::full())],
                 vec![]
             ),
             Err(TopologyError::UnknownCanonicalModel)
@@ -557,9 +556,9 @@ mod tests {
         assert_eq!(
             compile(
                 vec![provider()],
-                vec![endpoint(ProtocolProfile::OpenAiChat)],
+                vec![endpoint(GenerationProtocol::OpenAiChat)],
                 vec![route()],
-                vec![model(TargetCaps::full())],
+                vec![model(TargetContract::full())],
                 vec![limited]
             ),
             Err(TopologyError::SemanticUnsatisfiable)
@@ -571,27 +570,27 @@ mod tests {
         assert_eq!(
             compile_fixture(
                 vec![
-                    endpoint(ProtocolProfile::OpenAiChat),
-                    endpoint(ProtocolProfile::OpenAiChat)
+                    endpoint(GenerationProtocol::OpenAiChat),
+                    endpoint(GenerationProtocol::OpenAiChat)
                 ],
                 vec![route()],
-                vec![model(TargetCaps::full())],
+                vec![model(TargetContract::full())],
             ),
             Err(TopologyError::DuplicateEndpoint)
         );
         assert_eq!(
             compile_fixture(
-                vec![endpoint(ProtocolProfile::OpenAiChat)],
+                vec![endpoint(GenerationProtocol::OpenAiChat)],
                 vec![route(), route()],
-                vec![model(TargetCaps::full())],
+                vec![model(TargetContract::full())],
             ),
             Err(TopologyError::DuplicateRoute)
         );
         assert_eq!(
             compile_fixture(
-                vec![endpoint(ProtocolProfile::OpenAiChat)],
+                vec![endpoint(GenerationProtocol::OpenAiChat)],
                 vec![route()],
-                vec![model(TargetCaps::full()), model(TargetCaps::full()),],
+                vec![model(TargetContract::full()), model(TargetContract::full()),],
             ),
             Err(TopologyError::DuplicateModel)
         );
@@ -606,9 +605,9 @@ mod tests {
         assert_eq!(
             compile(
                 vec![chat_only.clone()],
-                vec![endpoint(ProtocolProfile::OpenAiResponses)],
+                vec![endpoint(GenerationProtocol::OpenAiResponses)],
                 vec![route()],
-                vec![model(TargetCaps::full())],
+                vec![model(TargetContract::full())],
                 vec![canonical()]
             ),
             Err(TopologyError::TargetMismatch)
@@ -616,15 +615,15 @@ mod tests {
         assert!(
             compile(
                 vec![chat_only],
-                vec![endpoint(ProtocolProfile::OpenAiChat)],
+                vec![endpoint(GenerationProtocol::OpenAiChat)],
                 vec![route()],
-                vec![model(TargetCaps::full())],
+                vec![model(TargetContract::full())],
                 vec![canonical()]
             )
             .is_ok()
         );
         // Wrong origin: business-selectable targets never compile.
-        let mut wrong_origin = endpoint(ProtocolProfile::OpenAiResponses);
+        let mut wrong_origin = endpoint(GenerationProtocol::OpenAiResponses);
         wrong_origin.target.origin = TrustedOrigin::parse("http://127.0.0.1:40000").unwrap();
         assert_eq!(
             compile_fixture(
@@ -635,12 +634,12 @@ mod tests {
                     endpoints: vec![EndpointId::new("fixture-endpoint").unwrap()],
                     policy: super::super::RoutePolicy::default(),
                 }],
-                vec![model(TargetCaps::full())],
+                vec![model(TargetContract::full())],
             ),
             Err(TopologyError::TargetMismatch)
         );
         // Wrong entry: a Responses endpoint cannot ride the chat entry path.
-        let mut wrong_entry = endpoint(ProtocolProfile::OpenAiResponses);
+        let mut wrong_entry = endpoint(GenerationProtocol::OpenAiResponses);
         wrong_entry.target.path = provider()
             .entry(crate::provider::ProviderOperation::ChatCompletions)
             .unwrap()
@@ -650,7 +649,7 @@ mod tests {
             compile_fixture(
                 vec![wrong_entry],
                 vec![route()],
-                vec![model(TargetCaps::full())],
+                vec![model(TargetContract::full())],
             ),
             Err(TopologyError::TargetMismatch)
         );
@@ -673,15 +672,15 @@ mod tests {
         );
         assert_eq!(
             compile_fixture(
-                vec![endpoint(ProtocolProfile::OpenAiChat)],
+                vec![endpoint(GenerationProtocol::OpenAiChat)],
                 vec![],
-                vec![model(TargetCaps::full())],
+                vec![model(TargetContract::full())],
             ),
             Err(TopologyError::UnknownRoute)
         );
         assert_eq!(
             compile_fixture(
-                vec![endpoint(ProtocolProfile::OpenAiChat)],
+                vec![endpoint(GenerationProtocol::OpenAiChat)],
                 vec![Route {
                     id: RouteId::new("fixture-route").unwrap(),
                     task: TaskKind::Generation,
@@ -696,10 +695,10 @@ mod tests {
             compile_fixture(
                 vec![Endpoint {
                     provider: ProviderId::new("missing").unwrap(),
-                    ..endpoint(ProtocolProfile::OpenAiChat)
+                    ..endpoint(GenerationProtocol::OpenAiChat)
                 }],
                 vec![route()],
-                vec![model(TargetCaps::full())],
+                vec![model(TargetContract::full())],
             ),
             Err(TopologyError::UnknownProvider)
         );
@@ -707,25 +706,25 @@ mod tests {
 
     #[test]
     fn public_contract_must_be_satisfiable_by_every_candidate() {
-        let promise = TargetCaps {
-            semantics: GenerationSemanticContract {
+        let promise = TargetContract {
+            semantics: GenerationFeatureSet {
                 strict_tools: true,
-                ..GenerationSemanticContract::full()
+                ..GenerationFeatureSet::full()
             },
-            ..TargetCaps::full()
+            ..TargetContract::full()
         };
-        let candidate = TargetCaps {
-            semantics: GenerationSemanticContract {
+        let candidate = TargetContract {
+            semantics: GenerationFeatureSet {
                 strict_tools: false,
-                ..GenerationSemanticContract::full()
+                ..GenerationFeatureSet::full()
             },
-            ..TargetCaps::full()
+            ..TargetContract::full()
         };
         assert_eq!(
             compile_fixture(
                 vec![Endpoint {
                     representation: candidate.into(),
-                    ..endpoint(ProtocolProfile::OpenAiChat)
+                    ..endpoint(GenerationProtocol::OpenAiChat)
                 }],
                 vec![route()],
                 vec![model(promise)],
@@ -741,12 +740,12 @@ mod tests {
                 vec![Endpoint {
                     execution: ExecutionContract {
                         request_body_limit: 0,
-                        ..endpoint(ProtocolProfile::OpenAiChat).execution
+                        ..endpoint(GenerationProtocol::OpenAiChat).execution
                     },
-                    ..endpoint(ProtocolProfile::OpenAiChat)
+                    ..endpoint(GenerationProtocol::OpenAiChat)
                 }],
                 vec![route()],
-                vec![model(TargetCaps::full())],
+                vec![model(TargetContract::full())],
             ),
             Err(TopologyError::InvalidExecutionLimits)
         );
@@ -754,10 +753,10 @@ mod tests {
             compile_fixture(
                 vec![Endpoint {
                     upstream_model: "model with spaces".into(),
-                    ..endpoint(ProtocolProfile::OpenAiChat)
+                    ..endpoint(GenerationProtocol::OpenAiChat)
                 }],
                 vec![route()],
-                vec![model(TargetCaps::full())],
+                vec![model(TargetContract::full())],
             ),
             Err(TopologyError::InvalidModelBinding)
         );

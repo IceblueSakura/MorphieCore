@@ -1,9 +1,9 @@
 //! Independent activation/target assertions over synthetic file configuration.
-use super::*;
-use crate::protocol::failure::{CarrierReason, ShapeReason};
-
-use super::test_support::*;
-use crate::adapter::ClientProtocol;
+use super::{test_support::*, *};
+use crate::protocol::{
+    ClientProtocol,
+    failure::{CarrierReason, ShapeReason},
+};
 
 #[test]
 fn readable_chat_profile_is_explicit_and_does_not_widen_other_protocols() {
@@ -97,17 +97,21 @@ fn shared_provider_credentials_keep_model_and_protocol_targets_distinct() {
             "/api/v1",
         ),
     ] {
-        for protocol in [Profile::Chat, Profile::Responses] {
-            let entry = &boot.gateway.state.entries
-                [&(crate::adapter::ClientProtocol::from(protocol), model.into())];
+        for protocol in [GenerationApi::Chat, GenerationApi::Responses] {
+            let entry = &boot.gateway.state.entries[&(
+                crate::protocol::ClientProtocol::from(protocol),
+                model.into(),
+            )];
             let candidate = entry
                 .candidates
                 .iter()
                 .find(|c| {
                     c.endpoint.protocol
                         == match protocol {
-                            Profile::Chat => crate::topology::ProtocolProfile::OpenAiChat,
-                            Profile::Responses => crate::topology::ProtocolProfile::OpenAiResponses,
+                            GenerationApi::Chat => crate::topology::GenerationProtocol::OpenAiChat,
+                            GenerationApi::Responses => {
+                                crate::topology::GenerationProtocol::OpenAiResponses
+                            }
                         }
                 })
                 .unwrap();
@@ -120,19 +124,19 @@ fn shared_provider_credentials_keep_model_and_protocol_targets_distinct() {
                 candidate.endpoint.target.path.as_str(),
                 format!(
                     "{}/{}",
-                    if protocol == Profile::Chat {
+                    if protocol == GenerationApi::Chat {
                         chat_prefix
                     } else {
                         responses_prefix
                     },
-                    if protocol == Profile::Chat {
+                    if protocol == GenerationApi::Chat {
                         "chat/completions"
                     } else {
                         "responses"
                     }
                 )
             );
-            let request = if protocol == Profile::Chat {
+            let request = if protocol == GenerationApi::Chat {
                 serde_json::json!({"model":model,"messages":[{"role":"user","content":"hi"}]})
             } else {
                 serde_json::json!({"model":model,"input":"hi"})
@@ -140,7 +144,7 @@ fn shared_provider_credentials_keep_model_and_protocol_targets_distinct() {
             assert!(
                 crate::gateway::ingress::admission::prepare(
                     &boot.gateway.state,
-                    crate::adapter::ClientProtocol::from(protocol),
+                    crate::protocol::ClientProtocol::from(protocol),
                     &serde_json::to_vec(&request).unwrap(),
                     &crate::execution::report::Report::default()
                 )
@@ -180,7 +184,7 @@ fn shared_provider_credentials_keep_model_and_protocol_targets_distinct() {
     assert_eq!(wire["max_completion_tokens"], 64);
     assert!(wire.get("max_tokens").is_none());
     assert!(boot.gateway.state.entries.contains_key(&(
-        crate::adapter::ClientProtocol::Responses,
+        crate::protocol::ClientProtocol::Responses,
         "glm-5.3-prime".into(),
     )));
 }
@@ -213,16 +217,16 @@ fn subscription_and_metered_entries_never_exchange_credentials_or_origins() {
             &credentials,
         )
         .unwrap();
-        for profile in [Profile::Chat, Profile::Responses] {
+        for profile in [GenerationApi::Chat, GenerationApi::Responses] {
             for model in ["qwen3.8-flash", "qwen3.8-max"] {
-                let value = if profile == Profile::Chat {
+                let value = if profile == GenerationApi::Chat {
                     serde_json::json!({"model":model,"messages":[{"role":"user","content":"hi"}],"max_completion_tokens":32})
                 } else {
                     serde_json::json!({"model":model,"input":"hi","max_output_tokens":32})
                 };
                 let admitted = crate::gateway::ingress::admission::prepare(
                     &boot.gateway.state,
-                    crate::adapter::ClientProtocol::from(profile),
+                    crate::protocol::ClientProtocol::from(profile),
                     &serde_json::to_vec(&value).unwrap(),
                     &crate::execution::report::Report::default(),
                 );
@@ -261,7 +265,7 @@ fn subscription_and_metered_entries_never_exchange_credentials_or_origins() {
                     assert_eq!(
                         prepared.path,
                         if candidate.endpoint.protocol
-                            == crate::topology::ProtocolProfile::OpenAiChat
+                            == crate::topology::GenerationProtocol::OpenAiChat
                         {
                             "/compatible-mode/v1/chat/completions"
                         } else {
@@ -272,7 +276,7 @@ fn subscription_and_metered_entries_never_exchange_credentials_or_origins() {
                     assert_eq!(wire["model"], model);
                     assert_eq!(
                         wire[if candidate.endpoint.protocol
-                            == crate::topology::ProtocolProfile::OpenAiChat
+                            == crate::topology::GenerationProtocol::OpenAiChat
                         {
                             assert!(wire.get("max_tokens").is_none());
                             "max_completion_tokens"
@@ -285,10 +289,12 @@ fn subscription_and_metered_entries_never_exchange_credentials_or_origins() {
             }
         }
         if subscription && metered {
-            let subscription_entry = &boot.gateway.state.entries
-                [&(crate::adapter::ClientProtocol::Chat, "qwen3.8-flash".into())];
+            let subscription_entry = &boot.gateway.state.entries[&(
+                crate::protocol::ClientProtocol::Chat,
+                "qwen3.8-flash".into(),
+            )];
             let metered_entry = &boot.gateway.state.entries
-                [&(crate::adapter::ClientProtocol::Chat, "qwen3.8-max".into())];
+                [&(crate::protocol::ClientProtocol::Chat, "qwen3.8-max".into())];
             assert_ne!(
                 subscription_entry.candidates[0]
                     .endpoint
@@ -334,7 +340,7 @@ fn responses_chat_bridge_is_explicit_and_replaces_not_falls_back_to_native_respo
         .iter()
         .find(|b| b.model == "gpt-6-luna" && (b.provider)().id.as_str() == "openrouter")
         .unwrap()
-        .endpoint_id(crate::topology::ProtocolProfile::OpenAiChat);
+        .endpoint_id(crate::topology::GenerationProtocol::OpenAiChat);
     let config =
         serde_json::json!({"models":{"gpt-6-luna":{"candidates":[{"binding":binding.as_str()}]}}});
     let credentials = [(
@@ -344,13 +350,13 @@ fn responses_chat_bridge_is_explicit_and_replaces_not_falls_back_to_native_respo
     )];
     let boot = Fixture::new(service(), config.clone(), &credentials).unwrap();
     let entry = &boot.gateway.state.entries[&(
-        crate::adapter::ClientProtocol::Responses,
+        crate::protocol::ClientProtocol::Responses,
         "gpt-6-luna".into(),
     )];
     assert_eq!(entry.candidates.len(), 1);
     assert_eq!(
         entry.candidates[0].endpoint.protocol,
-        crate::topology::ProtocolProfile::OpenAiChat
+        crate::topology::GenerationProtocol::OpenAiChat
     );
     assert_eq!(
         entry.candidates[0].endpoint.target.path.as_str(),
@@ -454,11 +460,11 @@ fn xiaomi_audio_is_explicit_and_prepares_its_own_json_contracts() {
     let topology = catalog::default_topology().unwrap();
     let provider = crate::provider::catalog::xiaomi();
     let secret = SecretMaterial::new("synthetic-upstream-only").unwrap();
-    let speech = crate::adapter::speech::Request::new(
+    let speech = crate::protocol::speech::Request::new(
         "mimo-v2.5-tts",
         crate::semantic::task::speech_synthesis::SpeechRequest::new("Hello.", "Chloe").unwrap(),
     );
-    let transcription = crate::adapter::transcription::Request {
+    let transcription = crate::protocol::transcription::Request {
         model: "mimo-v2.5-asr".into(),
         task: crate::semantic::task::speech_recognition::RecognitionRequest::new(
             crate::semantic::task::speech_recognition::AudioInput::new(
@@ -472,18 +478,17 @@ fn xiaomi_audio_is_explicit_and_prepares_its_own_json_contracts() {
         crate::execution::speech::prepare(
             topology.speech_route(&speech.model).unwrap(),
             &provider,
-            &secret,
             &speech,
         )
         .unwrap(),
         crate::execution::transcription::prepare(
             topology.transcription_route(&transcription.model).unwrap(),
             &provider,
-            &secret,
             &transcription,
         )
         .unwrap(),
     ] {
+        let prepared = prepared.authorize(&provider, &secret).unwrap();
         assert_eq!(prepared.origin, "https://api.xiaomimimo.com");
         assert_eq!(prepared.path, "/v1/chat/completions");
         assert!(
@@ -722,13 +727,13 @@ fn configured_failover_orders_and_limits_a_models_providers() {
         "max_attempts":2,
         "total_timeout_ms":12000,
         "candidates":[{
-            "binding":binding.endpoint_id(crate::topology::ProtocolProfile::OpenAiChat).as_str(),
+            "binding":binding.endpoint_id(crate::topology::GenerationProtocol::OpenAiChat).as_str(),
             "base_url":"https://primary.example/custom/v1",
             "upstream_model":"configured-wire-model",
             "credential":"selected-key",
             "attempt_timeout_ms":3000
         },{
-            "binding":binding.endpoint_id(crate::topology::ProtocolProfile::OpenAiChat).as_str(),
+            "binding":binding.endpoint_id(crate::topology::GenerationProtocol::OpenAiChat).as_str(),
             "base_url":"https://secondary.example/v1",
             "credential":"selected-key",
             "attempt_timeout_ms":4000
@@ -757,7 +762,7 @@ fn configured_failover_orders_and_limits_a_models_providers() {
     service.as_object_mut().unwrap().remove("delta_coalescing");
     private_write(&gateway_file, service);
     let entry = &configured.gateway.state.entries[&(
-        crate::adapter::ClientProtocol::Chat,
+        crate::protocol::ClientProtocol::Chat,
         "claude-haiku-5-5".into(),
     )];
     assert_eq!(entry.policy.max_attempts, 2);
@@ -830,7 +835,7 @@ fn configured_failover_orders_and_limits_a_models_providers() {
             .state
             .entries
             .get(&(
-                crate::adapter::ClientProtocol::from(protocol),
+                crate::protocol::ClientProtocol::from(protocol),
                 "claude-haiku-5-5".into(),
             ))
             .map(|entry| {
@@ -847,11 +852,11 @@ fn configured_failover_orders_and_limits_a_models_providers() {
     };
     let boot = Fixture::new(test_support::service(), ordered.clone(), &credentials).unwrap();
     assert_eq!(
-        providers(&boot, Profile::Chat).unwrap(),
+        providers(&boot, GenerationApi::Chat).unwrap(),
         ["opencode-go", "openrouter"]
     );
     assert_eq!(
-        providers(&boot, Profile::Responses).unwrap(),
+        providers(&boot, GenerationApi::Responses).unwrap(),
         ["opencode-go", "openrouter"]
     );
     let mut unlisted = ordered.clone();
@@ -860,7 +865,10 @@ fn configured_failover_orders_and_limits_a_models_providers() {
         .unwrap()
         .remove(1);
     let boot = Fixture::new(test_support::service(), unlisted, &credentials).unwrap();
-    assert_eq!(providers(&boot, Profile::Chat).unwrap(), ["opencode-go"]);
+    assert_eq!(
+        providers(&boot, GenerationApi::Chat).unwrap(),
+        ["opencode-go"]
+    );
     write_private(&models_file, br#"{"models":{},"models":{}}"#);
     assert!(Bootstrap::from_files(&gateway_file, &store).is_err());
     let mut invalid = model_config;
@@ -872,7 +880,7 @@ fn configured_failover_orders_and_limits_a_models_providers() {
         .iter()
         .find(|b| b.model == "gpt-6-luna" && (b.provider)().id.as_str() == "openrouter")
         .unwrap()
-        .endpoint_id(crate::topology::ProtocolProfile::OpenAiResponses);
+        .endpoint_id(crate::topology::GenerationProtocol::OpenAiResponses);
     private_write(
         &models_file,
         serde_json::json!({"models":{"gpt-6-luna":{
@@ -884,7 +892,7 @@ fn configured_failover_orders_and_limits_a_models_providers() {
     );
     let configured = Bootstrap::from_files(&gateway_file, &store).unwrap();
     let entry = &configured.gateway.state.entries[&(
-        crate::adapter::ClientProtocol::Responses,
+        crate::protocol::ClientProtocol::Responses,
         "gpt-6-luna".into(),
     )];
     let first = &entry.candidates[0].endpoint;
@@ -896,10 +904,10 @@ fn configured_failover_orders_and_limits_a_models_providers() {
         "synthetic-compacted-history",
     )
     .unwrap();
-    let mut replay = crate::protocol::openai::Adapter::new(
-        Profile::Responses,
+    let mut replay = crate::protocol::openai::GenerationCodec::new(
+        GenerationApi::Responses,
         crate::protocol::openai::Dialect::Standard,
-        Some(crate::execution::replay::CLIENT_ORIGIN.clone()),
+        Some(crate::protocol::replay_envelope::CLIENT_ORIGIN.clone()),
     )
     .decode_request(
         &serde_json::to_vec(&serde_json::json!({
@@ -963,9 +971,9 @@ fn configured_failover_orders_and_limits_a_models_providers() {
     ]}}});
     private_write(&models_file, limits_config.clone());
     let configured = Bootstrap::from_files(&gateway_file, &store).unwrap();
-    for protocol in [Profile::Chat, Profile::Responses] {
+    for protocol in [GenerationApi::Chat, GenerationApi::Responses] {
         let entry = &configured.gateway.state.entries[&(
-            crate::adapter::ClientProtocol::from(protocol),
+            crate::protocol::ClientProtocol::from(protocol),
             google.model.into(),
         )];
         assert_eq!(entry.candidates.len(), 2);
@@ -1007,7 +1015,7 @@ fn configured_failover_orders_and_limits_a_models_providers() {
             .evidence
             .iter()
             .filter_map(|c| match c {
-                crate::lowering::generation::Effect::Reasoning {
+                crate::protocol::conversion::generation::Effect::Reasoning {
                     rule,
                     input,
                     output,
@@ -1101,7 +1109,7 @@ fn configured_failover_orders_and_limits_a_models_providers() {
     assert!(
         matches!(
             entry.candidates[0].endpoint.encode_request(&scoped_request),
-            Err(crate::adapter::ConversionFailure { cause: crate::adapter::ConversionCause::Codec(crate::protocol::CodecError::Unsupported(reason)), .. })
+            Err(crate::protocol::ConversionFailure { cause: crate::protocol::ConversionCause::Codec(crate::protocol::CodecError::Unsupported(reason)), .. })
                 if matches!(reason,CarrierReason::Reasoning)
         ),
         "an explicit numeric policy replaces, rather than chains with, the scope policy"
@@ -1110,7 +1118,7 @@ fn configured_failover_orders_and_limits_a_models_providers() {
     private_write(&models_file, models);
     let configured = Bootstrap::from_files(&gateway_file, &store).unwrap();
     let entry = &configured.gateway.state.entries[&(
-        crate::adapter::ClientProtocol::Responses,
+        crate::protocol::ClientProtocol::Responses,
         google.model.into(),
     )];
     let wire = entry.candidates[0]

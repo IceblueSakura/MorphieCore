@@ -1,10 +1,11 @@
-//! Standard transcription identity and task; only synchronous JSON is admitted.
+//! Transcription codec dispatch.
+use crate::protocol::transcription::Request;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum Profile {
+pub enum UpstreamAdapter {
     AliyunFlash,
     Xiaomi,
 }
-impl Profile {
+impl UpstreamAdapter {
     pub fn encode_request(
         self,
         request: &Request,
@@ -27,9 +28,4 @@ impl Profile {
             Self::Xiaomi => crate::protocol::xiaomi_audio::decode_transcription(bytes),
         }
     }
-}
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Request {
-    pub model: String,
-    pub task: crate::semantic::task::speech_recognition::RecognitionRequest,
 }

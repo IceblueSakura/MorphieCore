@@ -6,13 +6,13 @@ use crate::protocol::openai::events::*;
 use serde_json::json;
 
 pub struct EventDecoder {
-    pub(super) profile: Profile,
+    pub(super) profile: GenerationApi,
     pub(super) adaptation: crate::protocol::openai::dialect::adaptation::Adaptation,
     /// Everything both protocols advance: accepted state, fidelity and identity.
     /// None is rejection; retained metadata and fidelity remain observable.
     pub(super) state: Option<StreamState>,
     pub(super) fidelity: FidelityRecords,
-    pub(super) evidence: crate::lowering::generation::EvidenceDelta,
+    pub(super) evidence: crate::protocol::conversion::generation::EvidenceDelta,
     pub(super) metadata: Option<ResponseMetadata>,
     pub(super) origin: Option<ReplayOrigin>,
     pub(super) ids: Vec<ItemId>,
@@ -28,7 +28,7 @@ pub struct EventDecoder {
     responses: responses::State,
 }
 impl EventDecoder {
-    pub fn new(profile: Profile) -> Self {
+    pub fn new(profile: GenerationApi) -> Self {
         Self {
             profile,
             adaptation: Default::default(),
@@ -47,14 +47,16 @@ impl EventDecoder {
         }
     }
     /// Unregistered Responses event types skipped so far; names are never kept.
-    pub(crate) fn take_evidence(&mut self) -> crate::lowering::generation::EvidenceDelta {
+    pub(crate) fn take_evidence(
+        &mut self,
+    ) -> crate::protocol::conversion::generation::EvidenceDelta {
         std::mem::take(&mut self.evidence)
     }
     pub fn ignored_events(&self) -> usize {
         self.ignored
     }
     pub(crate) fn permits_responses_done(&self) -> bool {
-        self.profile == Profile::Responses && self.adaptation.rules.responses_done_marker
+        self.profile == GenerationApi::Responses && self.adaptation.rules.responses_done_marker
     }
     pub(crate) fn validate_stream_payload(&self, value: &Value) -> Result<(), CodecError> {
         crate::protocol::openai::responses::envelope::validate_stream_payload_with(
@@ -63,7 +65,7 @@ impl EventDecoder {
             DecodeDirection::Upstream,
         )
     }
-    pub(crate) fn profile(&self) -> Profile {
+    pub(crate) fn profile(&self) -> GenerationApi {
         self.profile
     }
     pub(crate) fn with_adaptation(
@@ -88,7 +90,7 @@ impl EventDecoder {
                 return Err(CodecError::Limit);
             }
             bounded(payload)?;
-            let (normalized, extras) = if self.profile == Profile::Responses {
+            let (normalized, extras) = if self.profile == GenerationApi::Responses {
                 if let Some(snapshot) = payload.get("response")
                     && (self.adaptation.rules.routing_extras
                         || self.adaptation.rules.responses_billing_view
@@ -139,7 +141,7 @@ impl EventDecoder {
             };
             let o = object(&normalized)?;
             if let Some(padding) = o.get("obfuscation")
-                && (self.profile != Profile::Responses
+                && (self.profile != GenerationApi::Responses
                     || !string(o, "type")?.ends_with(".delta")
                     || !padding.as_str().is_some_and(|s| s.len() <= 4096))
             {
@@ -154,15 +156,15 @@ impl EventDecoder {
                 }
                 self.sequence = Some(n);
             }
-            let events = if self.profile == Profile::Responses {
+            let events = if self.profile == GenerationApi::Responses {
                 self.responses(o)?
             } else {
                 self.chat(o)?
             };
-            if self.profile == Profile::Chat && self.chat.pending.is_some() {
+            if self.profile == GenerationApi::Chat && self.chat.pending.is_some() {
                 self.chat.extras.extend(extras);
                 crate::protocol::openai::dialect::adapter_shapes::check_budget(&self.chat.extras)?;
-            } else if self.profile == Profile::Responses
+            } else if self.profile == GenerationApi::Responses
                 && !extras.is_empty()
                 && self
                     .state()?
@@ -206,7 +208,7 @@ impl EventDecoder {
     }
     /// Framing calls this only for a real Chat `[DONE]`, never for transport EOF.
     pub fn done(&mut self) -> Result<Vec<StreamEvent>, CodecError> {
-        if self.profile != Profile::Chat || self.state.is_none() {
+        if self.profile != GenerationApi::Chat || self.state.is_none() {
             return Err(CodecError::invalid());
         }
         let Some((terminal, details)) = self.chat.pending.take() else {
@@ -298,7 +300,7 @@ impl EventDecoder {
         Ok(PartId::new(self.next_part))
     }
     pub(super) fn observe_metadata(&mut self, o: &Map<String, Value>) -> Result<(), CodecError> {
-        if self.profile == Profile::Responses {
+        if self.profile == GenerationApi::Responses {
             let (native, _) =
                 crate::semantic::context::ResponseContext::read(o, DecodeDirection::Upstream)?;
             native.validate()?;
@@ -324,7 +326,7 @@ impl EventDecoder {
             self.profile,
             &self.adaptation,
             &mut self.evidence,
-            crate::lowering::generation::ConversionBoundary::EventDecode,
+            crate::protocol::conversion::generation::ConversionBoundary::EventDecode,
         )?;
         if let Some(old) = &self.metadata {
             // Response identity is strict; providers re-stamp scalar facts such
@@ -344,7 +346,7 @@ impl EventDecoder {
                 }
                 m.created = old.created.clone();
             }
-            if self.profile == Profile::Responses {
+            if self.profile == GenerationApi::Responses {
                 m.context.reports = crate::protocol::reports::observe(
                     Some(&old.context.reports),
                     &m.context.reports,

@@ -4,7 +4,8 @@ use super::{
     TopologyError,
 };
 use crate::{
-    adapter::embeddings::{Contract, Profile},
+    adapter::embeddings::UpstreamAdapter,
+    protocol::embedding::projection::Contract,
     provider::{CredentialBindingId, CredentialKind, EndpointPath, ProviderId},
 };
 use std::collections::{BTreeMap, BTreeSet};
@@ -21,7 +22,7 @@ pub struct EmbeddingEndpoint {
     pub target: EndpointTarget,
     pub upstream_model: String,
     pub canonical_model: ModelId,
-    pub profile: Profile,
+    pub profile: UpstreamAdapter,
     pub contract: Contract,
     pub credential: CredentialBindingId,
     pub execution: ExecutionContract,

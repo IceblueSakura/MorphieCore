@@ -49,7 +49,7 @@ fn message(id: u64, annotations: Vec<Annotation>) -> (ItemId, Item) {
 fn source_coordinate_shapes_do_not_invent_document_extents_or_wire_carriers() {
     use morphiecore::protocol::{
         fidelity::FidelityRecords,
-        openai::{Profile, TargetCaps, lowering::lower_response},
+        openai::{GenerationApi, TargetContract, lowering::lower_response},
     };
     let table = ResourceTable::new(vec![(
         ResourceId::new(1),
@@ -87,8 +87,8 @@ fn source_coordinate_shapes_do_not_invent_document_extents_or_wire_carriers() {
             &positive,
             &FidelityRecords::default(),
             &metadata,
-            Profile::Responses,
-            TargetCaps::full()
+            GenerationApi::Responses,
+            TargetContract::full()
         )
         .is_ok()
     );
@@ -130,7 +130,7 @@ fn source_coordinate_shapes_do_not_invent_document_extents_or_wire_carriers() {
             table.clone(),
         )
         .unwrap();
-        for profile in [Profile::Responses, Profile::Chat] {
+        for profile in [GenerationApi::Responses, GenerationApi::Chat] {
             assert!(
                 lower_response(
                     &response,
@@ -141,7 +141,7 @@ fn source_coordinate_shapes_do_not_invent_document_extents_or_wire_carriers() {
                     .unwrap()
                     .metadata,
                     profile,
-                    TargetCaps::full()
+                    TargetContract::full()
                 )
                 .is_err()
             );
@@ -249,10 +249,12 @@ fn unresolved_file_citation_units_reject_native_json_history_and_old_ir_shapes()
     use morphiecore::protocol::{
         CodecError,
         fidelity::FidelityRecords,
-        openai::{Adapter, Dialect, Profile, TargetCaps, lowering::lower_response},
+        openai::{
+            Dialect, GenerationApi, GenerationCodec, TargetContract, lowering::lower_response,
+        },
     };
     use serde_json::json;
-    let adapter = Adapter::new(Profile::Responses, Dialect::Standard, None);
+    let adapter = GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None);
     let annotation =
         json!({"type":"file_citation","file_id":"synthetic-file","filename":"","index":2});
     let mut wire = crate::wire::response(2);
@@ -308,11 +310,11 @@ fn unresolved_file_citation_units_reject_native_json_history_and_old_ir_shapes()
                 &response,
                 &FidelityRecords::default(),
                 &metadata,
-                Profile::Responses,
-                TargetCaps::full(),
+                GenerationApi::Responses,
+                TargetContract::full(),
             )
             .err(),
-            Some(morphiecore::lowering::generation::RepresentationError::TextMetadata)
+            Some(morphiecore::protocol::conversion::generation::RepresentationError::TextMetadata)
         );
     }
 }
@@ -352,9 +354,9 @@ fn selection_keeps_cited_sources_and_rejects_a_changed_source() {
 }
 #[test]
 fn native_file_reports_preserve_list_ordinals_and_namespaced_identity_without_fake_claims() {
-    use morphiecore::protocol::openai::{Adapter, Dialect, Profile, TargetCaps};
+    use morphiecore::protocol::openai::{Dialect, GenerationApi, GenerationCodec, TargetContract};
     use serde_json::json;
-    let adapter = Adapter::new(Profile::Responses, Dialect::Standard, None);
+    let adapter = GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None);
     let mut wire = crate::wire::response(2);
     let annotations = json!([
         {"type":"container_file_citation","container_id":"synthetic-container","file_id":"synthetic-file","filename":"report","start_index":0,"end_index":1},
@@ -383,7 +385,7 @@ fn native_file_reports_preserve_list_ordinals_and_namespaced_identity_without_fa
         if namespace.as_str()=="synthetic-container" && id.as_str()=="synthetic-file")
     );
     let encoded = adapter
-        .encode_response(&decoded, &TargetCaps::full())
+        .encode_response(&decoded, &TargetContract::full())
         .unwrap();
     assert_eq!(
         encoded["output"][0]["content"][0]["annotations"],

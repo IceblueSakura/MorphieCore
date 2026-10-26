@@ -9,7 +9,7 @@ use axum::{
 use morphiecore::{
     protocol::{
         openai::{
-            Profile, TargetCaps as Contract,
+            GenerationApi, TargetContract as Contract,
             chat::{
                 envelope,
                 sse::{ChatSseDecoder, ChatSseEncoder},
@@ -60,7 +60,7 @@ pub(super) async fn handle(
     let Ok(target) = lower_request(
         &request.task.semantic,
         &request.task.fidelity,
-        Profile::Chat,
+        GenerationApi::Chat,
         Contract::full(),
     ) else {
         return failure(StatusCode::BAD_REQUEST, "Chat lowering", &state);
@@ -133,7 +133,7 @@ pub(super) async fn handle(
             &decoded.semantic,
             &decoded.fidelity,
             &decoded.metadata,
-            Profile::Chat,
+            GenerationApi::Chat,
             Contract::full(),
         )
         .unwrap();
@@ -224,7 +224,7 @@ pub(super) async fn handle(
             &d.semantic,
             &d.fidelity,
             &d.metadata,
-            Profile::Chat,
+            GenerationApi::Chat,
             Contract::full(),
         )
         .unwrap();

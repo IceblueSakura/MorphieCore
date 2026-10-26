@@ -1,10 +1,11 @@
 //! OpenAI target capabilities; independent of endpoint execution and credentials.
+mod request;
 use crate::{
-    lowering::generation::ReportedFactPolicy,
-    semantic::task::generation::GenerationSemanticContract,
+    protocol::conversion::generation::ReportedFactPolicy,
+    semantic::task::generation::GenerationFeatureSet,
 };
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct TargetCaps {
+pub struct TargetContract {
     pub adaptation: crate::protocol::openai::dialect::adaptation::Adaptation,
     /// Selected Bailian Chat bindings require a reasoning-capable client while
     /// thinking is active or uses its enabled default. Not parser capability.
@@ -17,11 +18,11 @@ pub struct TargetCaps {
     /// Delivery policy for reported facts; `Faithful` unless a consumer
     /// explicitly demands the strict complete form.
     pub reported_facts: ReportedFactPolicy,
-    pub semantics: GenerationSemanticContract,
+    pub semantics: GenerationFeatureSet,
     pub model_limits: crate::protocol::model_limits::ModelLimits,
     pub images: crate::protocol::image_constraints::ImageConstraints,
     pub files: crate::protocol::file_constraints::FileConstraints,
-    pub cache: crate::protocol::cache::CacheProjection,
+    pub cache: crate::protocol::cache::CacheTargetPolicy,
     /// Identity/safety acceptance is independent of optional cache hints.
     pub identity_hints: bool,
     /// Target admits metadata/service-tier/tool-budget context fields.
@@ -29,7 +30,7 @@ pub struct TargetCaps {
     /// The selected model supports the native Chat predicted-output optimization.
     pub prediction: bool,
 }
-impl TargetCaps {
+impl TargetContract {
     pub fn full() -> Self {
         Self {
             adaptation: Default::default(),
@@ -38,11 +39,11 @@ impl TargetCaps {
             replay_origin: None,
             resource_time: None,
             reported_facts: ReportedFactPolicy::Faithful,
-            semantics: GenerationSemanticContract::full(),
+            semantics: GenerationFeatureSet::full(),
             model_limits: Default::default(),
             images: crate::protocol::image_constraints::ImageConstraints::all(),
             files: crate::protocol::file_constraints::FileConstraints::all(),
-            cache: crate::protocol::cache::CacheProjection::all(),
+            cache: crate::protocol::cache::CacheTargetPolicy::all(),
             identity_hints: true,
             standard_context: true,
             prediction: true,

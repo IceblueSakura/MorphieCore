@@ -1,6 +1,6 @@
 //! Independent standard Chat media/citation oracles; never use a live credential or catalog.
 use morphiecore::{
-    protocol::openai::{Adapter, Dialect, Profile, TargetCaps as Contract},
+    protocol::openai::{Dialect, GenerationApi, GenerationCodec, TargetContract as Contract},
     semantic::task::generation::*,
 };
 use serde_json::{Value, json};
@@ -11,7 +11,7 @@ fn chunk(delta: Value, finish: Value) -> Value {
 #[test]
 fn audit_responses_rejects_credential_owned_locators_even_with_a_public_source() {
     use morphiecore::protocol::CodecError;
-    let adapter = standard(Profile::Responses);
+    let adapter = standard(GenerationApi::Responses);
     for part in [
         json!({"type":"input_image","image_url":"https://example.test/a.png","detail":"auto"}),
         json!({"type":"input_file","file_url":"https://example.test/a.pdf"}),
@@ -46,7 +46,7 @@ fn audit_responses_rejects_credential_owned_locators_even_with_a_public_source()
 }
 #[test]
 fn input_audio_is_an_ordered_inline_resource_not_a_transcript_or_assistant_artifact() {
-    let adapter = standard(Profile::Chat);
+    let adapter = standard(GenerationApi::Chat);
     for (format, mime) in [("wav", "audio/wav"), ("mp3", "audio/mpeg")] {
         let wire = json!({"model":"synthetic-model","messages":[{"role":"user","content":[
             {"type":"text","text":"Listen."},
@@ -119,7 +119,7 @@ fn input_audio_is_an_ordered_inline_resource_not_a_transcript_or_assistant_artif
             0
         );
         assert!(
-            standard(Profile::Responses)
+            standard(GenerationApi::Responses)
                 .encode_request(&decoded, "synthetic-model", &Contract::full())
                 .is_err()
         );
@@ -161,7 +161,7 @@ fn input_audio_is_an_ordered_inline_resource_not_a_transcript_or_assistant_artif
 fn audio_history_requires_source_clock_and_final_owner_not_just_an_id() {
     use morphiecore::semantic::value::ReplayOrigin;
     let origin = ReplayOrigin::new("synthetic-audio-source").unwrap();
-    let source = Adapter::new(Profile::Chat, Dialect::Standard, Some(origin.clone()));
+    let source = GenerationCodec::new(GenerationApi::Chat, Dialect::Standard, Some(origin.clone()));
     let wire = json!({"model":"synthetic-model","messages":[{"role":"assistant","audio":{"id":"synthetic-audio","data":"AQID","transcript":"hello","expires_at":2000}},{"role":"user","content":"Repeat it."}]});
     let request = source
         .decode_request(&serde_json::to_vec(&wire).unwrap())
@@ -232,9 +232,9 @@ fn audio_history_requires_source_clock_and_final_owner_not_just_an_id() {
             .is_ok()
     );
     assert!(
-        standard(Profile::Chat)
+        standard(GenerationApi::Chat)
             .encode_request(
-                &standard(Profile::Chat)
+                &standard(GenerationApi::Chat)
                     .decode_request(&serde_json::to_vec(&id_only).unwrap())
                     .unwrap(),
                 "synthetic-model",
@@ -255,7 +255,7 @@ fn audio_shapes_budgets_and_controls_fail_without_repair() {
             .unwrap()
             .remove(field);
         assert!(
-            standard(Profile::Chat)
+            standard(GenerationApi::Chat)
                 .decode_response(&serde_json::to_vec(&bad).unwrap())
                 .is_err()
         );
@@ -270,39 +270,39 @@ fn audio_shapes_budgets_and_controls_fail_without_repair() {
         let mut bad = wire.clone();
         bad["choices"][0]["message"]["audio"][field] = value;
         assert!(
-            standard(Profile::Chat)
+            standard(GenerationApi::Chat)
                 .decode_response(&serde_json::to_vec(&bad).unwrap())
                 .is_err()
         );
     }
     let mut request = json!({"model":"synthetic-model","messages":[{"role":"user","content":"hello"}],"modalities":["audio"],"audio":{"format":"wav","voice":"alloy"}});
     request["stream"] = json!(true);
-    let decoded = standard(Profile::Chat)
+    let decoded = standard(GenerationApi::Chat)
         .decode_request(&serde_json::to_vec(&request).unwrap())
         .unwrap();
     assert!(
-        standard(Profile::Chat)
+        standard(GenerationApi::Chat)
             .encode_request(&decoded, "synthetic-model", &Contract::full())
             .is_err()
     );
     request["audio"]["format"] = json!("pcm16");
-    let decoded = standard(Profile::Chat)
+    let decoded = standard(GenerationApi::Chat)
         .decode_request(&serde_json::to_vec(&request).unwrap())
         .unwrap();
     assert!(
-        standard(Profile::Chat)
+        standard(GenerationApi::Chat)
             .encode_request(&decoded, "synthetic-model", &Contract::full())
             .is_ok()
     );
     let mut restricted = Contract::full();
     restricted.semantics.audio_output = false;
     assert!(
-        standard(Profile::Chat)
+        standard(GenerationApi::Chat)
             .encode_request(&decoded, "synthetic-model", &restricted)
             .is_err()
     );
     assert!(
-        standard(Profile::Responses)
+        standard(GenerationApi::Responses)
             .encode_request(&decoded, "synthetic-model", &Contract::full())
             .is_err()
     );
@@ -314,7 +314,7 @@ fn audio_shapes_budgets_and_controls_fail_without_repair() {
     ] {
         request["modalities"] = modalities;
         assert!(
-            standard(Profile::Chat)
+            standard(GenerationApi::Chat)
                 .decode_request(&serde_json::to_vec(&request).unwrap())
                 .is_err()
         );
@@ -336,7 +336,7 @@ fn audio_empty_text_refusal_padding_and_identity_boundaries() {
         chunk(json!({"audio":{"id":"different"}}), Value::Null),
         chunk(json!({"content":"late text"}), Value::Null),
     ] {
-        let mut decoder = standard(Profile::Chat).event_decoder();
+        let mut decoder = standard(GenerationApi::Chat).event_decoder();
         decoder
             .push(&chunk(
                 json!({"role":"assistant","audio":{"id":"a"}}),
@@ -345,7 +345,7 @@ fn audio_empty_text_refusal_padding_and_identity_boundaries() {
             .unwrap();
         assert!(decoder.push(&extra).is_err());
     }
-    let mut bad = standard(Profile::Chat).event_decoder();
+    let mut bad = standard(GenerationApi::Chat).event_decoder();
     bad.push(&chunk(
         json!({"audio":{"id":"a","data":"AQ==","transcript":""}}),
         Value::Null,
@@ -355,7 +355,7 @@ fn audio_empty_text_refusal_padding_and_identity_boundaries() {
         bad.push(&chunk(json!({"audio":{"data":"Ag=="}}), Value::Null))
             .is_err()
     );
-    let mut good = standard(Profile::Chat).event_decoder();
+    let mut good = standard(GenerationApi::Chat).event_decoder();
     for value in [
         chunk(
             json!({"role":"assistant","content":"","audio":{"id":"a"}}),
@@ -371,7 +371,7 @@ fn audio_empty_text_refusal_padding_and_identity_boundaries() {
         good.push(&value).unwrap();
     }
     good.done().unwrap();
-    let output = standard(Profile::Chat)
+    let output = standard(GenerationApi::Chat)
         .encode_response(&good.materialize().unwrap(), &Contract::full())
         .unwrap();
     assert_eq!(output["choices"][0]["message"]["content"], "hello");
@@ -400,7 +400,7 @@ fn chat_message_parts_allow_only_text_then_audio() {
                 kind: first,
             },
         ] {
-            check_event(&state, &event, Profile::Chat, &contract).unwrap();
+            check_event(&state, &event, GenerationApi::Chat, &contract).unwrap();
             state = reduce(state, event).unwrap();
         }
         for second in [PartKind::Text, PartKind::Audio, PartKind::Refusal] {
@@ -415,7 +415,7 @@ fn chat_message_parts_allow_only_text_then_audio() {
                 Err(RepresentationError::MessageGrouping)
             };
             assert_eq!(
-                check_event(&state, &event, Profile::Chat, &contract),
+                check_event(&state, &event, GenerationApi::Chat, &contract),
                 expected,
                 "{first:?} -> {second:?}"
             );
@@ -436,7 +436,7 @@ fn byte_fragments_encode_as_one_base64_value() {
         context: Default::default(),
         instruction_fidelity: Default::default(),
     };
-    let mut e = EventEncoder::new(Profile::Chat, meta).unwrap();
+    let mut e = EventEncoder::new(GenerationApi::Chat, meta).unwrap();
     let item = ItemId::new(1);
     let part = PartId::new(1);
     let mut data = String::new();
@@ -499,8 +499,8 @@ fn byte_fragments_encode_as_one_base64_value() {
     assert_eq!(data, "AQIDBA==");
 }
 
-fn standard(profile: Profile) -> Adapter {
-    Adapter::new(profile, Dialect::Standard, None)
+fn standard(profile: GenerationApi) -> GenerationCodec {
+    GenerationCodec::new(profile, Dialect::Standard, None)
 }
 #[test]
 fn video_url_is_a_video_resource_only_for_declaring_chat_dialects() {
@@ -508,7 +508,7 @@ fn video_url_is_a_video_resource_only_for_declaring_chat_dialects() {
             {"type":"video_url","video_url":{"url":"https://example.invalid/clip.mp4"}},
             {"type":"video_url","video_url":{"url":"data:video/mp4;base64,AQID"}},
             {"type":"text","text":"Describe both."}]}]});
-    let decoded = standard(Profile::Chat)
+    let decoded = standard(GenerationApi::Chat)
         .decode_request(&serde_json::to_vec(&wire).unwrap())
         .unwrap();
     let semantic = &decoded.task.semantic;
@@ -533,12 +533,15 @@ fn video_url_is_a_video_resource_only_for_declaring_chat_dialects() {
         matches!(views[1].location, ResourceLocation::Inline{media_type,data_base64}
                 if media_type.as_str()=="video/mp4" && data_base64.as_str()=="AQID")
     );
-    let modelbest = Adapter::new(Profile::Chat, Dialect::ModelBest, None);
+    let modelbest = GenerationCodec::new(GenerationApi::Chat, Dialect::ModelBest, None);
     let output = modelbest
         .encode_request(&decoded, "synthetic-model", &Contract::full())
         .unwrap();
     assert_eq!(output["messages"], wire["messages"]);
-    for adapter in [standard(Profile::Chat), standard(Profile::Responses)] {
+    for adapter in [
+        standard(GenerationApi::Chat),
+        standard(GenerationApi::Responses),
+    ] {
         assert!(
             adapter
                 .encode_request(&decoded, "synthetic-model", &Contract::full())
@@ -549,7 +552,7 @@ fn video_url_is_a_video_resource_only_for_declaring_chat_dialects() {
     mislabeled["messages"][0]["content"][1]["video_url"]["url"] =
         json!("data:image/png;base64,AQID");
     assert!(
-        standard(Profile::Chat)
+        standard(GenerationApi::Chat)
             .decode_request(&serde_json::to_vec(&mislabeled).unwrap())
             .is_err()
     );
@@ -561,7 +564,7 @@ fn input_video_reaches_only_declaring_responses_dialects() {
             {"type":"input_text","text":"Describe it."}]);
     let wire = json!({"model":"synthetic-model","input":[
             {"type":"message","role":"user","content":content}]});
-    let decoded = standard(Profile::Responses)
+    let decoded = standard(GenerationApi::Responses)
         .decode_request(&serde_json::to_vec(&wire).unwrap())
         .unwrap();
     let semantic = &decoded.task.semantic;
@@ -578,12 +581,12 @@ fn input_video_reaches_only_declaring_responses_dialects() {
         matches!(view.location, ResourceLocation::Inline { media_type, data_base64 }
             if media_type.as_str() == "video/mp4" && data_base64.as_str() == "AQID")
     );
-    let openrouter = |profile| Adapter::new(profile, Dialect::OpenRouter, None);
-    let output = openrouter(Profile::Responses)
+    let openrouter = |profile| GenerationCodec::new(profile, Dialect::OpenRouter, None);
+    let output = openrouter(GenerationApi::Responses)
         .encode_request(&decoded, "synthetic-model", &Contract::full())
         .unwrap();
     assert_eq!(output["input"][0]["content"], content);
-    let output = openrouter(Profile::Chat)
+    let output = openrouter(GenerationApi::Chat)
         .encode_request(&decoded, "synthetic-model", &Contract::full())
         .unwrap();
     assert_eq!(
@@ -591,7 +594,7 @@ fn input_video_reaches_only_declaring_responses_dialects() {
         json!({"type":"video_url","video_url":{"url":"data:video/mp4;base64,AQID"}})
     );
     assert!(
-        standard(Profile::Responses)
+        standard(GenerationApi::Responses)
             .encode_request(&decoded, "synthetic-model", &Contract::full())
             .is_err()
     );
@@ -601,13 +604,13 @@ fn input_video_reaches_only_declaring_responses_dialects() {
             {"type":"function_call_output","call_id":"call_1","output":[
                 {"type":"input_video","video_url":"https://example.invalid/clip.mp4"}]}],
             "tools":[{"type":"function","name":"record","parameters":{"type":"object"}}]});
-    let decoded = standard(Profile::Responses)
+    let decoded = standard(GenerationApi::Responses)
         .decode_request(&serde_json::to_vec(&tool).unwrap())
         .unwrap();
     let needs = GenerationRequirements::derive(&decoded.task.semantic);
     assert_eq!((needs.tool_result_media, needs.video_inputs), (1, 1));
     assert!(
-        openrouter(Profile::Responses)
+        openrouter(GenerationApi::Responses)
             .encode_request(&decoded, "synthetic-model", &Contract::full())
             .is_err()
     );
@@ -620,7 +623,7 @@ fn chat_url_citations_are_standard_typed_and_cross_profile() {
     let wire = completion(
         json!({"role":"assistant","content":"hello","annotations":[{"type":"url_citation","url_citation":{"start_index":0,"end_index":5,"title":"Synthetic","url":"https://example.invalid/source"}}]}),
     );
-    let decoded = standard(Profile::Chat)
+    let decoded = standard(GenerationApi::Chat)
         .decode_response(&serde_json::to_vec(&wire).unwrap())
         .unwrap();
     let (_, item) = &decoded.semantic.items()[0];
@@ -648,7 +651,7 @@ fn chat_url_citations_are_standard_typed_and_cross_profile() {
         matches!(decoded.semantic.resources().get(citation.source).unwrap(),
         ResourceLocation::Url(url) if url.as_str() == "https://example.invalid/source")
     );
-    let encoded = standard(Profile::Chat)
+    let encoded = standard(GenerationApi::Chat)
         .encode_response(&decoded, &Contract::full())
         .unwrap();
     assert_eq!(
@@ -656,7 +659,7 @@ fn chat_url_citations_are_standard_typed_and_cross_profile() {
         wire["choices"][0]["message"]["annotations"]
     );
     // Responses omits the ambiguous stop cause by rule; the citation keeps its carrier.
-    let responses = standard(Profile::Responses)
+    let responses = standard(GenerationApi::Responses)
         .encode_response(&decoded, &Contract::full())
         .unwrap();
     assert_eq!(responses["status"], "completed");
@@ -679,7 +682,7 @@ fn chat_url_citations_are_standard_typed_and_cross_profile() {
     let target = morphiecore::protocol::openai::lowering::lower_request(
         &history,
         &decoded.fidelity,
-        Profile::Responses,
+        GenerationApi::Responses,
         Contract::full(),
     )
     .unwrap();
@@ -692,10 +695,10 @@ fn chat_url_citations_are_standard_typed_and_cross_profile() {
 #[test]
 fn chat_audio_complete_values_and_generation_controls_are_standard() {
     let request = json!({"model":"synthetic-model","messages":[{"role":"user","content":"Say hello."}],"modalities":["text","audio"],"audio":{"format":"wav","voice":"alloy"}});
-    let decoded = standard(Profile::Chat)
+    let decoded = standard(GenerationApi::Chat)
         .decode_request(&serde_json::to_vec(&request).unwrap())
         .unwrap();
-    let encoded = standard(Profile::Chat)
+    let encoded = standard(GenerationApi::Chat)
         .encode_request(&decoded, "synthetic-model", &Contract::full())
         .unwrap();
     assert_eq!(encoded["modalities"], json!(["text", "audio"]));
@@ -703,10 +706,10 @@ fn chat_audio_complete_values_and_generation_controls_are_standard() {
     let wire = completion(
         json!({"role":"assistant","content":null,"audio":{"id":"synthetic-audio","data":"AQID","transcript":"hello","expires_at":2000}}),
     );
-    let audio = standard(Profile::Chat)
+    let audio = standard(GenerationApi::Chat)
         .decode_response(&serde_json::to_vec(&wire).unwrap())
         .unwrap();
-    let encoded = standard(Profile::Chat)
+    let encoded = standard(GenerationApi::Chat)
         .encode_response(&audio, &Contract::full())
         .unwrap();
     assert_eq!(
@@ -714,7 +717,7 @@ fn chat_audio_complete_values_and_generation_controls_are_standard() {
         wire["choices"][0]["message"]["audio"]
     );
     assert!(
-        standard(Profile::Responses)
+        standard(GenerationApi::Responses)
             .encode_response(&audio, &Contract::full())
             .is_err()
     );

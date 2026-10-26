@@ -1,15 +1,14 @@
 //! Model restrictions apply after projection, not to protocol-wide carriers.
 use morphiecore::{
-    adapter::{ConversionFailure, Request},
     execution::{
         AttemptError,
         plan::{RejectionReason, representable},
         prepare,
     },
     protocol::{
-        CodecError,
+        CodecError, ConversionFailure, GenerationRequestEnvelope as Request,
         model_limits::ModelLimits,
-        openai::{Adapter, Dialect, Profile, TargetCaps},
+        openai::{Dialect, GenerationApi, GenerationCodec, TargetContract},
         reasoning::{
             ReasoningConversion, ReasoningEffortMapping, ReasoningRequestPolicy, SHARED_BUDGETS,
         },
@@ -21,7 +20,7 @@ use morphiecore::{
 use serde_json::{Value, json};
 
 fn source(value: Value) -> Request {
-    Adapter::new(Profile::Responses, Dialect::Standard, None)
+    GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None)
         .decode_request(value.to_string().as_bytes())
         .unwrap()
 }
@@ -92,7 +91,7 @@ fn google_response_effort_is_a_selected_direction_not_native_support() {
                 serde_json::from_slice::<Value>(&prepared.body).unwrap(),
                 wire
             );
-            if endpoint.protocol == ProtocolProfile::GoogleGenerateContent {
+            if endpoint.protocol == GenerationProtocol::GoogleGenerateContent {
                 assert_eq!(
                     wire["generationConfig"],
                     json!({"maxOutputTokens":2048,
@@ -115,7 +114,7 @@ fn google_response_effort_is_a_selected_direction_not_native_support() {
         assert_eq!(request, before);
         for request in [
             source(json!({"model":binding.model,"input":"go","reasoning":{"effort":"low"}})),
-            Adapter::new(Profile::Chat, Dialect::Standard, None)
+            GenerationCodec::new(GenerationApi::Chat, Dialect::Standard, None)
                 .decode_request(
                     json!({"model":binding.model,"messages":[{"role":"user","content":"go"}],
                     "reasoning_effort":"low"})
@@ -138,10 +137,10 @@ fn google_response_effort_is_a_selected_direction_not_native_support() {
         for fabricated_native_support in [false, true] {
             let mut invalid = endpoint.clone();
             let (semantics, policy) = match &mut invalid.representation {
-                morphiecore::lowering::target::TargetCaps::GoogleGenerateContent(c) => {
+                morphiecore::lowering::target::TargetContract::GoogleGenerateContent(c) => {
                     (&mut c.semantics, &mut c.reasoning_policy)
                 }
-                morphiecore::lowering::target::TargetCaps::GoogleInteractions(c) => {
+                morphiecore::lowering::target::TargetContract::GoogleInteractions(c) => {
                     (&mut c.semantics, &mut c.reasoning_policy)
                 }
                 _ => unreachable!(),
@@ -161,10 +160,10 @@ fn google_response_effort_is_a_selected_direction_not_native_support() {
             );
         }
         match &mut endpoint.representation {
-            morphiecore::lowering::target::TargetCaps::GoogleGenerateContent(c) => {
+            morphiecore::lowering::target::TargetContract::GoogleGenerateContent(c) => {
                 c.reasoning_policy = None
             }
-            morphiecore::lowering::target::TargetCaps::GoogleInteractions(c) => {
+            morphiecore::lowering::target::TargetContract::GoogleInteractions(c) => {
                 c.reasoning_policy = None
             }
             _ => unreachable!(),
@@ -205,7 +204,9 @@ fn google_scope_mapping_does_not_saturate_disable_or_allocate() {
             assert!(morphiecore::execution::admit(&binding.public_model(), &request).is_ok());
             assert_eq!(
                 representable(&endpoint, &request),
-                Err(RejectionReason::Representation)
+                Err(RejectionReason::Conversion(Box::new(
+                    endpoint.encode_request(&request).unwrap_err()
+                )))
             );
             assert!(
                 prepare(
@@ -232,7 +233,9 @@ fn google_scope_mapping_does_not_saturate_disable_or_allocate() {
         assert!(morphiecore::execution::admit(&binding.public_model(), &request).is_ok());
         assert_eq!(
             representable(&endpoint, &request),
-            Err(RejectionReason::Representation)
+            Err(RejectionReason::Conversion(Box::new(
+                endpoint.encode_request(&request).unwrap_err()
+            )))
         );
     }
 }
@@ -244,14 +247,13 @@ fn rejected(
 ) {
     let before = request.clone();
     assert!(matches!(endpoint.encode_request(request),
-        Err(ConversionFailure { cause: morphiecore::adapter::ConversionCause::Codec(CodecError::Unsupported(value)), .. }) if value == reason));
-    assert_eq!(
-        representable(endpoint, request),
-        Err(RejectionReason::Representation)
-    );
+        Err(ConversionFailure { cause: morphiecore::protocol::ConversionCause::Codec(CodecError::Unsupported(value)), .. }) if value == reason));
+    assert!(matches!(representable(endpoint, request),
+        Err(RejectionReason::Conversion(error))
+        if matches!(error.cause, morphiecore::protocol::ConversionCause::Codec(CodecError::Unsupported(value)) if value == reason)));
     assert!(matches!(prepare(endpoint, &GOOGLE_BINDINGS[0].provider(),
         &SecretMaterial::new("synthetic").unwrap(), request),
-        Err(AttemptError::Adapter(ConversionFailure { cause: morphiecore::adapter::ConversionCause::Codec(CodecError::Unsupported(value)), .. })) if value == reason));
+        Err(AttemptError::Conversion(ConversionFailure { cause: morphiecore::protocol::ConversionCause::Codec(CodecError::Unsupported(value)), .. })) if value == reason));
     assert_eq!(request, &before);
 }
 
@@ -271,7 +273,7 @@ fn gemini_model_values_are_checked_by_both_preflight_and_preparation() {
         )
         .unwrap();
         let wire: Value = serde_json::from_slice(&prepared.body).unwrap();
-        if endpoint.protocol == morphiecore::topology::ProtocolProfile::GoogleGenerateContent {
+        if endpoint.protocol == morphiecore::topology::GenerationProtocol::GoogleGenerateContent {
             assert_eq!(
                 wire["generationConfig"],
                 json!({"maxOutputTokens":65536,"thinkingConfig":{"thinkingLevel":"HIGH"}})
@@ -301,7 +303,7 @@ fn gemini_model_values_are_checked_by_both_preflight_and_preparation() {
         // Restrictions belong to this binding, not the generic Google carriers.
         *endpoint.representation.model_limits_mut() = ModelLimits::default();
         let wire = endpoint.encode_request(&minimal).unwrap();
-        if endpoint.protocol == morphiecore::topology::ProtocolProfile::GoogleGenerateContent {
+        if endpoint.protocol == morphiecore::topology::GenerationProtocol::GoogleGenerateContent {
             assert_eq!(
                 wire["generationConfig"]["thinkingConfig"]["thinkingLevel"],
                 "MINIMAL"
@@ -333,10 +335,10 @@ fn gemini_preserves_native_budgets_and_checks_fallback_levels_without_requantizi
             },
         });
         match &mut endpoint.representation {
-            morphiecore::lowering::target::TargetCaps::GoogleGenerateContent(c) => {
+            morphiecore::lowering::target::TargetContract::GoogleGenerateContent(c) => {
                 c.reasoning_policy = policy
             }
-            morphiecore::lowering::target::TargetCaps::GoogleInteractions(c) => {
+            morphiecore::lowering::target::TargetContract::GoogleInteractions(c) => {
                 c.reasoning_policy = policy
             }
             _ => unreachable!(),
@@ -347,13 +349,13 @@ fn gemini_preserves_native_budgets_and_checks_fallback_levels_without_requantizi
             morphiecore::protocol::failure::CarrierReason::Unavailable,
         );
         // A wire field alone is not a declaration of native model support.
-        if let morphiecore::lowering::target::TargetCaps::GoogleGenerateContent(c) =
+        if let morphiecore::lowering::target::TargetContract::GoogleGenerateContent(c) =
             &mut endpoint.representation
         {
             c.native_thinking_budget = true;
         }
         let native_budget =
-            endpoint.protocol == morphiecore::topology::ProtocolProfile::GoogleGenerateContent;
+            endpoint.protocol == morphiecore::topology::GenerationProtocol::GoogleGenerateContent;
         if native_budget {
             let (wire, rules) = endpoint.encode_request_with_rules(&request).unwrap();
             assert_eq!(
@@ -398,8 +400,8 @@ fn gemini_preserves_native_budgets_and_checks_fallback_levels_without_requantizi
 fn openai_limits_check_calibrated_levels_and_do_not_insert_caps() {
     let request = source(json!({"model":"public","input":"go","reasoning":{"effort":"medium"}}));
     let before = request.clone();
-    for profile in [Profile::Chat, Profile::Responses] {
-        let mut adapter = Adapter::new(profile, Dialect::Standard, None);
+    for profile in [GenerationApi::Chat, GenerationApi::Responses] {
+        let mut adapter = GenerationCodec::new(profile, Dialect::Standard, None);
         adapter.adaptation.effort_mapping = Some(&ReasoningEffortMapping {
             canonical_model: "synthetic",
             rule: "synthetic.effort.v1",
@@ -411,7 +413,7 @@ fn openai_limits_check_calibrated_levels_and_do_not_insert_caps() {
             ],
             decode: &[(EffortLevel::High, EffortLevel::Medium)],
         });
-        let mut caps = TargetCaps::full();
+        let mut caps = TargetContract::full();
         caps.model_limits = ModelLimits {
             allowed_effort: Some(vec![EffortLevel::High].into()),
             maximum_output_tokens: Some(32),
@@ -426,7 +428,7 @@ fn openai_limits_check_calibrated_levels_and_do_not_insert_caps() {
                 .count(),
             1
         );
-        if profile == Profile::Chat {
+        if profile == GenerationApi::Chat {
             assert_eq!(wire["reasoning_effort"], "high");
             assert!(wire.get("max_completion_tokens").is_none());
         } else {
@@ -437,8 +439,8 @@ fn openai_limits_check_calibrated_levels_and_do_not_insert_caps() {
         assert!(matches!(
             adapter.encode_request(&request, "synthetic", &caps),
             Err(ConversionFailure {
-                cause: morphiecore::adapter::ConversionCause::Representation(
-                    morphiecore::lowering::generation::RepresentationError::Controls
+                cause: morphiecore::protocol::ConversionCause::Representation(
+                    morphiecore::protocol::conversion::generation::RepresentationError::Controls
                 ),
                 ..
             })
@@ -451,8 +453,8 @@ fn openai_limits_check_calibrated_levels_and_do_not_insert_caps() {
         assert!(matches!(
             adapter.encode_request(&capped, "synthetic", &caps),
             Err(ConversionFailure {
-                cause: morphiecore::adapter::ConversionCause::Representation(
-                    morphiecore::lowering::generation::RepresentationError::Controls
+                cause: morphiecore::protocol::ConversionCause::Representation(
+                    morphiecore::protocol::conversion::generation::RepresentationError::Controls
                 ),
                 ..
             })
@@ -462,7 +464,7 @@ fn openai_limits_check_calibrated_levels_and_do_not_insert_caps() {
         capped.task.semantic = capped.task.semantic.with_settings(settings).unwrap();
         let wire = adapter.encode_request(&capped, "synthetic", &caps).unwrap();
         assert_eq!(
-            wire[if profile == Profile::Chat {
+            wire[if profile == GenerationApi::Chat {
                 "max_completion_tokens"
             } else {
                 "max_output_tokens"
@@ -488,7 +490,7 @@ fn google_sampling_omission_is_binding_selected_and_preparation_matches_prefligh
     for mut endpoint in [binding.endpoint(), binding.interactions_endpoint()] {
         let interactions = matches!(
             endpoint.representation,
-            morphiecore::lowering::target::TargetCaps::GoogleInteractions(_)
+            morphiecore::lowering::target::TargetContract::GoogleInteractions(_)
         );
         let rule = if interactions {
             "interactions.omit-ignored-sampling.v1"
@@ -531,7 +533,7 @@ fn google_sampling_omission_is_binding_selected_and_preparation_matches_prefligh
         let (_, rules) = endpoint.encode_request_with_rules(&absent).unwrap();
         assert!(!rules.contains(&rule));
         if interactions {
-            let morphiecore::lowering::target::TargetCaps::GoogleInteractions(caps) =
+            let morphiecore::lowering::target::TargetContract::GoogleInteractions(caps) =
                 &mut endpoint.representation
             else {
                 unreachable!()
@@ -565,7 +567,7 @@ fn google_sampling_omission_is_binding_selected_and_preparation_matches_prefligh
             .unwrap()
             .extend(patch.as_object().unwrap().clone());
         assert!(
-            Adapter::new(Profile::Responses, Dialect::Standard, None)
+            GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None)
                 .decode_request(value.to_string().as_bytes())
                 .is_err()
         );
@@ -583,14 +585,14 @@ fn unreviewed_google_models_do_not_inherit_ignored_sampling() {
         developer: "synthetic",
     };
     let endpoint = binding.endpoint();
-    let morphiecore::lowering::target::TargetCaps::GoogleGenerateContent(caps) =
+    let morphiecore::lowering::target::TargetContract::GoogleGenerateContent(caps) =
         endpoint.representation
     else {
         unreachable!()
     };
     assert_eq!(caps.sampling, SamplingPolicy::Native);
     let endpoint = binding.interactions_endpoint();
-    let morphiecore::lowering::target::TargetCaps::GoogleInteractions(caps) =
+    let morphiecore::lowering::target::TargetContract::GoogleInteractions(caps) =
         endpoint.representation
     else {
         unreachable!()

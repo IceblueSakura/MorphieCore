@@ -1,11 +1,18 @@
 //! Chat message/item mapping shared by request history, static output and event codecs.
-use crate::protocol::failure::CarrierReason;
-use crate::protocol::openai::{CodecError, Profile, shape::*};
-use crate::protocol::openai::{
-    content::call::{reject_chat_orchestration, tool_call},
-    content::intake::Items,
+use crate::{
+    protocol::{
+        failure::CarrierReason,
+        openai::{
+            CodecError, GenerationApi,
+            content::{
+                call::{reject_chat_orchestration, tool_call},
+                intake::Items,
+            },
+            shape::*,
+        },
+    },
+    semantic::task::generation::*,
 };
-use crate::semantic::task::generation::*;
 use serde_json::{Map, Value, json};
 pub(in crate::protocol::openai) fn reject_moderation(
     o: &Map<String, Value>,
@@ -317,7 +324,7 @@ fn decode_message(
                                 content: ContentPart::Resource(b.resource(
                                     crate::protocol::openai::content::image::read(
                                         part,
-                                        Profile::Chat,
+                                        GenerationApi::Chat,
                                         direction,
                                     )?,
                                 )?),
@@ -465,7 +472,13 @@ fn decode_message(
                         if call.contains_key("custom") {
                             return Err(CodecError::invalid());
                         }
-                        Item::ToolCall(tool_call(call, Profile::Chat, None, replay, direction)?)
+                        Item::ToolCall(tool_call(
+                            call,
+                            GenerationApi::Chat,
+                            None,
+                            replay,
+                            direction,
+                        )?)
                     };
                     let cid = b.id()?;
                     b.message_owners.push((cid, id));
@@ -684,7 +697,7 @@ fn write_input_resource(resource: ResourceView<'_>) -> Value {
     match resource.kind() {
         ResourceKind::Audio => crate::protocol::openai::content::input_audio::write(resource),
         ResourceKind::Image => {
-            crate::protocol::openai::content::image::write(resource, Profile::Chat)
+            crate::protocol::openai::content::image::write(resource, GenerationApi::Chat)
         }
         ResourceKind::Video => crate::protocol::openai::content::video::write(resource),
         ResourceKind::File => crate::protocol::openai::content::file::write_chat(resource),

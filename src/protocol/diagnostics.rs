@@ -1,6 +1,8 @@
 //! Optional body-free wire projection, independent of execution and Provider dialects.
-use super::failure::FailureKind;
-use crate::lowering::generation::{Change, ConversionBoundary, Coverage, Effect, Field, Owner};
+use super::failure::SourceFailureKind;
+use crate::protocol::conversion::generation::{
+    Change, ConversionBoundary, Coverage, Effect, Field, Owner,
+};
 use serde::Serialize;
 use serde_json::Value;
 
@@ -19,7 +21,7 @@ pub struct NoticeFailure {
     pub boundary: Option<ConversionBoundary>,
     pub category: FailureCategory,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub source_kind: Option<FailureKind>,
+    pub source_kind: Option<SourceFailureKind>,
 }
 #[derive(Clone, Debug, Serialize)]
 struct NoticeEntry {

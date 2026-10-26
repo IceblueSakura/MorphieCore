@@ -1,7 +1,7 @@
 //! One Router gate for credential attempts, local availability and publication boundaries.
-use crate::gateway::*;
 use crate::{
     credential::{CredentialManager, CredentialPool, CredentialRef, Secret},
+    gateway::*,
     provider::*,
     topology::*,
 };
@@ -112,10 +112,10 @@ async fn same_provider_fallback_is_ordered_bounded_and_never_crosses_publication
                     .clone(),
             },
             task: TaskKind::Generation,
-            protocol: ProtocolProfile::OpenAiResponses,
+            protocol: GenerationProtocol::OpenAiResponses,
             upstream_model: "upstream-model".into(),
             canonical_model: ModelId::new("canonical").unwrap(),
-            representation: TargetCaps::full().into(),
+            representation: TargetContract::full().into(),
             execution: ExecutionContract {
                 streaming: true,
                 retry_before_commit: false,
@@ -140,7 +140,7 @@ async fn same_provider_fallback_is_ordered_bounded_and_never_crosses_publication
             ModelId::new("canonical").unwrap(),
             TaskKind::Generation,
             route.id.clone(),
-            GenerationSemanticContract::full(),
+            GenerationFeatureSet::full(),
         );
         let topology = compile(
             vec![provider],
@@ -150,7 +150,7 @@ async fn same_provider_fallback_is_ordered_bounded_and_never_crosses_publication
             vec![CanonicalModel {
                 id: ModelId::new("canonical").unwrap(),
                 task: TaskKind::Generation,
-                contract: GenerationSemanticContract::full(),
+                contract: GenerationFeatureSet::full(),
             }],
         )
         .unwrap()
@@ -165,7 +165,7 @@ async fn same_provider_fallback_is_ordered_bounded_and_never_crosses_publication
                 generation: vec![Entry {
                     chat_profile: Default::default(),
                     model: "public".into(),
-                    protocol: crate::adapter::ClientProtocol::Responses,
+                    protocol: crate::protocol::ClientProtocol::Responses,
                     endpoint: EndpointId::new("single").unwrap(),
                 }],
                 ..Default::default()

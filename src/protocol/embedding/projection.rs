@@ -1,6 +1,6 @@
 //! Pure target admission, request expectations and explicit client delivery projection.
 use crate::{
-    adapter::embeddings::{valid_model, *},
+    protocol::embedding::{valid_model, *},
     semantic::{task::embedding::*, value::Presence},
 };
 use std::num::NonZeroU64;
@@ -96,7 +96,7 @@ pub struct Prepared {
     pub target: TargetRequest,
     pub expectation: Expectation,
     pub delivery: DeliveryPolicy,
-    pub receipts: Vec<Receipt>,
+    pub adaptations: Vec<AdaptationRecord>,
 }
 #[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize)]
 pub enum Rule {
@@ -147,14 +147,14 @@ pub enum Action {
     DetailsOmitted,
 }
 #[derive(Clone, Debug, Eq, PartialEq, serde::Serialize)]
-pub struct Receipt {
+pub struct AdaptationRecord {
     pub rule: Rule,
     pub direction: Direction,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub actions: Vec<Action>,
 }
-fn receipt(rule: Rule, actions: Vec<Action>) -> Receipt {
-    Receipt {
+fn receipt(rule: Rule, actions: Vec<Action>) -> AdaptationRecord {
+    AdaptationRecord {
         rule,
         direction: Direction::Delivery,
         actions,
@@ -163,7 +163,7 @@ fn receipt(rule: Rule, actions: Vec<Action>) -> Receipt {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Projection {
     pub response: Delivery,
-    pub receipts: Vec<Receipt>,
+    pub adaptations: Vec<AdaptationRecord>,
 }
 
 pub fn project_response(
@@ -175,17 +175,17 @@ pub fn project_response(
         return Err(EmbeddingError);
     }
     let compatible = policy.reports == ReportPolicy::Compatible;
-    let mut receipts = vec![];
+    let mut adaptations = vec![];
     let model = match &source.model {
         Some(model) => model.clone(),
         None if compatible => {
-            receipts.push(receipt(Rule::BoundModel, vec![]));
+            adaptations.push(receipt(Rule::BoundModel, vec![]));
             policy.model.clone()
         }
         None => return Err(EmbeddingError),
     };
     if source.id.is_some() {
-        receipts.push(receipt(Rule::OmitResponseId, vec![]));
+        adaptations.push(receipt(Rule::OmitResponseId, vec![]));
     }
     let report = source.task.usage();
     let details = report.is_some_and(|u| u.details().is_some());
@@ -241,9 +241,9 @@ pub fn project_response(
         if details {
             actions.push(Action::DetailsOmitted);
         }
-        receipts.push(receipt(rule, actions));
+        adaptations.push(receipt(rule, actions));
     } else if details {
-        receipts.push(receipt(Rule::OmitDetails, vec![Action::DetailsOmitted]));
+        adaptations.push(receipt(Rule::OmitDetails, vec![Action::DetailsOmitted]));
     }
     let mut rounded = false;
     let vectors = source
@@ -275,7 +275,7 @@ pub fn project_response(
         })
         .collect::<Result<_, _>>()?;
     if rounded {
-        receipts.push(receipt(Rule::RoundBinary32, vec![]));
+        adaptations.push(receipt(Rule::RoundBinary32, vec![]));
     }
     Ok(Projection {
         response: Delivery {
@@ -283,7 +283,7 @@ pub fn project_response(
             vectors,
             usage,
         },
-        receipts,
+        adaptations,
     })
 }
 impl Contract {
@@ -368,11 +368,11 @@ impl Contract {
         if text_bytes > MAX_INPUT_BYTES || token_ids > MAX_TOKEN_IDS || values > MAX_VECTOR_VALUES {
             return Err(EmbeddingError);
         }
-        let mut receipts = vec![];
+        let mut adaptations = vec![];
         let user = match (&request.identity.user, self.user) {
             (Presence::Value(_), UserPolicy::Reject) => return Err(EmbeddingError),
             (Presence::Value(_), UserPolicy::Omit) => {
-                receipts.push(Receipt {
+                adaptations.push(AdaptationRecord {
                     rule: Rule::OmitUser,
                     direction: Direction::Request,
                     actions: vec![],
@@ -403,7 +403,7 @@ impl Contract {
                 )
                 .ok_or(EmbeddingError)?,
             },
-            receipts,
+            adaptations,
         })
     }
 }

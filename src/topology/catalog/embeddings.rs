@@ -1,7 +1,9 @@
 //! Explicit text embedding bindings. No Generation or file-service admission is inferred.
 use crate::{
-    adapter::embeddings::{Contract, DimensionSupport, Profile},
-    lowering::embeddings::{EncodingSupport, ReportPolicy, UserPolicy},
+    adapter::embeddings::UpstreamAdapter,
+    protocol::embedding::projection::{
+        Contract, DimensionSupport, EncodingSupport, ReportPolicy, UserPolicy,
+    },
     provider::{
         CredentialBindingId, CredentialKind, ProviderDefinition, ProviderOperation, catalog,
     },
@@ -24,7 +26,7 @@ pub struct EmbeddingBinding {
     pub user: UserPolicy,
     pub tokenizer: Option<TokenizerScope>,
     pub max_input_tokens: Option<usize>,
-    pub profile: Profile,
+    pub profile: UpstreamAdapter,
     pub released_at: u64,
     pub developer: &'static str,
 }
@@ -43,7 +45,7 @@ pub const EMBEDDING_BINDINGS: &[EmbeddingBinding] = &[
         encodings: EncodingSupport::Float,
         user: UserPolicy::Omit,
         tokenizer: None,
-        profile: Profile::DashScope,
+        profile: UpstreamAdapter::DashScope,
         max_input_tokens: None,
         // https://platform.qianwenai.com/docs/changelog/models#2026年7月15日
         released_at: 1_784_073_600,
@@ -62,7 +64,7 @@ pub const EMBEDDING_BINDINGS: &[EmbeddingBinding] = &[
         encodings: EncodingSupport::Both,
         user: UserPolicy::Forward,
         tokenizer: Some(TokenizerScope::Cl100kBase),
-        profile: Profile::OpenRouter,
+        profile: UpstreamAdapter::OpenRouter,
         max_input_tokens: Some(8192),
         // https://openai.com/index/new-embedding-models-and-api-updates/ (2024-01-25).
         released_at: 1_706_140_800,
@@ -81,7 +83,7 @@ pub const EMBEDDING_BINDINGS: &[EmbeddingBinding] = &[
         encodings: EncodingSupport::Float,
         user: UserPolicy::Omit,
         tokenizer: None,
-        profile: Profile::Google,
+        profile: UpstreamAdapter::Google,
         max_input_tokens: Some(8192),
         released_at: 1_776_816_000,
         developer: "Google",
@@ -141,7 +143,7 @@ impl EmbeddingBinding {
                     user: self.user,
                     tokenizer: self.tokenizer,
                     max_input_tokens: self.max_input_tokens,
-                    joint_text: self.profile == Profile::Google,
+                    joint_text: self.profile == UpstreamAdapter::Google,
                     reports: ReportPolicy::Compatible,
                 },
                 credential: self.credential(),

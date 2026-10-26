@@ -3,17 +3,20 @@ use super::{
     items::{MessageSide, decode_whole, encode_items_with, request_text_parts},
     owners,
 };
-use crate::protocol::failure::{CarrierReason, ShapeReason};
-use crate::protocol::openai::{
-    CodecError, DecodedRequest, Profile, RequestRepresentation, function_tools, shape::*,
+use crate::{
+    protocol::{
+        failure::{CarrierReason, ShapeReason},
+        openai::{
+            CodecError, DecodedRequest, GenerationApi, RequestRepresentation,
+            content::intake::Items,
+            function_tools,
+            lowering::carriers::{check_item_carriers, check_message_carriers},
+            settings::{controls, write_control_values},
+            shape::*,
+        },
+    },
+    semantic::{task::generation::*, value::Presence},
 };
-use crate::protocol::openai::{
-    content::intake::Items,
-    lowering::carriers::{check_item_carriers, check_message_carriers},
-    settings::{controls, write_control_values},
-};
-use crate::semantic::task::generation::*;
-use crate::semantic::value::Presence;
 use serde_json::{Map, Value, json};
 pub(in crate::protocol::openai) const FIELDS: &[&str] = &[
     "messages",
@@ -175,7 +178,7 @@ pub(crate) fn decode_generation_with(
         GenerationRequest::from_resources_and_envelopes(b.items, settings, b.resources, groups)?;
     Ok(DecodedRequest {
         evidence: b.evidence,
-        semantic: function_tools::decode(r, o, Profile::Chat, direction)?,
+        semantic: function_tools::decode(r, o, GenerationApi::Chat, direction)?,
         fidelity: b.fidelity,
     })
 }
@@ -231,19 +234,19 @@ fn write_response_format(f: &OutputConstraint) -> Result<Value, CodecError> {
     })
 }
 pub fn encode_generation(target: &RequestRepresentation<'_>) -> Result<Value, CodecError> {
-    if target.profile != Profile::Chat {
+    if target.profile != GenerationApi::Chat {
         return Err(CodecError::ProfileMismatch);
     }
     check_message_carriers(
         target.semantic.items(),
         target.semantic.message_envelopes(),
-        Profile::Chat,
+        GenerationApi::Chat,
     )?;
     check_item_carriers(target.semantic.items())?;
     crate::protocol::openai::content::citations::check_items(
         target.semantic.items(),
         target.semantic.resources(),
-        Profile::Chat,
+        GenerationApi::Chat,
     )?;
     target
         .fidelity
@@ -265,7 +268,7 @@ pub fn encode_generation(target: &RequestRepresentation<'_>) -> Result<Value, Co
     if target.adaptation.rules.bailian_requests {
         crate::protocol::openai::dialect::bailian::check_semantic(
             &target.semantic,
-            Profile::Chat,
+            GenerationApi::Chat,
             "",
         )?;
     }
@@ -290,7 +293,7 @@ pub fn encode_generation(target: &RequestRepresentation<'_>) -> Result<Value, Co
     if let Some(root) = target.semantic.instructions().value() {
         messages.insert(0, json!({
             "role":role,
-            "content":crate::protocol::openai::settings::instruction_content(root, Profile::Chat)?,
+            "content":crate::protocol::openai::settings::instruction_content(root, GenerationApi::Chat)?,
         }));
     }
     for (index, message) in messages.iter().enumerate() {
@@ -403,10 +406,10 @@ pub fn encode_generation(target: &RequestRepresentation<'_>) -> Result<Value, Co
         crate::protocol::openai::dialect::bailian::write_tools(
             target.semantic.settings(),
             o,
-            Profile::Chat,
+            GenerationApi::Chat,
         )?;
     } else {
-        function_tools::encode(&target.semantic, Profile::Chat, o)?;
+        function_tools::encode(&target.semantic, GenerationApi::Chat, o)?;
     }
     let mut settings = target.semantic.settings().clone();
     if !settings.reasoning.read_history.is_absent() {
@@ -422,9 +425,13 @@ pub fn encode_generation(target: &RequestRepresentation<'_>) -> Result<Value, Co
         settings.reasoning.read_history = Presence::Absent;
     }
     if target.adaptation.rules.thinking_controls {
-        crate::protocol::openai::dialect::bailian::write_reasoning(&settings, o, Profile::Chat)?;
+        crate::protocol::openai::dialect::bailian::write_reasoning(
+            &settings,
+            o,
+            GenerationApi::Chat,
+        )?;
     } else {
-        crate::protocol::openai::reasoning::write_request(&settings, o, Profile::Chat)?;
+        crate::protocol::openai::reasoning::write_request(&settings, o, GenerationApi::Chat)?;
     }
     bounded(&v)?;
     Ok(v)

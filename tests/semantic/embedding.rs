@@ -1,11 +1,17 @@
 //! Independent request and report oracles for scoped inputs and native Google projection.
 use morphiecore::{
-    adapter::embeddings::{Encoding, Profile, Request, TargetRequest},
-    lowering::embeddings::{
-        Action, Contract, DeliveryPolicy, DimensionSupport, EncodingSupport, ReportPolicy, Rule,
-        UserPolicy, project_response,
+    adapter::embeddings::UpstreamAdapter,
+    protocol::{
+        embedding::{
+            Encoding, Request, TargetRequest,
+            projection::{
+                Action, Contract, DeliveryPolicy, DimensionSupport, EncodingSupport, ReportPolicy,
+                Rule, UserPolicy, project_response,
+            },
+        },
+        google::embeddings as google,
+        openai::embeddings as openai,
     },
-    protocol::{google::embeddings as google, openai::embeddings as openai},
     semantic::{task::embedding::*, value::Presence},
 };
 use serde_json::{Value, json};
@@ -183,7 +189,7 @@ fn complete_usage_preserves_reports_and_bounds_only_missing_estimates() {
             vec![Action::TotalEstimated],
         ),
     ] {
-        let source = morphiecore::adapter::embeddings::Response {
+        let source = morphiecore::protocol::embedding::Response {
             model: Some("reported".into()),
             id: None,
             task: EmbeddingResponse::new(
@@ -198,10 +204,14 @@ fn complete_usage_preserves_reports_and_bounds_only_missing_estimates() {
         assert_eq!((usage.input_tokens, usage.total_tokens), expected);
         assert_eq!(source, snapshot);
         assert_eq!(
-            result.receipts.iter().map(|r| r.rule).collect::<Vec<_>>(),
+            result
+                .adaptations
+                .iter()
+                .map(|r| r.rule)
+                .collect::<Vec<_>>(),
             rule.into_iter().collect::<Vec<_>>()
         );
-        if let Some(receipt) = result.receipts.first() {
+        if let Some(receipt) = result.adaptations.first() {
             assert_eq!(receipt.actions, actions);
         }
         assert_eq!(
@@ -229,7 +239,7 @@ fn google_entries_preserve_sample_boundaries_and_per_sample_dimensions() {
     let prepared = contract().prepare(&request).unwrap();
     assert_eq!(prepared.expectation.dimensions, vec![128, 256]);
     for (widths, valid) in [([256, 128], true), ([128, 256], false)] {
-        let response = morphiecore::adapter::embeddings::Response {
+        let response = morphiecore::protocol::embedding::Response {
             model: None,
             id: None,
             task: EmbeddingResponse::new(
@@ -247,7 +257,11 @@ fn google_entries_preserve_sample_boundaries_and_per_sample_dimensions() {
         );
     }
     assert_eq!(
-        prepared.receipts.iter().map(|r| r.rule).collect::<Vec<_>>(),
+        prepared
+            .adaptations
+            .iter()
+            .map(|r| r.rule)
+            .collect::<Vec<_>>(),
         vec![Rule::OmitUser]
     );
     assert_eq!(
@@ -415,7 +429,7 @@ fn google_usage_is_batch_scoped_and_projection_does_not_invent_source_facts() {
         json!({"object":"list","model":"public-vector","data":[{"object":"embedding","index":0,"embedding":"zczMPQAAAL4="},{"object":"embedding","index":1,"embedding":"AAAAAAAAgD8="}],"usage":{"prompt_tokens":7,"total_tokens":7}})
     );
     let derivations: Vec<_> = delivered
-        .receipts
+        .adaptations
         .iter()
         .filter(|r| r.rule == Rule::DeriveTotal)
         .collect();
@@ -431,7 +445,7 @@ fn google_usage_is_batch_scoped_and_projection_does_not_invent_source_facts() {
     assert_eq!(delivered.response.usage().total_tokens, 5);
     assert!(
         delivered
-            .receipts
+            .adaptations
             .iter()
             .any(|r| r.rule == Rule::EstimateUsage
                 && r.actions
@@ -445,10 +459,10 @@ fn google_usage_is_batch_scoped_and_projection_does_not_invent_source_facts() {
 #[test]
 fn strict_openai_wire_rejects_unprojected_loss() {
     // Native serialization still requires actual reports, not a request fallback.
-    use morphiecore::adapter::embeddings::Response;
+    use morphiecore::protocol::embedding::Response;
     let wire=br#"{"object":"list","model":"m","data":[{"object":"embedding","index":0,"embedding":[1]},{"object":"embedding","index":1,"embedding":[1,2]}],"usage":{"prompt_tokens":1,"total_tokens":1}}"#;
     assert!(openai::decode_response(wire).is_err());
-    assert!(Profile::OpenRouter.decode_response(wire).is_err());
+    assert!(UpstreamAdapter::OpenRouter.decode_response(wire).is_err());
     let heterogeneous = Response {
         model: Some("m".into()),
         id: None,
@@ -487,12 +501,14 @@ fn strict_openai_wire_rejects_unprojected_loss() {
     assert!(openai::encode_response_as(&delivered.response, Encoding::Base64).is_ok());
     assert!(
         delivered
-            .receipts
+            .adaptations
             .iter()
             .any(|r| r.rule == Rule::OmitDetails)
     );
     let total_only=br#"{"object":"list","data":[{"object":"embedding","index":0,"embedding":[1]}],"usage":{"total_tokens":7}}"#;
-    let source = Profile::OpenRouter.decode_response(total_only).unwrap();
+    let source = UpstreamAdapter::OpenRouter
+        .decode_response(total_only)
+        .unwrap();
     assert_eq!(
         source.task.usage().unwrap().basis(),
         AccountingBasis::Unspecified
@@ -502,7 +518,7 @@ fn strict_openai_wire_rejects_unprojected_loss() {
     assert_eq!(delivered.response.usage().total_tokens, 7);
     assert!(
         delivered
-            .receipts
+            .adaptations
             .iter()
             .any(|r| r.rule == Rule::EstimateUsage)
     );
@@ -514,7 +530,7 @@ fn compatible_encodings_and_missing_reports_do_not_relax_malformed_values() {
             &json!({"object":"list","data":[{"object":"embedding","index":0,"embedding":value}]}),
         )
         .unwrap();
-        let source = Profile::OpenRouter
+        let source = UpstreamAdapter::OpenRouter
             .decode_response_as(&bytes, Encoding::Base64)
             .unwrap();
         let delivered = project_response(&source, &policy()).unwrap();
@@ -525,7 +541,7 @@ fn compatible_encodings_and_missing_reports_do_not_relax_malformed_values() {
         assert_eq!(delivered.response.usage().input_tokens, 5);
         assert_eq!(delivered.response.usage().total_tokens, 5);
         assert!(
-            Profile::Standard
+            UpstreamAdapter::Standard
                 .decode_response_as(&bytes, Encoding::Base64)
                 .is_err()
         );

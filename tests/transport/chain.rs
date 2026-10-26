@@ -1,16 +1,17 @@
-//! Adapter/execution acceptance with independent wire and explicit I/O commit.
+//! GenerationCodec/execution acceptance with independent wire and explicit I/O commit.
 use crate::{chat_wire, wire};
 use morphiecore::{
     execution::{Attempt, AttemptError, ResponseDelivery, admit, prepare},
-    lowering::generation::ReportedFactPolicy,
     protocol::{
+        conversion::generation::ReportedFactPolicy,
         openai::{
-            Adapter, Dialect, Profile, TargetCaps as Contract, chat::sse::ChatSseDecoder,
-            obfuscation::Obfuscation, responses::sse::ResponsesSseDecoder,
+            Dialect, GenerationApi, GenerationCodec, TargetContract as Contract,
+            chat::sse::ChatSseDecoder, obfuscation::Obfuscation,
+            responses::sse::ResponsesSseDecoder,
         },
         stream::SseLimits,
     },
-    provider::{ErrorClass, SecretMaterial, catalog as providers},
+    provider::{RecoveryClass, SecretMaterial, catalog as providers},
     semantic::{
         context::StreamOptions,
         task::generation::*,
@@ -20,8 +21,8 @@ use morphiecore::{
 };
 use serde_json::{Value, json};
 
-fn standard(protocol: Profile) -> Adapter {
-    Adapter::new(protocol, Dialect::Standard, None)
+fn standard(protocol: GenerationApi) -> GenerationCodec {
+    GenerationCodec::new(protocol, Dialect::Standard, None)
 }
 fn options() -> StreamOptions {
     StreamOptions {
@@ -29,7 +30,7 @@ fn options() -> StreamOptions {
         include_obfuscation: Presence::Value(false),
     }
 }
-fn delivery(adapter: Adapter, contract: Contract) -> ResponseDelivery {
+fn delivery(adapter: GenerationCodec, contract: Contract) -> ResponseDelivery {
     ResponseDelivery::new(
         morphiecore::adapter::ClientAdapter::openai(adapter, contract),
         "public-model",
@@ -38,9 +39,9 @@ fn delivery(adapter: Adapter, contract: Contract) -> ResponseDelivery {
         Obfuscation::Disabled,
     )
 }
-fn bytes(profile: Profile) -> Vec<u8> {
+fn bytes(profile: GenerationApi) -> Vec<u8> {
     match profile {
-        Profile::Chat => {
+        GenerationApi::Chat => {
             let mut body = chat_wire::events(2)
                 .iter()
                 .flat_map(|v| format!("data: {v}\n\n").into_bytes())
@@ -48,7 +49,7 @@ fn bytes(profile: Profile) -> Vec<u8> {
             body.extend_from_slice(b"data: [DONE]\n\n");
             body
         }
-        Profile::Responses => wire::events(2)
+        GenerationApi::Responses => wire::events(2)
             .iter()
             .flat_map(|v| {
                 morphiecore::protocol::openai::responses::sse::encode_frame(
@@ -82,7 +83,7 @@ fn consume(
 }
 #[test]
 fn incremental_chain_emits_before_terminal_and_does_not_commit_by_encoding() {
-    for profile in [Profile::Chat, Profile::Responses] {
+    for profile in [GenerationApi::Chat, GenerationApi::Responses] {
         let mut intake = Attempt::new(standard(profile), 4096, SseLimits::default());
         let mut output = delivery(standard(profile), Contract::full());
         intake.begin(200, "text/event-stream").unwrap();
@@ -129,7 +130,7 @@ fn incremental_chain_emits_before_terminal_and_does_not_commit_by_encoding() {
                 .is_err()
         );
         let decoded = match profile {
-            Profile::Chat => {
+            GenerationApi::Chat => {
                 let mut decoder =
                     ChatSseDecoder::new(200, "text/event-stream", SseLimits::default()).unwrap();
                 let mut rest = encoded.as_slice();
@@ -140,7 +141,7 @@ fn incremental_chain_emits_before_terminal_and_does_not_commit_by_encoding() {
                 decoder.finish().unwrap();
                 decoder.materialize().unwrap()
             }
-            Profile::Responses => {
+            GenerationApi::Responses => {
                 let mut decoder =
                     ResponsesSseDecoder::new(200, "text/event-stream", SseLimits::default(), None)
                         .unwrap();
@@ -186,7 +187,11 @@ fn incremental_chain_emits_before_terminal_and_does_not_commit_by_encoding() {
 
 #[test]
 fn static_intake_finish_is_idempotent_and_cancellation_discards_the_result() {
-    let mut intake = Attempt::new(standard(Profile::Responses), 1 << 20, SseLimits::default());
+    let mut intake = Attempt::new(
+        standard(GenerationApi::Responses),
+        1 << 20,
+        SseLimits::default(),
+    );
     intake.begin(200, "application/json").unwrap();
     let body = wire::response(2).to_string();
     assert_eq!(intake.push(body.as_bytes()).unwrap().0, body.len());
@@ -209,7 +214,7 @@ fn static_intake_finish_is_idempotent_and_cancellation_discards_the_result() {
 
 #[test]
 fn delivery_cannot_switch_attempts_even_when_wire_identity_matches() {
-    let profile = Profile::Responses;
+    let profile = GenerationApi::Responses;
     let body = bytes(profile);
     let mut first = Attempt::new(standard(profile), 4096, SseLimits::default());
     first.begin(200, "text/event-stream").unwrap();
@@ -235,7 +240,7 @@ fn delivery_cannot_switch_attempts_even_when_wire_identity_matches() {
 
 #[test]
 fn terminal_is_withheld_on_truncated_eof_or_trailing_invalid_data() {
-    for profile in [Profile::Chat, Profile::Responses] {
+    for profile in [GenerationApi::Chat, GenerationApi::Responses] {
         for trailing in [false, true] {
             let mut intake = Attempt::new(standard(profile), 4096, SseLimits::default());
             let mut output = delivery(standard(profile), Contract::full());
@@ -284,25 +289,23 @@ fn terminal_is_withheld_on_truncated_eof_or_trailing_invalid_data() {
                     .is_err()
             );
             assert!(!output.lifecycle().may_retry_or_fallback());
-            assert!(
-                !String::from_utf8(encoded)
-                    .unwrap()
-                    .contains(if profile == Profile::Chat {
-                        "[DONE]"
-                    } else {
-                        "response.completed"
-                    })
-            );
+            assert!(!String::from_utf8(encoded).unwrap().contains(
+                if profile == GenerationApi::Chat {
+                    "[DONE]"
+                } else {
+                    "response.completed"
+                }
+            ));
             assert!(intake.push(b"\n\n").is_err());
         }
     }
 }
 #[test]
 fn strict_completeness_can_fail_late_without_fabricating_a_terminal() {
-    let adapter = Adapter::new(Profile::Responses, Dialect::Xiaomi, None);
+    let adapter = GenerationCodec::new(GenerationApi::Responses, Dialect::Xiaomi, None);
     let mut intake = Attempt::new(adapter, 4096, SseLimits::default());
     let mut output = delivery(
-        standard(Profile::Responses),
+        standard(GenerationApi::Responses),
         Contract {
             reported_facts: ReportedFactPolicy::StrictComplete,
             ..Contract::full()
@@ -338,7 +341,7 @@ fn strict_completeness_can_fail_late_without_fabricating_a_terminal() {
             .is_err()
     );
     assert!(!output.lifecycle().may_retry_or_fallback());
-    let mut intake = Attempt::new(standard(Profile::Chat), 4096, SseLimits::default());
+    let mut intake = Attempt::new(standard(GenerationApi::Chat), 4096, SseLimits::default());
     let mut output = ResponseDelivery::new(
         morphiecore::adapter::ClientAdapter::Messages,
         "public",
@@ -376,7 +379,11 @@ fn strict_completeness_can_fail_late_without_fabricating_a_terminal() {
 #[test]
 fn static_delivery_wraps_the_issuer_value_and_commit_is_explicit() {
     let scope = ReplayOrigin::new("scope-a").unwrap();
-    let source = Adapter::new(Profile::Responses, Dialect::Standard, Some(scope.clone()));
+    let source = GenerationCodec::new(
+        GenerationApi::Responses,
+        Dialect::Standard,
+        Some(scope.clone()),
+    );
     let mut body = wire::response(2);
     body["output"].as_array_mut().unwrap().insert(0, json!({"id":"rs1","type":"reasoning","status":"completed","summary":[],"encrypted_content":"synthetic-token"}));
     let mut intake = Attempt::new(source.clone(), 1 << 20, SseLimits::default());
@@ -441,10 +448,14 @@ fn streaming_carrier_seals_opaque_for_both_downstream_protocols() {
             morphiecore::protocol::openai::responses::sse::encode_frame(&event, 1 << 20).unwrap()
         })
         .collect();
-    for profile in [Profile::Chat, Profile::Responses] {
-        let source = Adapter::new(Profile::Responses, Dialect::Standard, Some(scope.clone()));
+    for profile in [GenerationApi::Chat, GenerationApi::Responses] {
+        let source = GenerationCodec::new(
+            GenerationApi::Responses,
+            Dialect::Standard,
+            Some(scope.clone()),
+        );
         let mut intake = Attempt::new(source, 1 << 20, SseLimits::default());
-        let target = Adapter::new(profile, Dialect::MorphieCore, None);
+        let target = GenerationCodec::new(profile, Dialect::MorphieCore, None);
         let mut output = delivery(target.clone(), Contract::full());
         intake.begin(200, "text/event-stream").unwrap();
         let mut bytes = consume(&mut intake, &mut output, &body).unwrap();
@@ -486,23 +497,23 @@ fn streaming_carrier_seals_opaque_for_both_downstream_protocols() {
 
 #[test]
 fn intake_errors_are_classified_bounded_and_irrecoverable() {
-    let mut rejected = Attempt::new(standard(Profile::Chat), 16, SseLimits::default());
+    let mut rejected = Attempt::new(standard(GenerationApi::Chat), 16, SseLimits::default());
     assert!(matches!(
         rejected.begin(429, "application/json"),
         Err(AttemptError::Status {
-            class: ErrorClass::RateLimit,
+            class: RecoveryClass::RateLimit,
             ..
         })
     ));
     assert!(rejected.begin(200, "application/json").is_err());
-    let mut limited = Attempt::new(standard(Profile::Chat), 16, SseLimits::default());
+    let mut limited = Attempt::new(standard(GenerationApi::Chat), 16, SseLimits::default());
     limited.begin(200, "application/json").unwrap();
     assert!(matches!(
         limited.push(&[b' '; 17]),
         Err(AttemptError::Limit)
     ));
     assert!(limited.finish().is_err());
-    let mut malformed = Attempt::new(standard(Profile::Chat), 4096, SseLimits::default());
+    let mut malformed = Attempt::new(standard(GenerationApi::Chat), 4096, SseLimits::default());
     malformed.begin(200, "application/json").unwrap();
     malformed.push(b"{}").unwrap();
     assert!(malformed.finish().is_err());
@@ -510,7 +521,7 @@ fn intake_errors_are_classified_bounded_and_irrecoverable() {
 }
 #[test]
 fn cancellation_closes_intake_and_delivery_without_success() {
-    for profile in [Profile::Chat, Profile::Responses] {
+    for profile in [GenerationApi::Chat, GenerationApi::Responses] {
         let mut intake = Attempt::new(standard(profile), 4096, SseLimits::default());
         let mut output = delivery(standard(profile), Contract::full());
         intake.begin(200, "text/event-stream").unwrap();
@@ -541,7 +552,7 @@ fn unified_request_projection_keeps_targets_trusted_and_debug_redacted() {
     let endpoint = topology
         .endpoint(&EndpointId::new("deepseek-chat").unwrap())
         .unwrap();
-    let client = Adapter::new(Profile::Responses, Dialect::MorphieCore, None);
+    let client = GenerationCodec::new(GenerationApi::Responses, Dialect::MorphieCore, None);
     let request = client.decode_request(json!({"model":"deepseek-flash","input":"hello","stream":true,"prompt_cache_key":"session"}).to_string().as_bytes()).unwrap();
     admit(
         catalog::default_topology()
@@ -607,7 +618,7 @@ fn grok_public_binding_uses_the_responses_cache_carrier() {
         .unwrap();
     let provider = (binding.provider)();
     let endpoint = binding.endpoint();
-    let request = standard(Profile::Responses)
+    let request = standard(GenerationApi::Responses)
         .decode_request(
             json!({"model":binding.model,"input":"hello","prompt_cache_key":"shared-workspace"})
                 .to_string()
@@ -644,7 +655,7 @@ fn opencode_go_projects_neutral_conversations_independently_of_cache_groups() {
         .endpoint(&EndpointId::new("opencode-go-chat").unwrap())
         .unwrap();
     let provider = providers::opencode_go();
-    let client = Adapter::new(Profile::Chat, Dialect::MorphieCore, None);
+    let client = GenerationCodec::new(GenerationApi::Chat, Dialect::MorphieCore, None);
     let secret = SecretMaterial::new("synthetic-go-key").unwrap();
     for (group, key, expected) in [
         (
@@ -735,7 +746,7 @@ fn router_request_policy_is_fixed_and_luna_controls_are_not_silently_ignored() {
     let secret = SecretMaterial::new("synthetic-router-secret").unwrap();
     for (profile, suffix, mut body) in [
         (
-            Profile::Chat,
+            GenerationApi::Chat,
             "chat",
             json!({"model":"gpt-6-luna","messages":[
             {"role":"user","content":"hello"},
@@ -743,13 +754,13 @@ fn router_request_policy_is_fixed_and_luna_controls_are_not_silently_ignored() {
             "max_completion_tokens":64,"reasoning_effort":"low","stream":true}),
         ),
         (
-            Profile::Responses,
+            GenerationApi::Responses,
             "responses",
             json!({"model":"gpt-6-luna","input":"hello",
             "max_output_tokens":64,"reasoning":{"effort":"low"},"stream":true}),
         ),
     ] {
-        let client = Adapter::new(profile, Dialect::MorphieCore, None);
+        let client = GenerationCodec::new(profile, Dialect::MorphieCore, None);
         let request = client.decode_request(body.to_string().as_bytes()).unwrap();
         admit(
             catalog::default_topology()
@@ -769,7 +780,7 @@ fn router_request_policy_is_fixed_and_luna_controls_are_not_silently_ignored() {
         assert_eq!(prepared.origin, "https://openrouter.ai");
         assert_eq!(
             prepared.path,
-            if profile == Profile::Chat {
+            if profile == GenerationApi::Chat {
                 "/api/v1/chat/completions"
             } else {
                 "/api/v1/responses"
@@ -782,7 +793,7 @@ fn router_request_policy_is_fixed_and_luna_controls_are_not_silently_ignored() {
                 "Bearer synthetic-router-secret".into()
             )
         );
-        if profile == Profile::Chat {
+        if profile == GenerationApi::Chat {
             assert_eq!(wire["messages"][1]["reasoning"], "think");
             assert!(wire["messages"][1].get("reasoning_content").is_none());
             assert_eq!(wire["max_completion_tokens"], 64);
@@ -821,7 +832,7 @@ fn router_request_policy_is_fixed_and_luna_controls_are_not_silently_ignored() {
         .find(|endpoint| endpoint.provider.as_str() == "openai")
         .unwrap();
     assert_eq!(endpoint.credential.as_str(), "openai-oauth");
-    let client = standard(Profile::Responses);
+    let client = standard(GenerationApi::Responses);
     let request = client
         .decode_request(br#"{"model":"gpt-6-luna","input":"hello"}"#)
         .unwrap();

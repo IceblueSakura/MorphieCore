@@ -4,10 +4,11 @@ use crate::protocol::openai::{content::call::reject_chat_orchestration, content:
 mod decode;
 mod encode;
 mod responses_wire;
-use crate::protocol::openai::TargetCaps;
-use crate::protocol::openai::{CodecError, Profile, ResponseMetadata, shape::*};
 use crate::{
-    protocol::fidelity::FidelityRecords,
+    protocol::{
+        fidelity::FidelityRecords,
+        openai::{CodecError, GenerationApi, ResponseMetadata, TargetContract, shape::*},
+    },
     semantic::{task::generation::*, value::ReplayOrigin},
 };
 pub use decode::EventDecoder;

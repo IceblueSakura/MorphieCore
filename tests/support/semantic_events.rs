@@ -2,7 +2,9 @@
 use morphiecore::{
     protocol::{
         fidelity::FidelityRecords,
-        openai::{Profile, ResponseMetadata, TargetCaps as Contract, events::EventEncoder},
+        openai::{
+            GenerationApi, ResponseMetadata, TargetContract as Contract, events::EventEncoder,
+        },
     },
     semantic::{
         task::generation::*,
@@ -80,7 +82,7 @@ pub fn part(item: u64, part: u64, kind: PartKind, s: &str) -> Vec<StreamEvent> {
 pub fn apply(events: &[StreamEvent]) -> Result<StreamState, EventError> {
     events.iter().cloned().try_fold(StreamState::new(), reduce)
 }
-pub fn encode(events: &[StreamEvent], profile: Profile, f: &FidelityRecords) -> Vec<Value> {
+pub fn encode(events: &[StreamEvent], profile: GenerationApi, f: &FidelityRecords) -> Vec<Value> {
     let mut encoder = EventEncoder::new(profile, metadata())
         .unwrap()
         .with_contract(contract());

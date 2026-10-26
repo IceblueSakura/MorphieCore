@@ -1,36 +1,35 @@
 //! Target-only projection of native Messages facts onto the OpenAI client carriers.
-use crate::protocol::failure::CarrierReason;
 use crate::{
-    protocol::{CodecError, DecodedResponse, openai::Profile},
+    protocol::{CodecError, DecodedResponse, failure::CarrierReason, openai::GenerationApi},
     semantic::task::generation::*,
 };
 mod events;
-use crate::lowering::generation::Effect;
+use crate::protocol::conversion::generation::Effect;
 pub(crate) use events::EventProjection;
 
-fn envelope_loss(profile: Profile, direction: &'static str) -> Effect {
+fn envelope_loss(profile: GenerationApi, direction: &'static str) -> Effect {
     Effect::Field {
-        rule: crate::lowering::generation::RuleId::new(match profile {
-            Profile::Responses => "responses.omit-message-envelopes.v1",
-            Profile::Chat => "chat.regroup-native-message-envelopes.v1",
+        rule: crate::protocol::conversion::generation::RuleId::new(match profile {
+            GenerationApi::Responses => "responses.omit-message-envelopes.v1",
+            GenerationApi::Chat => "chat.regroup-native-message-envelopes.v1",
         }),
         field: ("generation.message_envelopes").into(),
-        direction: (direction).into(),
-        action: (if profile == Profile::Responses {
+        boundary: (direction).into(),
+        change: (if profile == GenerationApi::Responses {
             "omit"
         } else {
             "regroup"
         })
         .into(),
-        owner: crate::lowering::generation::Owner::Root,
+        owner: crate::protocol::conversion::generation::Owner::Root,
     }
 }
 fn usage_loss(
     before: Option<Usage>,
     after: Option<Usage>,
     direction: &'static str,
-) -> Vec<crate::lowering::generation::Effect> {
-    use crate::lowering::generation::{Change, Effect, Field};
+) -> Vec<crate::protocol::conversion::generation::Effect> {
+    use crate::protocol::conversion::generation::{Change, Effect, Field};
     if before == after {
         return vec![];
     }
@@ -152,14 +151,14 @@ fn client_usage(usage: Usage) -> Result<Option<Usage>, CodecError> {
 /// stop progress is represented by OpenAI outcome plus the preserved tool calls.
 pub(crate) fn project(
     decoded: &mut DecodedResponse,
-    profile: Profile,
+    profile: GenerationApi,
 ) -> Result<Vec<Effect>, CodecError> {
     let source = &decoded.semantic;
     let attached = source
         .items()
         .iter()
         .any(|(_, item)| item.has_replay_attachment())
-        || profile == Profile::Chat && crate::protocol::phase::has_phase(source.items());
+        || profile == GenerationApi::Chat && crate::protocol::phase::has_phase(source.items());
     match source.progress() {
         InteractionProgress::Unreported | InteractionProgress::TurnFinished => {}
         InteractionProgress::AwaitingToolResults
@@ -190,7 +189,7 @@ pub(crate) fn project(
         }
     }
     // Build a target representation rather than editing an observed call under
-    // its source dependency receipts. JSON serialization above preserves its value.
+    // its source dependency adaptations. JSON serialization above preserves its value.
     let mut projected =
         GenerationResponse::from_resources(items, source.outcome(), source.resources().clone())?
             .with_details(source.details().clone())?
@@ -200,7 +199,7 @@ pub(crate) fn project(
     if attached {
         projected = projected.with_message_envelopes(source.message_envelopes().to_vec())?;
     }
-    if profile == Profile::Chat && !attached {
+    if profile == GenerationApi::Chat && !attached {
         let status = if source.outcome() == Outcome::Incomplete {
             ItemLifecycle::Incomplete
         } else {
@@ -298,7 +297,7 @@ pub(crate) fn project(
     if source.usage_reports().has_unrepresented_details() {
         losses.push(crate::protocol::usage::report_loss("response.project"));
     }
-    let coalesced = profile == Profile::Chat
+    let coalesced = profile == GenerationApi::Chat
         && !attached
         && source
             .items()
@@ -363,14 +362,14 @@ mod tests {
             source.semantic = source.semantic.with_usage_reports(reports).unwrap();
             let before = source.clone();
             let mut projected = source.clone();
-            let losses = project(&mut projected, Profile::Responses).unwrap();
+            let losses = project(&mut projected, GenerationApi::Responses).unwrap();
             assert!(projected.semantic.usage().is_none());
             assert!(
                 losses
                     .iter()
                     .any(|r| r.rule() == "generation.usage-report-view.v1")
             );
-            let mut events = EventProjection::new(Profile::Responses);
+            let mut events = EventProjection::new(GenerationApi::Responses);
             assert!(
                 events
                     .project(&[StreamEvent::UsageReport(report)])
@@ -390,26 +389,26 @@ mod tests {
     fn projection_keeps_native_observation_and_derives_only_the_client_view() {
         let source = fixture();
         let before = source.clone();
-        for profile in [Profile::Responses, Profile::Chat] {
+        for profile in [GenerationApi::Responses, GenerationApi::Chat] {
             let mut client = source.clone();
             crate::execution::replay::seal_for_client(
                 &mut client,
-                &crate::execution::replay::CLIENT_ORIGIN,
+                &crate::protocol::replay_envelope::CLIENT_ORIGIN,
             )
             .unwrap();
             project(&mut client, profile).unwrap();
             client.metadata.created = Some(1.into());
-            let adapter = crate::protocol::openai::Adapter::new(
+            let adapter = crate::protocol::openai::GenerationCodec::new(
                 profile,
                 crate::protocol::openai::Dialect::MorphieCore,
                 None,
             );
-            let contract = crate::protocol::openai::TargetCaps {
-                replay_origin: Some(crate::execution::replay::CLIENT_ORIGIN.clone()),
-                ..crate::protocol::openai::TargetCaps::full()
+            let contract = crate::protocol::openai::TargetContract {
+                replay_origin: Some(crate::protocol::replay_envelope::CLIENT_ORIGIN.clone()),
+                ..crate::protocol::openai::TargetContract::full()
             };
             let wire = adapter.encode_response(&client, &contract).unwrap();
-            let args = if profile == Profile::Responses {
+            let args = if profile == GenerationApi::Responses {
                 &wire["output"][1]["arguments"]
             } else {
                 &wire["choices"][0]["message"]["tool_calls"][0]["function"]["arguments"]
@@ -450,15 +449,15 @@ mod tests {
                 ..Default::default()
             },
         };
-        for profile in [Profile::Responses, Profile::Chat] {
-            let adapter = crate::protocol::openai::Adapter::new(
+        for profile in [GenerationApi::Responses, GenerationApi::Chat] {
+            let adapter = crate::protocol::openai::GenerationCodec::new(
                 profile,
                 crate::protocol::openai::Dialect::MorphieCore,
                 None,
             );
-            let contract = crate::protocol::openai::TargetCaps {
-                replay_origin: Some(crate::execution::replay::CLIENT_ORIGIN.clone()),
-                ..crate::protocol::openai::TargetCaps::full()
+            let contract = crate::protocol::openai::TargetContract {
+                replay_origin: Some(crate::protocol::replay_envelope::CLIENT_ORIGIN.clone()),
+                ..crate::protocol::openai::TargetContract::full()
             };
             let client_adapter =
                 crate::adapter::ClientAdapter::openai(adapter.clone(), contract.clone());
@@ -493,8 +492,9 @@ mod tests {
                     .effects()
                     .iter()
                     .any(|effect| effect.semantic_field()
-                        == crate::lowering::generation::Field::InputTokens
-                        && effect.change() == crate::lowering::generation::Change::Derive)
+                        == crate::protocol::conversion::generation::Field::InputTokens
+                        && effect.change()
+                            == crate::protocol::conversion::generation::Change::Derive)
             );
             let mut pending = crate::execution::ResponseDelivery::new(
                 client_adapter.clone(),
@@ -599,16 +599,17 @@ mod tests {
                     .effects()
                     .iter()
                     .any(|loss| loss.field() == "generation.message_envelopes"
-                        && loss.direction() == "event.project")
+                        && loss.boundary().as_str() == "event.project")
             );
             assert!(
                 encoder
                     .effects()
                     .into_iter()
                     .any(|loss| loss.semantic_field()
-                        == crate::lowering::generation::Field::InputTokens
-                        && loss.change() == crate::lowering::generation::Change::Derive
-                        && loss.direction() == "event.project")
+                        == crate::protocol::conversion::generation::Field::InputTokens
+                        && loss.change()
+                            == crate::protocol::conversion::generation::Change::Derive
+                        && loss.boundary().as_str() == "event.project")
             );
             encoder
                 .encode(&StreamEvent::Started, &source.fidelity)
@@ -623,7 +624,7 @@ mod tests {
             assert!(encoder.update_metadata(reported).is_err());
             assert!(encoder.encode(&terminal, &source.fidelity).is_err());
             assert!(encoder.finish().is_err());
-            if profile == Profile::Chat {
+            if profile == GenerationApi::Chat {
                 let mut failed = client_adapter
                     .stream_encoder(
                         metadata,

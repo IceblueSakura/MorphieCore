@@ -1,9 +1,10 @@
 //! Gemini Developer API synchronous batch embeddings, not Vertex or asynchronous jobs.
 //! https://ai.google.dev/api/embeddings
-use crate::protocol::embedding::{number, optional_count, required, string};
 use crate::{
-    adapter::embeddings::{valid_model, *},
-    protocol::CodecError,
+    protocol::{
+        CodecError,
+        embedding::{number, optional_count, required, string, valid_model, *},
+    },
     semantic::task::embedding::*,
 };
 use serde_json::{Value, json};

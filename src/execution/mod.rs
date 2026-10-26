@@ -11,6 +11,7 @@
 pub mod attempt;
 pub mod delivery;
 pub mod embeddings;
+pub mod failure;
 pub mod fallback;
 pub mod images;
 pub mod lifecycle;
@@ -18,6 +19,7 @@ pub mod plan;
 pub mod replay;
 pub mod report;
 pub mod speech;
+pub mod task;
 pub mod transcription;
 
 pub use attempt::{Attempt, AttemptError, UpstreamRequest, admit, prepare, prepare_with_rules};

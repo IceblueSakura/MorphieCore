@@ -7,16 +7,16 @@ use super::{
     error::StartupError,
 };
 use crate::{
-    adapter::ClientProtocol,
     credential::CredentialManager,
     gateway::Credentials,
-    lowering::target::TargetCaps,
-    protocol::reasoning::{
-        ReasoningConversion, ReasoningRequestPolicy, SHARED_BUDGETS, ThinkingBudgets,
+    lowering::target::TargetContract,
+    protocol::{
+        ClientProtocol,
+        reasoning::{ReasoningConversion, ReasoningRequestPolicy, SHARED_BUDGETS, ThinkingBudgets},
     },
     provider::{CredentialBindingId, EndpointPath, ProviderDefinition, TrustedOrigin},
     semantic::task::generation::{EffortLevel, EffortScope},
-    topology::{self, CompiledTopology, Endpoint, EndpointId, ProtocolProfile},
+    topology::{self, CompiledTopology, Endpoint, EndpointId, GenerationProtocol},
 };
 use serde::Deserialize;
 use std::collections::{BTreeMap, BTreeSet};
@@ -247,7 +247,7 @@ impl Models {
                 if let Some(base_url) = candidate.base_url {
                     deploy(&mut endpoint, &mut provider, &base_url)?;
                 }
-                if endpoint.protocol == ProtocolProfile::GoogleGenerateContent {
+                if endpoint.protocol == GenerationProtocol::GoogleGenerateContent {
                     if endpoint.upstream_model.is_empty()
                         || !endpoint
                             .upstream_model
@@ -310,7 +310,7 @@ impl Models {
                     &mut endpoint.representation,
                     candidate.default_output_tokens,
                 ) {
-                    (TargetCaps::AnthropicMessages(caps), configured) => {
+                    (TargetContract::AnthropicMessages(caps), configured) => {
                         use crate::semantic::value::Presence;
                         match configured {
                             Presence::Absent => {}
@@ -322,7 +322,7 @@ impl Models {
                     (_, crate::semantic::value::Presence::Absent) => {}
                     _ => return Err(invalid()),
                 }
-                let native = endpoint.protocol == ProtocolProfile::AnthropicMessages;
+                let native = endpoint.protocol == GenerationProtocol::AnthropicMessages;
                 let semantics = endpoint.representation.semantics();
                 native_owner_cache &= native && semantics.explicit_cache;
                 native_tool_examples &= native && semantics.tool_examples;
@@ -396,11 +396,11 @@ fn deploy(
     let origin = TrustedOrigin::parse(&format!("{scheme}://{authority}")).map_err(|_| invalid())?;
     let prefix = path.strip_suffix('/').unwrap_or(path);
     let suffix = match endpoint.protocol {
-        ProtocolProfile::OpenAiChat => "chat/completions",
-        ProtocolProfile::OpenAiResponses => "responses",
-        ProtocolProfile::AnthropicMessages => "messages",
-        ProtocolProfile::GoogleGenerateContent => "models",
-        ProtocolProfile::GoogleInteractions => "interactions",
+        GenerationProtocol::OpenAiChat => "chat/completions",
+        GenerationProtocol::OpenAiResponses => "responses",
+        GenerationProtocol::AnthropicMessages => "messages",
+        GenerationProtocol::GoogleGenerateContent => "models",
+        GenerationProtocol::GoogleInteractions => "interactions",
     };
     let path = EndpointPath::new(&if prefix.is_empty() {
         format!("/{suffix}")
@@ -430,7 +430,7 @@ fn reasoning(
             ThinkingConversion::BudgetToEffort => (
                 "configured.budget-to-effort.v1",
                 ReasoningConversion::BudgetToEffort {
-                    scope: if endpoint.protocol == ProtocolProfile::AnthropicMessages {
+                    scope: if endpoint.protocol == GenerationProtocol::AnthropicMessages {
                         EffortScope::Response
                     } else {
                         EffortScope::Reasoning
@@ -453,29 +453,29 @@ fn reasoning(
         }
     });
     if matches!(conversion, Some(ThinkingConversion::EffortToBudget))
-        && endpoint.protocol != ProtocolProfile::GoogleGenerateContent
+        && endpoint.protocol != GenerationProtocol::GoogleGenerateContent
     {
         return Err(invalid());
     }
     match &mut endpoint.representation {
-        TargetCaps::OpenAi(caps) => {
+        TargetContract::OpenAi(caps) => {
             if policy.is_some() && caps.adaptation.effort_mapping.is_some() {
                 return Err(invalid());
             }
             caps.reasoning_as_text = as_text;
             caps.adaptation.reasoning_policy = policy;
         }
-        TargetCaps::AnthropicMessages(caps) => {
+        TargetContract::AnthropicMessages(caps) => {
             caps.reasoning_as_text = as_text;
             caps.reasoning_policy = policy;
         }
-        TargetCaps::GoogleGenerateContent(caps) => {
+        TargetContract::GoogleGenerateContent(caps) => {
             caps.reasoning_as_text = as_text;
             if policy.is_some() {
                 caps.reasoning_policy = policy;
             }
         }
-        TargetCaps::GoogleInteractions(caps) => {
+        TargetContract::GoogleInteractions(caps) => {
             caps.reasoning_as_text = as_text;
             if policy.is_some() {
                 caps.reasoning_policy = policy;

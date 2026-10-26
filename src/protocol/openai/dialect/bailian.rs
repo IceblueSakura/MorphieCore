@@ -1,9 +1,11 @@
 //! Documented Bailian request carriers and fail-closed model constraints.
 //! OpenAI-compatible Chat/Responses, not the native DashScope RPC protocol.
-use crate::protocol::failure::CarrierReason;
-use crate::protocol::openai::{CodecError, Profile, function_tools, reasoning, shape::object};
 use crate::{
-    adapter::Request,
+    protocol::{
+        GenerationRequestEnvelope as Request,
+        failure::CarrierReason,
+        openai::{CodecError, GenerationApi, function_tools, reasoning, shape::object},
+    },
     semantic::{task::generation::*, value::Presence},
 };
 use serde_json::{Map, Value, json};
@@ -29,13 +31,13 @@ const UNOWNED: &[&str] = &[
 /// Registered controls cannot disappear under the unknown-field policy.
 pub(in crate::protocol::openai) fn source(
     value: &Value,
-    profile: Profile,
+    profile: GenerationApi,
     native: bool,
 ) -> Result<(), CodecError> {
     let o = object(value)?;
     if native {
         let model = o.get("model").and_then(Value::as_str).unwrap_or("");
-        let effort = if profile == Profile::Chat {
+        let effort = if profile == GenerationApi::Chat {
             o.get("reasoning_effort")
         } else {
             o.get("reasoning")
@@ -47,8 +49,8 @@ pub(in crate::protocol::openai) fn source(
         {
             return Err(CodecError::Unsupported(CarrierReason::Unavailable));
         }
-        if profile == Profile::Responses && o.contains_key("stream_options")
-            || profile == Profile::Chat
+        if profile == GenerationApi::Responses && o.contains_key("stream_options")
+            || profile == GenerationApi::Chat
                 && o.get("stream_options")
                     .and_then(Value::as_object)
                     .is_some_and(|o| o.contains_key("include_obfuscation"))
@@ -62,7 +64,7 @@ pub(in crate::protocol::openai) fn source(
         }
     }
     for message in o
-        .get(if profile == Profile::Chat {
+        .get(if profile == GenerationApi::Chat {
             "messages"
         } else {
             "input"
@@ -108,7 +110,8 @@ pub(in crate::protocol::openai) fn source(
             }
         }
     }
-    if native && profile == Profile::Chat && o.get("max_tokens").is_some_and(|v| !v.is_null()) {
+    if native && profile == GenerationApi::Chat && o.get("max_tokens").is_some_and(|v| !v.is_null())
+    {
         let model = o.get("model").and_then(Value::as_str).unwrap_or("");
         let disabled = o.get("enable_thinking") == Some(&json!(false))
             || o.get("reasoning_effort") == Some(&json!("none"));
@@ -122,7 +125,7 @@ pub(in crate::protocol::openai) fn source(
 pub(in crate::protocol::openai) fn read_controls(
     o: &Map<String, Value>,
     settings: &mut GenerationSettings,
-    profile: Profile,
+    profile: GenerationApi,
 ) -> Result<(), CodecError> {
     if let Some(value) = o.get("enable_thinking") {
         let enabled = value.as_bool().ok_or(CodecError::invalid())?;
@@ -140,7 +143,7 @@ pub(in crate::protocol::openai) fn read_controls(
         settings.reasoning.activation = Presence::Value(activation);
     }
     if let Some(value) = o.get("thinking_budget") {
-        if profile != Profile::Chat {
+        if profile != GenerationApi::Chat {
             return Err(CodecError::Unsupported(CarrierReason::Unavailable));
         }
         let budget = value
@@ -162,7 +165,7 @@ pub(in crate::protocol::openai) fn read_controls(
         settings.reasoning.budget_tokens = Some(budget);
     }
     if let Some(value) = o.get("top_k") {
-        if profile != Profile::Chat {
+        if profile != GenerationApi::Chat {
             return Err(CodecError::Unsupported(CarrierReason::Unavailable));
         }
         settings.controls.top_k = Some(
@@ -179,11 +182,11 @@ pub(in crate::protocol::openai) fn read_controls(
 /// Remove only fields with their own exact native carrier before the standard writer.
 pub(in crate::protocol::openai) fn standard_reasoning(
     settings: &GenerationSettings,
-    profile: Profile,
+    profile: GenerationApi,
 ) -> GenerationSettings {
     let mut standard = settings.clone();
     standard.reasoning.activation = Presence::Absent;
-    if profile == Profile::Chat {
+    if profile == GenerationApi::Chat {
         standard.reasoning.budget_tokens = None;
         if standard.reasoning.mode == Presence::Value(ReasoningMode::Budgeted) {
             standard.reasoning.mode = Presence::Absent;
@@ -193,7 +196,7 @@ pub(in crate::protocol::openai) fn standard_reasoning(
 }
 pub(in crate::protocol::openai) fn extended(
     settings: &GenerationSettings,
-    profile: Profile,
+    profile: GenerationApi,
     native: bool,
 ) -> bool {
     if native {
@@ -205,7 +208,7 @@ pub(in crate::protocol::openai) fn extended(
 pub(in crate::protocol::openai) fn write_reasoning(
     settings: &GenerationSettings,
     o: &mut Map<String, Value>,
-    profile: Profile,
+    profile: GenerationApi,
 ) -> Result<(), CodecError> {
     if settings.reasoning.activation == Presence::Null || settings.effort == Presence::Null {
         return Err(CodecError::Unsupported(CarrierReason::Reasoning));
@@ -216,14 +219,14 @@ pub(in crate::protocol::openai) fn write_reasoning(
             json!(*activation == ReasoningActivation::Enabled),
         );
     }
-    if profile == Profile::Chat
+    if profile == GenerationApi::Chat
         && let Some(budget) = settings.reasoning.budget_tokens
     {
         o.insert("thinking_budget".into(), json!(budget));
     }
     let standard = standard_reasoning(settings, profile);
     reasoning::write_request(&standard, o, profile)?;
-    if profile == Profile::Responses && o.get("reasoning") == Some(&json!({})) {
+    if profile == GenerationApi::Responses && o.get("reasoning") == Some(&json!({})) {
         o.shift_remove("reasoning");
     }
     Ok(())
@@ -289,14 +292,14 @@ const GLM_RESPONSES: ReasoningEffortMapping = ReasoningEffortMapping {
 };
 pub(crate) fn effort_mapping(
     model: &str,
-    profile: Profile,
+    profile: GenerationApi,
 ) -> Option<&'static ReasoningEffortMapping> {
     match (model, profile) {
         ("qwen3.8-flash", _) => Some(&QWEN_FLASH),
         ("qwen3.8-max", _) => Some(&QWEN_MAX),
-        ("glm-5.3" | "glm-5.3-prime", Profile::Chat) => Some(&GLM_CHAT),
-        ("glm-5.3" | "glm-5.3-prime", Profile::Responses) => Some(&GLM_RESPONSES),
-        ("kimi-k3", Profile::Chat) => Some(&KIMI_CHAT),
+        ("glm-5.3" | "glm-5.3-prime", GenerationApi::Chat) => Some(&GLM_CHAT),
+        ("glm-5.3" | "glm-5.3-prime", GenerationApi::Responses) => Some(&GLM_RESPONSES),
+        ("kimi-k3", GenerationApi::Chat) => Some(&KIMI_CHAT),
         _ => None,
     }
 }
@@ -304,7 +307,7 @@ pub(crate) fn effort_mapping(
 pub(in crate::protocol::openai) fn check_native_effort(
     settings: &GenerationSettings,
     model: &str,
-    profile: Profile,
+    profile: GenerationApi,
 ) -> Result<(), CodecError> {
     if let (Some(mapping), Some(control)) =
         (effort_mapping(model, profile), settings.effort.value())
@@ -316,7 +319,7 @@ pub(in crate::protocol::openai) fn check_native_effort(
 }
 pub(in crate::protocol::openai) fn check(
     request: &Request,
-    profile: Profile,
+    profile: GenerationApi,
     model: &str,
 ) -> Result<(), CodecError> {
     check_semantic(&request.task.semantic, profile, model)?;
@@ -325,12 +328,12 @@ pub(in crate::protocol::openai) fn check(
 pub(in crate::protocol::openai) fn check_context(
     ctx: &crate::semantic::context::ExecutionHints,
     service: &Presence<crate::semantic::context::ServicePolicy>,
-    profile: Profile,
+    profile: GenerationApi,
 ) -> Result<(), CodecError> {
     if !ctx.metadata.is_absent()
         || !ctx.max_tool_calls.is_absent()
         || !service.is_absent()
-        || profile == Profile::Responses
+        || profile == GenerationApi::Responses
             && (!ctx.background.is_absent()
                 || !ctx.previous_response_id.is_absent()
                 || !ctx.conversation.is_absent()
@@ -344,7 +347,7 @@ pub(in crate::protocol::openai) fn check_context(
 }
 pub(in crate::protocol::openai) fn check_semantic(
     semantic: &GenerationRequest,
-    profile: Profile,
+    profile: GenerationApi,
     model: &str,
 ) -> Result<(), CodecError> {
     let s = semantic.settings();
@@ -392,7 +395,7 @@ pub(in crate::protocol::openai) fn check_semantic(
     {
         return Err(CodecError::Unsupported(CarrierReason::Reasoning));
     }
-    if profile == Profile::Chat {
+    if profile == GenerationApi::Chat {
         if (glm && !matches!(s.output(), OutputConstraint::Text))
             || model == "kimi-k3" && matches!(s.output(), OutputConstraint::JsonSchema { .. })
         {
@@ -518,7 +521,7 @@ pub(in crate::protocol::openai) fn check_semantic(
 pub(in crate::protocol::openai) fn write_tools(
     s: &GenerationSettings,
     o: &mut Map<String, Value>,
-    profile: Profile,
+    profile: GenerationApi,
 ) -> Result<(), CodecError> {
     if let Some(tools) = &s.tools {
         let mut values = vec![];
@@ -540,7 +543,7 @@ pub(in crate::protocol::openai) fn write_tools(
             if let Some(schema) = &t.parameters {
                 value["parameters"] = schema.root().clone();
             }
-            values.push(if profile == Profile::Chat {
+            values.push(if profile == GenerationApi::Chat {
                 value
                     .as_object_mut()
                     .expect("function")
@@ -554,14 +557,14 @@ pub(in crate::protocol::openai) fn write_tools(
     }
     if let Some(choice) = &s.tool_choice {
         let value = match choice {
-            ToolChoice::Specific(name) if profile == Profile::Responses => {
+            ToolChoice::Specific(name) if profile == GenerationApi::Responses => {
                 json!({"type":"allowed_tools","mode":"required","tools":[{"type":"function","name":name.as_str()}]})
             }
             _ => function_tools::write_choice(choice, profile)?,
         };
         o.insert("tool_choice".into(), value);
     }
-    if profile == Profile::Chat
+    if profile == GenerationApi::Chat
         && let Some(parallel) = s.parallel_tool_calls
     {
         o.insert("parallel_tool_calls".into(), json!(parallel));

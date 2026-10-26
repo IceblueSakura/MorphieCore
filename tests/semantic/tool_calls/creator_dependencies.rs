@@ -2,7 +2,7 @@ use crate::events_support::*;
 use morphiecore::{
     protocol::{
         fidelity::FidelityRecords,
-        openai::{Profile, events::EventEncoder, responses},
+        openai::{GenerationApi, events::EventEncoder, responses},
     },
     semantic::task::generation::*,
 };
@@ -60,8 +60,8 @@ fn context_edits_invalidate_creator_reports_even_when_debug_is_redacted() {
             semantic,
             &parsed.fidelity,
             &parsed.metadata,
-            Profile::Responses,
-            morphiecore::protocol::openai::TargetCaps::full(),
+            GenerationApi::Responses,
+            morphiecore::protocol::openai::TargetContract::full(),
         )
         .err()
     };
@@ -74,7 +74,7 @@ fn context_edits_invalidate_creator_reports_even_when_debug_is_redacted() {
     .unwrap();
     assert_eq!(
         lower(&with_context),
-        Some(morphiecore::lowering::generation::RepresentationError::Tools)
+        Some(morphiecore::protocol::conversion::generation::RepresentationError::Tools)
     );
 }
 
@@ -163,7 +163,7 @@ fn typed_event_encoding_cannot_change_or_erase_an_already_published_creator() {
                 Some(&json!("A")),
             )
             .unwrap();
-        let mut encoder = EventEncoder::new(Profile::Responses, metadata())
+        let mut encoder = EventEncoder::new(GenerationApi::Responses, metadata())
             .unwrap()
             .with_contract(contract());
         encoder.encode(&StreamEvent::Started, &initial).unwrap();

@@ -1,7 +1,6 @@
 //! Incremental counterpart of the native JSON projection; no body aggregation here.
-use crate::protocol::failure::CarrierReason;
 use crate::{
-    protocol::{CodecError, openai::Profile},
+    protocol::{CodecError, failure::CarrierReason, openai::GenerationApi},
     semantic::task::generation::*,
 };
 use std::collections::BTreeMap;
@@ -10,8 +9,8 @@ fn order() -> CodecError {
     CodecError::Unsupported(CarrierReason::Unavailable)
 }
 pub(crate) struct EventProjection {
-    losses: Vec<crate::lowering::generation::Effect>,
-    profile: Profile,
+    losses: Vec<crate::protocol::conversion::generation::Effect>,
+    profile: GenerationApi,
     phase_only: bool,
     phase_seen: bool,
     message: Option<ItemId>,
@@ -30,10 +29,10 @@ pub(crate) struct EventProjection {
     scope: LocalScope,
 }
 impl EventProjection {
-    pub(crate) fn take_evidence(&mut self) -> Vec<crate::lowering::generation::Effect> {
+    pub(crate) fn take_evidence(&mut self) -> Vec<crate::protocol::conversion::generation::Effect> {
         std::mem::take(&mut self.losses)
     }
-    pub(crate) fn new(profile: Profile) -> Self {
+    pub(crate) fn new(profile: GenerationApi) -> Self {
         Self {
             losses: vec![],
             profile,
@@ -53,19 +52,19 @@ impl EventProjection {
         }
     }
     #[cfg(test)]
-    pub(crate) fn effects(&self) -> &[crate::lowering::generation::Effect] {
+    pub(crate) fn effects(&self) -> &[crate::protocol::conversion::generation::Effect] {
         &self.losses
     }
     pub(crate) fn for_phase() -> Self {
         Self {
             phase_only: true,
-            ..Self::new(Profile::Chat)
+            ..Self::new(GenerationApi::Chat)
         }
     }
     pub(crate) fn needs_source_check(&self) -> bool {
         self.phase_only && !self.phase_seen
     }
-    fn record(&mut self, loss: crate::lowering::generation::Effect) {
+    fn record(&mut self, loss: crate::protocol::conversion::generation::Effect) {
         if !self.losses.contains(&loss) {
             self.losses.push(loss);
         }
@@ -125,13 +124,13 @@ impl EventProjection {
                     StreamEvent::ItemStarted { item, kind, .. } => {
                         self.scope = item.scope();
                         match kind {
-                            ItemKind::Reasoning if self.profile == Profile::Chat => {
+                            ItemKind::Reasoning if self.profile == GenerationApi::Chat => {
                                 if self.message.is_some() || !self.calls.is_empty() {
                                     return Err(order());
                                 }
                                 self.reasoning.push(*item);
                             }
-                            ItemKind::Message { phase } if self.profile == Profile::Chat => {
+                            ItemKind::Message { phase } if self.profile == GenerationApi::Chat => {
                                 if self.phase_only {
                                     self.phase_seen |= phase.is_some();
                                     if phase.take().is_some() {
@@ -158,7 +157,7 @@ impl EventProjection {
                             }
                             ItemKind::ToolCall { format, .. } => {
                                 *format = ArgumentFormat::Raw;
-                                if self.profile == Profile::Chat {
+                                if self.profile == GenerationApi::Chat {
                                     self.owner(&mut out);
                                     self.close_text(&mut out);
                                     self.close_later(*item);
@@ -220,7 +219,9 @@ impl EventProjection {
                         }
                         *item = self.text_owners.get(item).copied().unwrap_or(*item);
                     }
-                    StreamEvent::ItemFinished { item, .. } if self.profile == Profile::Chat => {
+                    StreamEvent::ItemFinished { item, .. }
+                        if self.profile == GenerationApi::Chat =>
+                    {
                         if !self.reasoning.contains(item) {
                             continue;
                         }
@@ -263,13 +264,16 @@ impl EventProjection {
                             .into_iter()
                             .chain(self.calls.iter().copied())
                             .collect();
-                        if self.profile == Profile::Responses || envelope.members() != members {
+                        if self.profile == GenerationApi::Responses || envelope.members() != members
+                        {
                             self.record(super::envelope_loss(self.profile, "event.project"));
                         }
                         continue;
                     }
                     StreamEvent::Progress(_) if !self.phase_only => continue,
-                    StreamEvent::Terminal { terminal, .. } if self.profile == Profile::Chat => {
+                    StreamEvent::Terminal { terminal, .. }
+                        if self.profile == GenerationApi::Chat =>
+                    {
                         let owner = self.owner(&mut out);
                         self.close_text(&mut out);
                         for item in self.pending.drain(..) {

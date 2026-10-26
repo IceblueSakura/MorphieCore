@@ -1,12 +1,19 @@
 //! Independent HTTP oracle for standard clients over a native Messages endpoint.
 use super::Guard;
-use crate::messages_stream::messages_stream_body;
-use crate::messages_wire::{native_response, native_stream_body};
-use axum::response::{IntoResponse, Response};
-use axum::{Json, Router, extract::State, http::HeaderMap, routing::post};
+use crate::{
+    messages_stream::messages_stream_body,
+    messages_wire::{native_response, native_stream_body},
+};
+use axum::{
+    Json, Router,
+    extract::State,
+    http::HeaderMap,
+    response::{IntoResponse, Response},
+    routing::post,
+};
 use morphiecore::{
     gateway::{Entry, Gateway, Limits},
-    protocol::{openai::Profile, replay_envelope},
+    protocol::{openai::GenerationApi, replay_envelope},
     provider::{CredentialBindingId, SecretMaterial, TrustedOrigin},
     topology::{self, ModelMetadata, catalog::MESSAGES_BINDINGS},
 };
@@ -18,19 +25,19 @@ use std::{
 };
 use tokio::net::TcpListener;
 
-async fn client_body(response: reqwest::Response, profile: Profile, stream: bool) -> Value {
+async fn client_body(response: reqwest::Response, profile: GenerationApi, stream: bool) -> Value {
     if !stream || response.status() != 200 {
         return response.json().await.unwrap();
     }
     let wire = response.text().await.unwrap();
     stream_body(&wire, profile)
 }
-fn stream_body(wire: &str, profile: Profile) -> Value {
+fn stream_body(wire: &str, profile: GenerationApi) -> Value {
     assert!(!wire.contains("synthetic-native-signature") && !wire.contains("synthetic-redacted"));
-    let client = morphiecore::protocol::openai::Adapter::new(
+    let client = morphiecore::protocol::openai::GenerationCodec::new(
         profile,
         morphiecore::protocol::openai::Dialect::Standard,
-        Some(morphiecore::execution::replay::CLIENT_ORIGIN.clone()),
+        Some(morphiecore::protocol::replay_envelope::CLIENT_ORIGIN.clone()),
     );
     let mut decoder = client.event_decoder();
     for data in wire.lines().filter_map(|line| line.strip_prefix("data: ")) {
@@ -44,9 +51,9 @@ fn stream_body(wire: &str, profile: Profile) -> Value {
     client
         .encode_response(
             &decoder.materialize().unwrap(),
-            &morphiecore::protocol::openai::TargetCaps {
-                replay_origin: Some(morphiecore::execution::replay::CLIENT_ORIGIN.clone()),
-                ..morphiecore::protocol::openai::TargetCaps::full()
+            &morphiecore::protocol::openai::TargetContract {
+                replay_origin: Some(morphiecore::protocol::replay_envelope::CLIENT_ORIGIN.clone()),
+                ..morphiecore::protocol::openai::TargetContract::full()
             },
         )
         .unwrap()
@@ -338,7 +345,7 @@ async fn native_fixture() -> NativeFixture {
     let gate = Gateway::new(
         topology,
         morphiecore::gateway::TaskEntries {
-            generation: morphiecore::adapter::ClientProtocol::ALL
+            generation: morphiecore::protocol::ClientProtocol::ALL
                 .into_iter()
                 .flat_map(|protocol| {
                     endpoint_ids.iter().map(move |endpoint| Entry {
@@ -407,9 +414,9 @@ async fn json_and_stream_clients_replay_native_thinking_and_tools() {
     let diagnostics = &fixture.diagnostics;
     let client = &fixture.client;
     let binding = &MESSAGES_BINDINGS[0];
-    for profile in [Profile::Responses, Profile::Chat] {
+    for profile in [GenerationApi::Responses, GenerationApi::Chat] {
         for stream in [false, true] {
-            let responses = profile == Profile::Responses;
+            let responses = profile == GenerationApi::Responses;
             let path = if responses {
                 "/v1/responses"
             } else {
@@ -736,8 +743,8 @@ async fn json_and_stream_clients_replay_native_thinking_and_tools() {
     }
     assert_eq!(seen.lock().unwrap().len(), 26);
     // Standard error events preserve classes without inventing a failed Response.
-    for profile in [Profile::Responses, Profile::Chat] {
-        let responses = profile == Profile::Responses;
+    for profile in [GenerationApi::Responses, GenerationApi::Chat] {
+        let responses = profile == GenerationApi::Responses;
         for stream in [false, true] {
             for prompt in ["overflow", "overloaded", "overloaded-early"] {
                 tokio::time::pause();
@@ -884,8 +891,12 @@ async fn native_tool_publication_waits_for_eof_and_releases_upstream_without_rep
     let control = &fixture.control;
     let client = &fixture.client;
     let binding = &MESSAGES_BINDINGS[0];
-    for profile in [Some(Profile::Responses), Some(Profile::Chat), None] {
-        let responses = profile == Some(Profile::Responses);
+    for profile in [
+        Some(GenerationApi::Responses),
+        Some(GenerationApi::Chat),
+        None,
+    ] {
+        let responses = profile == Some(GenerationApi::Responses);
         let path = if profile.is_none() {
             "/v1/messages"
         } else if responses {

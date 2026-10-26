@@ -91,7 +91,7 @@ impl FidelityRecords {
     /// Partial snapshots are checked but cannot bind response-wide facts.
     pub(crate) fn capture_response_extras(
         &mut self,
-        protocol: Profile,
+        protocol: GenerationApi,
         adaptation: &Adaptation,
         o: &Map<String, Value>,
         semantic: Option<&GenerationResponse>,
@@ -135,7 +135,7 @@ impl FidelityRecords {
     }
     pub(crate) fn projected_response_extras(
         &self,
-        protocol: Profile,
+        protocol: GenerationApi,
         adaptation: &Adaptation,
         semantic: &GenerationResponse,
         response_id: &str,
@@ -154,7 +154,7 @@ impl FidelityRecords {
     }
     pub(crate) fn capture_routing_extras(
         &mut self,
-        protocol: Profile,
+        protocol: GenerationApi,
         adaptation: &Adaptation,
         values: crate::protocol::openai::dialect::adapter_shapes::Extras,
         semantic: &GenerationResponse,
@@ -189,7 +189,7 @@ impl FidelityRecords {
     }
     pub(crate) fn projected_routing_extras(
         &self,
-        protocol: Profile,
+        protocol: GenerationApi,
         adaptation: &Adaptation,
         semantic: &GenerationResponse,
         response_id: &str,

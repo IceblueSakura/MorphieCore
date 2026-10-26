@@ -137,7 +137,7 @@ async fn binary_bootstraps_default_home_files_and_ignores_environment_keys() {
         .iter()
         .find(|b| b.model == "deepseek-flash")
         .unwrap()
-        .endpoint_id(morphiecore::topology::ProtocolProfile::OpenAiResponses);
+        .endpoint_id(morphiecore::topology::GenerationProtocol::OpenAiResponses);
     options
         .open(root.parent().unwrap().join("models.json"))
         .unwrap()

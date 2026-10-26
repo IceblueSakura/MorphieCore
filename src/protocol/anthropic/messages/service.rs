@@ -1,8 +1,7 @@
 //! Messages capacity policy and reported service have different native vocabularies.
 use super::shape::{nonnull, presence, put};
-use crate::protocol::failure::CarrierReason;
 use crate::{
-    protocol::CodecError,
+    protocol::{CodecError, failure::CarrierReason},
     semantic::{
         context::{ServiceClass, ServicePolicy},
         value::Presence,
@@ -28,7 +27,7 @@ pub(super) fn policy_wire(policy: ServicePolicy) -> Result<&'static str, CodecEr
         ServicePolicy::PreferCommittedCapacity => Ok("auto"),
         ServicePolicy::StandardCapacityOnly => Ok("standard_only"),
         _ => Err(CodecError::Unsupported(CarrierReason::Field(
-            crate::lowering::generation::Field::ServiceClass,
+            crate::protocol::conversion::generation::Field::ServiceClass,
         ))),
     }
 }
@@ -50,7 +49,7 @@ pub(super) fn class_wire(class: ServiceClass) -> Result<&'static str, CodecError
         ServiceClass::PriorityCapacity => Ok("priority"),
         ServiceClass::BatchProcessing => Ok("batch"),
         _ => Err(CodecError::Unsupported(CarrierReason::Field(
-            crate::lowering::generation::Field::ServiceClass,
+            crate::protocol::conversion::generation::Field::ServiceClass,
         ))),
     }
 }

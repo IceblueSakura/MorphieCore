@@ -3,7 +3,7 @@ use crate::{
     protocol::{openai::Dialect, reasoning::ReasoningEffortMapping},
     provider::{ProviderDefinition, catalog},
     semantic::task::generation::{EffortLevel as E, EffortScope},
-    topology::ProtocolProfile,
+    topology::GenerationProtocol,
 };
 #[derive(Clone, Copy)]
 pub enum RequestSlice {
@@ -15,8 +15,8 @@ pub enum RequestSlice {
 impl RequestSlice {
     pub fn apply(
         self,
-        mut contract: crate::semantic::task::generation::GenerationSemanticContract,
-    ) -> crate::semantic::task::generation::GenerationSemanticContract {
+        mut contract: crate::semantic::task::generation::GenerationFeatureSet,
+    ) -> crate::semantic::task::generation::GenerationFeatureSet {
         if matches!(self, Self::RestrictedLuna) {
             contract.temperature = false;
             contract.top_p = false;
@@ -57,8 +57,8 @@ pub struct ApiKeyBinding {
     pub canonical_model: &'static str,
     /// Exact model spelling accepted by this Provider, injected during encoding.
     pub upstream: &'static str,
-    pub protocols: &'static [ProtocolProfile],
-    pub effort_mappings: &'static [(ProtocolProfile, &'static ReasoningEffortMapping)],
+    pub protocols: &'static [GenerationProtocol],
+    pub effort_mappings: &'static [(GenerationProtocol, &'static ReasoningEffortMapping)],
     pub replay_responses: bool,
     pub replay_chat: bool,
     pub public_slice: RequestSlice,
@@ -66,8 +66,10 @@ pub struct ApiKeyBinding {
 }
 use super::{GENERATION_REQUEST_BYTES, GENERATION_RESPONSE_BYTES, GENERATION_TIMEOUT_MS, models};
 use crate::{
-    lowering::generation::ReportedFactPolicy,
-    protocol::openai::{Adapter, TargetCaps},
+    protocol::{
+        conversion::generation::ReportedFactPolicy,
+        openai::{GenerationCodec, TargetContract},
+    },
     provider::{CredentialBindingId, CredentialKind},
     topology::{
         Endpoint, EndpointId, EndpointTarget, ExecutionContract, ModelId, PublicModel, RouteId,
@@ -94,11 +96,11 @@ impl ApiKeyBinding {
             reported_facts: ReportedFactPolicy::Faithful,
         }
     }
-    pub fn endpoint(&self, protocol: ProtocolProfile) -> Result<Endpoint, TopologyError> {
+    pub fn endpoint(&self, protocol: GenerationProtocol) -> Result<Endpoint, TopologyError> {
         let provider = (self.provider)();
         let (family, path, replay) = match protocol {
-            ProtocolProfile::OpenAiChat => (
-                crate::protocol::openai::Profile::Chat,
+            GenerationProtocol::OpenAiChat => (
+                crate::protocol::openai::GenerationApi::Chat,
                 provider
                     .generation_entry(protocol.operation())
                     .expect("declared entry")
@@ -106,8 +108,8 @@ impl ApiKeyBinding {
                     .clone(),
                 self.replay_chat,
             ),
-            ProtocolProfile::OpenAiResponses => (
-                crate::protocol::openai::Profile::Responses,
+            GenerationProtocol::OpenAiResponses => (
+                crate::protocol::openai::GenerationApi::Responses,
                 provider
                     .generation_entry(protocol.operation())
                     .expect("declared entry")
@@ -115,19 +117,19 @@ impl ApiKeyBinding {
                     .clone(),
                 self.replay_responses,
             ),
-            ProtocolProfile::AnthropicMessages
-            | ProtocolProfile::GoogleGenerateContent
-            | ProtocolProfile::GoogleInteractions => {
+            GenerationProtocol::AnthropicMessages
+            | GenerationProtocol::GoogleGenerateContent
+            | GenerationProtocol::GoogleInteractions => {
                 return Err(TopologyError::ContractUnsatisfiable);
             }
         };
         let scope = crate::protocol::replay_envelope::issuer(provider.id.as_str(), self.upstream);
-        let mut adapter = Adapter::new(family, self.dialect, Some(scope.clone()));
+        let mut adapter = GenerationCodec::new(family, self.dialect, Some(scope.clone()));
         // This hosted model's published Chat contract permits one initial string
         // system message. Do not extend it to Responses or other NVIDIA models.
         // https://docs.api.nvidia.com/nim/reference/nvidia-nemotron-3-super-120b-a12b-infer
         if self.dialect == Dialect::Nvidia
-            && family == crate::protocol::openai::Profile::Chat
+            && family == crate::protocol::openai::GenerationApi::Chat
             && self.upstream == "nvidia/nemotron-3-super-120b-a12b"
         {
             adapter.adaptation.rules.system_instruction_messages = true;
@@ -135,7 +137,7 @@ impl ApiKeyBinding {
             adapter.adaptation.rules.chat_initial_instruction_only = true;
         }
         adapter.adaptation.rules.responses_lifecycle_reports = self.dialect == Dialect::OpenRouter
-            && family == crate::protocol::openai::Profile::Responses
+            && family == crate::protocol::openai::GenerationApi::Responses
             && self.canonical_model == "gpt-6-luna";
         let mut mappings = self
             .effort_mappings
@@ -154,10 +156,10 @@ impl ApiKeyBinding {
         if mappings.next().is_some() {
             return Err(TopologyError::InvalidModelBinding);
         }
-        let contract = TargetCaps {
+        let contract = TargetContract {
             // Official thinking-mode contract: reasoning_content is separate
             // from the answer. An off request must use the native boolean.
-            chat_thinking_output: family == crate::protocol::openai::Profile::Chat
+            chat_thinking_output: family == crate::protocol::openai::GenerationApi::Chat
                 && self.dialect == Dialect::Bailian
                 && matches!(self.canonical_model, "qwen3.8-flash" | "qwen3.8-max"),
             semantics: self
@@ -168,7 +170,7 @@ impl ApiKeyBinding {
             identity_hints: false,
             standard_context: false,
             prediction: false,
-            ..TargetCaps::full()
+            ..TargetContract::full()
         };
         Ok(Endpoint {
             id: self.endpoint_id(protocol),
@@ -193,23 +195,23 @@ impl ApiKeyBinding {
             credential: self.credential(),
         })
     }
-    pub fn endpoint_id(&self, protocol: ProtocolProfile) -> EndpointId {
+    pub fn endpoint_id(&self, protocol: GenerationProtocol) -> EndpointId {
         let suffix = match protocol {
-            ProtocolProfile::OpenAiChat => "chat",
-            ProtocolProfile::OpenAiResponses => "responses",
-            ProtocolProfile::AnthropicMessages => "messages",
-            ProtocolProfile::GoogleGenerateContent => "generate-content",
-            ProtocolProfile::GoogleInteractions => "interactions",
+            GenerationProtocol::OpenAiChat => "chat",
+            GenerationProtocol::OpenAiResponses => "responses",
+            GenerationProtocol::AnthropicMessages => "messages",
+            GenerationProtocol::GoogleGenerateContent => "generate-content",
+            GenerationProtocol::GoogleInteractions => "interactions",
         };
         EndpointId::new(&format!("{}-{suffix}", self.endpoint_prefix)).expect("static id")
     }
 }
-const BOTH: &[ProtocolProfile] = &[
-    ProtocolProfile::OpenAiResponses,
-    ProtocolProfile::OpenAiChat,
+const BOTH: &[GenerationProtocol] = &[
+    GenerationProtocol::OpenAiResponses,
+    GenerationProtocol::OpenAiChat,
 ];
-const CHAT: &[ProtocolProfile] = &[ProtocolProfile::OpenAiChat];
-const RESPONSES: &[ProtocolProfile] = &[ProtocolProfile::OpenAiResponses];
+const CHAT: &[GenerationProtocol] = &[GenerationProtocol::OpenAiChat];
+const RESPONSES: &[GenerationProtocol] = &[GenerationProtocol::OpenAiResponses];
 // Documented wire aliases, not a claim of distinct effective thinking strength.
 // https://mimo.mi.com/docs/zh-CN/api/chat/responses
 const MIMO_FLASH_RESPONSES_EFFORT: ReasoningEffortMapping = ReasoningEffortMapping {
@@ -450,7 +452,7 @@ pub const API_KEY_BINDINGS: &[ApiKeyBinding] = &[
         dialect: Dialect::Xiaomi,
         endpoint_prefix: "xiaomi-flash",
         effort_mappings: &[(
-            ProtocolProfile::OpenAiResponses,
+            GenerationProtocol::OpenAiResponses,
             &MIMO_FLASH_RESPONSES_EFFORT,
         )],
         model: "mimo-v2.6-flash",
@@ -595,8 +597,8 @@ pub const API_KEY_BINDINGS: &[ApiKeyBinding] = &[
         dialect: Dialect::Zhipu,
         endpoint_prefix: "zhipu",
         effort_mappings: &[
-            (ProtocolProfile::OpenAiChat, &ZHIPU_GLM_EFFORT),
-            (ProtocolProfile::OpenAiResponses, &ZHIPU_GLM_EFFORT),
+            (GenerationProtocol::OpenAiChat, &ZHIPU_GLM_EFFORT),
+            (GenerationProtocol::OpenAiResponses, &ZHIPU_GLM_EFFORT),
         ],
         model: "glm-5.3",
         canonical_model: "glm-5.3",
@@ -627,8 +629,8 @@ pub const API_KEY_BINDINGS: &[ApiKeyBinding] = &[
         dialect: Dialect::Zhipu,
         endpoint_prefix: "zhipu-flash",
         effort_mappings: &[
-            (ProtocolProfile::OpenAiChat, &ZHIPU_GLM_FLASH_EFFORT),
-            (ProtocolProfile::OpenAiResponses, &ZHIPU_GLM_FLASH_EFFORT),
+            (GenerationProtocol::OpenAiChat, &ZHIPU_GLM_FLASH_EFFORT),
+            (GenerationProtocol::OpenAiResponses, &ZHIPU_GLM_FLASH_EFFORT),
         ],
         model: "glm-5.3-flash",
         canonical_model: "glm-5.3-flash",

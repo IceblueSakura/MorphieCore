@@ -1,20 +1,20 @@
 //! Request admission and candidate-local projection before OpenAI wire encoding.
 use super::{
-    RepresentationError, TargetCaps,
+    RepresentationError, TargetContract,
     checks::{check_tool_selection, represent_reasoning, text_items, validate_wire_ids},
     message_groups, projection,
 };
 use crate::{
     protocol::{
         fidelity::FidelityRecords,
-        openai::{Profile, RequestRepresentation},
+        openai::{GenerationApi, RequestRepresentation},
     },
     semantic::task::generation::*,
 };
 
 pub fn check(
     r: &GenerationRequest,
-    c: TargetCaps,
+    c: TargetContract,
 ) -> Result<GenerationRequirements, RepresentationError> {
     r.validate()?;
     c.semantics.check(r).map_err(RepresentationError::Admission)
@@ -22,8 +22,8 @@ pub fn check(
 pub fn lower_request<'a>(
     r: &'a GenerationRequest,
     fidelity: &'a FidelityRecords,
-    profile: Profile,
-    c: TargetCaps,
+    profile: GenerationApi,
+    c: TargetContract,
 ) -> Result<RequestRepresentation<'a>, RepresentationError> {
     r.validate()?;
     if r.items()
@@ -34,13 +34,14 @@ pub fn lower_request<'a>(
     }
     let mut semantic = std::borrow::Cow::Borrowed(r);
     let mut projection = Vec::new();
-    if profile == Profile::Chat
+    if profile == GenerationApi::Chat
         && let Some(projected) = crate::protocol::phase::omit_request(r)?
     {
         semantic = std::borrow::Cow::Owned(projected);
         projection.push(
-            projection::LossRule::OmitChatMessagePhase
-                .effect(crate::lowering::generation::ConversionBoundary::RequestProject),
+            projection::ProjectionRule::OmitChatMessagePhase.effect(
+                crate::protocol::conversion::generation::ConversionBoundary::RequestProject,
+            ),
         );
     }
     if let Some((groups, loss)) =
@@ -48,16 +49,21 @@ pub fn lower_request<'a>(
     {
         // Replay dependencies must be checked against the final target value below.
         semantic = std::borrow::Cow::Owned(semantic.into_owned().with_message_envelopes(groups)?);
-        projection
-            .push(loss.effect(crate::lowering::generation::ConversionBoundary::RequestProject));
+        projection.push(
+            loss.effect(
+                crate::protocol::conversion::generation::ConversionBoundary::RequestProject,
+            ),
+        );
     }
-    if semantic.settings().prediction.is_some() && (profile != Profile::Chat || !c.prediction) {
+    if semantic.settings().prediction.is_some() && (profile != GenerationApi::Chat || !c.prediction)
+    {
         let mut settings = semantic.settings().clone();
         settings.prediction = None;
         semantic = std::borrow::Cow::Owned(semantic.into_owned().with_settings(settings)?);
         projection.push(
-            projection::LossRule::OmitPrediction
-                .effect(crate::lowering::generation::ConversionBoundary::RequestProject),
+            projection::ProjectionRule::OmitPrediction.effect(
+                crate::protocol::conversion::generation::ConversionBoundary::RequestProject,
+            ),
         );
     }
     if c.adaptation.rules.parallel_tools_always_enabled {
@@ -67,11 +73,11 @@ pub fn lower_request<'a>(
                 let mut settings = semantic.settings().clone();
                 settings.parallel_tool_calls = None;
                 semantic = std::borrow::Cow::Owned(semantic.into_owned().with_settings(settings)?);
-                projection.push(crate::lowering::generation::Effect::new(
+                projection.push(crate::protocol::conversion::generation::Effect::new(
                     "deepseek.omit-parallel-tool-permission.v1",
-                    crate::lowering::generation::Field::ParallelTools,
-                    crate::lowering::generation::ConversionBoundary::RequestProject,
-                    crate::lowering::generation::Change::Omit,
+                    crate::protocol::conversion::generation::Field::ParallelTools,
+                    crate::protocol::conversion::generation::ConversionBoundary::RequestProject,
+                    crate::protocol::conversion::generation::Change::Omit,
                 ));
             }
             None => {}
@@ -80,9 +86,9 @@ pub fn lower_request<'a>(
     let r = semantic.as_ref();
     let q = check(r, c.clone())?;
     if r.controls().top_k.is_some()
-        && !(profile == Profile::Chat && c.adaptation.rules.thinking_controls)
-        || profile == Profile::Responses && r.controls().has_extended_controls()
-        || profile == Profile::Chat
+        && !(profile == GenerationApi::Chat && c.adaptation.rules.thinking_controls)
+        || profile == GenerationApi::Responses && r.controls().has_extended_controls()
+        || profile == GenerationApi::Chat
             && (r.controls().stop_sequences.len() > 4
                 || [
                     r.controls().presence_penalty(),
@@ -108,7 +114,7 @@ pub fn lower_request<'a>(
         return Err(RepresentationError::UnmigratedSemantic);
     }
     check_tool_selection(r.tool_choice())?;
-    if profile != Profile::Chat
+    if profile != GenerationApi::Chat
         && (!r.settings().audio.is_absent() || !r.settings().output_modalities.is_absent())
     {
         return Err(RepresentationError::UnmigratedSemantic);
@@ -127,7 +133,7 @@ pub fn lower_request<'a>(
             }
         }
     }
-    if profile == Profile::Chat
+    if profile == GenerationApi::Chat
         && q.reasoning
         && !c.adaptation.rules.readable_reasoning
         && r.items()
@@ -136,17 +142,17 @@ pub fn lower_request<'a>(
     {
         return Err(RepresentationError::Reasoning);
     }
-    if profile == Profile::Chat
+    if profile == GenerationApi::Chat
         && r.items()
             .iter()
             .any(|(_, i)| i.lifecycle().is_some_and(|s| s != ItemLifecycle::Completed))
     {
         return Err(RepresentationError::Terminal);
     }
-    if profile == Profile::Chat && q.truncation {
+    if profile == GenerationApi::Chat && q.truncation {
         return Err(RepresentationError::UnmigratedSemantic);
     }
-    if profile == Profile::Chat
+    if profile == GenerationApi::Chat
         && r.items()
             .iter()
             .any(|(_, i)| matches!(i, Item::Message(m) if m.phase.is_some()))
@@ -154,7 +160,7 @@ pub fn lower_request<'a>(
         // Phase labels are Responses-only; reject instead of dropping the label.
         return Err(RepresentationError::UnmigratedSemantic);
     }
-    if profile == Profile::Chat
+    if profile == GenerationApi::Chat
         && r.controls().top_logprobs.is_some()
         && r.controls().logprobs != crate::semantic::value::Presence::Value(true)
     {
@@ -189,8 +195,8 @@ pub fn lower_request<'a>(
                 .is_ok_and(|v| v.kind() == ResourceKind::Video)
         });
     let video_carrier = match profile {
-        Profile::Chat => c.adaptation.rules.chat_video_url,
-        Profile::Responses => c.adaptation.rules.responses_input_video,
+        GenerationApi::Chat => c.adaptation.rules.chat_video_url,
+        GenerationApi::Responses => c.adaptation.rules.responses_input_video,
     };
     if video && !video_carrier {
         return Err(RepresentationError::UnmigratedSemantic);
@@ -199,7 +205,7 @@ pub fn lower_request<'a>(
         if let Item::Message(message) = item {
             for part in &message.parts {
                 if let ContentPart::Resource(resource) = &part.content
-                    && profile == Profile::Chat
+                    && profile == GenerationApi::Chat
                     && resource.media(r.resources())?.image_detail() == Some(ImageDetail::Original)
                     && !c.adaptation.rules.chat_original_image_detail
                 {
@@ -208,18 +214,18 @@ pub fn lower_request<'a>(
             }
         }
     }
-    if profile == Profile::Responses {
+    if profile == GenerationApi::Responses {
         crate::protocol::openai::responses::request::validate_program_history(r)
             .map_err(|_| RepresentationError::Tools)?;
     }
-    if (profile == Profile::Responses && !r.message_envelopes().is_empty())
-        || (profile == Profile::Chat
+    if (profile == GenerationApi::Responses && !r.message_envelopes().is_empty())
+        || (profile == GenerationApi::Chat
             && !crate::protocol::openai::chat::owners::contiguous(r.items(), r.message_envelopes()))
     {
         return Err(RepresentationError::MessageGrouping);
     }
     text_items(r.items(), profile, true, r.resources())?;
-    if profile == Profile::Chat
+    if profile == GenerationApi::Chat
         && r.tools()
             .iter()
             .any(|t| matches!(t, ToolDefinition::Namespace(_)))
@@ -227,11 +233,11 @@ pub fn lower_request<'a>(
         return Err(RepresentationError::Tools);
     }
     for tool in r.tools().iter().flat_map(ToolDefinition::leaves) {
-        if !tool.dispatch_inactive() && profile == Profile::Chat {
+        if !tool.dispatch_inactive() && profile == GenerationApi::Chat {
             return Err(RepresentationError::Tools);
         }
         if let ToolDefinition::Function(t) = tool {
-            if profile == Profile::Chat
+            if profile == GenerationApi::Chat
                 && !crate::protocol::openai::function_tools::valid_chat_function_name(
                     t.name.as_str(),
                 )
@@ -243,21 +249,20 @@ pub fn lower_request<'a>(
             }
             // Non-strict source defaults have an exact explicit-false carrier in
             // Responses. The inverse requires schema normalization, not omission.
-            if profile == Profile::Chat
+            if profile == GenerationApi::Chat
                 && t.strict == FunctionStrictness::Omitted(StrictDefault::NormalizeSchema)
             {
                 return Err(RepresentationError::StrictDefault);
             }
-            if profile == Profile::Chat && t.output_schema.is_some() {
+            if profile == GenerationApi::Chat && t.output_schema.is_some() {
                 return Err(RepresentationError::Tools);
             }
         }
     }
     for (_, item) in r.items() {
-        if item
-            .cache_boundaries()
-            .any(|cache| profile == Profile::Chat || matches!(cache, PrefixCacheBoundary::Ttl(_)))
-        {
+        if item.cache_boundaries().any(|cache| {
+            profile == GenerationApi::Chat || matches!(cache, PrefixCacheBoundary::Ttl(_))
+        }) {
             return Err(RepresentationError::Controls);
         }
         if let Item::Message(m) = item

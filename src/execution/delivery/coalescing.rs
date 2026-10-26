@@ -34,7 +34,7 @@ struct PendingText {
     deadline: Instant,
     bytes: usize,
     encoded_text: usize,
-    evidence: crate::lowering::generation::EvidenceDelta,
+    evidence: crate::protocol::conversion::generation::EvidenceDelta,
 }
 pub(super) fn escaped_bytes(text: &str) -> usize {
     text.bytes()
@@ -99,8 +99,8 @@ impl EventContext {
                         .sum::<usize>()
             })
             .sum();
-        let execution = serde_json::to_vec(&context.execution).ok()?.len();
-        let diagnostics = serde_json::to_vec(&context.cache_diagnostics).ok()?.len();
+        let execution = context.execution.retained_bytes();
+        let diagnostics = std::mem::size_of_val(&context.cache_diagnostics);
         Some(
             std::mem::size_of::<Self>()
                 + metadata.id.as_ref().map_or(0, String::len)
@@ -115,8 +115,8 @@ impl EventContext {
                 + settings.saturating_mul(64)
                 + report_storage
                 + owners
-                + execution.saturating_mul(64)
-                + diagnostics.saturating_mul(64)
+                + execution
+                + diagnostics
                 + self.fidelity.retained_bytes()
                 + metadata.instruction_fidelity.retained_bytes(),
         )

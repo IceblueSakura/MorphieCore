@@ -2,19 +2,34 @@
 mod reports;
 use super::value::Presence;
 pub use reports::{ReportPhase, ResponseReport, ResponseReports};
-use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum ContextError {
     #[error("invalid context: {0}")]
-    Invalid(&'static str),
+    Invalid(ContextReason),
     #[error("context budget exceeded")]
     Limit,
     #[error("stateful execution is not admitted")]
     Stateful,
     #[error(transparent)]
     Generation(#[from] super::task::generation::GenerationError),
+}
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ContextReason {
+    Conversation,
+    CacheOptions,
+    MaxToolCalls,
+    SystemFingerprint,
+    InstructionEchoes,
+    CompletionTimestamp,
+    StreamOptions,
+    StreamOptionsWithoutStreaming,
+}
+impl std::fmt::Display for ContextReason {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{self:?}")
+    }
 }
 /// Caller-owned logical grouping, not stored history, authentication or replay authority.
 #[derive(Clone, Eq, PartialEq)]
@@ -38,7 +53,7 @@ impl ConversationContext {
     fn new(id: &str, conversation_scoped: bool) -> Result<Self, ContextError> {
         if id.is_empty() || id.len() > 256 || id.bytes().any(|b| !b.is_ascii_graphic() || b == b',')
         {
-            return Err(ContextError::Invalid("conversation context"));
+            return Err(ContextError::Invalid(ContextReason::Conversation));
         }
         Ok(Self {
             id: id.into(),
@@ -80,53 +95,37 @@ pub enum ServiceClass {
     PriorityCapacity,
     BatchProcessing,
 }
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CacheRetention {
     InMemory,
-    #[serde(rename = "24h")]
     Day,
 }
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CacheMode {
     Implicit,
     Explicit,
 }
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CacheTtl {
-    #[serde(rename = "30m")]
     ThirtyMinutes,
 }
-#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct CacheOptions {
-    #[serde(default, skip_serializing_if = "Presence::is_absent")]
     pub mode: Presence<CacheMode>,
-    #[serde(default, skip_serializing_if = "Presence::is_absent")]
     pub ttl: Presence<CacheTtl>,
-    #[serde(default, skip_serializing_if = "Presence::is_absent")]
     pub comparison_response_id: Presence<String>,
-    #[serde(default, skip_serializing_if = "Presence::is_absent")]
     pub prewarm: Presence<bool>,
 }
-#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct CacheHints {
-    #[serde(default, skip_serializing_if = "Presence::is_absent")]
     pub prompt_cache_key: Presence<String>,
-    #[serde(default, skip_serializing_if = "Presence::is_absent")]
     pub prompt_cache_retention: Presence<CacheRetention>,
-    #[serde(default, skip_serializing_if = "Presence::is_absent")]
     pub prompt_cache_options: Presence<CacheOptions>,
 }
 /// Client identity and safety metadata are not cache keys or session identities.
-#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct ClientIdentityHints {
-    #[serde(default, skip_serializing_if = "Presence::is_absent")]
     pub safety_identifier: Presence<String>,
-    #[serde(default, skip_serializing_if = "Presence::is_absent")]
     pub user: Presence<String>,
 }
 impl ClientIdentityHints {
@@ -156,7 +155,7 @@ impl CacheHints {
                 || options.ttl == Presence::Null
                 || options.prewarm == Presence::Null
             {
-                return Err(ContextError::Invalid("cache options"));
+                return Err(ContextError::Invalid(ContextReason::CacheOptions));
             }
             if options
                 .comparison_response_id
@@ -166,37 +165,61 @@ impl CacheHints {
                 return Err(ContextError::Limit);
             }
         }
-        super::value::json_size(self, super::task::generation::MAX_TEXT_BYTES)
-            .map_err(|_| ContextError::Limit)?;
+        // Fixed field cardinality and the individual text bounds fit this budget.
+        const {
+            assert!(super::task::generation::MAX_TEXT_BYTES >= 8192);
+        }
         Ok(())
     }
 }
-#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct ExecutionHints {
-    #[serde(flatten)]
     pub cache: CacheHints,
-    #[serde(flatten)]
     pub identity: ClientIdentityHints,
-    #[serde(default, skip_serializing_if = "Presence::is_absent")]
     pub metadata: Presence<BTreeMap<String, String>>,
-    #[serde(default, skip_serializing_if = "Presence::is_absent")]
     pub max_tool_calls: Presence<u64>,
-    #[serde(default, skip_serializing_if = "Presence::is_absent")]
     pub store: Presence<bool>,
-    #[serde(default, skip_serializing_if = "Presence::is_absent")]
     pub background: Presence<bool>,
-    #[serde(default, skip_serializing_if = "Presence::is_absent")]
     pub previous_response_id: Presence<()>,
-    #[serde(default, skip_serializing_if = "Presence::is_absent")]
     pub conversation: Presence<()>,
-    #[serde(default, skip_serializing_if = "Presence::is_absent")]
     pub prompt: Presence<()>,
-    #[serde(default, skip_serializing_if = "Presence::is_absent")]
     pub moderation: Presence<()>,
-    #[serde(default, skip_serializing_if = "Presence::is_absent")]
     pub context_management: Presence<Vec<()>>,
 }
 impl ExecutionHints {
+    /// Conservative retained storage plus escaped-text working space, without
+    /// choosing a protocol's field names or serialization.
+    pub fn retained_bytes(&self) -> usize {
+        fn text(value: &String) -> usize {
+            value.capacity().max(value.len().saturating_mul(64))
+        }
+        let mut bytes = std::mem::size_of_val(self);
+        for value in [
+            self.cache.prompt_cache_key.value(),
+            self.cache
+                .prompt_cache_options
+                .value()
+                .and_then(|o| o.comparison_response_id.value()),
+            self.identity.safety_identifier.value(),
+            self.identity.user.value(),
+        ]
+        .into_iter()
+        .flatten()
+        {
+            bytes = bytes.saturating_add(text(value));
+        }
+        if let Some(metadata) = self.metadata.value() {
+            for (key, value) in metadata {
+                // Charge a whole B-tree node per entry, including spare key/value
+                // slots and edges; sparse maps still allocate a complete node.
+                bytes = bytes
+                    .saturating_add(1024)
+                    .saturating_add(text(key))
+                    .saturating_add(text(value));
+            }
+        }
+        bytes
+    }
     pub fn validate(&self) -> Result<(), ContextError> {
         self.cache.validate()?;
         self.identity.validate()?;
@@ -217,13 +240,12 @@ impl ExecutionHints {
             return Err(ContextError::Limit);
         }
         if self.max_tool_calls == Presence::Value(0) {
-            return Err(ContextError::Invalid("max_tool_calls"));
+            return Err(ContextError::Invalid(ContextReason::MaxToolCalls));
         }
         Ok(())
     }
 }
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CacheDiagnostics {
     CacheHit,
     ComparisonResponseNotFound,
@@ -231,12 +253,10 @@ pub enum CacheDiagnostics {
     CacheMiss {
         reason: CacheMissReason,
         cache_missed_tokens: u64,
-        #[serde(default, skip_serializing_if = "Presence::is_absent")]
         comparison_reusable_tokens: Presence<u64>,
     },
 }
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CacheMissReason {
     ModelChanged,
     PromptCacheKeyChanged,
@@ -283,7 +303,7 @@ impl ResponseContext {
             .value()
             .is_some_and(|s| s.is_empty() || s.len() > 256)
         {
-            return Err(ContextError::Invalid("system fingerprint"));
+            return Err(ContextError::Invalid(ContextReason::SystemFingerprint));
         }
         self.reports.validate()?;
         if let Some(items) = &self.instruction_messages {
@@ -295,7 +315,7 @@ impl ResponseContext {
                 .iter()
                 .any(|(_, item)| !matches!(item, Item::Instruction(_)))
             {
-                return Err(ContextError::Invalid("instruction echoes"));
+                return Err(ContextError::Invalid(ContextReason::InstructionEchoes));
             }
             if !items.is_empty() {
                 GenerationRequest::new(items.clone(), GenerationControls::default())?;
@@ -306,7 +326,7 @@ impl ResponseContext {
             .value()
             .is_some_and(|n| !super::value::valid_timestamp(n))
         {
-            return Err(ContextError::Invalid("completion timestamp"));
+            return Err(ContextError::Invalid(ContextReason::CompletionTimestamp));
         }
         Ok(())
     }
@@ -326,7 +346,7 @@ impl StreamOptions {
     }
     pub fn validate(&self) -> Result<(), ContextError> {
         if self.include_usage == Presence::Null || self.include_obfuscation == Presence::Null {
-            return Err(ContextError::Invalid("stream options"));
+            return Err(ContextError::Invalid(ContextReason::StreamOptions));
         }
         Ok(())
     }
@@ -343,10 +363,29 @@ impl DeliveryIntent {
     pub fn validate(&self) -> Result<(), ContextError> {
         if let Some(options) = self.options.value() {
             if !self.streaming() {
-                return Err(ContextError::Invalid("stream options without streaming"));
+                return Err(ContextError::Invalid(
+                    ContextReason::StreamOptionsWithoutStreaming,
+                ));
             }
             options.validate()?;
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn sparse_metadata_storage_charges_spare_tree_slots() {
+        let empty = ExecutionHints::default();
+        let sparse = ExecutionHints {
+            metadata: Presence::Value(BTreeMap::from([(String::new(), String::new())])),
+            ..Default::default()
+        };
+        sparse.validate().unwrap();
+        // The pinned toolchain's B-tree leaf has eleven slots, even for one key.
+        let slots = 11 * std::mem::size_of::<(String, String)>();
+        assert!(sparse.retained_bytes() - empty.retained_bytes() >= slots + 128);
     }
 }

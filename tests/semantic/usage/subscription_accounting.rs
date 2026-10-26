@@ -1,12 +1,12 @@
 //! Independent closed accounting and event-owned output counterexamples.
 use morphiecore::{
-    protocol::openai::{Adapter, Dialect, Profile, TargetCaps as Contract},
+    protocol::openai::{Dialect, GenerationApi, GenerationCodec, TargetContract as Contract},
     semantic::value::ReplayOrigin,
 };
 use serde_json::{Value, json};
-fn adapter(dialect: Dialect, scope: &str) -> Adapter {
-    Adapter::new(
-        Profile::Responses,
+fn adapter(dialect: Dialect, scope: &str) -> GenerationCodec {
+    GenerationCodec::new(
+        GenerationApi::Responses,
         dialect,
         Some(ReplayOrigin::new(scope).unwrap()),
     )

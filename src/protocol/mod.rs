@@ -11,6 +11,10 @@ pub mod openai;
 // Shared decoded values, fidelity and projection policies.
 pub(crate) mod attribution;
 pub mod cache;
+pub mod conversion;
+mod request;
+pub use conversion::{ConversionCause, ConversionFailure};
+pub use request::{ClientProtocol, GenerationRequestEnvelope};
 mod decoded;
 pub(crate) mod diagnostics;
 pub mod failure;
@@ -26,11 +30,14 @@ pub(crate) mod reports;
 pub(crate) mod usage;
 
 // Shared wire validation and framing.
-mod embedding;
+pub mod embedding;
 pub mod file_constraints;
+pub mod image;
 pub mod image_constraints;
 pub(crate) mod json;
+pub mod speech;
 pub mod stream;
+pub mod transcription;
 
 // Standalone operation dialects; registration does not activate a binding.
 pub mod aliyun_asr;

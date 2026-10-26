@@ -1,8 +1,8 @@
 //! Explicit protocol fixtures; never selected from the product catalog.
 use super::{image_support, speech_support};
 use morphiecore::{
-    adapter::{images::Profile as ImageProfile, speech::Profile as SpeechProfile},
-    lowering::images::AccountingPolicy,
+    adapter::{images::UpstreamAdapter as ImageProfile, speech::UpstreamAdapter as SpeechProfile},
+    protocol::image::projection::AccountingPolicy,
     provider::{
         AuthScheme, CredentialBindingId, EndpointPath, ProviderDefinition, ProviderId,
         TrustedOrigin,
@@ -138,7 +138,7 @@ pub fn native_transcription(
                 },
                 upstream_model: "private-native-asr".into(),
                 canonical_model: model,
-                profile: morphiecore::adapter::transcription::Profile::AliyunFlash,
+                profile: morphiecore::adapter::transcription::UpstreamAdapter::AliyunFlash,
                 credential: CredentialBindingId::new("native-key").unwrap(),
                 execution: morphiecore::topology::ExecutionContract {
                     streaming: false,

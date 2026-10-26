@@ -2,12 +2,15 @@
 mod native_bindings {
     //! Operation binding and pure preparation; never opens a socket or reads a credential store.
     use morphiecore::{
-        adapter::{Request, UpstreamAdapter},
+        adapter::UpstreamAdapter,
         execution::{Attempt, UpstreamRequest, plan::representable, prepare},
         protocol::{
-            anthropic::messages::{Dialect as NativeDialect, Profile as NativeProfile, TargetCaps},
+            GenerationRequestEnvelope as Request,
+            anthropic::messages::{
+                Dialect as NativeDialect, Profile as NativeProfile, TargetContract,
+            },
             native::ReplayTarget,
-            openai::{Adapter, Dialect, Profile, TargetCaps as Contract},
+            openai::{Dialect, GenerationApi, GenerationCodec, TargetContract as Contract},
             stream::SseLimits,
         },
         provider::{
@@ -16,7 +19,7 @@ mod native_bindings {
         },
         semantic::{
             context::ConversationContext,
-            task::generation::{GenerationSemanticContract, LocalScope},
+            task::generation::{GenerationFeatureSet, LocalScope},
             value::Presence,
         },
         topology::*,
@@ -51,9 +54,9 @@ mod native_bindings {
             auth: AuthScheme::Bearer,
         }
     }
-    fn endpoint(protocol: ProtocolProfile) -> Endpoint {
+    fn endpoint(protocol: GenerationProtocol) -> Endpoint {
         let p = provider();
-        let chat = protocol == ProtocolProfile::OpenAiChat;
+        let chat = protocol == GenerationProtocol::OpenAiChat;
         Endpoint {
             id: EndpointId::new(if chat { "chat" } else { "messages" }).unwrap(),
             provider: p.id.clone(),
@@ -71,11 +74,12 @@ mod native_bindings {
             upstream_model: "synthetic-model".into(),
             canonical_model: ModelId::new("synthetic-model").unwrap(),
             representation: if chat {
-                Adapter::new(Profile::Chat, Dialect::OpenCodeGo, None)
+                GenerationCodec::new(GenerationApi::Chat, Dialect::OpenCodeGo, None)
                     .contract(&Contract::full())
                     .into()
             } else {
-                TargetCaps::new(NativeProfile::AdaptiveTextTools, NativeDialect::OpenCodeGo).into()
+                TargetContract::new(NativeProfile::AdaptiveTextTools, NativeDialect::OpenCodeGo)
+                    .into()
             },
             execution: ExecutionContract {
                 streaming: false,
@@ -89,9 +93,9 @@ mod native_bindings {
         }
     }
     fn standard_native() -> Endpoint {
-        let mut native = endpoint(ProtocolProfile::AnthropicMessages);
+        let mut native = endpoint(GenerationProtocol::AnthropicMessages);
         native.representation =
-            TargetCaps::new(NativeProfile::AdaptiveTextTools, NativeDialect::Standard).into();
+            TargetContract::new(NativeProfile::AdaptiveTextTools, NativeDialect::Standard).into();
         native
     }
     fn compile_endpoints(
@@ -106,7 +110,7 @@ mod native_bindings {
             vec![CanonicalModel {
                 id: ModelId::new("synthetic-model").unwrap(),
                 task: TaskKind::Generation,
-                contract: GenerationSemanticContract::full(),
+                contract: GenerationFeatureSet::full(),
             }],
         )
     }
@@ -137,7 +141,7 @@ mod native_bindings {
 
     #[test]
     fn compilation_rejects_contracts_the_native_slice_cannot_keep() {
-        let native = endpoint(ProtocolProfile::AnthropicMessages);
+        let native = endpoint(GenerationProtocol::AnthropicMessages);
         let route = Route {
             id: RouteId::new("synthetic-route").unwrap(),
             task: TaskKind::Generation,
@@ -162,12 +166,12 @@ mod native_bindings {
                 vec![CanonicalModel {
                     id: native.canonical_model.clone(),
                     task: TaskKind::Generation,
-                    contract: GenerationSemanticContract::full(),
+                    contract: GenerationFeatureSet::full(),
                 }],
             )
         };
         assert_eq!(
-            compile_with(public(GenerationSemanticContract::text_images())).unwrap_err(),
+            compile_with(public(GenerationFeatureSet::text_images())).unwrap_err(),
             TopologyError::ContractUnsatisfiable
         );
         // Native targets do not carry standard OpenAI execution context.
@@ -225,7 +229,7 @@ mod native_bindings {
             TopologyError::ContractUnsatisfiable
         );
         let mut foreign_protocol = native;
-        foreign_protocol.protocol = ProtocolProfile::OpenAiChat;
+        foreign_protocol.protocol = GenerationProtocol::OpenAiChat;
         assert!(compile_endpoints(p.clone(), vec![foreign_protocol.clone()]).is_err());
         let request = native_request();
         for wrong in [foreign_caps, foreign_protocol] {
@@ -237,9 +241,8 @@ mod native_bindings {
     #[test]
     fn output_defaults_are_candidate_local_and_preflight_matches_preparation() {
         use morphiecore::{
-            adapter::ConversionFailure,
-            execution::{AttemptError, plan::RejectionReason, prepare_with_rules},
-            protocol::CodecError,
+            execution::{AttemptError, prepare_with_rules},
+            protocol::{CodecError, ConversionFailure},
             semantic::task::generation::{
                 GenerationError, ReasoningActivation, ReasoningMode, ReasoningRequest,
             },
@@ -264,13 +267,13 @@ mod native_bindings {
             .unwrap()
             .default_output_tokens = Some(4096);
         assert_eq!(
-            representable(&first, &request),
-            Err(RejectionReason::Representation)
+            representable(&first, &request).unwrap_err().code(),
+            "semantic.invalid_control"
         );
         assert!(matches!(
             prepare(&first, &provider(), &secret(), &request),
-            Err(AttemptError::Adapter(ConversionFailure {
-                cause: morphiecore::adapter::ConversionCause::Codec(CodecError::Semantic(
+            Err(AttemptError::Conversion(ConversionFailure {
+                cause: morphiecore::protocol::ConversionCause::Codec(CodecError::Semantic(
                     GenerationError::InvalidControl
                 )),
                 ..
@@ -350,7 +353,7 @@ mod native_bindings {
 
         // Count escaped UTF-8 wire bytes, not characters or the unescaped source.
         let text = "中文 \"quoted\"\\path";
-        let capped = Adapter::new(Profile::Chat, Dialect::Standard, None)
+        let capped = GenerationCodec::new(GenerationApi::Chat, Dialect::Standard, None)
             .decode_request(
                 &serde_json::to_vec(&json!({
                     "model":"public", "max_tokens":32,
@@ -405,7 +408,7 @@ mod native_bindings {
         let request = native_request();
         assert!(representable(&restricted, &request).is_err());
         assert!(prepare(&restricted, &p, &secret(), &request).is_err());
-        let chat_request = Adapter::new(Profile::Chat, Dialect::Standard, None)
+        let chat_request = GenerationCodec::new(GenerationApi::Chat, Dialect::Standard, None)
             .decode_request(br#"{"model":"public","messages":[{"role":"user","content":"hello"}]}"#)
             .unwrap();
         // Only trusted target policy may fill the missing Chat ceiling.
@@ -424,10 +427,10 @@ mod native_bindings {
     #[test]
     fn one_provider_keeps_operation_paths_and_auth_separate() {
         let p = provider();
-        let chat = endpoint(ProtocolProfile::OpenAiChat);
+        let chat = endpoint(GenerationProtocol::OpenAiChat);
         let native = standard_native();
         compile_endpoints(p.clone(), vec![chat.clone(), native.clone()]).unwrap();
-        let mut request = Adapter::new(Profile::Chat, Dialect::Standard, None)
+        let mut request = GenerationCodec::new(GenerationApi::Chat, Dialect::Standard, None)
             .decode_request(br#"{"model":"public","messages":[{"role":"user","content":"hello"}]}"#)
             .unwrap();
         request.conversation = Some(ConversationContext::conversation("synthetic").unwrap());
@@ -475,9 +478,11 @@ mod native_bindings {
 mod native_catalog {
     //! Native registration, OpenAI activation and Provider acceptance are distinct.
     use morphiecore::{
-        adapter::Request,
         execution::{admit, plan::representable, prepare},
-        protocol::{anthropic::messages::Profile, native::ReplayTarget},
+        protocol::{
+            GenerationRequestEnvelope as Request, anthropic::messages::Profile,
+            native::ReplayTarget,
+        },
         provider::SecretMaterial,
         semantic::{task::generation::LocalScope, value::Presence},
         topology::catalog,
@@ -485,16 +490,18 @@ mod native_catalog {
     #[test]
     fn native_binding_rejects_unselected_default_strictness_but_preserves_plain_tools() {
         use morphiecore::{
-            adapter::ConversionFailure,
             execution::AttemptError,
-            lowering::generation::RepresentationError,
-            protocol::openai::{Adapter, Dialect, Profile as Client},
+            protocol::{
+                ConversionFailure,
+                conversion::generation::RepresentationError,
+                openai::{Dialect, GenerationApi as Client, GenerationCodec},
+            },
             semantic::task::generation::GenerationFeature,
         };
         let binding = &catalog::MESSAGES_BINDINGS[0];
         let topology = catalog::default_topology().unwrap();
         // pi's shape: a developer prompt and a tool whose `strict` is omitted.
-        let client = Adapter::new(Client::Responses, Dialect::Standard, None);
+        let client = GenerationCodec::new(Client::Responses, Dialect::Standard, None);
         let mut request = client
             .decode_client_request(
                 br#"{"model":"claude-haiku-5-5","max_output_tokens":64,"store":false,
@@ -509,8 +516,8 @@ mod native_catalog {
         );
         assert!(matches!(
             admit(topology.model(binding.model).unwrap(), &request),
-            Err(AttemptError::Adapter(ConversionFailure {
-                cause: morphiecore::adapter::ConversionCause::Representation(
+            Err(AttemptError::Conversion(ConversionFailure {
+                cause: morphiecore::protocol::ConversionCause::Representation(
                     RepresentationError::Admission(GenerationFeature::ToolSchemaNormalization)
                 ),
                 ..
@@ -565,8 +572,8 @@ mod native_catalog {
         request.task.semantic = request.task.semantic.with_settings(settings).unwrap();
         assert!(matches!(
             admit(topology.model(binding.model).unwrap(), &request),
-            Err(AttemptError::Adapter(ConversionFailure {
-                cause: morphiecore::adapter::ConversionCause::Representation(
+            Err(AttemptError::Conversion(ConversionFailure {
+                cause: morphiecore::protocol::ConversionCause::Representation(
                     RepresentationError::Admission(GenerationFeature::ExplicitCache)
                 ),
                 ..
@@ -697,15 +704,13 @@ mod native_catalog {
     fn native_caps_and_reasoning_policies_do_not_widen_unrelated_admission() {
         let mut endpoint = catalog::MESSAGES_BINDINGS[0].endpoint();
         endpoint.validate().unwrap();
-        endpoint.protocol = morphiecore::topology::ProtocolProfile::OpenAiChat;
+        endpoint.protocol = morphiecore::topology::GenerationProtocol::OpenAiChat;
         assert!(endpoint.validate().is_err());
-        endpoint.protocol = morphiecore::topology::ProtocolProfile::OpenAiResponses;
+        endpoint.protocol = morphiecore::topology::GenerationProtocol::OpenAiResponses;
         assert!(endpoint.validate().is_err());
-        use morphiecore::protocol::reasoning::{
-            ReasoningConversion, ReasoningRequestPolicy, SHARED_BUDGETS,
-        };
-        use morphiecore::semantic::task::generation::{
-            EffortScope, ReasoningMode, ReasoningRequest,
+        use morphiecore::{
+            protocol::reasoning::{ReasoningConversion, ReasoningRequestPolicy, SHARED_BUDGETS},
+            semantic::task::generation::{EffortScope, ReasoningMode, ReasoningRequest},
         };
         static OFF: ReasoningRequestPolicy = ReasoningRequestPolicy {
             canonical_model: std::borrow::Cow::Borrowed("synthetic-model"),
@@ -721,10 +726,10 @@ mod native_catalog {
             },
         };
         let mut google = endpoint;
-        google.protocol = morphiecore::topology::ProtocolProfile::GoogleGenerateContent;
+        google.protocol = morphiecore::topology::GenerationProtocol::GoogleGenerateContent;
         google.canonical_model = morphiecore::topology::ModelId::new("synthetic-model").unwrap();
-        let mut request = morphiecore::protocol::openai::Adapter::new(
-            morphiecore::protocol::openai::Profile::Responses,
+        let mut request = morphiecore::protocol::openai::GenerationCodec::new(
+            morphiecore::protocol::openai::GenerationApi::Responses,
             morphiecore::protocol::openai::Dialect::Standard,
             None,
         )
@@ -741,7 +746,7 @@ mod native_catalog {
             .clone()
             .with_settings(settings)
             .unwrap();
-        let mut caps = morphiecore::protocol::google::generate_content::TargetCaps::default();
+        let mut caps = morphiecore::protocol::google::generate_content::TargetContract::default();
         google.representation = caps.clone().into();
         assert!(google.encode_request(&request).is_err());
         caps.reasoning_policy = Some(OFF.clone());

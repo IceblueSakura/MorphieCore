@@ -1,6 +1,6 @@
 //! Explicit canonical declarations. Upstream aliases and public routes never create models.
 use crate::{
-    semantic::task::generation::GenerationSemanticContract,
+    semantic::task::generation::GenerationFeatureSet,
     topology::{CanonicalModel, ModelId, TaskKind},
 };
 pub struct ModelDefinition {
@@ -208,7 +208,7 @@ pub const MODELS: &[ModelDefinition] = &[
         developer: "Zhipu AI",
     },
 ];
-pub fn contract(id: &str) -> GenerationSemanticContract {
+pub fn contract(id: &str) -> GenerationFeatureSet {
     if let Some(binding) = super::MESSAGES_BINDINGS.iter().find(|b| b.model == id) {
         // Shared public admission is narrower than the model's native capabilities.
         // Do not copy Messages-only cache support into OpenAI-compatible bindings.
@@ -218,7 +218,7 @@ pub fn contract(id: &str) -> GenerationSemanticContract {
         .iter()
         .find(|m| m.id == id)
         .expect("explicit canonical reference");
-    GenerationSemanticContract {
+    GenerationFeatureSet {
         image_input: definition.images,
         file_input: definition.files,
         audio_input: id == "gpt-audio-mini",
@@ -231,7 +231,7 @@ pub fn contract(id: &str) -> GenerationSemanticContract {
         // Admission still needs the media kind's input. Only Responses carries tool
         // media; standard Chat has no carrier, so Chat targets reject it.
         tool_result_media: true,
-        ..GenerationSemanticContract::text_images()
+        ..GenerationFeatureSet::text_images()
     }
 }
 pub fn canonical_models() -> Vec<CanonicalModel> {

@@ -1,14 +1,14 @@
 //! Client codec dispatch. Publication, attempt identity and entropy belong to execution.
-use super::{ClientProtocol, Request};
-use crate::protocol::failure::CarrierReason;
 use crate::{
-    lowering::generation::Effect,
     protocol::{
-        CodecError, DecodedResponse, ResponseMetadata,
+        ClientProtocol, CodecError, DecodedResponse, GenerationRequestEnvelope as Request,
+        ResponseMetadata,
+        conversion::generation::Effect,
+        failure::CarrierReason,
         fidelity::FidelityRecords,
         openai::{
-            Adapter, Profile, TargetCaps, chat::sse::ChatSseEncoder, obfuscation::Obfuscation,
-            responses::sse::ResponsesSseEncoder,
+            GenerationApi, GenerationCodec, TargetContract, chat::sse::ChatSseEncoder,
+            obfuscation::Obfuscation, responses::sse::ResponsesSseEncoder,
         },
         stream::{SseError, SseLimits},
     },
@@ -20,13 +20,13 @@ use serde_json::Value;
 #[derive(Clone)]
 pub enum ClientAdapter {
     OpenAi {
-        adapter: Box<Adapter>,
-        contract: Box<TargetCaps>,
+        adapter: Box<GenerationCodec>,
+        contract: Box<TargetContract>,
     },
     Messages,
 }
 impl ClientAdapter {
-    pub fn openai(adapter: Adapter, contract: TargetCaps) -> Self {
+    pub fn openai(adapter: GenerationCodec, contract: TargetContract) -> Self {
         Self::OpenAi {
             adapter: Box::new(adapter),
             contract: Box::new(contract),
@@ -38,7 +38,7 @@ impl ClientAdapter {
             Self::Messages => ClientProtocol::Messages,
         }
     }
-    pub fn as_openai(&self) -> Result<(&Adapter, &TargetCaps), CodecError> {
+    pub fn as_openai(&self) -> Result<(&GenerationCodec, &TargetContract), CodecError> {
         match self {
             Self::OpenAi { adapter, contract } => Ok((adapter, contract)),
             Self::Messages => Err(CodecError::ProfileMismatch),
@@ -49,24 +49,25 @@ impl ClientAdapter {
     pub(crate) fn check_chat_source(
         &self,
         decoded: &DecodedResponse,
-    ) -> Result<(), super::ConversionFailure> {
+    ) -> Result<(), crate::protocol::ConversionFailure> {
         let result = (|| {
             let (adapter, contract) = self.as_openai()?;
             crate::protocol::openai::lowering::lower_response(
                 &decoded.semantic,
                 &decoded.fidelity,
                 &decoded.metadata,
-                Profile::Chat,
+                GenerationApi::Chat,
                 adapter.contract(contract),
             )
             .map_err(|error| {
-                crate::adapter::ConversionFailure::from(error)
-                    .at(crate::lowering::generation::ConversionBoundary::ResponseProject)
+                crate::protocol::ConversionFailure::from(error).at(
+                    crate::protocol::conversion::generation::ConversionBoundary::ResponseProject,
+                )
             })?;
             Ok(())
         })();
-        result.map_err(|error: crate::adapter::ConversionFailure| {
-            error.at(crate::lowering::generation::ConversionBoundary::ResponseProject)
+        result.map_err(|error: crate::protocol::ConversionFailure| {
+            error.at(crate::protocol::conversion::generation::ConversionBoundary::ResponseProject)
         })
     }
     pub(crate) fn bind_replay_origin(&mut self, origin: &ReplayOrigin) {
@@ -86,7 +87,10 @@ impl ClientAdapter {
     pub(crate) fn project_native(
         &self,
         response: &mut DecodedResponse,
-    ) -> Result<Vec<crate::lowering::generation::Effect>, super::ConversionFailure> {
+    ) -> Result<
+        Vec<crate::protocol::conversion::generation::Effect>,
+        crate::protocol::ConversionFailure,
+    > {
         let result = (|| {
             if let Self::OpenAi { adapter, .. } = self {
                 return Ok(crate::protocol::openai::lowering::native_response::project(
@@ -96,8 +100,8 @@ impl ClientAdapter {
             }
             Ok(vec![])
         })();
-        result.map_err(|error: crate::adapter::ConversionFailure| {
-            error.at(crate::lowering::generation::ConversionBoundary::ResponseProject)
+        result.map_err(|error: crate::protocol::ConversionFailure| {
+            error.at(crate::protocol::conversion::generation::ConversionBoundary::ResponseProject)
         })
     }
     /// Return the encoded body and its represented history. Hidden continuation
@@ -105,14 +109,14 @@ impl ClientAdapter {
     pub fn snapshot(
         &self,
         decoded: DecodedResponse,
-    ) -> Result<(DecodedResponse, Value), super::ConversionFailure> {
+    ) -> Result<(DecodedResponse, Value), crate::protocol::ConversionFailure> {
         self.snapshot_with_evidence(decoded)
             .map(|(decoded, value, _)| (decoded, value))
     }
     pub(crate) fn snapshot_with_evidence(
         &self,
         decoded: DecodedResponse,
-    ) -> Result<(DecodedResponse, Value, Vec<Effect>), super::ConversionFailure> {
+    ) -> Result<(DecodedResponse, Value, Vec<Effect>), crate::protocol::ConversionFailure> {
         self.snapshot_with_history(decoded, false)
     }
     /// Only execution-owned storage authorizes a richer typed continuation than
@@ -125,9 +129,9 @@ impl ClientAdapter {
         (
             DecodedResponse,
             Value,
-            Vec<crate::lowering::generation::Effect>,
+            Vec<crate::protocol::conversion::generation::Effect>,
         ),
-        super::ConversionFailure,
+        crate::protocol::ConversionFailure,
     > {
         let result = (|| {
             let hidden = decoded
@@ -174,8 +178,8 @@ impl ClientAdapter {
             }
             self.encode_snapshot(decoded)
         })();
-        result.map_err(|error: crate::adapter::ConversionFailure| {
-            error.at(crate::lowering::generation::ConversionBoundary::ResponseEncode)
+        result.map_err(|error: crate::protocol::ConversionFailure| {
+            error.at(crate::protocol::conversion::generation::ConversionBoundary::ResponseEncode)
         })
     }
     fn encode_snapshot(
@@ -185,9 +189,9 @@ impl ClientAdapter {
         (
             DecodedResponse,
             Value,
-            Vec<crate::lowering::generation::Effect>,
+            Vec<crate::protocol::conversion::generation::Effect>,
         ),
-        super::ConversionFailure,
+        crate::protocol::ConversionFailure,
     > {
         let result = (|| {
             let mut losses = vec![];
@@ -241,14 +245,14 @@ impl ClientAdapter {
                         adapter.contract(contract),
                     )
                     .map_err(|error| {
-                        crate::adapter::ConversionFailure::from(error)
-                            .at(crate::lowering::generation::ConversionBoundary::ResponseProject)
+                        crate::protocol::ConversionFailure::from(error)
+                            .at(crate::protocol::conversion::generation::ConversionBoundary::ResponseProject)
                     })?;
                     let value = match adapter.protocol {
-                        Profile::Chat => {
+                        GenerationApi::Chat => {
                             crate::protocol::openai::chat::envelope::encode_response(&target)?
                         }
-                        Profile::Responses => {
+                        GenerationApi::Responses => {
                             crate::protocol::openai::responses::envelope::encode_response(&target)?
                         }
                     };
@@ -262,8 +266,8 @@ impl ClientAdapter {
             };
             Ok((decoded, value, losses))
         })();
-        result.map_err(|error: crate::adapter::ConversionFailure| {
-            error.at(crate::lowering::generation::ConversionBoundary::ResponseEncode)
+        result.map_err(|error: crate::protocol::ConversionFailure| {
+            error.at(crate::protocol::conversion::generation::ConversionBoundary::ResponseEncode)
         })
     }
     /// Protocol-shaped cache continuation, not conversation storage or target selection.
@@ -281,11 +285,11 @@ impl ClientAdapter {
         let output = adapter.encode_response(decoded, contract).ok()?;
         crate::semantic::value::json_size(&output, MAX_PROMPT_BYTES).ok()?;
         let (field, items) = match adapter.protocol {
-            Profile::Chat => (
+            GenerationApi::Chat => (
                 "messages",
                 vec![output.get("choices")?.get(0)?.get("message")?.clone()],
             ),
-            Profile::Responses => ("input", output.get("output")?.as_array()?.clone()),
+            GenerationApi::Responses => ("input", output.get("output")?.as_array()?.clone()),
         };
         input.get_mut(field)?.as_array_mut()?.extend(items);
         prefixes(&input, adapter.protocol)?;
@@ -323,14 +327,14 @@ impl ClientAdapter {
                 Encoder::Messages(encoder)
             }
             Self::OpenAi { adapter, contract } => match adapter.protocol {
-                Profile::Chat => Encoder::Chat(ChatSseEncoder::new(
+                GenerationApi::Chat => Encoder::Chat(ChatSseEncoder::new(
                     metadata,
                     adapter.contract(contract),
                     limits,
                     options,
                     padding,
                 )?),
-                Profile::Responses => Encoder::Responses(ResponsesSseEncoder::new(
+                GenerationApi::Responses => Encoder::Responses(ResponsesSseEncoder::new(
                     metadata,
                     adapter.contract(contract),
                     limits,
@@ -390,11 +394,11 @@ impl ClientAdapter {
 pub(crate) const SAFETY_ASSESSMENT_RULE: &str = "generation.omit-safety-assessment.v1";
 fn safety_assessment_loss(direction: &'static str) -> Effect {
     Effect::Field {
-        rule: crate::lowering::generation::RuleId::new(SAFETY_ASSESSMENT_RULE),
+        rule: crate::protocol::conversion::generation::RuleId::new(SAFETY_ASSESSMENT_RULE),
         field: ("response.safety_reports").into(),
-        direction: (direction).into(),
-        action: ("omit").into(),
-        owner: crate::lowering::generation::Owner::Root,
+        boundary: (direction).into(),
+        change: ("omit").into(),
+        owner: crate::protocol::conversion::generation::Owner::Root,
     }
 }
 
@@ -404,7 +408,7 @@ enum Encoder {
     Messages(crate::protocol::anthropic::messages::client::sse::ClientEventEncoder),
 }
 pub(crate) struct ClientEncoder {
-    losses: Vec<crate::lowering::generation::Effect>,
+    losses: Vec<crate::protocol::conversion::generation::Effect>,
     encoder: Encoder,
     native_projection: Option<crate::protocol::openai::lowering::native_response::EventProjection>,
 }
@@ -422,7 +426,7 @@ impl ClientEncoder {
     pub(crate) fn project_phase(
         &mut self,
         events: &[StreamEvent],
-    ) -> Result<Option<Vec<StreamEvent>>, super::ConversionFailure> {
+    ) -> Result<Option<Vec<StreamEvent>>, crate::protocol::ConversionFailure> {
         let result = (|| {
             if !matches!(self.encoder, Encoder::Chat(_)) {
                 return Ok(None);
@@ -438,8 +442,8 @@ impl ClientEncoder {
             }
             Ok(Some(projected))
         })();
-        result.map_err(|error: crate::adapter::ConversionFailure| {
-            error.at(crate::lowering::generation::ConversionBoundary::EventProject)
+        result.map_err(|error: crate::protocol::ConversionFailure| {
+            error.at(crate::protocol::conversion::generation::ConversionBoundary::EventProject)
         })
     }
     pub(crate) fn needs_phase_source_check(&self) -> bool {
@@ -450,11 +454,11 @@ impl ClientEncoder {
     pub(crate) fn project_native(
         &mut self,
         events: &[StreamEvent],
-    ) -> Result<Option<Vec<StreamEvent>>, super::ConversionFailure> {
+    ) -> Result<Option<Vec<StreamEvent>>, crate::protocol::ConversionFailure> {
         let result = (|| {
             let profile = match self.encoder {
-                Encoder::Chat(_) => Profile::Chat,
-                Encoder::Responses(_) => Profile::Responses,
+                Encoder::Chat(_) => GenerationApi::Chat,
+                Encoder::Responses(_) => GenerationApi::Responses,
                 Encoder::Messages(_) => return Ok(None),
             };
             let projection = self.native_projection.get_or_insert_with(|| {
@@ -468,8 +472,8 @@ impl ClientEncoder {
             }
             Ok(Some(result))
         })();
-        result.map_err(|error: crate::adapter::ConversionFailure| {
-            error.at(crate::lowering::generation::ConversionBoundary::EventProject)
+        result.map_err(|error: crate::protocol::ConversionFailure| {
+            error.at(crate::protocol::conversion::generation::ConversionBoundary::EventProject)
         })
     }
     pub(crate) fn update_metadata(&mut self, metadata: ResponseMetadata) -> Result<(), SseError> {
@@ -534,7 +538,7 @@ impl ClientEncoder {
             };
             let frames = self.encode(&wire, fidelity)?;
             let loss = crate::protocol::phase::delivery_omission("event.encode")
-                .at(crate::lowering::generation::Owner::item(*item));
+                .at(crate::protocol::conversion::generation::Owner::item(*item));
             if !self.losses.contains(&loss) {
                 self.losses.push(loss);
             }
@@ -572,8 +576,10 @@ impl ClientEncoder {
         }
         effects
     }
-    pub(crate) fn take_evidence(&mut self) -> crate::lowering::generation::EvidenceDelta {
-        let mut evidence: crate::lowering::generation::EvidenceDelta =
+    pub(crate) fn take_evidence(
+        &mut self,
+    ) -> crate::protocol::conversion::generation::EvidenceDelta {
+        let mut evidence: crate::protocol::conversion::generation::EvidenceDelta =
             std::mem::take(&mut self.losses).into_iter().collect();
         evidence.extend(match &mut self.encoder {
             Encoder::Chat(e) => e.take_evidence(),

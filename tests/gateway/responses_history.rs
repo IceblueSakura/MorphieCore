@@ -1,6 +1,6 @@
 //! Responses phase/opaque history and stored/stateless continuation through the Router.
 use crate::openai_tool_loop as fixture;
-use morphiecore::protocol::openai::Profile;
+use morphiecore::protocol::openai::GenerationApi;
 use serde_json::{Value, json};
 
 async fn request(client: &reqwest::Client, base: &str, key: &str, body: &Value) -> Value {
@@ -216,7 +216,7 @@ async fn stored_history_capacity_delete_and_restart_release_without_hidden_dispa
 
 #[tokio::test]
 async fn stored_and_stateless_tool_history_agree_in_json_and_sse() {
-    let fixture = fixture::start(Profile::Responses, false).await;
+    let fixture = fixture::start(GenerationApi::Responses, false).await;
     let client = reqwest::Client::builder()
         .no_proxy()
         .timeout(std::time::Duration::from_secs(5))

@@ -44,10 +44,10 @@ impl Profile {
             .with_usage_reports(reports)?;
         let mut fidelity = FidelityRecords::default();
         bind(&mut fidelity, semantic.items(), target)?;
-        let mut evidence = crate::lowering::generation::EvidenceDelta::default();
+        let mut evidence = crate::protocol::conversion::generation::EvidenceDelta::default();
         if wire.input_transformations {
             evidence.record_input_transformations(
-                crate::lowering::generation::ConversionBoundary::ResponseDecode,
+                crate::protocol::conversion::generation::ConversionBoundary::ResponseDecode,
             );
         }
         Ok(DecodedResponse {

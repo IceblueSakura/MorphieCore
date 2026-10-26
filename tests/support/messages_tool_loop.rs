@@ -2,8 +2,8 @@
 use crate::messages_wire::native_response;
 use axum::{Json, Router, extract::State, http::HeaderMap, response::Response, routing::post};
 use morphiecore::{
-    adapter::ClientProtocol,
     gateway::{Entry, Gateway, Limits, TaskEntries},
+    protocol::ClientProtocol,
     provider::{SecretMaterial, TrustedOrigin},
     topology::{self, catalog::MESSAGES_BINDINGS},
 };

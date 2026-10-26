@@ -3,7 +3,7 @@
 /// Failure classes shared by provider error handling and downstream reporting.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize)]
 #[serde(rename_all = "snake_case")]
-pub enum ErrorClass {
+pub enum RecoveryClass {
     /// Local unavailable material, not an upstream 401 or permission denial.
     CredentialUnavailable,
     Authentication,
@@ -22,7 +22,7 @@ pub enum ErrorClass {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum StatusClass {
     Success,
-    Failure(ErrorClass),
+    Failure(RecoveryClass),
 }
 
 /// Map an HTTP status to a semantic failure class.
@@ -32,18 +32,18 @@ pub enum StatusClass {
 pub fn classify_status(status: u16) -> StatusClass {
     match status {
         200..=299 => StatusClass::Success,
-        300..=399 => StatusClass::Failure(ErrorClass::Redirect),
-        401 => StatusClass::Failure(ErrorClass::Authentication),
-        403 => StatusClass::Failure(ErrorClass::PermissionDenied),
-        404 => StatusClass::Failure(ErrorClass::NotFound),
-        429 => StatusClass::Failure(ErrorClass::RateLimit),
-        400..=499 => StatusClass::Failure(ErrorClass::InvalidRequest),
-        500..=599 => StatusClass::Failure(ErrorClass::Server),
-        _ => StatusClass::Failure(ErrorClass::Upstream),
+        300..=399 => StatusClass::Failure(RecoveryClass::Redirect),
+        401 => StatusClass::Failure(RecoveryClass::Authentication),
+        403 => StatusClass::Failure(RecoveryClass::PermissionDenied),
+        404 => StatusClass::Failure(RecoveryClass::NotFound),
+        429 => StatusClass::Failure(RecoveryClass::RateLimit),
+        400..=499 => StatusClass::Failure(RecoveryClass::InvalidRequest),
+        500..=599 => StatusClass::Failure(RecoveryClass::Server),
+        _ => StatusClass::Failure(RecoveryClass::Upstream),
     }
 }
 
-pub use crate::protocol::failure::{FailureKind, classify_failure};
+pub use crate::protocol::failure::{SourceFailureKind, classify_failure};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum ProviderError {
@@ -70,16 +70,16 @@ mod tests {
         for (status, class) in [
             (200, StatusClass::Success),
             (204, StatusClass::Success),
-            (400, StatusClass::Failure(ErrorClass::InvalidRequest)),
-            (401, StatusClass::Failure(ErrorClass::Authentication)),
-            (403, StatusClass::Failure(ErrorClass::PermissionDenied)),
-            (404, StatusClass::Failure(ErrorClass::NotFound)),
-            (413, StatusClass::Failure(ErrorClass::InvalidRequest)),
-            (422, StatusClass::Failure(ErrorClass::InvalidRequest)),
-            (429, StatusClass::Failure(ErrorClass::RateLimit)),
-            (500, StatusClass::Failure(ErrorClass::Server)),
-            (503, StatusClass::Failure(ErrorClass::Server)),
-            (302, StatusClass::Failure(ErrorClass::Redirect)),
+            (400, StatusClass::Failure(RecoveryClass::InvalidRequest)),
+            (401, StatusClass::Failure(RecoveryClass::Authentication)),
+            (403, StatusClass::Failure(RecoveryClass::PermissionDenied)),
+            (404, StatusClass::Failure(RecoveryClass::NotFound)),
+            (413, StatusClass::Failure(RecoveryClass::InvalidRequest)),
+            (422, StatusClass::Failure(RecoveryClass::InvalidRequest)),
+            (429, StatusClass::Failure(RecoveryClass::RateLimit)),
+            (500, StatusClass::Failure(RecoveryClass::Server)),
+            (503, StatusClass::Failure(RecoveryClass::Server)),
+            (302, StatusClass::Failure(RecoveryClass::Redirect)),
         ] {
             assert_eq!(classify_status(status), class, "status {status}");
         }

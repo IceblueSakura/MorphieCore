@@ -465,13 +465,13 @@ pub enum Effect {
         owner: Owner,
         input: EffortControl,
         output: EffortControl,
-        direction: ConversionBoundary,
+        boundary: ConversionBoundary,
     },
     Field {
         rule: RuleId,
         field: Field,
-        direction: ConversionBoundary,
-        action: Change,
+        boundary: ConversionBoundary,
+        change: Change,
         owner: Owner,
     },
     Verbosity {
@@ -511,14 +511,14 @@ impl Effect {
     pub fn new(
         rule: &'static str,
         field: Field,
-        direction: ConversionBoundary,
-        action: Change,
+        boundary: ConversionBoundary,
+        change: Change,
     ) -> Self {
         Self::Field {
             rule: rule.into(),
             field,
-            direction,
-            action,
+            boundary,
+            change,
             owner: Owner::Root,
         }
     }
@@ -537,10 +537,10 @@ impl Effect {
         match self {
             Self::Field { field, .. } => *field,
             Self::EffortMapping {
-                direction, owner, ..
+                boundary, owner, ..
             } => {
                 if !matches!(owner, Owner::Root)
-                    || matches!(direction, ConversionBoundary::RequestDecode)
+                    || matches!(boundary, ConversionBoundary::RequestDecode)
                 {
                     Field::Effort
                 } else {
@@ -564,19 +564,16 @@ impl Effect {
     }
     pub const fn boundary(&self) -> ConversionBoundary {
         match self {
-            Self::Field { direction, .. } | Self::EffortMapping { direction, .. } => *direction,
+            Self::Field { boundary, .. } | Self::EffortMapping { boundary, .. } => *boundary,
             _ => ConversionBoundary::RequestProject,
         }
     }
-    pub const fn direction(&self) -> &'static str {
-        self.boundary().as_str()
-    }
     pub fn change(&self) -> Change {
         match self {
-            Self::Field { action, .. } => *action,
-            Self::EffortMapping { direction, .. }
+            Self::Field { change, .. } => *change,
+            Self::EffortMapping { boundary, .. }
                 if !matches!(
-                    direction,
+                    boundary,
                     ConversionBoundary::RequestProject | ConversionBoundary::RequestEncode
                 ) =>
             {
@@ -594,9 +591,6 @@ impl Effect {
             }
             _ => Change::Approximate,
         }
-    }
-    pub fn action(&self) -> &'static str {
-        self.change().as_str()
     }
     pub fn owner(&self) -> Owner {
         match self {
@@ -621,9 +615,9 @@ impl Effect {
         }
         self
     }
-    pub fn with_boundary(mut self, boundary: ConversionBoundary) -> Self {
-        if let Self::Field { direction, .. } | Self::EffortMapping { direction, .. } = &mut self {
-            *direction = boundary;
+    pub fn with_boundary(mut self, value: ConversionBoundary) -> Self {
+        if let Self::Field { boundary, .. } | Self::EffortMapping { boundary, .. } = &mut self {
+            *boundary = value;
         }
         self
     }
@@ -644,8 +638,8 @@ impl Serialize for Effect {
         let mut s = serializer.serialize_struct("Effect", 7)?;
         s.serialize_field("rule", self.rule())?;
         s.serialize_field("field", &self.semantic_field())?;
-        s.serialize_field("direction", &self.boundary())?;
-        s.serialize_field("action", self.change().as_str())?;
+        s.serialize_field("boundary", &self.boundary())?;
+        s.serialize_field("change", self.change().as_str())?;
         if let Change::Default(basis) = self.change() {
             s.serialize_field("default_basis", &basis)?;
         }
@@ -829,7 +823,7 @@ impl EvidenceDelta {
             "responses.default-history-annotations.v1",
             Field::HistoryAnnotations,
             ConversionBoundary::RequestDecode,
-            Change::Default(crate::lowering::generation::DefaultBasis::SelectedPolicy),
+            Change::Default(crate::protocol::conversion::generation::DefaultBasis::SelectedPolicy),
         ));
     }
     pub(crate) fn record_cache_write_default(
@@ -841,7 +835,7 @@ impl EvidenceDelta {
             "openai.provider-cache-write-default.v1",
             Field::CacheWriteTokens,
             boundary,
-            Change::Default(crate::lowering::generation::DefaultBasis::SelectedPolicy),
+            Change::Default(crate::protocol::conversion::generation::DefaultBasis::SelectedPolicy),
         ));
     }
     pub(crate) fn record_effort_mapping(
@@ -849,7 +843,7 @@ impl EvidenceDelta {
         rule: &'static str,
         input: EffortControl,
         output: EffortControl,
-        direction: ConversionBoundary,
+        boundary: ConversionBoundary,
         owner: Owner,
     ) {
         self.push(Effect::EffortMapping {
@@ -857,7 +851,7 @@ impl EvidenceDelta {
             owner,
             input,
             output,
-            direction,
+            boundary,
         });
     }
     pub(crate) fn record_input_transformations(&mut self, boundary: ConversionBoundary) {

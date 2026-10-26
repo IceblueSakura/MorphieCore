@@ -2,18 +2,14 @@
 //! Sources: https://developers.openai.com/api/reference/resources/images/methods/generate
 //! https://github.com/openai/openai-python/tree/be9d66628ad7377bd36fe5a76ae6d735843f0e76/src/openai/types
 use crate::{
-    protocol::CodecError,
+    protocol::{CodecError, image::Request},
     semantic::{
+        context::{ClientIdentityHints, DeliveryIntent},
         task::image_generation::*,
         value::{ImageFormat, Presence},
     },
 };
 use serde_json::{Map, Value, json};
-
-use crate::{
-    adapter::images::Request,
-    semantic::context::{ClientIdentityHints, DeliveryIntent},
-};
 pub(crate) fn object<'a>(
     value: &'a Value,
     allowed: &[&str],
@@ -254,7 +250,7 @@ fn usage(value: &Value) -> Result<ImageUsage, CodecError> {
         billing: ImageBilling::default(),
     };
     usage.validate().map_err(|_| CodecError::invalid())?;
-    if !crate::lowering::images::standard_tokens_representable(&usage) {
+    if !crate::protocol::image::projection::standard_tokens_representable(&usage) {
         return Err(CodecError::invalid());
     }
     Ok(usage)
@@ -371,7 +367,8 @@ pub fn encode_response(response: &ImageGenerationResponse) -> Result<Value, Code
         return Err(CodecError::invalid());
     }
     if response.usage.value().is_some_and(|u| {
-        !crate::lowering::images::standard_tokens_representable(u) || !u.billing.is_absent()
+        !crate::protocol::image::projection::standard_tokens_representable(u)
+            || !u.billing.is_absent()
     }) {
         return Err(CodecError::invalid());
     }

@@ -155,7 +155,7 @@ impl Request {
                     agent_id = self.agent_id.as_deref(),
                     attempt = ordinal,
                     outcome = if code.is_some() {"failed"} else {"succeeded"},
-                    error_type = code.unwrap_or("none"), advanced);
+                    error_type = code, advanced);
             });
             drop(attempt);
         });

@@ -1,7 +1,6 @@
 //! Field-selective attribution on target copies; never authentication or cache identity.
 use crate::{
-    adapter::{ClientProtocol, Request},
-    protocol::{CodecError, cache::HintRule},
+    protocol::{ClientProtocol, CodecError, GenerationRequestEnvelope as Request, cache::HintRule},
     semantic::{context::ClientIdentityHints, value::Presence},
 };
 

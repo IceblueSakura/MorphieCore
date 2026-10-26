@@ -1,8 +1,8 @@
 //! Synthetic gateway and upstream body fixtures, without test cases.
 use super::topology::topology;
-use crate::gateway::{Entry, Gateway, Limits};
 use crate::{
-    adapter::ClientProtocol,
+    gateway::{Entry, Gateway, Limits},
+    protocol::ClientProtocol,
     provider::{CredentialBindingId, SecretMaterial},
     topology::EndpointId,
 };

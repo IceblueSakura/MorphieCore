@@ -1,6 +1,8 @@
 //! Cancellation is tested before dispatch, with no upstream or arbitrary sleeps.
-use crate::adapter::ClientProtocol;
-use crate::gateway::{Limits, ingress::http::handle, tests::support::gateway};
+use crate::{
+    gateway::{Limits, ingress::http::handle, tests::support::gateway},
+    protocol::ClientProtocol,
+};
 use axum::{
     body::{Body, Bytes},
     http::Request,
@@ -31,14 +33,14 @@ async fn shutdown_during_intake_releases_capacity_and_stays_stopped() {
         .unwrap()
         .unwrap()
         .unwrap_err();
-    assert_eq!(error.code, "shutting_down");
+    assert_eq!(error.code(), "shutting_down");
     assert_eq!(gate.state.permits.available_permits(), capacity);
     let request = Request::builder().body(Body::empty()).unwrap();
     assert_eq!(
         handle(gate.state.clone(), ClientProtocol::Chat, request)
             .await
             .unwrap_err()
-            .code,
+            .code(),
         "shutting_down"
     );
 }

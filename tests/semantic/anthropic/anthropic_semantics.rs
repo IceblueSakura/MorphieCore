@@ -332,8 +332,8 @@ fn stable_refusal_details_have_independent_native_directions_and_guarded_deliver
             wire
         );
         for profile in [
-            morphiecore::protocol::openai::Profile::Chat,
-            morphiecore::protocol::openai::Profile::Responses,
+            morphiecore::protocol::openai::GenerationApi::Chat,
+            morphiecore::protocol::openai::GenerationApi::Responses,
         ] {
             // Isolate reports with a target-representable incomplete text item;
             // native lifecycle/usage projection has separate checks.
@@ -352,7 +352,7 @@ fn stable_refusal_details_have_independent_native_directions_and_guarded_deliver
                 &manual.fidelity,
                 &metadata,
                 profile,
-                morphiecore::protocol::openai::TargetCaps::full(),
+                morphiecore::protocol::openai::TargetContract::full(),
             );
             if expected
                 .value()
@@ -360,7 +360,7 @@ fn stable_refusal_details_have_independent_native_directions_and_guarded_deliver
             {
                 assert_eq!(
                     result.err(),
-                    Some(morphiecore::lowering::generation::RepresentationError::Terminal)
+                    Some(morphiecore::protocol::conversion::generation::RepresentationError::Terminal)
                 );
             } else {
                 let lowered = result.unwrap();
@@ -517,8 +517,8 @@ fn native_stop_reasons_have_independent_terminal_owners() {
         &delivered,
         &fidelity,
         &metadata,
-        morphiecore::protocol::openai::Profile::Responses,
-        morphiecore::protocol::openai::TargetCaps::full(),
+        morphiecore::protocol::openai::GenerationApi::Responses,
+        morphiecore::protocol::openai::TargetContract::full(),
     )
     .unwrap();
     assert!(
@@ -534,8 +534,8 @@ fn native_stop_reasons_have_independent_terminal_owners() {
         &delivered,
         &fidelity,
         &metadata,
-        morphiecore::protocol::openai::Profile::Chat,
-        morphiecore::protocol::openai::TargetCaps::full(),
+        morphiecore::protocol::openai::GenerationApi::Chat,
+        morphiecore::protocol::openai::TargetContract::full(),
     )
     .unwrap();
     assert!(
@@ -566,7 +566,7 @@ fn native_stop_reasons_have_independent_terminal_owners() {
     assert_eq!(window_wire["stop_reason"], "model_context_window_exceeded");
     // OpenAI has no context-window reason: Chat reports `length` and Responses an
     // unspecified incomplete reason, each under a named rule; neither becomes success.
-    use morphiecore::protocol::openai::Profile as OpenAi;
+    use morphiecore::protocol::openai::GenerationApi as OpenAi;
     // As after the native client projection: no native usage, items follow the outcome.
     let mut items = window.semantic.items().to_vec();
     let Item::Message(message) = &mut items[0].1 else {
@@ -586,10 +586,10 @@ fn native_stop_reasons_have_independent_terminal_owners() {
             &fidelity,
             &metadata,
             profile,
-            morphiecore::protocol::openai::TargetCaps::full(),
+            morphiecore::protocol::openai::TargetContract::full(),
         )
         .unwrap();
-        let named = |stages: &[morphiecore::lowering::generation::Effect]| {
+        let named = |stages: &[morphiecore::protocol::conversion::generation::Effect]| {
             stages.iter().any(|stage| stage.rule() == rule)
         };
         assert!(named(projected.projection()), "{rule}");
@@ -746,7 +746,7 @@ fn saved_observation_and_appended_error_encode_the_independent_native_history() 
                 .filter(|e| e.rule() == "messages.omit-tool-execution.v1")
                 .map(|e| e.owner())
                 .collect::<Vec<_>>(),
-            vec![morphiecore::lowering::generation::Owner::item(
+            vec![morphiecore::protocol::conversion::generation::Owner::item(
                 ItemId::scoped(LocalScope::new(3), 1)
             )]
         );
@@ -927,8 +927,8 @@ fn root_system_blocks_and_disabled_controls_have_independent_semantic_owners() {
         morphiecore::protocol::openai::lowering::lower_request(
             &manual,
             &Default::default(),
-            morphiecore::protocol::openai::Profile::Chat,
-            morphiecore::protocol::openai::TargetCaps::full()
+            morphiecore::protocol::openai::GenerationApi::Chat,
+            morphiecore::protocol::openai::TargetContract::full()
         )
         .is_err()
     );
@@ -1175,19 +1175,19 @@ fn root_system_blocks_and_disabled_controls_have_independent_semantic_owners() {
     assert!(encoded.value["tools"][0].get("cache_control").is_none());
     assert!(!GenerationRequirements::derive(&removed).explicit_cache);
     for profile in [
-        morphiecore::protocol::openai::Profile::Chat,
-        morphiecore::protocol::openai::Profile::Responses,
+        morphiecore::protocol::openai::GenerationApi::Chat,
+        morphiecore::protocol::openai::GenerationApi::Responses,
     ] {
         assert_eq!(
             morphiecore::protocol::openai::lowering::lower_request(
                 &client.task.semantic,
                 &client.task.fidelity,
                 profile,
-                morphiecore::protocol::openai::TargetCaps::full(),
+                morphiecore::protocol::openai::TargetContract::full(),
             )
             .err()
             .unwrap(),
-            morphiecore::lowering::generation::RepresentationError::Controls
+            morphiecore::protocol::conversion::generation::RepresentationError::Controls
         );
     }
     assert!(
@@ -1315,8 +1315,8 @@ fn root_system_blocks_and_disabled_controls_have_independent_semantic_owners() {
         morphiecore::protocol::openai::lowering::lower_request(
             &stopped.semantic,
             &stopped.fidelity,
-            morphiecore::protocol::openai::Profile::Responses,
-            morphiecore::protocol::openai::TargetCaps::full()
+            morphiecore::protocol::openai::GenerationApi::Responses,
+            morphiecore::protocol::openai::TargetContract::full()
         )
         .is_err()
     );

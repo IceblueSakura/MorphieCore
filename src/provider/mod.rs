@@ -17,7 +17,7 @@ pub use definition::{
     ProviderId, ProviderOperation, TrustedOrigin,
 };
 pub use errors::{
-    ErrorClass, FailureKind, ProviderError, StatusClass, classify_failure, classify_status,
+    ProviderError, RecoveryClass, SourceFailureKind, StatusClass, classify_failure, classify_status,
 };
 
 /// Shared identity grammar for provider, endpoint and route labels.

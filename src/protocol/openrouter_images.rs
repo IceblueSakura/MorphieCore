@@ -2,9 +2,9 @@
 //! Sources: https://openrouter.ai/docs/api/api-reference/images/generate-an-image
 //! https://openrouter.ai/api/v1/images/models/openai/gpt-image-2.5-flare/endpoints
 use crate::{
-    adapter::images::Request,
     protocol::{
         CodecError,
+        image::Request,
         openai::images::{number, object, optional, required, string},
     },
     semantic::{

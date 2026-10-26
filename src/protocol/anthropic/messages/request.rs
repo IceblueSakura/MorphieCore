@@ -4,9 +4,11 @@ use super::{
     items::{Intake, bind, item_blocks, text},
     settings::{display, effort_level, output_settings, replay_mismatch},
 };
-use crate::protocol::failure::CarrierReason;
 use crate::{
-    protocol::{CodecError, DecodedRequest, fidelity::FidelityRecords, native::ReplayTarget},
+    protocol::{
+        CodecError, DecodedRequest, failure::CarrierReason, fidelity::FidelityRecords,
+        native::ReplayTarget,
+    },
     semantic::{task::generation::*, value::Presence},
 };
 use serde_json::Value;
@@ -19,7 +21,7 @@ impl Profile {
         request: &GenerationRequest,
         fidelity: &FidelityRecords,
         target: &ReplayTarget,
-    ) -> Result<crate::lowering::generation::Conversion<Value>, CodecError> {
+    ) -> Result<crate::protocol::conversion::generation::Conversion<Value>, CodecError> {
         self.encode_request_envelope(
             request,
             fidelity,
@@ -35,7 +37,7 @@ impl Profile {
         target: &ReplayTarget,
         policy: &Presence<crate::semantic::context::ServicePolicy>,
         limits: &crate::protocol::model_limits::ModelLimits,
-    ) -> Result<crate::lowering::generation::Conversion<Value>, CodecError> {
+    ) -> Result<crate::protocol::conversion::generation::Conversion<Value>, CodecError> {
         let (request, fidelity, transferred) = crate::protocol::native::native_reasoning_history(
             request,
             fidelity,
@@ -75,31 +77,31 @@ impl Profile {
                 .map(effort_level),
         )?;
         let value = self.encode_request(&wire)?;
-        let mut evidence: crate::lowering::generation::EvidenceDelta =
+        let mut evidence: crate::protocol::conversion::generation::EvidenceDelta =
             rules.into_iter().map(|r| r.effect(&request)).collect();
         for owner in normalized {
             evidence.push(
-                crate::lowering::generation::Effect::new(
+                crate::protocol::conversion::generation::Effect::new(
                     "messages.normalize-tool-arguments.v1",
-                    crate::lowering::generation::Field::ToolArguments,
-                    crate::lowering::generation::ConversionBoundary::RequestEncode,
-                    crate::lowering::generation::Change::Normalize,
+                    crate::protocol::conversion::generation::Field::ToolArguments,
+                    crate::protocol::conversion::generation::ConversionBoundary::RequestEncode,
+                    crate::protocol::conversion::generation::Change::Normalize,
                 )
-                .at(crate::lowering::generation::Owner::item(owner)),
+                .at(crate::protocol::conversion::generation::Owner::item(owner)),
             );
         }
         for owner in omitted {
             evidence.push(
-                crate::lowering::generation::Effect::new(
+                crate::protocol::conversion::generation::Effect::new(
                     "messages.omit-tool-execution.v1",
-                    crate::lowering::generation::Field::ToolExecution,
-                    crate::lowering::generation::ConversionBoundary::RequestProject,
-                    crate::lowering::generation::Change::Omit,
+                    crate::protocol::conversion::generation::Field::ToolExecution,
+                    crate::protocol::conversion::generation::ConversionBoundary::RequestProject,
+                    crate::protocol::conversion::generation::Change::Omit,
                 )
-                .at(crate::lowering::generation::Owner::item(owner)),
+                .at(crate::protocol::conversion::generation::Owner::item(owner)),
             );
         }
-        Ok(crate::lowering::generation::Conversion { value, evidence })
+        Ok(crate::protocol::conversion::generation::Conversion { value, evidence })
     }
     pub fn decode_generation_request(
         self,
@@ -244,17 +246,26 @@ pub enum RequestRule {
     CollapseToolChanges,
 }
 impl RequestRule {
-    pub(crate) fn effect(self, request: &GenerationRequest) -> crate::lowering::generation::Effect {
-        use crate::lowering::generation::{Change, ConversionBoundary as B, Effect, Field, Owner};
+    pub(crate) fn effect(
+        self,
+        request: &GenerationRequest,
+    ) -> crate::protocol::conversion::generation::Effect {
+        use crate::protocol::conversion::generation::{
+            Change, ConversionBoundary as B, Effect, Field, Owner,
+        };
         let (field, change) = match self {
             Self::CollapseToolChanges => (Field::Tools, Change::Omit),
             Self::DefaultAutomaticCache => (
                 Field::Cache,
-                Change::Default(crate::lowering::generation::DefaultBasis::SelectedPolicy),
+                Change::Default(
+                    crate::protocol::conversion::generation::DefaultBasis::SelectedPolicy,
+                ),
             ),
             Self::DefaultMaxTokens => (
                 Field::MaximumOutput,
-                Change::Default(crate::lowering::generation::DefaultBasis::SelectedPolicy),
+                Change::Default(
+                    crate::protocol::conversion::generation::DefaultBasis::SelectedPolicy,
+                ),
             ),
             Self::FlattenMessageEffort => (Field::Effort, Change::Omit),
             Self::Hint(hint) => return hint.effect(),

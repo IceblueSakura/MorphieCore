@@ -1,8 +1,15 @@
 //! Closed function/custom tool syntax; active orchestration features are outside this profile.
-use crate::protocol::failure::CarrierReason;
-use crate::protocol::openai::content::call::{reject_chat_orchestration, strict_default};
-use crate::protocol::openai::{CodecError, Profile, shape::*};
-use crate::semantic::task::generation::*;
+use crate::{
+    protocol::{
+        failure::CarrierReason,
+        openai::{
+            CodecError, GenerationApi,
+            content::call::{reject_chat_orchestration, strict_default},
+            shape::*,
+        },
+    },
+    semantic::task::generation::*,
+};
 use serde_json::{Map, Value, json};
 fn dispatch(o: &Map<String, Value>) -> Result<ToolDispatch, CodecError> {
     // Definition flags are non-nullable; call-item `async` has its own schema.
@@ -69,7 +76,7 @@ fn write_dispatch(dispatch: &ToolDispatch, o: &mut Map<String, Value>) {
 }
 pub(super) fn read_settings(
     o: &Map<String, Value>,
-    profile: Profile,
+    profile: GenerationApi,
     settings: &mut GenerationSettings,
     direction: DecodeDirection,
 ) -> Result<(), CodecError> {
@@ -81,7 +88,7 @@ pub(super) fn read_settings(
             return Err(CodecError::invalid());
         }
     }
-    if profile == Profile::Chat && o.get("parallel_tool_calls").is_some_and(Value::is_null) {
+    if profile == GenerationApi::Chat && o.get("parallel_tool_calls").is_some_and(Value::is_null) {
         return Err(CodecError::invalid());
     }
     settings.tools = o
@@ -108,10 +115,10 @@ pub(super) fn read_settings(
 }
 pub(super) fn read_tool(
     o: &Map<String, Value>,
-    profile: Profile,
+    profile: GenerationApi,
     direction: DecodeDirection,
 ) -> Result<ToolDefinition, CodecError> {
-    if string(o, "type")? == "namespace" && profile == Profile::Responses {
+    if string(o, "type")? == "namespace" && profile == GenerationApi::Responses {
         direction.fields(o, &["type", "name", "description", "tools"])?;
         let tools = o
             .get("tools")
@@ -135,7 +142,7 @@ pub(super) fn read_tool(
         }));
     }
     if string(o, "type")? == "custom" {
-        let o = if profile == Profile::Chat {
+        let o = if profile == GenerationApi::Chat {
             reject_chat_orchestration(o)?;
             direction.fields(o, &["type", "custom"])?;
             let custom = object(o.get("custom").ok_or(CodecError::invalid())?)?;
@@ -156,7 +163,7 @@ pub(super) fn read_tool(
                 "allowed_callers",
             ],
         )?;
-        let dispatch = if profile == Profile::Chat {
+        let dispatch = if profile == GenerationApi::Chat {
             ToolDispatch::default()
         } else {
             dispatch(o)?
@@ -171,7 +178,7 @@ pub(super) fn read_tool(
                         CustomFormat::Text
                     }
                     "grammar" => {
-                        let grammar = if profile == Profile::Chat {
+                        let grammar = if profile == GenerationApi::Chat {
                             direction.fields(f, &["type", "grammar"])?;
                             let grammar = object(f.get("grammar").ok_or(CodecError::invalid())?)?;
                             direction.fields(grammar, &["syntax", "definition"])?;
@@ -201,7 +208,7 @@ pub(super) fn read_tool(
                 })
             })
             .transpose()?;
-        if profile == Profile::Chat && o.get("description").is_some_and(Value::is_null) {
+        if profile == GenerationApi::Chat && o.get("description").is_some_and(Value::is_null) {
             return Err(CodecError::invalid());
         }
         return Ok(ToolDefinition::Custom(CustomTool {
@@ -218,7 +225,7 @@ pub(super) fn read_tool(
     if string(o, "type")? != "function" {
         return Err(CodecError::Unsupported(CarrierReason::Tools));
     }
-    let f = if profile == Profile::Chat {
+    let f = if profile == GenerationApi::Chat {
         reject_chat_orchestration(o)?;
         direction.fields(o, &["type", "function"])?;
         object(o.get("function").ok_or(CodecError::invalid())?)?
@@ -227,7 +234,7 @@ pub(super) fn read_tool(
     };
     direction.fields(
         f,
-        if profile == Profile::Chat {
+        if profile == GenerationApi::Chat {
             &["name", "description", "parameters", "strict"]
         } else {
             &[
@@ -243,13 +250,13 @@ pub(super) fn read_tool(
             ]
         },
     )?;
-    let dispatch = if profile == Profile::Chat {
+    let dispatch = if profile == GenerationApi::Chat {
         reject_chat_orchestration(f)?;
         ToolDispatch::default()
     } else {
         dispatch(f)?
     };
-    if profile == Profile::Chat
+    if profile == GenerationApi::Chat
         && (["description", "parameters"]
             .iter()
             .any(|key| f.get(*key).is_some_and(Value::is_null))
@@ -273,7 +280,7 @@ pub(super) fn read_tool(
             Some(v) => FunctionStrictness::Explicit(v),
             None => FunctionStrictness::Omitted(strict_default(profile)),
         },
-        output_schema: if profile == Profile::Responses {
+        output_schema: if profile == GenerationApi::Responses {
             f.get("output_schema")
                 .filter(|v| !v.is_null())
                 .cloned()
@@ -289,11 +296,11 @@ pub(super) fn read_tool(
 }
 fn reference(
     v: &Value,
-    profile: Profile,
+    profile: GenerationApi,
     direction: DecodeDirection,
 ) -> Result<ToolReference, CodecError> {
     let o = object(v)?;
-    if profile == Profile::Chat {
+    if profile == GenerationApi::Chat {
         let (kind, field) = match string(o, "type")? {
             "function" => (ToolKind::Function, "function"),
             "custom" => (ToolKind::Custom, "custom"),
@@ -327,7 +334,7 @@ fn reference(
 }
 fn read_choice(
     v: &Value,
-    profile: Profile,
+    profile: GenerationApi,
     direction: DecodeDirection,
 ) -> Result<ToolChoice, CodecError> {
     Ok(match v.as_str() {
@@ -340,7 +347,7 @@ fn read_choice(
         None => {
             let o = object(v)?;
             if string(o, "type")? == "allowed_tools" {
-                let allowed = if profile == Profile::Chat {
+                let allowed = if profile == GenerationApi::Chat {
                     direction.fields(o, &["type", "allowed_tools"])?;
                     let allowed = object(o.get("allowed_tools").ok_or(CodecError::invalid())?)?;
                     direction.fields(allowed, &["mode", "tools"])?;
@@ -383,7 +390,7 @@ fn read_choice(
 pub(super) fn decode(
     r: GenerationRequest,
     o: &Map<String, Value>,
-    profile: Profile,
+    profile: GenerationApi,
     direction: DecodeDirection<'_>,
 ) -> Result<GenerationRequest, CodecError> {
     let mut s = r.settings().clone();
@@ -392,14 +399,14 @@ pub(super) fn decode(
 }
 pub(super) fn encode(
     r: &GenerationRequest,
-    profile: Profile,
+    profile: GenerationApi,
     o: &mut Map<String, Value>,
 ) -> Result<(), CodecError> {
     write_settings(r.settings(), profile, o)
 }
 pub(super) fn write_settings(
     s: &GenerationSettings,
-    profile: Profile,
+    profile: GenerationApi,
     o: &mut Map<String, Value>,
 ) -> Result<(), CodecError> {
     if let Some(tools) = &s.tools {
@@ -428,9 +435,9 @@ pub(super) fn valid_chat_function_name(name: &str) -> bool {
             .bytes()
             .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'-'))
 }
-pub(super) fn write_tool(t: &ToolDefinition, profile: Profile) -> Result<Value, CodecError> {
+pub(super) fn write_tool(t: &ToolDefinition, profile: GenerationApi) -> Result<Value, CodecError> {
     Ok(match t {
-        ToolDefinition::Namespace(_) if profile == Profile::Chat => {
+        ToolDefinition::Namespace(_) if profile == GenerationApi::Chat => {
             return Err(CodecError::Unsupported(CarrierReason::Tools));
         }
         ToolDefinition::Namespace(group) => json!({
@@ -438,7 +445,7 @@ pub(super) fn write_tool(t: &ToolDefinition, profile: Profile) -> Result<Value, 
             "tools":group.tools.iter().map(|t| write_tool(t, profile)).collect::<Result<Vec<_>, _>>()?
         }),
         ToolDefinition::Function(t) => {
-            if profile == Profile::Chat && !valid_chat_function_name(t.name.as_str()) {
+            if profile == GenerationApi::Chat && !valid_chat_function_name(t.name.as_str()) {
                 return Err(CodecError::Unsupported(CarrierReason::Tools));
             }
             if t.input_examples.is_some() {
@@ -458,15 +465,15 @@ pub(super) fn write_tool(t: &ToolDefinition, profile: Profile) -> Result<Value, 
             }
             if let FunctionStrictness::Explicit(b) = t.strict {
                 f["strict"] = json!(b);
-            } else if profile == Profile::Responses
+            } else if profile == GenerationApi::Responses
                 && t.strict == FunctionStrictness::Omitted(StrictDefault::NonStrict)
             {
                 f["strict"] = json!(false);
             }
-            if profile == Profile::Responses {
+            if profile == GenerationApi::Responses {
                 write_dispatch(&t.dispatch, f.as_object_mut().expect("object"));
             }
-            if profile == Profile::Chat {
+            if profile == GenerationApi::Chat {
                 json!({"type":"function","function":f})
             } else {
                 f["type"] = json!("function");
@@ -490,7 +497,7 @@ pub(super) fn write_tool(t: &ToolDefinition, profile: Profile) -> Result<Value, 
                             "syntax": syntax,
                             "definition": definition.as_str(),
                         });
-                        if profile == Profile::Chat {
+                        if profile == GenerationApi::Chat {
                             json!({"type":"grammar","grammar":grammar})
                         } else {
                             let mut grammar = grammar;
@@ -500,7 +507,7 @@ pub(super) fn write_tool(t: &ToolDefinition, profile: Profile) -> Result<Value, 
                     }
                 };
             }
-            if profile == Profile::Chat {
+            if profile == GenerationApi::Chat {
                 json!({"type":"custom","custom":v})
             } else {
                 write_dispatch(&t.dispatch, v.as_object_mut().expect("object"));
@@ -510,16 +517,16 @@ pub(super) fn write_tool(t: &ToolDefinition, profile: Profile) -> Result<Value, 
         }
     })
 }
-pub(super) fn write_choice(c: &ToolChoice, profile: Profile) -> Result<Value, CodecError> {
+pub(super) fn write_choice(c: &ToolChoice, profile: GenerationApi) -> Result<Value, CodecError> {
     Ok(match c {
         ToolChoice::Auto => json!("auto"),
         ToolChoice::None => json!("none"),
         ToolChoice::Required => json!("required"),
-        ToolChoice::Specific(n) if profile == Profile::Chat => {
+        ToolChoice::Specific(n) if profile == GenerationApi::Chat => {
             json!({"type":"function","function":{"name":n.as_str()}})
         }
         ToolChoice::Specific(n) => json!({"type":"function","name":n.as_str()}),
-        ToolChoice::Custom(n) if profile == Profile::Chat => {
+        ToolChoice::Custom(n) if profile == GenerationApi::Chat => {
             json!({"type":"custom","custom":{"name":n.as_str()}})
         }
         ToolChoice::Custom(n) => json!({"type":"custom","name":n.as_str()}),
@@ -533,7 +540,7 @@ pub(super) fn write_choice(c: &ToolChoice, profile: Profile) -> Result<Value, Co
             let refs: Vec<_> = tools
                 .iter()
                 .map(|r| {
-                    if profile == Profile::Chat {
+                    if profile == GenerationApi::Chat {
                         match r.kind {
                             ToolKind::Function => {
                                 json!({"type":"function","function":{"name":r.name.as_str()}})
@@ -548,7 +555,7 @@ pub(super) fn write_choice(c: &ToolChoice, profile: Profile) -> Result<Value, Co
                 })
                 .collect();
             let mut allowed = json!({"mode":if *required{"required"}else{"auto"},"tools":refs});
-            if profile == Profile::Chat {
+            if profile == GenerationApi::Chat {
                 json!({"type":"allowed_tools","allowed_tools":allowed})
             } else {
                 allowed["type"] = json!("allowed_tools");

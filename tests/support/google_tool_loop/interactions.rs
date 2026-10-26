@@ -6,7 +6,7 @@ use axum::{
     http::{HeaderMap, Uri},
     response::Response,
 };
-use morphiecore::protocol::openai::Profile;
+use morphiecore::protocol::openai::GenerationApi;
 use serde_json::{Value, json};
 
 fn expected_input(turn: usize, messages: bool) -> Value {
@@ -63,7 +63,7 @@ pub(super) async fn answer(
         _ => panic!("unexpected Interactions history length: {body}"),
     };
     let mut config = json!({"max_output_tokens":256,"thinking_level":"low"});
-    if state.profile == Profile::Responses {
+    if state.profile == GenerationApi::Responses {
         config["thinking_summaries"] = json!("auto");
     }
     assert_eq!(
@@ -131,7 +131,7 @@ pub(super) async fn answer(
     frames.push(json!({"event_type":"interaction.completed","interaction":{
         "status":if turn <= 2 {"requires_action"} else {"completed"}, "steps":steps,
         "usage":usage}}));
-    if !state.messages && state.profile == Profile::Responses {
+    if !state.messages && state.profile == GenerationApi::Responses {
         frames.last_mut().unwrap()["interaction"]["service_tier"] = json!("standard");
     }
     // The last Messages turn proves mandatory downstream accounting completion,

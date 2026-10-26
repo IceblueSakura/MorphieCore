@@ -1,8 +1,6 @@
 //! Request-local presentation fallbacks. Never mutate upstream observations.
-use crate::protocol::failure::ShapeReason;
 use crate::{
-    adapter::ClientProtocol,
-    protocol::{CodecError, GenerationDelivery},
+    protocol::{ClientProtocol, CodecError, GenerationDelivery, failure::ShapeReason},
     semantic::task::generation::*,
 };
 
@@ -168,7 +166,7 @@ pub(super) fn complete(
     response: &GenerationResponse,
     protocol: ClientProtocol,
     input_estimate: u64,
-) -> Result<crate::lowering::generation::EvidenceDelta, CodecError> {
+) -> Result<crate::protocol::conversion::generation::EvidenceDelta, CodecError> {
     let source = response.usage();
     let mut input_method = UsageMethod::Accounting;
     let mut output_method = UsageMethod::Accounting;
@@ -585,7 +583,7 @@ pub(super) fn complete(
     }
     u.validate()?;
     delivery.usage = Some(u);
-    use crate::lowering::generation::{
+    use crate::protocol::conversion::generation::{
         Change, ConversionBoundary as B, Effect, EvidenceDelta, Field,
     };
     let mut evidence = EvidenceDelta::default();
@@ -710,9 +708,9 @@ mod tests {
             );
             assert_eq!(source.usage(), Some(sparse));
             assert!(
-                !evidence
-                    .iter()
-                    .any(|e| e.change() == crate::lowering::generation::Change::Estimate)
+                !evidence.iter().any(
+                    |e| e.change() == crate::protocol::conversion::generation::Change::Estimate
+                )
             );
         }
         let mut delivery = GenerationDelivery::default();
@@ -793,12 +791,12 @@ mod tests {
             );
             assert_eq!(source.usage().unwrap().input_cache_write_tokens, None);
             assert!(evidence.iter().any(|e| e.semantic_field()
-                == crate::lowering::generation::Field::CacheWriteTokens
+                == crate::protocol::conversion::generation::Field::CacheWriteTokens
                 && e.change()
                     == if complete_ttls {
-                        crate::lowering::generation::Change::Derive
+                        crate::protocol::conversion::generation::Change::Derive
                     } else {
-                        crate::lowering::generation::Change::Estimate
+                        crate::protocol::conversion::generation::Change::Estimate
                     }));
         }
         let mut counts = Usage::operation(0, 0, 100);
@@ -1009,8 +1007,8 @@ mod tests {
                 (Some(10), Some(90), Some(100), Some(70))
             );
             assert!(evidence.iter().any(|e| e.semantic_field()
-                == crate::lowering::generation::Field::ReasoningTokens
-                && e.change() == crate::lowering::generation::Change::Estimate));
+                == crate::protocol::conversion::generation::Field::ReasoningTokens
+                && e.change() == crate::protocol::conversion::generation::Change::Estimate));
             assert_eq!(sparse, original);
         }
     }
@@ -1019,7 +1017,7 @@ mod tests {
 #[cfg(test)]
 mod provenance_tests {
     use super::*;
-    use crate::lowering::generation::{Change, Field};
+    use crate::protocol::conversion::generation::{Change, Field};
     #[test]
     fn unknown_optional_buckets_do_not_turn_reported_parent_counters_into_estimates() {
         let response = GenerationResponse::new(vec![], Outcome::Completed)

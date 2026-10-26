@@ -1,6 +1,8 @@
 //! Immutable, bounded discovery of activated public labels; never contacts an upstream.
-use crate::gateway::{ApiError, Runtime, StartupError};
-use crate::topology::CompiledTopology;
+use crate::{
+    gateway::{ApiError, Runtime, StartupError},
+    topology::CompiledTopology,
+};
 use axum::{
     body::Body,
     extract::{Path, State, rejection::PathRejection},
@@ -107,11 +109,10 @@ pub(in crate::gateway) async fn retrieve(
 ) -> Result<Response, ApiError> {
     running(&state)?;
     let Path(model) = path.map_err(|_| ApiError::invalid())?;
-    let bytes = state
-        .models
-        .models
-        .get(&model)
-        .ok_or(ApiError::new(StatusCode::NOT_FOUND, "model_not_found"))?;
+    let bytes = state.models.models.get(&model).ok_or(ApiError::new(
+        StatusCode::NOT_FOUND,
+        crate::gateway::error::ErrorKind::ModelNotFound,
+    ))?;
     Ok(response(bytes.clone()))
 }
 pub(in crate::gateway) async fn delete(
@@ -121,13 +122,16 @@ pub(in crate::gateway) async fn delete(
     running(&state)?;
     let Path(model) = path.map_err(|_| ApiError::invalid())?;
     if !state.models.models.contains_key(&model) {
-        return Err(ApiError::new(StatusCode::NOT_FOUND, "model_not_found"));
+        return Err(ApiError::new(
+            StatusCode::NOT_FOUND,
+            crate::gateway::error::ErrorKind::ModelNotFound,
+        ));
     }
     // The standard operation deletes owned fine-tuned models, not catalog entries.
     // This instance has no such ownership or deletion capability.
     // Source: https://developers.openai.com/api/reference/resources/models/methods/delete
     Err(ApiError::new(
         StatusCode::FORBIDDEN,
-        "model_deletion_forbidden",
+        crate::gateway::error::ErrorKind::ModelDeletionForbidden,
     ))
 }

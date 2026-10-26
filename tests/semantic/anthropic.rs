@@ -15,7 +15,7 @@ mod native_controls;
 fn native_identity_projects_to_openai_safety_not_legacy_cache_bucketing() {
     use morphiecore::protocol::{
         anthropic::messages::client::decode_client_request,
-        openai::{Adapter, Dialect, Profile, TargetCaps},
+        openai::{Dialect, GenerationApi, GenerationCodec, TargetContract},
     };
     use serde_json::{Value, json};
     for value in [
@@ -33,9 +33,9 @@ fn native_identity_projects_to_openai_safety_not_legacy_cache_bucketing() {
         )
         .unwrap();
         let before = source.clone();
-        for profile in [Profile::Chat, Profile::Responses] {
-            let adapter = Adapter::new(profile, Dialect::Standard, None);
-            let encoded = adapter.encode_request_with_rules(&source, "m", &TargetCaps::full());
+        for profile in [GenerationApi::Chat, GenerationApi::Responses] {
+            let adapter = GenerationCodec::new(profile, Dialect::Standard, None);
+            let encoded = adapter.encode_request_with_rules(&source, "m", &TargetContract::full());
             if value
                 .as_str()
                 .is_some_and(|value| value.chars().count() > 128)

@@ -1,17 +1,14 @@
 //! Independent Interactions request expectations; no native encoder builds the oracle.
-use morphiecore::protocol::{
-    CodecError as Failure,
-    failure::{CarrierReason as Carrier, ShapeReason as Shape},
-    stream::SseError as WireFailure,
-};
-use morphiecore::protocol::{
-    google::interactions::encode_generation_request,
-    native::ReplayTarget,
-    openai::{Adapter, Dialect, Profile},
-};
 use morphiecore::{
     protocol::{
-        fidelity::FidelityRecords, google::interactions::RequestRule, replay_envelope::issuer,
+        CodecError as Failure,
+        failure::{CarrierReason as Carrier, ShapeReason as Shape},
+        fidelity::FidelityRecords,
+        google::interactions::{RequestRule, encode_generation_request},
+        native::ReplayTarget,
+        openai::{Dialect, GenerationApi, GenerationCodec},
+        replay_envelope::issuer,
+        stream::SseError as WireFailure,
     },
     semantic::{
         task::generation::*,
@@ -74,7 +71,7 @@ fn decode_interaction(
 
 #[test]
 fn empty_chat_carrier_is_not_an_empty_text_part() {
-    let adapter = Adapter::new(Profile::Chat, Dialect::Standard, None);
+    let adapter = GenerationCodec::new(GenerationApi::Chat, Dialect::Standard, None);
     let target = ReplayTarget::new("synthetic-google", "gemini-synthetic").unwrap();
     for (content, count, projected) in [
         (json!(null), 0, json!([])),
@@ -641,7 +638,7 @@ fn service_reports_preserve_matching_v1_phases_without_inference_or_capacity_ali
     assert!(matches!(
         decode_interaction(&wrong_owner, true).unwrap_err(),
         WireFailure::Codec(Failure::Unsupported(Carrier::Field(
-            morphiecore::lowering::generation::Field::ServiceClass
+            morphiecore::protocol::conversion::generation::Field::ServiceClass
         )))
     ));
 }
@@ -1110,7 +1107,7 @@ fn step_stream_rejects_missing_call_identity_and_unfinished_or_late_data() {
 }
 
 fn signed_history(format: ReplayFormat) -> (GenerationRequest, FidelityRecords) {
-    let source = Adapter::new(Profile::Responses, Dialect::Standard, None)
+    let source = GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None)
         .decode_request(
             json!({"model":"public","input":[
                 {"role":"user","content":"Read."},
@@ -1311,7 +1308,7 @@ fn rejects_orphaned_or_wrong_target_signatures() {
 #[test]
 fn projects_stateless_steps_tools_and_controls() {
     let schema = json!({"type":"object","properties":{"ok":{"type":"boolean"}},"required":["ok"],"additionalProperties":false});
-    let request = Adapter::new(Profile::Responses, Dialect::Standard, None)
+    let request = GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None)
         .decode_request(json!({
             "model":"public", "instructions":"Be precise.", "max_output_tokens":128,
             "text":{"format":{"type":"json_schema","name":"answer","schema":schema,"strict":true}},
@@ -1345,7 +1342,7 @@ fn projects_stateless_steps_tools_and_controls() {
         rules.iter().map(|r| r.name()).collect::<Vec<_>>(),
         ["interactions.omit-schema-name.v1"]
     );
-    let parts = Adapter::new(Profile::Responses, Dialect::Standard, None)
+    let parts = GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None)
         .decode_request(json!({"model":"public","input":[
             {"role":"system","content":[{"type":"input_text","text":"A"},{"type":"input_text","text":"B"}]},
             {"role":"user","content":"Hi"}]}).to_string().as_bytes())
@@ -1359,7 +1356,7 @@ fn projects_stateless_steps_tools_and_controls() {
     );
     let mut endpoint = morphiecore::topology::catalog::GOOGLE_BINDINGS[0].interactions_endpoint();
     assert!(endpoint.encode_request_with_rules(&request).is_err());
-    endpoint.representation = morphiecore::protocol::google::interactions::TargetCaps {
+    endpoint.representation = morphiecore::protocol::google::interactions::TargetContract {
         semantics: morphiecore::protocol::google::interactions::representation_contract(),
         ..Default::default()
     }
@@ -1446,7 +1443,7 @@ fn projects_stateless_steps_tools_and_controls() {
 
 #[test]
 fn rejects_unrepresentable_critical_tool_semantics() {
-    let advisory = Adapter::new(Profile::Responses, Dialect::Standard, None)
+    let advisory = GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None)
         .decode_request(
             br#"{"model":"public","input":"Read.","text":{"format":{"type":"text"},"verbosity":"low"}}"#,
         )
@@ -1474,7 +1471,7 @@ fn rejects_unrepresentable_critical_tool_semantics() {
         .with_settings(settings)
         .unwrap();
     assert!(encode_generation_request(&constrained, &advisory.task.fidelity, &target).is_err());
-    let request = Adapter::new(Profile::Responses, Dialect::Standard, None)
+    let request = GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None)
         .decode_request(
             json!({
                 "model":"public","input":"Read.",
@@ -1498,13 +1495,13 @@ fn rejects_unrepresentable_critical_tool_semantics() {
 #[test]
 fn media_become_v1_content_and_video_has_no_carrier() {
     let decode = |profile, body: serde_json::Value| {
-        Adapter::new(profile, Dialect::Standard, None)
+        GenerationCodec::new(profile, Dialect::Standard, None)
             .decode_request(body.to_string().as_bytes())
             .unwrap()
     };
     let target = ReplayTarget::new("synthetic-google", "gemini-synthetic").unwrap();
     let request = decode(
-        Profile::Responses,
+        GenerationApi::Responses,
         json!({"model":"public","tools":[{"type":"function","name":"shot","strict":false,"parameters":{"type":"object"}}],
             "input":[{"role":"user","content":[
                 {"type":"input_image","image_url":"https://example.invalid/a.png"},
@@ -1545,7 +1542,7 @@ fn media_become_v1_content_and_video_has_no_carrier() {
         encode_generation_request(&named.task.semantic, &named.task.fidelity, &target).is_err()
     );
     let video = decode(
-        Profile::Chat,
+        GenerationApi::Chat,
         json!({"model":"public","messages":[{"role":"user","content":[
             {"type":"video_url","video_url":{"url":"https://example.invalid/a.mp4"}}]}]}),
     );
@@ -1554,7 +1551,7 @@ fn media_become_v1_content_and_video_has_no_carrier() {
     );
     // System instructions are text, and other targets may downsize an oversized image.
     assert_eq!(
-        Adapter::new(Profile::Responses, Dialect::Standard, None)
+        GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None)
             .decode_request(
                 json!({"model":"public","input":[
             {"role":"developer","content":[{"type":"input_image","image_url":"data:image/png;base64,AQID"}]},
@@ -1587,7 +1584,10 @@ fn media_become_v1_content_and_video_has_no_carrier() {
         } else {
             json!([{"role":"user","content":[{"type":"input_image","image_url":uri}]}])
         };
-        let private = decode(Profile::Responses, json!({"model":"public","input":input}));
+        let private = decode(
+            GenerationApi::Responses,
+            json!({"model":"public","input":input}),
+        );
         assert!(
             encode_generation_request(&private.task.semantic, &private.task.fidelity, &target)
                 .is_err()
@@ -1599,7 +1599,7 @@ fn media_become_v1_content_and_video_has_no_carrier() {
 fn projects_instructions_tool_choice_effort_summaries_and_result_errors() {
     let target = ReplayTarget::new("synthetic-google", "gemini-synthetic").unwrap();
     let encode = |profile, body: serde_json::Value| {
-        let request = Adapter::new(profile, Dialect::Standard, None)
+        let request = GenerationCodec::new(profile, Dialect::Standard, None)
             .decode_request(body.to_string().as_bytes())
             .unwrap();
         let (wire, rules) =
@@ -1616,7 +1616,7 @@ fn projects_instructions_tool_choice_effort_summaries_and_result_errors() {
         body.as_object_mut()
             .unwrap()
             .extend(extra.as_object().unwrap().clone());
-        encode(Profile::Chat, body)
+        encode(GenerationApi::Chat, body)
     };
     let (wire, rules) = chat(json!({}));
     assert_eq!(wire["system_instruction"], "Be brief.");
@@ -1654,7 +1654,7 @@ fn projects_instructions_tool_choice_effort_summaries_and_result_errors() {
     }
     // One summary mode: requested concision is approximated, not dropped.
     let (wire, rules) = encode(
-        Profile::Responses,
+        GenerationApi::Responses,
         json!({"model":"public","input":"go","reasoning":{"summary":"concise"}}),
     );
     assert_eq!(

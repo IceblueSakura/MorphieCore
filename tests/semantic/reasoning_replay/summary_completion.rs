@@ -3,7 +3,7 @@ use morphiecore::{
     protocol::{
         fidelity::FidelityRecords,
         openai::{
-            Profile,
+            GenerationApi,
             events::{EventDecoder, EventEncoder},
         },
     },
@@ -25,7 +25,7 @@ fn prefix() -> Vec<Value> {
 }
 #[test]
 fn interrupted_summary_close_preserves_event_fact_without_inventing_static_status() {
-    let mut decoder = EventDecoder::new(Profile::Responses);
+    let mut decoder = EventDecoder::new(GenerationApi::Responses);
     for frame in prefix() {
         decoder.push(&frame).unwrap();
     }
@@ -55,7 +55,7 @@ fn interrupted_summary_close_preserves_event_fact_without_inventing_static_statu
     let part = PartId::new(8);
     let mut records = FidelityRecords::default();
     records.record_response_item_id(id, "reason").unwrap();
-    let mut encoder = EventEncoder::new(Profile::Responses, metadata())
+    let mut encoder = EventEncoder::new(GenerationApi::Responses, metadata())
         .unwrap()
         .with_contract(contract());
     for event in [
@@ -97,7 +97,7 @@ fn interrupted_summary_close_preserves_event_fact_without_inventing_static_statu
 #[test]
 fn unknown_summary_status_is_not_an_ignored_extension() {
     for value in [json!("complete"), json!(false), json!(7)] {
-        let mut decoder = EventDecoder::new(Profile::Responses);
+        let mut decoder = EventDecoder::new(GenerationApi::Responses);
         for frame in prefix() {
             decoder.push(&frame).unwrap();
         }

@@ -3,10 +3,10 @@ use crate::events_support::{
 };
 use morphiecore::{
     protocol::{
-        anthropic::messages::{client::encode_client_response, client::sse::ClientEventEncoder},
+        anthropic::messages::client::{encode_client_response, sse::ClientEventEncoder},
         fidelity::FidelityRecords,
         openai::{
-            Profile, TargetCaps,
+            GenerationApi, TargetContract,
             events::{EventDecoder, EventEncoder},
             lowering::lower_response,
             responses,
@@ -96,14 +96,21 @@ fn reported_results_preserve_facts_and_reject_missing_downstream_carriers() {
     let expected = semantic();
     let f = fidelity();
     let m = metadata();
-    let target = lower_response(&expected, &f, &m, Profile::Responses, TargetCaps::full()).unwrap();
+    let target = lower_response(
+        &expected,
+        &f,
+        &m,
+        GenerationApi::Responses,
+        TargetContract::full(),
+    )
+    .unwrap();
     assert_eq!(
         responses::encode_response(&target).unwrap()["output"],
         output
     );
-    let mut no_media = TargetCaps::full();
+    let mut no_media = TargetContract::full();
     no_media.semantics.tool_result_media = false;
-    assert!(lower_response(&expected, &f, &m, Profile::Responses, no_media).is_err());
+    assert!(lower_response(&expected, &f, &m, GenerationApi::Responses, no_media).is_err());
 
     // Even a plain function result has no assistant-output carrier in these protocols.
     let decoded = responses::decode_response(&envelope("completed", json!([result()]))).unwrap();
@@ -112,8 +119,8 @@ fn reported_results_preserve_facts_and_reject_missing_downstream_carriers() {
             &decoded.semantic,
             &decoded.fidelity,
             &decoded.metadata,
-            Profile::Chat,
-            TargetCaps::full()
+            GenerationApi::Chat,
+            TargetContract::full()
         )
         .is_err()
     );
@@ -165,8 +172,8 @@ fn reported_results_preserve_facts_and_reject_missing_downstream_carriers() {
     let target = morphiecore::protocol::openai::lowering::lower_request(
         &request,
         &f,
-        Profile::Responses,
-        TargetCaps::full(),
+        GenerationApi::Responses,
+        TargetContract::full(),
     )
     .unwrap();
     let replay = responses::encode_generation(&target).unwrap();
@@ -193,7 +200,7 @@ fn result_cache_snapshot_edits_are_semantic_and_native_ttls_reject_before_public
         (cleared, marked.clone(), 2),
         (marked.clone(), marked, 2),
     ] {
-        let mut decoder = EventDecoder::new(Profile::Responses);
+        let mut decoder = EventDecoder::new(GenerationApi::Responses);
         opening["status"] = json!("in_progress");
         for event in [
             created(),
@@ -214,8 +221,8 @@ fn result_cache_snapshot_edits_are_semantic_and_native_ttls_reject_before_public
             &final_value.semantic,
             &final_value.fidelity,
             &final_value.metadata,
-            Profile::Responses,
-            TargetCaps::full(),
+            GenerationApi::Responses,
+            TargetContract::full(),
         )
         .unwrap();
         let mut expected = closing;
@@ -315,7 +322,7 @@ fn result_stream_uses_item_snapshots_and_requires_honest_closure() {
     let done = json!({"type":"response.output_item.done","output_index":0,"item":final_item});
     let final_event = json!({"type":"response.completed",
             "response":envelope("completed", json!([result()]))});
-    let mut decoder = EventDecoder::new(Profile::Responses);
+    let mut decoder = EventDecoder::new(GenerationApi::Responses);
     for event in [created(), open.clone(), done.clone(), final_event.clone()] {
         decoder.push(&event).unwrap();
     }
@@ -326,11 +333,11 @@ fn result_stream_uses_item_snapshots_and_requires_honest_closure() {
     assert_eq!(reported.output, ToolOutput::Text("42".into()));
     assert_eq!(reported.status, Some(ItemLifecycle::Completed));
 
-    let mut decoder = EventDecoder::new(Profile::Responses);
+    let mut decoder = EventDecoder::new(GenerationApi::Responses);
     decoder.push(&created()).unwrap();
     decoder.push(&open).unwrap();
     assert!(decoder.push(&final_event).is_err());
-    let mut decoder = EventDecoder::new(Profile::Responses);
+    let mut decoder = EventDecoder::new(GenerationApi::Responses);
     decoder.push(&created()).unwrap();
     decoder.push(&open).unwrap();
     let mut changed = done;
@@ -368,7 +375,7 @@ fn result_stream_uses_item_snapshots_and_requires_honest_closure() {
     }
     events.push(terminal(StreamTerminal::Completed));
     assert_eq!(materialize(&apply(&events).unwrap()).unwrap(), expected);
-    let wire = encode(&events, Profile::Responses, &fidelity());
+    let wire = encode(&events, GenerationApi::Responses, &fidelity());
     let finished: Vec<_> = wire
         .iter()
         .filter(|v| v["type"] == "response.output_item.done")
@@ -380,14 +387,14 @@ fn result_stream_uses_item_snapshots_and_requires_honest_closure() {
             .iter()
             .any(|v| v["type"].as_str().unwrap().ends_with(".delta"))
     );
-    let mut decoder = EventDecoder::new(Profile::Responses);
+    let mut decoder = EventDecoder::new(GenerationApi::Responses);
     for event in wire {
         decoder.push(&event).unwrap();
     }
     assert_eq!(decoder.materialize().unwrap().semantic, expected);
 
     let starter = events[1].clone();
-    let mut chat = EventEncoder::new(Profile::Chat, metadata()).unwrap();
+    let mut chat = EventEncoder::new(GenerationApi::Chat, metadata()).unwrap();
     chat.encode(&StreamEvent::Started, &fidelity()).unwrap();
     assert!(chat.encode(&starter, &fidelity()).is_err());
     let mut messages = ClientEventEncoder::new("r", "synthetic");

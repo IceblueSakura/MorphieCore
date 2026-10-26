@@ -22,12 +22,12 @@ fn prediction_subsets_obey_the_joint_bound_not_only_individual_bounds() {
     }
 }
 
-use crate::events_support::{self as events, text};
+use crate::{events_support as events, events_support::text};
 use morphiecore::{
-    lowering::generation::RepresentationError,
     protocol::{
+        conversion::generation::RepresentationError,
         fidelity::FidelityRecords,
-        openai::{Profile, TargetCaps as Contract, lowering::lower_response},
+        openai::{GenerationApi, TargetContract as Contract, lowering::lower_response},
     },
     semantic::task::generation::*,
 };
@@ -68,7 +68,7 @@ fn separate_reasoning_and_missing_counts_do_not_guess_totals_or_views() {
         .with_usage(Some(usage))
         .unwrap();
     assert_eq!(response.usage().unwrap().input_tokens, None);
-    for profile in [Profile::Chat, Profile::Responses] {
+    for profile in [GenerationApi::Chat, GenerationApi::Responses] {
         assert_eq!(
             lower_response(
                 &response,

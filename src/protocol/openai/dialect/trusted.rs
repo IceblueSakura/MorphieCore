@@ -2,7 +2,7 @@
 //! replaces the codec, and a model or endpoint capability is a separate decision.
 use crate::{
     protocol::openai::{
-        Profile,
+        GenerationApi,
         dialect::adaptation::{Adaptation, WireRules},
     },
     semantic::value::ReplayOrigin,
@@ -29,7 +29,7 @@ pub enum Dialect {
 impl Dialect {
     pub(in crate::protocol::openai) fn adaptation(
         self,
-        profile: Profile,
+        profile: GenerationApi,
         scope: Option<ReplayOrigin>,
     ) -> Adaptation {
         let (profile_id, mut rules) = match self {
@@ -83,7 +83,7 @@ impl Dialect {
                 "deepseek-v1",
                 WireRules {
                     system_instruction_messages: true,
-                    responses_developer_is_user: profile == Profile::Responses,
+                    responses_developer_is_user: profile == GenerationApi::Responses,
                     parallel_tools_always_enabled: true,
                     chat_cache_usage_aliases: true,
                     readable_reasoning: true,
@@ -162,8 +162,8 @@ impl Dialect {
             Self::Bailian => (
                 "bailian-v1",
                 WireRules {
-                    system_instruction_messages: profile == Profile::Chat,
-                    chat_string_instructions: profile == Profile::Chat,
+                    system_instruction_messages: profile == GenerationApi::Chat,
+                    chat_string_instructions: profile == GenerationApi::Chat,
                     chat_video_url: true,
                     // Both billing plans use the same upstream wire dialect.
                     chunk_created_drift: true,
@@ -188,9 +188,9 @@ impl Dialect {
                     // Chat and Responses have different role and message-shape contracts.
                     // https://docs.bigmodel.cn/api-reference/模型-api/对话补全
                     // https://docs.bigmodel.cn/api-reference/response/创建-response
-                    system_instruction_messages: profile == Profile::Chat,
-                    chat_string_instructions: profile == Profile::Chat,
-                    responses_typed_messages: profile == Profile::Responses,
+                    system_instruction_messages: profile == GenerationApi::Chat,
+                    chat_string_instructions: profile == GenerationApi::Chat,
+                    responses_typed_messages: profile == GenerationApi::Responses,
                     chat_video_url: true,
                     readable_reasoning: true,
                     reject_disabled_reasoning: true,
@@ -226,20 +226,20 @@ impl Dialect {
         let mut cache = match self {
             // Public Responses carriers, independent of OAuth or product session headers.
             // https://docs.x.ai/developers/advanced-api-usage/prompt-caching/maximizing-cache-hits
-            Self::Siwc | Self::Grok => crate::protocol::cache::CacheProjection {
+            Self::Siwc | Self::Grok => crate::protocol::cache::CacheTargetPolicy {
                 key: true,
                 ..Default::default()
             },
-            Self::Standard | Self::ChatReasoning => crate::protocol::cache::CacheProjection {
+            Self::Standard | Self::ChatReasoning => crate::protocol::cache::CacheTargetPolicy {
                 session_id: false,
-                ..crate::protocol::cache::CacheProjection::all()
+                ..crate::protocol::cache::CacheTargetPolicy::all()
             },
-            Self::MorphieCore => crate::protocol::cache::CacheProjection::all(),
+            Self::MorphieCore => crate::protocol::cache::CacheTargetPolicy::all(),
             // The standard cache key is explicitly accepted as an affinity fallback.
             // session_id is a separate caller-supplied grouping value, never synthesized.
             // https://openrouter.ai/docs/guides/best-practices/prompt-caching
             // https://openrouter.ai/docs/client-sdks/typescript/models/responsesrequest
-            Self::OpenRouter => crate::protocol::cache::CacheProjection {
+            Self::OpenRouter => crate::protocol::cache::CacheTargetPolicy {
                 key: true,
                 session_id: true,
                 ..Default::default()
@@ -247,17 +247,17 @@ impl Dialect {
             // Neutral request context supplies the internal session header;
             // cache keys remain independent and do not enter the Go body.
             // https://opencode.ai/docs/go/#where-can-i-use-it
-            Self::OpenCodeGo => crate::protocol::cache::CacheProjection {
+            Self::OpenCodeGo => crate::protocol::cache::CacheTargetPolicy {
                 session_id: true,
                 ..Default::default()
             },
             _ => Default::default(),
         };
         // A Responses-only rule set never activates a Chat encoding, and the reverse.
-        if self == Self::Grok && profile != Profile::Responses {
+        if self == Self::Grok && profile != GenerationApi::Responses {
             cache.key = false;
         }
-        if self == Self::Bailian && profile != Profile::Chat {
+        if self == Self::Bailian && profile != GenerationApi::Chat {
             rules.chunk_created_drift = false;
             rules.empty_continuation_call_id = false;
         }

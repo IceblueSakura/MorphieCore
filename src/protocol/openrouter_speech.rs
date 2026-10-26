@@ -1,10 +1,8 @@
 //! Named MP3 Speech mapping; the upstream PCM default must not change client intent.
 //! Source: https://openrouter.ai/docs/api/api-reference/tts/create-speech.md
 //! https://openrouter.ai/docs/guides/overview/multimodal/tts
-use crate::protocol::failure::CarrierReason;
 use crate::{
-    adapter::speech::Request,
-    protocol::{CodecError, openai::speech},
+    protocol::{CodecError, failure::CarrierReason, openai::speech, speech::Request},
     semantic::{task::speech_synthesis::SpeechRequest, value::AudioEncoding},
 };
 use serde_json::{Value, json};

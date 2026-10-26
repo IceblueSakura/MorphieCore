@@ -2,7 +2,7 @@
 use crate::embedding_support;
 use morphiecore::{
     gateway::{Entry, Gateway, Limits},
-    protocol::openai::TargetCaps as Contract,
+    protocol::openai::TargetContract as Contract,
     provider::{
         AuthScheme, CredentialBindingId, CredentialKind, EndpointPath, ProviderDefinition,
         ProviderId, SecretMaterial, TrustedOrigin,
@@ -10,8 +10,8 @@ use morphiecore::{
     semantic::value::ReplayOrigin,
     topology::{
         CanonicalModel, Endpoint, EndpointId, EndpointTarget, ExecutionContract,
-        GenerationSemanticContract, ModelId, ProtocolProfile, PublicModel, Route, RouteId,
-        TaskKind, compile,
+        GenerationFeatureSet, GenerationProtocol, ModelId, PublicModel, Route, RouteId, TaskKind,
+        compile,
     },
 };
 use std::{collections::BTreeMap, sync::Arc};
@@ -57,8 +57,8 @@ fn bound_gateway(origin: &str, limits: Limits, embeddings: bool) -> Gateway {
     };
     let (embedding_operation, embedding_route) = embedding_support::binding(&provider);
     let endpoints = [
-        ("chat", ProtocolProfile::OpenAiChat),
-        ("responses", ProtocolProfile::OpenAiResponses),
+        ("chat", GenerationProtocol::OpenAiChat),
+        ("responses", GenerationProtocol::OpenAiResponses),
     ]
     .into_iter()
     .map(|(id, protocol)| Endpoint {
@@ -80,17 +80,17 @@ fn bound_gateway(origin: &str, limits: Limits, embeddings: bool) -> Gateway {
             // A synthetic upstream-only carrier must not leak through the
             // independently selected standard downstream adapter.
             adaptation: morphiecore::protocol::openai::dialect::adaptation::Adaptation {
-                cache: morphiecore::protocol::cache::CacheProjection {
+                cache: morphiecore::protocol::cache::CacheTargetPolicy {
                     key: true,
                     ..Default::default()
                 },
                 rules: morphiecore::protocol::openai::dialect::adaptation::WireRules {
-                    responses_image_usage: protocol == ProtocolProfile::OpenAiResponses,
+                    responses_image_usage: protocol == GenerationProtocol::OpenAiResponses,
                     ..Default::default()
                 },
                 ..Default::default()
             },
-            replay_origin: if protocol == ProtocolProfile::OpenAiResponses {
+            replay_origin: if protocol == GenerationProtocol::OpenAiResponses {
                 Some(ReplayOrigin::new("fixture").unwrap())
             } else {
                 None
@@ -125,18 +125,19 @@ fn bound_gateway(origin: &str, limits: Limits, embeddings: bool) -> Gateway {
             canonical_model: ModelId::new("canonical-fixture").unwrap(),
             task: TaskKind::Generation,
             route: route.id.clone(),
-            contract: GenerationSemanticContract {
+            contract: GenerationFeatureSet {
                 file_input: label != "no-files-model",
-                ..GenerationSemanticContract::full()
+                ..GenerationFeatureSet::full()
             },
             standard_context: true,
-            reported_facts: morphiecore::lowering::generation::ReportedFactPolicy::Faithful,
+            reported_facts:
+                morphiecore::protocol::conversion::generation::ReportedFactPolicy::Faithful,
         })
         .collect();
     let canonical = CanonicalModel {
         id: ModelId::new("canonical-fixture").unwrap(),
         task: TaskKind::Generation,
-        contract: GenerationSemanticContract::full(),
+        contract: GenerationFeatureSet::full(),
     };
     let (image_provider, image_route) = image_support::binding(origin);
     let (router_provider, router_image_operation, router_route) = media::router_images(origin);
@@ -217,25 +218,25 @@ fn bound_gateway(origin: &str, limits: Limits, embeddings: bool) -> Gateway {
         Entry {
             chat_profile: Default::default(),
             model: "public-model".into(),
-            protocol: morphiecore::adapter::ClientProtocol::Chat,
+            protocol: morphiecore::protocol::ClientProtocol::Chat,
             endpoint: EndpointId::new("chat").unwrap(),
         },
         Entry {
             chat_profile: Default::default(),
             model: "public-model".into(),
-            protocol: morphiecore::adapter::ClientProtocol::Responses,
+            protocol: morphiecore::protocol::ClientProtocol::Responses,
             endpoint: EndpointId::new("responses").unwrap(),
         },
         Entry {
             chat_profile: Default::default(),
             model: "cross-model".into(),
-            protocol: morphiecore::adapter::ClientProtocol::Responses,
+            protocol: morphiecore::protocol::ClientProtocol::Responses,
             endpoint: EndpointId::new("chat").unwrap(),
         },
         Entry {
             chat_profile: Default::default(),
             model: "cross-model".into(),
-            protocol: morphiecore::adapter::ClientProtocol::Chat,
+            protocol: morphiecore::protocol::ClientProtocol::Chat,
             endpoint: EndpointId::new("responses").unwrap(),
         },
     ];
@@ -243,7 +244,7 @@ fn bound_gateway(origin: &str, limits: Limits, embeddings: bool) -> Gateway {
     entries.push(Entry {
         chat_profile: Default::default(),
         model: "no-files-model".into(),
-        protocol: morphiecore::adapter::ClientProtocol::Responses,
+        protocol: morphiecore::protocol::ClientProtocol::Responses,
         endpoint: EndpointId::new("responses").unwrap(),
     });
     let credentials = BTreeMap::from([

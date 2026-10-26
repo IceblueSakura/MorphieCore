@@ -14,7 +14,7 @@ use morphiecore::{
     protocol::{
         anthropic::{
             self,
-            messages::{Dialect, Profile, TargetCaps},
+            messages::{Dialect, Profile, TargetContract},
         },
         native::ReplayTarget,
         openai::obfuscation::Obfuscation,
@@ -93,7 +93,7 @@ async fn handle(
             .collect::<Vec<_>>(),
         vec![json!({"n":9007199254740993_u64}), json!({"n":7})]
     );
-    let mut caps = TargetCaps::new(Profile::AdaptiveTextTools, Dialect::Standard);
+    let mut caps = TargetContract::new(Profile::AdaptiveTextTools, Dialect::Standard);
     caps.semantics = Profile::AdaptiveTextTools.representation_contract();
     caps.carriers = anthropic::messages::Carriers::all();
     let target = ReplayTarget::new("synthetic-sdk", "fixture-model").unwrap();
@@ -131,8 +131,9 @@ async fn handle(
     );
     assert!(native.evidence.iter().all(|effect| effect.rule()
         == "messages.normalize-tool-arguments.v1"
-        && effect.semantic_field() == morphiecore::lowering::generation::Field::ToolArguments
-        && effect.change() == morphiecore::lowering::generation::Change::Normalize));
+        && effect.semantic_field()
+            == morphiecore::protocol::conversion::generation::Field::ToolArguments
+        && effect.change() == morphiecore::protocol::conversion::generation::Change::Normalize));
     let turn = {
         let mut n = seen.lock().unwrap();
         *n += 1;
@@ -317,9 +318,11 @@ async fn sdk_messages_native_controls_history_and_partial_stream() {
 fn cross_protocol(seen: &Mutex<usize>, body: &[u8], wire: &Value) -> Response {
     use morphiecore::{
         execution::attempt::prepare,
-        protocol::openai::{Adapter, Dialect as OpenAiDialect, Profile as OpenAiProfile},
+        protocol::openai::{
+            Dialect as OpenAiDialect, GenerationApi as OpenAiProfile, GenerationCodec,
+        },
         provider::SecretMaterial,
-        topology::{ProtocolProfile, catalog::API_KEY_BINDINGS},
+        topology::{GenerationProtocol, catalog::API_KEY_BINDINGS},
     };
     let turn = {
         let mut n = seen.lock().unwrap();
@@ -335,7 +338,7 @@ fn cross_protocol(seen: &Mutex<usize>, body: &[u8], wire: &Value) -> Response {
         .find(|b| (b.provider)().id.as_str() == "aliyun-tokenplan-cn" && b.model == "qwen3.8-flash")
         .unwrap();
     let upstream = prepare(
-        &binding.endpoint(ProtocolProfile::OpenAiChat).unwrap(),
+        &binding.endpoint(GenerationProtocol::OpenAiChat).unwrap(),
         &(binding.provider)(),
         &SecretMaterial::new("synthetic-cross-protocol-key").unwrap(),
         &request,
@@ -389,7 +392,7 @@ fn cross_protocol(seen: &Mutex<usize>, body: &[u8], wire: &Value) -> Response {
             "prompt_tokens_details":{"cached_tokens":0}}}),
     );
     let mut attempt = Attempt::new(
-        UpstreamAdapter::OpenAi(Box::new(Adapter::new(
+        UpstreamAdapter::OpenAi(Box::new(GenerationCodec::new(
             OpenAiProfile::Chat,
             OpenAiDialect::ChatReasoning,
             None,

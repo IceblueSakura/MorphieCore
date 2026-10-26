@@ -1,14 +1,15 @@
 //! Complete Responses task requests: settings and validated full-history input.
 use super::items::{ItemSide, decode_items, encode_items};
-use crate::protocol::openai::{
-    CodecError, DecodedRequest, Profile, RequestRepresentation, settings, shape::*,
+use crate::{
+    protocol::openai::{
+        CodecError, DecodedRequest, GenerationApi, RequestRepresentation,
+        content::intake::Items,
+        lowering::carriers::{check_item_carriers, check_message_carriers},
+        settings,
+        shape::*,
+    },
+    semantic::{task::generation::*, value::Presence},
 };
-use crate::protocol::openai::{
-    content::intake::Items,
-    lowering::carriers::{check_item_carriers, check_message_carriers},
-};
-use crate::semantic::task::generation::*;
-use crate::semantic::value::Presence;
 use serde_json::{Value, json};
 pub fn decode_generation(v: &Value) -> Result<DecodedRequest, CodecError> {
     decode_generation_in(v, DecodeDirection::Request)
@@ -107,19 +108,19 @@ pub(crate) fn validate_program_history(request: &GenerationRequest) -> Result<()
     Ok(())
 }
 pub fn encode_generation(target: &RequestRepresentation<'_>) -> Result<Value, CodecError> {
-    if target.profile != Profile::Responses {
+    if target.profile != GenerationApi::Responses {
         return Err(CodecError::ProfileMismatch);
     }
     check_message_carriers(
         target.semantic.items(),
         target.semantic.message_envelopes(),
-        Profile::Responses,
+        GenerationApi::Responses,
     )?;
     target.semantic.validate()?;
     if target.adaptation.rules.bailian_requests {
         crate::protocol::openai::dialect::bailian::check_semantic(
             &target.semantic,
-            Profile::Responses,
+            GenerationApi::Responses,
             "",
         )?;
     }
@@ -127,7 +128,7 @@ pub fn encode_generation(target: &RequestRepresentation<'_>) -> Result<Value, Co
     crate::protocol::openai::content::citations::check_items(
         target.semantic.items(),
         target.semantic.resources(),
-        Profile::Responses,
+        GenerationApi::Responses,
     )?;
     target
         .fidelity
@@ -146,7 +147,7 @@ pub fn encode_generation(target: &RequestRepresentation<'_>) -> Result<Value, Co
             0,
             json!({
                 "role":"developer",
-                "content":settings::instruction_content(root, Profile::Responses)?,
+                "content":settings::instruction_content(root, GenerationApi::Responses)?,
             }),
         );
         encoded_settings.instructions = Presence::Absent;
@@ -181,13 +182,13 @@ pub fn encode_generation(target: &RequestRepresentation<'_>) -> Result<Value, Co
         crate::protocol::openai::dialect::bailian::write_reasoning(
             target.semantic.settings(),
             o,
-            Profile::Responses,
+            GenerationApi::Responses,
         )?;
         if target.adaptation.rules.bailian_requests {
             crate::protocol::openai::dialect::bailian::write_tools(
                 target.semantic.settings(),
                 o,
-                Profile::Responses,
+                GenerationApi::Responses,
             )?;
         }
     } else {

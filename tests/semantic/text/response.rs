@@ -1,9 +1,11 @@
 //! Refusal and non-success terminals for the text and function-call path.
 use morphiecore::{
-    lowering::generation::RepresentationError,
-    protocol::openai::{
-        Profile, ResponseMetadata, TargetCaps as Contract, chat, lowering::lower_response,
-        responses,
+    protocol::{
+        conversion::generation::RepresentationError,
+        openai::{
+            GenerationApi, ResponseMetadata, TargetContract as Contract, chat,
+            lowering::lower_response, responses,
+        },
     },
     semantic::task::generation::*,
 };
@@ -75,7 +77,7 @@ fn incomplete_and_failed_responses_do_not_encode_as_success() {
         &decoded.semantic,
         &fidelity,
         &metadata,
-        Profile::Responses,
+        GenerationApi::Responses,
         Contract::full(),
     )
     .unwrap();
@@ -97,7 +99,7 @@ fn incomplete_and_failed_responses_do_not_encode_as_success() {
             &decoded.semantic,
             &fidelity,
             &metadata,
-            Profile::Chat,
+            GenerationApi::Chat,
             Contract::full()
         ),
         Err(RepresentationError::Terminal)
@@ -108,7 +110,7 @@ fn incomplete_and_failed_responses_do_not_encode_as_success() {
                 &decoded.semantic,
                 &fidelity,
                 &metadata,
-                Profile::Responses,
+                GenerationApi::Responses,
                 Contract::full()
             )
             .unwrap()
@@ -142,7 +144,7 @@ fn content_filter_is_incomplete_not_length_or_refusal_success() {
                 .iter()
                 .all(|(_, i)| i.lifecycle() == Some(ItemLifecycle::Incomplete))
         );
-        for profile in [Profile::Chat, Profile::Responses] {
+        for profile in [GenerationApi::Chat, GenerationApi::Responses] {
             let target = lower_response(
                 &decoded.semantic,
                 &decoded.fidelity,
@@ -151,7 +153,7 @@ fn content_filter_is_incomplete_not_length_or_refusal_success() {
                 Contract::full(),
             );
             let target = target.unwrap();
-            if profile == Profile::Chat {
+            if profile == GenerationApi::Chat {
                 let encoded = chat::encode_response(&target).unwrap();
                 assert_eq!(encoded["choices"][0]["finish_reason"], "content_filter");
                 assert_eq!(encoded["choices"][0]["message"], message);
@@ -164,7 +166,7 @@ fn content_filter_is_incomplete_not_length_or_refusal_success() {
                     &other.semantic,
                     &other.fidelity,
                     &other.metadata,
-                    Profile::Chat,
+                    GenerationApi::Chat,
                     Contract::full(),
                 )
                 .unwrap();

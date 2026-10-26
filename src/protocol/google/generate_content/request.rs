@@ -1,10 +1,10 @@
 //! Candidate-local generateContent request projection.
 //! Source: <https://ai.google.dev/api/generate-content>.
 use super::items::contents;
-use crate::protocol::failure::CarrierReason;
 use crate::{
     protocol::{
         CodecError,
+        failure::CarrierReason,
         fidelity::FidelityRecords,
         native::{ReplayTarget, group_client_history},
     },
@@ -40,8 +40,13 @@ pub enum RequestRule {
     OmitLegacySignature,
 }
 impl RequestRule {
-    pub(crate) fn effect(self, request: &GenerationRequest) -> crate::lowering::generation::Effect {
-        use crate::lowering::generation::{Change, ConversionBoundary as B, Effect, Field, Owner};
+    pub(crate) fn effect(
+        self,
+        request: &GenerationRequest,
+    ) -> crate::protocol::conversion::generation::Effect {
+        use crate::protocol::conversion::generation::{
+            Change, ConversionBoundary as B, Effect, Field, Owner,
+        };
         let (field, change) = match self {
             Self::Hint(hint) => return hint.effect(),
             Self::OmitCacheKey => (Field::Cache, Change::Omit),
