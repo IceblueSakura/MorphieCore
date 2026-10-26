@@ -2,8 +2,8 @@
 use crate::messages_wire::native_response;
 use axum::{Json, Router, extract::State, http::HeaderMap, response::Response, routing::post};
 use morphiecore::{
+    adapter::ClientProtocol,
     gateway::{Entry, Gateway, Limits, TaskEntries},
-    protocol::openai::Profile,
     provider::{SecretMaterial, TrustedOrigin},
     topology::{self, catalog::MESSAGES_BINDINGS},
 };
@@ -249,12 +249,14 @@ async fn start_with_recovery(recover: bool) -> Fixture {
     let gateway = Gateway::new(
         topology,
         TaskEntries {
-            generation: vec![Entry {
-                chat_profile: Default::default(),
-                model: binding.model.into(),
-                protocol: Profile::Chat,
-                endpoint: binding.endpoint().id,
-            }],
+            generation: [ClientProtocol::Chat, ClientProtocol::Messages]
+                .map(|protocol| Entry {
+                    chat_profile: Default::default(),
+                    model: binding.model.into(),
+                    protocol,
+                    endpoint: binding.endpoint().id,
+                })
+                .into(),
             ..Default::default()
         },
         credentials,

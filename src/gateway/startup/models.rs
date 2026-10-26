@@ -1,15 +1,18 @@
 //! Explicit deployment parameters over existing catalog bindings.
-use super::config::{
-    ChatProfile, EmbeddingEntry, Entry, ImageEntry, SpeechEntry, StartupError, TaskEntries,
-    TranscriptionEntry,
+use super::{
+    entries::{
+        ChatProfile, EmbeddingEntry, Entry, ImageEntry, SpeechEntry, TaskEntries,
+        TranscriptionEntry,
+    },
+    error::StartupError,
 };
 use crate::{
+    adapter::ClientProtocol,
     credential::CredentialManager,
     gateway::Credentials,
     lowering::target::TargetCaps,
-    protocol::{
-        openai::Profile,
-        reasoning::{ReasoningConversion, ReasoningRequestPolicy, SHARED_BUDGETS, ThinkingBudgets},
+    protocol::reasoning::{
+        ReasoningConversion, ReasoningRequestPolicy, SHARED_BUDGETS, ThinkingBudgets,
     },
     provider::{CredentialBindingId, EndpointPath, ProviderDefinition, TrustedOrigin},
     semantic::task::generation::{EffortLevel, EffortScope},
@@ -333,13 +336,13 @@ impl Models {
                     && semantics.ordered_instructions
                     && semantics.tool_changes;
                 route.endpoints.push(endpoint.id.clone());
-                // All public Generation client protocols use the same explicit route.
+                // Every public client protocol exposes the same explicit route.
                 entries
                     .generation
-                    .extend([Profile::Chat, Profile::Responses].map(|protocol| Entry {
+                    .extend(ClientProtocol::ALL.map(|protocol| Entry {
                         model: label.clone(),
                         protocol,
-                        chat_profile: if protocol == Profile::Chat {
+                        chat_profile: if protocol == ClientProtocol::Chat {
                             config.chat_profile.unwrap_or_default()
                         } else {
                             ChatProfile::Standard

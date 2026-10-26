@@ -9,6 +9,7 @@ use axum::{
     routing::post,
 };
 use morphiecore::{
+    adapter::ClientProtocol,
     gateway::{Entry, Gateway, Limits, TaskEntries},
     protocol::openai::Profile,
     provider::{SecretMaterial, TrustedOrigin},
@@ -191,7 +192,11 @@ async fn start_with(profile: Profile, api: Api, messages: bool) -> Fixture {
             generation: vec![Entry {
                 chat_profile: Default::default(),
                 model: binding.model.into(),
-                protocol: profile,
+                protocol: if messages {
+                    ClientProtocol::Messages
+                } else {
+                    profile.into()
+                },
                 endpoint: endpoint.id,
             }],
             ..Default::default()

@@ -2,7 +2,7 @@
 use crate::embedding_support;
 use morphiecore::{
     gateway::{Entry, Gateway, Limits},
-    protocol::openai::{Profile, TargetCaps as Contract},
+    protocol::openai::TargetCaps as Contract,
     provider::{
         AuthScheme, CredentialBindingId, CredentialKind, EndpointPath, ProviderDefinition,
         ProviderId, SecretMaterial, TrustedOrigin,
@@ -217,25 +217,25 @@ fn bound_gateway(origin: &str, limits: Limits, embeddings: bool) -> Gateway {
         Entry {
             chat_profile: Default::default(),
             model: "public-model".into(),
-            protocol: Profile::Chat,
+            protocol: morphiecore::adapter::ClientProtocol::Chat,
             endpoint: EndpointId::new("chat").unwrap(),
         },
         Entry {
             chat_profile: Default::default(),
             model: "public-model".into(),
-            protocol: Profile::Responses,
+            protocol: morphiecore::adapter::ClientProtocol::Responses,
             endpoint: EndpointId::new("responses").unwrap(),
         },
         Entry {
             chat_profile: Default::default(),
             model: "cross-model".into(),
-            protocol: Profile::Responses,
+            protocol: morphiecore::adapter::ClientProtocol::Responses,
             endpoint: EndpointId::new("chat").unwrap(),
         },
         Entry {
             chat_profile: Default::default(),
             model: "cross-model".into(),
-            protocol: Profile::Chat,
+            protocol: morphiecore::adapter::ClientProtocol::Chat,
             endpoint: EndpointId::new("responses").unwrap(),
         },
     ];
@@ -243,7 +243,7 @@ fn bound_gateway(origin: &str, limits: Limits, embeddings: bool) -> Gateway {
     entries.push(Entry {
         chat_profile: Default::default(),
         model: "no-files-model".into(),
-        protocol: Profile::Responses,
+        protocol: morphiecore::adapter::ClientProtocol::Responses,
         endpoint: EndpointId::new("responses").unwrap(),
     });
     let credentials = BTreeMap::from([

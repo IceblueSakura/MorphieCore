@@ -338,7 +338,7 @@ async fn native_fixture() -> NativeFixture {
     let gate = Gateway::new(
         topology,
         morphiecore::gateway::TaskEntries {
-            generation: [Profile::Responses, Profile::Chat]
+            generation: morphiecore::adapter::ClientProtocol::ALL
                 .into_iter()
                 .flat_map(|protocol| {
                     endpoint_ids.iter().map(move |endpoint| Entry {

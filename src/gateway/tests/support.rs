@@ -2,7 +2,7 @@
 use super::topology::topology;
 use crate::gateway::{Entry, Gateway, Limits};
 use crate::{
-    protocol::openai::Profile,
+    adapter::ClientProtocol,
     provider::{CredentialBindingId, SecretMaterial},
     topology::EndpointId,
 };
@@ -20,12 +20,14 @@ pub(in crate::gateway) fn gateway(limits: Limits) -> Gateway {
     Gateway::new(
         topology(),
         crate::gateway::TaskEntries {
-            generation: vec![Entry {
-                chat_profile: Default::default(),
-                model: "fixture-model".into(),
-                protocol: Profile::Chat,
-                endpoint: EndpointId::new("fixture-chat").unwrap(),
-            }],
+            generation: [ClientProtocol::Chat, ClientProtocol::Messages]
+                .map(|protocol| Entry {
+                    chat_profile: Default::default(),
+                    model: "fixture-model".into(),
+                    protocol,
+                    endpoint: EndpointId::new("fixture-chat").unwrap(),
+                })
+                .into(),
             ..Default::default()
         },
         BTreeMap::from([(

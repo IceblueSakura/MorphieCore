@@ -165,7 +165,7 @@ async fn same_provider_fallback_is_ordered_bounded_and_never_crosses_publication
                 generation: vec![Entry {
                     chat_profile: Default::default(),
                     model: "public".into(),
-                    protocol: Profile::Responses,
+                    protocol: crate::adapter::ClientProtocol::Responses,
                     endpoint: EndpointId::new("single").unwrap(),
                 }],
                 ..Default::default()

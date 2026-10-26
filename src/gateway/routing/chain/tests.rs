@@ -1,14 +1,11 @@
 use super::*;
-use crate::{
-    gateway::{Limits, family},
-    protocol::openai::Profile,
-    topology::FallbackPolicy,
-};
+use crate::{gateway::Limits, topology::FallbackPolicy};
 
 fn candidates() -> Vec<Arc<BoundCandidate>> {
     let gate = crate::gateway::tests::support::gateway(Limits::default());
-    let template =
-        &gate.state.entries[&(family(Profile::Chat), "fixture-model".into())].candidates[0];
+    let template = &gate.state.entries
+        [&(crate::adapter::ClientProtocol::Chat, "fixture-model".into())]
+        .candidates[0];
     [
         ("a", "a"),
         ("a", "a"),

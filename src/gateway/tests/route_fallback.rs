@@ -265,7 +265,7 @@ async fn ordered_route_only_falls_back_before_visible_delivery() {
                     .map(|id| Entry {
                         chat_profile: Default::default(),
                         model: "public".into(),
-                        protocol: Profile::Responses,
+                        protocol: crate::adapter::ClientProtocol::Responses,
                         endpoint: EndpointId::new(id).unwrap(),
                     })
                     .collect(),
@@ -343,7 +343,8 @@ async fn ordered_route_only_falls_back_before_visible_delivery() {
             if status == 503 {
                 // A legal suffix blocked solely by health returns local
                 // availability, not the last upstream failure.
-                let entry = &gateway.state.entries[&(family(Profile::Responses), "public".into())];
+                let entry = &gateway.state.entries
+                    [&(crate::adapter::ClientProtocol::Responses, "public".into())];
                 let b = entry
                     .candidates
                     .iter()
@@ -465,7 +466,7 @@ async fn recovery_ownership_spans_final_handoff_and_distinguishes_deadlines() {
             generation: vec![Entry {
                 chat_profile: Default::default(),
                 model: "fixture-model".into(),
-                protocol: Profile::Chat,
+                protocol: crate::adapter::ClientProtocol::Chat,
                 endpoint: EndpointId::new("fixture-chat").unwrap(),
             }],
             ..Default::default()

@@ -807,19 +807,19 @@ fn router_request_policy_is_fixed_and_luna_controls_are_not_silently_ignored() {
         body["provider"] = json!({"require_parameters":false,"order":["untrusted"]});
         assert!(client.decode_request(body.to_string().as_bytes()).is_err());
     }
-    let topology = catalog::topology(&std::collections::BTreeMap::from([(
-        "gpt-6-luna".into(),
-        vec!["openai".into(), "openrouter".into()],
-    )]))
-    .unwrap();
+    let topology = catalog::default_topology().unwrap();
     let public = topology.model("gpt-6-luna").unwrap();
     let route = topology.route(&public.route).unwrap();
     assert_eq!(
         route.policy.fallback,
         morphiecore::topology::FallbackPolicy::BeforeCommit
     );
-    let endpoint = topology.endpoint(&route.endpoints[0]).unwrap();
-    assert_eq!(endpoint.provider.as_str(), "openai");
+    let endpoint = route
+        .endpoints
+        .iter()
+        .map(|id| topology.endpoint(id).unwrap())
+        .find(|endpoint| endpoint.provider.as_str() == "openai")
+        .unwrap();
     assert_eq!(endpoint.credential.as_str(), "openai-oauth");
     let client = standard(Profile::Responses);
     let request = client
@@ -831,7 +831,7 @@ fn router_request_policy_is_fixed_and_luna_controls_are_not_silently_ignored() {
     assert_eq!(prepared.origin, "https://api.openai.com");
     assert_eq!(prepared.path, "/v1/responses");
     let plan = morphiecore::execution::ExecutionPlan::for_request(&topology, &request).unwrap();
-    assert_eq!(plan.candidates[0].endpoint_id, endpoint.id);
+    assert!(plan.candidates.iter().any(|c| c.endpoint_id == endpoint.id));
     assert_eq!(plan.candidates.len(), 3);
     let capped = client
         .decode_request(br#"{"model":"gpt-6-luna","input":"hello","max_output_tokens":64}"#)

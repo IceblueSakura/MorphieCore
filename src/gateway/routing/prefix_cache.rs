@@ -215,7 +215,7 @@ impl Selection {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{protocol::openai::Profile, semantic::context::ConversationContext};
+    use crate::semantic::context::ConversationContext;
 
     fn request(entry: &crate::gateway::BoundEntry, seed: &str) -> crate::adapter::Request {
         let mut request = entry.client.as_openai().unwrap().0.decode_request(
@@ -231,10 +231,8 @@ mod tests {
     #[test]
     fn candidate_hints_never_mutate_identity_or_cross_the_fixed_scope() {
         let gate = crate::gateway::tests::support::gateway(crate::gateway::Limits::default());
-        let entry = &gate.state.entries[&(
-            crate::gateway::family(Profile::Chat),
-            "fixture-model".into(),
-        )];
+        let entry =
+            &gate.state.entries[&(crate::adapter::ClientProtocol::Chat, "fixture-model".into())];
         let candidate = &entry.candidates[0];
         let first = request(entry, "one");
         let saved = first.clone();

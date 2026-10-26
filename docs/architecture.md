@@ -126,7 +126,7 @@ Directories follow the Rust module tree. Keep architectural root boundaries; gro
 
 Generation validation owns ordered dependency traversal and aggregate charging; `semantic/task/generation/validate/controls.rs` owns tool/output controls. Stream reduction consumes state, keeping global guards and private `reduce/items.rs` transitions in order; rejected streams cannot resume. Delivery, body acknowledgement and credential lifecycle remain separate owners.
 
-Catalog binding families own declarations and endpoint/public-model construction. `topology/catalog.rs` assembles them in configured order.
+Catalog binding families own declarations and endpoint/public-model construction. `topology/catalog.rs` assembles them in catalog order. Gateway startup separates task entries, limits, errors and binding (`gateway/startup/{entries,limits,error,bind}.rs`); file-configured models choose their exposed client protocols in one place (`startup/models.rs`), and binding treats Chat, Responses and Messages uniformly.
 
 Protocol implementation is organized by the wire responsibility being reviewed:
 

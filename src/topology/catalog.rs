@@ -27,14 +27,8 @@ const GENERATION_REQUEST_BYTES: usize = 32 << 20;
 const GENERATION_RESPONSE_BYTES: usize = 64 << 20;
 const GENERATION_TIMEOUT_MS: u64 = 60 * 60 * 1000;
 pub use subscriptions::{SUBSCRIPTION_BINDINGS, SubscriptionBinding};
+/// The catalog with each public model's bindings in catalog order.
 pub fn default_topology() -> Result<CompiledTopology, TopologyError> {
-    topology(&Default::default())
-}
-/// The catalog with each public model's bindings in failover order: the trusted
-/// configured Provider order (`model -> [provider]`) first, then catalog order.
-pub fn topology(
-    failover: &std::collections::BTreeMap<String, Vec<String>>,
-) -> Result<CompiledTopology, TopologyError> {
     let mut endpoints = vec![];
     let mut routes = vec![];
     let mut public_models: Vec<PublicModel> = vec![];
@@ -49,17 +43,10 @@ pub fn topology(
         if public_models.iter().any(|p| p.id.as_str() == binding.model) {
             continue;
         }
-        let mut group: Vec<_> = API_KEY_BINDINGS
+        let group: Vec<_> = API_KEY_BINDINGS
             .iter()
             .filter(|b| b.model == binding.model)
             .collect();
-        let order = failover.get(binding.model);
-        group.sort_by_key(|b| {
-            let provider = (b.provider)().id;
-            order
-                .and_then(|o| o.iter().position(|p| p == provider.as_str()))
-                .unwrap_or(usize::MAX)
-        });
         let public = binding.public_model();
         // Alternatives share one public contract; candidates differ only in delivery.
         if group.iter().any(|b| {
@@ -71,17 +58,7 @@ pub fn topology(
         routes.push(Route {
             id: public.route.clone(),
             task: public.task,
-            // Failover only: skip candidates that cannot serve the request, advance
-            // before commit, never spread load.
-            policy: if group.len() > 1 {
-                RoutePolicy {
-                    candidates: CandidatePolicy::SkipUnrepresentable,
-                    fallback: FallbackPolicy::BeforeCommit,
-                    ..RoutePolicy::default()
-                }
-            } else {
-                RoutePolicy::default()
-            },
+            policy: RoutePolicy::for_candidates(group.len()),
             endpoints: group
                 .iter()
                 .flat_map(|b| b.protocols.iter().map(|&p| b.endpoint_id(p)))
@@ -143,31 +120,9 @@ pub fn topology(
                 .find(|r| r.id == existing.route)
                 .ok_or(TopologyError::ContractUnsatisfiable)?;
             route.endpoints.extend(alternative.endpoints);
-            route.policy = RoutePolicy {
-                candidates: CandidatePolicy::SkipUnrepresentable,
-                fallback: FallbackPolicy::BeforeCommit,
-                ..RoutePolicy::default()
-            };
+            route.policy = RoutePolicy::for_candidates(route.endpoints.len());
         } else {
             merged.push(public);
-        }
-    }
-    for public in &merged {
-        if let Some(order) = failover.get(public.id.as_str()) {
-            let route = routes
-                .iter_mut()
-                .find(|r| r.id == public.route)
-                .ok_or(TopologyError::ContractUnsatisfiable)?;
-            route.endpoints.sort_by_key(|id| {
-                let endpoint = endpoints
-                    .iter()
-                    .find(|e| &e.id == id)
-                    .expect("declared endpoint");
-                order
-                    .iter()
-                    .position(|p| p == endpoint.provider.as_str())
-                    .unwrap_or(usize::MAX)
-            });
         }
     }
     compile(catalog::all(), endpoints, routes, merged, canonical_models)?

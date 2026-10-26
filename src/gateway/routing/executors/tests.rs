@@ -1,10 +1,10 @@
 use super::*;
-use crate::gateway::{Limits, family};
-use crate::protocol::openai::Profile;
+use crate::gateway::Limits;
 
 fn candidates() -> (BoundCandidate, BoundCandidate) {
     let gate = crate::gateway::tests::support::gateway(Limits::default());
-    let mut a = gate.state.entries[&(family(Profile::Chat), "fixture-model".into())].candidates[0]
+    let mut a = gate.state.entries[&(crate::adapter::ClientProtocol::Chat, "fixture-model".into())]
+        .candidates[0]
         .as_ref()
         .clone();
     let pool = vec!["synthetic-a".into(), "synthetic-b".into()];

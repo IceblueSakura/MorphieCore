@@ -457,7 +457,7 @@ All three executables (`morphiecore`, `morphiecore-auth`, `morphiecore-upstream`
 
 Ctrl-C shuts down the listener and cancels in-flight upstream work.
 
-For Rust embedding, `Gateway::new` takes a compiled topology and one `TaskEntries` value with separate Generation, Images, Speech, Transcription and Embeddings lists. Empty lists activate nothing. Credentials and limits remain explicit; the embedded constructor does not opt into environment proxies. See [startup configuration](../src/gateway/startup/config.rs).
+For Rust embedding, `Gateway::new` takes a compiled topology and one `TaskEntries` value with separate Generation, Images, Speech, Transcription and Embeddings lists. Empty lists activate nothing. Credentials and limits remain explicit; the embedded constructor does not opt into environment proxies. Each Generation entry names one client protocol (Chat, Responses or Messages); file-configured models expose all three. See [task entries](../src/gateway/startup/entries.rs) and [binding](../src/gateway/startup/bind.rs).
 
 ## Send a request
 
@@ -608,7 +608,7 @@ Signed Google ordinary text/calls require managed continuation on Responses. The
 
 All operations require a configured Agent key and retain shared access among admitted Agents. Unknown, expired, deleted and unstored IDs return `404` with `response_not_found`. Concurrent requests may branch from one predecessor; they do not mutate it. Deleting an ancestor leaves already stored descendants usable.
 
-Snapshots use a fixed TTL from final delivery, not a sliding TTL. Defaults are 30 minutes, 1,024 entries and a 256 MiB accounted payload/owner budget; transient request and body limits still apply. See [Limits](../src/gateway/startup/config.rs) for embedded configuration and bounds. Capacity exhaustion rejects storage with `history_capacity_exceeded` before a successful terminal; an already started SSE body aborts. Unexpired snapshots are not evicted to make room.
+Snapshots use a fixed TTL from final delivery, not a sliding TTL. Defaults are 30 minutes, 1,024 entries and a 256 MiB accounted payload/owner budget; transient request and body limits still apply. See [Limits](../src/gateway/startup/limits.rs) for embedded configuration and bounds. Capacity exhaustion rejects storage with `history_capacity_exceeded` before a successful terminal; an already started SSE body aborts. Unexpired snapshots are not evicted to make room.
 
 History is process-local and is lost at shutdown or restart. A declared conversation header still controls routing/cache affinity independently; response IDs do not select credentials. There is no disk persistence, Conversations API, background generation or event log. Retrieval is JSON only: `stream=true` and `starting_after` are rejected. Retrieval and input listing accept only `include[]=reasoning.encrypted_content` as an optional include; other query fields are rejected.
 
@@ -709,4 +709,4 @@ A Responses stream with gateway-classified context overflow or exhausted quota m
 
 Body-free diagnostics carry the bounded `generation` execution report: checked conversion boundaries, typed failures, attempt observations and final request outcome. Public error classification is distinct from the actual upstream response head; failed attempts do not become successful-request errors. Private payloads and arbitrary error strings are excluded. See [typed failures](architecture.md#typed-conversion-failures); recording never changes routing or completion behavior.
 
-Resource defaults and bounds are in [Limits](../src/gateway/startup/config.rs). Configuration fields above do not expose every embedded-library limit.
+Resource defaults and bounds are in [Limits](../src/gateway/startup/limits.rs). Configuration fields above do not expose every embedded-library limit.

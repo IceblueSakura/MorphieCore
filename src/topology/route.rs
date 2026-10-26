@@ -29,6 +29,21 @@ pub struct RoutePolicy {
     /// Model-local exchange deadline, still bounded by the service ceiling.
     pub total_timeout_ms: Option<u64>,
 }
+impl RoutePolicy {
+    /// Alternatives only fail over: skip candidates that cannot serve the
+    /// request and advance before commit, never spread load.
+    pub fn for_candidates(count: usize) -> Self {
+        if count > 1 {
+            Self {
+                candidates: CandidatePolicy::SkipUnrepresentable,
+                fallback: FallbackPolicy::BeforeCommit,
+                ..Self::default()
+            }
+        } else {
+            Self::default()
+        }
+    }
+}
 impl Default for RoutePolicy {
     fn default() -> Self {
         Self {

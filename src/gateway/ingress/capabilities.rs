@@ -442,7 +442,7 @@ impl CapabilityView {
         embeddings: &BTreeMap<String, Arc<crate::gateway::tasks::embeddings::BoundEmbedding>>,
         response_bytes: usize,
     ) -> Result<Self, StartupError> {
-        if entries.len() > 64 * 3 || embeddings.len() > 64 {
+        if entries.len() > 64 * ClientProtocol::ALL.len() || embeddings.len() > 64 {
             return Err(StartupError::Binding);
         }
         let data = entries

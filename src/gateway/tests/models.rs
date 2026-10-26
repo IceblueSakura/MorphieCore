@@ -119,7 +119,7 @@ async fn activated_protocols_are_deduplicated_and_images_share_the_directory() {
     let gate = Gateway::new(
         crate::gateway::tests::topology::topology(),
         TaskEntries {
-            generation: [Profile::Responses, Profile::Chat]
+            generation: crate::adapter::ClientProtocol::ALL
                 .into_iter()
                 .map(|protocol| Entry {
                     chat_profile: Default::default(),
@@ -538,7 +538,7 @@ fn local_directory_encodes_empty_and_alias_views_with_inclusive_resource_limits(
     };
     contract.reported_facts = crate::lowering::generation::ReportedFactPolicy::StrictComplete;
     let entries = BTreeMap::from([(
-        (family(Profile::Chat), "fixture-model".into()),
+        (crate::adapter::ClientProtocol::Chat, "fixture-model".into()),
         Arc::new(entry),
     )]);
     let view = CapabilityView::bind(&entries, &BTreeMap::new(), 256 << 10).unwrap();

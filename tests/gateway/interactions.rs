@@ -161,7 +161,7 @@ async fn stateless_json_and_sse_replay_signatures_and_cancel_upstream() {
                 .map(|protocol| Entry {
                     chat_profile: Default::default(),
                     model: binding.model.into(),
-                    protocol,
+                    protocol: protocol.into(),
                     endpoint: endpoint.id.clone(),
                 })
                 .to_vec(),

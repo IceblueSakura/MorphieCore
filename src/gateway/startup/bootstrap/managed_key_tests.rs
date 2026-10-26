@@ -40,7 +40,7 @@ fn bootstrap_loads_selected_key_and_requires_reactivation_after_rotation() {
     let (dir, manager) = setup();
     let first = Bootstrap::from_directory(dir.path()).unwrap();
     let entry = &first.gateway.state.entries[&(
-        crate::gateway::family(Profile::Responses),
+        crate::adapter::ClientProtocol::Responses,
         "deepseek-flash".into(),
     )];
     let candidate = &entry.candidates[0];
@@ -68,7 +68,7 @@ fn bootstrap_loads_selected_key_and_requires_reactivation_after_rotation() {
     assert!(candidate.secret.resolve().is_err());
     let next = Bootstrap::from_directory(dir.path()).unwrap();
     let next = &next.gateway.state.entries[&(
-        crate::gateway::family(Profile::Responses),
+        crate::adapter::ClientProtocol::Responses,
         "deepseek-flash".into(),
     )];
     assert_eq!(

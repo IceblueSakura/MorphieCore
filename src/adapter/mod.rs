@@ -19,6 +19,10 @@ pub enum ClientProtocol {
     Responses,
     Messages,
 }
+impl ClientProtocol {
+    /// Every public Generation client protocol.
+    pub const ALL: [Self; 3] = [Self::Chat, Self::Responses, Self::Messages];
+}
 impl From<crate::protocol::openai::Profile> for ClientProtocol {
     fn from(profile: crate::protocol::openai::Profile) -> Self {
         match profile {

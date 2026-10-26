@@ -1,7 +1,6 @@
 //! Stored Responses over the real Router and a synthetic, stateless upstream.
 use crate::{
     gateway::{Entry, Gateway, Limits, tests::support::KEY},
-    protocol::openai::Profile,
     provider::{CredentialBindingId, SecretMaterial},
     topology::EndpointId,
 };
@@ -37,7 +36,7 @@ fn gateway_with_limits(origin: &str, limits: Limits) -> Gateway {
             generation: vec![Entry {
                 chat_profile: Default::default(),
                 model: "fixture-model".into(),
-                protocol: Profile::Responses,
+                protocol: crate::adapter::ClientProtocol::Responses,
                 endpoint: EndpointId::new("fixture-responses").unwrap(),
             }],
             ..Default::default()

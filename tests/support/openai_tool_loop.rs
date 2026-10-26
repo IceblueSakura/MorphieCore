@@ -271,7 +271,7 @@ async fn start_with_recovery(
         entries.push(Entry {
             chat_profile,
             model: label.into(),
-            protocol: profile,
+            protocol: profile.into(),
             endpoint: secondary.id.clone(),
         });
         credentials.insert(
@@ -288,7 +288,7 @@ async fn start_with_recovery(
     entries.push(Entry {
         chat_profile,
         model: label.into(),
-        protocol: profile,
+        protocol: profile.into(),
         endpoint: endpoint.id.clone(),
     });
     credentials.insert(

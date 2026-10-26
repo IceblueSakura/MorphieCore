@@ -32,7 +32,8 @@ async fn consume(
 ) -> Option<Vec<u8>> {
     use futures_util::StreamExt;
     let gate = crate::gateway::tests::support::gateway(Limits::default());
-    let original = gate.state.entries[&(family(Profile::Chat), "fixture-model".into())].clone();
+    let original =
+        gate.state.entries[&(crate::adapter::ClientProtocol::Chat, "fixture-model".into())].clone();
     let base = &original.candidates[0];
     let adapter = Adapter::new(Profile::Responses, dialect, None);
     let mut endpoint = base.endpoint.clone();

@@ -3,7 +3,6 @@ use super::*;
 
 use super::test_support::*;
 use crate::adapter::ClientProtocol;
-use crate::gateway::family;
 
 #[test]
 fn readable_chat_profile_is_explicit_and_does_not_widen_other_protocols() {
@@ -98,8 +97,8 @@ fn shared_provider_credentials_keep_model_and_protocol_targets_distinct() {
         ),
     ] {
         for protocol in [Profile::Chat, Profile::Responses] {
-            let entry =
-                &boot.gateway.state.entries[&(crate::gateway::family(protocol), model.into())];
+            let entry = &boot.gateway.state.entries
+                [&(crate::adapter::ClientProtocol::from(protocol), model.into())];
             let candidate = entry
                 .candidates
                 .iter()
@@ -140,7 +139,7 @@ fn shared_provider_credentials_keep_model_and_protocol_targets_distinct() {
             assert!(
                 crate::gateway::ingress::admission::prepare(
                     &boot.gateway.state,
-                    family(protocol),
+                    crate::adapter::ClientProtocol::from(protocol),
                     &serde_json::to_vec(&request).unwrap(),
                     &crate::execution::report::Report::default()
                 )
@@ -180,7 +179,7 @@ fn shared_provider_credentials_keep_model_and_protocol_targets_distinct() {
     assert_eq!(wire["max_completion_tokens"], 64);
     assert!(wire.get("max_tokens").is_none());
     assert!(boot.gateway.state.entries.contains_key(&(
-        crate::gateway::family(Profile::Responses),
+        crate::adapter::ClientProtocol::Responses,
         "glm-5.3-prime".into(),
     )));
 }
@@ -222,7 +221,7 @@ fn subscription_and_metered_entries_never_exchange_credentials_or_origins() {
                 };
                 let admitted = crate::gateway::ingress::admission::prepare(
                     &boot.gateway.state,
-                    family(profile),
+                    crate::adapter::ClientProtocol::from(profile),
                     &serde_json::to_vec(&value).unwrap(),
                     &crate::execution::report::Report::default(),
                 );
@@ -285,12 +284,10 @@ fn subscription_and_metered_entries_never_exchange_credentials_or_origins() {
             }
         }
         if subscription && metered {
-            let subscription_entry = &boot.gateway.state.entries[&(
-                crate::gateway::family(Profile::Chat),
-                "qwen3.8-flash".into(),
-            )];
+            let subscription_entry = &boot.gateway.state.entries
+                [&(crate::adapter::ClientProtocol::Chat, "qwen3.8-flash".into())];
             let metered_entry = &boot.gateway.state.entries
-                [&(crate::gateway::family(Profile::Chat), "qwen3.8-max".into())];
+                [&(crate::adapter::ClientProtocol::Chat, "qwen3.8-max".into())];
             assert_ne!(
                 subscription_entry.candidates[0]
                     .endpoint
@@ -346,7 +343,7 @@ fn responses_chat_bridge_is_explicit_and_replaces_not_falls_back_to_native_respo
     )];
     let boot = Fixture::new(service(), config.clone(), &credentials).unwrap();
     let entry = &boot.gateway.state.entries[&(
-        crate::gateway::family(Profile::Responses),
+        crate::adapter::ClientProtocol::Responses,
         "gpt-6-luna".into(),
     )];
     assert_eq!(entry.candidates.len(), 1);
@@ -759,7 +756,7 @@ fn configured_failover_orders_and_limits_a_models_providers() {
     service.as_object_mut().unwrap().remove("delta_coalescing");
     private_write(&gateway_file, service);
     let entry = &configured.gateway.state.entries[&(
-        crate::gateway::family(Profile::Chat),
+        crate::adapter::ClientProtocol::Chat,
         "claude-haiku-5-5".into(),
     )];
     assert_eq!(entry.policy.max_attempts, 2);
@@ -831,7 +828,10 @@ fn configured_failover_orders_and_limits_a_models_providers() {
         boot.gateway
             .state
             .entries
-            .get(&(crate::gateway::family(protocol), "claude-haiku-5-5".into()))
+            .get(&(
+                crate::adapter::ClientProtocol::from(protocol),
+                "claude-haiku-5-5".into(),
+            ))
             .map(|entry| {
                 assert_eq!(
                     entry.policy.fallback,
@@ -883,7 +883,7 @@ fn configured_failover_orders_and_limits_a_models_providers() {
     );
     let configured = Bootstrap::from_files(&gateway_file, &store).unwrap();
     let entry = &configured.gateway.state.entries[&(
-        crate::gateway::family(Profile::Responses),
+        crate::adapter::ClientProtocol::Responses,
         "gpt-6-luna".into(),
     )];
     let first = &entry.candidates[0].endpoint;
@@ -963,8 +963,10 @@ fn configured_failover_orders_and_limits_a_models_providers() {
     private_write(&models_file, limits_config.clone());
     let configured = Bootstrap::from_files(&gateway_file, &store).unwrap();
     for protocol in [Profile::Chat, Profile::Responses] {
-        let entry = &configured.gateway.state.entries
-            [&(crate::gateway::family(protocol), google.model.into())];
+        let entry = &configured.gateway.state.entries[&(
+            crate::adapter::ClientProtocol::from(protocol),
+            google.model.into(),
+        )];
         assert_eq!(entry.candidates.len(), 2);
         let limits = entry.candidates[0].endpoint.representation.model_limits();
         assert_eq!(limits.maximum_output_tokens, Some(4096));
@@ -1107,7 +1109,7 @@ fn configured_failover_orders_and_limits_a_models_providers() {
     private_write(&models_file, models);
     let configured = Bootstrap::from_files(&gateway_file, &store).unwrap();
     let entry = &configured.gateway.state.entries[&(
-        crate::gateway::family(Profile::Responses),
+        crate::adapter::ClientProtocol::Responses,
         google.model.into(),
     )];
     let wire = entry.candidates[0]

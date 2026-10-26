@@ -8,7 +8,6 @@ use super::{
 };
 use crate::{
     adapter::{ClientAdapter, ClientProtocol},
-    protocol::openai::Profile,
     provider::ProviderDefinition,
     topology::{Endpoint, PublicModel},
     transport::http::HttpTransport,
@@ -71,7 +70,3 @@ pub(super) struct Runtime {
     pub(super) transport: HttpTransport,
     pub(super) shutdown: CancellationToken,
 }
-pub(super) fn family(profile: Profile) -> ClientProtocol {
-    profile.into()
-}
-pub(super) const MESSAGES_FAMILY: ClientProtocol = ClientProtocol::Messages;

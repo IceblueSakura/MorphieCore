@@ -26,7 +26,7 @@ fn native_response_binding_activates_only_when_listed() {
     )
     .unwrap();
     for protocol in [Profile::Chat, Profile::Responses] {
-        let key = (crate::gateway::family(protocol), haiku.into());
+        let key = (crate::adapter::ClientProtocol::from(protocol), haiku.into());
         assert!(!boot.gateway.state.entries.contains_key(&key));
     }
     let boot = Fixture::new(
@@ -38,7 +38,8 @@ fn native_response_binding_activates_only_when_listed() {
     // Chat, Responses and Messages clients.
     assert_eq!(boot.gateway.state.entries.len(), 3);
     for protocol in [Profile::Chat, Profile::Responses] {
-        let entry = &boot.gateway.state.entries[&(crate::gateway::family(protocol), haiku.into())];
+        let entry = &boot.gateway.state.entries
+            [&(crate::adapter::ClientProtocol::from(protocol), haiku.into())];
         let endpoint = &entry.candidates[0].endpoint;
         assert_eq!(
             endpoint.protocol,
@@ -243,7 +244,7 @@ fn messages_output_defaults_inherit_override_or_clear_without_widening_maxima() 
     ] {
         let boot = load(configured).unwrap();
         let entry = &boot.gateway.state.entries[&(
-            crate::gateway::family(Profile::Responses),
+            crate::adapter::ClientProtocol::Responses,
             "claude-haiku-5-5".into(),
         )];
         let candidate = &entry.candidates[0];
@@ -369,7 +370,10 @@ async fn configured_messages_cache_admission_requires_all_native_candidates() {
     ] {
         let boot = configured_messages(providers);
         let state = &boot.gateway.state;
-        let entry = &state.entries[&(crate::gateway::MESSAGES_FAMILY, "claude-haiku-5-5".into())];
+        let entry = &state.entries[&(
+            crate::adapter::ClientProtocol::Messages,
+            "claude-haiku-5-5".into(),
+        )];
         assert_eq!(
             entry
                 .candidates
@@ -574,7 +578,10 @@ async fn configured_messages_cache_admission_requires_all_native_candidates() {
 fn native_response_admit_strict_changed_tools_and_message_effort() {
     let boot = configured_messages(&["opencode-go"]);
     let state = &boot.gateway.state;
-    let entry = &state.entries[&(crate::gateway::MESSAGES_FAMILY, "claude-haiku-5-5".into())];
+    let entry = &state.entries[&(
+        crate::adapter::ClientProtocol::Messages,
+        "claude-haiku-5-5".into(),
+    )];
     // The same configured admission must accept pi's complete native profile,
     // not only a plain tool plus cache markers.
     let mut rich = cached_tool_result_input();
@@ -715,7 +722,10 @@ async fn configured_messages_input_features_require_every_native_candidate() {
             .iter()
             .find(|entry| entry["protocol"] == "messages")
             .unwrap();
-        let entry = &state.entries[&(crate::gateway::MESSAGES_FAMILY, "claude-haiku-5-5".into())];
+        let entry = &state.entries[&(
+            crate::adapter::ClientProtocol::Messages,
+            "claude-haiku-5-5".into(),
+        )];
         for (feature, domain, input) in &cases {
             let case = messages["request"]
                 .as_array()

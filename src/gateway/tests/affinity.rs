@@ -197,7 +197,7 @@ fn gateway(origin: &str, profile: Profile, dialect: Dialect) -> Gateway {
             generation: vec![Entry {
                 chat_profile: Default::default(),
                 model: "public".into(),
-                protocol: profile,
+                protocol: profile.into(),
                 endpoint: EndpointId::new("endpoint").unwrap(),
             }],
             ..Default::default()
