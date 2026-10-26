@@ -12,6 +12,7 @@ This guide owns tooling, test procedures and evidence reporting. Use offline, sy
   - [Telemetry ecosystem checks](#telemetry-ecosystem-checks)
   - [Reusable Generation sessions](#reusable-generation-sessions)
   - [SDK loopback gate](#sdk-loopback-gate)
+  - [Reverse-proxy delivery gate](#reverse-proxy-delivery-gate)
   - [Documentation checks](#documentation-checks)
 - [Coverage and pruning](#coverage-and-pruning)
 - [Online acceptance](#online-acceptance)
@@ -347,6 +348,42 @@ The DashScope Chat fixture's JSON tool turn carries `content: null`, while its c
 All authority remains synthetic and catalog contracts remain selected explicitly. Responses fixtures independently cover the selected [opening/terminal report relation](architecture.md#lifecycle-settings-and-service-reports), exact phase carriers and terminal-only stored retrieval. The SDK accumulator's null `parsed`/`parsed_arguments` attributes are SDK-only, not wire fields; remove only those checked null annotations before comparing retrieval or replaying input. Passing these regressions does not certify real Responses SSE. Live acceptance and its limitations remain in the roadmap.
 
 Managed Responses continuation composes typed history rather than serializing retained items into temporary wire. Native Responses Router/SDK stored-versus-stateless cases remain independent request oracles. Google Router/SDK correction loops now use `previous_response_id`, with independent upstream signature/history expectations and no public manifest reasoning item. Execution checks distinguish execution-owned storage from metadata, static/SSE delivery, stateless rejection, typed signed equal-text/call owners, exact large integers and public input listing. Owner-local cases retain resource/citation identity collisions, empty-envelope append boundaries, sealed compaction, stale retained-prefix receipts and empty-part storage charges. The bounded-history Router case verifies that a large empty-part vector cannot bypass capacity with a tiny response. Messages keeps native thinking/redacted-thinking carriers, omits phase without a fabricated owner and rejects hidden text/call signatures. Former Google-to-Messages signed-loop success cases are replaced by Router and strict SDK failure checks; ordinary unsigned terminal-projection cases and native Messages success loops remain. Standard Chat text/tool, recovery and publication loops use plain source content; a separate real Bailian `reasoning_content` fixture checks generated-reasoning rejection. Official reasoning controls/usage counters remain covered. Real-client reacceptance remains separate.
+
+### Reverse-proxy delivery gate
+
+The [proxy contract](architecture.md#reverse-proxy-delivery) and [deployment procedure](usage.md#reverse-proxy-deployment) have a separate synthetic gate. Reuse the installed-client lifecycle scenarios with an explicit Nginx binary:
+
+```sh
+MORPHIECORE_PI_BIN=/absolute/path/to/current/unwrapped/pi \
+MORPHIECORE_OPENCODE_BIN=/absolute/path/to/current/unwrapped/opencode \
+MORPHIECORE_NGINX_BIN=/absolute/path/to/nginx \
+  cargo test --locked --offline --test clients incremental_lifecycle \
+  -- --ignored --test-threads=1
+```
+
+Nix users can obtain scoped tooling with `nix build --no-link --print-out-paths --inputs-from . nixpkgs#nginx`; use the returned `bin/nginx`, not a host daemon. The harness runs Nginx in the foreground on loopback with test-owned configuration, uploads, logs and processes. Only response encoding is logged. Omitting `MORPHIECORE_NGINX_BIN` retains the direct-client gate; it is not an implicit skip of requested proxy acceptance.
+
+Each case makes two synthetic requests with the CLI's default coalescing: after immediate first content, merge two further fragments and observe their complete text in one client delta while the source is silent and terminal/EOF remain withheld; cancel and require upstream socket release, then complete a new request with the single gateway permit. An eligible second credential cannot hide a post-publication retry. Nginx's two access rows must confirm gzip. This covers pi Chat/Messages and OpenCode Chat without private configuration or real Providers; it does not certify TLS, HTTP/2/3, gzip corruption/truncation handling, radio loss, compression ratios or a production deployment.
+
+The proxy case establishes content visibility before terminal/EOF, not a first-prefix latency bound. The separate owner-level checks establish that coalescing does not intentionally hold the first content batch.
+
+**Verified on 2026-10-26:** all three proxy lifecycle cases pass with pi 1.4.0, OpenCode 2.0.32 and Nginx 1.30.6. The default-enabled slice also passes the full offline baseline, production-only compilation, Python checks, all 16 SDK cases and all 12 direct installed-client scenarios. These are separate synthetic gates; no real Provider, TLS deployment or weak-network acceptance was run.
+
+The deterministic window check uses actual intake/projection/encoding with a simulated clock, 101 four-byte text fragments, 5/20 ms arrival gaps and 10/50/100 ms windows:
+
+```sh
+cargo test --locked --offline --lib paced_text_windows -- --nocapture
+```
+
+It independently checks exact content, immediate first content, fixed-window delay bounds and batch counts; it reports pre-compression opening/text-frame bytes (no terminal frames) and intentional delay. The 20 ms cadence produced:
+
+| Window | Nonempty text events | Encoded opening/text bytes | Mean intentional delay |
+|---|---:|---:|---:|
+| 10 ms | 101 | 17,405 | 9.90 ms |
+| 50 ms | 35 | 6,515 | 29.90 ms |
+| 100 ms | 21 | 4,205 | 59.41 ms |
+
+The gateway body test separately drives the real timer during source silence and preserves bounded handoff/backpressure. These checks explain window trade-offs, not real throughput: no proxy, gzip, network queue, packet loss or scheduler delay is present in the simulated-clock measurement. Compare identical source streams when extending it; never compare independent model generations as a compression benchmark.
 
 ### Documentation checks
 

@@ -40,6 +40,7 @@ This page owns accepted principles, domain contracts and decision records. [Road
   - [Failover](#failover)
   - [Conversation and cache affinity](#conversation-and-cache-affinity)
   - [Streaming and delivery](#streaming-and-delivery)
+    - [Reverse-proxy delivery](#reverse-proxy-delivery)
   - [Credentials and security](#credentials-and-security)
   - [Agent identity and cluster diagnostics](#agent-identity-and-cluster-diagnostics)
   - [Observability](#observability)
@@ -1364,9 +1365,21 @@ Upstream streaming and client delivery are independent. JSON clients receive a b
 
 Bodies, frames, event counts and deadlines are bounded. Client disconnect, timeout or shutdown cancels upstream work. Held-stream keep-alives remain [deferred](roadmap.md#only-if-needed).
 
+#### Reverse-proxy delivery
+
+**Selected on 2026-10-26.** A trusted reverse proxy may terminate public TLS, negotiate HTTP versions and compress responses while MorphieCore retains loopback-only ingress and Agent authentication. Provider traffic and client traffic are independent transport legs; optimizing either leg does not optimize the other.
+
+SSE responses carry `X-Accel-Buffering: no` alongside the existing `Cache-Control: no-store`. The proxy must deliver incrementally, avoid response caching and error-page substitution, and propagate cancellation. It must not retry generation requests, synthesize termination or resume a different upstream execution. Compression may change transport bytes, not decoded protocol events or their ordering. Validate incremental decompression and cancellation with actual clients; gzip support alone proves neither timely flush nor weak-network performance.
+
+Body acknowledgement means handoff to the immediate HTTP consumer, not receipt by the final Agent. A proxy and its bounded socket/compression buffers can delay backpressure and disconnect detection. No end-to-end acknowledgement, resumable output log or exactly-once execution is implied.
+
+Request buffering is a separate choice. The initial deployment profile buffers bounded uploads at the proxy before the gateway's body-collection deadline starts; this does not reduce uploaded bytes. The proxy therefore owns pre-authentication upload limits and private temporary storage. Streaming uploads directly instead requires an explicitly reviewed ingress deadline/resource policy. Preserve original Agent credentials and supported session/version headers; do not replace them with a shared proxy credential or trust forwarded identity.
+
+Deployment procedures and timeout trade-offs belong to [Usage](usage.md#reverse-proxy-deployment). The [proxy acceptance gate](development.md#reverse-proxy-delivery-gate) is distinct from direct-client, TLS/HTTP-version and real weak-network acceptance.
+
 #### Optional delta coalescing
 
-Delta coalescing is implemented and disabled by default. Prepared batches retain shared immutable metadata and fidelity, with projection and replay sealing performed once. The disabled path encodes each batch immediately.
+Delta coalescing is enabled by default: a 50 ms fixed window and a 16 KiB accounted pending budget. Omitted startup configuration selects this policy; explicit `null` disables it and a complete object overrides it. Rust `Limits::default()` selects the same policy, with `None` as the explicit opt-out. Prepared batches retain shared immutable metadata and fidelity, with projection and replay sealing performed once. The disabled path encodes each batch immediately.
 
 The goal is fewer downstream events, repeated envelopes and body handoffs without changing semantic content. It does not reduce upstream traffic or token usage, and fewer handoffs do not imply proportionally fewer network packets.
 
@@ -1411,7 +1424,7 @@ The coalescer has empty, pending and closed states. An eligible event starts or 
 5. Publication forbids advancement; acknowledgement advances the delivery lifecycle. Do not flush merely to manufacture commitment or create a new fallback permission. A failed unpublished attempt loses its buffer before legal advancement; cancellation discards it. On a published classified failure, handle already validated pending content in order before the failure frame when delivery remains possible; malformed intake still cannot create a success terminal.
 6. Normal completion drains pending content before terminal encoding, but the terminal itself remains gated by validated upstream EOF. Final-only delivery, stored response snapshots and replay retain their existing authority.
 
-The policy belongs to trusted startup configuration and defaults to disabled. Both finite time and accounted-byte bounds are required; invalid bounds fail startup. Retained context counts against the pending budget, and oversized contexts/fragments pass through rather than being truncated. Reported instruction-message trees bypass buffering. Conservative escaped-text and envelope allowances keep merged frames within the target event ceiling; the encoder still enforces aggregate output budgets.
+The policy belongs to trusted startup configuration. Both finite time and accounted-byte bounds are required; invalid bounds fail startup. Retained context counts against the pending budget, and oversized contexts/fragments pass through rather than being truncated. Reported instruction-message trees bypass buffering. Conservative escaped-text and envelope allowances keep merged frames within the target event ceiling; the encoder still enforces aggregate output budgets.
 
 Configuration is documented in [Usage](usage.md#delta-coalescing). It is not an IR field or a downstream request extension. The [offline baseline](development.md#offline-baseline), [SDK loopback gate](development.md#sdk-loopback-gate) and separately scoped real acceptance remain distinct; synthetic overhead reductions do not establish universal latency or packet-count improvements.
 
@@ -1708,7 +1721,8 @@ The 2026-10-23 standards reset supersedes conflicting historical conversion, pub
 | Cluster diagnostics planning (2026-10-23) | [Future capture baseline](#configurable-exchange-capture) permits sensitive business diagnostics in explicitly configured deployer-owned infrastructure, preserves mandatory authentication redaction and bounded best-effort capture, and distinguishes observed exchanges from complete Agent traces. No backend deployment or export is activated |
 | Actual adaptation reporting (selected 2026-10-23; implemented 2026-10-24) | The [domain evidence interface](#domain-evidence-interface) replaces parallel internal receipts with returned deltas, typed causes and atomic checked-unit acceptance under one execution report. Optional bounded notices and independent log projections are implemented; public schema/consumer certification remains deferred. Preserve source facts, selected-attempt isolation, publication honesty and privacy; a possible-adaptation header is not an actual receipt |
 | Safe-to-ignore diagnostic extensions (2026-10-24) | [Optional namespaced fields](#public-capability-and-adaptation-notice) may carry selected loss, error and routing diagnostics for a future deployer-owned Runtime. Standard SDK Agent loops remain independent of them; no client display, retention or echo is required. Field organization/aggregation and dedicated extension tests are deferred to final production preparation, not current delivery gates |
-| Bounded text-delta coalescing | Startup-only, disabled-by-default optimization after client projection and before encoding. One pending run retains its prepared context and fixed deadline; invalid bounds fail startup. Final-only clients retain existing materialization; original intake validation and publication safety remain authoritative |
+| Bounded text-delta coalescing | Default-enabled on 2026-10-26 with 50 ms / 16 KiB bounds; explicit null disables it. Startup-only policy after client projection and before encoding. One pending run retains its prepared context and fixed deadline; final-only materialization, original intake validation and publication safety remain authoritative |
+| Reverse-proxy delivery | Selected on 2026-10-26: loopback backend and gateway-owned Agent auth; incremental SSE with an anti-buffering header, no proxy retry/cache/error replacement, and propagated cancellation. Handoff is not Agent receipt. Proxy upload buffering, compression and deadlines have separate resource/acceptance boundaries |
 | Scoped source accounting | Retain raw buckets and latest operation/step snapshots independently; derive delivery views without summing snapshots or inferring unknown inclusion relations. Source-default zeros and optional counts remain distinguishable |
 | Honest delivery | Publication forbids advancement; success requires validated EOF and handoff |
 | Owner-local state representation | Each [pipeline owner](#layers-and-data-flow) retains its own rejection, finalization or acknowledgement authority; no shared dispatcher or global completion flag |

@@ -741,7 +741,13 @@ fn configured_failover_orders_and_limits_a_models_providers() {
     }}});
     private_write(&models_file, model_config.clone());
     let configured = Bootstrap::from_files(&gateway_file, &store).unwrap();
-    assert!(configured.gateway.state.limits.delta_coalescing.is_none());
+    let policy = configured.gateway.state.limits.delta_coalescing.unwrap();
+    assert_eq!((policy.max_delay_ms, policy.max_pending_bytes), (50, 16384));
+    let embedded = Limits::default().delta_coalescing.unwrap();
+    assert_eq!(
+        (policy.max_delay_ms, policy.max_pending_bytes),
+        (embedded.max_delay_ms, embedded.max_pending_bytes)
+    );
     let mut service = serde_json::json!({
         "auth_file":"auth.json",
         "bind":"127.0.0.1:0","models_file":"models.json",
@@ -751,9 +757,23 @@ fn configured_failover_orders_and_limits_a_models_providers() {
     let enabled = Bootstrap::from_files(&gateway_file, &store).unwrap();
     let policy = enabled.gateway.state.limits.delta_coalescing.unwrap();
     assert_eq!((policy.max_delay_ms, policy.max_pending_bytes), (10, 16384));
+    service["delta_coalescing"] = serde_json::Value::Null;
+    private_write(&gateway_file, service.clone());
+    assert!(
+        Bootstrap::from_files(&gateway_file, &store)
+            .unwrap()
+            .gateway
+            .state
+            .limits
+            .delta_coalescing
+            .is_none()
+    );
     for invalid in [
         serde_json::json!({"max_delay_ms":0,"max_pending_bytes":16384}),
         serde_json::json!({"max_delay_ms":10,"max_pending_bytes":0}),
+        serde_json::json!({"max_delay_ms":101,"max_pending_bytes":16384}),
+        serde_json::json!({"max_delay_ms":50}),
+        serde_json::json!(false),
     ] {
         service["delta_coalescing"] = invalid;
         private_write(&gateway_file, service.clone());

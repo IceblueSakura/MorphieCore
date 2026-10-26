@@ -42,16 +42,20 @@ class LifecycleOracles(unittest.TestCase):
     def test_held_frames_have_content_without_any_success_terminal(self):
         for native in (False, True):
             raw = frames(native, FIRST, False).decode()
-            self.assertIn(FIRST, raw)
             self.assertNotIn("[DONE]", raw)
             values = [json.loads(line.removeprefix("data: ")) for line in raw.splitlines()
                       if line.startswith("data: ")]
             if native:
                 self.assertEqual([v["type"] for v in values],
-                                 ["message_start", "content_block_start", "content_block_delta"])
+                                 ["message_start", "content_block_start"] + ["content_block_delta"] * 3)
                 self.assertIsNone(values[0]["message"]["stop_reason"])
+                fragments = [v["delta"]["text"] for v in values if v["type"] == "content_block_delta"]
             else:
                 self.assertTrue(all(c["finish_reason"] is None for v in values for c in v["choices"]))
+                fragments = [c["delta"]["content"] for v in values for c in v["choices"]]
+            self.assertEqual(fragments[0], "prefix ")
+            self.assertEqual("".join(fragments), "prefix " + FIRST)
+            self.assertTrue(all(FIRST not in fragment for fragment in fragments))
             finished = frames(native, "cedar-71", True).decode()
             self.assertIn("message_stop" if native else "[DONE]", finished)
 

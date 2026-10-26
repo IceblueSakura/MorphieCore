@@ -2,7 +2,7 @@
 use std::time::Duration;
 #[derive(Clone, Debug)]
 pub struct Limits {
-    /// Optional bounded text delivery batching; omission preserves immediate encoding.
+    /// Bounded text delivery batching; None explicitly selects immediate encoding.
     pub delta_coalescing: Option<crate::execution::delivery::DeltaCoalescing>,
     /// Disposable implicit affinity only; explicit grouping remains available when disabled.
     pub implicit_cache_affinity: bool,
@@ -29,7 +29,7 @@ pub struct Limits {
 impl Default for Limits {
     fn default() -> Self {
         Self {
-            delta_coalescing: None,
+            delta_coalescing: Self::default_delta_coalescing(),
             implicit_cache_affinity: true,
             request_bytes: 32 << 20,
             response_bytes: 64 << 20,
@@ -49,6 +49,14 @@ impl Default for Limits {
     }
 }
 impl Limits {
+    pub(super) fn default_delta_coalescing() -> Option<crate::execution::delivery::DeltaCoalescing>
+    {
+        Some(crate::execution::delivery::DeltaCoalescing {
+            max_delay_ms: 50,
+            max_pending_bytes: 16 << 10,
+        })
+    }
+
     pub(super) fn validate(&self) -> bool {
         self.delta_coalescing.is_none_or(|policy| policy.valid())
             && (1..=64 << 20).contains(&self.request_bytes)

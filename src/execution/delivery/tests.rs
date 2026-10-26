@@ -581,6 +581,112 @@ fn coalescing_preserves_first_content_barriers_and_attempt_isolation() {
 }
 
 #[test]
+fn paced_text_windows_preserve_content_and_bound_intentional_delay() {
+    for cadence_ms in [5, 20] {
+        for window_ms in [10, 50, 100] {
+            let codec = GenerationCodec::new(GenerationApi::Chat, Dialect::Standard, None);
+            let mut attempt = Attempt::new(codec.clone(), 65536, Default::default());
+            attempt.begin(200, "text/event-stream").unwrap();
+            let mut delivery = ResponseDelivery::new(
+                ClientAdapter::openai(codec, TargetContract::full()),
+                "public",
+                Default::default(),
+                StreamOptions {
+                    include_obfuscation: Presence::Value(false),
+                    ..Default::default()
+                },
+                Obfuscation::Disabled,
+            )
+            .with_coalescing(Some(DeltaCoalescing {
+                max_delay_ms: window_ms,
+                max_pending_bytes: 16384,
+            }));
+            let start = Instant::now();
+            let mut output = vec![];
+            let mut expected = String::new();
+            for index in 0..101 {
+                let now = start + Duration::from_millis(index * cadence_ms);
+                // Drive the fixed timer independently of the next source event.
+                if let Some(deadline) = delivery.flush_deadline().filter(|t| *t <= now) {
+                    output.extend(
+                        delivery
+                            .flush_pending()
+                            .unwrap()
+                            .into_bytes()
+                            .into_iter()
+                            .map(|bytes| (deadline, bytes)),
+                    );
+                }
+                let fragment = format!("{index:03}|");
+                expected.push_str(&fragment);
+                let chunk = json!({
+                    "id":"paced","object":"chat.completion.chunk","created":1,"model":"model",
+                    "choices":[{"index":0,"delta":{"content":fragment},"finish_reason":null}]
+                });
+                let (_, events) = attempt
+                    .push(format!("data: {chunk}\n\n").as_bytes())
+                    .unwrap();
+                output.extend(
+                    coalesce_events(&mut delivery, &attempt, &events, now)
+                        .unwrap()
+                        .into_iter()
+                        .map(|bytes| (now, bytes)),
+                );
+            }
+            if let Some(deadline) = delivery.flush_deadline() {
+                output.extend(
+                    delivery
+                        .flush_pending()
+                        .unwrap()
+                        .into_bytes()
+                        .into_iter()
+                        .map(|bytes| (deadline, bytes)),
+                );
+            }
+            let bytes: usize = output.iter().map(|(_, bytes)| bytes.len()).sum();
+            let mut actual = String::new();
+            let mut count = 0;
+            let mut delay_sum = 0;
+            let mut max_delay = 0;
+            for (at, bytes) in output {
+                for line in std::str::from_utf8(&bytes).unwrap().lines() {
+                    let Some(data) = line.strip_prefix("data: ") else {
+                        continue;
+                    };
+                    let value: Value = serde_json::from_str(data).unwrap();
+                    let Some(fragment) = value
+                        .pointer("/choices/0/delta/content")
+                        .and_then(Value::as_str)
+                        .filter(|text| !text.is_empty())
+                    else {
+                        continue;
+                    };
+                    count += 1;
+                    for offset in 0..fragment.len() / 4 {
+                        let emitted = (actual.len() / 4 + offset) as u64;
+                        let source = start + Duration::from_millis(emitted * cadence_ms);
+                        let delay = at.duration_since(source).as_millis();
+                        assert!(delay <= u128::from(window_ms));
+                        if emitted == 0 {
+                            assert_eq!(delay, 0, "first content stays immediate");
+                        }
+                        delay_sum += delay;
+                        max_delay = max_delay.max(delay);
+                    }
+                    actual.push_str(fragment);
+                }
+            }
+            assert_eq!(actual, expected);
+            assert_eq!(count, 1 + 100_u64.div_ceil(window_ms.div_ceil(cadence_ms)));
+            println!(
+                "cadence_ms={cadence_ms} window_ms={window_ms} text_events={count} encoded_bytes={bytes} mean_delay_ms={:.2} max_delay_ms={max_delay}",
+                delay_sum as f64 / 101.0
+            );
+        }
+    }
+}
+
+#[test]
 fn coalescing_respects_escaped_frame_and_pending_memory_limits() {
     let policy = DeltaCoalescing {
         max_delay_ms: 10,

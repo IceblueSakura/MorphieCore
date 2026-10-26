@@ -758,13 +758,7 @@ async fn bounded<T>(future: impl std::future::Future<Output = T>) -> T {
 }
 #[tokio::test]
 async fn first_frame_precedes_terminal_and_ack_gates_upstream_progress() {
-    let gate = gateway(Limits {
-        delta_coalescing: Some(crate::gateway::DeltaCoalescing {
-            max_delay_ms: 10,
-            max_pending_bytes: 16384,
-        }),
-        ..Limits::default()
-    });
+    let gate = gateway(Limits::default());
     let (tx, upstream, dropped, reads) = upstream(200, "text/event-stream");
     let frames = frames();
     tx.send(Ok(Bytes::from(frames[..2].concat())))
@@ -786,6 +780,9 @@ async fn first_frame_precedes_terminal_and_ack_gates_upstream_progress() {
     .unwrap();
     drop(tx);
     assert_eq!(reads.load(Ordering::SeqCst), 1);
+    assert_eq!(response.headers()["x-accel-buffering"], "no");
+    assert_eq!(response.headers()["cache-control"], "no-store");
+    assert!(!response.headers().contains_key("content-encoding"));
     let mut body = response.into_body().into_data_stream();
     let first = bounded(body.next()).await.unwrap().unwrap();
     assert!(!String::from_utf8_lossy(&first).contains("[DONE]"));
@@ -803,10 +800,7 @@ async fn first_frame_precedes_terminal_and_ack_gates_upstream_progress() {
     for enabled in [false, true] {
         let directory = crate::test_files::private_directory();
         let path = directory.path().join("events.jsonl");
-        let policy = crate::gateway::DeltaCoalescing {
-            max_delay_ms: 10,
-            max_pending_bytes: 16384,
-        };
+        let policy = Limits::default().delta_coalescing.unwrap();
         let gate = gateway(Limits {
             delta_coalescing: enabled.then_some(policy),
             ..Limits::default()
@@ -946,6 +940,7 @@ async fn first_frame_precedes_terminal_and_ack_gates_upstream_progress() {
         .await
         .unwrap();
     assert_eq!(response.headers()["content-type"], "application/json");
+    assert!(!response.headers().contains_key("x-accel-buffering"));
     let bytes = bounded(axum::body::to_bytes(response.into_body(), 65536))
         .await
         .unwrap();

@@ -66,6 +66,13 @@ async fn installed_case(
         .arg(binary)
         .args(arguments)
         .current_dir(env!("CARGO_MANIFEST_DIR"));
+    if script == "lifecycle"
+        && let Some(nginx) = std::env::var_os("MORPHIECORE_NGINX_BIN")
+    {
+        let nginx = PathBuf::from(nginx);
+        assert!(nginx.is_absolute() && nginx.is_file());
+        command.arg(nginx);
+    }
     let output = child_process::run(&mut command, b"", Duration::from_secs(120), 16 << 10)
         .await
         .expect("bounded installed-client process");
@@ -179,9 +186,18 @@ async fn lifecycle_case(case: &str, variable: &str) {
     assert_eq!(report["client_requests"], 2);
     assert_eq!(report["upstream_attempts"], 2);
     assert_eq!(report["content_before_terminal_and_eof"], true);
+    assert_eq!(report["coalesced_before_cancel"], true);
     assert_eq!(report["upstream_cancelled"], true);
     assert_eq!(report["single_permit_recovery"], true);
     assert_eq!(report["post_publication_replays"], 0);
+    if std::env::var_os("MORPHIECORE_NGINX_BIN").is_some() {
+        assert_eq!(report["proxy"]["gzip_responses"], 2);
+        assert!(
+            report["proxy"]["version"]
+                .as_str()
+                .is_some_and(|v| !v.is_empty())
+        );
+    }
 }
 
 #[tokio::test]

@@ -361,10 +361,12 @@ pub(super) async fn respond_producer(
         abort,
         ended: false,
     });
-    Response::builder()
+    let mut response = Response::builder()
         .header("content-type", content_type)
         .header("cache-control", "no-store")
-        .header("x-content-type-options", "nosniff")
-        .body(body)
-        .map_err(|_| ApiError::upstream())
+        .header("x-content-type-options", "nosniff");
+    if matches!(response_type, ResponseType::EventStream) {
+        response = response.header("x-accel-buffering", "no");
+    }
+    response.body(body).map_err(|_| ApiError::upstream())
 }

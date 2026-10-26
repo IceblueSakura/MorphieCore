@@ -6,6 +6,7 @@ from http.server import BaseHTTPRequestHandler
 import json
 from pathlib import Path
 import queue
+import re
 import select
 import signal
 import socket
@@ -24,6 +25,7 @@ RECOVER = "synthetic-after-cancel"
 
 
 def frames(native, text, final):
+    fragments = [text] if final else ["prefix ", text[:len(text) // 2], text[len(text) // 2:]]
     if native:
         values = [
             {"type": "message_start", "message": {"id": "synthetic-message", "type": "message",
@@ -31,8 +33,9 @@ def frames(native, text, final):
                 "stop_reason": None, "stop_sequence": None,
                 "usage": {"input_tokens": 1, "output_tokens": 0}}},
             {"type": "content_block_start", "index": 0, "content_block": {"type": "text", "text": ""}},
-            {"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": text}},
         ]
+        values.extend({"type": "content_block_delta", "index": 0,
+                       "delta": {"type": "text_delta", "text": fragment}} for fragment in fragments)
         if final:
             values += [{"type": "content_block_stop", "index": 0},
                        {"type": "message_delta", "delta": {"stop_reason": "end_turn", "stop_sequence": None},
@@ -41,7 +44,8 @@ def frames(native, text, final):
     def chunk(delta, finish=None):
         return {"id": "synthetic-chat", "object": "chat.completion.chunk", "created": 1,
                 "model": "qwen3.8-flash", "choices": [{"index": 0, "delta": delta, "finish_reason": finish}]}
-    values = [chunk({"role": "assistant", "content": text})]
+    values = [chunk({"role": "assistant", "content": fragments[0]})]
+    values.extend(chunk({"content": fragment}) for fragment in fragments[1:])
     if final:
         values.append({**chunk({}, "stop"), "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2}})
     raw = "".join(f"data: {json.dumps(value)}\n\n" for value in values).encode()
@@ -152,6 +156,7 @@ def pi_case(binary, env, root, work, origin, state):
         prompt_id = pi.submit("prompt", message=f"{CANCEL}: Say {FIRST} without tools.")
         deadline = time.monotonic() + 5
         acknowledged = set()
+        visible = ""
         while True:
             event = pi.record(deadline)
             if event.get("type") == "response" and event.get("id") == prompt_id:
@@ -161,8 +166,12 @@ def pi_case(binary, env, root, work, origin, state):
             check(not assistant_end and event.get("type") not in ("agent_settled", "tool_execution_start"),
                   "client_finished_before_visible_content")
             delta = event.get("assistantMessageEvent", {})
-            if event.get("type") == "message_update" and delta.get("type") == "text_delta" and FIRST in delta.get("delta", ""):
-                break
+            if event.get("type") == "message_update" and delta.get("type") == "text_delta":
+                visible += delta.get("delta", "")
+                check(len(visible) <= 1024, "visible_text_bound")
+                if FIRST in visible:
+                    check(FIRST in delta.get("delta", ""), "default_coalescing_not_observed")
+                    break
         observed_held_content(state)
         abort_id = pi.submit("abort")
         deadline = time.monotonic() + 5
@@ -287,14 +296,19 @@ def opencode_case(binary, env, root, work, origin, state):
                     "-m", "recovery/qwen3.8-flash#low", f"{CANCEL}: Say {FIRST} without tools."]
             with Child(args, env, work) as client:
                 deadline = time.monotonic() + 5
+                visible = ""
                 while True:
                     event = events.record(deadline)
                     check(event.get("type") not in ("session.execution.succeeded", "session.execution.failed",
                                                    "session.execution.interrupted"), "opencode_finished_before_visible_content")
-                    if event.get("type") == "session.text.delta" and FIRST in event.get("data", {}).get("delta", ""):
-                        identity = event["data"]["sessionID"]
-                        check(isinstance(identity, str) and identity, "opencode_visible_session")
-                        break
+                    if event.get("type") == "session.text.delta":
+                        visible += event.get("data", {}).get("delta", "")
+                        check(len(visible) <= 1024, "visible_text_bound")
+                        if FIRST in visible:
+                            check(FIRST in event["data"]["delta"], "default_coalescing_not_observed")
+                            identity = event["data"]["sessionID"]
+                            check(isinstance(identity, str) and identity, "opencode_visible_session")
+                            break
                 observed_held_content(state)
                 client.process.send_signal(signal.SIGINT)
                 output = client.wait(timeout=5, expected_status=130)
@@ -319,8 +333,91 @@ def opencode_case(binary, env, root, work, origin, state):
     return "core_sse_text_delta"
 
 
+@contextmanager
+def nginx_proxy(binary, root, env, origin, report):
+    """Optional real proxy; foreground, loopback-only and test-owned."""
+    directory = root / "nginx"
+    directory.mkdir(mode=0o700)
+    with Child([binary, "-v"], env, directory) as version:
+        version.wait(timeout=5)
+        match = re.fullmatch(r"nginx version: nginx/([0-9.]+)\s*", version.errors.decode())
+        check(match is not None, "nginx_version")
+        report["version"] = match.group(1)
+    with socket.socket() as reservation:
+        reservation.bind(("127.0.0.1", 0))
+        port = reservation.getsockname()[1]
+    # A port race fails startup; never fall back to another target or host service.
+    (directory / "nginx.conf").write_text(f"""
+daemon off;
+master_process off;
+pid nginx.pid;
+error_log stderr warn;
+events {{ worker_connections 64; }}
+http {{
+    log_format delivery '$sent_http_content_encoding';
+    access_log access.log delivery;
+    client_body_temp_path client_body;
+    proxy_temp_path proxy_body;
+    server {{
+        listen 127.0.0.1:{port};
+        underscores_in_headers on;
+        client_max_body_size 32m;
+        client_body_timeout 10s;
+        send_timeout 30s;
+        gzip on;
+        gzip_comp_level 1;
+        gzip_min_length 0;
+        gzip_types application/json text/event-stream;
+        gzip_vary on;
+        location = /_ready {{
+            access_log off;
+            return 204;
+        }}
+        location /v1/ {{
+            proxy_pass {origin};
+            proxy_http_version 1.1;
+            proxy_set_header Connection "";
+            proxy_set_header Accept-Encoding "";
+            proxy_request_buffering on;
+            proxy_buffering off;
+            proxy_cache off;
+            proxy_next_upstream off;
+            proxy_intercept_errors off;
+            proxy_ignore_client_abort off;
+            proxy_connect_timeout 3s;
+            proxy_read_timeout 30s;
+        }}
+    }}
+}}
+""")
+    with Child([binary, "-p", str(directory) + "/", "-c", "nginx.conf"], env, directory) as proxy:
+        deadline = time.monotonic() + 5
+        while True:
+            check(proxy.process.poll() is None, "nginx_startup")
+            probe = http.client.HTTPConnection("127.0.0.1", port, timeout=0.1)
+            try:
+                probe.request("GET", "/_ready")
+                check(probe.getresponse().status == 204, "nginx_readiness_status")
+                break
+            except OSError:
+                check(time.monotonic() < deadline, "nginx_readiness_deadline")
+                time.sleep(0.02)
+            finally:
+                probe.close()
+        try:
+            yield f"http://127.0.0.1:{port}"
+        finally:
+            proxy.process.send_signal(signal.SIGQUIT)
+            proxy.wait(timeout=5)
+    rows = (directory / "access.log").read_text().splitlines()
+    # The test-only readiness endpoint has its access log disabled.
+    check(rows == ["gzip", "gzip"], "nginx_gzip_delivery")
+    report["gzip_responses"] = len(rows)
+
+
 def main():
-    case, directory, gateway_binary, client_binary = sys.argv[1:]
+    case, directory, gateway_binary, client_binary, *proxy_binary = sys.argv[1:]
+    check(len(proxy_binary) <= 1, "proxy_arguments")
     root = Path(directory)
     work = root / "work"
     work.mkdir(mode=0o700)
@@ -349,6 +446,10 @@ def main():
             raise RuntimeError("gateway_readiness_deadline") from None
         check(len(ready) <= 127 and ready.startswith("MorphieCore listening on http://127.0.0.1:"), "gateway_startup")
         origin = ready.removeprefix("MorphieCore listening on ")
+        proxy_report = None
+        if proxy_binary:
+            proxy_report = {}
+            origin = stack.enter_context(nginx_proxy(proxy_binary[0], root, env, origin, proxy_report))
         try:
             run = pi_case if case.startswith("pi-") else opencode_case
             surface = run(client_binary, env, root, work, origin, state)
@@ -370,7 +471,9 @@ def main():
     check(state.attempts == 2 and not state.errors, "late_upstream_lifecycle_failure")
     print(json.dumps({"case": case, "version": version, "client_requests": 2, "upstream_attempts": 2,
         "consumer_surface": surface, "content_before_terminal_and_eof": True,
-        "upstream_cancelled": True, "single_permit_recovery": True, "post_publication_replays": 0}))
+        "coalesced_before_cancel": True,
+        "upstream_cancelled": True, "single_permit_recovery": True, "post_publication_replays": 0,
+        "proxy": proxy_report}))
 
 
 if __name__ == "__main__":

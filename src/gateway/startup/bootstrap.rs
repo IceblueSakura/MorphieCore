@@ -40,6 +40,7 @@ struct Configuration {
     capture: Option<crate::gateway::CaptureConfig>,
     concurrency: Option<usize>,
     exchange_timeout_ms: Option<u64>,
+    #[serde(default = "Limits::default_delta_coalescing")]
     delta_coalescing: Option<crate::execution::delivery::DeltaCoalescing>,
 }
 

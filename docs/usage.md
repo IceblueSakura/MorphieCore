@@ -16,6 +16,7 @@ This guide owns local setup, configuration and client-facing procedures for impl
   - [Delta coalescing](#delta-coalescing)
   - [Private exchange capture](#private-exchange-capture)
 - [Start the gateway](#start-the-gateway)
+- [Reverse-proxy deployment](#reverse-proxy-deployment)
 - [Send a request](#send-a-request)
   - [Responses](#responses)
   - [Chat Completions](#chat-completions)
@@ -212,7 +213,7 @@ Create private `gateway.json`, `auth.json` and `models.json` files in `$HOME/.lo
 | `proxy` | Outbound proxy |
 | `concurrency` | Concurrent exchanges; default 16, range 1–256 |
 | `exchange_timeout_ms` | Service-wide exchange ceiling; default 3600000, range 1–86400000 |
-| `delta_coalescing` | Optional bounded text delivery batching; omitted or `null` disables it. See [Delta coalescing](#delta-coalescing) |
+| `delta_coalescing` | Bounded text delivery batching; omitted selects 50 ms / 16 KiB, `null` disables it, an object overrides it. See [Delta coalescing](#delta-coalescing) |
 | `diagnostics` | Private bounded diagnostics path, reusable after a clean restart; no bodies are recorded. See [Body-free diagnostics](#body-free-diagnostics) |
 | `capture` | Optional private exchange capture; omitted or all-disabled selections record no content |
 
@@ -385,22 +386,33 @@ The file supports at most 64 models and 64 candidates per model; expanded creden
 
 ### Delta coalescing
 
-To opt in, add this field to `gateway.json`:
+Text-delta coalescing is enabled by default. Omitting the field selects this policy; a complete object can override either bound:
 
 ```json
 {
   "delta_coalescing": {
-    "max_delay_ms": 10,
+    "max_delay_ms": 50,
     "max_pending_bytes": 16384
   }
 }
 ```
 
-Both fields are required. `max_delay_ms` must be 1–100 milliseconds; `max_pending_bytes` must be 1024–1048576 bytes. Invalid bounds or unknown fields fail startup. Omission preserves immediate delivery. Rust embedding uses the same optional `Limits::delta_coalescing` policy.
+Both object fields are required. `max_delay_ms` must be 1–100 milliseconds; `max_pending_bytes` must be 1024–1048576 bytes. Invalid bounds, incomplete objects or unknown fields fail startup. Set `"delta_coalescing": null` for immediate encoding. Rust `Limits::default()` enables the same policy; set `Limits::delta_coalescing` to `None` to disable it.
 
 Only compatible adjacent nonempty text deltas are merged. The first content batch is not intentionally delayed; a fixed deadline flushes pending text during upstream silence. The delay bounds intentional buffering, not client backpressure or end-to-end latency. The byte limit accounts for retained context and encoded text, not process RSS. `stream:false`, including a declared forced-SSE upstream, retains existing final-response materialization without a coalescing buffer.
 
 See the [coalescing contract](architecture.md#optional-delta-coalescing) for merge eligibility, flush barriers, accounting, cancellation and EOF requirements. This service-only policy changes neither routing nor upstream traffic or token usage. Optional diagnostics report peak accounted pending bytes without content. Synthetic measurements do not establish SDK, real-client or Provider acceptance.
+
+#### Choosing a window
+
+Use eligible text-delta arrival cadence, not token rate alone. A Provider may put several tokens in one event, deliver bursts, or interleave barriers that prevent merging. A window shorter than the typical inter-delta gap can add latency without reducing event count. A 50 ms window is the default compromise; try 100 ms when fewer updates matter more than interactivity, or 10–20 ms when prompt updates matter more.
+
+- First content is not intentionally delayed. Later eligible fragments wait at most the configured window **inside the coalescer**, unless a barrier or byte bound flushes earlier. Scheduling, backpressure, compression and the network add their own delay.
+- For regularly spaced eligible fragments, the batch size is roughly the window divided by the inter-delta gap, rounded up and at least one. Sparse fragments can each wait the full window; the common half-window average only approximates sufficiently dense arrivals. Do not size the window from RTT alone.
+- The byte bound includes retained context, text and encoding allowances, not just useful text. Increasing it does not force full buffers or improve ordinary small deltas; large contexts may bypass coalescing. Keep the 16 KiB default unless measured bypass or burst behavior justifies a change.
+- Compare the same synthetic source stream with coalescing disabled and at 10/50/100 ms, then repeat through the actual proxy and client. Measure encoded and compressed bytes, first-content time, update gaps, cancellation and completion. Fewer events or handoffs are not proportional packet savings; HTTP/TLS packetization is independent.
+
+Compression already removes repeated envelopes, so its benefit and coalescing's benefit are not additive. Larger windows can produce larger bursts and longer visible pauses. Coalescing reduces framing and delivery work; it does not reduce radio loss, repair disconnected requests, compress uploads or guarantee higher completion rates. See the [controlled timing check](development.md#reverse-proxy-delivery-gate) and keep its synthetic scope explicit.
 
 ### Private exchange capture
 
@@ -459,6 +471,60 @@ All three executables (`morphiecore`, `morphiecore-auth`, `morphiecore-upstream`
 Ctrl-C shuts down the listener and cancels in-flight upstream work.
 
 For Rust embedding, `Gateway::new` takes a compiled topology and one `TaskEntries` value with separate Generation, Images, Speech, Transcription and Embeddings lists. Empty lists activate nothing. Credentials and limits remain explicit; the embedded constructor does not opt into environment proxies. Each Generation entry names one client protocol (Chat, Responses or Messages); file-configured models expose all three. See [task entries](../src/gateway/startup/entries.rs) and [binding](../src/gateway/startup/bind.rs).
+
+## Reverse-proxy deployment
+
+Keep MorphieCore on loopback. A separately managed Nginx may expose the standard APIs over TLS; this is deployment guidance, not permission to publish a listener. The [delivery contract](architecture.md#reverse-proxy-delivery) owns cancellation, publication and trust boundaries.
+
+The following is a configuration fragment for an existing TLS virtual host, not a complete production configuration. Supply its domain/certificate separately, restrict public connection/upload resources and keep request temporary files private and space-bounded.
+
+```nginx
+# In http {}.
+upstream morphiecore {
+    server 127.0.0.1:8080;
+    keepalive 16;
+}
+
+# In the existing TLS server {}.
+underscores_in_headers on;
+client_max_body_size 32m;
+client_body_timeout 120s;
+send_timeout 300s;
+
+gzip on;
+gzip_comp_level 1;
+gzip_min_length 1024;
+gzip_types application/json text/event-stream;
+gzip_vary on;
+gzip_proxied any;
+
+location /v1/ {
+    proxy_pass http://morphiecore;
+    proxy_http_version 1.1;
+    proxy_set_header Connection "";
+    proxy_set_header Accept-Encoding "";
+
+    proxy_request_buffering on;
+    proxy_buffering off;
+    proxy_cache off;
+    proxy_next_upstream off;
+    proxy_intercept_errors off;
+    proxy_ignore_client_abort off;
+
+    proxy_connect_timeout 5s;
+    proxy_send_timeout 60s;
+    proxy_read_timeout 300s;
+}
+```
+
+- **Compression:** Nginx owns response compression; clearing the backend `Accept-Encoding` does not clear the client's negotiation with Nginx. Start with gzip, measure incremental output, and only add br/zstd modules after client/build verification. SSE has no fixed `Content-Length`, so `gzip_min_length` is not an event-size threshold. Do not add `no-transform` while selecting proxy compression.
+- **Buffering:** `proxy_buffering off` controls responses. MorphieCore also sends `X-Accel-Buffering: no`, which Nginx normally consumes rather than forwarding. Upload buffering remains on: the gateway's default 60-second body-collection deadline then applies to the local backend transfer, not the preceding wireless upload. Nginx may spool full histories to temporary files and receives them before gateway authentication; limit that pre-authentication resource exposure separately. If spooling is forbidden, review gateway ingress bounds before disabling request buffering.
+- **Identity:** preserve `Authorization` or `x-api-key`, Messages version/beta headers and session carriers. Do not insert a shared key or accept a forwarded Agent identity. `underscores_in_headers on` preserves `session_id`; check the effective/default virtual-server settings when sharing listeners.
+- **Deadlines:** the read/write timeouts above bound gaps between operations, not whole-request duration. Coordinate them with Agent idle timeouts and the gateway's finite exchange deadline. Longer proxy timeouts cannot override an earlier client cancellation; do not disable cancellation or invent heartbeat content.
+- **Protocol versions:** the frontend may negotiate HTTP/2 or HTTP/3 independently of the HTTP/1.1 backend. Current Agent libraries must actually use them; an `Alt-Svc` advertisement or browser test is not evidence. Do not use replayable TLS early data for generation POSTs without a separately selected replay-safety contract.
+- **Reporting:** record only bounded protocol/encoding, status, size and timing fields, not credentials, bodies, session IDs or raw URLs. `$gzip_ratio`, `$request_length` and `$body_bytes_sent` help compare configurations but do not count all TLS/TCP overhead or retransmissions. Backend handoff is not final Agent receipt.
+
+Nginx references: [proxy controls](https://nginx.org/en/docs/http/ngx_http_proxy_module.html), [gzip](https://nginx.org/en/docs/http/ngx_http_gzip_module.html), [request limits and headers](https://nginx.org/en/docs/http/ngx_http_core_module.html). Run `nginx -t` against the actual deployment configuration and use the separate [proxy delivery gate](development.md#reverse-proxy-delivery-gate) before claiming client acceptance. That gate does not deploy Nginx or certify TLS, HTTP/2/3, radio loss or request compression.
 
 ## Send a request
 
