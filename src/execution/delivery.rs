@@ -149,6 +149,10 @@ impl ResponseDelivery {
     pub fn is_messages(&self) -> bool {
         self.client.protocol() == ClientProtocol::Messages
     }
+    /// Only Responses can deliver an upstream-reported failed response as such.
+    pub fn carries_failed_responses(&self) -> bool {
+        self.client.protocol() == ClientProtocol::Responses
+    }
     pub(crate) fn with_request(
         mut self,
         endpoint: &crate::topology::Endpoint,

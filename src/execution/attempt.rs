@@ -103,10 +103,6 @@ impl AttemptError {
             _ => None,
         }
     }
-    pub fn stream_failure(&self) -> Option<u16> {
-        self.source_failure()
-            .and_then(|e| e.status_hint.map(|h| h.get()))
-    }
 }
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum DeadlineReason {
@@ -544,6 +540,15 @@ impl Attempt {
                 crate::execution::attempt::DeliveryReason::UpstreamWasNotAStream,
             )),
         }
+    }
+    /// An upstream-reported failed Responses outcome, classified from its error.
+    pub(crate) fn reported_failure(
+        &self,
+    ) -> Option<crate::protocol::failure::SourceFailureEvidence> {
+        if !self.is_responses() {
+            return None;
+        }
+        crate::protocol::openai::terminal::failed_response(&self.response().ok()?.semantic)
     }
     pub fn cancel(&mut self) {
         self.reject();

@@ -56,8 +56,24 @@ impl ApiError {
     }
     /// A failed upstream reply, rendered as the class agents act on (roadmap Phase 2).
     pub fn failure(status: u16, body: &[u8], retry_after: Option<u64>) -> Self {
+        Self::classified(
+            status,
+            crate::provider::classify_failure(status, body),
+            retry_after,
+        )
+    }
+    /// An in-band stream failure the codec already classified from its envelope.
+    pub fn source_failure(source: crate::protocol::failure::SourceFailureEvidence) -> Option<Self> {
+        let status = source.status_hint?.get();
+        Some(Self::classified(status, source.kind, None))
+    }
+    fn classified(
+        status: u16,
+        kind: crate::provider::FailureKind,
+        retry_after: Option<u64>,
+    ) -> Self {
         use crate::provider::FailureKind;
-        let mut error = match crate::provider::classify_failure(status, body) {
+        let mut error = match kind {
             FailureKind::ContextOverflow => {
                 Self::new(StatusCode::BAD_REQUEST, "context_length_exceeded")
             }

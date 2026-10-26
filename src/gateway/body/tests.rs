@@ -468,6 +468,155 @@ async fn upstream_failures_reach_clients_as_agent_error_classes() {
     }
 }
 #[tokio::test]
+async fn chat_in_band_stream_errors_keep_their_agent_error_class() {
+    use axum::response::IntoResponse;
+    // Before publication the classified failure is the HTTP answer.
+    let gate = gateway(Limits::default());
+    let (tx, source, _, _) = upstream(200, "text/event-stream");
+    tx.send(Ok(Bytes::from_static(
+        br#"data: {"error":{"message":"quota 117","type":"insufficient_quota","param":null,"code":"insufficient_quota"}}
+
+"#,
+    )))
+    .await
+    .unwrap();
+    drop(tx);
+    let error = bounded(response(
+        &gate,
+        source,
+        true,
+        Instant::now() + Duration::from_secs(3),
+    ))
+    .await
+    .err()
+    .unwrap();
+    let rendered = error.into_response();
+    assert_eq!(rendered.status().as_u16(), 429);
+    let bytes = axum::body::to_bytes(rendered.into_body(), 4096)
+        .await
+        .unwrap();
+    let value: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(value["error"]["code"], "insufficient_quota");
+    assert!(!value.to_string().contains("117"));
+    // After publication an OpenRouter-style chunk error becomes a failure frame.
+    let gate = gateway(Limits::default());
+    let (tx, source, _, _) = upstream(200, "text/event-stream");
+    tx.send(Ok(frames()[..3].concat().into())).await.unwrap();
+    let response = bounded(response(
+        &gate,
+        source,
+        true,
+        Instant::now() + Duration::from_secs(3),
+    ))
+    .await
+    .unwrap();
+    tx.send(Ok(Bytes::from_static(
+        br#"data: {"id":"chunk","object":"chat.completion.chunk","created":1,"model":"private","error":{"code":429,"message":"limited 117"},"choices":[{"index":0,"delta":{"content":""},"finish_reason":"error"}]}
+
+"#,
+    )))
+    .await
+    .unwrap();
+    drop(tx);
+    let mut body = response.into_body().into_data_stream();
+    let mut seen = vec![];
+    while let Some(Ok(bytes)) = bounded(body.next()).await {
+        seen.extend_from_slice(&bytes);
+    }
+    let wire = String::from_utf8_lossy(&seen);
+    assert!(wire.contains("🧪"));
+    assert!(wire.contains(r#""code":"rate_limit_exceeded""#), "{wire}");
+    assert!(!wire.contains("117") && !wire.contains("[DONE]"));
+}
+#[tokio::test]
+async fn failed_responses_reach_chat_clients_as_classified_failures() {
+    use axum::response::IntoResponse;
+    async fn chat_over_responses(
+        gate: &crate::gateway::Gateway,
+        upstream: reqwest::Response,
+        stream: bool,
+    ) -> Result<Response, ApiError> {
+        // Test-owned codec pair: a Chat client over a Responses target.
+        let entry = gate.state.entries[&(family(Profile::Chat), "fixture-model".into())].clone();
+        let template = &entry.candidates[0];
+        let mut endpoint = template.endpoint.clone();
+        endpoint.protocol = crate::topology::ProtocolProfile::OpenAiResponses;
+        endpoint.representation = crate::protocol::openai::TargetCaps::full().into();
+        let candidate = Arc::new(BoundCandidate {
+            endpoint,
+            ..template.as_ref().clone()
+        });
+        let request = entry
+            .client
+            .decode_client_request(
+                serde_json::json!({"model":"fixture-model","stream":stream,
+                    "messages":[{"role":"user","content":"hello"}]})
+                .to_string()
+                .as_bytes(),
+            )
+            .unwrap();
+        respond(
+            entry,
+            candidate,
+            request,
+            upstream,
+            &gate.state.limits,
+            Instant::now() + Duration::from_secs(3),
+            gate.state.shutdown.clone(),
+            gate.state.permits.clone().acquire_owned().await.unwrap(),
+            super::Trace::new(gate.state.diagnostics.as_ref()),
+        )
+        .await
+    }
+    let mut failed = serde_json::json!({"id":"failed","object":"response","created_at":1,
+        "model":"fixture-model","status":"failed",
+        "error":{"code":"rate_limit_exceeded","message":"limited 117"},
+        "output":[{"id":"message","type":"message","role":"assistant","status":"incomplete",
+            "content":[{"type":"output_text","text":"partial 🧪","annotations":[],"logprobs":[]}]}]});
+    // Static: no Chat carrier for a failed response, so the class is the HTTP answer.
+    let gate = gateway(Limits::default());
+    let (tx, source, _, _) = upstream(200, "application/json");
+    tx.send(Ok(failed.to_string().into())).await.unwrap();
+    drop(tx);
+    let error = bounded(chat_over_responses(&gate, source, false))
+        .await
+        .err()
+        .unwrap();
+    let rendered = error.into_response();
+    assert_eq!(rendered.status().as_u16(), 429);
+    let bytes = axum::body::to_bytes(rendered.into_body(), 4096)
+        .await
+        .unwrap();
+    assert!(String::from_utf8_lossy(&bytes).contains(r#""code":"rate_limit_exceeded""#));
+    assert!(!String::from_utf8_lossy(&bytes).contains("117"));
+    // Streamed: published content stays, then the classified failure frame.
+    let error = failed["error"].take();
+    let mut events = responses_wire::response_events(failed);
+    let last = events.last_mut().unwrap();
+    last["type"] = serde_json::json!("response.failed");
+    last["response"]["error"] = error;
+    let wire: Vec<u8> = events
+        .iter()
+        .flat_map(|event| format!("data: {event}\n\n").into_bytes())
+        .collect();
+    let gate = gateway(Limits::default());
+    let (tx, source, _, _) = upstream(200, "text/event-stream");
+    tx.send(Ok(wire.into())).await.unwrap();
+    drop(tx);
+    let response = bounded(chat_over_responses(&gate, source, true))
+        .await
+        .unwrap();
+    let mut body = response.into_body().into_data_stream();
+    let mut seen = vec![];
+    while let Some(Ok(bytes)) = bounded(body.next()).await {
+        seen.extend_from_slice(&bytes);
+    }
+    let wire = String::from_utf8_lossy(&seen);
+    assert!(wire.contains("partial 🧪"), "{wire}");
+    assert!(wire.contains(r#""code":"rate_limit_exceeded""#), "{wire}");
+    assert!(!wire.contains("117") && !wire.contains("[DONE]"));
+}
+#[tokio::test]
 async fn messages_clients_get_anthropic_shapes_from_an_openai_target() {
     let gate = gateway(Limits::default());
     let entry =

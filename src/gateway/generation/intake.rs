@@ -45,6 +45,38 @@ async fn flush_pending(
 
     send_frames(lane, delivery, frames, trace).await
 }
+/// A classified upstream failure: it may fail over while unpublished; after
+/// publication it still reaches the client as the protocol's failure frame.
+async fn fail_classified(
+    lane: &Lane<'_>,
+    delivery: &mut ResponseDelivery,
+    stream: bool,
+    failure: ApiError,
+    trace: &mut Trace,
+) -> Result<(), ApiError> {
+    *lane.state.failure_head.lock().expect("upstream failure") = Some(failure);
+    let published = lane
+        .state
+        .published
+        .load(std::sync::atomic::Ordering::Acquire);
+    if stream && published {
+        flush_pending(lane, delivery, trace).await?;
+        let body = if delivery.is_messages() {
+            failure.messages_error().1
+        } else {
+            failure.body()
+        };
+        let frames = delivery.fail_stream(&body).map_err(|error| {
+            trace.projection_error(
+                crate::lowering::generation::ConversionBoundary::EventEncode,
+                &error,
+            );
+            failure
+        })?;
+        crate::gateway::body::send_error_frames(lane, frames, trace).await?;
+    }
+    Err(failure)
+}
 #[allow(clippy::too_many_arguments)]
 async fn produce(
     mut upstream: reqwest::Response,
@@ -135,36 +167,11 @@ async fn produce(
                 Err(error) => {
                     trace.decode_error(&error);
                     // An invalid or truncated upstream reply may fail over while unpublished.
-                    let Some(status) = error.stream_failure() else {
+                    let Some(failure) = error.source_failure().and_then(ApiError::source_failure)
+                    else {
                         return Err(ApiError::transport(crate::provider::ErrorClass::Upstream));
                     };
-                    let failure = ApiError::failure(status, b"", None);
-                    *lane.state.failure_head.lock().expect("upstream failure") = Some(failure);
-                    // After headers the class still reaches the client, as a failure frame.
-                    if stream
-                        && lane
-                            .state
-                            .published
-                            .load(std::sync::atomic::Ordering::Acquire)
-                    {
-                        flush_pending(lane, delivery, trace).await?;
-                        let body = if delivery.is_messages() {
-                            failure.messages_error().1
-                        } else {
-                            failure.body()
-                        };
-                        let frames = delivery.fail_stream(&body);
-
-                        let frames = frames.map_err(|error| {
-                            trace.projection_error(
-                                crate::lowering::generation::ConversionBoundary::EventEncode,
-                                &error,
-                            );
-                            failure
-                        })?;
-                        crate::gateway::body::send_error_frames(lane, frames, trace).await?;
-                    }
-                    return Err(failure);
+                    return fail_classified(lane, delivery, stream, failure, trace).await;
                 }
             };
             let evidence = attempt.take_evidence();
@@ -249,6 +256,15 @@ async fn produce(
         trace.decode_error(&error);
         ApiError::transport(crate::provider::ErrorClass::Upstream)
     })?;
+    // Chat and Messages have no failed-response carrier; an upstream-reported
+    // failure reaches them like an in-band stream error.
+    if !delivery.carries_failed_responses()
+        && let Some(failure) = attempt
+            .reported_failure()
+            .and_then(ApiError::source_failure)
+    {
+        return fail_classified(lane, delivery, stream, failure, trace).await;
+    }
     let evidence = attempt.take_evidence();
     // Stream reports were observed with their source-unit provenance. Re-reading
     // the materialized response after draining those deltas would lose that basis.

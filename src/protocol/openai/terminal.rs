@@ -167,6 +167,52 @@ pub(super) fn terminal_losses(
     }
     Ok(losses)
 }
+/// Classify an OpenAI-compatible error reported inside a successful reply. A
+/// numeric HTTP-like `code` (OpenRouter) wins, then a named code, then the type.
+pub(crate) fn reported_failure(
+    numeric: Option<u64>,
+    code: Option<&str>,
+    kind: Option<&str>,
+    message: Option<&str>,
+) -> crate::protocol::failure::SourceFailureEvidence {
+    use crate::protocol::failure::RecognitionBasis;
+    let named = |value: Option<&str>| match value? {
+        "invalid_request_error" | "context_length_exceeded" => Some(400),
+        "authentication_error" | "invalid_api_key" => Some(401),
+        "permission_error" | "permission_denied" => Some(403),
+        "not_found_error" | "model_not_found" => Some(404),
+        "rate_limit_exceeded" | "rate_limit_error" | "insufficient_quota" => Some(429),
+        "overloaded" | "server_is_overloaded" => Some(503),
+        _ => None,
+    };
+    let (status, basis) = match numeric.filter(|n| (400..600).contains(n)) {
+        Some(n) => (n as u16, RecognitionBasis::EnvelopeCode),
+        None => match (named(code), named(kind)) {
+            (Some(status), _) => (status, RecognitionBasis::EnvelopeCode),
+            (None, Some(status)) => (status, RecognitionBasis::EnvelopeType),
+            (None, None) => (500, RecognitionBasis::EnvelopeFields),
+        },
+    };
+    crate::protocol::failure::SourceFailureEvidence::envelope(status, basis, code, kind, message)
+}
+/// A failed Responses outcome classified as an upstream failure, for clients
+/// whose protocol has no failed-response carrier.
+pub fn failed_response(
+    response: &GenerationResponse,
+) -> Option<crate::protocol::failure::SourceFailureEvidence> {
+    if response.outcome() != Outcome::Failed {
+        return None;
+    }
+    let error = response.details().error.as_ref();
+    Some(reported_failure(
+        None,
+        error.and_then(|e| e.code.as_ref()).map(|c| c.as_str()),
+        error
+            .and_then(|e| e.original_type.as_ref())
+            .map(|t| t.as_str()),
+        error.map(|e| e.message.as_str()),
+    ))
+}
 pub(super) fn encode_error(error: Option<&ResponseError>) -> Value {
     error
         .map(|e| {

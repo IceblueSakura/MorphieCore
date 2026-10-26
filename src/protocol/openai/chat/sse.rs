@@ -130,6 +130,18 @@ impl ChatSseDecoder {
                 self.limits.max_obfuscation_bytes,
             )?;
         }
+        // OpenAI-compatible servers report in-band failures as an `error` object,
+        // with or without chunk identity fields; it is never chunk content.
+        if let Some(error) = object.get("error").filter(|error| !error.is_null()) {
+            let field = |name| error.get(name).and_then(serde_json::Value::as_str);
+            let evidence = crate::protocol::openai::terminal::reported_failure(
+                error.get("code").and_then(serde_json::Value::as_u64),
+                field("code"),
+                field("type"),
+                field("message").or(error.as_str()),
+            );
+            return Err(CodecError::StreamFailure(evidence).into());
+        }
         chat_envelope::headers(&payload, "chat.completion.chunk")?;
         Ok(self.codec.push(&payload)?)
     }

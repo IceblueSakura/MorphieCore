@@ -29,7 +29,7 @@ mod service;
 mod settings;
 pub mod speech;
 mod strict_schema;
-mod terminal;
+pub(crate) mod terminal;
 #[cfg(test)]
 mod tool_results_test;
 pub mod transcription;

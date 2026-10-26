@@ -1312,6 +1312,8 @@ After publication:
 
 A Responses stream with context overflow or exhausted quota can return HTTP 200 with a standard `error` event even before normal output. Gateway-classified failures use this event's open code field, not the closed model-reported `response.error.code` enumeration. After publication the error follows the existing sequence; before publication it is the only event with sequence zero. It never manufactures opening/failure Response reports or successful termination. The former Codex-specific `response.failed` shape is superseded; Codex acceptance remains unscheduled.
 
+Upstream-reported failures are classified at their codec from the source envelope: Messages `error` events, Google error chunks, OpenAI-compatible Chat `{"error": …}` frames (a numeric HTTP-like `code` wins, then named codes/types) and failed Responses outcomes. Responses clients keep the native failed Response or `error` event. Chat and Messages have no failed-response carrier, so a failed Responses outcome reaches them as the same classified failure: an HTTP error before publication, otherwise the protocol failure frame.
+
 Upstream streaming and client delivery are independent. JSON clients receive a bounded aggregate; SSE clients receive incremental output. A native stop event is not transport EOF.
 
 Bodies, frames, event counts and deadlines are bounded. Client disconnect, timeout or shutdown cancels upstream work. Held-stream keep-alives remain [deferred](roadmap.md#only-if-needed).
