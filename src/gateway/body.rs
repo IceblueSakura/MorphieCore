@@ -405,14 +405,26 @@ pub(super) async fn respond_producer(
     let worker = tokio::spawn(async move {
         trace.outcome(Outcome::Interrupted);
         let _permit = permit;
+        use crate::execution::{
+            AttemptError,
+            attempt::{DeadlineReason, DeliveryReason},
+        };
         let result = tokio::select! {
             biased;
-            _=shutdown.cancelled()=>Err(ApiError::shutdown()),
-            _=tx.closed()=>{trace.report.failure(None,&crate::execution::AttemptError::Delivery(crate::execution::attempt::DeliveryReason::BodyConsumerClosed));Err(ApiError::upstream())},
-            result=producer.produce(&limits,deadline,&tx,&worker_state,&mut trace)=>result,
+            _ = shutdown.cancelled() => Err(ApiError::shutdown()),
+            _ = tx.closed() => {
+                let closed = AttemptError::Delivery(DeliveryReason::BodyConsumerClosed);
+                trace.report.failure(None, &closed);
+                Err(ApiError::upstream())
+            }
+            result = producer.produce(&limits, deadline, &tx, &worker_state, &mut trace) => result,
             // Generation's own attempt deadline must record upstream evidence
             // before the outer safety deadline cancels its recovery lease.
-            _=tokio::time::sleep_until(deadline)=>{trace.report.failure(None,&crate::execution::AttemptError::Deadline(crate::execution::attempt::DeadlineReason::Exchange));Err(ApiError::timeout())},
+            _ = tokio::time::sleep_until(deadline) => {
+                let elapsed = AttemptError::Deadline(DeadlineReason::Exchange);
+                trace.report.failure(None, &elapsed);
+                Err(ApiError::timeout())
+            }
         };
         match result {
             Ok(()) => {

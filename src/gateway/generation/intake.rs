@@ -4,6 +4,7 @@ use crate::gateway::{
     body::{Lane, send_frames},
     diagnostics::{Stage, Trace},
 };
+use crate::lowering::generation::ConversionBoundary;
 use crate::protocol::failure::{Observation, SourceFailureEvidence};
 use crate::{
     adapter::Request,
@@ -31,18 +32,36 @@ fn lifecycle_only(event: &crate::semantic::task::generation::StreamEvent) -> boo
         _ => false,
     }
 }
+/// Record a failed delivery projection at `boundary`; the client sees an upstream error.
+fn projection_failed(
+    trace: &mut Trace,
+    boundary: ConversionBoundary,
+) -> impl FnOnce(crate::execution::AttemptError) -> ApiError + '_ {
+    move |error| {
+        trace.projection_error(boundary, &error);
+        ApiError::upstream()
+    }
+}
+/// Publish lifecycle frames held while another candidate could still answer.
+async fn release_held(
+    held: &mut Option<Vec<crate::execution::report::EncodedBatch>>,
+    lane: &Lane<'_>,
+    delivery: &mut ResponseDelivery,
+    trace: &mut Trace,
+) -> Result<(), ApiError> {
+    for batch in held.take().into_iter().flatten() {
+        send_frames(lane, delivery, batch, trace).await?;
+    }
+    Ok(())
+}
 async fn flush_pending(
     lane: &Lane<'_>,
     delivery: &mut ResponseDelivery,
     trace: &mut Trace,
 ) -> Result<(), ApiError> {
-    let frames = delivery.flush_pending().map_err(|error| {
-        trace.projection_error(
-            crate::lowering::generation::ConversionBoundary::EventEncode,
-            &error,
-        );
-        ApiError::upstream()
-    })?;
+    let frames = delivery
+        .flush_pending()
+        .map_err(projection_failed(trace, ConversionBoundary::EventEncode))?;
 
     send_frames(lane, delivery, frames, trace).await
 }
@@ -68,10 +87,7 @@ async fn fail_classified(
             failure.body()
         };
         let frames = delivery.fail_stream(&body).map_err(|error| {
-            trace.projection_error(
-                crate::lowering::generation::ConversionBoundary::EventEncode,
-                &error,
-            );
+            trace.projection_error(ConversionBoundary::EventEncode, &error);
             failure
         })?;
         crate::gateway::body::send_error_frames(lane, frames, trace).await?;
@@ -116,9 +132,7 @@ async fn produce(
         let chunk = tokio::select! {
             biased;
             _ = tokio::time::sleep_until(started + HOLD_TIME), if held.is_some() => {
-                if let Some(buffer) = held.take() {
-                    for batch in buffer {send_frames(lane, delivery, batch, trace).await?;}
-                }
+                release_held(&mut held, lane, delivery, trace).await?;
                 continue;
             }
             _ = async {
@@ -200,25 +214,15 @@ async fn produce(
                 }
                 let batches = delivery.queue_events(attempt, &events, std::time::Instant::now());
 
-                let batches = batches.map_err(|error| {
-                    trace.projection_error(
-                        crate::lowering::generation::ConversionBoundary::EventProject,
-                        &error,
-                    );
-                    ApiError::upstream()
-                })?;
+                let batches =
+                    batches.map_err(projection_failed(trace, ConversionBoundary::EventProject))?;
                 // Handoff each drained run before encoding a following barrier:
                 // a later target error must not erase validated pending content.
                 for batch in batches {
                     let frames = delivery.encode_prepared(batch);
 
-                    let frames = frames.map_err(|error| {
-                        trace.projection_error(
-                            crate::lowering::generation::ConversionBoundary::EventEncode,
-                            &error,
-                        );
-                        ApiError::upstream()
-                    })?;
+                    let frames = frames
+                        .map_err(projection_failed(trace, ConversionBoundary::EventEncode))?;
                     if frames.is_empty() {
                         continue;
                     }
@@ -234,11 +238,7 @@ async fn produce(
                     {
                         buffer.push(frames);
                     } else {
-                        if let Some(buffer) = held.take() {
-                            for batch in buffer {
-                                send_frames(lane, delivery, batch, trace).await?;
-                            }
-                        }
+                        release_held(&mut held, lane, delivery, trace).await?;
                         send_frames(lane, delivery, frames, trace).await?;
                     }
                 }
@@ -279,20 +279,7 @@ async fn produce(
         .accept(crate::execution::report::View::SourceIntake, evidence);
     trace.report.update(|a| {
         a.source_eof = true;
-        a.task_outcome = attempt.response().ok().map(|r| match r.semantic.outcome() {
-            crate::semantic::task::generation::Outcome::Completed => {
-                crate::execution::report::TaskOutcome::Completed
-            }
-            crate::semantic::task::generation::Outcome::Incomplete => {
-                crate::execution::report::TaskOutcome::Incomplete
-            }
-            crate::semantic::task::generation::Outcome::Failed => {
-                crate::execution::report::TaskOutcome::Failed
-            }
-            crate::semantic::task::generation::Outcome::Cancelled => {
-                crate::execution::report::TaskOutcome::Cancelled
-            }
-        });
+        a.task_outcome = attempt.response().ok().map(|r| r.semantic.outcome().into());
     });
     trace.reported_settings(
         attempt
@@ -306,13 +293,7 @@ async fn produce(
     let (frames, json_snapshot) = if stream {
         let frames = delivery.finish_stream(attempt);
 
-        let frames = frames.map_err(|error| {
-            trace.projection_error(
-                crate::lowering::generation::ConversionBoundary::EventEncode,
-                &error,
-            );
-            ApiError::upstream()
-        })?;
+        let frames = frames.map_err(projection_failed(trace, ConversionBoundary::EventEncode))?;
         (frames, None)
     } else {
         if let Some(usage) = attempt.response().ok().and_then(|r| r.semantic.usage()) {
@@ -320,24 +301,15 @@ async fn produce(
         }
         let snapshot = delivery.encode_json_snapshot(attempt);
 
-        let (response, batch) = snapshot.map_err(|error| {
-            trace.projection_error(
-                crate::lowering::generation::ConversionBoundary::ResponseEncode,
-                &error,
-            );
-            ApiError::upstream()
-        })?;
+        let (response, batch) =
+            snapshot.map_err(projection_failed(trace, ConversionBoundary::ResponseEncode))?;
         let snapshot = history
             .filter(|h| h.input.is_some())
             .map(|_| (response, batch.frames()[0].clone()));
         (batch, snapshot)
     };
 
-    if let Some(buffer) = held.take() {
-        for batch in buffer {
-            send_frames(lane, delivery, batch, trace).await?;
-        }
-    }
+    release_held(&mut held, lane, delivery, trace).await?;
     let reservation = if let Some(history) = history.filter(|h| h.input.is_some()) {
         let (response, body) = match json_snapshot {
             Some(snapshot) => snapshot,

@@ -155,6 +155,17 @@ pub enum TaskOutcome {
     Failed,
     Cancelled,
 }
+impl From<crate::semantic::task::generation::Outcome> for TaskOutcome {
+    fn from(outcome: crate::semantic::task::generation::Outcome) -> Self {
+        use crate::semantic::task::generation::Outcome;
+        match outcome {
+            Outcome::Completed => Self::Completed,
+            Outcome::Incomplete => Self::Incomplete,
+            Outcome::Failed => Self::Failed,
+            Outcome::Cancelled => Self::Cancelled,
+        }
+    }
+}
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct AttemptReport {
     pub ordinal: usize,

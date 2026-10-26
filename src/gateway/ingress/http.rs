@@ -175,6 +175,75 @@ async fn messages(State(state): State<Arc<Runtime>>, request: Request) -> Respon
         .await
         .unwrap_or_else(ApiError::into_messages_response)
 }
+/// A request admitted before any upstream I/O.
+struct Admitted {
+    permit: tokio::sync::OwnedSemaphorePermit,
+    conversation: crate::semantic::context::ConversationContext,
+    entry: Arc<crate::gateway::BoundEntry>,
+    request: crate::adapter::Request,
+    history: Option<Box<crate::gateway::generation::history::Pending>>,
+}
+/// Bounded admission: concurrency, headers, body, then codec and task checks.
+async fn admit(
+    state: &Runtime,
+    protocol: ClientProtocol,
+    request: Request,
+    trace: &mut Trace,
+) -> Result<Admitted, ApiError> {
+    let permit = admission::acquire_permit(state)?;
+    admission::headers(request.headers(), state.limits.request_bytes)?;
+    if protocol == ClientProtocol::Messages {
+        admission::messages_version(request.headers())?;
+    }
+    let conversation = admission::conversation(request.headers())?;
+    let bytes = read_body(state, request.into_body(), trace).await?;
+    let (entry, request, history) = match protocol {
+        ClientProtocol::Responses => {
+            let (entry, request, history) =
+                admission::prepare_responses(state, &bytes, &trace.report)?;
+            (entry, request, Some(Box::new(history)))
+        }
+        protocol => {
+            let (entry, request) = admission::prepare(state, protocol, &bytes, &trace.report)?;
+            (entry, request, None)
+        }
+    };
+    Ok(Admitted {
+        permit,
+        conversation,
+        entry,
+        request,
+        history,
+    })
+}
+/// Collect the bounded body unless shutdown or the body deadline comes first.
+async fn read_body(
+    state: &Runtime,
+    body: axum::body::Body,
+    trace: &mut Trace,
+) -> Result<Vec<u8>, ApiError> {
+    use crate::gateway::diagnostics::Outcome;
+    let collect = admission::collect(body, state.limits.request_bytes);
+    tokio::select! {
+        biased;
+        _ = state.shutdown.cancelled() => {
+            trace.outcome(Outcome::Shutdown);
+            Err(ApiError::shutdown())
+        }
+        result = tokio::time::timeout(state.limits.body_timeout, collect) => {
+            result.map_err(|_| {
+                trace.report.failure(
+                    None,
+                    &crate::execution::AttemptError::Deadline(
+                        crate::execution::attempt::DeadlineReason::RequestBody,
+                    ),
+                );
+                trace.outcome(Outcome::Timeout);
+                ApiError::new(StatusCode::REQUEST_TIMEOUT, "request_timeout")
+            })?
+        }
+    }
+}
 pub(in crate::gateway) async fn handle(
     state: Arc<Runtime>,
     protocol: ClientProtocol,
@@ -182,31 +251,13 @@ pub(in crate::gateway) async fn handle(
 ) -> Result<Response, ApiError> {
     let mut trace = Trace::for_request(state.diagnostics.as_ref(), &request);
     trace.generation();
-    let admission:Result<_,ApiError>=async {
-    let permit = admission::acquire_permit(&state)?;
-    admission::headers(request.headers(), state.limits.request_bytes)?;
-    if protocol == ClientProtocol::Messages {
-        admission::messages_version(request.headers())?;
-    }
-    let conversation = admission::conversation(request.headers())?;
-    let bytes = tokio::select! {
-        biased;
-        _=state.shutdown.cancelled()=>{trace.outcome(crate::gateway::diagnostics::Outcome::Shutdown);return Err(ApiError::shutdown());},
-        result=tokio::time::timeout(state.limits.body_timeout,admission::collect(request.into_body(),state.limits.request_bytes))=>result.map_err(|_|{trace.report.failure(None,&crate::execution::AttemptError::Deadline(crate::execution::attempt::DeadlineReason::RequestBody));trace.outcome(crate::gateway::diagnostics::Outcome::Timeout);ApiError::new(StatusCode::REQUEST_TIMEOUT,"request_timeout")})??,
-    };
-    let (entry, semantic, history) = match protocol {
-        ClientProtocol::Responses => {
-            let (entry, request, history) = admission::prepare_responses(&state, &bytes,&trace.report)?;
-            (entry, request, Some(Box::new(history)))
-        }
-        protocol => {
-            let (entry, request) = admission::prepare(&state, protocol, &bytes,&trace.report)?;
-            (entry, request, None)
-        }
-    };
-        Ok((permit,conversation,entry,semantic,history))
-    }.await;
-    let (permit, conversation, entry, mut semantic, history) = match admission {
+    let Admitted {
+        permit,
+        conversation,
+        entry,
+        request: mut semantic,
+        history,
+    } = match admit(&state, protocol, request, &mut trace).await {
         Ok(admitted) => admitted,
         Err(error) => {
             trace

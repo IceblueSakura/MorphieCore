@@ -1,6 +1,7 @@
 //! Authenticated, bounded body collection and public-task admission before I/O.
 use crate::adapter::{ClientProtocol, Request};
 use crate::gateway::{ApiError, BoundEntry, Runtime};
+use crate::lowering::generation::ConversionBoundary;
 use axum::{
     body::Body,
     http::{HeaderMap, StatusCode},
@@ -150,20 +151,8 @@ pub(in crate::gateway) fn prepare_responses(
     ApiError,
 > {
     use crate::{gateway::generation::history::Pending, protocol::openai::responses::managed};
-    let value = crate::protocol::json::decode(bytes).map_err(|error| {
-        report.failure(
-            Some(crate::lowering::generation::ConversionBoundary::RequestDecode),
-            &crate::execution::AttemptError::Codec(error),
-        );
-        ApiError::invalid()
-    })?;
-    let options = managed::Options::read(&value).map_err(|error| {
-        report.failure(
-            Some(crate::lowering::generation::ConversionBoundary::RequestDecode),
-            &crate::execution::AttemptError::Codec(error),
-        );
-        ApiError::invalid()
-    })?;
+    let value = crate::protocol::json::decode(bytes).map_err(invalid_request(report))?;
+    let options = managed::Options::read(&value).map_err(invalid_request(report))?;
     let previous = options
         .previous
         .as_ref()
@@ -195,13 +184,7 @@ fn prepare_in(
 ) -> Result<(Arc<BoundEntry>, Request), ApiError> {
     // Only envelope identity is inspected here; semantic interpretation starts
     // after resolving the trusted Public Model/task. Duplicate keys remain errors.
-    let value = crate::protocol::json::decode(bytes).map_err(|error| {
-        report.failure(
-            Some(crate::lowering::generation::ConversionBoundary::RequestDecode),
-            &crate::execution::AttemptError::Codec(error),
-        );
-        ApiError::invalid()
-    })?;
+    let value = crate::protocol::json::decode(bytes).map_err(invalid_request(report))?;
     let model = value
         .get("model")
         .and_then(serde_json::Value::as_str)
@@ -214,29 +197,26 @@ fn prepare_in(
     if value.get("session_id").is_some() {
         return Err(ApiError::invalid());
     }
-    let mut request = decode(&entry).map_err(|error| {
-        report.failure(
-            Some(crate::lowering::generation::ConversionBoundary::RequestDecode),
-            &crate::execution::AttemptError::Codec(error),
-        );
-        ApiError::invalid()
-    })?;
-    crate::execution::replay::open_from_client(&mut request).map_err(|error| {
-        report.failure(
-            Some(crate::lowering::generation::ConversionBoundary::RequestDecode),
-            &crate::execution::AttemptError::Codec(error),
-        );
-        ApiError::invalid()
-    })?;
+    let mut request = decode(&entry).map_err(invalid_request(report))?;
+    crate::execution::replay::open_from_client(&mut request).map_err(invalid_request(report))?;
     // Decode/replay validation is one checked intake unit. Later public
     // admission cannot erase it or assign it to a candidate attempt.
     report.intake(std::mem::take(&mut request.task.evidence));
     crate::execution::admit(&entry.public, &request).map_err(|error| {
-        report.failure(
-            Some(crate::lowering::generation::ConversionBoundary::RequestProject),
-            &error,
-        );
+        report.failure(Some(ConversionBoundary::RequestProject), &error);
         ApiError::invalid()
     })?;
     Ok((entry, request))
+}
+/// Record an undecodable request and answer with the generic invalid-request error.
+fn invalid_request(
+    report: &crate::execution::report::Report,
+) -> impl Fn(crate::protocol::CodecError) -> ApiError + '_ {
+    |error| {
+        report.failure(
+            Some(ConversionBoundary::RequestDecode),
+            &crate::execution::AttemptError::Codec(error),
+        );
+        ApiError::invalid()
+    }
 }
