@@ -673,7 +673,7 @@ fn codex_history_reaches_the_native_binding_by_named_rules() {
 
 #[test]
 fn configured_failover_orders_and_limits_a_models_providers() {
-    let directory = crate::credential::tests::support::private_directory();
+    let directory = crate::test_files::private_directory();
     let store = directory.path().join("credentials");
     let manager = crate::credential::CredentialManager::new(&store, vec![]).unwrap();
     manager

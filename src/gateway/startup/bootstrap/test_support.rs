@@ -83,7 +83,7 @@ impl Fixture {
         models: serde_json::Value,
         credentials: &[(&str, &str, &str)],
     ) -> Result<Self, StartupError> {
-        let directory = crate::credential::tests::support::private_directory();
+        let directory = crate::test_files::private_directory();
         let manager =
             crate::credential::CredentialManager::new(directory.path().join("credentials"), vec![])
                 .unwrap();

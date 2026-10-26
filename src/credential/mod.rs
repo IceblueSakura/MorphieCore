@@ -4,7 +4,7 @@ pub mod drivers;
 mod oauth;
 mod storage;
 #[cfg(test)]
-pub(crate) mod tests;
+mod tests;
 pub use api_key::{ApiKeyAccess, ApiKeyState, ApiKeyStatus};
 mod access;
 pub use access::{AccessBinding, AccessGrant};

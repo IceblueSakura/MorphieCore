@@ -983,7 +983,7 @@ fn entries_cannot_escape_compiled_route_or_credential_ownership() {
     );
     // Bind the entire authorized pool even when both runtime ceilings are
     // smaller. The expanded-entry bound, not a pool validator, rejects #65.
-    let directory = crate::credential::tests::support::private_directory();
+    let directory = crate::test_files::private_directory();
     let manager = crate::credential::CredentialManager::new(directory.path(), vec![]).unwrap();
     let mut members = Vec::new();
     for index in 0..64 {

@@ -84,7 +84,7 @@ impl CredentialManager {
     }
 }
 
-pub(crate) use crate::test_files::{Directory, private_directory};
+pub(in crate::credential) use crate::test_files::Directory;
 
 pub(in crate::credential) fn read_account(
     root: &std::path::Path,

@@ -32,7 +32,7 @@ async fn same_provider_fallback_is_ordered_bounded_and_never_crosses_publication
         // Only lifecycle frames before the cut: held, so the next key answers.
         (200, true, true, 2, vec!["first", "second"], 200),
     ] {
-        let dir = crate::credential::tests::support::private_directory();
+        let dir = crate::test_files::private_directory();
         let manager = CredentialManager::new(dir.path(), vec![]).unwrap();
         for alias in ["first", "second", "third"] {
             manager

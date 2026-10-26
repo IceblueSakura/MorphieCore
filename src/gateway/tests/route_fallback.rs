@@ -122,7 +122,7 @@ async fn ordered_route_only_falls_back_before_visible_delivery() {
         let mut providers = vec![];
         let mut endpoints = vec![];
         let mut credentials = Credentials::new();
-        let directory = crate::credential::tests::support::private_directory();
+        let directory = crate::test_files::private_directory();
         let manager = crate::credential::CredentialManager::new(directory.path(), vec![]).unwrap();
         for id in ["a", "b"] {
             let provider = ProviderDefinition {
