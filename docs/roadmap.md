@@ -34,6 +34,7 @@ This page owns current scope, priorities, dependencies and exit gates. Start wit
 - [Pending decisions](#pending-decisions)
   - [Ownership and projection decisions](#ownership-and-projection-decisions)
   - [Scheduling and product decisions](#scheduling-and-product-decisions)
+  - [Structure and boundary decisions](#structure-and-boundary-decisions)
 - [Deferred work](#deferred-work)
   - [Deferred Generation semantics](#deferred-generation-semantics)
   - [Deferred cache prewarming](#deferred-cache-prewarming)
@@ -515,6 +516,18 @@ Minimal counterexamples and pinned sources are in [Generation contract boundarie
 | Server-side compaction | Stage-5 backlog, unscheduled. Keep the explicit `/responses/compact` operation separate from automatic triggers and existing compaction-item replay | Compaction execution, not existing replay or stages 1–4 |
 | Batch | Stage-5 backlog, unscheduled. Select native job execution, durable acceptance/reconciliation and supported task/resource dependencies | Batch API and execution |
 | Realtime | Stage-5 backlog, unscheduled. Choose a client scenario and official contract before deciding session ownership, transport, interruption and recovery | Realtime |
+
+### Structure and boundary decisions
+
+Raised by the 2026-10-26 code-quality review. The behavior-neutral consolidations from that review are implemented; each item below either changes observable behavior or revises an accepted ownership boundary, so it needs a user selection. Each selection is an independent slice with the full offline baseline and, where the boundary is connected, the SDK gate.
+
+| Question | Current state | Recommendation and exit condition |
+|---|---|---|
+| Standalone task exchange pipeline | Images, Speech, Transcription and Embeddings each reimplement admission, bounded receive and encoding (`gateway/tasks/*`, about 450 duplicated lines) and have diverged: only Embeddings keeps `Retry-After` on upstream failures and captures exchanges; Images skips Content-Length checks; Images, Speech and Transcription encode the request twice | Share one task exchange owner and align all tasks to the Embeddings behavior (prepare once, authorize after credential resolution, classified failures with `Retry-After`, capture). Exit: focused per-task assertions for each aligned behavior; frozen-scope maintenance only, no new operations |
+| Evidence vocabulary location | `lowering::generation` holds conversion evidence, boundaries and representation errors that `protocol` depends on (209 references), while top-level `lowering` also dispatches over every protocol. This revises the accepted [domain evidence interface](architecture.md#domain-evidence-interface) owner | Move the vocabulary to `protocol::evidence` and leave `lowering` for cross-protocol dispatch. Exit: no `protocol → lowering` dependency; Architecture layer table updated |
+| OpenAI target naming and upward dependencies | Candidate-local OpenAI encoding lives in `openai/adapter` plus `openai/target.rs` and `openai/lowering/`, while Anthropic and Google use `*/target.rs`; 11 protocol files import `crate::adapter` | Fold into `openai/target/` with the same role names as other vendors and remove `protocol → adapter` imports. Exit: pure move, no behavior change, ownership table updated |
+| Protocol spelling in semantic context | `semantic/context.rs` derives OpenAI wire spelling (`prompt_cache_key`, `"24h"`, `"30m"`) and `protocol/openai/context.rs` reuses those semantic types as wire DTOs, contrary to codec-owned spelling | Move serde spelling into OpenAI codec DTOs with explicit wire→IR/IR→wire mapping. Exit: independent directional assertions for the moved fields; semantic types carry no serde wire names |
+| Small behavior inconsistencies | (a) OpenAI image/input-audio media types are capped at 64 bytes while other resources use `MAX_RESOURCE_MEDIA_TYPE_BYTES` (256). (b) generateContent stream errors honor only numeric `code`; Interactions maps string gRPC statuses. (c) Static Chat accepts `finish_reason: "tool_calls"` without calls; Chat SSE requires calls | (a) Use the shared 256-byte bound. (b) Share one Google failure table for both APIs. (c) Share one Chat finish-reason decoder and require calls in both directions. Exit: one owner per rule with focused negative cases |
 
 ## Deferred work
 
