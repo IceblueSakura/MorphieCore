@@ -62,13 +62,14 @@ pub(in crate::protocol::openai) fn decode_whole(
     side: MessageSide,
 ) -> Result<(), CodecError> {
     let message = crate::protocol::openai::chat::reasoning::decode_static(b, m, adaptation)?;
-    decode_message(b, &message, side)
+    decode_message(b, &message, side, adaptation.rules.chat_video_url)
 }
 
 fn decode_message(
     b: &mut Items,
     m: &Map<String, Value>,
     side: MessageSide,
+    video: bool,
 ) -> Result<(), CodecError> {
     let replay = side == MessageSide::History;
     let direction = b.direction;
@@ -92,7 +93,7 @@ fn decode_message(
         return Err(CodecError::Unsupported(CarrierReason::Unavailable));
     }
     if role != "assistant"
-        && ["audio", "annotations", "refusal", "tool_calls"]
+        && ["audio", "refusal", "tool_calls"]
             .iter()
             .any(|key| m.get(*key).is_some_and(|v| !v.is_null()))
     {
@@ -108,8 +109,6 @@ fn decode_message(
             "tool_calls",
             "refusal",
             "reasoning_content",
-            "parsed",
-            "annotations",
             "audio",
         ],
         "assistant" => &[
@@ -146,10 +145,6 @@ fn decode_message(
     } else {
         None
     };
-    if replay && role != "assistant" && m.contains_key("parsed") {
-        // The pinned SDK attaches its parsed view to assistant messages only.
-        return Err(CodecError::invalid());
-    }
     // Readable provider thinking text on an assistant message maps to a
     // reasoning item ordered immediately ahead of its carrier message. Absent,
     // null and empty carry no reasoning; anything else must be a string.
@@ -268,16 +263,6 @@ fn decode_message(
             if m.contains_key("tool_call_id") || (role == "user" && m.contains_key("tool_calls")) {
                 return Err(CodecError::invalid());
             }
-            if replay {
-                crate::protocol::openai::shape::admit_parsed(
-                    "parsed",
-                    m.get("parsed"),
-                    match m.get("content") {
-                        Some(Value::String(s)) => Some(s.as_str()),
-                        _ => None,
-                    },
-                )?;
-            }
             let calls = m
                 .get("tool_calls")
                 .filter(|v| !v.is_null())
@@ -329,7 +314,7 @@ fn decode_message(
                                     )?,
                                 )?),
                             }),
-                            "video_url" => parts.push(Part {
+                            "video_url" if video => parts.push(Part {
                                 replay: None,
                                 cache: None,
                                 id: b.part_id()?,
@@ -407,11 +392,13 @@ fn decode_message(
                     return Err(CodecError::Unsupported(CarrierReason::Unavailable));
                 }
             };
-            crate::protocol::openai::chat::annotations::attach(
-                &mut parts,
-                m.get("annotations"),
-                b,
-            )?;
+            if !replay {
+                crate::protocol::openai::chat::annotations::attach(
+                    &mut parts,
+                    m.get("annotations"),
+                    b,
+                )?;
+            }
             if let Some(audio) = m.get("audio").filter(|v| !v.is_null()) {
                 if parts
                     .iter()
@@ -590,7 +577,7 @@ pub(in crate::protocol::openai) fn encode_items_with(
                     [part] => match &part.content {
                         ContentPart::Text(t) => {
                             message["content"] = json!(t.as_str());
-                            if !t.annotations().is_empty() {
+                            if response && !t.annotations().is_empty() {
                                 message["annotations"] =
                                     crate::protocol::openai::chat::annotations::write(
                                         t.annotations(),

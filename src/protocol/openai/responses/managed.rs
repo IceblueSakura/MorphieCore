@@ -574,7 +574,7 @@ mod tests {
             let parts = vec![json!({"type":"output_text","text":"","annotations":[]}); count];
             let request = adapter
                 .decode_client_request(
-                    json!({"model":"m","input":[{"role":"assistant","content":parts}]})
+                    json!({"model":"m","input":[{"id":"msg_1","type":"message","status":"completed","role":"assistant","content":parts}]})
                         .to_string()
                         .as_bytes(),
                 )
@@ -669,7 +669,7 @@ mod tests {
                 {"type":"message","role":"user","content":[{"type":"input_text","text":"first"}]},
                 {"id":"reason1","type":"reasoning","summary":[{"type":"summary_text","text":"summary"}],
                     "content":[{"type":"reasoning_text","text":"readable"}],"encrypted_content":"opaque-final"},
-                {"id":"comment","type":"message","role":"assistant","phase":"commentary",
+                {"id":"comment","type":"message","role":"assistant","status":"completed","phase":"commentary",
                     "content":[{"type":"output_text","text":"checking","annotations":[]}]},
                 {"id":"call-item","type":"function_call","call_id":"c","name":"lookup","arguments":"{\"n\":9007199254740993}"},
                 {"type":"function_call_output","call_id":"c","output":"done"}
@@ -724,7 +724,7 @@ mod tests {
             .to_string().as_bytes()).unwrap();
             let mut twice = expected_input.as_array().unwrap().clone();
             twice.extend([
-            json!({"id":"final","type":"message","role":"assistant","phase":"final_answer",
+            json!({"id":"final","type":"message","role":"assistant","status":"completed","phase":"final_answer",
                 "content":[{"type":"output_text","text":"answer","annotations":[]}]}),
             json!({"type":"message","role":"user","content":[{"type":"input_text","text":"again"}]})
         ]);

@@ -695,7 +695,7 @@ fn unrepresentable_sources_and_uncalibrated_options_fail_without_losing_filename
     );
     use morphiecore::protocol::openai::{Dialect, GenerationApi as Client, GenerationCodec};
     let endpoint = catalog::MESSAGES_BINDINGS[0].endpoint();
-    let chat = GenerationCodec::new(Client::Chat, Dialect::Standard, None);
+    let chat = GenerationCodec::new(Client::Chat, Dialect::ModelBest, None);
     let decode = |content: Value| {
         let mut request = chat
             .decode_client_request(

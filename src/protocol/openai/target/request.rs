@@ -482,6 +482,7 @@ impl GenerationCodec {
                             },
                             stream: request.delivery.stream.clone(),
                             stream_options: options,
+                            store: context.store,
                             cache: context.cache,
                             identity: context.identity,
                             metadata: context.metadata,

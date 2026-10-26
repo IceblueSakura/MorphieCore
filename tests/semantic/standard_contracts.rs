@@ -8,6 +8,8 @@ use morphiecore::{
     semantic::{task::generation::*, value::Text},
 };
 use serde_json::{Value, json};
+#[path = "standard_contracts/request_boundaries.rs"]
+mod request_boundaries;
 
 fn adapter(profile: GenerationApi) -> GenerationCodec {
     GenerationCodec::new(profile, Dialect::Standard, None)

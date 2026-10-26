@@ -43,9 +43,11 @@ with httpx.Client(trust_env=False, timeout=10) as http:
             {"role": "user", "content": "second input"}]
         first = client.messages.create(**shared, messages=history)
         assert first.stop_reason == "tool_use"
-        assert first.content[0].type == "tool_use"
-        assert first.content[0].id == "call_sdk"
-        assert first.content[0].input == {"n": 7}
+        assert first.content[0].type == "thinking"
+        assert first.content[0].signature.startswith("mc1.")
+        assert first.content[1].type == "tool_use"
+        assert first.content[1].id == "call_sdk"
+        assert first.content[1].input == {"n": 7}
         history += [
             {"role": "assistant", "content": [block.model_dump(exclude_none=True) for block in first.content]},
             {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "call_sdk",
@@ -117,7 +119,10 @@ with httpx.Client(trust_env=False, timeout=10) as http:
                 {"role": "user", "content": [
                     {"type": "tool_result", "tool_use_id": "call_cross", "content": "found"}]},
             ]
-            final = client.messages.create(**shared_cross, messages=messages)
-            assert final.stop_reason == "max_tokens"
-            assert final.content[0].text == "done"
-print(json.dumps({"requests": 9, "partial": True, "refusal_details": True, "unsigned_replay": True}))
+            try:
+                client.messages.create(**shared_cross, messages=messages)
+            except anthropic.BadRequestError as error:
+                assert error.status_code == 400
+            else:
+                raise AssertionError("unsigned thinking cannot become standard history")
+print(json.dumps({"requests": 9, "partial": True, "refusal_details": True, "unsigned_replay_rejected": True}))

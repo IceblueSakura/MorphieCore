@@ -11,8 +11,8 @@ use axum::{
 use morphiecore::{
     protocol::{
         openai::{
-            GenerationApi, TargetContract,
-            lowering::{lower_request, lower_response},
+            Dialect, GenerationApi, GenerationCodec, TargetContract,
+            lowering::lower_response,
             obfuscation::Obfuscation,
             responses::{
                 envelope,
@@ -89,14 +89,15 @@ async fn handle(State(state): State<Suite>, headers: HeaderMap, body: Bytes) -> 
     {
         return failure(StatusCode::UNAUTHORIZED, "local request boundary", &state);
     }
-    let mut decoded = match envelope::decode_request_bytes(&body) {
+    let codec = GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None);
+    let mut decoded = match codec.decode_client_request(&body) {
         Ok(decoded) => decoded,
         Err(error) => {
             eprintln!("synthetic SDK request rejected: {error}");
             return failure(StatusCode::BAD_REQUEST, "envelope decode", &state);
         }
     };
-    if decoded.context.model != "fixture-model"
+    if decoded.model != "fixture-model"
         || decoded.task.fidelity.bind_replay_origin(&origin()).is_err()
     {
         return failure(
@@ -105,15 +106,7 @@ async fn handle(State(state): State<Suite>, headers: HeaderMap, body: Bytes) -> 
             &state,
         );
     }
-    let Ok(target) = lower_request(
-        &decoded.task.semantic,
-        &decoded.task.fidelity,
-        GenerationApi::Responses,
-        contract(),
-    ) else {
-        return failure(StatusCode::BAD_REQUEST, "request lowering", &state);
-    };
-    let Ok(encoded) = envelope::encode_request(&target, &decoded.context) else {
+    let Ok(encoded) = codec.encode_request(&decoded, "fixture-model", &contract()) else {
         return failure(StatusCode::BAD_REQUEST, "request encoding", &state);
     };
     if encoded["store"] != false
@@ -207,7 +200,7 @@ async fn handle(State(state): State<Suite>, headers: HeaderMap, body: Bytes) -> 
         return failure(StatusCode::BAD_REQUEST, "parsed_arguments replay", &state);
     }
     let response = response_fixture(turn as u8, state.1);
-    if !decoded.context.delivery.streaming() {
+    if !decoded.delivery.streaming() {
         let Ok(mut decoded) =
             envelope::decode_response_bytes(&serde_json::to_vec(&response).unwrap())
         else {

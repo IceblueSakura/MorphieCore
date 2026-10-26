@@ -166,10 +166,6 @@ impl<'de> Visitor<'de> for Prefix {
         Ok(())
     }
 }
-/// Derived views use last-key-wins without changing raw or structured authority.
-pub(crate) fn parse_json_view(input: &[u8]) -> Result<Value, JsonError> {
-    parse(input, JsonLimits::ENVELOPE, false)
-}
 pub(crate) fn parse_image_response_json(input: &[u8]) -> Result<Value, JsonError> {
     parse(input, JsonLimits::IMAGE_RESPONSE, true)
 }

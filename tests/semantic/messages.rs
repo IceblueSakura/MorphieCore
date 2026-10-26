@@ -459,13 +459,13 @@ mod phase {
     }
 
     #[test]
-    fn commentary_text_never_carries_a_parsed_view() {
+    fn closed_wire_history_rejects_sdk_derived_views() {
         let item = |label: Value, parsed: Value| json!({"type":"message","id":"m","role":"assistant","status":"completed","content":[{"type":"output_text","text":"{\"ok\":true}","annotations":[],"parsed":parsed}],"phase":label});
-        // The pinned SDK never parses commentary text; contradictory dumps cannot replay.
+        // SDK convenience objects are not standard request fields, even when null.
         assert!(decode_input(json!([item(json!("commentary"), json!({"ok":true}))])).is_err());
-        assert!(decode_input(json!([item(json!("commentary"), Value::Null)])).is_ok());
-        assert!(decode_input(json!([item(json!("final_answer"), json!({"ok":true}))])).is_ok());
-        assert!(decode_input(json!([item(Value::Null, json!({"ok":true}))])).is_ok());
+        assert!(decode_input(json!([item(json!("commentary"), Value::Null)])).is_err());
+        assert!(decode_input(json!([item(json!("final_answer"), json!({"ok":true}))])).is_err());
+        assert!(decode_input(json!([item(Value::Null, json!({"ok":true}))])).is_err());
     }
 
     fn stream(label: Option<Value>, done_label: Option<Value>) -> Vec<Value> {

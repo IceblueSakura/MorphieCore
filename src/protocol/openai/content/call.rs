@@ -47,45 +47,23 @@ pub(in crate::protocol::openai) fn tool_call(
             }
             let f = object(o.get("function").ok_or(CodecError::invalid())?)?;
             reject_chat_orchestration(f)?;
-            direction.fields(
-                f,
-                if replay {
-                    &["name", "arguments", "parsed_arguments"]
-                } else {
-                    &["name", "arguments"]
-                },
-            )?;
+            direction.fields(f, &["name", "arguments"])?;
             (f, string(o, "id")?)
         }
         GenerationApi::Responses => {
             direction.fields(
                 o,
-                if replay {
-                    &[
-                        "id",
-                        "type",
-                        "call_id",
-                        "name",
-                        "arguments",
-                        "parsed_arguments",
-                        "status",
-                        "caller",
-                        "namespace",
-                        "async",
-                    ]
-                } else {
-                    &[
-                        "id",
-                        "type",
-                        "call_id",
-                        "name",
-                        "arguments",
-                        "status",
-                        "caller",
-                        "namespace",
-                        "async",
-                    ]
-                },
+                &[
+                    "id",
+                    "type",
+                    "call_id",
+                    "name",
+                    "arguments",
+                    "status",
+                    "caller",
+                    "namespace",
+                    "async",
+                ],
             )?;
             if let Some(status) = item_status {
                 accept_status(o, status)?;
@@ -93,17 +71,15 @@ pub(in crate::protocol::openai) fn tool_call(
             (o, string(o, "call_id")?)
         }
     };
-    // The pinned SDK derives this view from the authoritative raw arguments; wire
-    // positions never carry it and history replay drops it after validation.
-    if replay {
-        admit_parsed(
-            "parsed_arguments",
-            f.get("parsed_arguments"),
-            Some(string(f, "arguments")?),
-        )?;
+    if replay && profile == GenerationApi::Responses {
+        for key in ["id", "status", "namespace", "async"] {
+            if o.get(key).is_some_and(Value::is_null) {
+                return Err(CodecError::invalid());
+            }
+        }
     }
-    // Function-call status is optional/nullable, unlike complete message status.
-    // https://github.com/openai/openai-python/blob/be9d66628ad7377bd36fe5a76ae6d735843f0e76/src/openai/types/responses/response_function_tool_call.py
+    // Request status is optional but non-nullable; upstream reports also admit null.
+    // https://github.com/openai/openai-python/blob/e8a0fd28bbdc1699c97ff0f602b1af3dd378382d/src/openai/types/responses/response_function_tool_call_param.py
     let status = if profile == GenerationApi::Chat || o.get("status").is_some_and(Value::is_null) {
         ItemLifecycle::Completed
     } else {

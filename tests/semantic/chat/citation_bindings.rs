@@ -267,7 +267,7 @@ fn unresolved_file_citation_units_reject_native_json_history_and_old_ir_shapes()
             .unwrap_err(),
         expected
     );
-    let history = json!({"model":"m","input":[{"role":"assistant","content":[
+    let history = json!({"model":"m","input":[{"type":"message","id":"msg_1","status":"completed","role":"assistant","content":[
         {"type":"output_text","text":"é😀X","annotations":[annotation]}]}]});
     assert_eq!(
         adapter

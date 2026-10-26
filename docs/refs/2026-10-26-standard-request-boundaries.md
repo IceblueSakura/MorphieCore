@@ -1,6 +1,6 @@
 # Standard Generation request boundaries
 
-Checked on **2026-10-26** against MorphieCore `4560c66`. This note records protocol evidence and bounded counterexamples, not a conformance certificate or a second work queue. [Roadmap](../roadmap.md#standard-request-boundary-repair) owns the selected repair scope and exit gate; [Architecture](../architecture.md#standard-request-boundary) owns the boundary. No implementation repair is claimed here.
+Initially checked on **2026-10-26** against MorphieCore `4560c66`. The findings below retain that source state; the later [repair disposition](#repair-disposition) records their resolution under the user's same-day standard-priority decision. This is protocol evidence, not a conformance certificate or a second work queue. [Roadmap](../roadmap.md#standard-request-boundary-repair) owns scope and subsequent review; [Architecture](../architecture.md#standard-request-boundary) owns the accepted boundary.
 
 ## Scope and evidence
 
@@ -72,6 +72,24 @@ These are not additional confirmed corruption claims:
 - **Representation downgrade, reproduced:** Messages Client intake discards generated message envelopes and converts structured function arguments to raw JSON. Existing IR can retain both structures. No independent semantic corruption was demonstrated solely by this conversion; choose retention/target-local conversion based on concrete owner and source-immutability requirements, not a speculative redesign.
 - **Null/default questions:** do not generalize the confirmed non-nullable-field defects to every null. In particular, `strict:null` and `store:null` need field-specific source evidence before selecting equivalence or rejection.
 - **IR scope:** no additional indispensable core IR owner was proven missing in these counterexamples. Prefer existing typed owners and pure target projections; unsupported official features remain explicit gaps rather than automatic API activation.
+
+## Repair disposition
+
+The user authorized all five repair slices on 2026-10-26 and directed conflicts to be resolved primarily by official standards, with Provider adaptation isolated in dialects. This supersedes conflicting Client-input convenience decisions; it does not select new replay provenance, native beta features, routing or a response/SSE redesign.
+
+| Slice | Resolution and permanent check |
+|---|---|
+| Continuation and explicit intent | Bare/damaged reasoning continuation rejects without deleting owners or altering the source request; valid sealed foreign history retains provenance until candidate-local transfer. Chat context retains and emits explicit `store:false`. [Replay regressions](../../tests/semantic/reasoning_replay/replay_carrier.rs) and [directional request cases](../../tests/semantic/standard_contracts/request_boundaries.rs) protect both |
+| Standard source admission | Chat audio history always selects the ID-reference contract; response annotations and SDK-derived views cannot change request meaning. Standard video discriminators reject while declaring dialects retain their user-input carriers. Known malformed sentinels and non-nullable call/input fields reject; upstream nullable report fields retain their separate contracts |
+| Messages grammar and ownership | Public/native requests share the native tool-turn grammar and manual-thinking constraints. Active multi-step tool turns preserve the leading-thinking requirement; a fresh user turn can enable thinking after completed old turns. Empty completed signatures reject without affecting legitimate SSE opening placeholders. Exact JSON serialization and existing Client envelope decomposition remain unchanged: no additional corruption was demonstrated solely by those representations, so this repair adds no speculative IR/target normalization |
+| Standard target encoding | Responses emits complete assistant history and lifecycle-bearing input arrays; Chat does not reattribute independent calls to named participants; pure standard codecs reject unsupported explicit replay-mismatch enforcement. [Independent Rust assertions](../../tests/semantic/standard_contracts/request_boundaries.rs) and [real SDK parameter-union validation](../../tests/sdk/standard_requests.py) cover the emitted shapes |
+| Compatibility reconciliation | Remove omitted-annotations insertion and unsigned thinking intake. Public decoders ignore SDK convenience fields rather than interpreting them; closed decoders reject them. SDK scenarios now use the real public ingress and genuinely sealed native history, not request repair or invented signatures |
+
+Non-null official Messages diagnostics requests explicitly reject as unsupported. A nonempty incoming beta feature list rejects before body polling, so the stable eager-input default is unambiguous; an empty list selects no beta semantics. Actual pi 1.4.0 reacceptance requires the test-owned model header `anthropic-beta:\"\"`: the client otherwise automatically enables betas. The earlier null-header experiment failed client configuration loading; the supported string override, not a patched launcher or filtered wire, is the verified profile. No host configuration was changed.
+
+The pinned Chat [function definition](https://raw.githubusercontent.com/openai/openai-python/e8a0fd28bbdc1699c97ff0f602b1af3dd378382d/src/openai/types/shared_params/function_definition.py) and create parameters admit nullable `strict`/`store`. This repair does not invent a stricter null policy: the confirmed non-nullable-field corrections are field-local, Chat storage presence is retained, and no additional effective-default claim is inferred from SDK nullability alone.
+
+The legacy unsigned Messages **output** projection remains outside the request repair. Its empty signature is now rejected if returned as standard request history; the SDK negative contrast asserts that rejection rather than counting it as a successful tool loop. Native signed SDK/Agent paths remain separate. Full response/SSE representability, including removal or redesign of that output-only adaptation, belongs to subsequent review. [Development](../development.md#verification-gates) records the executed gates and exclusions; these changes do not establish new live Provider acceptance.
 
 ## Evidence limits and later review inputs
 

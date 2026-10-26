@@ -56,8 +56,9 @@ async fn handle(
     for field in ["eager_input_streaming", "cache_control"] {
         assert_eq!(wire["tools"][0].get(field), Some(&Value::Null));
     }
-    let request =
+    let mut request =
         anthropic::messages::client::decode_client_request(&body).expect("synthetic SDK request");
+    morphiecore::execution::replay::open_from_client(&mut request).unwrap();
     assert_eq!(
         request.context.identity.user,
         morphiecore::semantic::value::Presence::Value("sdk-user".into())
@@ -165,7 +166,8 @@ async fn handle(
     }
     if turn == 1 || turn == 4 {
         let mut wire = json!({"id":"msg1","type":"message","role":"assistant","model":"fixture-model",
-            "content":[{"type":"tool_use","id":"call_sdk","name":"lookup","input":{"n":7}}],
+            "content":[{"type":"thinking","thinking":"Plan","signature":"synthetic-native-signature"},
+                {"type":"tool_use","id":"call_sdk","name":"lookup","input":{"n":7}}],
             "stop_reason":"tool_use","stop_sequence":null,"usage":{"input_tokens":1,"output_tokens":1}});
         if turn == 4 {
             wire["content"] = json!([{"type":"text","text":"partial"}]);
@@ -173,9 +175,14 @@ async fn handle(
             wire["stop_details"] =
                 json!({"type":"refusal","category":"cyber","explanation":"synthetic explanation"});
         }
-        let decoded = Profile::AdaptiveTextTools
+        let mut decoded = Profile::AdaptiveTextTools
             .decode_generation_response(wire.to_string().as_bytes(), LocalScope::new(2), &target)
             .unwrap();
+        morphiecore::execution::replay::seal_for_client(
+            &mut decoded,
+            &morphiecore::protocol::replay_envelope::CLIENT_ORIGIN,
+        )
+        .unwrap();
         let output =
             anthropic::messages::client::encode_client_response(&decoded, "fixture-model").unwrap();
         return Response::builder()
@@ -311,7 +318,7 @@ async fn sdk_messages_native_controls_history_and_partial_stream() {
     let report: Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(
         report,
-        json!({"requests":9,"partial":true,"refusal_details":true,"unsigned_replay":true})
+        json!({"requests":9,"partial":true,"refusal_details":true,"unsigned_replay_rejected":true})
     );
 }
 
@@ -332,6 +339,14 @@ fn cross_protocol(seen: &Mutex<usize>, body: &[u8], wire: &Value) -> Response {
     assert!(turn < 4);
     let feedback = turn % 2 == 1;
     let streaming = wire["stream"] == true;
+    if feedback {
+        assert!(anthropic::messages::client::decode_client_request(body).is_err());
+        return Response::builder().status(400)
+            .header("content-type", "application/json")
+            .body(Body::from(json!({"type":"error","error":{
+                "type":"invalid_request_error","message":"Unsigned thinking is not native request history"
+            }}).to_string())).unwrap();
+    }
     let request = anthropic::messages::client::decode_client_request(body).unwrap();
     let binding = API_KEY_BINDINGS
         .iter()

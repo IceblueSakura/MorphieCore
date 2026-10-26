@@ -236,13 +236,11 @@ pub fn open_from_client(request: &mut Request) -> Result<(), CodecError> {
                     if crate::protocol::replay_projection::is_marker(value.as_str()) {
                         return Err(CodecError::invalid());
                     }
-                    reasoning.replay = match replay_envelope::open(value.as_str()) {
-                        Some((origin, format, payload)) if value.replay_token().is_some() => {
-                            origins.insert(*id, origin);
-                            Some(ReplayValue::final_value(format, payload))
-                        }
-                        _ => None,
-                    };
+                    let (origin, format, payload) = replay_envelope::open(value.as_str())
+                        .filter(|_| value.replay_token().is_some())
+                        .ok_or(CodecError::invalid())?;
+                    origins.insert(*id, origin);
+                    reasoning.replay = Some(ReplayValue::final_value(format, payload));
                     changed = true;
                 }
             }
@@ -270,9 +268,6 @@ pub fn open_from_client(request: &mut Request) -> Result<(), CodecError> {
     if !changed {
         return Ok(());
     }
-    items.retain(
-        |(_, item)| !matches!(item,Item::Reasoning(r) if r.replay.is_none() && r.parts.is_empty()),
-    );
     request.task.semantic = request.task.semantic.clone().with_items(items)?;
     request
         .task

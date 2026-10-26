@@ -654,7 +654,12 @@ mod tests {
         let sink = Sink::from_sender(tx);
         let mut trace = Trace::new(Some(&sink));
         let mut intake = EvidenceDelta::default();
-        intake.record_history_annotations_default();
+        intake.push(Effect::new(
+            "synthetic.intake.v1",
+            Field::HistoryAnnotations,
+            B::RequestDecode,
+            Change::Default(crate::protocol::conversion::generation::DefaultBasis::SelectedPolicy),
+        ));
         trace.report.intake(intake);
         trace.executor_order("affinity");
         trace.begin_candidate(1);

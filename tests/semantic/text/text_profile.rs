@@ -341,9 +341,10 @@ fn instruction_status_is_checked_in_history_and_reported_echoes() {
             assert_eq!(decoded.is_ok(), accepted, "{item}");
             if let Ok(d) = decoded {
                 let encoded = request_wire(&d)["input"][0].clone();
-                if lifecycle {
+                if status.is_some() {
                     assert_eq!(encoded["status"], item["status"]);
                     assert_eq!(encoded["type"], json!("message"));
+                    assert_eq!(encoded["content"], item["content"]);
                 } else {
                     assert!(encoded.get("status").is_none());
                     assert_eq!(encoded["content"], json!("Be precise"));
@@ -366,8 +367,9 @@ fn instruction_status_is_checked_in_history_and_reported_echoes() {
                 )
                 .unwrap();
                 let encoded = &output["instructions"][0];
-                if lifecycle {
+                if status.is_some() {
                     assert_eq!(encoded["status"], item["status"]);
+                    assert_eq!(encoded["content"], item["content"]);
                 } else {
                     assert!(encoded.get("status").is_none());
                     assert_eq!(encoded["content"], json!("Be precise"));

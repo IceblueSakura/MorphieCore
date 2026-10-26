@@ -346,6 +346,7 @@
           "id": "comment-0",
           "type": "message",
           "role": "assistant",
+          "status": "completed",
           "phase": "commentary",
           "content": [
             {
@@ -1166,6 +1167,7 @@
           "id": "answer-6",
           "type": "message",
           "role": "assistant",
+          "status": "completed",
           "phase": "final_answer",
           "content": [
             {
@@ -1322,6 +1324,7 @@
           "id": "answer-7",
           "type": "message",
           "role": "assistant",
+          "status": "completed",
           "phase": "final_answer",
           "content": [
             {

@@ -38,6 +38,8 @@ mod openai_tool_history;
 mod openai_tool_loop;
 #[path = "support/responses_profile.rs"]
 mod responses_wire;
+#[path = "sdk/standard_requests.rs"]
+mod standard_requests;
 #[path = "sdk/text_loop.rs"]
 mod text_loop;
 #[path = "support/upstream_assets.rs"]

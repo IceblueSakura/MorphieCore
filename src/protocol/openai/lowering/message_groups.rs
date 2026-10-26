@@ -57,7 +57,11 @@ pub(super) fn project(
     let mut additions: BTreeMap<ItemId, Vec<ItemId>> = BTreeMap::new();
     for (id, item) in items {
         match item {
-            Item::Message(message) if message.role == MessageRole::Assistant => current = Some(*id),
+            Item::Message(message) if message.role == MessageRole::Assistant => {
+                current = (message.participant.is_none()
+                    || groups.iter().any(|group| group.members().contains(id)))
+                .then_some(*id);
+            }
             Item::ToolCall(_) | Item::CustomCall(_) => {
                 if let Some(owner) = owners.get(id) {
                     if current != Some(*owner) {

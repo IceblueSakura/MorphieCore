@@ -158,7 +158,7 @@ fn tool_fields(t: &mut Value, ignored: &mut BTreeSet<String>) -> Result<(), Code
 pub fn decode_client_request(bytes: &[u8]) -> Result<Request, CodecError> {
     let mut v = parse(bytes)?;
     let o = object(&v)?;
-    wire::request::reject_removed_fields(o)?;
+    wire::request::validate_request_controls(o)?;
     for field in [
         "system",
         "tools",
@@ -326,6 +326,7 @@ pub fn decode_client_request(bytes: &[u8]) -> Result<Request, CodecError> {
         .as_array()
         .ok_or(CodecError::invalid())?;
     let mut roles = Vec::with_capacity(messages.len());
+    let mut parsed_messages = Vec::with_capacity(messages.len());
     for message in messages {
         let mut message = message.clone();
         // Turn-scoped clearing changes the model contract.
@@ -367,6 +368,11 @@ pub fn decode_client_request(bytes: &[u8]) -> Result<Request, CodecError> {
             };
             roles.push((role, !parsed.is_empty()));
             intake.system_message(&parsed, effort)?;
+            parsed_messages.push(wire::request::InputMessage {
+                role,
+                content: wire::request::MessageContent::Blocks(parsed),
+                effort,
+            });
             continue;
         }
         if effort.is_some() {
@@ -388,7 +394,7 @@ pub fn decode_client_request(bytes: &[u8]) -> Result<Request, CodecError> {
                 .map(|v| wire::request::CacheMarked::read(v, Block::read))
                 .collect::<Result<_, _>>()?
         };
-        if !wire::request::input_block_bytes(role, &parsed, true)?.1 {
+        if !wire::request::input_block_bytes(role, &parsed)?.1 {
             return Err(CodecError::invalid());
         }
         if parsed.iter().any(|block| match &block.content {
@@ -400,8 +406,24 @@ pub fn decode_client_request(bytes: &[u8]) -> Result<Request, CodecError> {
             return Err(CodecError::Unsupported(CarrierReason::Replay));
         }
         intake.request_message(role, &parsed)?;
+        parsed_messages.push(wire::request::InputMessage {
+            role,
+            content: wire::request::MessageContent::Blocks(parsed),
+            effort,
+        });
     }
     wire::request::validate_system_placement(&roles)?;
+    let selection = settings.tool_choice.as_ref().map(|c| match c {
+        ToolChoice::Required => Selection::Any,
+        ToolChoice::Specific(name) => Selection::Tool(name.as_str().into()),
+        ToolChoice::None => Selection::None,
+        _ => Selection::Auto,
+    });
+    wire::request::validate_turns(
+        &parsed_messages,
+        settings.reasoning.mode == Presence::Value(ReasoningMode::Budgeted),
+        selection.as_ref(),
+    )?;
     // Messages turns are not kept as envelopes: each target regroups items its own
     // way (native by role, Chat by assistant text and calls).
     // Calls carry their input as raw JSON text, as every client protocol's calls do.
@@ -413,12 +435,6 @@ pub fn decode_client_request(bytes: &[u8]) -> Result<Request, CodecError> {
                 && let ToolArguments::Structured(input) = &call.arguments
             {
                 call.arguments = ToolArguments::Raw(input.value().to_string());
-            }
-            // Thinking from a target without opaque values comes back unsigned.
-            if let Item::Reasoning(r) = &mut item
-                && r.replay.as_ref().is_some_and(|v| v.as_str().is_empty())
-            {
-                r.replay = None;
             }
             (id, item)
         })

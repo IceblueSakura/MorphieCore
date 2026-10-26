@@ -77,7 +77,7 @@ fn audit_non_strict_defaults_use_exact_explicit_false_on_responses() {
 fn expected_responses_history() -> Value {
     json!({"input":[
         {"type":"message","role":"user","content":[{"type":"input_text","text":"weather?"}]},
-        {"type":"message","role":"assistant","content":[{"type":"output_text","text":"Checking.","annotations":[]}]},
+        {"id":"item_2","type":"message","role":"assistant","status":"completed","content":[{"type":"output_text","text":"Checking.","annotations":[]}]},
         {"type":"function_call","call_id":"call_a","name":"weather","arguments":"{ \"city\": \"Paris\" }"},
         {"type":"function_call","call_id":"call_b","name":"weather","arguments":"{\"city\":\"Rome\"}"},
         {"type":"function_call_output","call_id":"call_b","output":""},

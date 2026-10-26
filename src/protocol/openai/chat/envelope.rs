@@ -44,6 +44,7 @@ pub struct RequestContext {
     pub n: Presence<u64>,
     pub stream: Presence<bool>,
     pub stream_options: Presence<StreamOptions>,
+    pub store: Presence<bool>,
     pub cache: CacheHints,
     pub identity: ClientIdentityHints,
     pub metadata: Presence<std::collections::BTreeMap<String, String>>,
@@ -71,6 +72,7 @@ impl RequestContext {
             )?;
         }
         validate_context(&ExecutionHints {
+            store: self.store.clone(),
             cache: self.cache.clone(),
             identity: self.identity.clone(),
             metadata: self.metadata.clone(),
@@ -158,6 +160,7 @@ pub(crate) fn decode_request_with(
         n: read_presence(o, "n", |v| v.as_u64().ok_or(CodecError::invalid()))?,
         stream: read_presence(o, "stream", |v| v.as_bool().ok_or(CodecError::invalid()))?,
         stream_options: read_presence(o, "stream_options", |v| StreamOptions::read(v, direction))?,
+        store: hints.store,
         cache: hints.cache,
         identity: hints.identity,
         metadata: hints.metadata,
@@ -212,6 +215,7 @@ pub fn encode_request(
     o.insert("model".into(), json!(context.model));
     put_presence(o, "n", &context.n, |v| json!(v));
     put_presence(o, "stream", &context.stream, |v| json!(v));
+    put_presence(o, "store", &context.store, |v| json!(v));
     if target.adaptation.rules.bailian_requests {
         if let Some(options) = context.stream_options.value()
             && !options.include_usage.is_absent()

@@ -191,7 +191,7 @@ impl InputMessage {
     fn bytes(&self) -> Result<usize, CodecError> {
         let (bytes, has_content) = match &self.content {
             MessageContent::Text(s) => (text(s)?, !s.is_empty()),
-            MessageContent::Blocks(a) => input_block_bytes(self.role, a, false)?,
+            MessageContent::Blocks(a) => input_block_bytes(self.role, a)?,
         };
         if self.effort.is_some() && self.role != Role::System {
             return Err(CodecError::invalid());
@@ -219,7 +219,6 @@ impl InputMessage {
 pub(in crate::protocol::anthropic::messages) fn input_block_bytes(
     role: Role,
     blocks: &[CacheMarked<Block>],
-    allow_unsigned_thinking: bool,
 ) -> Result<(usize, bool), CodecError> {
     count(blocks.len())?;
     let mut bytes = 0;
@@ -234,11 +233,16 @@ pub(in crate::protocol::anthropic::messages) fn input_block_bytes(
         {
             return Err(CodecError::invalid());
         }
-        // Public history may carry visible reasoning from a non-native target;
-        // native replay still requires a completed signature.
-        let content_bytes = block
-            .content
-            .bytes(allow_unsigned_thinking && matches!(block.content, Block::Thinking { .. }))?;
+        if matches!(
+            &block.content,
+            Block::ToolUse {
+                caller: Presence::Null,
+                ..
+            }
+        ) {
+            return Err(CodecError::invalid());
+        }
+        let content_bytes = block.content.bytes(false)?;
         has_content |= content_bytes > 0;
         charge(
             &mut bytes,
@@ -810,7 +814,7 @@ impl std::fmt::Debug for Request {
 }
 impl Request {
     pub(in crate::protocol::anthropic::messages) fn read(v: &Value) -> Result<Self, CodecError> {
-        reject_removed_fields(object(v)?)?;
+        validate_request_controls(object(v)?)?;
         let o = closed(
             v,
             &[
@@ -1036,80 +1040,40 @@ impl Request {
                 _ => {}
             }
         }
-        let mut seen = BTreeSet::new();
-        let mut pending = BTreeSet::new();
+        validate_turns(
+            &self.messages,
+            matches!(self.thinking.value(), Some(Thinking::Enabled { .. })),
+            self.tool_choice.value().map(|c| &c.selection),
+        )?;
         let mut block_count = 0;
         let mut image_count = 0;
-        // The API combines consecutive same-role messages into one logical turn.
-        // Validate adjacency and result prefixes across the run, without rewriting it.
-        for turn in self.messages.chunk_by(|a, b| a.role == b.role) {
-            // Effort-only system messages render nothing at their position.
-            if !pending.is_empty()
-                && turn[0].role != Role::User
-                && (turn[0].role != Role::System || turn.iter().any(|m| m.carries_content()))
-            {
-                return Err(CodecError::invalid());
-            }
-            let mut results = BTreeSet::new();
-            let mut saw_text = false;
-            for message in turn {
-                charge(&mut bytes, message.bytes()?)?;
-                node_charge(&mut nodes, 8)?;
-                if let MessageContent::Blocks(blocks) = &message.content {
-                    block_count += blocks.len();
-                    count(block_count)?;
-                    for block in blocks {
-                        let block = &block.content;
-                        image_count += match block {
-                            Block::Media(Media::Image { .. }) => 1,
-                            Block::ToolResult {
-                                content: ResultContent::Blocks(parts),
-                                ..
-                            } => parts
-                                .iter()
-                                .filter(|p| {
-                                    matches!(p.content, ResultBlock::Media(Media::Image { .. }))
-                                })
-                                .count(),
-                            _ => 0,
-                        };
-                        if image_count > MAX_IMAGES {
-                            return Err(CodecError::Limit);
-                        }
-                        node_charge(&mut nodes, block.nodes()?)?;
-                        match block {
-                            Block::ToolUse { id, .. } => {
-                                if !seen.insert(id.as_str()) {
-                                    return Err(CodecError::Invalid(ShapeReason::CallIdentity));
-                                }
-                                pending.insert(id.as_str());
-                            }
-                            Block::ToolResult { tool_use_id, .. } => {
-                                if saw_text
-                                    || !pending.contains(tool_use_id.as_str())
-                                    || !results.insert(tool_use_id.as_str())
-                                {
-                                    return Err(CodecError::invalid());
-                                }
-                            }
-                            _ => {
-                                saw_text = true;
-                            }
-                        }
+        for message in &self.messages {
+            charge(&mut bytes, message.bytes()?)?;
+            node_charge(&mut nodes, 8)?;
+            if let MessageContent::Blocks(blocks) = &message.content {
+                block_count += blocks.len();
+                count(block_count)?;
+                for block in blocks {
+                    let block = &block.content;
+                    image_count += match block {
+                        Block::Media(Media::Image { .. }) => 1,
+                        Block::ToolResult {
+                            content: ResultContent::Blocks(parts),
+                            ..
+                        } => parts
+                            .iter()
+                            .filter(|p| {
+                                matches!(p.content, ResultBlock::Media(Media::Image { .. }))
+                            })
+                            .count(),
+                        _ => 0,
+                    };
+                    if image_count > MAX_IMAGES {
+                        return Err(CodecError::Limit);
                     }
-                } else {
-                    saw_text = true;
+                    node_charge(&mut nodes, block.nodes()?)?;
                 }
             }
-            if turn[0].role == Role::User {
-                if results != pending {
-                    return Err(CodecError::invalid());
-                }
-                pending.clear();
-            }
-        }
-        if !pending.is_empty() {
-            return Err(CodecError::invalid());
         }
         Ok(())
     }
@@ -1148,7 +1112,79 @@ impl Request {
         v
     }
 }
-pub(in crate::protocol::anthropic::messages) fn reject_removed_fields(
+/// Source and target share native turn rules, independently of byte accounting.
+/// Tool-result-only user messages continue the same assistant turn.
+pub(in crate::protocol::anthropic::messages) fn validate_turns(
+    messages: &[InputMessage],
+    manual: bool,
+    selection: Option<&Selection>,
+) -> Result<(), CodecError> {
+    if manual && matches!(selection, Some(Selection::Any | Selection::Tool(_))) {
+        return Err(CodecError::invalid());
+    }
+    let mut seen = BTreeSet::new();
+    let mut pending = BTreeSet::new();
+    let mut starts_with_thinking = None;
+    for turn in messages.chunk_by(|a, b| a.role == b.role) {
+        let role = turn[0].role;
+        if !pending.is_empty()
+            && role != Role::User
+            && (role != Role::System || turn.iter().any(|m| m.carries_content()))
+        {
+            return Err(CodecError::invalid());
+        }
+        if role == Role::Assistant && starts_with_thinking.is_none() {
+            starts_with_thinking = Some(matches!(
+                &turn[0].content,
+                MessageContent::Blocks(blocks) if blocks.first().is_some_and(|b| matches!(
+                    b.content, Block::Thinking { .. } | Block::RedactedThinking(_)
+                ))
+            ));
+        }
+        let mut results = BTreeSet::new();
+        let mut saw_content = false;
+        for message in turn {
+            if let MessageContent::Blocks(blocks) = &message.content {
+                for block in blocks {
+                    match &block.content {
+                        Block::ToolUse { id, .. } => {
+                            if !seen.insert(id.as_str()) {
+                                return Err(CodecError::Invalid(ShapeReason::CallIdentity));
+                            }
+                            pending.insert(id.as_str());
+                        }
+                        Block::ToolResult { tool_use_id, .. } => {
+                            if saw_content
+                                || !pending.contains(tool_use_id.as_str())
+                                || !results.insert(tool_use_id.as_str())
+                            {
+                                return Err(CodecError::invalid());
+                            }
+                        }
+                        _ => saw_content = true,
+                    }
+                }
+            } else {
+                saw_content = true;
+            }
+        }
+        if role == Role::User {
+            if results != pending {
+                return Err(CodecError::invalid());
+            }
+            pending.clear();
+            if saw_content {
+                starts_with_thinking = None;
+            }
+        }
+    }
+    if !pending.is_empty() || manual && starts_with_thinking == Some(false) {
+        return Err(CodecError::invalid());
+    }
+    Ok(())
+}
+
+pub(in crate::protocol::anthropic::messages) fn validate_request_controls(
     o: &Map<String, Value>,
 ) -> Result<(), CodecError> {
     // Removed controls are known fields, not ignorable extensions, including null.
@@ -1156,6 +1192,19 @@ pub(in crate::protocol::anthropic::messages) fn reject_removed_fields(
         if o.contains_key(key) {
             return Err(CodecError::Unsupported(CarrierReason::UnknownField));
         }
+    }
+    if o.get("stop_sequences").is_some_and(Value::is_null) {
+        return Err(CodecError::invalid());
+    }
+    if let Some(diagnostics) = o.get("diagnostics").filter(|v| !v.is_null()) {
+        let diagnostics = object(diagnostics)?;
+        if diagnostics
+            .get("previous_message_id")
+            .is_some_and(|id| !id.is_null() && id.as_str().is_none())
+        {
+            return Err(CodecError::invalid());
+        }
+        return Err(CodecError::Unsupported(CarrierReason::Unavailable));
     }
     Ok(())
 }

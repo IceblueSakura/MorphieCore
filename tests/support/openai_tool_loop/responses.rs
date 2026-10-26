@@ -103,7 +103,7 @@ pub fn assert_request(body: &Value) -> usize {
             json!({"id":"reason","type":"reasoning",
             "summary":[{"type":"summary_text","text":"Plan 🧪"}],
             "content":[{"type":"reasoning_text","text":"Check"}],"encrypted_content":"synthetic-final-token"}),
-            json!({"id":"comment","type":"message","role":"assistant","phase":"commentary",
+            json!({"id":"comment","type":"message","role":"assistant","status":"completed","phase":"commentary",
                 "content":[{"type":"output_text","text":"checking","annotations":[],"logprobs":[]}]}),
             json!({"id":"call-item","type":"function_call","call_id":"call-lookup",
                 "name":"lookup","arguments":"{ \"key\": \"A\" }"}),
@@ -114,7 +114,7 @@ pub fn assert_request(body: &Value) -> usize {
         ];
         if turn == 3 {
             expected.extend([
-                json!({"id":"answer-2","type":"message","role":"assistant","phase":"final_answer",
+                json!({"id":"answer-2","type":"message","role":"assistant","status":"completed","phase":"final_answer",
                     "content":[{"type":"output_text","text":"cedar-71","annotations":[],"logprobs":[]}]}),
                 json!({"type":"message","role":"user","content":[{"type":"input_text","text":"next"}]}),
             ]);

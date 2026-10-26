@@ -9,12 +9,12 @@ use axum::{
 use morphiecore::{
     protocol::{
         openai::{
-            GenerationApi, TargetContract as Contract,
+            Dialect, GenerationApi, GenerationCodec, TargetContract as Contract,
             chat::{
                 envelope,
                 sse::{ChatSseDecoder, ChatSseEncoder},
             },
-            lowering::{lower_request, lower_response},
+            lowering::lower_response,
             obfuscation::Obfuscation,
         },
         stream::SseLimits,
@@ -47,25 +47,18 @@ pub(super) async fn handle(
     {
         return failure(StatusCode::UNAUTHORIZED, "Chat authentication", &state);
     }
-    let request = match envelope::decode_request_bytes(&body) {
+    let codec = GenerationCodec::new(GenerationApi::Chat, Dialect::Standard, None);
+    let request = match codec.decode_client_request(&body) {
         Ok(request) => request,
         Err(error) => {
             eprintln!("synthetic Chat request rejected: {error}");
             return failure(StatusCode::BAD_REQUEST, "Chat request", &state);
         }
     };
-    if request.context.model != "fixture-model" {
+    if request.model != "fixture-model" {
         return failure(StatusCode::BAD_REQUEST, "Chat model", &state);
     }
-    let Ok(target) = lower_request(
-        &request.task.semantic,
-        &request.task.fidelity,
-        GenerationApi::Chat,
-        Contract::full(),
-    ) else {
-        return failure(StatusCode::BAD_REQUEST, "Chat lowering", &state);
-    };
-    let Ok(encoded) = envelope::encode_request(&target, &request.context) else {
+    let Ok(encoded) = codec.encode_request(&request, "fixture-model", &Contract::full()) else {
         return failure(StatusCode::BAD_REQUEST, "Chat projection", &state);
     };
     let turn = {
@@ -105,7 +98,7 @@ pub(super) async fn handle(
                 && matches!(&custom.format,Some(CustomFormat::Grammar{syntax:GrammarSyntax::Regex,definition})
                     if definition.as_str()=="SELECT [0-9]+")));
         if turn > 5
-            || request.context.streaming()
+            || request.delivery.streaming()
             || !grammar
             || turn == 4
                 && !matches!(request.task.semantic.tool_choice(),Some(ToolChoice::Custom(name)) if name.as_str()=="sql")
@@ -194,7 +187,7 @@ pub(super) async fn handle(
             &state,
         );
     }
-    if !request.context.streaming() {
+    if !request.delivery.streaming() {
         let mut body = wire::response(turn as u8);
         body["usage"] = usage();
         let mut d = envelope::decode_response_bytes(&serde_json::to_vec(&body).unwrap()).unwrap();
@@ -262,8 +255,8 @@ pub(super) async fn handle(
     decoder.finish().unwrap();
     let d = decoder.materialize().unwrap();
     let options = request
-        .context
-        .stream_options
+        .delivery
+        .options
         .value()
         .cloned()
         .unwrap_or_default();

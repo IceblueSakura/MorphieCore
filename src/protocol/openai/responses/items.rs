@@ -163,12 +163,6 @@ fn input_parts(
                 let id = b.part_id()?;
                 (id, InputPart::Resource(b.resource(resource)?))
             }
-            // Open Responses places video in tool results; targets without a carrier reject it.
-            "input_video" => {
-                let resource =
-                    crate::protocol::openai::content::video::read_responses(o, direction)?;
-                (b.part_id()?, InputPart::Resource(b.resource(resource)?))
-            }
             _ => {
                 return Err(CodecError::Unsupported(CarrierReason::Unavailable));
             }
@@ -303,6 +297,7 @@ pub(in crate::protocol::openai) fn decode_items(
     input: &[Value],
     side: ItemSide,
     item_status: &str,
+    input_video: bool,
 ) -> Result<(), CodecError> {
     let response = side.response();
     let direction = b.direction;
@@ -344,6 +339,13 @@ pub(in crate::protocol::openai) fn decode_items(
                         "async",
                     ],
                 )?;
+                if !response {
+                    for key in ["id", "namespace", "async"] {
+                        if o.get(key).is_some_and(Value::is_null) {
+                            return Err(CodecError::invalid());
+                        }
+                    }
+                }
                 Item::CustomCall(CustomCall {
                     call_id: text(string(o, "call_id")?, "call id", 256)?,
                     name: text(string(o, "name")?, "custom name", 128)?,
@@ -435,6 +437,24 @@ pub(in crate::protocol::openai) fn decode_items(
                 }
                 let phase = read_phase(o)?;
                 let content = o.get("content").ok_or(CodecError::invalid())?;
+                if !response
+                    && role == "assistant"
+                    && content.as_array().is_some_and(|parts| {
+                        parts.iter().any(|p| {
+                            matches!(
+                                p.get("type").and_then(Value::as_str),
+                                Some("output_text" | "refusal")
+                            )
+                        })
+                    })
+                {
+                    // Complete output-message history is not the easy-input union branch.
+                    if typ != Some("message") {
+                        return Err(CodecError::invalid());
+                    }
+                    text(string(o, "id")?, "message id", 256)?;
+                    string(o, "status")?;
+                }
                 let values = if let Some(s) = content.as_str() {
                     if response {
                         return Err(CodecError::invalid());
@@ -451,19 +471,11 @@ pub(in crate::protocol::openai) fn decode_items(
                 if values.len() > MAX_ITEMS {
                     return Err(CodecError::Limit);
                 }
-                if phase == Some(Phase::Commentary)
-                    && values
-                        .iter()
-                        .any(|p| p.get("parsed").is_some_and(|v| !v.is_null()))
-                {
-                    // The pinned SDK never derives a parsed view from commentary text.
-                    return Err(CodecError::invalid());
-                }
                 if role == "system" || role == "developer" {
-                    // Omitted and explicit completed stay without a lifecycle field.
-                    let instruction_status = status(o, ItemLifecycle::Completed)?;
-                    let instruction_status = (instruction_status != ItemLifecycle::Completed)
-                        .then_some(instruction_status);
+                    let instruction_status = o
+                        .get("status")
+                        .map(|_| status(o, ItemLifecycle::Completed))
+                        .transpose()?;
                     let mut parts = Vec::with_capacity(values.len());
                     for value in &values {
                         let part = object(value)?;
@@ -542,7 +554,9 @@ pub(in crate::protocol::openai) fn decode_items(
                                     crate::protocol::openai::content::file::read(p, direction)?,
                                 )?)
                             }
-                            "input_video" if !response && role == MessageRole::User => {
+                            "input_video"
+                                if !response && role == MessageRole::User && input_video =>
+                            {
                                 ContentPart::Resource(b.resource(
                                     crate::protocol::openai::content::video::read_responses(
                                         p, direction,
@@ -550,7 +564,7 @@ pub(in crate::protocol::openai) fn decode_items(
                                 )?)
                             }
                             "output_text" if role == MessageRole::Assistant => ContentPart::Text(
-                                crate::protocol::openai::content::text::read(p, !response, b)?,
+                                crate::protocol::openai::content::text::read(p, b)?,
                             ),
                             _ => {
                                 return Err(CodecError::Unsupported(CarrierReason::Unavailable));
@@ -597,12 +611,9 @@ pub(in crate::protocol::openai) fn decode_items(
                 return Err(CodecError::Unsupported(CarrierReason::Unavailable));
             }
         };
-        // Function/custom and compaction IDs are optional/nullable in input; required IDs have
-        // already been validated by their owning branch or complete boundary.
-        if !(matches!(
-            typ,
-            Some("function_call" | "custom_tool_call" | "compaction")
-        ) && o.get("id").is_some_and(Value::is_null))
+        // Report IDs and the explicitly nullable input-item IDs use their own contracts.
+        if !((response || matches!(typ, Some("compaction" | "function_call_output")))
+            && o.get("id").is_some_and(Value::is_null))
         {
             b.record_id(id, o)?;
         }
@@ -688,6 +699,7 @@ pub(in crate::protocol::openai) fn encode_items(
             Item::Instruction(i) => {
                 let content = if let [part] = i.parts.as_slice()
                     && part.cache.is_none()
+                    && i.status.is_none()
                 {
                     json!(part.content.as_str())
                 } else {
@@ -714,10 +726,7 @@ pub(in crate::protocol::openai) fn encode_items(
                     .parts
                     .iter()
                     .map(|p| match &p.content {
-                        ContentPart::Text(t)
-                            if !response
-                                && (user || fidelity.input_text_form(p.id) && t.is_plain()) =>
-                        {
+                        ContentPart::Text(t) if !response && user => {
                             input_part(t.as_str(), p.cache)
                         }
                         ContentPart::Text(t) => crate::protocol::openai::content::text::write(
@@ -832,16 +841,28 @@ pub(in crate::protocol::openai) fn encode_items(
                 v["id"] = json!(wire);
             } else if matches!(
                 item,
-                Item::Reasoning(_) | Item::Program(_) | Item::ProgramOutput(_)
+                Item::Reasoning(_)
+                    | Item::Program(_)
+                    | Item::ProgramOutput(_)
+                    | Item::Message(Message {
+                        role: MessageRole::Assistant,
+                        ..
+                    })
             ) {
                 // Typed snapshots require identity; fresh task items assign it. An input
                 // instruction message has no `id` field, so none is minted for it.
                 v["id"] = json!(crate::protocol::fidelity::generated_item_id(*id));
             }
-            if item
-                .lifecycle()
-                .is_some_and(|s| s != ItemLifecycle::Completed)
-            {
+            if item.lifecycle().is_some_and(|s| {
+                s != ItemLifecycle::Completed
+                    || matches!(
+                        item,
+                        Item::Message(Message {
+                            role: MessageRole::Assistant,
+                            ..
+                        }) | Item::Instruction(_)
+                    )
+            }) {
                 v["status"] = json!(status_label(item.lifecycle().expect("lifecycle")));
             }
         }

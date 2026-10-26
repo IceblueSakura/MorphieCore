@@ -87,12 +87,13 @@ pub(crate) fn decode_request_in(
     v: &Value,
     direction: DecodeDirection<'_>,
 ) -> Result<DecodedResponsesRequest, CodecError> {
-    decode_request_with_history(v, direction, None)
+    decode_request_with_history(v, direction, None, false)
 }
 pub(in crate::protocol::openai) fn decode_request_with_history(
     v: &Value,
     direction: DecodeDirection<'_>,
     history: Option<(&DecodedRequest, &crate::protocol::DecodedResponse)>,
+    input_video: bool,
 ) -> Result<DecodedResponsesRequest, CodecError> {
     bounded(v)?;
     let o = object(v)?;
@@ -124,6 +125,7 @@ pub(in crate::protocol::openai) fn decode_request_with_history(
             &Value::Object(task),
             direction,
             history,
+            input_video,
         )?,
         context,
     })
@@ -204,6 +206,7 @@ impl ResponseContext {
                 values,
                 crate::protocol::openai::responses::items::ItemSide::History,
                 "completed",
+                false,
             )?;
             fidelity = items.fidelity;
             Some(items.items)

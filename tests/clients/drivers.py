@@ -195,7 +195,9 @@ def pi_configuration(root, origin, native, compaction=None, retry=None, provider
         "api": "anthropic-messages" if native else "openai-completions", "apiKey": "$INGRESS_KEY",
         "models": [{"id": model, "reasoning": True, "contextWindow": 128000,
                     "maxTokens": 2048, "compat": compat,
-                    "headers": {"anthropic-version": "2026-10-21"} if native else {}}]}}})
+                    # Explicit client opt-out; never filter beta headers in transit.
+                    "headers": {"anthropic-version": "2026-10-21",
+                                "anthropic-beta": ""} if native else {}}]}}})
     private_json(directory / "settings.json", {"retry": {"enabled": False,
         **(retry or {}), "provider": {"maxRetries": 0, "timeoutMs": provider_timeout_ms}},
         "compaction": {"enabled": False, **(compaction or {})}, "cacheWarming": "off"})

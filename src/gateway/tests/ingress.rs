@@ -70,7 +70,7 @@ fn client_profile_cannot_depend_on_candidate_order_or_select_responses_extension
 }
 
 #[tokio::test]
-async fn checked_intake_survives_admission_and_planning_failures_without_an_attempt() {
+async fn source_decode_and_planning_failures_have_separate_boundaries_without_attempts() {
     use crate::execution::{
         plan::{PlanError, RejectionReason},
         report::{Report, ResultState},
@@ -92,7 +92,7 @@ async fn checked_intake_survives_admission_and_planning_failures_without_an_atte
         Arc::new(entry),
     );
     let wire = serde_json::json!({"model":"fixture-model",
-        "input":[{"role":"assistant","content":[{"type":"output_text","text":"prior"}]}],
+        "input":[{"role":"assistant","content":"prior"}],
         "tools":[{"type":"function","name":"lookup","strict":false}]});
     let report = Report::default();
     assert_eq!(
@@ -108,7 +108,7 @@ async fn checked_intake_survives_admission_and_planning_failures_without_an_atte
         400
     );
     let snapshot = report.snapshot();
-    assert!(!snapshot.intake.entries.is_empty());
+    assert!(snapshot.intake.entries.is_empty());
     assert!(snapshot.attempts.is_empty());
     assert_eq!(
         snapshot.failure.unwrap().boundary,
@@ -166,7 +166,7 @@ async fn checked_intake_survives_admission_and_planning_failures_without_an_atte
     assert_eq!(snapshot.failure_code, Some(error.diagnostic_code()));
     assert_eq!(snapshot.failure_status_hint, Some(400));
     assert!(snapshot.attempts.is_empty());
-    assert!(!snapshot.intake.entries.is_empty());
+    assert!(snapshot.intake.entries.is_empty());
     assert!(matches!(
         snapshot.planning_failure,
         Some(PlanError::CandidateRejected(RejectionReason::BodyLimit))
@@ -648,14 +648,18 @@ async fn authentication_runs_before_any_body_poll() {
 async fn messages_version_is_single_current_and_checked_before_body_poll() {
     let gate = gateway(Limits::default());
     for path in ["/v1/messages", "/v1/messages?beta=true"] {
-        for versions in [
-            vec![],
-            vec![""],
-            vec!["2023-06-01"],
-            vec!["2026-10-22"],
-            vec!["invalid"],
-            vec!["2026-10-21, 2026-10-21"],
-            vec!["2026-10-21", "2026-10-21"],
+        for (versions, beta) in [
+            (vec![], None),
+            (vec![""], None),
+            (vec!["2023-06-01"], None),
+            (vec!["2026-10-22"], None),
+            (vec!["invalid"], None),
+            (vec!["2026-10-21, 2026-10-21"], None),
+            (vec!["2026-10-21", "2026-10-21"], None),
+            (
+                vec!["2026-10-21"],
+                Some("fine-grained-tool-streaming-2025-05-14"),
+            ),
         ] {
             let mut request = HttpRequest::builder()
                 .method("POST")
@@ -664,6 +668,9 @@ async fn messages_version_is_single_current_and_checked_before_body_poll() {
                 .header("content-type", "application/json");
             for version in versions {
                 request = request.header("anthropic-version", version);
+            }
+            if let Some(beta) = beta {
+                request = request.header("anthropic-beta", beta);
             }
             let forbidden = futures_util::stream::poll_fn(
                 |_| -> std::task::Poll<Option<Result<bytes::Bytes, std::io::Error>>> {
@@ -690,11 +697,12 @@ async fn messages_version_is_single_current_and_checked_before_body_poll() {
             assert_eq!(body["type"], "error");
             assert_eq!(body["error"]["type"], "invalid_request_error");
         }
-        // Current version passes header admission and reaches model resolution.
+        // An empty beta list selects no features and reaches model resolution.
         let response = gate.router().oneshot(
             HttpRequest::builder().method("POST").uri(path)
                 .header("x-api-key", KEY).header("content-type", "application/json")
                 .header("anthropic-version", "2026-10-21")
+                .header("anthropic-beta", "")
                 .body(axum::body::Body::from(r#"{"model":"unregistered","max_tokens":32,"messages":[{"role":"user","content":"hi"}]}"#))
                 .unwrap()
         ).await.unwrap();

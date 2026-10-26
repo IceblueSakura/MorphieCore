@@ -40,8 +40,6 @@ async fn request(client: &reqwest::Client, base: &str, input: &Value, session: &
         .header("x-api-key", fixture::KEY)
         .header("anthropic-version", "2026-10-21")
         .header("x-session-affinity", session)
-        // Ingress headers cannot select which beta carriers upstream receives.
-        .header("anthropic-beta", "synthetic-do-not-forward")
         .json(input)
         .send()
         .await

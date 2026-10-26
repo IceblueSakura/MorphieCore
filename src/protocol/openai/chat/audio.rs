@@ -55,7 +55,7 @@ pub(in crate::protocol::openai) fn read(
     direction: DecodeDirection,
 ) -> Result<ContentPart, CodecError> {
     let o = object(value)?;
-    if history && o.len() == 1 {
+    if history {
         direction.fields(o, &["id"])?;
         return Ok(ContentPart::AudioReference(AudioReference::new(
             text(string(o, "id")?, "audio id", 256)?,

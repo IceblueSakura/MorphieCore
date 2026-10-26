@@ -162,10 +162,19 @@ fn audio_history_requires_source_clock_and_final_owner_not_just_an_id() {
     use morphiecore::semantic::value::ReplayOrigin;
     let origin = ReplayOrigin::new("synthetic-audio-source").unwrap();
     let source = GenerationCodec::new(GenerationApi::Chat, Dialect::Standard, Some(origin.clone()));
-    let wire = json!({"model":"synthetic-model","messages":[{"role":"assistant","audio":{"id":"synthetic-audio","data":"AQID","transcript":"hello","expires_at":2000}},{"role":"user","content":"Repeat it."}]});
-    let request = source
+    let wire = json!({"model":"synthetic-model","messages":[{"role":"assistant","audio":{"id":"synthetic-audio"}},{"role":"user","content":"Repeat it."}]});
+    let mut request = source
         .decode_request(&serde_json::to_vec(&wire).unwrap())
         .unwrap();
+    // Generated audio originates in a response, not request-only audio references.
+    let generated = source.decode_response(&completion(json!({
+        "role":"assistant","content":null,
+        "audio":{"id":"synthetic-audio","data":"AQID","transcript":"hello","expires_at":2000}
+    })).to_string().into_bytes()).unwrap();
+    let mut items = request.task.semantic.items().to_vec();
+    items[0].1 = generated.semantic.items()[0].1.clone();
+    request.task.semantic = request.task.semantic.with_items(items).unwrap();
+    request.task.fidelity = generated.fidelity;
     let mut contract = Contract::full();
     contract.replay_origin = Some(origin.clone());
     contract.resource_time = Some(1000);
@@ -508,7 +517,12 @@ fn video_url_is_a_video_resource_only_for_declaring_chat_dialects() {
             {"type":"video_url","video_url":{"url":"https://example.invalid/clip.mp4"}},
             {"type":"video_url","video_url":{"url":"data:video/mp4;base64,AQID"}},
             {"type":"text","text":"Describe both."}]}]});
-    let decoded = standard(GenerationApi::Chat)
+    assert!(
+        standard(GenerationApi::Chat)
+            .decode_request(&serde_json::to_vec(&wire).unwrap())
+            .is_err()
+    );
+    let decoded = GenerationCodec::new(GenerationApi::Chat, Dialect::ModelBest, None)
         .decode_request(&serde_json::to_vec(&wire).unwrap())
         .unwrap();
     let semantic = &decoded.task.semantic;
@@ -564,7 +578,12 @@ fn input_video_reaches_only_declaring_responses_dialects() {
             {"type":"input_text","text":"Describe it."}]);
     let wire = json!({"model":"synthetic-model","input":[
             {"type":"message","role":"user","content":content}]});
-    let decoded = standard(GenerationApi::Responses)
+    assert!(
+        standard(GenerationApi::Responses)
+            .decode_request(&serde_json::to_vec(&wire).unwrap())
+            .is_err()
+    );
+    let decoded = GenerationCodec::new(GenerationApi::Responses, Dialect::OpenRouter, None)
         .decode_request(&serde_json::to_vec(&wire).unwrap())
         .unwrap();
     let semantic = &decoded.task.semantic;
@@ -598,22 +617,22 @@ fn input_video_reaches_only_declaring_responses_dialects() {
             .encode_request(&decoded, "synthetic-model", &Contract::full())
             .is_err()
     );
-    // Tool-result video decodes, but OpenRouter's function_call_output has no video part.
+    // Neither Standard nor the declared OpenRouter extension has a tool-result video carrier.
     let tool = json!({"model":"synthetic-model","input":[
             {"type":"function_call","call_id":"call_1","name":"record","arguments":"{}"},
             {"type":"function_call_output","call_id":"call_1","output":[
                 {"type":"input_video","video_url":"https://example.invalid/clip.mp4"}]}],
             "tools":[{"type":"function","name":"record","parameters":{"type":"object"}}]});
-    let decoded = standard(GenerationApi::Responses)
-        .decode_request(&serde_json::to_vec(&tool).unwrap())
-        .unwrap();
-    let needs = GenerationRequirements::derive(&decoded.task.semantic);
-    assert_eq!((needs.tool_result_media, needs.video_inputs), (1, 1));
-    assert!(
-        openrouter(GenerationApi::Responses)
-            .encode_request(&decoded, "synthetic-model", &Contract::full())
-            .is_err()
-    );
+    for codec in [
+        standard(GenerationApi::Responses),
+        openrouter(GenerationApi::Responses),
+    ] {
+        assert!(
+            codec
+                .decode_request(&serde_json::to_vec(&tool).unwrap())
+                .is_err()
+        );
+    }
 }
 fn completion(message: Value) -> Value {
     json!({"id":"synthetic-response","object":"chat.completion","created":1,"model":"synthetic-model","choices":[{"index":0,"message":message,"finish_reason":"stop"}]})

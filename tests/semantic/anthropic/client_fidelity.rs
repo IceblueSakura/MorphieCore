@@ -55,7 +55,7 @@ fn response() -> DecodedResponse {
     }
 }
 #[test]
-fn unsigned_reasoning_projection_keeps_bytes_and_returned_history() {
+fn unsigned_reasoning_delivery_is_not_standard_request_history() {
     use morphiecore::{adapter::ClientAdapter, semantic::value::Text};
     let text = |s| Text::allowing_empty(s, "test", MAX_TEXT_BYTES).unwrap();
     let mut source = response();
@@ -106,22 +106,8 @@ fn unsigned_reasoning_projection_keeps_bytes_and_returned_history() {
         ]})
         .to_string()
         .as_bytes(),
-    )
-    .unwrap();
-    let upstream = GenerationCodec::new(GenerationApi::Chat, Dialect::Bailian, None)
-        .encode_request(
-            &request,
-            "m",
-            &morphiecore::protocol::openai::TargetContract::full(),
-        )
-        .unwrap();
-    assert_eq!(
-        upstream["messages"],
-        json!([
-        {"role":"user","content":"go"},
-        {"role":"assistant","content":"answer","reasoning_content":" 思考\nsummary tail "},
-        {"role":"user","content":"continue"}])
     );
+    assert!(request.is_err());
     let mut signed = source.clone();
     let mut items = signed.semantic.items().to_vec();
     let Item::Reasoning(r) = &mut items[0].1 else {

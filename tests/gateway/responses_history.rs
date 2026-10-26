@@ -104,7 +104,7 @@ async fn stored_history_capacity_delete_and_restart_release_without_hidden_dispa
     let empty_parts = client
         .post(format!("{base}/responses"))
         .bearer_auth(super::support::CLIENT_KEY)
-        .json(&body(json!([{"role":"assistant","content":vec![
+        .json(&body(json!([{"id":"msg_1","type":"message","status":"completed","role":"assistant","content":vec![
             json!({"type":"output_text","text":"","annotations":[]});1024
         ]}])))
         .send()
@@ -301,21 +301,7 @@ async fn stored_and_stateless_tool_history_agree_in_json_and_sse() {
                     body["previous_response_id"] = output_id.clone();
                     body["input"] = next;
                 } else {
-                    let mut returned = output.clone();
-                    if stream {
-                        // OpenCode's input shorthand omits empty annotations.
-                        // Never erase a supplied citation in this client oracle.
-                        for item in &mut returned {
-                            if item["type"] == "message" {
-                                for part in item["content"].as_array_mut().unwrap() {
-                                    if part["type"] == "output_text" {
-                                        assert_eq!(part["annotations"], json!([]));
-                                        part.as_object_mut().unwrap().remove("annotations");
-                                    }
-                                }
-                            }
-                        }
-                    }
+                    let returned = output.clone();
                     body["input"].as_array_mut().unwrap().extend(returned);
                     body["input"]
                         .as_array_mut()

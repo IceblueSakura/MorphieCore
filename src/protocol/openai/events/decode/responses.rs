@@ -593,7 +593,6 @@ impl EventDecoder {
         if kind == PartKind::Text {
             let text = crate::protocol::openai::content::text::read(
                 p,
-                false,
                 &mut Items::new(DecodeDirection::Upstream),
             )?;
             if !text.annotations().is_empty()
@@ -902,7 +901,6 @@ impl EventDecoder {
                 Items::from_resources(self.state()?.resources().clone(), DecodeDirection::Upstream);
             let t = crate::protocol::openai::content::text::read_existing(
                 p,
-                false,
                 &mut sources,
                 &self.state()?.part(item, part)?.annotations,
             )?;

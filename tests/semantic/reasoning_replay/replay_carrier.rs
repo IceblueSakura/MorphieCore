@@ -37,14 +37,6 @@ fn client() -> GenerationCodec {
         Some(CLIENT_ORIGIN.clone()),
     )
 }
-fn reasoning(items: &[(morphiecore::semantic::task::generation::ItemId, Item)]) -> Vec<&Item> {
-    items
-        .iter()
-        .map(|(_, item)| item)
-        .filter(|item| matches!(item, Item::Reasoning(_)))
-        .collect()
-}
-
 /// Upstream response → sealed client JSON → the client's next request.
 fn client_round_trip(issuer: &str) -> Value {
     let mut decoded = upstream(issuer)
@@ -153,7 +145,7 @@ fn tool_turn_transfer_keeps_real_results_and_forgets_paired_wire_ids_only() {
     let mut body = client_round_trip("openai/model-a");
     body["input"].as_array_mut().unwrap().pop();
     body["input"].as_array_mut().unwrap().extend([
-            json!({"role":"assistant","content":[{"type":"output_text","text":"Checking.","annotations":[]}]}),
+            json!({"type":"message","id":"msg_check","status":"completed","role":"assistant","content":[{"type":"output_text","text":"Checking.","annotations":[]}]}),
             json!({"type":"function_call","id":"fc_paired","call_id":"c","name":"read","arguments":"{}"}),
             json!({"type":"function_call_output","call_id":"c","output":"42"}),
         ]);
@@ -169,7 +161,7 @@ fn tool_turn_transfer_keeps_real_results_and_forgets_paired_wire_ids_only() {
         wire["input"],
         json!([
             {"type":"message","role":"user","content":[{"type":"input_text","text":"first"}]},
-            {"type":"message","role":"assistant","content":[{"type":"output_text","text":"Checking.","annotations":[]}]},
+            {"id":"msg_check","type":"message","role":"assistant","status":"completed","content":[{"type":"output_text","text":"Checking.","annotations":[]}]},
             {"type":"function_call","call_id":"c","name":"read","arguments":"{}"},
             {"type":"function_call_output","call_id":"c","output":"42"},
         ])
@@ -239,22 +231,15 @@ fn tool_turn_transfer_keeps_real_results_and_forgets_paired_wire_ids_only() {
 }
 
 #[test]
-fn values_without_a_known_origin_are_dropped() {
+fn values_without_a_known_origin_reject_without_mutation() {
     let mut body = client_round_trip("openai/model-a");
     body["input"][1]["encrypted_content"] = json!("raw-token-from-elsewhere");
     let mut request = client()
         .decode_request(body.to_string().as_bytes())
         .unwrap();
-    open_from_client(&mut request).unwrap();
-    assert!(
-        reasoning(request.task.semantic.items())
-            .iter()
-            .all(|item| matches!(item, Item::Reasoning(r) if r.replay.is_none()))
-    );
-    let wire = upstream("openai/model-a")
-        .encode_request(&request, "model-a", &contract("openai/model-a"))
-        .unwrap();
-    assert!(!wire.to_string().contains("raw-token-from-elsewhere"));
+    let saved = request.clone();
+    assert!(open_from_client(&mut request).is_err());
+    assert_eq!(request, saved);
 }
 
 #[test]
@@ -288,7 +273,7 @@ fn streamed_replay_is_sealed_before_client_encoding() {
 }
 
 #[test]
-fn foreign_and_malformed_opaque_only_items_are_removed() {
+fn foreign_replay_remains_bound_and_malformed_replay_rejects() {
     for token in [
         replay_envelope::seal(
             &origin("foreign/model"),
@@ -309,7 +294,14 @@ fn foreign_and_malformed_opaque_only_items_are_removed() {
         let mut request = client()
             .decode_request(body.to_string().as_bytes())
             .unwrap();
+        let original = request.clone();
+        if !token.starts_with("mc1.") || replay_envelope::open(&token).is_none() {
+            assert!(open_from_client(&mut request).is_err());
+            assert_eq!(request, original);
+            continue;
+        }
         open_from_client(&mut request).unwrap();
+        assert_eq!(request.task.semantic.items().len(), 2);
         let saved = request.clone();
         let wire = upstream("openai/model-a")
             .encode_request(&request, "model-a", &contract("openai/model-a"))

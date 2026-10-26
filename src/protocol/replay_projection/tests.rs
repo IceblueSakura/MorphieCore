@@ -444,7 +444,7 @@ fn legacy_surrogate_signatures_are_dropped_with_a_receipt() {
         {"role":"user","content":"go"},
         {"type":"reasoning","id":"rs_1","summary":[{"type":"summary_text","text":"plan"}],
             "encrypted_content":seal(r#"{"anchor":"thought","signature":"VEhU"}"#).as_str()},
-        {"type":"message","role":"assistant","content":[{"type":"output_text","text":"OK","annotations":[]}]},
+        {"id":"msg_ok","status":"completed","type":"message","role":"assistant","content":[{"type":"output_text","text":"OK","annotations":[]}]},
         {"type":"function_call","call_id":"c","name":"lookup","arguments":"{}"},
         {"type":"reasoning","id":"rs_2","summary":[],
             "encrypted_content":seal(r#"{"anchor":"call","call":"c","signature":"U0lH"}"#).as_str()},

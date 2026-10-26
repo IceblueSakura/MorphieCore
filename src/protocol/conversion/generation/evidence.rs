@@ -818,14 +818,6 @@ impl<T> std::fmt::Debug for Conversion<T> {
 }
 
 impl EvidenceDelta {
-    pub(crate) fn record_history_annotations_default(&mut self) {
-        self.push(Effect::new(
-            "responses.default-history-annotations.v1",
-            Field::HistoryAnnotations,
-            ConversionBoundary::RequestDecode,
-            Change::Default(crate::protocol::conversion::generation::DefaultBasis::SelectedPolicy),
-        ));
-    }
     pub(crate) fn record_cache_write_default(
         &mut self,
         _profile: &'static str,

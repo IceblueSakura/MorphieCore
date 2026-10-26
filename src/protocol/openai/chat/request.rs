@@ -61,11 +61,16 @@ pub(crate) fn decode_generation_with(
     if let Some(_key) = ["logit_bias"].into_iter().find(|key| o.contains_key(*key)) {
         return Err(CodecError::Unsupported(CarrierReason::UnknownField));
     }
-    if let Some(_key) = UNSUPPORTED.iter().find(|key| {
-        o.get(**key)
-            .is_some_and(|v| !v.is_null() && v != &json!([]) && v != &json!(""))
-    }) {
-        return Err(CodecError::Unsupported(CarrierReason::UnknownField));
+    for key in UNSUPPORTED {
+        if let Some(value) = o.get(*key) {
+            if *key == "functions" {
+                let functions = value.as_array().ok_or(CodecError::invalid())?;
+                if functions.is_empty() {
+                    continue;
+                }
+            }
+            return Err(CodecError::Unsupported(CarrierReason::UnknownField));
+        }
     }
     let messages = o
         .get("messages")

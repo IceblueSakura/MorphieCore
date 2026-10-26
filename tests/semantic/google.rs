@@ -1597,7 +1597,7 @@ fn next_request_restores_signatures_on_their_parts_in_any_item_order() {
 }
 
 fn client(profile: GenerationApi, body: Value) -> Request {
-    GenerationCodec::new(profile, Dialect::Standard, None)
+    GenerationCodec::new(profile, Dialect::OpenRouter, None)
         .decode_request(body.to_string().as_bytes())
         .unwrap()
 }
@@ -1733,7 +1733,45 @@ fn unproven_tool_media_linkage_rejects_instead_of_fabricating_display_names() {
     assert!(
         encode_generation_request(&pdf.task.semantic, &pdf.task.fidelity, &target(), None).is_err()
     );
-    let video = part(json!({"type":"input_video","video_url":"data:video/mp4;base64,BAUG"}));
+    // Independent IR: Standard has no tool-result video input carrier.
+    let mut video = pdf;
+    let mut items = video.task.semantic.items().to_vec();
+    let Item::ToolResult(result) = &mut items[1].1 else {
+        panic!("result")
+    };
+    let ToolOutput::Parts(parts) = &mut result.output else {
+        panic!("parts")
+    };
+    let InputPart::Resource(resource) = &mut parts[0].content else {
+        panic!("resource")
+    };
+    resource.description = ResourceDescription::Video;
+    let resource_id = resource.id;
+    let resources = ResourceTable::new(
+        video
+            .task
+            .semantic
+            .resources()
+            .iter()
+            .map(|(id, loc)| {
+                (
+                    id,
+                    if id == resource_id {
+                        ResourceLocation::Inline {
+                            media_type: Text::new("video/mp4", "test", 32).unwrap(),
+                            data_base64: Text::new("BAUG", "test", 32).unwrap(),
+                        }
+                    } else {
+                        loc.clone()
+                    },
+                )
+            })
+            .collect(),
+    )
+    .unwrap();
+    video.task.semantic =
+        GenerationRequest::from_resources(items, video.task.semantic.settings().clone(), resources)
+            .unwrap();
     assert!(
         encode_generation_request(&video.task.semantic, &video.task.fidelity, &target(), None)
             .is_err()

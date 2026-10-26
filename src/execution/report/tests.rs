@@ -99,7 +99,12 @@ fn evidence_and_association_saturation_never_disable_acknowledgment() {
 fn failed_candidate_and_output_views_do_not_pollute_the_producer() {
     let report = Report::default();
     let mut intake = EvidenceDelta::default();
-    intake.record_history_annotations_default();
+    intake.push(Effect::new(
+        "synthetic.default.v1",
+        Field::HistoryAnnotations,
+        ConversionBoundary::RequestDecode,
+        Change::Default(crate::protocol::conversion::generation::DefaultBasis::SelectedPolicy),
+    ));
     report.intake(intake);
     report.begin(1);
     report.accept(View::DownstreamSse, std::iter::once(effect()).collect());

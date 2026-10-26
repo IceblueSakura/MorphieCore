@@ -121,6 +121,7 @@ impl GenerationCodec {
                     task: decoded.task,
                     model: decoded.context.model,
                     context: ExecutionHints {
+                        store: decoded.context.store,
                         cache: decoded.context.cache,
                         identity: decoded.context.identity,
                         metadata: decoded.context.metadata,
@@ -140,7 +141,12 @@ impl GenerationCodec {
                 }
             }
             GenerationApi::Responses => {
-                let decoded = envelope::decode_request_with_history(&value, direction, history)?;
+                let decoded = envelope::decode_request_with_history(
+                    &value,
+                    direction,
+                    history,
+                    self.adaptation.rules.responses_input_video,
+                )?;
                 let options = match decoded.context.delivery.options {
                     Presence::Absent => Presence::Absent,
                     Presence::Null => Presence::Null,

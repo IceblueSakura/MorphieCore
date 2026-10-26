@@ -60,6 +60,7 @@ pub(crate) fn decode_with(
         output,
         responses::items::ItemSide::Output,
         item_status,
+        false,
     )?;
     for (owner, item) in &mut b.items {
         if let Item::ConfigurationUpdate(update) = item {

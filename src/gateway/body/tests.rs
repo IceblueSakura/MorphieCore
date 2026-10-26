@@ -661,12 +661,10 @@ async fn messages_clients_get_anthropic_shapes_from_an_openai_target() {
     )]
         .clone();
     // A failed tool result keeps its text toward an OpenAI target; the flag is named.
-    // Reasoning history is independent of active thinking controls.
     let body = serde_json::json!({"model":"fixture-model","max_tokens":32,
         "tools":[{"name":"lookup","input_schema":{"type":"object","properties":{}}}],"messages":[
         {"role":"user","content":"q"},
-        {"role":"assistant","content":[{"type":"thinking","thinking":"plan","signature":""},
-            {"type":"tool_use","id":"call-local","name":"lookup","input":{}}]},
+        {"role":"assistant","content":[{"type":"tool_use","id":"call-local","name":"lookup","input":{}}]},
         {"role":"user","content":[{"type":"tool_result","tool_use_id":"call-local","content":"boom","is_error":true}]}]});
     let (_, request) = crate::gateway::ingress::admission::prepare(
         &gate.state,
@@ -695,8 +693,7 @@ async fn messages_clients_get_anthropic_shapes_from_an_openai_target() {
     assert!(rules.contains(&"openai.wrap-tool-result-errors.v1"));
     assert_eq!(
         chat["messages"][1],
-        serde_json::json!({"role":"assistant","content":null,"reasoning_content":"plan",
-            "reasoning_details":[{"type":"reasoning.summary","summary":"plan","format":"openai-responses-v1","index":0}],"tool_calls":[{"id":"call-local","type":"function","function":{"name":"lookup","arguments":"{}"}}]})
+        serde_json::json!({"role":"assistant","content":null,"tool_calls":[{"id":"call-local","type":"function","function":{"name":"lookup","arguments":"{}"}}]})
     );
     let (tx, upstream, _, _) = upstream(200, "application/json");
     let mut source = wire::response(1);

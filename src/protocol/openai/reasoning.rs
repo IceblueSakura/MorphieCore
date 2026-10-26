@@ -20,6 +20,7 @@ use serde_json::{Map, Value, json};
 pub(super) fn requires_extended_controls(settings: &GenerationSettings) -> bool {
     let value = &settings.reasoning;
     value.budget_tokens.is_some()
+        || value.replay_mismatch == Some(crate::semantic::task::generation::ReplayMismatch::Reject)
         || value.presentation.visibility == crate::semantic::value::Presence::Null
         || settings
             .effort

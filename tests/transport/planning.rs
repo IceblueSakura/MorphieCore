@@ -228,7 +228,7 @@ mod candidates {
     fn a_narrower_native_candidate_is_skipped_not_admitted() {
         let topology = catalog::default_topology().unwrap();
         let model = catalog::GOOGLE_BINDINGS[0].model;
-        let video = GenerationCodec::new(GenerationApi::Chat, Dialect::Standard, None)
+        let video = GenerationCodec::new(GenerationApi::Chat, Dialect::ModelBest, None)
             .decode_client_request(
                 &serde_json::to_vec(&json!({"model":model,"messages":[{"role":"user","content":[
                     {"type":"video_url","video_url":{"url":"data:video/mp4;base64,AQID"}}]}]}))

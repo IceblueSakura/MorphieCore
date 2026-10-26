@@ -28,7 +28,7 @@ pub fn json_size(value: &impl serde::Serialize, max: usize) -> Result<usize, Val
 }
 mod json;
 pub use json::{JsonError, JsonLimits, JsonResource, parse_json};
-pub(crate) use json::{parse_image_response_json, parse_json_view, validate_json_prefix};
+pub(crate) use json::{parse_image_response_json, validate_json_prefix};
 mod image;
 pub use image::ImageFormat;
 mod presence;

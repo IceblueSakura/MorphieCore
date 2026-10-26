@@ -101,29 +101,6 @@ pub(super) fn fields(o: &Map<String, Value>, allowed: &[&str]) -> Result<(), Cod
     }
     Ok(())
 }
-/// A replayed SDK derived view (`parsed`, `parsed_arguments`) must equal the naive JSON
-/// parse of its authoritative raw body, mirroring the pinned SDK's derivation over this
-/// opaque string; null means no derived value. The view is validated then dropped: it
-/// never becomes IR state, is never emitted, and an unparseable body cannot carry a
-/// non-null view.
-pub(super) fn admit_parsed(
-    _key: &'static str,
-    parsed: Option<&Value>,
-    raw: Option<&str>,
-) -> Result<(), CodecError> {
-    match (parsed, raw) {
-        (None | Some(Value::Null), _) => Ok(()),
-        (Some(_), None) => Err(CodecError::invalid()),
-        (Some(v), Some(raw)) => {
-            let expected: Value = crate::semantic::value::parse_json_view(raw.as_bytes())
-                .map_err(|_| CodecError::invalid())?;
-            if *v != expected {
-                return Err(CodecError::invalid());
-            }
-            Ok(())
-        }
-    }
-}
 pub(super) fn string<'a>(
     o: &'a Map<String, Value>,
     key: &'static str,

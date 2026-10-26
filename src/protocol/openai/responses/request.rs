@@ -18,12 +18,13 @@ pub(crate) fn decode_generation_in(
     v: &Value,
     direction: DecodeDirection<'_>,
 ) -> Result<DecodedRequest, CodecError> {
-    decode_generation_with_history(v, direction, None)
+    decode_generation_with_history(v, direction, None, false)
 }
 pub(super) fn decode_generation_with_history(
     v: &Value,
     direction: DecodeDirection<'_>,
     history: Option<(&DecodedRequest, &crate::protocol::DecodedResponse)>,
+    input_video: bool,
 ) -> Result<DecodedRequest, CodecError> {
     bounded(v)?;
     let o = object(v)?;
@@ -48,7 +49,9 @@ pub(super) fn decode_generation_with_history(
                 }),
             ));
         }
-        Some(Value::Array(a)) => decode_items(&mut b, a, ItemSide::History, "completed")?,
+        Some(Value::Array(a)) => {
+            decode_items(&mut b, a, ItemSide::History, "completed", input_video)?
+        }
         None if history.is_some() || o.get("instructions").is_some_and(Value::is_string) => {}
         _ => {
             return Err(CodecError::invalid());

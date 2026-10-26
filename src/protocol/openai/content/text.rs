@@ -9,38 +9,22 @@ use crate::semantic::{
 use serde_json::{Map, Value, json};
 pub(in crate::protocol::openai) fn read(
     o: &Map<String, Value>,
-    replay: bool,
     items: &mut Items,
 ) -> Result<TextContent, CodecError> {
-    read_existing(o, replay, items, &[])
+    read_existing(o, items, &[])
 }
 pub(in crate::protocol::openai) fn read_existing(
     o: &Map<String, Value>,
-    replay: bool,
     items: &mut Items,
     existing: &[Annotation],
 ) -> Result<TextContent, CodecError> {
-    items.direction.fields(
-        o,
-        if replay {
-            &["type", "text", "annotations", "logprobs", "parsed"]
-        } else {
-            &["type", "text", "annotations", "logprobs"]
-        },
-    )?;
+    items
+        .direction
+        .fields(o, &["type", "text", "annotations", "logprobs"])?;
     let text = Text::allowing_empty(string(o, "text")?, "text", MAX_TEXT_BYTES)
         .map_err(|_| CodecError::Limit)?;
-    if replay {
-        admit_parsed("parsed", o.get("parsed"), Some(text.as_str()))?;
-    }
     let annotations = match o.get("annotations") {
         Some(v) if !v.is_null() => read_annotations(v, items, existing)?,
-        None if replay && items.direction.client() => {
-            // Selected client-input shorthand only. Closed request decoding and
-            // every upstream snapshot still require the official array.
-            items.evidence.record_history_annotations_default();
-            vec![]
-        }
         _ => {
             return Err(CodecError::invalid());
         }

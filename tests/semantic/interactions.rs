@@ -1495,7 +1495,7 @@ fn rejects_unrepresentable_critical_tool_semantics() {
 #[test]
 fn media_become_v1_content_and_video_has_no_carrier() {
     let decode = |profile, body: serde_json::Value| {
-        GenerationCodec::new(profile, Dialect::Standard, None)
+        GenerationCodec::new(profile, Dialect::OpenRouter, None)
             .decode_request(body.to_string().as_bytes())
             .unwrap()
     };
