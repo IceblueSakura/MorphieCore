@@ -88,14 +88,20 @@ fn auth_file_is_required_private_strict_and_versioned() {
         std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
     }
     assert!(Bootstrap::from_directory(root).is_ok());
-    write_private(
-        &root.join("gateway.json"),
-        &serde_json::to_vec(&json!({"client_key":FIRST})).unwrap(),
-    );
-    assert!(matches!(
-        Bootstrap::from_directory(root),
-        Err(StartupError::Configuration("gateway"))
-    ));
+    for invalid in [
+        json!({"client_key":FIRST}),
+        json!({"auth_file":"auth.json","models_file":"models.json","client_key":FIRST}),
+        json!({"auth_file":"auth.json","models_file":"models.json","client_key":null}),
+    ] {
+        write_private(
+            &root.join("gateway.json"),
+            &serde_json::to_vec(&invalid).unwrap(),
+        );
+        assert!(matches!(
+            Bootstrap::from_directory(root),
+            Err(StartupError::Configuration("gateway"))
+        ));
+    }
 }
 
 #[tokio::test]
