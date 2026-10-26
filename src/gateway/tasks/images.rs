@@ -3,11 +3,9 @@ use crate::gateway::{
     ApiError, Credentials, ImageEntry, Runtime, StartupError, body,
     diagnostics::{Stage, Trace},
     ingress::admission,
-    startup::credentials,
 };
 use crate::{
     protocol::openai::images,
-    provider::{CredentialKind, ProviderDefinition},
     topology::{CompiledTopology, images::ImageRoute},
 };
 use axum::{
@@ -18,52 +16,19 @@ use axum::{
 use std::{collections::BTreeMap, sync::Arc, time::Duration};
 use tokio::time::Instant;
 
-pub(in crate::gateway) struct BoundImage {
-    route: ImageRoute,
-    provider: ProviderDefinition,
-    secret: credentials::Source,
-}
+pub(in crate::gateway) type BoundImage = super::BoundTask<ImageRoute>;
 pub(in crate::gateway) fn bind(
     topology: &CompiledTopology,
     entries: Vec<ImageEntry>,
     credentials: &Credentials,
 ) -> Result<BTreeMap<String, Arc<BoundImage>>, StartupError> {
-    if entries.len() > 64 {
-        return Err(StartupError::Binding);
-    }
-    let mut result = BTreeMap::new();
-    for entry in entries {
-        let route = topology
-            .image_route(&entry.model)
-            .ok_or(StartupError::Binding)?
-            .clone();
-        let provider = topology
-            .provider(route.endpoint.provider.as_str())
-            .ok_or(StartupError::Binding)?
-            .clone();
-        let binding = credentials
-            .get(&route.endpoint.credential)
-            .ok_or(StartupError::Credentials)?;
-        if binding.fallback || binding.sources.len() != 1 {
-            return Err(StartupError::Credentials);
-        }
-        let secret = binding.sources[0].clone();
-        secret.check(CredentialKind::ApiKey, provider.id.as_str())?;
-        if result
-            .insert(
-                entry.model,
-                Arc::new(BoundImage {
-                    route,
-                    provider,
-                    secret,
-                }),
-            )
-            .is_some()
-        {
-            return Err(StartupError::Binding);
-        }
-    }
-    Ok(result)
+    super::bind(
+        topology,
+        entries,
+        credentials,
+        |entry: &ImageEntry| topology.image_route(&entry.model),
+        |entry| entry.model,
+    )
 }
 pub(in crate::gateway) async fn handle(
     State(runtime): State<Arc<Runtime>>,

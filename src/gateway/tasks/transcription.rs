@@ -3,11 +3,9 @@ use crate::gateway::{
     ApiError, Credentials, Runtime, StartupError, TranscriptionEntry, body,
     diagnostics::{Stage, Trace},
     ingress::admission,
-    startup::credentials,
 };
 use crate::{
     protocol::openai::transcription as codec,
-    provider::{CredentialKind, ProviderDefinition},
     semantic::task::speech_recognition::RecognitionResult,
     topology::{CompiledTopology, transcription::TranscriptionRoute},
 };
@@ -18,54 +16,22 @@ use axum::{
 };
 use std::{collections::BTreeMap, sync::Arc, time::Duration};
 use tokio::time::Instant;
-pub(in crate::gateway) struct BoundTranscription {
-    route: TranscriptionRoute,
-    provider: ProviderDefinition,
-    secret: credentials::Source,
-}
+pub(in crate::gateway) type BoundTranscription = super::BoundTask<TranscriptionRoute>;
 pub(in crate::gateway) fn bind(
     topology: &CompiledTopology,
     entries: Vec<TranscriptionEntry>,
     credentials: &Credentials,
 ) -> Result<BTreeMap<String, Arc<BoundTranscription>>, StartupError> {
-    if entries.len() > 64 {
-        return Err(StartupError::Binding);
-    }
-    let mut result = BTreeMap::new();
-    for entry in entries {
-        let route = match &entry.binding {
+    super::bind(
+        topology,
+        entries,
+        credentials,
+        |entry: &TranscriptionEntry| match &entry.binding {
             Some(binding) => topology.transcription_binding(&entry.model, binding),
             None => topology.transcription_route(&entry.model),
-        }
-        .ok_or(StartupError::Binding)?
-        .clone();
-        let provider = topology
-            .provider(route.endpoint.provider.as_str())
-            .ok_or(StartupError::Binding)?
-            .clone();
-        let binding = credentials
-            .get(&route.endpoint.credential)
-            .ok_or(StartupError::Credentials)?;
-        if binding.fallback || binding.sources.len() != 1 {
-            return Err(StartupError::Credentials);
-        }
-        let secret = binding.sources[0].clone();
-        secret.check(CredentialKind::ApiKey, provider.id.as_str())?;
-        if result
-            .insert(
-                entry.model,
-                Arc::new(BoundTranscription {
-                    route,
-                    provider,
-                    secret,
-                }),
-            )
-            .is_some()
-        {
-            return Err(StartupError::Binding);
-        }
-    }
-    Ok(result)
+        },
+        |entry| entry.model,
+    )
 }
 pub(in crate::gateway) async fn handle(
     State(runtime): State<Arc<Runtime>>,
