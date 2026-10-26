@@ -1,7 +1,7 @@
 //! Completed or partial Generation output, independent of transport success.
 use crate::semantic::task::generation::{
-    GenerationError, Item, ItemId, ItemLifecycle, MAX_TEXT_BYTES, RefusalDetails, Usage,
-    UsageReports,
+    GenerationError, Item, ItemId, ItemLifecycle, MAX_NAME_BYTES, MAX_TEXT_BYTES, RefusalDetails,
+    Usage, UsageReports, nonempty_within,
 };
 use crate::semantic::value::{Presence, Text};
 
@@ -105,7 +105,7 @@ impl TerminalDetails {
             && (e
                 .code
                 .as_ref()
-                .is_some_and(|c| c.as_str().is_empty() || c.as_str().len() > 128)
+                .is_some_and(|c| !nonempty_within(c.as_str(), MAX_NAME_BYTES))
                 || e.message.as_str().len() > MAX_TEXT_BYTES
                 || e.param.as_ref().is_some_and(|p| p.as_str().len() > 256)
                 || e.original_type
@@ -115,7 +115,7 @@ impl TerminalDetails {
             return Err(GenerationError::Limit);
         }
         if let Some(IncompleteReason::Other(t)) = &self.incomplete
-            && (t.as_str().is_empty() || t.as_str().len() > 128)
+            && !nonempty_within(t.as_str(), MAX_NAME_BYTES)
         {
             return Err(GenerationError::Limit);
         }

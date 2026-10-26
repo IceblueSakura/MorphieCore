@@ -86,7 +86,7 @@ pub(super) fn start_item(
         }
     }
     if let Some(call_id) = kind.call_id() {
-        if call_id.as_str().is_empty() || call_id.as_str().len() > 256 {
+        if !nonempty_within(call_id.as_str(), MAX_ID_BYTES) {
             return Err(EventError::Limit);
         }
         if state.items.iter().any(|i| {
@@ -111,12 +111,12 @@ pub(super) fn start_item(
     }
     if let Some((_, name)) = kind.call() {
         if let Some(domain) = kind.alias_domain() {
-            if domain.source.as_str().is_empty() || domain.source.as_str().len() > 256 {
+            if !nonempty_within(domain.source.as_str(), MAX_ID_BYTES) {
                 return Err(EventError::Limit);
             }
             state.charge(domain.source.as_str().len())?;
         }
-        if name.as_str().is_empty() || name.as_str().len() > 128 {
+        if !nonempty_within(name.as_str(), MAX_NAME_BYTES) {
             return Err(EventError::Limit);
         }
         state.charge(name.as_str().len())?;
@@ -128,7 +128,7 @@ pub(super) fn start_item(
         state.charge(code.len() + fingerprint.len())?;
     }
     if let ItemKind::ProgramOutput { call_id, result } = &kind {
-        if call_id.as_str().is_empty() || call_id.as_str().len() > 256 {
+        if !nonempty_within(call_id.as_str(), MAX_ID_BYTES) {
             return Err(EventError::Limit);
         }
         if state

@@ -8,6 +8,14 @@ pub const MAX_ITEMS: usize = 65_536;
 pub const MAX_TEXT_BYTES: usize = 16 << 20;
 pub const MAX_TOTAL_BYTES: usize = 32 << 20;
 pub const MAX_TOOLS: usize = 128;
+/// Call IDs, aliases, sources and caller IDs.
+pub const MAX_ID_BYTES: usize = 256;
+/// Tool names, namespaces and error codes.
+pub const MAX_NAME_BYTES: usize = 128;
+/// A nonempty identifier or name within `max` bytes.
+pub(crate) fn nonempty_within(value: &str, max: usize) -> bool {
+    !value.is_empty() && value.len() <= max
+}
 fn add(total: &mut usize, value: &str) -> Result<(), GenerationError> {
     charge(total, value.len())
 }
@@ -287,7 +295,7 @@ pub fn items(
                         tools(&[ToolDefinition::Function((**tool).clone())], None)?,
                     )?,
                     ToolChangeAction::AddReference(name) | ToolChangeAction::Remove(name) => {
-                        if name.as_str().is_empty() || name.as_str().len() > 128 {
+                        if !nonempty_within(name.as_str(), MAX_NAME_BYTES) {
                             return Err(GenerationError::InvalidToolDefinition);
                         }
                         add(&mut bytes, name.as_str())?;
@@ -308,7 +316,7 @@ pub fn items(
                 {
                     return Err(GenerationError::DuplicateCall);
                 }
-                if p.call_id.as_str().is_empty() || p.call_id.as_str().len() > 256 {
+                if !nonempty_within(p.call_id.as_str(), MAX_ID_BYTES) {
                     return Err(GenerationError::Limit);
                 }
                 add(&mut bytes, p.call_id.as_str())?;
@@ -474,7 +482,7 @@ pub(super) fn tool_result(
             return Err(GenerationError::InvalidToolResult);
         }
         if let ToolExecution::Failed { code: Some(code) } = execution {
-            if code.as_str().is_empty() || code.as_str().len() > 128 {
+            if !nonempty_within(code.as_str(), MAX_NAME_BYTES) {
                 return Err(GenerationError::Limit);
             }
             add(bytes, code.as_str())?;
@@ -510,7 +518,7 @@ fn provider_observation_value(
     resources: &ResourceTable,
     file_decoded_bytes: &mut usize,
 ) -> Result<(), GenerationError> {
-    if observed.source.source.as_str().is_empty() || observed.source.source.as_str().len() > 256 {
+    if !nonempty_within(observed.source.source.as_str(), MAX_ID_BYTES) {
         return Err(GenerationError::InvalidProviderObservation);
     }
     add(bytes, observed.source.source.as_str())?;
@@ -521,12 +529,12 @@ fn provider_observation_value(
             action,
             ..
         } => {
-            if tool.as_str().is_empty() || tool.as_str().len() > 128 {
+            if !nonempty_within(tool.as_str(), MAX_NAME_BYTES) {
                 return Err(GenerationError::InvalidProviderObservation);
             }
             add(bytes, tool.as_str())?;
             if let Some(alias) = alias {
-                if alias.as_str().is_empty() || alias.as_str().len() > 256 {
+                if !nonempty_within(alias.as_str(), MAX_ID_BYTES) {
                     return Err(GenerationError::Limit);
                 }
                 add(bytes, alias.as_str())?;
@@ -564,7 +572,7 @@ fn provider_observation_value(
         }
         ProviderOperation::Reference(reference) => {
             if let ProviderOperationReference::Native(alias) = reference {
-                if alias.as_str().is_empty() || alias.as_str().len() > 256 {
+                if !nonempty_within(alias.as_str(), MAX_ID_BYTES) {
                     return Err(GenerationError::Limit);
                 }
                 add(bytes, alias.as_str())?;
@@ -588,7 +596,7 @@ fn provider_observation_value(
         return Err(GenerationError::InvalidProviderObservation);
     }
     if let Some(ToolExecution::Failed { code: Some(code) }) = &observed.execution {
-        if code.as_str().is_empty() || code.as_str().len() > 128 {
+        if !nonempty_within(code.as_str(), MAX_NAME_BYTES) {
             return Err(GenerationError::Limit);
         }
         add(bytes, code.as_str())?;
@@ -631,19 +639,19 @@ fn provider_observation_value(
 }
 fn call_context(context: &CallContext, bytes: &mut usize) -> Result<(), GenerationError> {
     if let Some(domain) = &context.alias_domain {
-        if domain.source.as_str().is_empty() || domain.source.as_str().len() > 256 {
+        if !nonempty_within(domain.source.as_str(), MAX_ID_BYTES) {
             return Err(GenerationError::Limit);
         }
         add(bytes, domain.source.as_str())?;
     }
     if let Some(namespace) = &context.namespace {
-        if namespace.as_str().is_empty() || namespace.as_str().len() > 128 {
+        if !nonempty_within(namespace.as_str(), MAX_NAME_BYTES) {
             return Err(GenerationError::InvalidToolDefinition);
         }
         add(bytes, namespace.as_str())?;
     }
     if let Some(CallOrigin::Program { caller_id }) = &context.caller {
-        if caller_id.as_str().is_empty() || caller_id.as_str().len() > 256 {
+        if !nonempty_within(caller_id.as_str(), MAX_ID_BYTES) {
             return Err(GenerationError::InvalidToolDefinition);
         }
         add(bytes, caller_id.as_str())?;
@@ -662,10 +670,8 @@ fn validate_call<'a>(
     if calls.insert((domain, id.as_str()), kind).is_some() {
         return Err(GenerationError::DuplicateCall);
     }
-    if id.as_str().is_empty()
-        || id.as_str().len() > 256
-        || name.as_str().is_empty()
-        || name.as_str().len() > 128
+    if !nonempty_within(id.as_str(), MAX_ID_BYTES)
+        || !nonempty_within(name.as_str(), MAX_NAME_BYTES)
     {
         return Err(GenerationError::Limit);
     }

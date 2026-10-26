@@ -97,4 +97,7 @@ pub use stream::{
     EventError, ItemKind, PartKind, StreamEvent, StreamItem, StreamPart, StreamState,
     StreamTerminal, end_of_stream, materialize, reduce, snapshot_items,
 };
-pub use validate::{MAX_ITEMS, MAX_TEXT_BYTES, MAX_TOOLS, MAX_TOTAL_BYTES};
+pub(crate) use validate::nonempty_within;
+pub use validate::{
+    MAX_ID_BYTES, MAX_ITEMS, MAX_NAME_BYTES, MAX_TEXT_BYTES, MAX_TOOLS, MAX_TOTAL_BYTES,
+};
