@@ -175,7 +175,7 @@ impl Store {
     pub fn transaction(&self) -> Result<Transaction<'_>, Error> {
         Ok(Transaction {
             store: self,
-            _lock: self.root.lock("store.lock")?,
+            _lock: self.root.lock_briefly("store.lock")?,
         })
     }
     pub fn account_lock(&self, profile: &str, alias: &str) -> Result<FileLock, Error> {

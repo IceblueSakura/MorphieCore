@@ -154,6 +154,19 @@ impl Source {
             Self::ManagedKey(binding) => binding.provenance(),
         }
     }
+    /// Request-time resolution. Store-backed sources read private files under a
+    /// briefly contended lock, so they run off the async workers.
+    pub(in crate::gateway) async fn resolve_for_request(
+        &self,
+    ) -> Result<(Arc<SecretMaterial>, Option<AccessGrant>), crate::gateway::ApiError> {
+        if let Self::ApiKey(secret) = self {
+            return Ok((secret.clone(), None));
+        }
+        let source = self.clone();
+        tokio::task::spawn_blocking(move || source.resolve())
+            .await
+            .map_err(|_| crate::gateway::ApiError::upstream())?
+    }
     pub(in crate::gateway) fn resolve(
         &self,
     ) -> Result<(Arc<SecretMaterial>, Option<AccessGrant>), crate::gateway::ApiError> {

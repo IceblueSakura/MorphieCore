@@ -148,7 +148,7 @@ async fn produce_one(
     trace.executor(entry.provider.id.as_str());
     let expectation = prepared.expectation.clone();
     let delivery = prepared.delivery.clone();
-    let (secret, grant) = entry.secret.resolve()?;
+    let (secret, grant) = entry.secret.resolve_for_request().await?;
     if grant.is_some() {
         return Err(ApiError::upstream());
     }

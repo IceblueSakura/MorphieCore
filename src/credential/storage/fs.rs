@@ -5,7 +5,11 @@ use std::{
     fs::{File, OpenOptions, TryLockError},
     io::{Read, Write},
     path::Path,
+    time::{Duration, Instant},
 };
+
+/// Bounds waiting for a store transaction; holders never span network I/O.
+const BRIEF_LOCK_WAIT: Duration = Duration::from_secs(1);
 
 pub(in crate::credential) struct FileLock(File);
 impl std::fmt::Debug for FileLock {
@@ -116,6 +120,24 @@ impl Directory {
             TryLockError::Error(_) => Error::Storage,
         })?;
         Ok(FileLock(file))
+    }
+    /// Short store transactions wait briefly for concurrent holders, including
+    /// other requests in this process; long-lived operation locks use `lock`
+    /// and report `Busy` immediately.
+    pub fn lock_briefly(&self, name: &str) -> Result<FileLock, Error> {
+        let deadline = Instant::now() + BRIEF_LOCK_WAIT;
+        let mut pause = Duration::from_millis(1);
+        loop {
+            match self.lock(name) {
+                Err(Error::Busy) if Instant::now() < deadline => {
+                    std::thread::sleep(
+                        pause.min(deadline.saturating_duration_since(Instant::now())),
+                    );
+                    pause = (pause * 2).min(Duration::from_millis(16));
+                }
+                result => return result,
+            }
+        }
     }
     /// Only a callback error is known to precede replacement. Internal errors
     /// may follow rename/fsync and must keep the caller's recovery marker armed.

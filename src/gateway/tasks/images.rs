@@ -171,7 +171,7 @@ async fn produce_one(
     trace: &mut Trace,
 ) -> Result<(), ApiError> {
     trace.stage(Stage::Prepare);
-    let (secret, grant) = entry.secret.resolve()?;
+    let (secret, grant) = entry.secret.resolve_for_request().await?;
     if grant.is_some() {
         return Err(ApiError::upstream());
     }

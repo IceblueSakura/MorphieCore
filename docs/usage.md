@@ -69,6 +69,8 @@ morphiecore-auth api-key disable --domain "$PROVIDER_ID" --alias "$ALIAS" --revi
 
 `enable` and `remove` use the same identity and revision arguments. Re-read the revision after every change. Removing a key deletes the local secret; it does not revoke the upstream key.
 
+A running gateway pins each key's identity at startup. After `replace`, `disable` or `remove`, that key is unavailable until the gateway restarts (the pool advances only when fallback is enabled; otherwise requests fail with `credential_unavailable`); a replaced key never inherits the old key's replay or cache scope.
+
 Every subcommand accepts `--store /path/to/store`.
 
 ### Create a pool

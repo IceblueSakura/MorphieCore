@@ -162,7 +162,7 @@ pub(in crate::gateway) async fn produce_chain(
             } else {
                 let runtime = runtime.as_ref().ok_or(ApiError::upstream())?;
                 trace.stage(Stage::Prepare);
-                let (secret, grant) = candidate.secret.resolve()?;
+                let (secret, grant) = candidate.secret.resolve_for_request().await?;
                 affinity = crate::gateway::routing::prefix_cache::choose(
                     &runtime.affinity,
                     candidate,

@@ -263,3 +263,37 @@ fn local_locks_and_record_binding_are_shared_but_domains_are_isolated() {
     );
     assert!(manager.list_api_keys(None).is_err());
 }
+#[test]
+fn concurrent_borrows_wait_for_short_transactions_within_a_bound() {
+    let dir = Directory::new();
+    let manager = manager(&dir);
+    manager
+        .add_api_key("alpha", "one", secret("synthetic-one"))
+        .unwrap();
+    let access = std::sync::Arc::new(manager.bind_api_key("alpha", "one").unwrap());
+    // Parallel requests on one binding contend only for short store transactions.
+    let workers: Vec<_> = (0..8)
+        .map(|_| {
+            let access = access.clone();
+            std::thread::spawn(move || {
+                (0..50).all(|_| {
+                    access
+                        .borrow()
+                        .is_ok_and(|key| key.expose() == "synthetic-one")
+                })
+            })
+        })
+        .collect();
+    assert!(workers.into_iter().all(|worker| worker.join().unwrap()));
+    // A stuck holder still yields Busy after the bounded wait, not a hang.
+    let held = manager.keys.transaction().unwrap();
+    let started = std::time::Instant::now();
+    let blocked = {
+        let access = access.clone();
+        std::thread::spawn(move || access.borrow().unwrap_err())
+    };
+    assert_eq!(blocked.join().unwrap(), CredentialError::Busy);
+    assert!(started.elapsed() >= std::time::Duration::from_millis(900));
+    drop(held);
+    assert!(access.borrow().is_ok());
+}

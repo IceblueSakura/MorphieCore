@@ -1369,7 +1369,7 @@ Configuration is documented in [Usage](usage.md#delta-coalescing). It is not an 
 
 ### Credentials and security
 
-Credentials come only from the application's private store. A manager owns API keys, OAuth identities and ordered pools. Inference borrows access for a fixed identity; it never logs in or refreshes.
+Credentials come only from the application's private store. A manager owns API keys, OAuth identities and ordered pools. Inference borrows access for a fixed identity; it never logs in or refreshes. Each borrow reads the store under its short transaction lock off the async workers; concurrent requests wait at most one second for that lock, while long-lived account operation locks still report `Busy` immediately.
 
 Ingress resolves exactly one configured Agent key via Bearer or `x-api-key` before body collection. The immutable authenticated-Agent context exists independently of diagnostics and capture. Business data cannot select an Agent identity, origin, credential or auth/proxy header. Inbound headers are not passed through.
 
