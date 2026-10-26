@@ -1,4 +1,5 @@
 //! Function-call content carriers shared by Chat and Responses.
+use crate::protocol::failure::CarrierReason;
 use crate::protocol::openai::{CodecError, Profile, shape::*};
 use crate::semantic::task::generation::*;
 use serde_json::{Map, Value};
@@ -22,9 +23,7 @@ pub(in crate::protocol::openai) fn reject_chat_orchestration(
     .into_iter()
     .find(|key| o.get(*key).is_some_and(|v| !v.is_null()))
     {
-        return Err(CodecError::Unsupported(
-            crate::protocol::failure::CarrierReason::UnknownField,
-        ));
+        return Err(CodecError::Unsupported(CarrierReason::UnknownField));
     }
     Ok(())
 }
@@ -40,13 +39,9 @@ pub(in crate::protocol::openai) fn tool_call(
             reject_chat_orchestration(o)?;
             direction.fields(o, &["id", "type", "function", "index"])?;
             if string(o, "type")? != "function" {
-                return Err(CodecError::Unsupported(
-                    crate::protocol::failure::CarrierReason::Tools,
-                ));
+                return Err(CodecError::Unsupported(CarrierReason::Tools));
             }
-            let f = object(o.get("function").ok_or(CodecError::Invalid(
-                crate::protocol::failure::ShapeReason::InvalidValue,
-            ))?)?;
+            let f = object(o.get("function").ok_or(CodecError::invalid())?)?;
             reject_chat_orchestration(f)?;
             direction.fields(
                 f,

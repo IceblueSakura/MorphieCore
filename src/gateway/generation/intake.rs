@@ -4,6 +4,7 @@ use crate::gateway::{
     body::{Lane, send_frames},
     diagnostics::{Stage, Trace},
 };
+use crate::protocol::failure::{Observation, SourceFailureEvidence};
 use crate::{
     adapter::Request,
     execution::{Attempt, ResponseDelivery},
@@ -361,10 +362,7 @@ async fn produce(
     Ok(())
 }
 /// Error bodies are read for classification only, within the attempt deadline.
-async fn error_body(
-    mut upstream: reqwest::Response,
-    trace: &Trace,
-) -> (Vec<u8>, crate::protocol::failure::Observation) {
+async fn error_body(mut upstream: reqwest::Response, trace: &Trace) -> (Vec<u8>, Observation) {
     const LIMIT: usize = 16 << 10;
     let content_type = upstream
         .headers()
@@ -388,11 +386,11 @@ async fn error_body(
                 if json && let Some(capture) = &mut capture {
                     capture.feed(&body);
                 }
-                return (body, crate::protocol::failure::Observation::Interrupted);
+                return (body, Observation::Interrupted);
             }
         };
         if body.len() + chunk.len() > LIMIT {
-            return (vec![], crate::protocol::failure::Observation::OverLimit);
+            return (vec![], Observation::OverLimit);
         }
         if !json && let Some(capture) = &mut capture {
             capture.feed(&chunk);
@@ -405,7 +403,7 @@ async fn error_body(
         }
         capture.finish();
     }
-    (body, crate::protocol::failure::Observation::Complete)
+    (body, Observation::Complete)
 }
 #[allow(clippy::too_many_arguments)]
 pub(in crate::gateway) async fn produce_candidate(
@@ -439,13 +437,11 @@ pub(in crate::gateway) async fn produce_candidate(
             None,
             &crate::execution::AttemptError::Status { status, class },
         );
-        trace
-            .report
-            .source_failure(crate::protocol::failure::SourceFailureEvidence::http(
-                status,
-                b"",
-                crate::protocol::failure::Observation::IntentionallyUnread,
-            ));
+        trace.report.source_failure(SourceFailureEvidence::http(
+            status,
+            b"",
+            Observation::IntentionallyUnread,
+        ));
         if !(400..600).contains(&status) {
             return Err(ApiError::status(status));
         }
@@ -460,21 +456,15 @@ pub(in crate::gateway) async fn produce_candidate(
         lane.state
             .waiting_upstream
             .store(true, std::sync::atomic::Ordering::Release);
-        trace
-            .report
-            .source_failure(crate::protocol::failure::SourceFailureEvidence::http(
-                status,
-                b"",
-                crate::protocol::failure::Observation::Pending,
-            ));
+        trace.report.source_failure(SourceFailureEvidence::http(
+            status,
+            b"",
+            Observation::Pending,
+        ));
         let (body, observation) = error_body(upstream, trace).await;
         trace
             .report
-            .source_failure(crate::protocol::failure::SourceFailureEvidence::http(
-                status,
-                &body,
-                observation,
-            ));
+            .source_failure(SourceFailureEvidence::http(status, &body, observation));
         lane.state
             .waiting_upstream
             .store(false, std::sync::atomic::Ordering::Release);

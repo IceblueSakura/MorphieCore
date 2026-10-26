@@ -1,4 +1,5 @@
 //! Standard input image values. File IDs need issuer/resource ownership before admission.
+use crate::protocol::failure::CarrierReason;
 use crate::protocol::openai::{CodecError, Profile, shape::*};
 use crate::semantic::{task::generation::*, value::Text};
 use serde_json::{Map, Value, json};
@@ -11,9 +12,7 @@ pub(in crate::protocol::openai) fn read(
     let image = match profile {
         Profile::Responses => {
             if part.get("file_id").is_some_and(|v| !v.is_null()) {
-                return Err(CodecError::Unsupported(
-                    crate::protocol::failure::CarrierReason::Unavailable,
-                ));
+                return Err(CodecError::Unsupported(CarrierReason::Unavailable));
             }
             direction.fields(
                 part,
@@ -29,9 +28,7 @@ pub(in crate::protocol::openai) fn read(
         }
         Profile::Chat => {
             direction.fields(part, &["type", "image_url"])?;
-            let image = object(part.get("image_url").ok_or(CodecError::Invalid(
-                crate::protocol::failure::ShapeReason::InvalidValue,
-            ))?)?;
+            let image = object(part.get("image_url").ok_or(CodecError::invalid())?)?;
             direction.fields(image, &["url", "detail"])?;
             image
         }
@@ -48,31 +45,27 @@ pub(in crate::protocol::openai) fn read(
         return Err(CodecError::Limit);
     }
     let location = if let Some(data) = raw.strip_prefix("data:") {
-        let (media_type, data_base64) = data.split_once(";base64,").ok_or(CodecError::Invalid(
-            crate::protocol::failure::ShapeReason::InvalidValue,
-        ))?;
+        let (media_type, data_base64) = data.split_once(";base64,").ok_or(CodecError::invalid())?;
         ResourceLocation::Inline {
-            media_type: Text::new(media_type, "image media type", 64).map_err(|_| {
-                CodecError::Invalid(crate::protocol::failure::ShapeReason::InvalidValue)
-            })?,
-            data_base64: Text::new(data_base64, "image data", MAX_TEXT_BYTES).map_err(|_| {
-                CodecError::Invalid(crate::protocol::failure::ShapeReason::InvalidValue)
-            })?,
+            media_type: Text::new(media_type, "image media type", 64)
+                .map_err(|_| CodecError::invalid())?,
+            data_base64: Text::new(data_base64, "image data", MAX_TEXT_BYTES)
+                .map_err(|_| CodecError::invalid())?,
         }
     } else {
-        ResourceLocation::Url(Text::new(raw, "image URL", MAX_RESOURCE_URL_BYTES).map_err(
-            |_| CodecError::Invalid(crate::protocol::failure::ShapeReason::InvalidValue),
-        )?)
+        ResourceLocation::Url(
+            Text::new(raw, "image URL", MAX_RESOURCE_URL_BYTES)
+                .map_err(|_| CodecError::invalid())?,
+        )
     };
     let image_detail = match image.get("detail") {
         None => None,
-        Some(Value::String(s)) => Some(s.parse::<ImageDetail>().map_err(|_| {
-            CodecError::Invalid(crate::protocol::failure::ShapeReason::InvalidValue)
-        })?),
+        Some(Value::String(s)) => Some(
+            s.parse::<ImageDetail>()
+                .map_err(|_| CodecError::invalid())?,
+        ),
         _ => {
-            return Err(CodecError::Invalid(
-                crate::protocol::failure::ShapeReason::InvalidValue,
-            ));
+            return Err(CodecError::invalid());
         }
     };
     let resource = Resource {

@@ -1,4 +1,5 @@
 //! One content unit in either direction: block → IR and IR → block.
+use crate::protocol::failure::CarrierReason;
 mod decode;
 mod encode;
 
@@ -11,7 +12,7 @@ pub(in crate::protocol::anthropic::messages) use encode::item_blocks;
 
 /// An IR shape Messages has no carrier for; the caller names the owning rule.
 pub(in crate::protocol::anthropic::messages) fn unsupported() -> CodecError {
-    CodecError::Unsupported(crate::protocol::failure::CarrierReason::Unavailable)
+    CodecError::Unsupported(CarrierReason::Unavailable)
 }
 
 /// Native boundaries own their TTL; a request-lifetime boundary cannot be guessed.

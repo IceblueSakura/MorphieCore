@@ -1,5 +1,6 @@
 //! Closed, source-bound accounting views, not substitutes for Generation usage.
 //! Public access-program reports are not authority to invoke programs or hosted tools.
+use crate::protocol::failure::{CarrierReason, ShapeReason};
 use crate::protocol::openai::{
     CodecError, dialect::adapter_shapes::Extras, shape::DecodeDirection,
 };
@@ -15,9 +16,7 @@ pub(in crate::protocol::openai) fn programs(
     direction: DecodeDirection,
 ) -> Result<(), CodecError> {
     if let Some(value) = o.get_mut("access_programs") {
-        let programs = value.as_object_mut().ok_or(CodecError::Invalid(
-            crate::protocol::failure::ShapeReason::InvalidValue,
-        ))?;
+        let programs = value.as_object_mut().ok_or(CodecError::invalid())?;
         direction.fields(programs, &["cyber"])?;
         programs.retain(|name, _| name == "cyber");
         if programs.get("cyber").is_some_and(|v| {
@@ -28,9 +27,7 @@ pub(in crate::protocol::openai) fn programs(
                         .all(|c| c.is_ascii_alphanumeric() || b"_-".contains(&c))
             })
         }) {
-            return Err(CodecError::Invalid(
-                crate::protocol::failure::ShapeReason::InvalidValue,
-            ));
+            return Err(CodecError::invalid());
         }
         take(o, "access_programs", "/access_programs", extras);
     }
@@ -43,9 +40,7 @@ pub(in crate::protocol::openai) fn inactive_reports(
     for field in ["frequency_penalty", "presence_penalty"] {
         if let Some(value) = o.get(field) {
             if value.as_f64() != Some(0.0) {
-                return Err(CodecError::Unsupported(
-                    crate::protocol::failure::CarrierReason::Unavailable,
-                ));
+                return Err(CodecError::Unsupported(CarrierReason::Unavailable));
             }
             take(o, field, &format!("/{field}"), extras);
         }
@@ -55,9 +50,7 @@ pub(in crate::protocol::openai) fn inactive_reports(
 fn null_moderation(o: &mut Map<String, Value>, extras: &mut Extras) -> Result<(), CodecError> {
     if let Some(value) = o.get("moderation") {
         if !value.is_null() {
-            return Err(CodecError::Unsupported(
-                crate::protocol::failure::CarrierReason::Unavailable,
-            ));
+            return Err(CodecError::Unsupported(CarrierReason::Unavailable));
         }
         take(o, "moderation", "/moderation", extras);
     }
@@ -84,9 +77,7 @@ pub(in crate::protocol::openai) fn zero_tools(
         // No hosted-tool accounting semantics are admitted by the text slice.
         let expected = json!({"image_gen":{"input_tokens":0,"input_tokens_details":{"image_tokens":0,"text_tokens":0},"output_tokens":0,"output_tokens_details":{"image_tokens":0,"text_tokens":0},"total_tokens":0},"web_search":{"num_requests":0}});
         if value != &expected {
-            return Err(CodecError::Unsupported(
-                crate::protocol::failure::CarrierReason::Tools,
-            ));
+            return Err(CodecError::Unsupported(CarrierReason::Tools));
         }
         take(o, "tool_usage", "/tool_usage", extras);
     }
@@ -96,24 +87,20 @@ pub(in crate::protocol::openai) fn zero_tools(
 // the entire closed view source-bound; never attach it to a new semantic owner
 // or sum it into billed totals (context and billing can account differently).
 fn attribution(value: &mut Value, direction: DecodeDirection) -> Result<(), CodecError> {
-    let attribution = value.as_object_mut().ok_or(CodecError::Invalid(
-        crate::protocol::failure::ShapeReason::Usage,
-    ))?;
+    let attribution = value
+        .as_object_mut()
+        .ok_or(CodecError::Invalid(ShapeReason::Usage))?;
     direction.fields(attribution, &["items", "request_fields"])?;
     attribution.retain(|name, _| matches!(name.as_str(), "items" | "request_fields"));
     let items = attribution
         .get_mut("items")
         .and_then(Value::as_object_mut)
-        .ok_or(CodecError::Invalid(
-            crate::protocol::failure::ShapeReason::Usage,
-        ))?;
+        .ok_or(CodecError::Invalid(ShapeReason::Usage))?;
     if items.len() > 64 {
         return Err(CodecError::Limit);
     }
     let counts = |value: &mut Value, item: bool| -> Result<(), CodecError> {
-        let value = value.as_object_mut().ok_or(CodecError::Invalid(
-            crate::protocol::failure::ShapeReason::InvalidValue,
-        ))?;
+        let value = value.as_object_mut().ok_or(CodecError::invalid())?;
         let keys = [
             "input_tokens",
             "output_tokens",
@@ -130,25 +117,19 @@ fn attribution(value: &mut Value, direction: DecodeDirection) -> Result<(), Code
             .iter()
             .any(|key| value.get(*key).and_then(Value::as_u64).is_none())
         {
-            return Err(CodecError::Invalid(
-                crate::protocol::failure::ShapeReason::InvalidValue,
-            ));
+            return Err(CodecError::invalid());
         }
         Ok(())
     };
     for (id, item) in items {
         if id.is_empty() || id.len() > 128 || !id.bytes().all(|c| c.is_ascii_graphic()) {
-            return Err(CodecError::Invalid(
-                crate::protocol::failure::ShapeReason::InvalidValue,
-            ));
+            return Err(CodecError::invalid());
         }
         counts(item, true)?;
         let Some(content) = item.get_mut("content") else {
             continue;
         };
-        let content = content.as_array_mut().ok_or(CodecError::Invalid(
-            crate::protocol::failure::ShapeReason::InvalidValue,
-        ))?;
+        let content = content.as_array_mut().ok_or(CodecError::invalid())?;
         if content.len() > 64 {
             return Err(CodecError::Limit);
         }
@@ -157,9 +138,9 @@ fn attribution(value: &mut Value, direction: DecodeDirection) -> Result<(), Code
         }
     }
     if let Some(request_fields) = attribution.get_mut("request_fields") {
-        let request_fields = request_fields.as_object_mut().ok_or(CodecError::Invalid(
-            crate::protocol::failure::ShapeReason::InvalidValue,
-        ))?;
+        let request_fields = request_fields
+            .as_object_mut()
+            .ok_or(CodecError::invalid())?;
         direction.fields(request_fields, &["tools"])?;
         request_fields.retain(|name, _| name == "tools");
         for value in request_fields.values_mut() {
@@ -180,9 +161,7 @@ pub(in crate::protocol::openai) fn context(
         if o.get(name)
             .is_some_and(|v| !v.as_f64().is_some_and(f64::is_finite))
         {
-            return Err(CodecError::Invalid(
-                crate::protocol::failure::ShapeReason::InvalidValue,
-            ));
+            return Err(CodecError::invalid());
         }
     }
     let Some(usage) = o.get_mut("usage").and_then(Value::as_object_mut) else {
@@ -191,18 +170,14 @@ pub(in crate::protocol::openai) fn context(
     for name in ["num_sources_used", "num_server_side_tools_used"] {
         if let Some(value) = usage.get(name) {
             if value.as_u64() != Some(0) {
-                return Err(CodecError::Unsupported(
-                    crate::protocol::failure::CarrierReason::Usage,
-                ));
+                return Err(CodecError::Unsupported(CarrierReason::Usage));
             }
             take(usage, name, &format!("/usage/{name}"), extras);
         }
     }
     if let Some(value) = usage.get("cost_in_usd_ticks") {
         if value.as_u64().is_none() {
-            return Err(CodecError::Invalid(
-                crate::protocol::failure::ShapeReason::InvalidValue,
-            ));
+            return Err(CodecError::invalid());
         }
         take(
             usage,
@@ -212,15 +187,11 @@ pub(in crate::protocol::openai) fn context(
         );
     }
     if let Some(value) = usage.get_mut("context_details") {
-        let details = value.as_object_mut().ok_or(CodecError::Invalid(
-            crate::protocol::failure::ShapeReason::InvalidValue,
-        ))?;
+        let details = value.as_object_mut().ok_or(CodecError::invalid())?;
         direction.fields(details, &["input_tokens", "output_tokens"])?;
         details.retain(|name, _| matches!(name.as_str(), "input_tokens" | "output_tokens"));
         if details.values().any(|v| v.as_u64().is_none()) {
-            return Err(CodecError::Invalid(
-                crate::protocol::failure::ShapeReason::InvalidValue,
-            ));
+            return Err(CodecError::invalid());
         }
         take(usage, "context_details", "/usage/context_details", extras);
     }

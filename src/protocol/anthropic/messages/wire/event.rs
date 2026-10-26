@@ -9,6 +9,7 @@ use crate::protocol::anthropic::messages::{
         request::Role,
     },
 };
+use crate::protocol::failure::CarrierReason;
 use crate::{protocol::CodecError, semantic::value::Presence};
 use serde_json::{Value, json};
 
@@ -24,18 +25,14 @@ impl Delta {
         let kind = v
             .get("type")
             .and_then(Value::as_str)
-            .ok_or(CodecError::Invalid(
-                crate::protocol::failure::ShapeReason::InvalidValue,
-            ))?;
+            .ok_or(CodecError::invalid())?;
         let (key, constructor): (&str, fn(String) -> Self) = match kind {
             "text_delta" => ("text", Self::Text),
             "thinking_delta" => ("thinking", Self::Thinking),
             "signature_delta" => ("signature", Self::Signature),
             "input_json_delta" => ("partial_json", Self::InputJson),
             _ => {
-                return Err(CodecError::Unsupported(
-                    crate::protocol::failure::CarrierReason::Unavailable,
-                ));
+                return Err(CodecError::Unsupported(CarrierReason::Unavailable));
             }
         };
         let o = object(v)?;
@@ -113,13 +110,9 @@ impl Event {
         let kind = v
             .get("type")
             .and_then(Value::as_str)
-            .ok_or(CodecError::Invalid(
-                crate::protocol::failure::ShapeReason::InvalidValue,
-            ))?;
+            .ok_or(CodecError::invalid())?;
         if !Self::KNOWN.contains(&kind) {
-            return Err(CodecError::Unsupported(
-                crate::protocol::failure::CarrierReason::Unavailable,
-            ));
+            return Err(CodecError::Unsupported(CarrierReason::Unavailable));
         }
         let o = object(v)?;
         let e = match kind {
@@ -165,9 +158,7 @@ impl Event {
             Self::BlockStart { index, block } => {
                 Self::index(*index)?;
                 if !block.permits(Role::Assistant) {
-                    return Err(CodecError::Invalid(
-                        crate::protocol::failure::ShapeReason::InvalidValue,
-                    ));
+                    return Err(CodecError::invalid());
                 }
                 block.bytes(true)?;
             }
@@ -189,30 +180,22 @@ impl Event {
                         .value()
                         .is_some_and(|reason| *reason != StopReason::Refusal)
                     {
-                        return Err(CodecError::Invalid(
-                            crate::protocol::failure::ShapeReason::InvalidValue,
-                        ));
+                        return Err(CodecError::invalid());
                     }
                 }
                 usage.validate()?;
                 if !usage.cache_creation.is_absent() {
-                    return Err(CodecError::Unsupported(
-                        crate::protocol::failure::CarrierReason::Unavailable,
-                    ));
+                    return Err(CodecError::Unsupported(CarrierReason::Unavailable));
                 }
                 // The pinned MessageDeltaUsage has no service-tier carrier.
                 // https://github.com/anthropics/anthropic-sdk-python/blob/b4b7916deaf4e5570cd627b1ae7ee4394a4de39f/src/anthropic/types/message_delta_usage.py
                 if !usage.service_class.is_absent() {
-                    return Err(CodecError::Unsupported(
-                        crate::protocol::failure::CarrierReason::Unavailable,
-                    ));
+                    return Err(CodecError::Unsupported(CarrierReason::Unavailable));
                 }
                 if stop_sequence.value().is_some()
                     != (*stop_reason == Presence::Value(StopReason::StopSequence))
                 {
-                    return Err(CodecError::Invalid(
-                        crate::protocol::failure::ShapeReason::InvalidValue,
-                    ));
+                    return Err(CodecError::invalid());
                 }
                 if let Presence::Value(s) = stop_sequence {
                     text(s)?;

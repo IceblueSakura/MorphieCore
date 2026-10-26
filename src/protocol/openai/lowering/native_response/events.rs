@@ -1,4 +1,5 @@
 //! Incremental counterpart of the native JSON projection; no body aggregation here.
+use crate::protocol::failure::CarrierReason;
 use crate::{
     protocol::{CodecError, openai::Profile},
     semantic::task::generation::*,
@@ -6,7 +7,7 @@ use crate::{
 use std::collections::BTreeMap;
 
 fn order() -> CodecError {
-    CodecError::Unsupported(crate::protocol::failure::CarrierReason::Unavailable)
+    CodecError::Unsupported(CarrierReason::Unavailable)
 }
 pub(crate) struct EventProjection {
     losses: Vec<crate::lowering::generation::Effect>,
@@ -117,9 +118,7 @@ impl EventProjection {
                 {
                     self.text_metadata = true;
                     if self.text_parts > 1 {
-                        return Err(CodecError::Unsupported(
-                            crate::protocol::failure::CarrierReason::Unavailable,
-                        ));
+                        return Err(CodecError::Unsupported(CarrierReason::Unavailable));
                     }
                 }
                 match &mut event {
@@ -143,7 +142,7 @@ impl EventProjection {
                                 }
                                 if !self.calls.is_empty() {
                                     return Err(CodecError::Unsupported(
-                                        crate::protocol::failure::CarrierReason::Unavailable,
+                                        CarrierReason::Unavailable,
                                     ));
                                 }
                                 let owner = *self.message.get_or_insert(*item);
@@ -181,7 +180,7 @@ impl EventProjection {
                                     || old_kind != PartKind::Text
                                 {
                                     return Err(CodecError::Unsupported(
-                                        crate::protocol::failure::CarrierReason::Unavailable,
+                                        CarrierReason::Unavailable,
                                     ));
                                 }
                                 self.record(super::envelope_loss(self.profile, "event.project"));
@@ -204,12 +203,7 @@ impl EventProjection {
                         logprobs,
                     } if self.text_owners.contains_key(item) => {
                         if !annotations.is_empty() || !logprobs.is_absent() {
-                            *part = self
-                                .text_part
-                                .ok_or(CodecError::Invalid(
-                                    crate::protocol::failure::ShapeReason::InvalidValue,
-                                ))?
-                                .0;
+                            *part = self.text_part.ok_or(CodecError::invalid())?.0;
                             *item = self.text_owners[item];
                             self.text_metadata_end = Some(event);
                         }
@@ -222,12 +216,7 @@ impl EventProjection {
                     | StreamEvent::ValueFinished { item, part }
                     | StreamEvent::PartFinished { item, part } => {
                         if self.text_owners.contains_key(item) {
-                            *part = self
-                                .text_part
-                                .ok_or(CodecError::Invalid(
-                                    crate::protocol::failure::ShapeReason::InvalidValue,
-                                ))?
-                                .0;
+                            *part = self.text_part.ok_or(CodecError::invalid())?.0;
                         }
                         *item = self.text_owners.get(item).copied().unwrap_or(*item);
                     }

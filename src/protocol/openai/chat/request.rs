@@ -3,6 +3,7 @@ use super::{
     items::{MessageSide, decode_whole, encode_items_with, request_text_parts},
     owners,
 };
+use crate::protocol::failure::{CarrierReason, ShapeReason};
 use crate::protocol::openai::{
     CodecError, DecodedRequest, Profile, RequestRepresentation, function_tools, shape::*,
 };
@@ -55,36 +56,26 @@ pub(crate) fn decode_generation_with(
     let o = object(v)?;
     direction.fields(o, FIELDS)?;
     if let Some(_key) = ["logit_bias"].into_iter().find(|key| o.contains_key(*key)) {
-        return Err(CodecError::Unsupported(
-            crate::protocol::failure::CarrierReason::UnknownField,
-        ));
+        return Err(CodecError::Unsupported(CarrierReason::UnknownField));
     }
     if let Some(_key) = UNSUPPORTED.iter().find(|key| {
         o.get(**key)
             .is_some_and(|v| !v.is_null() && v != &json!([]) && v != &json!(""))
     }) {
-        return Err(CodecError::Unsupported(
-            crate::protocol::failure::CarrierReason::UnknownField,
-        ));
+        return Err(CodecError::Unsupported(CarrierReason::UnknownField));
     }
     let messages = o
         .get("messages")
         .and_then(Value::as_array)
-        .ok_or(CodecError::Invalid(
-            crate::protocol::failure::ShapeReason::InvalidValue,
-        ))?;
+        .ok_or(CodecError::invalid())?;
     let mut b = Items::new(direction);
     let prediction = if let Some(prediction) = o.get("prediction").filter(|v| !v.is_null()) {
         let prediction = object(prediction)?;
         direction.fields(prediction, &["type", "content"])?;
         if string(prediction, "type")? != "content" {
-            return Err(CodecError::Invalid(
-                crate::protocol::failure::ShapeReason::InvalidValue,
-            ));
+            return Err(CodecError::invalid());
         }
-        let content = prediction.get("content").ok_or(CodecError::Invalid(
-            crate::protocol::failure::ShapeReason::InvalidValue,
-        ))?;
+        let content = prediction.get("content").ok_or(CodecError::invalid())?;
         Some(
             request_text_parts(content, direction)?
                 .into_iter()
@@ -109,11 +100,7 @@ pub(crate) fn decode_generation_with(
     controls.seed = o
         .get("seed")
         .filter(|v| !v.is_null())
-        .map(|v| {
-            v.as_i64().ok_or(CodecError::Invalid(
-                crate::protocol::failure::ShapeReason::InvalidValue,
-            ))
-        })
+        .map(|v| v.as_i64().ok_or(CodecError::invalid()))
         .transpose()?;
     for (key, apply) in [
         (
@@ -126,25 +113,19 @@ pub(crate) fn decode_generation_with(
         ),
     ] {
         if let Some(value) = o.get(key).filter(|v| !v.is_null()) {
-            let value =
-                value
-                    .as_f64()
-                    .filter(|v| (-2.0..=2.0).contains(v))
-                    .ok_or(CodecError::Invalid(
-                        crate::protocol::failure::ShapeReason::InvalidValue,
-                    ))?;
+            let value = value
+                .as_f64()
+                .filter(|v| (-2.0..=2.0).contains(v))
+                .ok_or(CodecError::invalid())?;
             controls = apply(controls, value)?;
         }
     }
     if let Some(v) = o.get("top_p").filter(|v| !v.is_null()) {
-        controls = controls.with_top_p(v.as_f64().ok_or(CodecError::Invalid(
-            crate::protocol::failure::ShapeReason::InvalidValue,
-        ))?)?;
+        controls = controls.with_top_p(v.as_f64().ok_or(CodecError::invalid())?)?;
     }
     controls.logprobs = read_presence(o, "logprobs", |v| {
-        v.as_bool().ok_or(CodecError::Invalid(
-            crate::protocol::failure::ShapeReason::Probabilities,
-        ))
+        v.as_bool()
+            .ok_or(CodecError::Invalid(ShapeReason::Probabilities))
     })?;
     controls.top_logprobs = o
         .get("top_logprobs")
@@ -153,20 +134,14 @@ pub(crate) fn decode_generation_with(
             v.as_u64()
                 .filter(|n| *n <= 20)
                 .map(|n| n as u8)
-                .ok_or(CodecError::Invalid(
-                    crate::protocol::failure::ShapeReason::InvalidValue,
-                ))
+                .ok_or(CodecError::invalid())
         })
         .transpose()?;
     if controls.top_logprobs.is_some() && controls.logprobs != Presence::Value(true) {
-        return Err(CodecError::Invalid(
-            crate::protocol::failure::ShapeReason::InvalidValue,
-        ));
+        return Err(CodecError::invalid());
     }
     if o.get("response_format").is_some_and(Value::is_null) {
-        return Err(CodecError::Invalid(
-            crate::protocol::failure::ShapeReason::InvalidValue,
-        ));
+        return Err(CodecError::invalid());
     }
     let format = read_presence(o, "response_format", |v| read_response_format(v, direction))?;
     let verbosity = read_presence(o, "verbosity", crate::protocol::openai::settings::verbosity)?;
@@ -188,13 +163,10 @@ pub(crate) fn decode_generation_with(
     if let Some(value) = o.get("preserve_thinking") {
         if adaptation.rules.chat_preserve_thinking {
             settings.reasoning.presence = ReasoningPresence::Present;
-            settings.reasoning.read_history = Presence::Value(value.as_bool().ok_or(
-                CodecError::Invalid(crate::protocol::failure::ShapeReason::InvalidValue),
-            )?);
+            settings.reasoning.read_history =
+                Presence::Value(value.as_bool().ok_or(CodecError::invalid())?);
         } else {
-            return Err(CodecError::Unsupported(
-                crate::protocol::failure::CarrierReason::Reasoning,
-            ));
+            return Err(CodecError::Unsupported(CarrierReason::Reasoning));
         }
     }
     crate::protocol::openai::chat::audio::settings(o, &mut settings, direction)?;
@@ -224,16 +196,15 @@ fn read_response_format(
         }
         "json_schema" => {
             direction.fields(o, &["type", "json_schema"])?;
-            let body = object(o.get("json_schema").ok_or(CodecError::Invalid(
-                crate::protocol::failure::ShapeReason::Json,
-            ))?)?;
+            let body = object(
+                o.get("json_schema")
+                    .ok_or(CodecError::Invalid(ShapeReason::Json))?,
+            )?;
             direction.fields(body, &["name", "description", "schema", "strict"])?;
             crate::protocol::openai::settings::read_schema_body(body, false)?
         }
         _ => {
-            return Err(CodecError::Unsupported(
-                crate::protocol::failure::CarrierReason::Unavailable,
-            ));
+            return Err(CodecError::Unsupported(CarrierReason::Unavailable));
         }
     })
 }
@@ -289,9 +260,7 @@ pub fn encode_generation(target: &RequestRepresentation<'_>) -> Result<Value, Co
         .iter()
         .any(|(_, item)| unrepresentable_result(item))
     {
-        return Err(CodecError::Unsupported(
-            crate::protocol::failure::CarrierReason::Tools,
-        ));
+        return Err(CodecError::Unsupported(CarrierReason::Tools));
     }
     if target.adaptation.rules.bailian_requests {
         crate::protocol::openai::dialect::bailian::check_semantic(
@@ -341,9 +310,7 @@ pub fn encode_generation(target: &RequestRepresentation<'_>) -> Result<Value, Co
                             .any(|key| !matches!(key.as_str(), "role" | "content"))
                     }))
         {
-            return Err(CodecError::Unsupported(
-                crate::protocol::failure::CarrierReason::Unavailable,
-            ));
+            return Err(CodecError::Unsupported(CarrierReason::Unavailable));
         }
     }
     let mut v = json!({"messages": messages});
@@ -378,9 +345,7 @@ pub fn encode_generation(target: &RequestRepresentation<'_>) -> Result<Value, Co
     }
     if let Some(k) = target.semantic.controls().top_k {
         if !target.adaptation.rules.thinking_controls {
-            return Err(CodecError::Unsupported(
-                crate::protocol::failure::CarrierReason::Unavailable,
-            ));
+            return Err(CodecError::Unsupported(CarrierReason::Unavailable));
         }
         o.insert("top_k".into(), json!(k));
     }
@@ -427,9 +392,7 @@ pub fn encode_generation(target: &RequestRepresentation<'_>) -> Result<Value, Co
     match &target.semantic.text_options().format {
         crate::semantic::value::Presence::Absent => {}
         crate::semantic::value::Presence::Null => {
-            return Err(CodecError::Invalid(
-                crate::protocol::failure::ShapeReason::InvalidValue,
-            ));
+            return Err(CodecError::invalid());
         }
         crate::semantic::value::Presence::Value(format) => {
             o.insert("response_format".into(), write_response_format(format)?);
@@ -448,9 +411,7 @@ pub fn encode_generation(target: &RequestRepresentation<'_>) -> Result<Value, Co
     let mut settings = target.semantic.settings().clone();
     if !settings.reasoning.read_history.is_absent() {
         if !target.adaptation.rules.chat_preserve_thinking {
-            return Err(CodecError::Unsupported(
-                crate::protocol::failure::CarrierReason::Reasoning,
-            ));
+            return Err(CodecError::Unsupported(CarrierReason::Reasoning));
         }
         put_presence(
             o,

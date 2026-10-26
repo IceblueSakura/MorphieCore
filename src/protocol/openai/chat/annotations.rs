@@ -1,5 +1,6 @@
 //! Standard Chat nests URL citations; the shared text owner uses a flat typed value.
 //! https://github.com/openai/openai-python/blob/be9d66628ad7377bd36fe5a76ae6d735843f0e76/src/openai/types/chat/chat_completion_message.py
+use crate::protocol::failure::CarrierReason;
 use crate::protocol::openai::content::intake::Items;
 use crate::protocol::openai::{CodecError, shape::*};
 use crate::semantic::{task::generation::*, value::Text};
@@ -13,9 +14,7 @@ pub(in crate::protocol::openai) fn attach(
     let Some(value) = value.filter(|v| !v.is_null()) else {
         return Ok(());
     };
-    let rows = value.as_array().ok_or(CodecError::Invalid(
-        crate::protocol::failure::ShapeReason::InvalidValue,
-    ))?;
+    let rows = value.as_array().ok_or(CodecError::invalid())?;
     if rows.len() > MAX_ITEMS {
         return Err(CodecError::Limit);
     }
@@ -29,22 +28,16 @@ pub(in crate::protocol::openai) fn attach(
         },
     ] = parts
     else {
-        return Err(CodecError::Invalid(
-            crate::protocol::failure::ShapeReason::InvalidValue,
-        ));
+        return Err(CodecError::invalid());
     };
     let mut annotations = Vec::new();
     for row in rows {
         let row = object(row)?;
         items.direction.fields(row, &["type", "url_citation"])?;
         if string(row, "type")? != "url_citation" {
-            return Err(CodecError::Unsupported(
-                crate::protocol::failure::CarrierReason::Unavailable,
-            ));
+            return Err(CodecError::Unsupported(CarrierReason::Unavailable));
         }
-        let cite = object(row.get("url_citation").ok_or(CodecError::Invalid(
-            crate::protocol::failure::ShapeReason::InvalidValue,
-        ))?)?;
+        let cite = object(row.get("url_citation").ok_or(CodecError::invalid())?)?;
         items
             .direction
             .fields(cite, &["start_index", "end_index", "title", "url"])?;

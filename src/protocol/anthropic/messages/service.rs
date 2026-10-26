@@ -1,5 +1,6 @@
 //! Messages capacity policy and reported service have different native vocabularies.
 use super::shape::{nonnull, presence, put};
+use crate::protocol::failure::CarrierReason;
 use crate::{
     protocol::CodecError,
     semantic::{
@@ -15,9 +16,7 @@ pub(super) fn read_policy(o: &Map<String, Value>) -> Result<Presence<ServicePoli
             Some("auto") => ServicePolicy::PreferCommittedCapacity,
             Some("standard_only") => ServicePolicy::StandardCapacityOnly,
             _ => {
-                return Err(CodecError::Invalid(
-                    crate::protocol::failure::ShapeReason::InvalidValue,
-                ));
+                return Err(CodecError::invalid());
             }
         })
     })?;
@@ -28,11 +27,9 @@ pub(super) fn policy_wire(policy: ServicePolicy) -> Result<&'static str, CodecEr
     match policy {
         ServicePolicy::PreferCommittedCapacity => Ok("auto"),
         ServicePolicy::StandardCapacityOnly => Ok("standard_only"),
-        _ => Err(CodecError::Unsupported(
-            crate::protocol::failure::CarrierReason::Field(
-                crate::lowering::generation::Field::ServiceClass,
-            ),
-        )),
+        _ => Err(CodecError::Unsupported(CarrierReason::Field(
+            crate::lowering::generation::Field::ServiceClass,
+        ))),
     }
 }
 pub(super) fn read_class(o: &Map<String, Value>) -> Result<Presence<ServiceClass>, CodecError> {
@@ -42,9 +39,7 @@ pub(super) fn read_class(o: &Map<String, Value>) -> Result<Presence<ServiceClass
             Some("priority") => ServiceClass::PriorityCapacity,
             Some("batch") => ServiceClass::BatchProcessing,
             _ => {
-                return Err(CodecError::Invalid(
-                    crate::protocol::failure::ShapeReason::InvalidValue,
-                ));
+                return Err(CodecError::invalid());
             }
         })
     })
@@ -54,11 +49,9 @@ pub(super) fn class_wire(class: ServiceClass) -> Result<&'static str, CodecError
         ServiceClass::StandardCapacity => Ok("standard"),
         ServiceClass::PriorityCapacity => Ok("priority"),
         ServiceClass::BatchProcessing => Ok("batch"),
-        _ => Err(CodecError::Unsupported(
-            crate::protocol::failure::CarrierReason::Field(
-                crate::lowering::generation::Field::ServiceClass,
-            ),
-        )),
+        _ => Err(CodecError::Unsupported(CarrierReason::Field(
+            crate::lowering::generation::Field::ServiceClass,
+        ))),
     }
 }
 pub(super) fn write_class(

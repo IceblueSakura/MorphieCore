@@ -8,11 +8,7 @@ use serde_json::{Map, Value, json};
 
 fn string<'a>(o: &'a Map<String, Value>, key: &'static str) -> Result<Option<&'a str>, CodecError> {
     o.get(key)
-        .map(|v| {
-            v.as_str().ok_or(CodecError::Invalid(
-                crate::protocol::failure::ShapeReason::InvalidValue,
-            ))
-        })
+        .map(|v| v.as_str().ok_or(CodecError::invalid()))
         .transpose()
 }
 fn category(value: &str) -> Result<SafetyCategory, CodecError> {
@@ -25,9 +21,7 @@ fn category(value: &str) -> Result<SafetyCategory, CodecError> {
         "HARM_CATEGORY_CIVIC_INTEGRITY" => SafetyCategory::CivicIntegrity,
         "HARM_CATEGORY_JAILBREAK" => SafetyCategory::Jailbreak,
         _ => {
-            return Err(CodecError::Invalid(
-                crate::protocol::failure::ShapeReason::InvalidValue,
-            ));
+            return Err(CodecError::invalid());
         }
     })
 }
@@ -65,9 +59,7 @@ fn probability(value: &str) -> Result<SafetyProbability, CodecError> {
         "MEDIUM" => SafetyProbability::Medium,
         "HIGH" => SafetyProbability::High,
         _ => {
-            return Err(CodecError::Invalid(
-                crate::protocol::failure::ShapeReason::InvalidValue,
-            ));
+            return Err(CodecError::invalid());
         }
     })
 }
@@ -80,9 +72,7 @@ fn input_reason(value: &str) -> Result<SafetyBlockReason, CodecError> {
         "PROHIBITED_CONTENT" => SafetyBlockReason::ProhibitedContent,
         "IMAGE_SAFETY" => SafetyBlockReason::ImageSafety,
         _ => {
-            return Err(CodecError::Invalid(
-                crate::protocol::failure::ShapeReason::InvalidValue,
-            ));
+            return Err(CodecError::invalid());
         }
     })
 }
@@ -105,12 +95,7 @@ pub(super) fn report(
 ) -> Result<Option<SafetyReport>, CodecError> {
     let values = match o.get("safetyRatings") {
         None => &[][..],
-        Some(v) => v
-            .as_array()
-            .ok_or(CodecError::Invalid(
-                crate::protocol::failure::ShapeReason::InvalidValue,
-            ))?
-            .as_slice(),
+        Some(v) => v.as_array().ok_or(CodecError::invalid())?.as_slice(),
     };
     if values.len() > MAX_ITEMS {
         return Err(CodecError::Limit);
@@ -118,9 +103,7 @@ pub(super) fn report(
     let ratings = values
         .iter()
         .map(|v| {
-            let rating = v.as_object().ok_or(CodecError::Invalid(
-                crate::protocol::failure::ShapeReason::InvalidValue,
-            ))?;
+            let rating = v.as_object().ok_or(CodecError::invalid())?;
             Ok(SafetyRating {
                 // Proto3 scalar defaults are source facts, not requested-policy inference.
                 // https://github.com/googleapis/googleapis/blob/8cc2927c2ea64e6876568683050deabf2b52ce56/google/ai/generativelanguage/v1beta/safety.proto
@@ -133,11 +116,7 @@ pub(super) fn report(
                 blocked: Some(
                     rating
                         .get("blocked")
-                        .map(|v| {
-                            v.as_bool().ok_or(CodecError::Invalid(
-                                crate::protocol::failure::ShapeReason::InvalidValue,
-                            ))
-                        })
+                        .map(|v| v.as_bool().ok_or(CodecError::invalid()))
                         .transpose()?
                         .unwrap_or(false),
                 ),

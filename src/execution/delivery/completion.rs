@@ -1,4 +1,5 @@
 //! Request-local presentation fallbacks. Never mutate upstream observations.
+use crate::protocol::failure::ShapeReason;
 use crate::{
     adapter::ClientProtocol,
     protocol::{CodecError, GenerationDelivery},
@@ -73,9 +74,8 @@ fn infer_residual(total: Option<u64>, counts: &mut [Option<u64>]) -> Result<(), 
         *counts
             .iter_mut()
             .find(|v| v.is_none())
-            .expect("one missing counter") = Some(total.checked_sub(known).ok_or(
-            CodecError::Invalid(crate::protocol::failure::ShapeReason::InvalidValue),
-        )?);
+            .expect("one missing counter") =
+            Some(total.checked_sub(known).ok_or(CodecError::invalid())?);
     }
     Ok(())
 }
@@ -255,11 +255,7 @@ pub(super) fn complete(
     {
         u.total_tokens
             .zip(u.output_tokens)
-            .map(|(t, o)| {
-                t.checked_sub(o).ok_or(CodecError::Invalid(
-                    crate::protocol::failure::ShapeReason::InvalidValue,
-                ))
-            })
+            .map(|(t, o)| t.checked_sub(o).ok_or(CodecError::invalid()))
             .transpose()?
     } else {
         None
@@ -342,9 +338,7 @@ pub(super) fn complete(
         let maximum_input = total
             .checked_sub(minimum_output)
             .filter(|maximum| *maximum >= minimum_input)
-            .ok_or(CodecError::Invalid(
-                crate::protocol::failure::ShapeReason::Usage,
-            ))?;
+            .ok_or(CodecError::Invalid(ShapeReason::Usage))?;
         let input = input_estimate.clamp(minimum_input, maximum_input);
         u.input_tokens = Some(input);
         u.output_tokens = Some(total - input);
@@ -371,9 +365,7 @@ pub(super) fn complete(
         || u.cached_input_tokens.is_some_and(|n| n < cache_floor)
         || u.input_cache_write_tokens.is_some_and(|n| n < write_floor)
     {
-        return Err(CodecError::Invalid(
-            crate::protocol::failure::ShapeReason::Usage,
-        ));
+        return Err(CodecError::Invalid(ShapeReason::Usage));
     }
     if let Some(report) = response.usage_reports().operation()
         && matches!(
@@ -386,9 +378,11 @@ pub(super) fn complete(
         && u.reasoning_tokens.is_none()
         && let (Some(output), Some(visible)) = (u.output_tokens, report.counts.output_tokens)
     {
-        u.reasoning_tokens = Some(output.checked_sub(visible).ok_or(CodecError::Invalid(
-            crate::protocol::failure::ShapeReason::Usage,
-        ))?);
+        u.reasoning_tokens = Some(
+            output
+                .checked_sub(visible)
+                .ok_or(CodecError::Invalid(ShapeReason::Usage))?,
+        );
         reasoning_method = if output_method.estimated() {
             UsageMethod::CompletedResidual
         } else {
@@ -488,9 +482,7 @@ pub(super) fn complete(
                         .unwrap_or(0)
                         .max(u.input_cache_write_tokens.unwrap_or(0)),
                 )
-                .ok_or(CodecError::Invalid(
-                    crate::protocol::failure::ShapeReason::Usage,
-                ))?
+                .ok_or(CodecError::Invalid(ShapeReason::Usage))?
             }
             _ => n,
         });

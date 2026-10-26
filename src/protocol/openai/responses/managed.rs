@@ -1,4 +1,5 @@
 //! Synchronous Responses storage envelopes; no store, transport or upstream state.
+use crate::protocol::failure::CarrierReason;
 use crate::{
     adapter::Request,
     protocol::{
@@ -37,15 +38,9 @@ pub(crate) fn read_storage(o: &Map<String, Value>) -> Result<Option<ResponseStor
         return Ok(None);
     }
     let storage = ResponseStorage {
-        store: read_presence(o, "store", |v| {
-            v.as_bool().ok_or(CodecError::Invalid(
-                crate::protocol::failure::ShapeReason::InvalidValue,
-            ))
-        })?,
+        store: read_presence(o, "store", |v| v.as_bool().ok_or(CodecError::invalid()))?,
         previous_response_id: read_presence(o, "previous_response_id", |v| {
-            v.as_str().map(str::to_owned).ok_or(CodecError::Invalid(
-                crate::protocol::failure::ShapeReason::InvalidValue,
-            ))
+            v.as_str().map(str::to_owned).ok_or(CodecError::invalid())
         })?,
     };
     storage.validate()?;
@@ -63,21 +58,15 @@ pub fn decode(
     }
     let mut value = crate::protocol::json::decode(bytes)?;
     let options = Options::read(&value)?;
-    let o = value.as_object_mut().ok_or(CodecError::Invalid(
-        crate::protocol::failure::ShapeReason::InvalidValue,
-    ))?;
+    let o = value.as_object_mut().ok_or(CodecError::invalid())?;
     o.remove("previous_response_id");
     o.insert("store".into(), json!(false));
     if history.is_none() && options.previous.is_some() {
-        return Err(CodecError::Invalid(
-            crate::protocol::failure::ShapeReason::InvalidValue,
-        ));
+        return Err(CodecError::invalid());
     }
     bounded(&value)?;
     let request = adapter.decode_client_history(
-        &serde_json::to_vec(&value).map_err(|_| {
-            CodecError::Invalid(crate::protocol::failure::ShapeReason::InvalidValue)
-        })?,
+        &serde_json::to_vec(&value).map_err(|_| CodecError::invalid())?,
         history,
     )?;
     request
@@ -137,9 +126,7 @@ pub fn validate_retrieve_query(query: Option<&str>) -> Result<(), CodecError> {
         match (name.as_str(), value.as_str()) {
             ("stream", "false") | ("include[]", "reasoning.encrypted_content") => {}
             _ => {
-                return Err(CodecError::Unsupported(
-                    crate::protocol::failure::CarrierReason::Unavailable,
-                ));
+                return Err(CodecError::Unsupported(CarrierReason::Unavailable));
             }
         }
     }
@@ -153,9 +140,7 @@ fn query_pairs(query: Option<&str>) -> Result<Vec<(String, String)>, CodecError>
     let mut pairs = vec![];
     for (key, value) in url::form_urlencoded::parse(query.as_bytes()) {
         if pairs.iter().any(|(old, _)| old == &key) {
-            return Err(CodecError::Invalid(
-                crate::protocol::failure::ShapeReason::InvalidValue,
-            ));
+            return Err(CodecError::invalid());
         }
         pairs.push((key.into_owned(), value.into_owned()));
     }
@@ -172,27 +157,25 @@ pub fn input_items(
     for (key, value) in query_pairs(query)? {
         match key.as_str() {
             "limit" => {
-                limit = value.parse().ok().filter(|n| (1..=100).contains(n)).ok_or(
-                    CodecError::Invalid(crate::protocol::failure::ShapeReason::InvalidValue),
-                )?;
+                limit = value
+                    .parse()
+                    .ok()
+                    .filter(|n| (1..=100).contains(n))
+                    .ok_or(CodecError::invalid())?;
             }
             "order" => {
                 ascending = match value.as_str() {
                     "asc" => true,
                     "desc" => false,
                     _ => {
-                        return Err(CodecError::Invalid(
-                            crate::protocol::failure::ShapeReason::InvalidValue,
-                        ));
+                        return Err(CodecError::invalid());
                     }
                 }
             }
             "after" if !value.is_empty() && value.len() <= 256 => after = Some(value),
             "include[]" if value == "reasoning.encrypted_content" => {}
             _ => {
-                return Err(CodecError::Unsupported(
-                    crate::protocol::failure::CarrierReason::Unavailable,
-                ));
+                return Err(CodecError::Unsupported(CarrierReason::Unavailable));
             }
         }
     }
@@ -239,9 +222,7 @@ pub fn input_items(
             items
                 .iter()
                 .position(|value| value["id"].as_str() == Some(&id))
-                .ok_or(CodecError::Invalid(
-                    crate::protocol::failure::ShapeReason::InvalidValue,
-                ))?
+                .ok_or(CodecError::invalid())?
                 + 1
         }
         None => 0,

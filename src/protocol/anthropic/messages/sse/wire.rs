@@ -1,5 +1,6 @@
 //! Shared native wire reducer; only strict EOF exposes the complete aggregated message.
 use crate::protocol::anthropic::messages::{Block, Delta, Event, Message, Profile};
+use crate::protocol::failure::{RecognitionBasis, ShapeReason, SourceFailureEvidence};
 use crate::{
     protocol::{
         CodecError,
@@ -45,7 +46,7 @@ pub(super) fn error_status(kind: &str) -> u16 {
     }
 }
 fn invalid() -> SseError {
-    CodecError::Invalid(crate::protocol::failure::ShapeReason::InvalidValue).into()
+    CodecError::invalid().into()
 }
 fn append(target: &mut String, value: &str) -> Result<(), SseError> {
     if target
@@ -134,15 +135,13 @@ impl MessageSseDecoder {
         match event {
             Event::Ping => {}
             Event::Error { kind, message } => {
-                return Err(CodecError::StreamFailure(
-                    crate::protocol::failure::SourceFailureEvidence::envelope(
-                        error_status(&kind),
-                        crate::protocol::failure::RecognitionBasis::EnvelopeType,
-                        None,
-                        Some(&kind),
-                        Some(&message),
-                    ),
-                )
+                return Err(CodecError::StreamFailure(SourceFailureEvidence::envelope(
+                    error_status(&kind),
+                    RecognitionBasis::EnvelopeType,
+                    None,
+                    Some(&kind),
+                    Some(&message),
+                ))
                 .into());
             }
             Event::MessageStart(message) => {
@@ -167,10 +166,7 @@ impl MessageSseDecoder {
                 if let Block::ToolUse { input, .. } = &block
                     && !input.value().as_object().is_some_and(|o| o.is_empty())
                 {
-                    return Err(CodecError::Invalid(
-                        crate::protocol::failure::ShapeReason::InvalidValue,
-                    )
-                    .into());
+                    return Err(CodecError::invalid().into());
                 }
                 self.charge(block.bytes(true)?)?;
                 let signature_started =
@@ -224,10 +220,7 @@ impl MessageSseDecoder {
                     match parse_json(json.as_bytes(), JsonLimits::STRUCTURED) {
                         Ok(value) => {
                             if !value.is_object() {
-                                return Err(CodecError::Invalid(
-                                    crate::protocol::failure::ShapeReason::InvalidValue,
-                                )
-                                .into());
+                                return Err(CodecError::invalid().into());
                             }
                             *input = StructuredValue::new(value).map_err(CodecError::from)?;
                         }
@@ -239,10 +232,7 @@ impl MessageSseDecoder {
                         }
                         Err(crate::semantic::value::JsonError::Invalid) => {
                             if json.trim_start().chars().next().is_some_and(|c| c != '{') {
-                                return Err(CodecError::Invalid(
-                                    crate::protocol::failure::ShapeReason::InvalidValue,
-                                )
-                                .into());
+                                return Err(CodecError::invalid().into());
                             }
                             crate::semantic::value::validate_json_prefix(
                                 json.as_bytes(),
@@ -255,8 +245,7 @@ impl MessageSseDecoder {
                                     ))
                                 }
                                 crate::semantic::value::JsonError::Invalid => {
-                                    CodecError::Invalid(crate::protocol::failure::ShapeReason::Json)
-                                        .into()
+                                    CodecError::Invalid(ShapeReason::Json).into()
                                 }
                             })?;
                             let Block::ToolUse {
@@ -303,10 +292,7 @@ impl MessageSseDecoder {
                     if message.stop_details.value().is_some()
                         && message.stop_details != stop_details
                     {
-                        return Err(CodecError::Invalid(
-                            crate::protocol::failure::ShapeReason::InvalidValue,
-                        )
-                        .into());
+                        return Err(CodecError::invalid().into());
                     }
                     message.stop_details = stop_details;
                 }

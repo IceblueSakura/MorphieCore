@@ -1,4 +1,5 @@
 //! Target-only projection of native Messages facts onto the OpenAI client carriers.
+use crate::protocol::failure::CarrierReason;
 use crate::{
     protocol::{CodecError, DecodedResponse, openai::Profile},
     semantic::task::generation::*,
@@ -167,9 +168,7 @@ pub(crate) fn project(
                 .iter()
                 .any(|(_, item)| matches!(item, Item::ToolCall(_))) => {}
         _ => {
-            return Err(CodecError::Unsupported(
-                crate::protocol::failure::CarrierReason::Unavailable,
-            ));
+            return Err(CodecError::Unsupported(CarrierReason::Unavailable));
         }
     }
     let mut items = source.items().to_vec();
@@ -177,18 +176,15 @@ pub(crate) fn project(
         if let Item::ToolCall(call) = item {
             match &call.arguments {
                 ToolArguments::Structured(value) => {
-                    call.arguments =
-                        ToolArguments::Raw(serde_json::to_string(value.value()).map_err(|_| {
-                            CodecError::Invalid(crate::protocol::failure::ShapeReason::InvalidValue)
-                        })?);
+                    call.arguments = ToolArguments::Raw(
+                        serde_json::to_string(value.value()).map_err(|_| CodecError::invalid())?,
+                    );
                 }
                 ToolArguments::Raw(raw)
                     if StructuredValue::from_bytes(raw.as_bytes())
                         .is_ok_and(|value| value.value().is_object()) => {}
                 _ => {
-                    return Err(CodecError::Invalid(
-                        crate::protocol::failure::ShapeReason::InvalidValue,
-                    ));
+                    return Err(CodecError::invalid());
                 }
             }
         }
@@ -232,9 +228,7 @@ pub(crate) fn project(
                     calls.push((*id, Item::ToolCall(call)));
                 }
                 _ => {
-                    return Err(CodecError::Unsupported(
-                        crate::protocol::failure::CarrierReason::Unavailable,
-                    ));
+                    return Err(CodecError::Unsupported(CarrierReason::Unavailable));
                 }
             }
         }
@@ -261,14 +255,10 @@ pub(crate) fn project(
             let mut text = String::new();
             for part in &parts {
                 let ContentPart::Text(value) = &part.content else {
-                    return Err(CodecError::Unsupported(
-                        crate::protocol::failure::CarrierReason::Unavailable,
-                    ));
+                    return Err(CodecError::Unsupported(CarrierReason::Unavailable));
                 };
                 if !value.is_plain() || part.cache.is_some() || part.replay.is_some() {
-                    return Err(CodecError::Unsupported(
-                        crate::protocol::failure::CarrierReason::Unavailable,
-                    ));
+                    return Err(CodecError::Unsupported(CarrierReason::Unavailable));
                 }
                 text.push_str(value.as_str());
             }

@@ -1,4 +1,5 @@
 //! Whole Responses snapshot decode and encode, including non-success terminals.
+use crate::protocol::failure::{CarrierReason, ShapeReason};
 use crate::protocol::openai::{
     CodecError, DecodedResponse, Profile, ResponseRepresentation, accounting, context, responses,
     shape::*, terminal::*,
@@ -26,9 +27,7 @@ pub(crate) fn decode_with(
     let o = object(&v)?;
     crate::protocol::openai::responses::envelope::response_fields(o)?;
     if string(o, "object")? != "response" {
-        return Err(CodecError::Invalid(
-            crate::protocol::failure::ShapeReason::Object,
-        ));
+        return Err(CodecError::Invalid(ShapeReason::Object));
     }
     let outcome = match string(o, "status")? {
         "completed" => Outcome::Completed,
@@ -36,17 +35,13 @@ pub(crate) fn decode_with(
         "failed" => Outcome::Failed,
         "cancelled" => Outcome::Cancelled,
         _ => {
-            return Err(CodecError::Unsupported(
-                crate::protocol::failure::CarrierReason::Unavailable,
-            ));
+            return Err(CodecError::Unsupported(CarrierReason::Unavailable));
         }
     };
     let output = o
         .get("output")
         .and_then(Value::as_array)
-        .ok_or(CodecError::Invalid(
-            crate::protocol::failure::ShapeReason::InvalidValue,
-        ))?;
+        .ok_or(CodecError::invalid())?;
     let mut b = Items::new(DecodeDirection::Upstream);
     let item_status = if outcome == Outcome::Completed {
         "completed"
@@ -126,12 +121,10 @@ pub fn encode(target: &ResponseRepresentation<'_>) -> Result<Value, CodecError> 
     if target.semantic.items().iter().any(|(_, item)| {
         matches!(item, Item::ToolResult(r) | Item::CustomResult(r) if r.status.is_none())
     }) {
-        return Err(CodecError::Unsupported(crate::protocol::failure::CarrierReason::Unavailable));
+        return Err(CodecError::Unsupported(CarrierReason::Unavailable));
     }
     if !target.metadata.context.system_fingerprint.is_absent() {
-        return Err(CodecError::Unsupported(
-            crate::protocol::failure::CarrierReason::Unavailable,
-        ));
+        return Err(CodecError::Unsupported(CarrierReason::Unavailable));
     }
     check_response_carriers(&target.semantic)?;
     crate::protocol::openai::content::citations::check_items(
@@ -161,9 +154,10 @@ pub fn encode(target: &ResponseRepresentation<'_>) -> Result<Value, CodecError> 
         target.semantic.resources(),
     )?;
     let m = &target.metadata;
-    let created = m.created.as_ref().ok_or(CodecError::Invalid(
-        crate::protocol::failure::ShapeReason::Metadata,
-    ))?;
+    let created = m
+        .created
+        .as_ref()
+        .ok_or(CodecError::Invalid(ShapeReason::Metadata))?;
     let usage = target
         .metadata
         .delivery
@@ -178,7 +172,7 @@ pub fn encode(target: &ResponseRepresentation<'_>) -> Result<Value, CodecError> 
             .map(|(usage, _)| {
                 accounting::encode_usage(usage, Profile::Responses, &target.adaptation.rules)
             })
-            .map_err(|_| CodecError::Unsupported(crate::protocol::failure::CarrierReason::Usage))
+            .map_err(|_| CodecError::Unsupported(CarrierReason::Usage))
         })
         .transpose()?;
     let mut value = json!({

@@ -1,5 +1,6 @@
 //! Generation input, protocol provenance, context validation and replay isolation.
 use super::{ClientProtocol, ConversionFailure};
+use crate::protocol::failure::CarrierReason;
 use crate::{
     lowering::generation::RepresentationError,
     protocol::{CodecError, DecodedRequest},
@@ -34,9 +35,7 @@ impl Request {
             || model.len() > 256
             || model.chars().any(|c| c.is_control() || c.is_whitespace())
         {
-            return Err(CodecError::Invalid(
-                crate::protocol::failure::ShapeReason::InvalidValue,
-            ));
+            return Err(CodecError::invalid());
         }
         Ok(Self {
             task,
@@ -77,9 +76,7 @@ impl Request {
     }
     pub(crate) fn check_grouping(&self) -> Result<(), CodecError> {
         if self.conversation.is_some() && self.cache_session.is_some() {
-            return Err(CodecError::Invalid(
-                crate::protocol::failure::ShapeReason::InvalidValue,
-            ));
+            return Err(CodecError::invalid());
         }
         Ok(())
     }
@@ -100,9 +97,7 @@ impl Request {
             if let Item::Compaction(value) = item
                 && !fidelity.compaction_matches(*id, value, target)
             {
-                return Err(CodecError::Unsupported(
-                    crate::protocol::failure::CarrierReason::Replay,
-                ));
+                return Err(CodecError::Unsupported(CarrierReason::Replay));
             }
         }
         let foreign: Vec<_> = self
@@ -123,18 +118,14 @@ impl Request {
                 Item::Message(message) => {
                     for part in &message.parts {
                         if let Some(value) = &part.replay {
-                            let origin = fidelity.part_replay_origin(*id, part.id).ok_or(
-                                CodecError::Invalid(
-                                    crate::protocol::failure::ShapeReason::InvalidValue,
-                                ),
-                            )?;
+                            let origin = fidelity
+                                .part_replay_origin(*id, part.id)
+                                .ok_or(CodecError::invalid())?;
                             if Some(origin) != target {
                                 if message.status != ItemLifecycle::Completed
                                     || value.replay_token().is_none()
                                 {
-                                    return Err(CodecError::Unsupported(
-                                        crate::protocol::failure::CarrierReason::Replay,
-                                    ));
+                                    return Err(CodecError::Unsupported(CarrierReason::Replay));
                                 }
                                 foreign_parts.push((*id, part.id));
                             }
@@ -143,16 +134,12 @@ impl Request {
                 }
                 Item::ToolCall(call) => {
                     if let Some(value) = &call.replay {
-                        let origin = fidelity.replay_origin(*id).ok_or(CodecError::Invalid(
-                            crate::protocol::failure::ShapeReason::InvalidValue,
-                        ))?;
+                        let origin = fidelity.replay_origin(*id).ok_or(CodecError::invalid())?;
                         if Some(origin) != target {
                             if call.status != ItemLifecycle::Completed
                                 || value.replay_token().is_none()
                             {
-                                return Err(CodecError::Unsupported(
-                                    crate::protocol::failure::CarrierReason::Replay,
-                                ));
+                                return Err(CodecError::Unsupported(CarrierReason::Replay));
                             }
                             foreign_calls.push(*id);
                         }
@@ -169,9 +156,7 @@ impl Request {
                 && matches!(item, Item::Reasoning(r) if r.status != ItemLifecycle::Completed
                     || r.replay.as_ref().is_some_and(|v| v.replay_token().is_none()))
         }) {
-            return Err(CodecError::Unsupported(
-                crate::protocol::failure::CarrierReason::Reasoning,
-            ));
+            return Err(CodecError::Unsupported(CarrierReason::Reasoning));
         }
         let mut copy = self.clone();
         // Responses item IDs can be paired with discarded reasoning. Forget only
@@ -200,9 +185,7 @@ impl Request {
                     matches!(item, Item::ToolCall(_) | Item::CustomCall(_))
                         && fidelity.response_item_id(*id).is_some()
                 }) {
-                    return Err(CodecError::Unsupported(
-                        crate::protocol::failure::CarrierReason::Replay,
-                    ));
+                    return Err(CodecError::Unsupported(CarrierReason::Replay));
                 }
                 for (id, item) in run {
                     if matches!(item, Item::ToolCall(_) | Item::CustomCall(_)) {

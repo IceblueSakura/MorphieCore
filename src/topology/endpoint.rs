@@ -1,5 +1,6 @@
 //! One fixed upstream target: trusted origin + relative entry for a task,
 //! protocol profile and upstream model binding.
+use crate::protocol::failure::CarrierReason;
 
 use crate::{
     lowering::target::TargetCaps,
@@ -29,7 +30,7 @@ fn omit_messages_controls(
         Some(ReplayMismatch::Drop) => rules.push("messages.omit-block-binding.v1"),
         Some(ReplayMismatch::Reject) => {
             return Err(crate::protocol::CodecError::Unsupported(
-                crate::protocol::failure::CarrierReason::Reasoning,
+                CarrierReason::Reasoning,
             ));
         }
         None => {}
@@ -117,9 +118,7 @@ impl Endpoint {
         if let Some(policy) = reasoning_policy {
             policy.validate()?;
             if policy.canonical_model != self.canonical_model.as_str() {
-                return Err(CodecError::Invalid(
-                    crate::protocol::failure::ShapeReason::InvalidValue,
-                ));
+                return Err(CodecError::invalid());
             }
         }
         Ok(match (&self.protocol, &self.representation) {
@@ -158,9 +157,7 @@ impl Endpoint {
                 if let Some(mapping) = caps.adaptation.effort_mapping {
                     mapping.validate()?;
                     if mapping.canonical_model != self.canonical_model.as_str() {
-                        return Err(CodecError::Invalid(
-                            crate::protocol::failure::ShapeReason::InvalidValue,
-                        ));
+                        return Err(CodecError::invalid());
                     }
                 }
                 UpstreamAdapter::OpenAi(Box::new(Adapter {

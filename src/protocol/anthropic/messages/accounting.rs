@@ -1,5 +1,6 @@
 //! Source accounting and the exact Messages subset of shared usage reports.
 use super::{CacheCreation, ServerToolUsage};
+use crate::protocol::failure::{CarrierReason, ShapeReason};
 use crate::{
     protocol::CodecError,
     semantic::{context::ServiceClass, task::generation::*, value::Presence},
@@ -79,7 +80,7 @@ fn tools(report: &UsageReport) -> Option<ServerToolUsage> {
 /// Messages usage: input excludes cache reads and reported cache writes.
 /// An unreported write category stays absent; the remaining input keeps any such writes.
 fn project_usage(u: Usage) -> Result<Usage, CodecError> {
-    let unsupported = || CodecError::Unsupported(crate::protocol::failure::CarrierReason::Usage);
+    let unsupported = || CodecError::Unsupported(CarrierReason::Usage);
     u.validate()?;
     let input = u.input_tokens.ok_or_else(unsupported)?;
     let input = match u.input_relation {
@@ -159,9 +160,7 @@ pub(super) fn wire(
     service_class: Presence<ServiceClass>,
 ) -> Result<super::Usage, CodecError> {
     if project(report)?.as_ref() != Some(report) {
-        return Err(CodecError::Unsupported(
-            crate::protocol::failure::CarrierReason::Usage,
-        ));
+        return Err(CodecError::Unsupported(CarrierReason::Usage));
     }
     let counts = report.counts;
     Ok(super::Usage {
@@ -169,9 +168,9 @@ pub(super) fn wire(
         input_tokens: counts
             .input_tokens
             .map_or(Presence::Absent, Presence::Value),
-        output_tokens: counts.output_tokens.ok_or(CodecError::Invalid(
-            crate::protocol::failure::ShapeReason::Usage,
-        ))?,
+        output_tokens: counts
+            .output_tokens
+            .ok_or(CodecError::Invalid(ShapeReason::Usage))?,
         cache_creation_input_tokens: counts
             .input_cache_write_tokens
             .map_or(Presence::Absent, Presence::Value),
@@ -202,14 +201,12 @@ pub(super) fn json_with_fallback(
         return Ok(delivery_wire(counts)?.wire());
     }
     if reports.reports().len() != 1 {
-        return Err(CodecError::Unsupported(
-            crate::protocol::failure::CarrierReason::Usage,
-        ));
+        return Err(CodecError::Unsupported(CarrierReason::Usage));
     }
     Ok(wire(
-        reports.operation().ok_or(CodecError::Invalid(
-            crate::protocol::failure::ShapeReason::Usage,
-        ))?,
+        reports
+            .operation()
+            .ok_or(CodecError::Invalid(ShapeReason::Usage))?,
         Presence::Absent,
     )?
     .wire())
@@ -405,7 +402,7 @@ mod tests {
             "usage":{"output_tokens":7,"cache_creation":usage_json()["cache_creation"]}});
         assert!(
             matches!(p.decode_event("message_delta",delta.to_string().as_bytes()),
-            Err(CodecError::Unsupported(field)) if field == crate::protocol::failure::CarrierReason::Unavailable)
+            Err(CodecError::Unsupported(field)) if field == CarrierReason::Unavailable)
         );
 
         let mut encoder = super::super::client::sse::ClientEventEncoder::new("id", "model");
@@ -420,7 +417,7 @@ mod tests {
         assert!(!frames.is_empty());
         assert!(
             matches!(encoder.encode(&StreamEvent::UsageReport(expected())),
-            Err(CodecError::Unsupported(field)) if field == crate::protocol::failure::CarrierReason::Usage)
+            Err(CodecError::Unsupported(field)) if field == CarrierReason::Usage)
         );
         assert!(encoder.finish().is_err());
     }
@@ -466,7 +463,7 @@ mod tests {
                 _ => unreachable!(),
             }
             last.validate().unwrap();
-            let expected = crate::protocol::failure::CarrierReason::Usage;
+            let expected = CarrierReason::Usage;
             let rejected = encoder.encode(&StreamEvent::UsageReport(last));
             assert!(
                 matches!(rejected,Err(CodecError::Unsupported(reason)) if reason == expected),

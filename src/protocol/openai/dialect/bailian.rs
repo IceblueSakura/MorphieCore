@@ -1,5 +1,6 @@
 //! Documented Bailian request carriers and fail-closed model constraints.
 //! OpenAI-compatible Chat/Responses, not the native DashScope RPC protocol.
+use crate::protocol::failure::CarrierReason;
 use crate::protocol::openai::{CodecError, Profile, function_tools, reasoning, shape::object};
 use crate::{
     adapter::Request,
@@ -44,9 +45,7 @@ pub(in crate::protocol::openai) fn source(
         if matches!(model, "kimi-k3" | "glm-5.3" | "glm-5.3-prime")
             && effort.is_some_and(|v| v.as_str() == Some("none"))
         {
-            return Err(CodecError::Unsupported(
-                crate::protocol::failure::CarrierReason::Unavailable,
-            ));
+            return Err(CodecError::Unsupported(CarrierReason::Unavailable));
         }
         if profile == Profile::Responses && o.contains_key("stream_options")
             || profile == Profile::Chat
@@ -54,16 +53,12 @@ pub(in crate::protocol::openai) fn source(
                     .and_then(Value::as_object)
                     .is_some_and(|o| o.contains_key("include_obfuscation"))
         {
-            return Err(CodecError::Unsupported(
-                crate::protocol::failure::CarrierReason::Unavailable,
-            ));
+            return Err(CodecError::Unsupported(CarrierReason::Unavailable));
         }
     }
     for key in UNOWNED {
         if o.contains_key(*key) {
-            return Err(CodecError::Unsupported(
-                crate::protocol::failure::CarrierReason::UnknownField,
-            ));
+            return Err(CodecError::Unsupported(CarrierReason::UnknownField));
         }
     }
     for message in o
@@ -80,9 +75,7 @@ pub(in crate::protocol::openai) fn source(
             continue;
         };
         if message.contains_key("partial") || message.contains_key("prefix") {
-            return Err(CodecError::Unsupported(
-                crate::protocol::failure::CarrierReason::Unavailable,
-            ));
+            return Err(CodecError::Unsupported(CarrierReason::Unavailable));
         }
         for part in message
             .get("content")
@@ -103,9 +96,7 @@ pub(in crate::protocol::openai) fn source(
             .iter()
             .any(|k| part.contains_key(*k))
             {
-                return Err(CodecError::Unsupported(
-                    crate::protocol::failure::CarrierReason::Unavailable,
-                ));
+                return Err(CodecError::Unsupported(CarrierReason::Unavailable));
             }
             if native
                 && part
@@ -113,9 +104,7 @@ pub(in crate::protocol::openai) fn source(
                     .and_then(Value::as_object)
                     .is_some_and(|image| image.contains_key("detail"))
             {
-                return Err(CodecError::Unsupported(
-                    crate::protocol::failure::CarrierReason::Unavailable,
-                ));
+                return Err(CodecError::Unsupported(CarrierReason::Unavailable));
             }
         }
     }
@@ -124,9 +113,7 @@ pub(in crate::protocol::openai) fn source(
         let disabled = o.get("enable_thinking") == Some(&json!(false))
             || o.get("reasoning_effort") == Some(&json!("none"));
         if !matches!(model, "glm-5.3" | "glm-5.3-prime") && !disabled {
-            return Err(CodecError::Unsupported(
-                crate::protocol::failure::CarrierReason::Unavailable,
-            ));
+            return Err(CodecError::Unsupported(CarrierReason::Unavailable));
         }
     }
     Ok(())
@@ -138,9 +125,7 @@ pub(in crate::protocol::openai) fn read_controls(
     profile: Profile,
 ) -> Result<(), CodecError> {
     if let Some(value) = o.get("enable_thinking") {
-        let enabled = value.as_bool().ok_or(CodecError::Invalid(
-            crate::protocol::failure::ShapeReason::InvalidValue,
-        ))?;
+        let enabled = value.as_bool().ok_or(CodecError::invalid())?;
         let activation = if enabled {
             ReasoningActivation::Enabled
         } else {
@@ -149,38 +134,28 @@ pub(in crate::protocol::openai) fn read_controls(
         if !settings.reasoning.activation.is_absent()
             && settings.reasoning.activation != Presence::Value(activation)
         {
-            return Err(CodecError::Invalid(
-                crate::protocol::failure::ShapeReason::InvalidValue,
-            ));
+            return Err(CodecError::invalid());
         }
         settings.reasoning.presence = ReasoningPresence::Present;
         settings.reasoning.activation = Presence::Value(activation);
     }
     if let Some(value) = o.get("thinking_budget") {
         if profile != Profile::Chat {
-            return Err(CodecError::Unsupported(
-                crate::protocol::failure::CarrierReason::Unavailable,
-            ));
+            return Err(CodecError::Unsupported(CarrierReason::Unavailable));
         }
         let budget = value
             .as_u64()
             .filter(|v| *v > 0)
-            .ok_or(CodecError::Invalid(
-                crate::protocol::failure::ShapeReason::InvalidValue,
-            ))?;
+            .ok_or(CodecError::invalid())?;
         if !settings.effort.is_absent() {
-            return Err(CodecError::Unsupported(
-                crate::protocol::failure::CarrierReason::Unavailable,
-            ));
+            return Err(CodecError::Unsupported(CarrierReason::Unavailable));
         }
         if settings
             .controls
             .max_output_tokens
             .is_some_and(|cap| budget > cap)
         {
-            return Err(CodecError::Unsupported(
-                crate::protocol::failure::CarrierReason::Unavailable,
-            ));
+            return Err(CodecError::Unsupported(CarrierReason::Unavailable));
         }
         settings.reasoning.presence = ReasoningPresence::Present;
         settings.reasoning.mode = Presence::Value(ReasoningMode::Budgeted);
@@ -188,13 +163,14 @@ pub(in crate::protocol::openai) fn read_controls(
     }
     if let Some(value) = o.get("top_k") {
         if profile != Profile::Chat {
-            return Err(CodecError::Unsupported(
-                crate::protocol::failure::CarrierReason::Unavailable,
-            ));
+            return Err(CodecError::Unsupported(CarrierReason::Unavailable));
         }
-        settings.controls.top_k = Some(value.as_u64().filter(|v| (1..=100).contains(v)).ok_or(
-            CodecError::Unsupported(crate::protocol::failure::CarrierReason::Unavailable),
-        )? as u32);
+        settings.controls.top_k = Some(
+            value
+                .as_u64()
+                .filter(|v| (1..=100).contains(v))
+                .ok_or(CodecError::Unsupported(CarrierReason::Unavailable))? as u32,
+        );
     }
     settings.validate()?;
     Ok(())
@@ -232,9 +208,7 @@ pub(in crate::protocol::openai) fn write_reasoning(
     profile: Profile,
 ) -> Result<(), CodecError> {
     if settings.reasoning.activation == Presence::Null || settings.effort == Presence::Null {
-        return Err(CodecError::Unsupported(
-            crate::protocol::failure::CarrierReason::Reasoning,
-        ));
+        return Err(CodecError::Unsupported(CarrierReason::Reasoning));
     }
     if let Some(activation) = settings.reasoning.activation.value() {
         o.insert(
@@ -336,9 +310,7 @@ pub(in crate::protocol::openai) fn check_native_effort(
         (effort_mapping(model, profile), settings.effort.value())
         && (!mapping.native_levels.contains(&control.level) || control.scope != mapping.scope)
     {
-        return Err(CodecError::Unsupported(
-            crate::protocol::failure::CarrierReason::Unavailable,
-        ));
+        return Err(CodecError::Unsupported(CarrierReason::Unavailable));
     }
     Ok(())
 }
@@ -366,9 +338,7 @@ pub(in crate::protocol::openai) fn check_context(
                 || !ctx.moderation.is_absent()
                 || !ctx.context_management.is_absent())
     {
-        return Err(CodecError::Unsupported(
-            crate::protocol::failure::CarrierReason::Unavailable,
-        ));
+        return Err(CodecError::Unsupported(CarrierReason::Unavailable));
     }
     Ok(())
 }
@@ -383,76 +353,54 @@ pub(in crate::protocol::openai) fn check_semantic(
     if c.temperature().is_some_and(|v| !(0.0..2.0).contains(&v))
         || c.top_p().is_some_and(|v| v <= 0.0)
     {
-        return Err(CodecError::Unsupported(
-            crate::protocol::failure::CarrierReason::Unavailable,
-        ));
+        return Err(CodecError::Unsupported(CarrierReason::Unavailable));
     }
     let qwen = matches!(model, "qwen3.8-flash" | "qwen3.8-max");
     let glm = matches!(model, "glm-5.3" | "glm-5.3-prime");
     let disabled = r.activation.value() == Some(&ReasoningActivation::Disabled);
     if qwen && !disabled && c.temperature().is_some_and(|v| v < 0.6) {
-        return Err(CodecError::Unsupported(
-            crate::protocol::failure::CarrierReason::Unavailable,
-        ));
+        return Err(CodecError::Unsupported(CarrierReason::Unavailable));
     }
     if glm && disabled {
-        return Err(CodecError::Unsupported(
-            crate::protocol::failure::CarrierReason::Unavailable,
-        ));
+        return Err(CodecError::Unsupported(CarrierReason::Unavailable));
     }
     if r.budget_tokens.is_some() && (glm || model == "kimi-k3" || !s.effort.is_absent()) {
-        return Err(CodecError::Unsupported(
-            crate::protocol::failure::CarrierReason::Reasoning,
-        ));
+        return Err(CodecError::Unsupported(CarrierReason::Reasoning));
     }
     if c.top_k.is_some_and(|n| n > 100) || c.top_k.is_some() && model == "kimi-k3" {
-        return Err(CodecError::Unsupported(
-            crate::protocol::failure::CarrierReason::Unavailable,
-        ));
+        return Err(CodecError::Unsupported(CarrierReason::Unavailable));
     }
     if c.seed.is_some_and(|n| !(0..=2147483647).contains(&n))
         || c.top_logprobs.is_some_and(|n| n > 5)
     {
-        return Err(CodecError::Unsupported(
-            crate::protocol::failure::CarrierReason::Unavailable,
-        ));
+        return Err(CodecError::Unsupported(CarrierReason::Unavailable));
     }
     if (qwen || glm || model == "kimi-k3") && c.logprobs == Presence::Value(true) {
-        return Err(CodecError::Unsupported(
-            crate::protocol::failure::CarrierReason::Unavailable,
-        ));
+        return Err(CodecError::Unsupported(CarrierReason::Unavailable));
     }
     if s.effort == Presence::Null
         || r.activation == Presence::Null
         || r.presence == ReasoningPresence::Null
         || c.logprobs == Presence::Null
     {
-        return Err(CodecError::Unsupported(
-            crate::protocol::failure::CarrierReason::Reasoning,
-        ));
+        return Err(CodecError::Unsupported(CarrierReason::Reasoning));
     }
     if r.replay_mismatch.is_some()
         || !r.presentation.is_absent()
         || !r.context.is_absent()
         || !r.mode.is_absent() && r.mode != Presence::Value(ReasoningMode::Budgeted)
     {
-        return Err(CodecError::Unsupported(
-            crate::protocol::failure::CarrierReason::Reasoning,
-        ));
+        return Err(CodecError::Unsupported(CarrierReason::Reasoning));
     }
     if profile == Profile::Chat {
         if (glm && !matches!(s.output(), OutputConstraint::Text))
             || model == "kimi-k3" && matches!(s.output(), OutputConstraint::JsonSchema { .. })
         {
-            return Err(CodecError::Unsupported(
-                crate::protocol::failure::CarrierReason::Unavailable,
-            ));
+            return Err(CodecError::Unsupported(CarrierReason::Unavailable));
         }
         for tool in semantic.tools() {
             let ToolDefinition::Function(tool) = tool else {
-                return Err(CodecError::Unsupported(
-                    crate::protocol::failure::CarrierReason::Tools,
-                ));
+                return Err(CodecError::Unsupported(CarrierReason::Tools));
             };
             if tool.description.is_none()
                 || tool.output_schema.is_some()
@@ -463,33 +411,23 @@ pub(in crate::protocol::openai) fn check_semantic(
                         | FunctionStrictness::Omitted(StrictDefault::NonStrict)
                 )
             {
-                return Err(CodecError::Unsupported(
-                    crate::protocol::failure::CarrierReason::Unavailable,
-                ));
+                return Err(CodecError::Unsupported(CarrierReason::Unavailable));
             }
         }
         if matches!(
             s.tool_choice,
             Some(ToolChoice::Allowed { .. } | ToolChoice::Custom(_) | ToolChoice::Qualified(_))
         ) {
-            return Err(CodecError::Unsupported(
-                crate::protocol::failure::CarrierReason::Tools,
-            ));
+            return Err(CodecError::Unsupported(CarrierReason::Tools));
         }
         if c.frequency_penalty().is_some() || !s.text.verbosity.is_absent() {
-            return Err(CodecError::Unsupported(
-                crate::protocol::failure::CarrierReason::Unavailable,
-            ));
+            return Err(CodecError::Unsupported(CarrierReason::Unavailable));
         }
         if qwen && matches!(s.tool_choice, Some(ToolChoice::Required)) {
-            return Err(CodecError::Unsupported(
-                crate::protocol::failure::CarrierReason::Tools,
-            ));
+            return Err(CodecError::Unsupported(CarrierReason::Tools));
         }
         if !disabled && matches!(s.tool_choice, Some(ToolChoice::Specific(_))) {
-            return Err(CodecError::Unsupported(
-                crate::protocol::failure::CarrierReason::Unavailable,
-            ));
+            return Err(CodecError::Unsupported(CarrierReason::Unavailable));
         }
     } else {
         if c.has_extended_controls()
@@ -500,23 +438,17 @@ pub(in crate::protocol::openai) fn check_semantic(
             || r.budget_tokens.is_some()
             || !r.read_history.is_absent()
         {
-            return Err(CodecError::Unsupported(
-                crate::protocol::failure::CarrierReason::Unavailable,
-            ));
+            return Err(CodecError::Unsupported(CarrierReason::Unavailable));
         }
         if c.max_output_tokens
             .is_some_and(|n| n < 16 || !model.is_empty() && !qwen && !disabled)
         {
-            return Err(CodecError::Unsupported(
-                crate::protocol::failure::CarrierReason::Unavailable,
-            ));
+            return Err(CodecError::Unsupported(CarrierReason::Unavailable));
         }
         let tools = semantic.tools();
         for tool in tools {
             let ToolDefinition::Function(t) = tool else {
-                return Err(CodecError::Unsupported(
-                    crate::protocol::failure::CarrierReason::Unavailable,
-                ));
+                return Err(CodecError::Unsupported(CarrierReason::Unavailable));
             };
             if t.description.is_none()
                 || t.output_schema.is_some()
@@ -527,9 +459,7 @@ pub(in crate::protocol::openai) fn check_semantic(
                         | FunctionStrictness::Omitted(StrictDefault::NonStrict)
                 )
             {
-                return Err(CodecError::Unsupported(
-                    crate::protocol::failure::CarrierReason::Unavailable,
-                ));
+                return Err(CodecError::Unsupported(CarrierReason::Unavailable));
             }
         }
         let required = matches!(
@@ -541,34 +471,24 @@ pub(in crate::protocol::openai) fn check_semantic(
             )
         );
         if required && tools.len() != 1 {
-            return Err(CodecError::Unsupported(
-                crate::protocol::failure::CarrierReason::Unavailable,
-            ));
+            return Err(CodecError::Unsupported(CarrierReason::Unavailable));
         }
         for (index, (_, item)) in semantic.items().iter().enumerate() {
             match item {
                 Item::ToolCall(c) if !c.context.is_direct() => {
-                    return Err(CodecError::Unsupported(
-                        crate::protocol::failure::CarrierReason::Unavailable,
-                    ));
+                    return Err(CodecError::Unsupported(CarrierReason::Unavailable));
                 }
                 Item::ToolResult(result) => {
                     if !matches!(result.output, ToolOutput::Text(_)) {
-                        return Err(CodecError::Unsupported(
-                            crate::protocol::failure::CarrierReason::Unavailable,
-                        ));
+                        return Err(CodecError::Unsupported(CarrierReason::Unavailable));
                     }
                     if !matches!(index.checked_sub(1).and_then(|n|semantic.items().get(n)),Some((_,Item::ToolCall(c))) if result.required_call_id().ok()==Some(c.call_id.as_str()))
                     {
-                        return Err(CodecError::Unsupported(
-                            crate::protocol::failure::CarrierReason::Unavailable,
-                        ));
+                        return Err(CodecError::Unsupported(CarrierReason::Unavailable));
                     }
                 }
                 Item::Message(m) if m.phase.is_some() => {
-                    return Err(CodecError::Unsupported(
-                        crate::protocol::failure::CarrierReason::Unavailable,
-                    ));
+                    return Err(CodecError::Unsupported(CarrierReason::Unavailable));
                 }
                 Item::Reasoning(r)
                     if r.replay.is_some()
@@ -576,9 +496,7 @@ pub(in crate::protocol::openai) fn check_semantic(
                             .iter()
                             .any(|(_, p)| matches!(p, ReasoningContent::Text(_))) =>
                 {
-                    return Err(CodecError::Unsupported(
-                        crate::protocol::failure::CarrierReason::UnknownField,
-                    ));
+                    return Err(CodecError::Unsupported(CarrierReason::UnknownField));
                 }
                 Item::CustomCall(_)
                 | Item::CustomResult(_)
@@ -586,9 +504,7 @@ pub(in crate::protocol::openai) fn check_semantic(
                 | Item::Compaction(_)
                 | Item::Program(_)
                 | Item::ProgramOutput(_) => {
-                    return Err(CodecError::Unsupported(
-                        crate::protocol::failure::CarrierReason::Unavailable,
-                    ));
+                    return Err(CodecError::Unsupported(CarrierReason::Unavailable));
                 }
                 _ => {}
             }
@@ -608,9 +524,7 @@ pub(in crate::protocol::openai) fn write_tools(
         let mut values = vec![];
         for tool in tools {
             let ToolDefinition::Function(t) = tool else {
-                return Err(CodecError::Unsupported(
-                    crate::protocol::failure::CarrierReason::Unavailable,
-                ));
+                return Err(CodecError::Unsupported(CarrierReason::Unavailable));
             };
             if t.output_schema.is_some()
                 || !t.dispatch.is_inactive()
@@ -620,11 +534,9 @@ pub(in crate::protocol::openai) fn write_tools(
                         | FunctionStrictness::Omitted(StrictDefault::NonStrict)
                 )
             {
-                return Err(CodecError::Unsupported(
-                    crate::protocol::failure::CarrierReason::Unavailable,
-                ));
+                return Err(CodecError::Unsupported(CarrierReason::Unavailable));
             }
-            let mut value = json!({"type":"function","name":t.name.as_str(),"description":t.description.as_ref().ok_or(CodecError::Invalid(crate::protocol::failure::ShapeReason::InvalidValue))?});
+            let mut value = json!({"type":"function","name":t.name.as_str(),"description":t.description.as_ref().ok_or(CodecError::invalid())?});
             if let Some(schema) = &t.parameters {
                 value["parameters"] = schema.root().clone();
             }

@@ -1,4 +1,5 @@
 //! Incremental projection and explicit I/O-owned commit. Encoding is not delivery.
+use crate::protocol::failure::CarrierReason;
 mod coalescing;
 mod completion;
 use crate::{
@@ -623,10 +624,7 @@ impl ResponseDelivery {
                     .iter()
                     .any(|(_, item)| item.has_replay_attachment())
             {
-                return Err(CodecError::Unsupported(
-                    crate::protocol::failure::CarrierReason::Replay,
-                )
-                .into());
+                return Err(CodecError::Unsupported(CarrierReason::Replay).into());
             }
             let mut prepared = self.prepare(attempt, std::slice::from_ref(&terminal))?;
             prepared.evidence.extend(evidence);
@@ -718,9 +716,7 @@ impl ResponseDelivery {
                 _ => false,
             })
         {
-            return Err(
-                CodecError::Unsupported(crate::protocol::failure::CarrierReason::Replay).into(),
-            );
+            return Err(CodecError::Unsupported(CarrierReason::Replay).into());
         }
         let wire_events: Vec<_> = events
             .iter()

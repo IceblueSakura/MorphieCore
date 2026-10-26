@@ -1,6 +1,7 @@
 //! Pure HTTP/SSE boundary for the stateless Responses profile.
 //! Socket I/O, authentication, cancellation and commit remain caller responsibilities.
 //! One consume call yields at most one framed payload; it never buffers a whole wire stream.
+use crate::protocol::failure::ShapeReason;
 use crate::protocol::openai::{
     CodecError, DecodedResponse, Profile, ResponseMetadata,
     events::{EventDecoder, EventEncoder},
@@ -121,9 +122,7 @@ impl ResponsesSseDecoder {
             return Ok(vec![]);
         }
         let mut payload = crate::protocol::json::decode(frame.data().as_bytes())?;
-        let object = payload.as_object_mut().ok_or(CodecError::Invalid(
-            crate::protocol::failure::ShapeReason::InvalidValue,
-        ))?;
+        let object = payload.as_object_mut().ok_or(CodecError::invalid())?;
         let declared = frame.event().filter(|s| !s.is_empty());
         match (declared, object.get("type")) {
             (Some(header), Some(Value::String(body))) if header == body => {}
@@ -134,12 +133,7 @@ impl ResponsesSseDecoder {
             _ => return Err(SseError::EventType),
         }
         if let Some(padding) = payload.get("obfuscation") {
-            let bytes = padding
-                .as_str()
-                .ok_or(CodecError::Invalid(
-                    crate::protocol::failure::ShapeReason::InvalidValue,
-                ))?
-                .len();
+            let bytes = padding.as_str().ok_or(CodecError::invalid())?.len();
             charge_padding(
                 &mut self.obfuscation_bytes,
                 bytes,
@@ -280,9 +274,7 @@ impl ResponsesSseEncoder {
                 }
                 let typ = value["type"]
                     .as_str()
-                    .ok_or(CodecError::Invalid(
-                        crate::protocol::failure::ShapeReason::InvalidValue,
-                    ))?
+                    .ok_or(CodecError::invalid())?
                     .to_owned();
                 if typ.ends_with(".delta")
                     && let Obfuscation::Seeded(seed) = &self.padding
@@ -345,15 +337,11 @@ pub(crate) fn error_frame(
     max_bytes: usize,
     notice: Option<&crate::protocol::diagnostics::AdaptationNotice>,
 ) -> Result<Bytes, SseError> {
-    let error = error.get("error").ok_or(CodecError::Invalid(
-        crate::protocol::failure::ShapeReason::InvalidValue,
-    ))?;
+    let error = error.get("error").ok_or(CodecError::invalid())?;
     let message = error
         .get("message")
         .and_then(Value::as_str)
-        .ok_or(CodecError::Invalid(
-            crate::protocol::failure::ShapeReason::InvalidValue,
-        ))?;
+        .ok_or(CodecError::invalid())?;
     let mut value = json!({
         "type":"error", "sequence_number":sequence,
         "code":error.get("code").and_then(Value::as_str),
@@ -388,7 +376,7 @@ pub fn encode_frame(payload: &Value, max_bytes: usize) -> Result<Bytes, SseError
     let mut wire = Vec::with_capacity(prefix.len() + size + 2);
     wire.extend_from_slice(prefix.as_bytes());
     serde_json::to_writer(&mut wire, payload)
-        .map_err(|_| CodecError::Invalid(crate::protocol::failure::ShapeReason::Json))?;
+        .map_err(|_| CodecError::Invalid(ShapeReason::Json))?;
     wire.extend_from_slice(b"\n\n");
     Ok(Bytes::from(wire))
 }

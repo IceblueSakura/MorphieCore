@@ -1,5 +1,6 @@
 //! Reported context and the executed-context wire codec shared by both OpenAI profiles.
 //! A context hint is never a task instruction, and each profile owns its field set.
+use crate::protocol::failure::{CarrierReason, ShapeReason};
 use crate::protocol::openai::{CodecError, Profile, ResponseMetadata, shape::*};
 use crate::semantic::{
     context::{CacheHints, ExecutionHints},
@@ -25,9 +26,10 @@ pub(super) fn metadata(
     let model = text(string(o, "model")?, "response model", 256)?
         .as_str()
         .to_owned();
-    let created = timestamp(o.get(created_key).ok_or(CodecError::Invalid(
-        crate::protocol::failure::ShapeReason::Metadata,
-    ))?)?;
+    let created = timestamp(
+        o.get(created_key)
+            .ok_or(CodecError::Invalid(ShapeReason::Metadata))?,
+    )?;
     let (mut context, instruction_fidelity) = if profile == Profile::Responses {
         crate::semantic::context::ResponseContext::read(o, DecodeDirection::Upstream)?
     } else {
@@ -48,9 +50,7 @@ pub(super) fn metadata(
                     DecodeDirection::Upstream,
                 )?,
                 system_fingerprint: read_presence(o, "system_fingerprint", |v| {
-                    v.as_str().map(str::to_owned).ok_or(CodecError::Invalid(
-                        crate::protocol::failure::ShapeReason::InvalidValue,
-                    ))
+                    v.as_str().map(str::to_owned).ok_or(CodecError::invalid())
                 })?,
                 ..Default::default()
             },
@@ -67,9 +67,7 @@ pub(super) fn metadata(
             && let Some(control) = settings.effort.value().copied()
         {
             if control.scope != mapping.scope {
-                return Err(CodecError::Unsupported(
-                    crate::protocol::failure::CarrierReason::Reasoning,
-                ));
+                return Err(CodecError::Unsupported(CarrierReason::Reasoning));
             }
             let mapped = mapping.decode(control.level)?;
             if mapped != control.level {
@@ -122,9 +120,7 @@ impl CacheHints {
         o: &mut Map<String, Value>,
     ) -> Result<(), CodecError> {
         self.validate()?;
-        let Value::Object(v) = serde_json::to_value(self).map_err(|_| {
-            CodecError::Invalid(crate::protocol::failure::ShapeReason::InvalidValue)
-        })?
+        let Value::Object(v) = serde_json::to_value(self).map_err(|_| CodecError::invalid())?
         else {
             unreachable!()
         };
@@ -149,9 +145,7 @@ pub(in crate::protocol::openai) fn check_access_programs(
     o: &Map<String, Value>,
 ) -> Result<(), CodecError> {
     if o.get("access_programs").is_some_and(|v| !v.is_null()) {
-        return Err(CodecError::Unsupported(
-            crate::protocol::failure::CarrierReason::Unavailable,
-        ));
+        return Err(CodecError::Unsupported(CarrierReason::Unavailable));
     }
     Ok(())
 }
@@ -186,26 +180,20 @@ impl ExecutionHints {
             .get("prompt_cache_options")
             .is_some_and(Value::is_null)
         {
-            return Err(CodecError::Invalid(
-                crate::protocol::failure::ShapeReason::InvalidValue,
-            ));
+            return Err(CodecError::invalid());
         }
         if let Some(options) = fields
             .get_mut("prompt_cache_options")
             .filter(|v| !v.is_null())
         {
-            let options = options.as_object_mut().ok_or(CodecError::Invalid(
-                crate::protocol::failure::ShapeReason::InvalidValue,
-            ))?;
+            let options = options.as_object_mut().ok_or(CodecError::invalid())?;
             let allowed: &[&str] = if profile == Profile::Chat {
                 if direction.client()
                     && ["comparison_response_id", "prewarm"]
                         .iter()
                         .any(|key| options.get(*key).is_some_and(|v| !v.is_null()))
                 {
-                    return Err(CodecError::Unsupported(
-                        crate::protocol::failure::CarrierReason::Unavailable,
-                    ));
+                    return Err(CodecError::Unsupported(CarrierReason::Unavailable));
                 }
                 &["mode", "ttl"]
             } else {
@@ -214,9 +202,8 @@ impl ExecutionHints {
             direction.fields(options, allowed)?;
             options.retain(|key, _| allowed.contains(&key.as_str()));
         }
-        let hints: Self = serde_json::from_value(Value::Object(fields)).map_err(|_| {
-            CodecError::Invalid(crate::protocol::failure::ShapeReason::InvalidValue)
-        })?;
+        let hints: Self =
+            serde_json::from_value(Value::Object(fields)).map_err(|_| CodecError::invalid())?;
         hints.validate()?;
         validate_identity(&hints.identity)?;
         Ok(hints)
@@ -227,9 +214,7 @@ impl ExecutionHints {
     ) -> Result<(), CodecError> {
         self.validate()?;
         validate_identity(&self.identity)?;
-        let Value::Object(v) = serde_json::to_value(self).map_err(|_| {
-            CodecError::Invalid(crate::protocol::failure::ShapeReason::InvalidValue)
-        })?
+        let Value::Object(v) = serde_json::to_value(self).map_err(|_| CodecError::invalid())?
         else {
             unreachable!()
         };
@@ -241,9 +226,7 @@ impl ExecutionHints {
 pub(in crate::protocol::openai) fn timestamp(v: &Value) -> Result<Number, CodecError> {
     match v {
         Value::Number(n) if crate::semantic::value::valid_timestamp(n) => Ok(n.clone()),
-        _ => Err(CodecError::Invalid(
-            crate::protocol::failure::ShapeReason::Metadata,
-        )),
+        _ => Err(CodecError::Invalid(ShapeReason::Metadata)),
     }
 }
 

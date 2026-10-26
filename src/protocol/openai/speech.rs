@@ -12,9 +12,6 @@ use crate::{
 use bytes::Bytes;
 use serde_json::{Value, json};
 
-fn invalid() -> CodecError {
-    CodecError::Invalid(crate::protocol::failure::ShapeReason::InvalidValue)
-}
 pub(crate) fn valid_model(model: &str) -> bool {
     !model.is_empty()
         && model.len() <= 256
@@ -28,7 +25,7 @@ fn format(label: &str) -> Result<AudioEncoding, CodecError> {
         "flac" => AudioEncoding::Flac,
         "wav" => AudioEncoding::Wav,
         "pcm" => AudioEncoding::PcmS16Le24KhzMono,
-        _ => return Err(invalid()),
+        _ => return Err(CodecError::invalid()),
     })
 }
 fn format_label(format: AudioEncoding) -> &'static str {
@@ -43,7 +40,7 @@ fn format_label(format: AudioEncoding) -> &'static str {
 }
 pub fn decode_request(bytes: &[u8]) -> Result<Request, CodecError> {
     let value = crate::protocol::json::decode(bytes)?;
-    let map = value.as_object().ok_or_else(invalid)?;
+    let map = value.as_object().ok_or_else(CodecError::invalid)?;
     if map.keys().any(|k| {
         ![
             "model",
@@ -56,27 +53,34 @@ pub fn decode_request(bytes: &[u8]) -> Result<Request, CodecError> {
         ]
         .contains(&k.as_str())
     }) {
-        return Err(invalid());
+        return Err(CodecError::invalid());
     }
-    let required = |key| map.get(key).and_then(Value::as_str).ok_or_else(invalid);
-    let mut task =
-        SpeechRequest::new(required("input")?, required("voice")?).map_err(|_| invalid())?;
+    let required = |key| {
+        map.get(key)
+            .and_then(Value::as_str)
+            .ok_or_else(CodecError::invalid)
+    };
+    let mut task = SpeechRequest::new(required("input")?, required("voice")?)
+        .map_err(|_| CodecError::invalid())?;
     task.instructions = map
         .get("instructions")
-        .map(|v| v.as_str().map(String::from).ok_or_else(invalid))
+        .map(|v| v.as_str().map(String::from).ok_or_else(CodecError::invalid))
         .transpose()?;
     task.speed = map
         .get("speed")
-        .map(|v| Speed::new(v.as_number().ok_or_else(invalid)?.clone()).map_err(|_| invalid()))
+        .map(|v| {
+            Speed::new(v.as_number().ok_or_else(CodecError::invalid)?.clone())
+                .map_err(|_| CodecError::invalid())
+        })
         .transpose()?;
     task.format = map
         .get("response_format")
-        .map(|v| format(v.as_str().ok_or_else(invalid)?))
+        .map(|v| format(v.as_str().ok_or_else(CodecError::invalid)?))
         .transpose()?;
     let mut request = Request::new(required("model")?, task);
     if let Some(delivery) = map.get("stream_format") {
         if delivery.as_str() != Some("audio") {
-            return Err(invalid());
+            return Err(CodecError::invalid());
         }
         request.explicit_audio_delivery = true;
     }
@@ -84,16 +88,16 @@ pub fn decode_request(bytes: &[u8]) -> Result<Request, CodecError> {
     Ok(request)
 }
 pub fn validate_request(request: &Request) -> Result<(), CodecError> {
-    request.task.validate().map_err(|_| invalid())?;
+    request.task.validate().map_err(|_| CodecError::invalid())?;
     if !valid_model(&request.model) {
-        return Err(invalid());
+        return Err(CodecError::invalid());
     }
     Ok(())
 }
 pub fn encode_request(request: &Request, model: &str) -> Result<Value, CodecError> {
     validate_request(request)?;
     if !valid_model(model) {
-        return Err(invalid());
+        return Err(CodecError::invalid());
     }
     let mut value =
         json!({"model":model, "input":request.task.input(), "voice":request.task.voice()});
@@ -117,10 +121,10 @@ pub fn reported_encoding(
     content_type: &str,
     task: &SpeechRequest,
 ) -> Result<Option<AudioEncoding>, CodecError> {
-    task.validate().map_err(|_| invalid())?;
-    let mime: mime::Mime = content_type.parse().map_err(|_| invalid())?;
+    task.validate().map_err(|_| CodecError::invalid())?;
+    let mime: mime::Mime = content_type.parse().map_err(|_| CodecError::invalid())?;
     if mime.params().next().is_some() {
-        return Err(invalid());
+        return Err(CodecError::invalid());
     }
     let encoding = match mime.essence_str() {
         "application/octet-stream" => None,
@@ -130,10 +134,10 @@ pub fn reported_encoding(
         "audio/flac" => Some(AudioEncoding::Flac),
         "audio/wav" | "audio/x-wav" => Some(AudioEncoding::Wav),
         "audio/pcm" => Some(AudioEncoding::PcmS16Le24KhzMono),
-        _ => return Err(invalid()),
+        _ => return Err(CodecError::invalid()),
     };
     if encoding.is_some_and(|e| e != task.requested_format()) {
-        return Err(invalid());
+        return Err(CodecError::invalid());
     }
     Ok(encoding)
 }
@@ -142,7 +146,8 @@ pub fn decode_response(
     content_type: &str,
     task: &SpeechRequest,
 ) -> Result<AudioArtifact, CodecError> {
-    AudioArtifact::new(bytes, reported_encoding(content_type, task)?).map_err(|_| invalid())
+    AudioArtifact::new(bytes, reported_encoding(content_type, task)?)
+        .map_err(|_| CodecError::invalid())
 }
 pub fn response_content_type(artifact: &AudioArtifact) -> &'static str {
     match artifact.encoding() {
@@ -161,5 +166,5 @@ pub fn response_content_type(artifact: &AudioArtifact) -> &'static str {
 pub fn project_result(
     result: &crate::semantic::task::speech_synthesis::SpeechResult,
 ) -> Result<crate::lowering::speech::BinaryProjection, CodecError> {
-    crate::lowering::speech::project_binary(result).map_err(|_| invalid())
+    crate::lowering::speech::project_binary(result).map_err(|_| CodecError::invalid())
 }

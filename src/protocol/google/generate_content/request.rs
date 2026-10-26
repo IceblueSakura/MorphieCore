@@ -1,6 +1,7 @@
 //! Candidate-local generateContent request projection.
 //! Source: <https://ai.google.dev/api/generate-content>.
 use super::items::contents;
+use crate::protocol::failure::CarrierReason;
 use crate::{
     protocol::{
         CodecError,
@@ -16,7 +17,7 @@ use serde_json::{Map, Value, json};
 use std::collections::BTreeSet;
 
 pub(super) fn unsupported() -> CodecError {
-    CodecError::Unsupported(crate::protocol::failure::CarrierReason::Unavailable)
+    CodecError::Unsupported(CarrierReason::Unavailable)
 }
 /// Named degradable rules applied to one candidate's request copy.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]

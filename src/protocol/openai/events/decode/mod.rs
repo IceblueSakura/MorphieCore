@@ -1,4 +1,5 @@
 //! Incoming payload driver: state, rejection, metadata and profile dispatch.
+use crate::protocol::failure::ShapeReason;
 mod chat;
 mod responses;
 use crate::protocol::openai::events::*;
@@ -79,9 +80,7 @@ impl EventDecoder {
     pub fn push(&mut self, payload: &Value) -> Result<Vec<StreamEvent>, CodecError> {
         if self.state.as_ref().is_none_or(|s| s.terminal().is_some()) {
             self.state = None;
-            return Err(CodecError::Invalid(
-                crate::protocol::failure::ShapeReason::InvalidValue,
-            ));
+            return Err(CodecError::invalid());
         }
         self.events += 1;
         let result = (|| {
@@ -144,18 +143,14 @@ impl EventDecoder {
                     || !string(o, "type")?.ends_with(".delta")
                     || !padding.as_str().is_some_and(|s| s.len() <= 4096))
             {
-                return Err(CodecError::Invalid(
-                    crate::protocol::failure::ShapeReason::InvalidValue,
-                ));
+                return Err(CodecError::invalid());
             }
             if let Some(n) = o.get("sequence_number") {
-                let n = n.as_u64().ok_or(CodecError::Invalid(
-                    crate::protocol::failure::ShapeReason::Sequence,
-                ))?;
+                let n = n
+                    .as_u64()
+                    .ok_or(CodecError::Invalid(ShapeReason::Sequence))?;
                 if self.sequence.is_some_and(|old| n <= old) {
-                    return Err(CodecError::Invalid(
-                        crate::protocol::failure::ShapeReason::Sequence,
-                    ));
+                    return Err(CodecError::Invalid(ShapeReason::Sequence));
                 }
                 self.sequence = Some(n);
             }
@@ -178,9 +173,7 @@ impl EventDecoder {
                 let id = self
                     .metadata
                     .as_ref()
-                    .ok_or(CodecError::Invalid(
-                        crate::protocol::failure::ShapeReason::Metadata,
-                    ))?
+                    .ok_or(CodecError::Invalid(ShapeReason::Metadata))?
                     .required_id()?;
                 self.fidelity.capture_routing_extras(
                     self.profile,
@@ -206,27 +199,19 @@ impl EventDecoder {
     }
     pub fn finish(&self) -> Result<(), CodecError> {
         if self.state.is_none() {
-            return Err(CodecError::Invalid(
-                crate::protocol::failure::ShapeReason::InvalidValue,
-            ));
+            return Err(CodecError::invalid());
         }
-        end_of_stream(self.state.as_ref().ok_or(CodecError::Invalid(
-            crate::protocol::failure::ShapeReason::InvalidValue,
-        ))?)?;
+        end_of_stream(self.state.as_ref().ok_or(CodecError::invalid())?)?;
         Ok(())
     }
     /// Framing calls this only for a real Chat `[DONE]`, never for transport EOF.
     pub fn done(&mut self) -> Result<Vec<StreamEvent>, CodecError> {
         if self.profile != Profile::Chat || self.state.is_none() {
-            return Err(CodecError::Invalid(
-                crate::protocol::failure::ShapeReason::InvalidValue,
-            ));
+            return Err(CodecError::invalid());
         }
         let Some((terminal, details)) = self.chat.pending.take() else {
             self.state = None;
-            return Err(CodecError::Invalid(
-                crate::protocol::failure::ShapeReason::InvalidValue,
-            ));
+            return Err(CodecError::invalid());
         };
         let result = (|| {
             let mut out = vec![];
@@ -236,9 +221,7 @@ impl EventDecoder {
                 let id = self
                     .metadata
                     .as_ref()
-                    .ok_or(CodecError::Invalid(
-                        crate::protocol::failure::ShapeReason::Metadata,
-                    ))?
+                    .ok_or(CodecError::Invalid(ShapeReason::Metadata))?
                     .required_id()?;
                 self.fidelity.capture_routing_extras(
                     self.profile,
@@ -259,28 +242,24 @@ impl EventDecoder {
         self.finish()?;
         Ok(crate::protocol::openai::DecodedResponse {
             evidence: self.evidence.clone(),
-            semantic: materialize(self.state.as_ref().ok_or(CodecError::Invalid(
-                crate::protocol::failure::ShapeReason::InvalidValue,
-            ))?)?,
+            semantic: materialize(self.state.as_ref().ok_or(CodecError::invalid())?)?,
             fidelity: self.fidelity.clone(),
-            metadata: self.metadata.clone().ok_or(CodecError::Invalid(
-                crate::protocol::failure::ShapeReason::Metadata,
-            ))?,
+            metadata: self
+                .metadata
+                .clone()
+                .ok_or(CodecError::Invalid(ShapeReason::Metadata))?,
         })
     }
     pub fn into_parts(self) -> Result<(FidelityRecords, ResponseMetadata), CodecError> {
         self.finish()?;
         Ok((
             self.fidelity,
-            self.metadata.ok_or(CodecError::Invalid(
-                crate::protocol::failure::ShapeReason::Metadata,
-            ))?,
+            self.metadata
+                .ok_or(CodecError::Invalid(ShapeReason::Metadata))?,
         ))
     }
     pub(super) fn state(&self) -> Result<&StreamState, CodecError> {
-        self.state.as_ref().ok_or(CodecError::Invalid(
-            crate::protocol::failure::ShapeReason::InvalidValue,
-        ))
+        self.state.as_ref().ok_or(CodecError::invalid())
     }
     pub(super) fn emit(
         &mut self,
@@ -288,18 +267,14 @@ impl EventDecoder {
         out: &mut Vec<StreamEvent>,
     ) -> Result<(), CodecError> {
         self.state = Some(reduce(
-            self.state.take().ok_or(CodecError::Invalid(
-                crate::protocol::failure::ShapeReason::InvalidValue,
-            ))?,
+            self.state.take().ok_or(CodecError::invalid())?,
             event.clone(),
         )?);
         if let StreamEvent::ItemStarted { item, .. } | StreamEvent::ItemFinished { item, .. } =
             &event
         {
             sync_replays(
-                self.state.as_ref().ok_or(CodecError::Invalid(
-                    crate::protocol::failure::ShapeReason::InvalidValue,
-                ))?,
+                self.state.as_ref().ok_or(CodecError::invalid())?,
                 &mut self.fidelity,
                 Some(*item),
             )?;
@@ -334,9 +309,7 @@ impl EventDecoder {
                     .as_ref()
                     .is_some_and(|old| old != &instructions)
                 {
-                    return Err(CodecError::Invalid(
-                        crate::protocol::failure::ShapeReason::InvalidValue,
-                    ));
+                    return Err(CodecError::invalid());
                 }
                 self.responses.native_instructions = Some(instructions);
             }
@@ -358,22 +331,16 @@ impl EventDecoder {
             // as `created` and `system_fingerprint` per chunk, so the first
             // reported value binds and later drift is normalized away.
             if old.id != m.id {
-                return Err(CodecError::Invalid(
-                    crate::protocol::failure::ShapeReason::MetadataIdChanged,
-                ));
+                return Err(CodecError::Invalid(ShapeReason::MetadataIdChanged));
             }
             if old.model != m.model {
-                return Err(CodecError::Invalid(
-                    crate::protocol::failure::ShapeReason::MetadataModelChanged,
-                ));
+                return Err(CodecError::Invalid(ShapeReason::MetadataModelChanged));
             }
             if old.created != m.created {
                 if !(self.adaptation.rules.chunk_metadata_drift
                     || self.adaptation.rules.chunk_created_drift)
                 {
-                    return Err(CodecError::Invalid(
-                        crate::protocol::failure::ShapeReason::MetadataCreatedChanged,
-                    ));
+                    return Err(CodecError::Invalid(ShapeReason::MetadataCreatedChanged));
                 }
                 m.created = old.created.clone();
             }
@@ -387,9 +354,7 @@ impl EventDecoder {
                 if !m.context.service_class().is_absent()
                     && old.context.service_class() != m.context.service_class()
                 {
-                    return Err(CodecError::Invalid(
-                        crate::protocol::failure::ShapeReason::Metadata,
-                    ));
+                    return Err(CodecError::Invalid(ShapeReason::Metadata));
                 }
                 m.context
                     .reports
@@ -402,9 +367,7 @@ impl EventDecoder {
                     && old.context.system_fingerprint != m.context.system_fingerprint
                     && !self.adaptation.rules.chunk_metadata_drift
                 {
-                    return Err(CodecError::Invalid(
-                        crate::protocol::failure::ShapeReason::Metadata,
-                    ));
+                    return Err(CodecError::Invalid(ShapeReason::Metadata));
                 }
                 m.context.system_fingerprint = old.context.system_fingerprint.clone();
             }

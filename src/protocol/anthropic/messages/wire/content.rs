@@ -1,6 +1,7 @@
 //! Text, reasoning, tool and media blocks shared by requests, responses and events.
 //! No stream reducer or IR mapping lives here.
 use crate::protocol::anthropic::messages::{shape::*, wire::request::Role};
+use crate::protocol::failure::CarrierReason;
 use crate::{
     protocol::CodecError,
     semantic::{task::generation::StructuredValue, value::Presence},
@@ -54,9 +55,7 @@ impl Block {
         let kind = v
             .get("type")
             .and_then(Value::as_str)
-            .ok_or(CodecError::Invalid(
-                crate::protocol::failure::ShapeReason::InvalidValue,
-            ))?;
+            .ok_or(CodecError::invalid())?;
         Ok(match kind {
             "text" => {
                 let o = object(v)?;
@@ -76,9 +75,7 @@ impl Block {
                 reject_toolset(o)?;
                 let input = required(o, "input")?;
                 if !input.is_object() {
-                    return Err(CodecError::Invalid(
-                        crate::protocol::failure::ShapeReason::InvalidValue,
-                    ));
+                    return Err(CodecError::invalid());
                 }
                 Self::ToolUse {
                     id: string(required(o, "id")?)?,
@@ -87,9 +84,7 @@ impl Block {
                     caller: presence(o, "caller", |v| {
                         let o = object(v)?;
                         if required(o, "type")?.as_str() != Some("direct") {
-                            return Err(CodecError::Unsupported(
-                                crate::protocol::failure::CarrierReason::Unavailable,
-                            ));
+                            return Err(CodecError::Unsupported(CarrierReason::Unavailable));
                         }
                         Ok(Caller::Direct)
                     })?,
@@ -122,16 +117,12 @@ impl Block {
                 match super::ToolTarget::read(tool)? {
                     super::ToolTarget::Reference(name) => Self::ToolRemoval(name),
                     super::ToolTarget::Definition(_) => {
-                        return Err(CodecError::Invalid(
-                            crate::protocol::failure::ShapeReason::InvalidValue,
-                        ));
+                        return Err(CodecError::invalid());
                     }
                 }
             }
             _ => {
-                return Err(CodecError::Unsupported(
-                    crate::protocol::failure::CarrierReason::Unavailable,
-                ));
+                return Err(CodecError::Unsupported(CarrierReason::Unavailable));
             }
         })
     }
@@ -169,18 +160,14 @@ impl Block {
                 signature,
             } => {
                 if !opening && signature.is_empty() {
-                    return Err(CodecError::Invalid(
-                        crate::protocol::failure::ShapeReason::InvalidValue,
-                    ));
+                    return Err(CodecError::invalid());
                 }
                 charge(&mut bytes, text(thinking)?)?;
                 charge(&mut bytes, text(signature)?)?;
             }
             Self::RedactedThinking(data) => {
                 if data.is_empty() {
-                    return Err(CodecError::Invalid(
-                        crate::protocol::failure::ShapeReason::InvalidValue,
-                    ));
+                    return Err(CodecError::invalid());
                 }
                 charge(&mut bytes, text(data)?)?;
             }
@@ -193,9 +180,7 @@ impl Block {
                 name(id, 64)?;
                 name(tool, 128)?;
                 if !input.value().is_object() {
-                    return Err(CodecError::Invalid(
-                        crate::protocol::failure::ShapeReason::InvalidValue,
-                    ));
+                    return Err(CodecError::invalid());
                 }
                 charge(&mut bytes, id.len() + tool.len())?;
                 charge(
@@ -290,9 +275,7 @@ fn reject_toolset(o: &serde_json::Map<String, Value>) -> Result<(), CodecError> 
     // Dispatch identity belongs to this block, never to its argument properties.
     // Neither null nor an empty namespace has a proven omission equivalence.
     if !presence(o, "toolset_name", string)?.is_absent() {
-        return Err(CodecError::Unsupported(
-            crate::protocol::failure::CarrierReason::Tools,
-        ));
+        return Err(CodecError::Unsupported(CarrierReason::Tools));
     }
     Ok(())
 }

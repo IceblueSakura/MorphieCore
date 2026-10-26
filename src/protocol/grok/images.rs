@@ -12,15 +12,14 @@ use crate::{
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-fn invalid() -> CodecError {
-    CodecError::Invalid(crate::protocol::failure::ShapeReason::InvalidValue)
-}
-
 /// Project only controls with an exact carrier. Resolution tiers and aspect
 /// ratios are not exact pixel dimensions; no size-to-ratio approximation occurs.
 pub fn encode_request(request: &Request, model: &str) -> Result<Value, CodecError> {
-    request.task.validate().map_err(|_| invalid())?;
-    request.identity.validate().map_err(|_| invalid())?;
+    request.task.validate().map_err(|_| CodecError::invalid())?;
+    request
+        .identity
+        .validate()
+        .map_err(|_| CodecError::invalid())?;
     if model != "grok-imagine-image-2.0"
         || request.model.is_empty()
         || request.model.len() > 256
@@ -38,7 +37,7 @@ pub fn encode_request(request: &Request, model: &str) -> Result<Value, CodecErro
         || request.task.compression.value().is_some()
         || request.task.moderation.value().is_some()
     {
-        return Err(invalid());
+        return Err(CodecError::invalid());
     }
     let mut wire = json!({
         "model": model,
@@ -51,7 +50,7 @@ pub fn encode_request(request: &Request, model: &str) -> Result<Value, CodecErro
             ImageQualityRequest::Auto => json!("auto"),
             ImageQualityRequest::Exact(ImageQuality::Low) => json!("low"),
             ImageQualityRequest::Exact(ImageQuality::Medium) => json!("medium"),
-            _ => return Err(invalid()),
+            _ => return Err(CodecError::invalid()),
         };
     }
     if let Some(user) = request.identity.user.value() {
@@ -144,14 +143,14 @@ fn usage(wire: Usage) -> Result<ImageUsage, CodecError> {
         total: wire.total_tokens,
         input_details: map_presence(wire.input_tokens_details, |d| {
             if d.cached_tokens > d.text_tokens {
-                return Err(invalid());
+                return Err(CodecError::invalid());
             }
             let sum = d
                 .text_tokens
                 .checked_add(d.image_tokens)
-                .ok_or_else(invalid)?;
+                .ok_or_else(CodecError::invalid)?;
             if input.is_some_and(|n| n != sum) {
-                return Err(invalid());
+                return Err(CodecError::invalid());
             }
             input = Some(sum);
             Ok(ImageTokenBreakdown {
@@ -166,9 +165,9 @@ fn usage(wire: Usage) -> Result<ImageUsage, CodecError> {
                 .text_tokens
                 .checked_add(d.image_tokens)
                 .and_then(|n| n.checked_add(d.reasoning_tokens))
-                .ok_or_else(invalid)?;
+                .ok_or_else(CodecError::invalid)?;
             if output.is_some_and(|n| n != sum) {
-                return Err(invalid());
+                return Err(CodecError::invalid());
             }
             output = Some(sum);
             Ok(ImageTokenBreakdown {
@@ -180,22 +179,23 @@ fn usage(wire: Usage) -> Result<ImageUsage, CodecError> {
         })?,
         billing: ImageBilling {
             cost: Presence::Value(
-                UsdAmount::new(cost.parse().map_err(|_| invalid())?).map_err(|_| invalid())?,
+                UsdAmount::new(cost.parse().map_err(|_| CodecError::invalid())?)
+                    .map_err(|_| CodecError::invalid())?,
             ),
             ..Default::default()
         },
     };
     if let Some(total) = result.total.value() {
         if [input, output].into_iter().flatten().any(|n| n > *total) {
-            return Err(invalid());
+            return Err(CodecError::invalid());
         }
         if let (Some(input), Some(output)) = (input, output)
             && input.checked_add(output) != Some(*total)
         {
-            return Err(invalid());
+            return Err(CodecError::invalid());
         }
     }
-    result.validate().map_err(|_| invalid())?;
+    result.validate().map_err(|_| CodecError::invalid())?;
     Ok(result)
 }
 
@@ -203,13 +203,13 @@ pub fn decode_response(bytes: &[u8]) -> Result<ImageGenerationResponse, CodecErr
     // Strict JSON intake rejects duplicate keys before typed deserialization.
     // Unknown upstream fields are ignored; known fields retain strict types.
     let wire: Response = serde_json::from_value(super::super::json::decode_image_response(bytes)?)
-        .map_err(|_| invalid())?;
+        .map_err(|_| CodecError::invalid())?;
     if wire.request_id.is_some()
         || wire.status.is_some()
         || wire.error.is_some()
         || !(1..=usize::from(MAX_IMAGE_COUNT)).contains(&wire.data.len())
     {
-        return Err(invalid());
+        return Err(CodecError::invalid());
     }
     let mut total = 0;
     let mut images = Vec::with_capacity(wire.data.len());
@@ -219,17 +219,19 @@ pub fn decode_response(bytes: &[u8]) -> Result<ImageGenerationResponse, CodecErr
             || artifact.file_output.is_some()
             || artifact.storage_error.is_some()
         {
-            return Err(invalid());
+            return Err(CodecError::invalid());
         }
         let mut image =
             GeneratedImage::new(image_data(&Value::String(artifact.b64_json), &mut total)?);
         image.format = map_presence(artifact.mime_type, |mime| {
-            let format = mime.parse::<ImageFormat>().map_err(|_| invalid())?;
+            let format = mime
+                .parse::<ImageFormat>()
+                .map_err(|_| CodecError::invalid())?;
             if !matches!(
                 format,
                 ImageFormat::Png | ImageFormat::Jpeg | ImageFormat::Webp
             ) {
-                return Err(invalid());
+                return Err(CodecError::invalid());
             }
             Ok(format)
         })?;
@@ -241,7 +243,7 @@ pub fn decode_response(bytes: &[u8]) -> Result<ImageGenerationResponse, CodecErr
         images,
         usage: map_presence(wire.usage, usage)?,
     };
-    result.validate().map_err(|_| invalid())?;
+    result.validate().map_err(|_| CodecError::invalid())?;
     Ok(result)
 }
 

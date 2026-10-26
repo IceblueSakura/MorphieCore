@@ -1,4 +1,5 @@
 //! Whole Chat completion decode and encode, including non-success terminals.
+use crate::protocol::failure::{CarrierReason, ShapeReason};
 use crate::protocol::openai::{
     CodecError, DecodedResponse, Profile, ResponseRepresentation, accounting, chat, context,
     shape::*, terminal::*,
@@ -40,36 +41,26 @@ pub(crate) fn decode_with(
         ],
     )?;
     if string(o, "object")? != "chat.completion" {
-        return Err(CodecError::Invalid(
-            crate::protocol::failure::ShapeReason::Object,
-        ));
+        return Err(CodecError::Invalid(ShapeReason::Object));
     }
     let choices = o
         .get("choices")
         .and_then(Value::as_array)
         .filter(|a| a.len() == 1)
-        .ok_or(CodecError::Unsupported(
-            crate::protocol::failure::CarrierReason::Unavailable,
-        ))?;
+        .ok_or(CodecError::Unsupported(CarrierReason::Unavailable))?;
     let c = object(&choices[0])?;
     DecodeDirection::Upstream.fields(c, &["index", "message", "finish_reason", "logprobs"])?;
     if c.get("index").and_then(Value::as_u64) != Some(0) {
-        return Err(CodecError::Unsupported(
-            crate::protocol::failure::CarrierReason::Unavailable,
-        ));
+        return Err(CodecError::Unsupported(CarrierReason::Unavailable));
     }
     let outcome = match string(c, "finish_reason")? {
         "stop" | "tool_calls" => Outcome::Completed,
         "length" | "content_filter" => Outcome::Incomplete,
         _ => {
-            return Err(CodecError::Unsupported(
-                crate::protocol::failure::CarrierReason::Unavailable,
-            ));
+            return Err(CodecError::Unsupported(CarrierReason::Unavailable));
         }
     };
-    let message = object(c.get("message").ok_or(CodecError::Invalid(
-        crate::protocol::failure::ShapeReason::InvalidValue,
-    ))?)?;
+    let message = object(c.get("message").ok_or(CodecError::invalid())?)?;
     let mut b = Items::new(DecodeDirection::Upstream);
     chat::items::decode_whole(
         &mut b,
@@ -129,9 +120,7 @@ pub(crate) fn decode_with(
     // Chat's finish label must agree with content even though response outcome
     // no longer encodes a call/no-call distinction.
     if chat_finish(&semantic)? != string(c, "finish_reason")? {
-        return Err(CodecError::Invalid(
-            crate::protocol::failure::ShapeReason::InvalidValue,
-        ));
+        return Err(CodecError::invalid());
     }
     let metadata = context::metadata(
         o,
@@ -165,9 +154,7 @@ pub fn encode(target: &ResponseRepresentation<'_>) -> Result<Value, CodecError> 
         .iter()
         .any(|(_, item)| matches!(item, Item::ToolResult(_) | Item::CustomResult(_)))
     {
-        return Err(CodecError::Unsupported(
-            crate::protocol::failure::CarrierReason::Unavailable,
-        ));
+        return Err(CodecError::Unsupported(CarrierReason::Unavailable));
     }
     check_response_carriers(&target.semantic)?;
     crate::protocol::openai::content::citations::check_items(
@@ -198,13 +185,12 @@ pub fn encode(target: &ResponseRepresentation<'_>) -> Result<Value, CodecError> 
             crate::protocol::openai::dialect::adapter_shapes::encode_message(message);
         }
     }
-    let message = messages.first_mut().ok_or(CodecError::Invalid(
-        crate::protocol::failure::ShapeReason::InvalidValue,
-    ))?;
+    let message = messages.first_mut().ok_or(CodecError::invalid())?;
     let m = &target.metadata;
-    let created = m.created.as_ref().ok_or(CodecError::Invalid(
-        crate::protocol::failure::ShapeReason::Metadata,
-    ))?;
+    let created = m
+        .created
+        .as_ref()
+        .ok_or(CodecError::Invalid(ShapeReason::Metadata))?;
     let mut value = json!({"id":m.id,"object":"chat.completion","created":created,"model":m.model,
         "choices":[{"index":0,"message":message,"finish_reason":finish}],
         "usage":m.delivery.as_ref().and_then(|d| d.usage).or_else(|| target.semantic.usage())

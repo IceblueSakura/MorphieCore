@@ -1,5 +1,6 @@
 //! Final typed SIWC admission, before cache projection or wire encoding.
 use crate::adapter::Request;
+use crate::protocol::failure::CarrierReason;
 use crate::{
     protocol::CodecError,
     semantic::task::generation::{Item, ToolDefinition},
@@ -29,15 +30,11 @@ pub(in crate::protocol::openai) fn check(
             && !cache.omits_day_retention(context))
         || !context.cache.prompt_cache_options.is_absent()
     {
-        return Err(CodecError::Unsupported(
-            crate::protocol::failure::CarrierReason::Unavailable,
-        ));
+        return Err(CodecError::Unsupported(CarrierReason::Unavailable));
     }
     for tool in request.task.semantic.tools() {
         if !matches!(tool, ToolDefinition::Namespace(_)) || !tool.dispatch_inactive() {
-            return Err(CodecError::Unsupported(
-                crate::protocol::failure::CarrierReason::Tools,
-            ));
+            return Err(CodecError::Unsupported(CarrierReason::Tools));
         }
     }
     for (_, item) in request.task.semantic.items() {
@@ -52,9 +49,7 @@ pub(in crate::protocol::openai) fn check(
             _ => false,
         };
         if unsupported {
-            return Err(CodecError::Unsupported(
-                crate::protocol::failure::CarrierReason::Unavailable,
-            ));
+            return Err(CodecError::Unsupported(CarrierReason::Unavailable));
         }
     }
     Ok(())

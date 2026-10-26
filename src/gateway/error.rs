@@ -1,4 +1,5 @@
 //! Stable client errors never include upstream bodies, URLs, credentials or parser input.
+use crate::protocol::failure::SourceFailureEvidence;
 use axum::{
     Json,
     http::StatusCode,
@@ -63,7 +64,7 @@ impl ApiError {
         )
     }
     /// An in-band stream failure the codec already classified from its envelope.
-    pub fn source_failure(source: crate::protocol::failure::SourceFailureEvidence) -> Option<Self> {
+    pub fn source_failure(source: SourceFailureEvidence) -> Option<Self> {
         let status = source.status_hint?.get();
         Some(Self::classified(status, source.kind, None))
     }

@@ -37,9 +37,7 @@ pub(in crate::protocol::anthropic::messages) fn item_blocks(
                 || r.parts.len() > 1
                 || !fidelity.replay_matches_request(id, r, Some(&target.origin()), request)
             {
-                return Err(CodecError::Invalid(
-                    crate::protocol::failure::ShapeReason::InvalidValue,
-                ));
+                return Err(CodecError::invalid());
             }
             let replay = r.replay.as_ref().ok_or_else(unsupported)?;
             let value = replay.replay_token().ok_or_else(unsupported)?.into();
@@ -72,9 +70,7 @@ pub(in crate::protocol::anthropic::messages) fn item_blocks(
                         s.as_bytes(),
                         crate::semantic::value::JsonLimits::STRUCTURED,
                     )
-                    .map_err(|_| {
-                        CodecError::Invalid(crate::protocol::failure::ShapeReason::InvalidValue)
-                    })?;
+                    .map_err(|_| CodecError::invalid())?;
                     normalized.push(id);
                     StructuredValue::new(value)?
                 }

@@ -1,4 +1,5 @@
 //! Upstream response dispatch, independent of the standard client's OpenAI profile.
+use crate::protocol::failure::CarrierReason;
 use crate::{
     protocol::{
         CodecError, DecodedResponse, ResponseMetadata, anthropic,
@@ -51,9 +52,9 @@ impl UpstreamAdapter {
             Self::AnthropicMessages { profile, target } => {
                 profile.decode_generation_response(bytes, NATIVE_SCOPE, target)
             }
-            Self::GoogleGenerateContent { .. } | Self::GoogleInteractions { .. } => Err(
-                CodecError::Unsupported(crate::protocol::failure::CarrierReason::Unavailable),
-            ),
+            Self::GoogleGenerateContent { .. } | Self::GoogleInteractions { .. } => {
+                Err(CodecError::Unsupported(CarrierReason::Unavailable))
+            }
         };
         result.map_err(|error: CodecError| {
             super::ConversionFailure::from(error)

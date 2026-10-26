@@ -1,4 +1,5 @@
 use super::*;
+use crate::protocol::failure::CarrierReason;
 use crate::{
     adapter::{ClientAdapter, ClientProtocol},
     execution::{
@@ -340,7 +341,7 @@ fn native_history_validates_deleted_anchors_before_partial_attachments() {
     let request = GenerationRequest::new(items, GenerationControls::default()).unwrap();
     assert!(matches!(
         crate::protocol::native::native_reasoning_history(&request, &fidelity, &target(), &[]),
-        Err(CodecError::Unsupported(reason)) if reason == crate::protocol::failure::CarrierReason::Replay
+        Err(CodecError::Unsupported(reason)) if reason == CarrierReason::Replay
     ));
     let request = request
         .with_message_envelopes(vec![MessageEnvelope::empty(
@@ -364,7 +365,7 @@ fn native_history_validates_deleted_anchors_before_partial_attachments() {
     .unwrap();
     assert!(matches!(
         request.without_foreign_reasoning(Some(&ReplayTarget::new("other", "other").unwrap().origin())),
-        Err(CodecError::Unsupported(reason)) if reason == crate::protocol::failure::CarrierReason::Replay
+        Err(CodecError::Unsupported(reason)) if reason == CarrierReason::Replay
     ));
 }
 
@@ -375,7 +376,7 @@ fn ordinary_reasoning_cannot_hide_an_unrestored_carrier() {
         "encrypted_content":"mca1.synthetic"}]});
     assert!(
         matches!(client.decode_client_request(input.to_string().as_bytes()),
-        Err(CodecError::Unsupported(reason)) if reason == crate::protocol::failure::CarrierReason::Replay)
+        Err(CodecError::Unsupported(reason)) if reason == CarrierReason::Replay)
     );
     let raw = Adapter::new(Profile::Responses, Dialect::Standard, None);
     let mut request = raw.decode_request(input.to_string().as_bytes()).unwrap();

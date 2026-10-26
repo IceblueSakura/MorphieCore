@@ -1,6 +1,7 @@
 //! Incremental native semantic mapping over the same strict wire reducer as aggregation.
 use crate::protocol::anthropic::messages::sse::MessageSseDecoder;
 use crate::protocol::anthropic::messages::{Block, Delta, Event, Message};
+use crate::protocol::failure::{RecognitionBasis, SourceFailureEvidence};
 use crate::{
     protocol::{
         CodecError, ResponseMetadata,
@@ -79,10 +80,7 @@ impl GenerationSseDecoder {
         match event {
             Event::MessageStart(message) => {
                 if message.model != self.target.model() {
-                    return Err(CodecError::Invalid(
-                        crate::protocol::failure::ShapeReason::InvalidValue,
-                    )
-                    .into());
+                    return Err(CodecError::invalid().into());
                 }
                 let usage = crate::protocol::anthropic::messages::accounting::report(
                     &message.usage,
@@ -135,10 +133,7 @@ impl GenerationSseDecoder {
                         String::new(),
                     ),
                     _ => {
-                        return Err(CodecError::Invalid(
-                            crate::protocol::failure::ShapeReason::InvalidValue,
-                        )
-                        .into());
+                        return Err(CodecError::invalid().into());
                     }
                 };
                 out.push(StreamEvent::ItemStarted {
@@ -192,13 +187,8 @@ impl GenerationSseDecoder {
             }
             Event::BlockStop { index } => {
                 let (item, part) = self.ids(index);
-                let block = &self
-                    .wire
-                    .message()
-                    .ok_or(CodecError::Invalid(
-                        crate::protocol::failure::ShapeReason::InvalidValue,
-                    ))?
-                    .content[index as usize];
+                let block =
+                    &self.wire.message().ok_or(CodecError::invalid())?.content[index as usize];
                 let partial = matches!(block, Block::PartialToolUse { .. });
                 if matches!(block, Block::ToolUse { .. }) && !self.json_delta {
                     out.push(StreamEvent::Delta {
@@ -257,9 +247,7 @@ impl GenerationSseDecoder {
                 });
             }
             Event::MessageStop => {
-                let message = self.wire.message().ok_or(CodecError::Invalid(
-                    crate::protocol::failure::ShapeReason::InvalidValue,
-                ))?;
+                let message = self.wire.message().ok_or(CodecError::invalid())?;
                 let members: Vec<_> = (0..message.content.len())
                     .map(|n| self.ids(n as u64).0)
                     .collect();
@@ -292,9 +280,7 @@ impl GenerationSseDecoder {
                 });
             }
             Event::MessageDelta { .. } => {
-                let message = self.wire.message().ok_or(CodecError::Invalid(
-                    crate::protocol::failure::ShapeReason::InvalidValue,
-                ))?;
+                let message = self.wire.message().ok_or(CodecError::invalid())?;
                 if message.input_transformations {
                     self.evidence.record_input_transformations(
                         crate::lowering::generation::ConversionBoundary::EventDecode,
@@ -309,15 +295,13 @@ impl GenerationSseDecoder {
             }
             Event::Ping => {}
             Event::Error { kind, message } => {
-                return Err(CodecError::StreamFailure(
-                    crate::protocol::failure::SourceFailureEvidence::envelope(
-                        super::wire::error_status(&kind),
-                        crate::protocol::failure::RecognitionBasis::EnvelopeType,
-                        None,
-                        Some(&kind),
-                        Some(&message),
-                    ),
-                )
+                return Err(CodecError::StreamFailure(SourceFailureEvidence::envelope(
+                    super::wire::error_status(&kind),
+                    RecognitionBasis::EnvelopeType,
+                    None,
+                    Some(&kind),
+                    Some(&message),
+                ))
                 .into());
             }
         }

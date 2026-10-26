@@ -1,5 +1,6 @@
 //! Independent native wires and guarded Messages terminal projection at real EOF.
 use super::*;
+use crate::protocol::failure::CarrierReason;
 use crate::{
     protocol::{
         anthropic::messages::client::GoogleTerminalPolicy,
@@ -191,7 +192,7 @@ fn stateless_clients_reject_hidden_signatures_without_fabricated_reasoning() {
                         matches!(
                             error.codec(),
                             Some(crate::protocol::CodecError::Unsupported(
-                                crate::protocol::failure::CarrierReason::Replay
+                                CarrierReason::Replay
                             ))
                         ),
                         "{error:?}"
@@ -212,9 +213,7 @@ fn stateless_clients_reject_hidden_signatures_without_fabricated_reasoning() {
                 .to_string().as_bytes()).unwrap_err();
         assert_eq!(
             error,
-            crate::protocol::CodecError::Unsupported(
-                crate::protocol::failure::CarrierReason::Replay
-            )
+            crate::protocol::CodecError::Unsupported(CarrierReason::Replay)
         );
     }
 }
@@ -528,9 +527,7 @@ fn google_service_reports_keep_processing_meaning_in_clients_and_reject_capacity
                     matches!(
                         error.codec(),
                         Some(crate::protocol::CodecError::Unsupported(
-                            crate::protocol::failure::CarrierReason::Field(
-                                crate::lowering::generation::Field::ServiceClass
-                            )
+                            CarrierReason::Field(crate::lowering::generation::Field::ServiceClass)
                         ))
                     ),
                     "{error:?}"
@@ -541,9 +538,7 @@ fn google_service_reports_keep_processing_meaning_in_clients_and_reject_capacity
                     matches!(
                         error.codec(),
                         Some(crate::protocol::CodecError::Unsupported(
-                            crate::protocol::failure::CarrierReason::Field(
-                                crate::lowering::generation::Field::ServiceClass
-                            )
+                            CarrierReason::Field(crate::lowering::generation::Field::ServiceClass)
                         ))
                     ),
                     "{error:?}"
@@ -636,7 +631,7 @@ fn google_messages_projection_requires_context_and_never_repairs_failure() {
                 matches!(
                     error.codec(),
                     Some(crate::protocol::CodecError::Unsupported(
-                        crate::protocol::failure::CarrierReason::Terminal
+                        CarrierReason::Terminal
                     ))
                 ),
                 "{error:?}"

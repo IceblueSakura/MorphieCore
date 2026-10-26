@@ -25,15 +25,11 @@ impl FidelityRecords {
                     value.fingerprint()
                 }
                 _ => {
-                    return Err(CodecError::Invalid(
-                        crate::protocol::failure::ShapeReason::InvalidValue,
-                    ));
+                    return Err(CodecError::invalid());
                 }
             };
             if binding.dependency != dependency {
-                return Err(CodecError::Invalid(
-                    crate::protocol::failure::ShapeReason::InvalidValue,
-                ));
+                return Err(CodecError::invalid());
             }
             match new {
                 Item::Reasoning(r) => self.record_replay(new_id, r, binding.origin.clone())?,
@@ -42,9 +38,7 @@ impl FidelityRecords {
                     self.record_compaction(new_id, value, binding.origin.clone())?
                 }
                 _ => {
-                    return Err(CodecError::Invalid(
-                        crate::protocol::failure::ShapeReason::InvalidValue,
-                    ));
+                    return Err(CodecError::invalid());
                 }
             }
         }
@@ -61,9 +55,7 @@ impl FidelityRecords {
             for (ordinal, (a, b)) in old.parts.iter().zip(&new.parts).enumerate() {
                 if let Some(binding) = source.part_replay.get(&(old_id, a.id)) {
                     if binding.dependency != replay::part_dependency(old.status, ordinal, a)? {
-                        return Err(CodecError::Invalid(
-                            crate::protocol::failure::ShapeReason::InvalidValue,
-                        ));
+                        return Err(CodecError::invalid());
                     }
                     self.record_part_replay(
                         new_id,
@@ -80,15 +72,11 @@ impl FidelityRecords {
                         }
                         ContentPart::AudioReference(v) => (v.fingerprint(), None),
                         _ => {
-                            return Err(CodecError::Invalid(
-                                crate::protocol::failure::ShapeReason::InvalidValue,
-                            ));
+                            return Err(CodecError::invalid());
                         }
                     };
                     if binding.reference != reference || body.is_some() && binding.body != body {
-                        return Err(CodecError::Invalid(
-                            crate::protocol::failure::ShapeReason::InvalidValue,
-                        ));
+                        return Err(CodecError::invalid());
                     }
                     self.record_audio(b.id, &b.content, binding.origin.clone())?;
                 }

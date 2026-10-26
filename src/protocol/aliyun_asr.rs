@@ -1,5 +1,6 @@
 //! Qwen ASR Flash native synchronous HTTP mapping, not Chat-compatible ASR.
 //! Source: https://help.aliyun.com/en/model-studio/fun-asr-flash-recorded-speech-recognition-http-api
+use crate::protocol::failure::CarrierReason;
 use crate::{
     adapter::transcription::Request,
     protocol::CodecError,
@@ -9,34 +10,31 @@ use crate::{
 };
 use base64::{Engine, engine::general_purpose::STANDARD};
 use serde_json::{Map, Value, json};
-fn invalid() -> CodecError {
-    CodecError::Invalid(crate::protocol::failure::ShapeReason::InvalidValue)
-}
 fn object<'a>(v: &'a Value, keys: &[&str]) -> Result<&'a Map<String, Value>, CodecError> {
-    let m = v.as_object().ok_or_else(invalid)?;
+    let m = v.as_object().ok_or_else(CodecError::invalid)?;
     if m.keys().any(|k| !keys.contains(&k.as_str())) {
-        return Err(invalid());
+        return Err(CodecError::invalid());
     }
     Ok(m)
 }
 fn required<'a>(m: &'a Map<String, Value>, key: &str) -> Result<&'a Value, CodecError> {
-    m.get(key).ok_or_else(invalid)
+    m.get(key).ok_or_else(CodecError::invalid)
 }
 fn number(m: &Map<String, Value>, key: &str) -> Result<u64, CodecError> {
-    required(m, key)?.as_u64().ok_or_else(invalid)
+    required(m, key)?.as_u64().ok_or_else(CodecError::invalid)
 }
 fn text(m: &Map<String, Value>, key: &str) -> Result<String, CodecError> {
     required(m, key)?
         .as_str()
         .map(str::to_owned)
-        .ok_or_else(invalid)
+        .ok_or_else(CodecError::invalid)
 }
 pub fn encode_request(request: &Request, model: &str) -> Result<Value, CodecError> {
-    request.task.validate().map_err(|_| invalid())?;
+    request.task.validate().map_err(|_| CodecError::invalid())?;
     if !super::openai::speech::valid_model(&request.model)
         || !super::openai::speech::valid_model(model)
     {
-        return Err(invalid());
+        return Err(CodecError::invalid());
     }
     if request.task.language.as_ref().is_some_and(|s| {
         ![
@@ -46,9 +44,7 @@ pub fn encode_request(request: &Request, model: &str) -> Result<Value, CodecErro
         ]
         .contains(&s.as_str())
     }) {
-        return Err(CodecError::Unsupported(
-            crate::protocol::failure::CarrierReason::Unavailable,
-        ));
+        return Err(CodecError::Unsupported(CarrierReason::Unavailable));
     }
     let (format, mime) = match request.task.audio.format() {
         InputFormat::Wav => ("wav", "audio/wav"),
@@ -83,17 +79,17 @@ pub fn decode_response(bytes: &[u8]) -> Result<RecognitionResult, CodecError> {
         )?;
         for key in ["text", "sentence"] {
             if required(inner, key)? != required(output, key)? {
-                return Err(invalid());
+                return Err(CodecError::invalid());
             }
         }
         if required(inner, "request_id")? != required(root, "request_id")?
             || required(output, "request_id")? != required(root, "request_id")?
             || required(output, "usage")? != required(root, "usage")?
         {
-            return Err(invalid());
+            return Err(CodecError::invalid());
         }
     } else if output.contains_key("request_id") || output.contains_key("usage") {
-        return Err(invalid());
+        return Err(CodecError::invalid());
     }
     let body = text(output, "text")?;
     let last_sentence = output
@@ -112,9 +108,11 @@ pub fn decode_response(bytes: &[u8]) -> Result<RecognitionResult, CodecError> {
                 ],
             )?;
             if required(s, "sentence_end")?.as_bool() != Some(true) {
-                return Err(invalid());
+                return Err(CodecError::invalid());
             }
-            let words = required(s, "words")?.as_array().ok_or_else(invalid)?;
+            let words = required(s, "words")?
+                .as_array()
+                .ok_or_else(CodecError::invalid)?;
             if words.len() > 65536 {
                 return Err(CodecError::Limit);
             }
@@ -126,7 +124,7 @@ pub fn decode_response(bytes: &[u8]) -> Result<RecognitionResult, CodecError> {
                         &["text", "punctuation", "begin_time", "end_time", "fixed"],
                     )?;
                     if required(w, "fixed")?.as_bool() != Some(true) {
-                        return Err(invalid());
+                        return Err(CodecError::invalid());
                     }
                     Ok(RecognizedWord {
                         text: text(w, "text")?,
@@ -157,11 +155,15 @@ pub fn decode_response(bytes: &[u8]) -> Result<RecognitionResult, CodecError> {
         // Integral usage is a reported processing count, not an exact file/timestamp ceiling.
         || last_sentence.as_ref().is_some_and(|s| s.end_ms > 300_000)
     {
-        return Err(invalid());
+        return Err(CodecError::invalid());
     }
     let request_id = root
         .get("request_id")
-        .map(|v| v.as_str().map(str::to_owned).ok_or_else(invalid))
+        .map(|v| {
+            v.as_str()
+                .map(str::to_owned)
+                .ok_or_else(CodecError::invalid)
+        })
         .transpose()?;
     RecognitionResult::new(
         body,
@@ -171,5 +173,5 @@ pub fn decode_response(bytes: &[u8]) -> Result<RecognitionResult, CodecError> {
             last_sentence,
         },
     )
-    .map_err(|_| invalid())
+    .map_err(|_| CodecError::invalid())
 }

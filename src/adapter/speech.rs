@@ -1,4 +1,5 @@
 //! Typed Speech boundary; explicit audio delivery is not an SSE or latency promise.
+use crate::protocol::failure::ShapeReason;
 use crate::semantic::task::speech_synthesis::SpeechRequest;
 
 /// Trusted upstream wire contract, independent of the standard client boundary.
@@ -33,25 +34,21 @@ impl Profile {
         task: &SpeechRequest,
     ) -> Result<Option<crate::semantic::value::AudioEncoding>, crate::protocol::CodecError> {
         if self.upstream_sse() {
-            return Err(crate::protocol::CodecError::Invalid(
-                crate::protocol::failure::ShapeReason::InvalidValue,
-            ));
+            return Err(crate::protocol::CodecError::invalid());
         }
         if self == Self::OpenRouterMp3 {
             crate::protocol::openrouter_speech::validate_task(task)?;
         }
         if self == Self::Xiaomi {
-            let mime: mime::Mime = content_type.parse().map_err(|_| {
-                crate::protocol::CodecError::Invalid(crate::protocol::failure::ShapeReason::Json)
-            })?;
+            let mime: mime::Mime = content_type
+                .parse()
+                .map_err(|_| crate::protocol::CodecError::Invalid(ShapeReason::Json))?;
             if mime.essence_str() != "application/json"
                 || mime
                     .params()
                     .any(|(k, v)| k != mime::CHARSET || v != mime::UTF_8)
             {
-                return Err(crate::protocol::CodecError::Invalid(
-                    crate::protocol::failure::ShapeReason::Json,
-                ));
+                return Err(crate::protocol::CodecError::Invalid(ShapeReason::Json));
             }
             return Ok(Some(task.requested_format()));
         }

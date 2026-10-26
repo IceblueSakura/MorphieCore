@@ -7,13 +7,10 @@ use crate::{
     semantic::task::embedding::*,
 };
 use serde_json::{Value, json};
-fn invalid() -> CodecError {
-    CodecError::Invalid(crate::protocol::failure::ShapeReason::InvalidValue)
-}
 
 pub fn encode_request(request: &TargetRequest, model: &str) -> Result<Value, CodecError> {
     if !valid_model(model) || request.encoding != Encoding::Float || request.user.is_some() {
-        return Err(invalid());
+        return Err(CodecError::invalid());
     }
     let model = if model.starts_with("models/") {
         model.to_owned()
@@ -26,7 +23,7 @@ pub fn encode_request(request: &TargetRequest, model: &str) -> Result<Value, Cod
         .iter()
         .map(|sample| {
             let EmbeddingInput::TextParts(parts) = sample.input() else {
-                return Err(invalid());
+                return Err(CodecError::invalid());
             };
             let mut config = json!({"autoTruncate":false});
             if let Some(d) = sample.dimensions() {
@@ -43,28 +40,30 @@ pub fn encode_request(request: &TargetRequest, model: &str) -> Result<Value, Cod
 }
 pub fn decode_response(bytes: &[u8]) -> Result<Response, CodecError> {
     let value = crate::protocol::json::decode(bytes)?;
-    let map = value.as_object().ok_or_else(invalid)?;
+    let map = value.as_object().ok_or_else(CodecError::invalid)?;
     let data = required(map, "embeddings")?
         .as_array()
-        .ok_or_else(invalid)?;
+        .ok_or_else(CodecError::invalid)?;
     if !(1..=MAX_INPUTS).contains(&data.len()) {
         return Err(CodecError::Limit);
     }
     let mut count = 0usize;
     let mut vectors = vec![];
     for (index, item) in data.iter().enumerate() {
-        let item = item.as_object().ok_or_else(invalid)?;
+        let item = item.as_object().ok_or_else(CodecError::invalid)?;
         if let Some(shape) = item.get("shape") {
-            let shape = shape.as_array().ok_or_else(invalid)?;
+            let shape = shape.as_array().ok_or_else(CodecError::invalid)?;
             for dimension in shape {
                 number(dimension)?;
             }
             if !shape.is_empty() {
-                return Err(invalid());
+                return Err(CodecError::invalid());
             }
         }
         // This native contract guarantees request order; it does not report an index.
-        let values = required(item, "values")?.as_array().ok_or_else(invalid)?;
+        let values = required(item, "values")?
+            .as_array()
+            .ok_or_else(CodecError::invalid)?;
         if values.len() > MAX_DIMENSIONS {
             return Err(CodecError::Limit);
         }
@@ -72,10 +71,10 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, CodecError> {
             index,
             values
                 .iter()
-                .map(|v| v.as_number().cloned().ok_or_else(invalid))
+                .map(|v| v.as_number().cloned().ok_or_else(CodecError::invalid))
                 .collect::<Result<_, _>>()?,
         )
-        .map_err(|_| invalid())?;
+        .map_err(|_| CodecError::invalid())?;
         count = count
             .checked_add(vector.values().len())
             .ok_or(CodecError::Limit)?;
@@ -87,19 +86,19 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, CodecError> {
     let usage = map
         .get("usageMetadata")
         .map(|v| {
-            let u = v.as_object().ok_or_else(invalid)?;
+            let u = v.as_object().ok_or_else(CodecError::invalid)?;
             let input = optional_count(u, "promptTokenCount")?;
             let details = u
                 .get("promptTokenDetails")
                 .map(|v| {
-                    let details = v.as_array().ok_or_else(invalid)?;
+                    let details = v.as_array().ok_or_else(CodecError::invalid)?;
                     if details.len() > 16 {
                         return Err(CodecError::Limit);
                     }
                     details
                         .iter()
                         .map(|v| {
-                            let v = v.as_object().ok_or_else(invalid)?;
+                            let v = v.as_object().ok_or_else(CodecError::invalid)?;
                             let modality = match string(required(v, "modality")?)? {
                                 "MODALITY_UNSPECIFIED" => InputModality::Unspecified,
                                 "TEXT" => InputModality::Text,
@@ -107,7 +106,7 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, CodecError> {
                                 "AUDIO" => InputModality::Audio,
                                 "VIDEO" => InputModality::Video,
                                 "DOCUMENT" => InputModality::Document,
-                                _ => return Err(invalid()),
+                                _ => return Err(CodecError::invalid()),
                             };
                             Ok(ModalityTokenCount {
                                 modality,
@@ -118,14 +117,14 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, CodecError> {
                 })
                 .transpose()?;
             EmbeddingUsage::reported(input, None, AccountingBasis::InputOnly, details)
-                .map_err(|_| invalid())
+                .map_err(|_| CodecError::invalid())
         })
         .transpose()?;
     let result = Response {
         model: None,
         id: None,
-        task: EmbeddingResponse::new(vectors, usage).map_err(|_| invalid())?,
+        task: EmbeddingResponse::new(vectors, usage).map_err(|_| CodecError::invalid())?,
     };
-    result.validate().map_err(|_| invalid())?;
+    result.validate().map_err(|_| CodecError::invalid())?;
     Ok(result)
 }

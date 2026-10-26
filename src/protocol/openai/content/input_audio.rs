@@ -1,5 +1,6 @@
 //! Standard user input audio: inline WAV/MP3 only, never a transcript or a URL.
 //! https://developers.openai.com/api/reference/resources/chat/subresources/completions/methods/create
+use crate::protocol::failure::CarrierReason;
 use crate::protocol::openai::{CodecError, shape::*};
 use crate::semantic::{task::generation::*, value::Text};
 use serde_json::{Map, Value, json};
@@ -9,26 +10,21 @@ pub(in crate::protocol::openai) fn read(
     direction: DecodeDirection,
 ) -> Result<Resource, CodecError> {
     direction.fields(part, &["type", "input_audio"])?;
-    let audio = object(part.get("input_audio").ok_or(CodecError::Invalid(
-        crate::protocol::failure::ShapeReason::InvalidValue,
-    ))?)?;
+    let audio = object(part.get("input_audio").ok_or(CodecError::invalid())?)?;
     direction.fields(audio, &["data", "format"])?;
     let mime = match string(audio, "format")? {
         "wav" => "audio/wav",
         "mp3" => "audio/mpeg",
         _ => {
-            return Err(CodecError::Unsupported(
-                crate::protocol::failure::CarrierReason::Unavailable,
-            ));
+            return Err(CodecError::Unsupported(CarrierReason::Unavailable));
         }
     };
     let resource = Resource {
         description: ResourceDescription::Audio,
         location: ResourceLocation::Inline {
             media_type: Text::new(mime, "audio media type", 64).map_err(|_| CodecError::Limit)?,
-            data_base64: Text::new(string(audio, "data")?, "audio data", MAX_TEXT_BYTES).map_err(
-                |_| CodecError::Invalid(crate::protocol::failure::ShapeReason::InvalidValue),
-            )?,
+            data_base64: Text::new(string(audio, "data")?, "audio data", MAX_TEXT_BYTES)
+                .map_err(|_| CodecError::invalid())?,
         },
     };
     resource.validate()?;

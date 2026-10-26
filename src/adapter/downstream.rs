@@ -1,5 +1,6 @@
 //! Client codec dispatch. Publication, attempt identity and entropy belong to execution.
 use super::{ClientProtocol, Request};
+use crate::protocol::failure::CarrierReason;
 use crate::{
     lowering::generation::Effect,
     protocol::{
@@ -136,10 +137,7 @@ impl ClientAdapter {
                 .any(|(_, item)| item.has_replay_attachment());
             if self.protocol() != ClientProtocol::Responses {
                 if hidden {
-                    return Err(CodecError::Unsupported(
-                        crate::protocol::failure::CarrierReason::Replay,
-                    )
-                    .into());
+                    return Err(CodecError::Unsupported(CarrierReason::Replay).into());
                 }
                 if crate::protocol::phase::has_phase(decoded.semantic.items()) {
                     let mut wire = crate::protocol::replay_projection::strip(&decoded, true)?;
@@ -152,10 +150,7 @@ impl ClientAdapter {
             }
             if self.protocol() == ClientProtocol::Responses && hidden {
                 if !managed {
-                    return Err(CodecError::Unsupported(
-                        crate::protocol::failure::CarrierReason::Replay,
-                    )
-                    .into());
+                    return Err(CodecError::Unsupported(CarrierReason::Replay).into());
                 }
                 decoded
                     .fidelity
@@ -312,9 +307,7 @@ impl ClientAdapter {
             .iter()
             .any(|r| r.settings.as_ref().is_some_and(|s| !s.safety.is_empty()))
         {
-            return Err(
-                CodecError::Unsupported(crate::protocol::failure::CarrierReason::Safety).into(),
-            );
+            return Err(CodecError::Unsupported(CarrierReason::Safety).into());
         }
         let encoder = match self {
             Self::Messages => {
@@ -501,18 +494,12 @@ impl ClientEncoder {
                     .any(|r| r.settings.as_ref().is_some_and(|s| !s.safety.is_empty()))
                 {
                     e.reject();
-                    return Err(CodecError::Unsupported(
-                        crate::protocol::failure::CarrierReason::Safety,
-                    )
-                    .into());
+                    return Err(CodecError::Unsupported(CarrierReason::Safety).into());
                 }
                 if metadata.context.execution != crate::semantic::context::ExecutionHints::default()
                 {
                     e.reject();
-                    return Err(CodecError::Unsupported(
-                        crate::protocol::failure::CarrierReason::Unavailable,
-                    )
-                    .into());
+                    return Err(CodecError::Unsupported(CarrierReason::Unavailable).into());
                 }
                 e.update_service_class(metadata.context.service_class().clone())?;
                 e.update_delivery(metadata.delivery.as_deref());

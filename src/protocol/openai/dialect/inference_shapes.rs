@@ -1,4 +1,5 @@
 //! Closed inference-server placeholders and reported usage aliases; no payload fidelity.
+use crate::protocol::failure::{CarrierReason, ShapeReason};
 use crate::protocol::openai::{
     CodecError,
     shape::{DecodeDirection, object},
@@ -10,9 +11,7 @@ fn inactive(object: &mut Map<String, Value>, names: &[&str]) -> Result<(), Codec
         if let Some(value) = object.shift_remove(*name)
             && !value.is_null()
         {
-            return Err(CodecError::Unsupported(
-                crate::protocol::failure::CarrierReason::UnknownField,
-            ));
+            return Err(CodecError::Unsupported(CarrierReason::UnknownField));
         }
     }
     Ok(())
@@ -26,9 +25,7 @@ fn counter(object: &mut Map<String, Value>, name: &str, value: Value) -> Result<
             .get(name)
             .is_some_and(|old| !old.is_null() && old != &value)
     {
-        return Err(CodecError::Invalid(
-            crate::protocol::failure::ShapeReason::Usage,
-        ));
+        return Err(CodecError::Invalid(ShapeReason::Usage));
     }
     object.insert(name.into(), value);
     Ok(())
@@ -64,9 +61,9 @@ pub(in crate::protocol::openai) fn decode(
         .and_then(|usage| usage.get_mut("prompt_tokens_details"))
         .filter(|v| !v.is_null())
     {
-        let details = details.as_object_mut().ok_or(CodecError::Invalid(
-            crate::protocol::failure::ShapeReason::Usage,
-        ))?;
+        let details = details
+            .as_object_mut()
+            .ok_or(CodecError::Invalid(ShapeReason::Usage))?;
         // Both aliases report existing prompt-token subsets, not new totals.
         // https://github.com/vllm-project/vllm/blob/main/vllm/entrypoints/openai/chat_completion/serving.py
         if let Some(value) = details.shift_remove("created_cache_tokens") {
@@ -83,9 +80,7 @@ pub(in crate::protocol::openai) fn decode(
                     .get(name)
                     .is_some_and(|v| !v.is_null() && v.as_u64() != Some(0))
                 {
-                    return Err(CodecError::Unsupported(
-                        crate::protocol::failure::CarrierReason::Unavailable,
-                    ));
+                    return Err(CodecError::Unsupported(CarrierReason::Unavailable));
                 }
             }
             if let Some(images) = values.get("image") {

@@ -1,5 +1,6 @@
 //! Attempt preparation and bounded intake. Wire projection belongs to adapters;
 //! transport I/O and downstream commit belong to their respective owners.
+use crate::protocol::failure::{CarrierReason, SourceFailureEvidence};
 use crate::{
     adapter::{ConversionFailure, GenerationDecoder, Request, UpstreamAdapter},
     lowering::generation::RepresentationError,
@@ -72,12 +73,12 @@ impl AttemptError {
             return e.locus;
         }
         match self.codec() {
-            Some(CodecError::Unsupported(crate::protocol::failure::CarrierReason::Field(
-                field,
-            ))) => Some(crate::lowering::generation::SemanticLocus {
-                field: *field,
-                owner: crate::lowering::generation::Owner::Root,
-            }),
+            Some(CodecError::Unsupported(CarrierReason::Field(field))) => {
+                Some(crate::lowering::generation::SemanticLocus {
+                    field: *field,
+                    owner: crate::lowering::generation::Owner::Root,
+                })
+            }
             _ => None,
         }
     }
@@ -92,7 +93,7 @@ impl AttemptError {
             _ => None,
         }
     }
-    pub fn source_failure(&self) -> Option<crate::protocol::failure::SourceFailureEvidence> {
+    pub fn source_failure(&self) -> Option<SourceFailureEvidence> {
         match self {
             Self::Codec(CodecError::StreamFailure(e))
             | Self::Sse(SseError::Codec(CodecError::StreamFailure(e))) => Some(*e),
@@ -542,9 +543,7 @@ impl Attempt {
         }
     }
     /// An upstream-reported failed Responses outcome, classified from its error.
-    pub(crate) fn reported_failure(
-        &self,
-    ) -> Option<crate::protocol::failure::SourceFailureEvidence> {
+    pub(crate) fn reported_failure(&self) -> Option<SourceFailureEvidence> {
         if !self.is_responses() {
             return None;
         }

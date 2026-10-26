@@ -50,9 +50,7 @@ pub(super) fn decode_generation_with_history(
         Some(Value::Array(a)) => decode_items(&mut b, a, ItemSide::History, "completed")?,
         None if history.is_some() || o.get("instructions").is_some_and(Value::is_string) => {}
         _ => {
-            return Err(CodecError::Invalid(
-                crate::protocol::failure::ShapeReason::InvalidValue,
-            ));
+            return Err(CodecError::invalid());
         }
     }
     if let Some((input, output)) = history {
@@ -104,7 +102,7 @@ pub(crate) fn validate_program_history(request: &GenerationRequest) -> Result<()
     if request.items().iter().any(|(_, item)| {
         matches!(item, Item::Program(program) if !outputs.contains(program.call_id.as_str()))
     }) {
-        return Err(CodecError::Invalid(crate::protocol::failure::ShapeReason::InvalidValue));
+        return Err(CodecError::invalid());
     }
     Ok(())
 }

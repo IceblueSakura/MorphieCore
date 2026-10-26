@@ -1,5 +1,6 @@
 //! Direct IR → Interactions steps; no generateContent wire translation.
 use super::items::steps;
+use crate::protocol::failure::CarrierReason;
 use crate::{
     protocol::{CodecError, fidelity::FidelityRecords, native::ReplayTarget},
     semantic::{task::generation::*, value::Presence},
@@ -65,7 +66,7 @@ impl RequestRule {
     }
 }
 pub(super) fn unsupported() -> CodecError {
-    CodecError::Unsupported(crate::protocol::failure::CarrierReason::Unavailable)
+    CodecError::Unsupported(CarrierReason::Unavailable)
 }
 
 pub(super) fn project(
@@ -355,9 +356,7 @@ pub fn encode_generation_request(
     let request = crate::protocol::native::group_client_history(&request, false)?;
     request.validate()?;
     if request.cached_context().is_some() {
-        return Err(CodecError::Unsupported(
-            crate::protocol::failure::CarrierReason::Unavailable,
-        ));
+        return Err(CodecError::Unsupported(CarrierReason::Unavailable));
     }
     let mut rules = std::collections::BTreeSet::new();
     if transferred {

@@ -30,9 +30,7 @@ impl Profile {
     ) -> Result<DecodedResponse, CodecError> {
         wire.validate(false)?;
         if wire.model != target.model() {
-            return Err(CodecError::Invalid(
-                crate::protocol::failure::ShapeReason::InvalidValue,
-            ));
+            return Err(CodecError::invalid());
         }
         let mut intake = Intake::new(scope);
         intake.message(Role::Assistant, &wire.content)?;

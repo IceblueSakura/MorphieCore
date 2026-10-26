@@ -1,4 +1,5 @@
 //! Complete single-candidate Chat envelopes; task mapping stays in `chat`.
+use crate::protocol::failure::CarrierReason;
 use crate::protocol::openai::{
     CodecError, DecodedRequest, DecodedResponse, RequestRepresentation, ResponseRepresentation,
     chat, shape::*, validate_identity,
@@ -13,11 +14,7 @@ impl StreamOptions {
     fn read(v: &Value, direction: DecodeDirection<'_>) -> Result<Self, CodecError> {
         let o = object(v)?;
         direction.fields(o, &["include_usage", "include_obfuscation"])?;
-        let boolean = |v: &Value| {
-            v.as_bool().ok_or(CodecError::Invalid(
-                crate::protocol::failure::ShapeReason::InvalidValue,
-            ))
-        };
+        let boolean = |v: &Value| v.as_bool().ok_or(CodecError::invalid());
         let s = Self {
             include_usage: read_presence(o, "include_usage", boolean)?,
             include_obfuscation: read_presence(o, "include_obfuscation", boolean)?,
@@ -55,15 +52,11 @@ impl RequestContext {
     pub fn validate(&self) -> Result<(), CodecError> {
         text(&self.model, "model", 256)?;
         if self.n.value().is_some_and(|n| *n != 1) {
-            return Err(CodecError::Unsupported(
-                crate::protocol::failure::CarrierReason::Unavailable,
-            ));
+            return Err(CodecError::Unsupported(CarrierReason::Unavailable));
         }
         if let Some(options) = self.stream_options.value() {
             if !self.streaming() {
-                return Err(CodecError::Invalid(
-                    crate::protocol::failure::ShapeReason::InvalidValue,
-                ));
+                return Err(CodecError::invalid());
             }
             options.validate()?;
         }
@@ -90,9 +83,7 @@ pub(crate) fn validate_context(context: &ExecutionHints) -> Result<(), CodecErro
             !options.comparison_response_id.is_absent() || !options.prewarm.is_absent()
         })
     {
-        return Err(CodecError::Unsupported(
-            crate::protocol::failure::CarrierReason::Unavailable,
-        ));
+        return Err(CodecError::Unsupported(CarrierReason::Unavailable));
     }
     Ok(())
 }
@@ -120,13 +111,9 @@ pub(crate) fn decode_request_with(
     // the upstream spelling.
     let v = if v.get("max_tokens").is_some() {
         normalized = v.clone();
-        let o = normalized.as_object_mut().ok_or(CodecError::Invalid(
-            crate::protocol::failure::ShapeReason::InvalidValue,
-        ))?;
+        let o = normalized.as_object_mut().ok_or(CodecError::invalid())?;
         if o.contains_key("max_completion_tokens") {
-            return Err(CodecError::Invalid(
-                crate::protocol::failure::ShapeReason::InvalidValue,
-            ));
+            return Err(CodecError::invalid());
         }
         let limit = o.shift_remove("max_tokens").expect("checked field");
         o.insert("max_completion_tokens".into(), limit);
@@ -137,9 +124,7 @@ pub(crate) fn decode_request_with(
     let o = object(v)?;
     // Known security intent is not an unregistered extension.
     if o.contains_key("moderation") {
-        return Err(CodecError::Unsupported(
-            crate::protocol::failure::CarrierReason::Unavailable,
-        ));
+        return Err(CodecError::Unsupported(CarrierReason::Unavailable));
     }
     let allowed: Vec<_> = chat::request::FIELDS
         .iter()
@@ -163,16 +148,8 @@ pub(crate) fn decode_request_with(
     let hints = ExecutionHints::read(o, crate::protocol::openai::Profile::Chat, direction)?;
     let context = RequestContext {
         model: string(o, "model")?.into(),
-        n: read_presence(o, "n", |v| {
-            v.as_u64().ok_or(CodecError::Invalid(
-                crate::protocol::failure::ShapeReason::InvalidValue,
-            ))
-        })?,
-        stream: read_presence(o, "stream", |v| {
-            v.as_bool().ok_or(CodecError::Invalid(
-                crate::protocol::failure::ShapeReason::InvalidValue,
-            ))
-        })?,
+        n: read_presence(o, "n", |v| v.as_u64().ok_or(CodecError::invalid()))?,
+        stream: read_presence(o, "stream", |v| v.as_bool().ok_or(CodecError::invalid()))?,
         stream_options: read_presence(o, "stream_options", |v| StreamOptions::read(v, direction))?,
         cache: hints.cache,
         identity: hints.identity,
@@ -203,9 +180,7 @@ pub fn encode_request(
             .value()
             .is_some_and(|a| a.format != crate::semantic::task::generation::AudioFormat::Pcm16)
     {
-        return Err(CodecError::Unsupported(
-            crate::protocol::failure::CarrierReason::Unavailable,
-        ));
+        return Err(CodecError::Unsupported(CarrierReason::Unavailable));
     }
     if target.adaptation.rules.bailian_requests {
         crate::protocol::openai::dialect::bailian::check_semantic(
@@ -219,9 +194,7 @@ pub fn encode_request(
             super::super::Profile::Chat,
         )?;
         if !context.metadata.is_absent() || !context.service_policy.is_absent() {
-            return Err(CodecError::Unsupported(
-                crate::protocol::failure::CarrierReason::Unavailable,
-            ));
+            return Err(CodecError::Unsupported(CarrierReason::Unavailable));
         }
     }
     let mut v = chat::encode_generation(target)?;
@@ -248,8 +221,8 @@ pub fn encode_request(
         );
     }
     context.cache.write(o)?;
-    let Value::Object(identity) = serde_json::to_value(&context.identity)
-        .map_err(|_| CodecError::Invalid(crate::protocol::failure::ShapeReason::InvalidValue))?
+    let Value::Object(identity) =
+        serde_json::to_value(&context.identity).map_err(|_| CodecError::invalid())?
     else {
         unreachable!()
     };
@@ -279,13 +252,9 @@ pub(crate) fn validate_response(v: &Value) -> Result<(), CodecError> {
         .get("choices")
         .and_then(Value::as_array)
         .filter(|a| a.len() == 1)
-        .ok_or(CodecError::Unsupported(
-            crate::protocol::failure::CarrierReason::Unavailable,
-        ))?;
+        .ok_or(CodecError::Unsupported(CarrierReason::Unavailable))?;
     if choices[0].pointer("/message/role").and_then(Value::as_str) != Some("assistant") {
-        return Err(CodecError::Invalid(
-            crate::protocol::failure::ShapeReason::InvalidValue,
-        ));
+        return Err(CodecError::invalid());
     }
     Ok(())
 }
@@ -296,9 +265,7 @@ pub(in crate::protocol::openai) fn headers(v: &Value, kind: &str) -> Result<(), 
     text(string(o, "id")?, "response id", 256)?;
     text(string(o, "model")?, "response model", 256)?;
     if string(o, "object")? != kind || o.get("created").and_then(Value::as_u64).is_none() {
-        return Err(CodecError::Invalid(
-            crate::protocol::failure::ShapeReason::InvalidValue,
-        ));
+        return Err(CodecError::invalid());
     }
     Ok(())
 }

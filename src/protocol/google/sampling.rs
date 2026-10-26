@@ -1,4 +1,5 @@
 //! Trusted model/API sampling policy; never inferred from request model labels.
+use crate::protocol::failure::CarrierReason;
 use crate::{
     lowering::generation::Effect, protocol::CodecError,
     semantic::task::generation::GenerationRequest,
@@ -29,9 +30,7 @@ pub(super) fn project(
         return Ok(None);
     }
     if policy == SamplingPolicy::Reject {
-        return Err(CodecError::Unsupported(
-            crate::protocol::failure::CarrierReason::Unavailable,
-        ));
+        return Err(CodecError::Unsupported(CarrierReason::Unavailable));
     }
     let mut settings = request.settings().clone();
     settings.controls = settings.controls.without_sampling();

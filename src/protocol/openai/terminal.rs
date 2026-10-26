@@ -1,4 +1,5 @@
 //! Typed terminal details, shared by static and event codecs.
+use crate::protocol::failure::{CarrierReason, SourceFailureEvidence};
 use crate::protocol::openai::{CodecError, lowering::projection::LossRule, shape::*};
 use crate::semantic::task::generation::*;
 use serde_json::{Map, Value, json};
@@ -9,9 +10,7 @@ pub(super) fn decode_details(o: &Map<String, Value>) -> Result<TerminalDetails, 
         .map(|v| {
             let e = object(v)?;
             if e.get("misalignment").is_some_and(|v| !v.is_null()) {
-                return Err(CodecError::Unsupported(
-                    crate::protocol::failure::CarrierReason::Unavailable,
-                ));
+                return Err(CodecError::Unsupported(CarrierReason::Unavailable));
             }
             DecodeDirection::Upstream.fields(e, &["code", "message", "param", "type"])?;
             Ok::<_, CodecError>(ResponseError {
@@ -20,9 +19,7 @@ pub(super) fn decode_details(o: &Map<String, Value>) -> Result<TerminalDetails, 
                     .filter(|v| !v.is_null())
                     .map(|v| {
                         crate::semantic::value::Text::allowing_empty(
-                            v.as_str().ok_or(CodecError::Invalid(
-                                crate::protocol::failure::ShapeReason::InvalidValue,
-                            ))?,
+                            v.as_str().ok_or(CodecError::invalid())?,
                             "original error type",
                             256,
                         )
@@ -32,15 +29,7 @@ pub(super) fn decode_details(o: &Map<String, Value>) -> Result<TerminalDetails, 
                 code: e
                     .get("code")
                     .filter(|v| !v.is_null())
-                    .map(|v| {
-                        text(
-                            v.as_str().ok_or(CodecError::Invalid(
-                                crate::protocol::failure::ShapeReason::InvalidValue,
-                            ))?,
-                            "error code",
-                            128,
-                        )
-                    })
+                    .map(|v| text(v.as_str().ok_or(CodecError::invalid())?, "error code", 128))
                     .transpose()?,
                 message: crate::semantic::value::Text::allowing_empty(
                     string(e, "message")?,
@@ -51,15 +40,7 @@ pub(super) fn decode_details(o: &Map<String, Value>) -> Result<TerminalDetails, 
                 param: e
                     .get("param")
                     .filter(|v| !v.is_null())
-                    .map(|v| {
-                        text(
-                            v.as_str().ok_or(CodecError::Invalid(
-                                crate::protocol::failure::ShapeReason::InvalidValue,
-                            ))?,
-                            "param",
-                            256,
-                        )
-                    })
+                    .map(|v| text(v.as_str().ok_or(CodecError::invalid())?, "param", 256))
                     .transpose()?,
             })
         })
@@ -106,9 +87,7 @@ pub(super) fn chat_finish(response: &GenerationResponse) -> Result<&'static str,
             Outcome::Incomplete,
             Some(IncompleteReason::ContentFilter | IncompleteReason::Recitation),
         ) => Ok("content_filter"),
-        _ => Err(CodecError::Unsupported(
-            crate::protocol::failure::CarrierReason::Terminal,
-        )),
+        _ => Err(CodecError::Unsupported(CarrierReason::Terminal)),
     }
 }
 /// Whether Chat has a finish reason for this incomplete state, exactly or under a
@@ -139,9 +118,7 @@ pub(super) fn terminal_losses(
         .value()
         .is_some_and(|report| report.category.value().is_some())
     {
-        return Err(CodecError::Unsupported(
-            crate::protocol::failure::CarrierReason::Unavailable,
-        ));
+        return Err(CodecError::Unsupported(CarrierReason::Unavailable));
     }
     if !details.refusal.is_absent() {
         losses.push(LossRule::OmitExplanatoryRefusalDetails);
@@ -174,7 +151,7 @@ pub(crate) fn reported_failure(
     code: Option<&str>,
     kind: Option<&str>,
     message: Option<&str>,
-) -> crate::protocol::failure::SourceFailureEvidence {
+) -> SourceFailureEvidence {
     use crate::protocol::failure::RecognitionBasis;
     let named = |value: Option<&str>| match value? {
         "invalid_request_error" | "context_length_exceeded" => Some(400),
@@ -193,13 +170,11 @@ pub(crate) fn reported_failure(
             (None, None) => (500, RecognitionBasis::EnvelopeFields),
         },
     };
-    crate::protocol::failure::SourceFailureEvidence::envelope(status, basis, code, kind, message)
+    SourceFailureEvidence::envelope(status, basis, code, kind, message)
 }
 /// A failed Responses outcome classified as an upstream failure, for clients
 /// whose protocol has no failed-response carrier.
-pub fn failed_response(
-    response: &GenerationResponse,
-) -> Option<crate::protocol::failure::SourceFailureEvidence> {
+pub fn failed_response(response: &GenerationResponse) -> Option<SourceFailureEvidence> {
     if response.outcome() != Outcome::Failed {
         return None;
     }

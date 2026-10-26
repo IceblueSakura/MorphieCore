@@ -1,5 +1,6 @@
 //! Explicit upstream cache carriers. No cache storage, session state or routing decisions.
 use super::openai::CodecError;
+use crate::protocol::failure::CarrierReason;
 use crate::semantic::{
     context::{CacheRetention, ConversationContext, ExecutionHints},
     value::{Presence, Text},
@@ -136,16 +137,12 @@ impl CacheProjection {
         context.cache.validate()?;
         // Shared hints also hold nullable reports; target projection admits requests only.
         if context.cache.prompt_cache_options == Presence::Null {
-            return Err(CodecError::Invalid(
-                crate::protocol::failure::ShapeReason::InvalidValue,
-            ));
+            return Err(CodecError::invalid());
         }
         // Never erase in_memory or infer a default storage policy from automatic caching.
         if !self.retention && !context.cache.prompt_cache_retention.is_absent() {
             if !self.omits_day_retention(context) {
-                return Err(CodecError::Unsupported(
-                    crate::protocol::failure::CarrierReason::Unavailable,
-                ));
+                return Err(CodecError::Unsupported(CarrierReason::Unavailable));
             }
             context.cache.prompt_cache_retention = Presence::Absent;
         }
@@ -163,9 +160,7 @@ impl CacheProjection {
                     options != &crate::semantic::context::CacheOptions::default()
                 })
         {
-            return Err(CodecError::Unsupported(
-                crate::protocol::failure::CarrierReason::Unavailable,
-            ));
+            return Err(CodecError::Unsupported(CarrierReason::Unavailable));
         }
         if !self.options {
             context.cache.prompt_cache_options = Presence::Absent;
@@ -199,9 +194,7 @@ impl CacheProjection {
         inferred: Option<InferredAffinity>,
     ) -> Result<String, CodecError> {
         if !self.session_id {
-            return Err(CodecError::Unsupported(
-                crate::protocol::failure::CarrierReason::Unavailable,
-            ));
+            return Err(CodecError::Unsupported(CarrierReason::Unavailable));
         }
         match (conversation, session) {
             (Some(group), None) if !group.is_conversation_scoped() && inferred.is_some() => {
@@ -213,9 +206,7 @@ impl CacheProjection {
             }
             (Some(group), None) => Ok(affinity_key(group, b"MorphieCore.go-session.v1\0")),
             (None, Some(session)) => Ok(session.header_value()?.into()),
-            _ => Err(CodecError::Invalid(
-                crate::protocol::failure::ShapeReason::InvalidValue,
-            )),
+            _ => Err(CodecError::invalid()),
         }
     }
 }
@@ -230,22 +221,18 @@ impl std::fmt::Debug for CacheSession {
 impl CacheSession {
     pub fn new(value: &str) -> Result<Self, CodecError> {
         if value.chars().count() > 256 || value.chars().any(char::is_control) {
-            return Err(CodecError::Invalid(
-                crate::protocol::failure::ShapeReason::InvalidValue,
-            ));
+            return Err(CodecError::invalid());
         }
-        Ok(Self(Text::new(value, "session_id", 1024).map_err(
-            |_| CodecError::Invalid(crate::protocol::failure::ShapeReason::InvalidValue),
-        )?))
+        Ok(Self(
+            Text::new(value, "session_id", 1024).map_err(|_| CodecError::invalid())?,
+        ))
     }
     pub fn as_str(&self) -> &str {
         self.0.as_str()
     }
     pub(crate) fn header_value(&self) -> Result<&str, CodecError> {
         if !self.as_str().is_ascii() {
-            return Err(CodecError::Invalid(
-                crate::protocol::failure::ShapeReason::InvalidValue,
-            ));
+            return Err(CodecError::invalid());
         }
         Ok(self.as_str())
     }

@@ -1,5 +1,6 @@
 //! Responses event coordinates, item snapshots and wire rendering.
 use super::*;
+use crate::protocol::failure::{CarrierReason, ShapeReason};
 use crate::protocol::openai::events::responses_wire::*;
 
 impl EventEncoder {
@@ -8,9 +9,7 @@ impl EventEncoder {
             .items()
             .iter()
             .position(|i| i.id == id)
-            .ok_or(CodecError::Invalid(
-                crate::protocol::failure::ShapeReason::InvalidValue,
-            ))
+            .ok_or(CodecError::invalid())
     }
     fn part_index(&self, item: ItemId, part: PartId) -> Result<usize, CodecError> {
         let kind = self.state()?.part(item, part)?.kind;
@@ -20,18 +19,14 @@ impl EventEncoder {
             .iter()
             .filter(|p| (p.kind == PartKind::Summary) == (kind == PartKind::Summary))
             .position(|p| p.id == part)
-            .ok_or(CodecError::Invalid(
-                crate::protocol::failure::ShapeReason::InvalidValue,
-            ))
+            .ok_or(CodecError::invalid())
     }
     fn coordinates(&self, item: ItemId, part: PartId) -> Result<Value, CodecError> {
         let kind = self.state()?.part(item, part)?.kind;
         let id = self
             .fidelity
             .response_item_id(item)
-            .ok_or(CodecError::Invalid(
-                crate::protocol::failure::ShapeReason::InvalidValue,
-            ))?;
+            .ok_or(CodecError::invalid())?;
         let mut v = json!({"output_index": self.index(item)?, "item_id": id});
         if !matches!(
             kind,
@@ -50,9 +45,11 @@ impl EventEncoder {
         status: &str,
         output: Vec<Value>,
     ) -> Result<Value, CodecError> {
-        let created = self.metadata.created.as_ref().ok_or(CodecError::Invalid(
-            crate::protocol::failure::ShapeReason::Metadata,
-        ))?;
+        let created = self
+            .metadata
+            .created
+            .as_ref()
+            .ok_or(CodecError::Invalid(ShapeReason::Metadata))?;
         let mut v = json!({
             "id": self.metadata.id,
             "object": "response",
@@ -63,16 +60,13 @@ impl EventEncoder {
         });
         let mut delivered = self.metadata.clone();
         crate::protocol::reports::opening_view(&mut delivered.context.reports)?;
-        let loss = projection::reported_settings(&mut delivered, self.profile).map_err(|_| {
-            CodecError::Unsupported(crate::protocol::failure::CarrierReason::Unavailable)
-        })?;
+        let loss = projection::reported_settings(&mut delivered, self.profile)
+            .map_err(|_| CodecError::Unsupported(CarrierReason::Unavailable))?;
         if loss.is_some()
             && self.contract.reported_facts
                 == crate::lowering::generation::ReportedFactPolicy::StrictComplete
         {
-            return Err(CodecError::Unsupported(
-                crate::protocol::failure::CarrierReason::Unavailable,
-            ));
+            return Err(CodecError::Unsupported(CarrierReason::Unavailable));
         }
         let fingerprint = if !delivered.context.system_fingerprint.is_absent() {
             delivered.context.system_fingerprint = crate::semantic::value::Presence::Absent;
@@ -93,9 +87,7 @@ impl EventEncoder {
     pub(super) fn responses(&mut self, event: &StreamEvent) -> Result<Vec<Value>, CodecError> {
         let result = match event {
             StreamEvent::AudioDelta { .. } => {
-                return Err(CodecError::Unsupported(
-                    crate::protocol::failure::CarrierReason::Unavailable,
-                ));
+                return Err(CodecError::Unsupported(CarrierReason::Unavailable));
             }
             StreamEvent::Queued => {
                 vec![json!({"type":"response.queued","response":self.envelope("queued",vec![])?})]
@@ -114,9 +106,7 @@ impl EventEncoder {
                 let id = self
                     .fidelity
                     .response_item_id(*item)
-                    .ok_or(CodecError::Invalid(
-                        crate::protocol::failure::ShapeReason::InvalidValue,
-                    ))?;
+                    .ok_or(CodecError::invalid())?;
                 let mut v = match kind {
                     ItemKind::Message { phase } => {
                         let mut v = json!({
@@ -189,9 +179,7 @@ impl EventEncoder {
                         item_wire(self.state()?, *item, &self.fidelity)?
                     }
                     ItemKind::ProviderTool(_) | ItemKind::ProviderResult { .. } => {
-                        return Err(CodecError::Unsupported(
-                            crate::protocol::failure::CarrierReason::Unavailable,
-                        ));
+                        return Err(CodecError::Unsupported(CarrierReason::Unavailable));
                     }
                     ItemKind::ToolCall {
                         call_id,
@@ -313,9 +301,8 @@ impl EventEncoder {
                     });
                     v["part"] = if p.kind == PartKind::Text {
                         let text = crate::semantic::value::Text::allowing_empty(
-                            p.text().ok_or(CodecError::Unsupported(
-                                crate::protocol::failure::CarrierReason::Unavailable,
-                            ))?,
+                            p.text()
+                                .ok_or(CodecError::Unsupported(CarrierReason::Unavailable))?,
                             "text",
                             MAX_TEXT_BYTES,
                         )
@@ -328,9 +315,8 @@ impl EventEncoder {
                     } else {
                         part_wire(
                             p.kind,
-                            p.text().ok_or(CodecError::Unsupported(
-                                crate::protocol::failure::CarrierReason::Unavailable,
-                            ))?,
+                            p.text()
+                                .ok_or(CodecError::Unsupported(CarrierReason::Unavailable))?,
                         )
                     };
                     if matches!(event, StreamEvent::PartInterrupted { .. }) {
@@ -342,7 +328,7 @@ impl EventEncoder {
             StreamEvent::CompactionProgress { item } => vec![json!({
                 "type":"response.compaction.compacting",
                 "output_index":self.index(*item)?,
-                "item_id":self.fidelity.response_item_id(*item).ok_or(CodecError::Invalid(crate::protocol::failure::ShapeReason::InvalidValue))?,
+                "item_id":self.fidelity.response_item_id(*item).ok_or(CodecError::invalid())?,
             })],
             StreamEvent::ItemFinished { item, .. } => vec![json!({
                 "type": "response.output_item.done",
@@ -355,9 +341,7 @@ impl EventEncoder {
                 annotation,
             } => {
                 if annotation.value().kind == CitationKind::ArtifactReference {
-                    return Err(CodecError::Unsupported(
-                        crate::protocol::failure::CarrierReason::Unavailable,
-                    ));
+                    return Err(CodecError::Unsupported(CarrierReason::Unavailable));
                 }
                 let mut v = self.coordinates(*item, *part)?;
                 v["type"] = json!("response.output_text.annotation.added");
@@ -377,19 +361,13 @@ impl EventEncoder {
             | StreamEvent::Usage(_)
             | StreamEvent::UsageReport(_) => vec![],
             StreamEvent::PartReplay { .. } => {
-                return Err(CodecError::Unsupported(
-                    crate::protocol::failure::CarrierReason::Replay,
-                ));
+                return Err(CodecError::Unsupported(CarrierReason::Replay));
             }
             StreamEvent::SafetyReport(_) => {
-                return Err(CodecError::Unsupported(
-                    crate::protocol::failure::CarrierReason::Safety,
-                ));
+                return Err(CodecError::Unsupported(CarrierReason::Safety));
             }
             StreamEvent::Progress(_) => {
-                return Err(CodecError::Unsupported(
-                    crate::protocol::failure::CarrierReason::Unavailable,
-                ));
+                return Err(CodecError::Unsupported(CarrierReason::Unavailable));
             }
             StreamEvent::Terminal {
                 terminal: StreamTerminal::Error,
@@ -401,14 +379,10 @@ impl EventEncoder {
                     .as_ref()
                     .is_some_and(|e| e.original_type.is_some())
                 {
-                    return Err(CodecError::Unsupported(
-                        crate::protocol::failure::CarrierReason::Unavailable,
-                    ));
+                    return Err(CodecError::Unsupported(CarrierReason::Unavailable));
                 }
                 if !v.is_object() {
-                    return Err(CodecError::Invalid(
-                        crate::protocol::failure::ShapeReason::InvalidValue,
-                    ));
+                    return Err(CodecError::invalid());
                 }
                 v["type"] = json!("error");
                 vec![v]
@@ -437,18 +411,14 @@ impl EventEncoder {
                     Profile::Responses,
                     self.contract.clone(),
                 )
-                .map_err(|_| {
-                    CodecError::Unsupported(crate::protocol::failure::CarrierReason::Terminal)
-                })?;
+                .map_err(|_| CodecError::Unsupported(CarrierReason::Terminal))?;
                 let v = crate::protocol::openai::responses::encode_response(&target)?;
                 let kind = match terminal {
                     StreamTerminal::Completed => "response.completed",
                     StreamTerminal::Incomplete => "response.incomplete",
                     StreamTerminal::Failed => "response.failed",
                     StreamTerminal::Cancelled => {
-                        return Err(CodecError::Unsupported(
-                            crate::protocol::failure::CarrierReason::Unavailable,
-                        ));
+                        return Err(CodecError::Unsupported(CarrierReason::Unavailable));
                     }
                     StreamTerminal::Error => unreachable!(),
                 };

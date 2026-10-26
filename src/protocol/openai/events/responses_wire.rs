@@ -1,13 +1,12 @@
 //! Responses-only event part, item-snapshot and replay-value helpers; no stream state.
 use super::*;
+use crate::protocol::failure::{CarrierReason, ShapeReason};
 
 pub(super) fn lifecycle(value: &str) -> Result<ItemLifecycle, CodecError> {
     match value {
         "completed" => Ok(ItemLifecycle::Completed),
         "incomplete" => Ok(ItemLifecycle::Incomplete),
-        _ => Err(CodecError::Invalid(
-            crate::protocol::failure::ShapeReason::Item,
-        )),
+        _ => Err(CodecError::Invalid(ShapeReason::Item)),
     }
 }
 pub(super) fn replay(
@@ -34,9 +33,7 @@ pub(super) fn replay(
                 },
             }))
         }
-        _ => Err(CodecError::Invalid(
-            crate::protocol::failure::ShapeReason::InvalidValue,
-        )),
+        _ => Err(CodecError::invalid()),
     }
 }
 fn kind_name(kind: PartKind) -> &'static str {
@@ -60,9 +57,7 @@ pub(super) fn part_kind(part: &Map<String, Value>) -> Result<PartKind, CodecErro
         "refusal" => Ok(PartKind::Refusal),
         "summary_text" => Ok(PartKind::Summary),
         "reasoning_text" => Ok(PartKind::ReasoningText),
-        _ => Err(CodecError::Unsupported(
-            crate::protocol::failure::CarrierReason::Unavailable,
-        )),
+        _ => Err(CodecError::Unsupported(CarrierReason::Unavailable)),
     }
 }
 pub(super) fn part_text(part: &Map<String, Value>, kind: PartKind) -> Result<&str, CodecError> {
@@ -108,7 +103,5 @@ pub(super) fn item_wire(
     )?
     .into_iter()
     .next()
-    .ok_or(CodecError::Invalid(
-        crate::protocol::failure::ShapeReason::ItemSnapshot,
-    ))
+    .ok_or(CodecError::Invalid(ShapeReason::ItemSnapshot))
 }

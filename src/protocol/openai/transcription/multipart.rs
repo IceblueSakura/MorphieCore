@@ -9,25 +9,22 @@ use crate::{
 use bytes::Bytes;
 use std::collections::BTreeMap;
 pub const MAX_UPLOAD_BYTES: usize = MAX_INPUT_BYTES + (16 << 10);
-fn invalid() -> CodecError {
-    CodecError::Invalid(crate::protocol::failure::ShapeReason::InvalidValue)
-}
 pub async fn decode_request(content_type: &str, bytes: Bytes) -> Result<Request, CodecError> {
     if bytes.len() > MAX_UPLOAD_BYTES {
         return Err(CodecError::Limit);
     }
-    let mime: mime::Mime = content_type.parse().map_err(|_| invalid())?;
+    let mime: mime::Mime = content_type.parse().map_err(|_| CodecError::invalid())?;
     if mime.essence_str() != "multipart/form-data" || mime.params().count() != 1 {
-        return Err(invalid());
+        return Err(CodecError::invalid());
     }
-    let boundary = multer::parse_boundary(content_type).map_err(|_| invalid())?;
+    let boundary = multer::parse_boundary(content_type).map_err(|_| CodecError::invalid())?;
     if boundary.is_empty()
         || boundary.len() > 70
         || !boundary
             .bytes()
             .all(|b| b.is_ascii_alphanumeric() || b"'()+_,-./:=?".contains(&b))
     {
-        return Err(invalid());
+        return Err(CodecError::invalid());
     }
     // Admit canonical single-envelope uploads; never ignore a second envelope or postamble.
     let closing = format!("\r\n--{boundary}--");
@@ -43,7 +40,7 @@ pub async fn decode_request(content_type: &str, bytes: Bytes) -> Result<Request,
             .position(|w| w == closing.as_bytes())
             != Some(end - closing.len())
     {
-        return Err(invalid());
+        return Err(CodecError::invalid());
     }
     let constraints = multer::Constraints::new()
         .allowed_fields(vec![
@@ -64,7 +61,11 @@ pub async fn decode_request(content_type: &str, bytes: Bytes) -> Result<Request,
     let mut multipart = multer::Multipart::with_constraints(stream, boundary, constraints);
     let mut fields = BTreeMap::new();
     let mut audio = None;
-    while let Some(field) = multipart.next_field().await.map_err(|_| invalid())? {
+    while let Some(field) = multipart
+        .next_field()
+        .await
+        .map_err(|_| CodecError::invalid())?
+    {
         if field
             .headers()
             .keys()
@@ -77,44 +78,44 @@ pub async fn decode_request(content_type: &str, bytes: Bytes) -> Result<Request,
                 != 1
             || field.headers().get_all("content-type").iter().count() > 1
         {
-            return Err(invalid());
+            return Err(CodecError::invalid());
         }
-        let name = field.name().ok_or_else(invalid)?.to_owned();
+        let name = field.name().ok_or_else(CodecError::invalid)?.to_owned();
         if name == "file" {
             if audio.is_some() {
-                return Err(invalid());
+                return Err(CodecError::invalid());
             }
             let format = input_format(field.file_name(), field.content_type())?;
-            let data = field.bytes().await.map_err(|_| invalid())?;
-            audio = Some(AudioInput::new(data, format).map_err(|_| invalid())?);
+            let data = field.bytes().await.map_err(|_| CodecError::invalid())?;
+            audio = Some(AudioInput::new(data, format).map_err(|_| CodecError::invalid())?);
         } else {
             if field.file_name().is_some() || fields.contains_key(&name) {
-                return Err(invalid());
+                return Err(CodecError::invalid());
             }
             if field.content_type().is_some_and(|m| {
                 m.essence_str() != "text/plain"
                     || m.params()
                         .any(|(k, v)| k != mime::CHARSET || v != mime::UTF_8)
             }) {
-                return Err(invalid());
+                return Err(CodecError::invalid());
             }
-            let data = field.bytes().await.map_err(|_| invalid())?;
+            let data = field.bytes().await.map_err(|_| CodecError::invalid())?;
             let text = std::str::from_utf8(&data)
-                .map_err(|_| invalid())?
+                .map_err(|_| CodecError::invalid())?
                 .to_owned();
             fields.insert(name, text);
         }
     }
-    let model = fields.remove("model").ok_or_else(invalid)?;
+    let model = fields.remove("model").ok_or_else(CodecError::invalid)?;
     if !crate::protocol::openai::speech::valid_model(&model)
         || fields.get("response_format").is_some_and(|s| s != "json")
         || fields.get("stream").is_some_and(|s| s != "false")
     {
-        return Err(invalid());
+        return Err(CodecError::invalid());
     }
-    let mut task = RecognitionRequest::new(audio.ok_or_else(invalid)?);
+    let mut task = RecognitionRequest::new(audio.ok_or_else(CodecError::invalid)?);
     task.language = fields.remove("language");
-    task.validate().map_err(|_| invalid())?;
+    task.validate().map_err(|_| CodecError::invalid())?;
     Ok(Request { model, task })
 }
 fn input_format(
@@ -125,10 +126,10 @@ fn input_format(
         Some("audio/wav" | "audio/x-wav") => Some(InputFormat::Wav),
         Some("audio/mpeg" | "audio/mp3") => Some(InputFormat::Mp3),
         None | Some("application/octet-stream") => None,
-        _ => return Err(invalid()),
+        _ => return Err(CodecError::invalid()),
     };
     if media.is_some_and(|m| m.params().next().is_some()) {
-        return Err(invalid());
+        return Err(CodecError::invalid());
     }
     let named = if let Some(name) = filename {
         if name.is_empty()
@@ -137,7 +138,7 @@ fn input_format(
                 .chars()
                 .any(|c| c.is_control() || matches!(c, '/' | '\\'))
         {
-            return Err(invalid());
+            return Err(CodecError::invalid());
         }
         match name
             .rsplit_once('.')
@@ -152,7 +153,7 @@ fn input_format(
         None
     };
     if declared.is_some() && named.is_some() && declared != named {
-        return Err(invalid());
+        return Err(CodecError::invalid());
     }
-    declared.or(named).ok_or_else(invalid)
+    declared.or(named).ok_or_else(CodecError::invalid)
 }

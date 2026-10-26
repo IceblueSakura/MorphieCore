@@ -1,4 +1,5 @@
 //! Outgoing event driver: contract locking, projection and semantic reduction.
+use crate::protocol::failure::{CarrierReason, ShapeReason};
 mod chat;
 mod responses;
 use crate::protocol::openai::events::*;
@@ -37,9 +38,7 @@ impl EventEncoder {
     /// Refresh reported settings/completion metadata without changing response identity.
     pub fn update_metadata(&mut self, metadata: ResponseMetadata) -> Result<(), CodecError> {
         if self.state.is_none() {
-            return Err(CodecError::Invalid(
-                crate::protocol::failure::ShapeReason::InvalidValue,
-            ));
+            return Err(CodecError::invalid());
         }
         let result = (|| {
             if self.state()?.terminal().is_some()
@@ -47,9 +46,7 @@ impl EventEncoder {
                 || self.metadata.model != metadata.model
                 || self.metadata.created != metadata.created
             {
-                return Err(CodecError::Invalid(
-                    crate::protocol::failure::ShapeReason::Metadata,
-                ));
+                return Err(CodecError::Invalid(ShapeReason::Metadata));
             }
             metadata.validate()?;
             validate_metadata(self.profile, &metadata)?;
@@ -69,9 +66,7 @@ impl EventEncoder {
                         .reports
                         .at(crate::semantic::context::ReportPhase::Opening)
             {
-                return Err(CodecError::Invalid(
-                    crate::protocol::failure::ShapeReason::InvalidValue,
-                ));
+                return Err(CodecError::invalid());
             }
             if self.profile == Profile::Chat && self.state()?.started() {
                 let old = &self.metadata.context;
@@ -79,9 +74,7 @@ impl EventEncoder {
                     && old.system_fingerprint != metadata.context.system_fingerprint
                 {
                     // Intake normalization is not permission to rewrite already emitted facts.
-                    return Err(CodecError::Invalid(
-                        crate::protocol::failure::ShapeReason::Metadata,
-                    ));
+                    return Err(CodecError::Invalid(ShapeReason::Metadata));
                 }
             }
             crate::protocol::reports::update(
@@ -111,9 +104,7 @@ impl EventEncoder {
         source: &FidelityRecords,
     ) -> Result<Vec<Value>, CodecError> {
         if self.state.is_none() {
-            return Err(CodecError::Invalid(
-                crate::protocol::failure::ShapeReason::InvalidValue,
-            ));
+            return Err(CodecError::invalid());
         }
         self.target_locked = true;
         let checked_projection = self.projection.len();
@@ -125,9 +116,7 @@ impl EventEncoder {
                 if self.contract.reported_facts
                     == crate::lowering::generation::ReportedFactPolicy::StrictComplete
                 {
-                    return Err(CodecError::Unsupported(
-                        crate::protocol::failure::CarrierReason::Unavailable,
-                    ));
+                    return Err(CodecError::Unsupported(CarrierReason::Unavailable));
                 }
                 self.record_loss(projection::LossRule::OmitChatReportedSettings);
             }
@@ -152,9 +141,7 @@ impl EventEncoder {
                     .iter()
                     .any(|old| self.fidelity.response_item_id(old.id) == Some(id.as_str()))
                 {
-                    return Err(CodecError::Invalid(
-                        crate::protocol::failure::ShapeReason::InvalidValue,
-                    ));
+                    return Err(CodecError::invalid());
                 }
                 self.fidelity.record_response_item_id(*item, &id)?;
             }
@@ -177,9 +164,7 @@ impl EventEncoder {
                 None
             };
             self.state = Some(reduce(
-                self.state.take().ok_or(CodecError::Invalid(
-                    crate::protocol::failure::ShapeReason::InvalidValue,
-                ))?,
+                self.state.take().ok_or(CodecError::invalid())?,
                 event.clone(),
             )?);
             self.fidelity
@@ -188,17 +173,13 @@ impl EventEncoder {
             match event {
                 StreamEvent::ItemStarted { item, .. } | StreamEvent::ItemFinished { item, .. } => {
                     sync_replays(
-                        self.state.as_ref().ok_or(CodecError::Invalid(
-                            crate::protocol::failure::ShapeReason::InvalidValue,
-                        ))?,
+                        self.state.as_ref().ok_or(CodecError::invalid())?,
                         &mut self.fidelity,
                         Some(*item),
                     )?
                 }
                 StreamEvent::Terminal { .. } => sync_replays(
-                    self.state.as_ref().ok_or(CodecError::Invalid(
-                        crate::protocol::failure::ShapeReason::InvalidValue,
-                    ))?,
+                    self.state.as_ref().ok_or(CodecError::invalid())?,
                     &mut self.fidelity,
                     None,
                 )?,
@@ -235,9 +216,7 @@ impl EventEncoder {
     }
     pub fn finish(&self) -> Result<(), CodecError> {
         if self.state.is_none() {
-            return Err(CodecError::Invalid(
-                crate::protocol::failure::ShapeReason::InvalidValue,
-            ));
+            return Err(CodecError::invalid());
         }
         end_of_stream(self.state()?)?;
         Ok(())
@@ -256,9 +235,7 @@ impl EventEncoder {
         );
     }
     pub(super) fn state(&self) -> Result<&StreamState, CodecError> {
-        self.state.as_ref().ok_or(CodecError::Invalid(
-            crate::protocol::failure::ShapeReason::InvalidValue,
-        ))
+        self.state.as_ref().ok_or(CodecError::invalid())
     }
 }
 /// Event delivery re-labels every copied stage and keeps the first occurrence.
@@ -281,24 +258,21 @@ fn validate_metadata(profile: Profile, metadata: &ResponseMetadata) -> Result<()
         if let Some(settings) = &report.settings {
             settings.validate()?;
             if !settings.safety.is_empty() {
-                return Err(CodecError::Unsupported(
-                    crate::protocol::failure::CarrierReason::Safety,
-                ));
+                return Err(CodecError::Unsupported(CarrierReason::Safety));
             }
         }
     }
     metadata.required_id()?;
-    let created = metadata.created.as_ref().ok_or(CodecError::Invalid(
-        crate::protocol::failure::ShapeReason::Metadata,
-    ))?;
+    let created = metadata
+        .created
+        .as_ref()
+        .ok_or(CodecError::Invalid(ShapeReason::Metadata))?;
     if profile == Profile::Chat {
         crate::protocol::reports::validate_single(&metadata.context.reports)?;
         crate::protocol::openai::chat::envelope::validate_context(&metadata.context.execution)?;
         if created.as_u64().is_none() || !metadata.context.execution.metadata.is_absent() {
             // Chat chunks have no metadata slot; never silently discard a static fact.
-            return Err(CodecError::Unsupported(
-                crate::protocol::failure::CarrierReason::Metadata,
-            ));
+            return Err(CodecError::Unsupported(CarrierReason::Metadata));
         }
     }
     Ok(())

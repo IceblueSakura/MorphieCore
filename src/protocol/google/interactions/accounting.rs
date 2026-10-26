@@ -1,4 +1,5 @@
 //! Interactions usage counters → IR accounting.
+use crate::protocol::failure::ShapeReason;
 use crate::{
     protocol::{CodecError, stream::SseError},
     semantic::task::generation::*,
@@ -6,7 +7,7 @@ use crate::{
 use serde_json::{Map, Value};
 
 fn invalid(_what: &'static str) -> SseError {
-    CodecError::Invalid(crate::protocol::failure::ShapeReason::Usage).into()
+    CodecError::Invalid(ShapeReason::Usage).into()
 }
 fn object<'a>(value: &'a Value, what: &'static str) -> Result<&'a Map<String, Value>, SseError> {
     value.as_object().ok_or_else(|| invalid(what))

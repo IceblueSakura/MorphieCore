@@ -3,6 +3,7 @@ use super::{
     replay::Signed,
     sse::{check_annotations, field, invalid, object, required, string},
 };
+use crate::protocol::failure::{CarrierReason, ShapeReason};
 use crate::{
     protocol::{CodecError, stream::SseError},
     semantic::task::generation::*,
@@ -10,7 +11,7 @@ use crate::{
 use serde_json::Value;
 
 fn mismatch() -> SseError {
-    invalid(crate::protocol::failure::ShapeReason::TerminalSnapshot)
+    invalid(ShapeReason::TerminalSnapshot)
 }
 
 pub(super) fn reconcile(
@@ -23,7 +24,7 @@ pub(super) fn reconcile(
     };
     let steps = value
         .as_array()
-        .ok_or_else(|| invalid(crate::protocol::failure::ShapeReason::SnapshotShape))?;
+        .ok_or_else(|| invalid(ShapeReason::SnapshotShape))?;
     if steps.len() > MAX_ITEMS {
         return Err(SseError::Limit);
     }
@@ -34,10 +35,7 @@ pub(super) fn reconcile(
     for (step, owner) in steps.iter().zip(owners) {
         let step = object(step, "Interactions snapshot step")?;
         if step.get("error").is_some_and(|value| !value.is_null()) {
-            return Err(CodecError::Unsupported(
-                crate::protocol::failure::CarrierReason::StepError,
-            )
-            .into());
+            return Err(CodecError::Unsupported(CarrierReason::StepError).into());
         }
         let item = match owner {
             None => None,
@@ -67,8 +65,7 @@ pub(super) fn reconcile(
                 return Err(mismatch());
             };
             let arguments = object(
-                field(step, "arguments")
-                    .map_err(|_| invalid(crate::protocol::failure::ShapeReason::SnapshotShape))?,
+                field(step, "arguments").map_err(|_| invalid(ShapeReason::SnapshotShape))?,
                 "snapshot call arguments",
             )?;
             let [part] = item.parts.as_slice() else {
@@ -89,14 +86,11 @@ pub(super) fn reconcile(
                 "thought" => ReplayFormat::GoogleInteractionsV1Thought,
                 "function_call" => ReplayFormat::GoogleInteractionsV1FunctionCall,
                 _ => {
-                    return Err(CodecError::Unsupported(
-                        crate::protocol::failure::CarrierReason::MultipartContent,
-                    )
-                    .into());
+                    return Err(CodecError::Unsupported(CarrierReason::MultipartContent).into());
                 }
             };
             if signature.is_empty() {
-                return Err(invalid(crate::protocol::failure::ShapeReason::Signature));
+                return Err(invalid(ShapeReason::Signature));
             }
             let replay = item
                 .and_then(|item| item.replay.as_ref())
@@ -127,13 +121,10 @@ pub(super) fn reconcile(
 fn text(value: &Value, item: Option<&StreamItem>) -> Result<(), SseError> {
     let parts = value
         .as_array()
-        .ok_or_else(|| invalid(crate::protocol::failure::ShapeReason::SnapshotShape))?;
+        .ok_or_else(|| invalid(ShapeReason::SnapshotShape))?;
     // Deltas carry no content-part index. Do not assert unknown segmentation.
     if parts.len() > 1 {
-        return Err(CodecError::Unsupported(
-            crate::protocol::failure::CarrierReason::MultipartContent,
-        )
-        .into());
+        return Err(CodecError::Unsupported(CarrierReason::MultipartContent).into());
     }
     let actual = match item.map(|item| item.parts.as_slice()).unwrap_or_default() {
         [] => "",
@@ -144,13 +135,9 @@ fn text(value: &Value, item: Option<&StreamItem>) -> Result<(), SseError> {
         let part = object(part, "snapshot content part")?;
         check_annotations(part)?;
         if required(part, "type")? != "text" {
-            return Err(CodecError::Unsupported(
-                crate::protocol::failure::CarrierReason::MultipartContent,
-            )
-            .into());
+            return Err(CodecError::Unsupported(CarrierReason::MultipartContent).into());
         }
-        string(part, "text")?
-            .ok_or_else(|| invalid(crate::protocol::failure::ShapeReason::SnapshotShape))?
+        string(part, "text")?.ok_or_else(|| invalid(ShapeReason::SnapshotShape))?
     } else {
         ""
     };

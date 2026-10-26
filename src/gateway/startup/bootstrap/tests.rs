@@ -1,5 +1,6 @@
 //! Independent activation/target assertions over synthetic file configuration.
 use super::*;
+use crate::protocol::failure::{CarrierReason, ShapeReason};
 
 use super::test_support::*;
 use crate::adapter::ClientProtocol;
@@ -663,7 +664,7 @@ fn codex_history_reaches_the_native_binding_by_named_rules() {
         matches!(
             error.codec(),
             Some(crate::protocol::CodecError::Invalid(
-                crate::protocol::failure::ShapeReason::CallIdentity
+                ShapeReason::CallIdentity
             ))
         ),
         "{error:?}"
@@ -1101,7 +1102,7 @@ fn configured_failover_orders_and_limits_a_models_providers() {
         matches!(
             entry.candidates[0].endpoint.encode_request(&scoped_request),
             Err(crate::adapter::ConversionFailure { cause: crate::adapter::ConversionCause::Codec(crate::protocol::CodecError::Unsupported(reason)), .. })
-                if matches!(reason,crate::protocol::failure::CarrierReason::Reasoning)
+                if matches!(reason,CarrierReason::Reasoning)
         ),
         "an explicit numeric policy replaces, rather than chains with, the scope policy"
     );

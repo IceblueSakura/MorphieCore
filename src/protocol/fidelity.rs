@@ -129,9 +129,7 @@ impl FidelityRecords {
             .as_ref()
             .is_some_and(|old| old != &binding)
         {
-            return Err(CodecError::Invalid(
-                crate::protocol::failure::ShapeReason::InvalidValue,
-            ));
+            return Err(CodecError::invalid());
         }
         self.cached_context = Some(binding);
         Ok(())
@@ -142,18 +140,12 @@ impl FidelityRecords {
         origin: &ReplayOrigin,
         now: Option<std::time::SystemTime>,
     ) -> Result<(), CodecError> {
-        let binding = self.cached_context.as_ref().ok_or(CodecError::Invalid(
-            crate::protocol::failure::ShapeReason::InvalidValue,
-        ))?;
+        let binding = self.cached_context.as_ref().ok_or(CodecError::invalid())?;
         if &binding.reference != reference || &binding.origin != origin {
-            return Err(CodecError::Invalid(
-                crate::protocol::failure::ShapeReason::InvalidValue,
-            ));
+            return Err(CodecError::invalid());
         }
         if reference.expires_at().is_some() {
-            reference.check_at(now.ok_or(CodecError::Invalid(
-                crate::protocol::failure::ShapeReason::InvalidValue,
-            ))?)?;
+            reference.check_at(now.ok_or(CodecError::invalid())?)?;
         }
         Ok(())
     }
@@ -168,15 +160,11 @@ impl FidelityRecords {
             ContentPart::Audio(v) => (v.reference(), Some(v.fingerprint())),
             ContentPart::AudioReference(v) => (v, None),
             _ => {
-                return Err(CodecError::Invalid(
-                    crate::protocol::failure::ShapeReason::InvalidValue,
-                ));
+                return Err(CodecError::invalid());
             }
         };
         if self.audio.len() >= MAX_ITEMS || self.audio.contains_key(&owner) {
-            return Err(CodecError::Invalid(
-                crate::protocol::failure::ShapeReason::InvalidValue,
-            ));
+            return Err(CodecError::invalid());
         }
         self.audio.insert(
             owner,
@@ -199,27 +187,19 @@ impl FidelityRecords {
             ContentPart::Audio(v) => (v.reference(), Some(v.fingerprint())),
             ContentPart::AudioReference(v) => (v, None),
             _ => {
-                return Err(CodecError::Invalid(
-                    crate::protocol::failure::ShapeReason::InvalidValue,
-                ));
+                return Err(CodecError::invalid());
             }
         };
-        let binding = self.audio.get(&owner).ok_or(CodecError::Invalid(
-            crate::protocol::failure::ShapeReason::InvalidValue,
-        ))?;
+        let binding = self.audio.get(&owner).ok_or(CodecError::invalid())?;
         if origin.is_none()
             || binding.origin.as_ref() != origin
             || binding.reference != reference.fingerprint()
             || body.is_some() && body != binding.body
         {
-            return Err(CodecError::Invalid(
-                crate::protocol::failure::ShapeReason::InvalidValue,
-            ));
+            return Err(CodecError::invalid());
         }
         if reference.expires_at().is_some() {
-            reference.check_at(now.ok_or(CodecError::Invalid(
-                crate::protocol::failure::ShapeReason::InvalidValue,
-            ))?)?;
+            reference.check_at(now.ok_or(CodecError::invalid())?)?;
         }
         Ok(())
     }
@@ -244,9 +224,7 @@ impl FidelityRecords {
                 *id != owner && id.scope() == owner.scope() && text.as_str() == value
             })
         {
-            return Err(CodecError::Invalid(
-                crate::protocol::failure::ShapeReason::InvalidValue,
-            ));
+            return Err(CodecError::invalid());
         }
         let value = Text::new(value, "wire item id", 256).map_err(|_| CodecError::Limit)?;
         self.response_item_ids.insert(owner, value);
@@ -277,9 +255,7 @@ impl FidelityRecords {
                 .map(str::to_owned)
                 .or_else(|| generated.then(|| generated_item_id(*owner)));
             if alias.is_some_and(|alias| !aliases.insert(alias)) {
-                return Err(CodecError::Invalid(
-                    crate::protocol::failure::ShapeReason::InvalidValue,
-                ));
+                return Err(CodecError::invalid());
             }
         }
         Ok(())

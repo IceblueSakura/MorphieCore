@@ -1,5 +1,6 @@
 //! Native signatures remain typed stored history, never fabricated public reasoning.
 use super::*;
+use crate::protocol::failure::CarrierReason;
 use crate::{
     adapter::UpstreamAdapter,
     protocol::{
@@ -188,7 +189,7 @@ fn stateless_responses_reject_hidden_signatures_and_poison_delivery() {
     assert!(
         matches!(client.snapshot(source),
         Err(crate::adapter::ConversionFailure { cause: crate::adapter::ConversionCause::Codec(CodecError::Unsupported(reason)), .. })
-            if matches!(reason,crate::protocol::failure::CarrierReason::Replay)),
+            if matches!(reason,CarrierReason::Replay)),
         "reported storage does not authorize execution-owned retention"
     );
     for store in [None, Some(false)] {
@@ -207,7 +208,7 @@ fn stateless_responses_reject_hidden_signatures_and_poison_delivery() {
             assert!(
                 matches!(result, Err(AttemptError::Codec(CodecError::Unsupported(reason)))
                     | Err(AttemptError::Adapter(crate::adapter::ConversionFailure { cause: crate::adapter::ConversionCause::Codec(CodecError::Unsupported(reason)), .. }))
-                    if matches!(reason,crate::protocol::failure::CarrierReason::Replay)),
+                    if matches!(reason,CarrierReason::Replay)),
                 "{result:?}"
             );
             assert!(delivery.commit().is_err());

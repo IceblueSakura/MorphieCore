@@ -5,6 +5,7 @@ use super::{
     CodecError, Profile,
     shape::{put_presence, read_presence},
 };
+use crate::protocol::failure::CarrierReason;
 use crate::semantic::{
     context::{ServiceClass, ServicePolicy},
     value::Presence,
@@ -27,9 +28,7 @@ pub(super) fn read_policy(
                 ServicePolicy::UltraFastProcessing
             }
             _ => {
-                return Err(CodecError::Invalid(
-                    crate::protocol::failure::ShapeReason::InvalidValue,
-                ));
+                return Err(CodecError::invalid());
             }
         })
     })
@@ -47,9 +46,7 @@ pub(super) fn policy_wire(
         ServicePolicy::ScaleProcessing => "scale",
         ServicePolicy::UltraFastProcessing if profile == Profile::Responses => "ultrafast",
         _ => {
-            return Err(CodecError::Unsupported(
-                crate::protocol::failure::CarrierReason::Unavailable,
-            ));
+            return Err(CodecError::Unsupported(CarrierReason::Unavailable));
         }
     })
 }
@@ -80,9 +77,7 @@ pub(super) fn read_class(
             Some("scale") => ServiceClass::ScaleProcessing,
             Some("ultrafast") if profile == Profile::Responses => ServiceClass::UltraFastProcessing,
             _ => {
-                return Err(CodecError::Invalid(
-                    crate::protocol::failure::ShapeReason::InvalidValue,
-                ));
+                return Err(CodecError::invalid());
             }
         })
     })
@@ -100,9 +95,7 @@ pub(super) fn class_wire(
         ServiceClass::ScaleProcessing => "scale",
         ServiceClass::UltraFastProcessing if profile == Profile::Responses => "ultrafast",
         _ => {
-            return Err(CodecError::Unsupported(
-                crate::protocol::failure::CarrierReason::Unavailable,
-            ));
+            return Err(CodecError::Unsupported(CarrierReason::Unavailable));
         }
     })
 }

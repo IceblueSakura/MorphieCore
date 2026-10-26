@@ -4,6 +4,7 @@ use super::{
     items::{Intake, bind, item_blocks, text},
     settings::{display, effort_level, output_settings, replay_mismatch},
 };
+use crate::protocol::failure::CarrierReason;
 use crate::{
     protocol::{CodecError, DecodedRequest, fidelity::FidelityRecords, native::ReplayTarget},
     semantic::{task::generation::*, value::Presence},
@@ -108,19 +109,13 @@ impl Profile {
     ) -> Result<DecodedRequest, CodecError> {
         let wire = self.decode_request(bytes)?;
         if !wire.service_policy.is_absent() || !wire.user_id.is_absent() {
-            return Err(CodecError::Unsupported(
-                crate::protocol::failure::CarrierReason::Unavailable,
-            ));
+            return Err(CodecError::Unsupported(CarrierReason::Unavailable));
         }
         if wire.model != target.model() {
-            return Err(CodecError::Invalid(
-                crate::protocol::failure::ShapeReason::InvalidValue,
-            ));
+            return Err(CodecError::invalid());
         }
         if wire.stream == Presence::Value(true) {
-            return Err(CodecError::Unsupported(
-                crate::protocol::failure::CarrierReason::Unavailable,
-            ));
+            return Err(CodecError::Unsupported(CarrierReason::Unavailable));
         }
         let mut intake = Intake::new(scope);
         let mut settings = GenerationSettings {
@@ -819,9 +814,10 @@ pub(in crate::protocol::anthropic::messages) fn project(
         model: target.model().into(),
         user_id: Presence::Absent,
         service_policy: Presence::Absent,
-        max_tokens: s.controls.max_output_tokens.ok_or(CodecError::Unsupported(
-            crate::protocol::failure::CarrierReason::Unavailable,
-        ))?,
+        max_tokens: s
+            .controls
+            .max_output_tokens
+            .ok_or(CodecError::Unsupported(CarrierReason::Unavailable))?,
         stop_sequences: s
             .controls
             .stop_sequences

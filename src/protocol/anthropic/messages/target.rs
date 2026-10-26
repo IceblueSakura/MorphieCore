@@ -1,5 +1,6 @@
 //! Native target projection and dialect policy; no OpenAI profile or wire switches.
 use super::{Profile, RequestRule};
+use crate::protocol::failure::CarrierReason;
 use crate::{
     adapter::{ConversionFailure, Request},
     protocol::{
@@ -99,9 +100,7 @@ impl TargetCaps {
                     .maximum_output_tokens
                     .is_some_and(|maximum| default > maximum)
         }) {
-            return Err(CodecError::Invalid(
-                crate::protocol::failure::ShapeReason::InvalidValue,
-            ));
+            return Err(CodecError::invalid());
         }
         Ok(())
     }
@@ -110,9 +109,7 @@ impl TargetCaps {
         request.context.validate()?;
         request.delivery.validate()?;
         if request.service_policy == Presence::Null {
-            return Err(CodecError::Invalid(
-                crate::protocol::failure::ShapeReason::InvalidValue,
-            ));
+            return Err(CodecError::invalid());
         }
         if let Some(policy) = request.service_policy.value() {
             super::service::policy_wire(*policy)?;
@@ -135,9 +132,7 @@ impl TargetCaps {
             || request.n.value().is_some_and(|n| *n != 1)
             || !go && request.cache_session.is_some()
         {
-            return Err(CodecError::Unsupported(
-                crate::protocol::failure::CarrierReason::Unavailable,
-            ));
+            return Err(CodecError::Unsupported(CarrierReason::Unavailable));
         }
         Ok(())
     }
@@ -156,10 +151,7 @@ impl TargetCaps {
             let sampling_loss = if self.sampling == SamplingPolicy::Fixed {
                 let settings = request.task.semantic.settings();
                 if settings.controls.top_k.is_some() {
-                    return Err(CodecError::Unsupported(
-                        crate::protocol::failure::CarrierReason::Unavailable,
-                    )
-                    .into());
+                    return Err(CodecError::Unsupported(CarrierReason::Unavailable).into());
                 }
                 let values = (
                     settings.controls.temperature().is_some(),
@@ -241,10 +233,7 @@ impl TargetCaps {
             };
             let request = projected.as_ref();
             if !self.manual_thinking && request.task.semantic.reasoning().budget_tokens.is_some() {
-                return Err(CodecError::Unsupported(
-                    crate::protocol::failure::CarrierReason::Reasoning,
-                )
-                .into());
+                return Err(CodecError::Unsupported(CarrierReason::Reasoning).into());
             }
             let stripped = request.without_foreign_reasoning(Some(&target.origin()))?;
             let foreign = stripped.is_some();
@@ -268,9 +257,10 @@ impl TargetCaps {
             let mut settings = semantic.settings().clone();
             let default_output = settings.controls.max_output_tokens.is_none();
             if default_output {
-                settings.controls.max_output_tokens = Some(self.default_output_tokens.ok_or(
-                    CodecError::Unsupported(crate::protocol::failure::CarrierReason::Unavailable),
-                )?);
+                settings.controls.max_output_tokens = Some(
+                    self.default_output_tokens
+                        .ok_or(CodecError::Unsupported(CarrierReason::Unavailable))?,
+                );
             }
             let default_cache = settings.automatic_prefix_cache.is_none()
                 && !settings
@@ -328,10 +318,7 @@ impl TargetCaps {
                     .evidence
                     .contains_rule(RequestRule::ReasoningAsText.name())
             {
-                return Err(CodecError::Unsupported(
-                    crate::protocol::failure::CarrierReason::Reasoning,
-                )
-                .into());
+                return Err(CodecError::Unsupported(CarrierReason::Reasoning).into());
             }
             if let Some(stream) = request.delivery.stream.value() {
                 projection.value["stream"] = serde_json::json!(stream);

@@ -1,5 +1,6 @@
 //! Native HTTP SpeechSynthesizer MP3 mapping and bounded SSE-data reduction.
 //! Source: https://help.aliyun.com/en/model-studio/qwen-audio-tts-http-api
+use crate::protocol::failure::CarrierReason;
 use crate::{
     adapter::speech::Request,
     protocol::{CodecError, openai::speech},
@@ -13,24 +14,21 @@ use crate::{
 use base64::{Engine, engine::general_purpose::STANDARD};
 use serde_json::{Map, Value, json};
 
-fn invalid() -> CodecError {
-    CodecError::Invalid(crate::protocol::failure::ShapeReason::InvalidValue)
-}
 fn object<'a>(v: &'a Value, keys: &[&str]) -> Result<&'a Map<String, Value>, CodecError> {
-    let m = v.as_object().ok_or_else(invalid)?;
+    let m = v.as_object().ok_or_else(CodecError::invalid)?;
     if m.keys().any(|k| !keys.contains(&k.as_str())) {
-        return Err(invalid());
+        return Err(CodecError::invalid());
     }
     Ok(m)
 }
 fn text(v: &Value) -> Result<&str, CodecError> {
-    v.as_str().ok_or_else(invalid)
+    v.as_str().ok_or_else(CodecError::invalid)
 }
 fn number(v: &Value) -> Result<u64, CodecError> {
-    v.as_u64().ok_or_else(invalid)
+    v.as_u64().ok_or_else(CodecError::invalid)
 }
 fn required<'a>(m: &'a Map<String, Value>, k: &str) -> Result<&'a Value, CodecError> {
-    m.get(k).ok_or_else(invalid)
+    m.get(k).ok_or_else(CodecError::invalid)
 }
 fn string(m: &Map<String, Value>, k: &str) -> Result<Option<String>, CodecError> {
     m.get(k).map(|v| text(v).map(str::to_owned)).transpose()
@@ -38,7 +36,7 @@ fn string(m: &Map<String, Value>, k: &str) -> Result<Option<String>, CodecError>
 fn merge<T: Eq>(old: &mut Option<T>, next: Option<T>) -> Result<(), CodecError> {
     if let Some(next) = next {
         if old.as_ref().is_some_and(|old| *old != next) {
-            return Err(invalid());
+            return Err(CodecError::invalid());
         }
         *old = Some(next);
     }
@@ -55,12 +53,10 @@ pub fn encode_request(request: &Request, model: &str) -> Result<Value, CodecErro
         || request.task.instructions.is_some()
         || request.task.speed.is_some()
     {
-        return Err(CodecError::Unsupported(
-            crate::protocol::failure::CarrierReason::Unavailable,
-        ));
+        return Err(CodecError::Unsupported(CarrierReason::Unavailable));
     }
     if !speech::valid_model(model) {
-        return Err(invalid());
+        return Err(CodecError::invalid());
     }
     Ok(json!({"model":model,"input":{
         "text":request.task.input(),"voice":request.task.voice(),"format":"mp3"
@@ -93,7 +89,7 @@ impl Decoder {
     /// Every failure poisons the reduction; a later stop cannot repair missing data.
     pub fn push(&mut self, value: &Value) -> Result<(), CodecError> {
         if self.poisoned {
-            return Err(invalid());
+            return Err(CodecError::invalid());
         }
         let result = self.push_inner(value);
         if result.is_err() {
@@ -103,7 +99,7 @@ impl Decoder {
     }
     fn push_inner(&mut self, value: &Value) -> Result<(), CodecError> {
         if self.complete || self.remaining_events == 0 {
-            return Err(invalid());
+            return Err(CodecError::invalid());
         }
         self.remaining_events -= 1;
         let size = crate::semantic::value::json_size(value, self.remaining_report)
@@ -112,7 +108,7 @@ impl Decoder {
         let root = object(value, &["request_id", "output", "usage"])?;
         let id = text(required(root, "request_id")?)?;
         if id.is_empty() || id.len() > 256 {
-            return Err(invalid());
+            return Err(CodecError::invalid());
         }
         merge(&mut self.report.request_id, Some(id.into()))?;
         if let Some(usage) = root.get("usage") {
@@ -120,7 +116,7 @@ impl Decoder {
             if let Some(count) = usage.get("characters") {
                 let count = number(count)?;
                 if self.report.billed_characters.is_some_and(|n| count < n) {
-                    return Err(invalid());
+                    return Err(CodecError::invalid());
                 }
                 self.report.billed_characters = Some(count);
             }
@@ -138,7 +134,7 @@ impl Decoder {
         let reason = required(output, "finish_reason")?;
         let stop = reason.as_str() == Some("stop");
         if !stop && !reason.is_null() && reason.as_str() != Some("null") {
-            return Err(invalid());
+            return Err(CodecError::invalid());
         }
         let audio = object(
             required(output, "audio")?,
@@ -150,7 +146,7 @@ impl Decoder {
             url: string(audio, "url")?,
             expires_at: audio.get("expires_at").map(number).transpose()?,
         };
-        reference.validate().map_err(|_| invalid())?;
+        reference.validate().map_err(|_| CodecError::invalid())?;
         if stop {
             if self.active.is_some()
                 || self.bytes.is_empty()
@@ -159,7 +155,7 @@ impl Decoder {
                     .iter()
                     .any(|k| output.contains_key(*k))
             {
-                return Err(invalid());
+                return Err(CodecError::invalid());
             }
             self.report.reference = reference;
             self.report.billed_characters_final = root
@@ -172,12 +168,12 @@ impl Decoder {
         let kind = text(required(output, "type")?)?;
         if kind == "sentence-begin" {
             if self.active.is_some() || self.report.sentences.len() >= 4096 || !data.is_empty() {
-                return Err(invalid());
+                return Err(CodecError::invalid());
             }
             let sentence = object(required(output, "sentence")?, &["index", "words"])?;
             let index = number(required(sentence, "index")?)?;
             if index != self.report.sentences.len() as u64 {
-                return Err(invalid());
+                return Err(CodecError::invalid());
             }
             self.active = Some((
                 SpeechSentence {
@@ -189,18 +185,18 @@ impl Decoder {
                 self.bytes.len(),
             ));
         } else if !matches!(kind, "sentence-synthesis" | "sentence-end") {
-            return Err(invalid());
+            return Err(CodecError::invalid());
         }
-        let (active, start) = self.active.as_mut().ok_or_else(invalid)?;
+        let (active, start) = self.active.as_mut().ok_or_else(CodecError::invalid)?;
         merge(&mut active.text, string(output, "original_text")?)?;
         merge_reference(&mut active.reference, reference)?;
         if let Some(sentence) = output.get("sentence") {
             let sentence = object(sentence, &["index", "words"])?;
             if number(required(sentence, "index")?)? != active.index {
-                return Err(invalid());
+                return Err(CodecError::invalid());
             }
             if let Some(words) = sentence.get("words") {
-                let words = words.as_array().ok_or_else(invalid)?;
+                let words = words.as_array().ok_or_else(CodecError::invalid)?;
                 if words.len() > 65536 {
                     return Err(CodecError::Limit);
                 }
@@ -222,7 +218,7 @@ impl Decoder {
                     .collect::<Result<Vec<_>, CodecError>>()?;
                 if !parsed.is_empty() {
                     if !parsed.starts_with(&active.words) {
-                        return Err(invalid());
+                        return Err(CodecError::invalid());
                     }
                     active.words = parsed;
                 }
@@ -234,30 +230,31 @@ impl Decoder {
             {
                 return Err(CodecError::Limit);
             }
-            let chunk = STANDARD.decode(data).map_err(|_| invalid())?;
+            let chunk = STANDARD.decode(data).map_err(|_| CodecError::invalid())?;
             if self.bytes.len().saturating_add(chunk.len()) > self.byte_limit {
                 return Err(CodecError::Limit);
             }
             self.bytes.extend_from_slice(&chunk);
         } else if !data.is_empty() {
-            return Err(invalid());
+            return Err(CodecError::invalid());
         }
         if kind == "sentence-end" {
             if self.bytes.len() == *start {
-                return Err(invalid());
+                return Err(CodecError::invalid());
             }
-            let (sentence, _) = self.active.take().ok_or_else(invalid)?;
+            let (sentence, _) = self.active.take().ok_or_else(CodecError::invalid)?;
             self.report.sentences.push(sentence);
-            self.report.validate().map_err(|_| invalid())?;
+            self.report.validate().map_err(|_| CodecError::invalid())?;
         }
         Ok(())
     }
     /// The caller must independently establish strict SSE framing and transport EOF.
     pub fn finish(self) -> Result<SpeechResult, CodecError> {
         if self.poisoned || !self.complete || self.active.is_some() {
-            return Err(invalid());
+            return Err(CodecError::invalid());
         }
-        let audio = AudioArtifact::new(self.bytes.into(), None).map_err(|_| invalid())?;
-        SpeechResult::new(audio, self.report).map_err(|_| invalid())
+        let audio =
+            AudioArtifact::new(self.bytes.into(), None).map_err(|_| CodecError::invalid())?;
+        SpeechResult::new(audio, self.report).map_err(|_| CodecError::invalid())
     }
 }

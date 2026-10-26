@@ -2,6 +2,7 @@
 use crate::protocol::anthropic::messages::{
     Block, Media, ResultBlock, ResultContent, Role, wire::request::text_cache_eligible,
 };
+use crate::protocol::failure::CarrierReason;
 use crate::protocol::native::ReplayTarget;
 use crate::{
     protocol::{CodecError, fidelity::FidelityRecords},
@@ -65,9 +66,7 @@ impl Intake {
         parts: &[crate::protocol::anthropic::messages::CacheMarked<String>],
     ) -> Result<(), CodecError> {
         if parts.is_empty() {
-            return Err(CodecError::Invalid(
-                crate::protocol::failure::ShapeReason::InvalidValue,
-            ));
+            return Err(CodecError::invalid());
         }
         if self.items.len() >= MAX_ITEMS {
             return Err(CodecError::Limit);
@@ -116,9 +115,7 @@ impl Intake {
         effort: Option<crate::protocol::anthropic::messages::Effort>,
     ) -> Result<(), CodecError> {
         if blocks.is_empty() && effort.is_none() {
-            return Err(CodecError::Invalid(
-                crate::protocol::failure::ShapeReason::InvalidValue,
-            ));
+            return Err(CodecError::invalid());
         }
         let mut text_run = vec![];
         for block in blocks {
@@ -138,9 +135,7 @@ impl Intake {
                 ) => ToolChangeAction::AddDefinition(Box::new(function_tool(tool)?)),
                 Block::ToolRemoval(name) => ToolChangeAction::Remove(text(name)?),
                 _ => {
-                    return Err(CodecError::Invalid(
-                        crate::protocol::failure::ShapeReason::InvalidValue,
-                    ));
+                    return Err(CodecError::invalid());
                 }
             };
             if !text_run.is_empty() {
@@ -174,9 +169,7 @@ impl Intake {
             || !block.permits(role)
                 && !(role == Role::Assistant && matches!(block, Block::PartialToolUse { .. }))
         {
-            return Err(CodecError::Invalid(
-                crate::protocol::failure::ShapeReason::InvalidValue,
-            ));
+            return Err(CodecError::invalid());
         }
         if self.items.len() >= MAX_ITEMS {
             return Err(CodecError::Limit);
@@ -264,9 +257,7 @@ impl Intake {
                 context: Default::default(),
             }),
             Block::ToolAddition(_) | Block::ToolRemoval(_) => {
-                return Err(CodecError::Invalid(
-                    crate::protocol::failure::ShapeReason::InvalidValue,
-                ));
+                return Err(CodecError::invalid());
             }
             Block::ToolResult {
                 tool_use_id,
@@ -337,9 +328,7 @@ impl Intake {
                 Item::ToolCall(c) => c.cache = block.cache,
                 Item::ToolResult(r) => r.cache = block.cache,
                 _ if block.cache.is_some() => {
-                    return Err(CodecError::Unsupported(
-                        crate::protocol::failure::CarrierReason::Unavailable,
-                    ));
+                    return Err(CodecError::Unsupported(CarrierReason::Unavailable));
                 }
                 _ => {}
             }
@@ -464,9 +453,7 @@ pub(in crate::protocol::anthropic::messages) fn validate_cache(
                     _ => None,
                 };
                 if change.cache.is_some() && definition.is_some() {
-                    return Err(CodecError::Invalid(
-                        crate::protocol::failure::ShapeReason::InvalidValue,
-                    ));
+                    return Err(CodecError::invalid());
                 }
                 let cache = change.cache.or(definition);
                 markers.extend(cache);

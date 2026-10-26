@@ -2,6 +2,7 @@
 //! `wire` holds the DTOs; `request`, `response`, `items` and `settings` map them to
 //! and from the IR; `client` admits and delivers downstream values. Accounting and
 //! terminal mappings are shared by those directions, not owned by a delivery front end.
+use crate::protocol::failure::CarrierReason;
 mod accounting;
 mod carriers;
 pub mod client;
@@ -106,9 +107,7 @@ impl Profile {
     pub fn encode_request(self, request: &Request) -> Result<Value, CodecError> {
         request.validate()?;
         if !strict_schema::admits_request(request) {
-            return Err(CodecError::Unsupported(
-                crate::protocol::failure::CarrierReason::Schema,
-            ));
+            return Err(CodecError::Unsupported(CarrierReason::Schema));
         }
         let wire = request.wire();
         shape::bounded(&wire)?;
@@ -124,9 +123,7 @@ impl Profile {
             .iter()
             .any(|b| matches!(b, Block::PartialToolUse { .. }))
         {
-            return Err(CodecError::Unsupported(
-                crate::protocol::failure::CarrierReason::Unavailable,
-            ));
+            return Err(CodecError::Unsupported(CarrierReason::Unavailable));
         }
         let wire = message.wire();
         shape::bounded(&wire)?;
@@ -136,9 +133,7 @@ impl Profile {
     pub fn decode_event(self, name: &str, bytes: &[u8]) -> Result<Event, CodecError> {
         let value = shape::parse(bytes)?;
         if value.get("type").and_then(Value::as_str) != Some(name) {
-            return Err(CodecError::Invalid(
-                crate::protocol::failure::ShapeReason::InvalidValue,
-            ));
+            return Err(CodecError::invalid());
         }
         Event::read(&value)
     }

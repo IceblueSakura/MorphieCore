@@ -1,6 +1,7 @@
 //! Messages activation, all-native contract publication and owner-local cache admission.
 use super::test_support::{Fixture, selected_models, service};
 use super::*;
+use crate::protocol::failure::CarrierReason;
 use crate::{
     adapter::{ClientAdapter, ClientProtocol, ConversionFailure},
     execution::{AttemptError, admit, plan::representable, prepare},
@@ -182,7 +183,7 @@ fn configured_messages_adaptive_forced_tools_keep_strictness_and_effort() {
         .unwrap_err();
         assert!(
             matches!(error, AttemptError::Adapter(ConversionFailure { cause: crate::adapter::ConversionCause::Codec(
-            crate::protocol::CodecError::Unsupported(reason)), .. }) if reason == crate::protocol::failure::CarrierReason::Schema),
+            crate::protocol::CodecError::Unsupported(reason)), .. }) if reason == CarrierReason::Schema),
             "{error:?}"
         );
     }
@@ -293,7 +294,7 @@ fn messages_output_defaults_inherit_override_or_clear_without_widening_maxima() 
             assert!(
                 matches!(prepare(&candidate.endpoint, &candidate.provider, &secret, &request),
                 Err(AttemptError::Adapter(ConversionFailure { cause: crate::adapter::ConversionCause::Codec(crate::protocol::CodecError::Unsupported(value)), .. }))
-                    if value == crate::protocol::failure::CarrierReason::Unavailable)
+                    if value == CarrierReason::Unavailable)
             );
         }
         assert_eq!(request, before);

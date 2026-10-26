@@ -1,4 +1,5 @@
 //! Trusted model-effective limits, checked after target-local control projection.
+use crate::protocol::failure::CarrierReason;
 use crate::{
     protocol::CodecError,
     semantic::task::generation::{EffortLevel, GenerationRequest, Item},
@@ -22,9 +23,7 @@ impl ModelLimits {
                     .any(|(i, level)| levels[..i].contains(level))
         }) || self.maximum_output_tokens == Some(0)
         {
-            return Err(CodecError::Invalid(
-                crate::protocol::failure::ShapeReason::InvalidValue,
-            ));
+            return Err(CodecError::invalid());
         }
         Ok(())
     }
@@ -41,9 +40,7 @@ impl ModelLimits {
             self.maximum_output_tokens
                 .is_some_and(|base| maximum > base)
         }) {
-            return Err(CodecError::Invalid(
-                crate::protocol::failure::ShapeReason::InvalidValue,
-            ));
+            return Err(CodecError::invalid());
         }
         Ok(Self {
             allowed_effort: configured
@@ -81,16 +78,12 @@ impl ModelLimits {
             .zip(self.maximum_output_tokens)
             .is_some_and(|(value, maximum)| value > maximum)
         {
-            return Err(CodecError::Unsupported(
-                crate::protocol::failure::CarrierReason::Unavailable,
-            ));
+            return Err(CodecError::Unsupported(CarrierReason::Unavailable));
         }
         if let Some(allowed) = &self.allowed_effort
             && efforts.into_iter().any(|effort| !allowed.contains(&effort))
         {
-            return Err(CodecError::Unsupported(
-                crate::protocol::failure::CarrierReason::Unavailable,
-            ));
+            return Err(CodecError::Unsupported(CarrierReason::Unavailable));
         }
         Ok(())
     }

@@ -1,4 +1,5 @@
 //! Native reported processing classes, separate from request policy and accounting.
+use crate::protocol::failure::{CarrierReason, ShapeReason};
 use crate::{
     protocol::CodecError,
     semantic::{context::ServiceClass, value::Presence},
@@ -16,17 +17,13 @@ pub(super) fn read(
             "flex" => ServiceClass::FlexibleProcessing,
             "priority" => ServiceClass::PriorityProcessing,
             _ => {
-                return Err(CodecError::Unsupported(
-                    crate::protocol::failure::CarrierReason::Field(
-                        crate::lowering::generation::Field::ServiceClass,
-                    ),
-                ));
+                return Err(CodecError::Unsupported(CarrierReason::Field(
+                    crate::lowering::generation::Field::ServiceClass,
+                )));
             }
         }),
         Some(_) => {
-            return Err(CodecError::Invalid(
-                crate::protocol::failure::ShapeReason::Metadata,
-            ));
+            return Err(CodecError::Invalid(ShapeReason::Metadata));
         }
     })
 }

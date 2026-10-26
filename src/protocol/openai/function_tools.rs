@@ -1,4 +1,5 @@
 //! Closed function/custom tool syntax; active orchestration features are outside this profile.
+use crate::protocol::failure::CarrierReason;
 use crate::protocol::openai::content::call::{reject_chat_orchestration, strict_default};
 use crate::protocol::openai::{CodecError, Profile, shape::*};
 use crate::semantic::task::generation::*;
@@ -9,18 +10,14 @@ fn dispatch(o: &Map<String, Value>) -> Result<ToolDispatch, CodecError> {
     let flag = |key| match o.get(key) {
         None | Some(Value::Bool(false)) => Ok(false),
         Some(Value::Bool(true)) => Ok(true),
-        _ => Err(CodecError::Invalid(
-            crate::protocol::failure::ShapeReason::InvalidValue,
-        )),
+        _ => Err(CodecError::invalid()),
     };
     let allowed_callers = match o.get("allowed_callers") {
         None | Some(Value::Null) => None,
         Some(Value::Array(values)) if values == &vec![json!("direct")] => None,
         Some(Value::Array(values)) => {
             if values.is_empty() || values.len() > 2 {
-                return Err(CodecError::Invalid(
-                    crate::protocol::failure::ShapeReason::InvalidValue,
-                ));
+                return Err(CodecError::invalid());
             }
             let mut callers = vec![];
             for value in values {
@@ -28,24 +25,18 @@ fn dispatch(o: &Map<String, Value>) -> Result<ToolDispatch, CodecError> {
                     Some("direct") => CallerMode::Direct,
                     Some("programmatic") => CallerMode::Programmatic,
                     _ => {
-                        return Err(CodecError::Invalid(
-                            crate::protocol::failure::ShapeReason::InvalidValue,
-                        ));
+                        return Err(CodecError::invalid());
                     }
                 };
                 if callers.contains(&mode) {
-                    return Err(CodecError::Invalid(
-                        crate::protocol::failure::ShapeReason::InvalidValue,
-                    ));
+                    return Err(CodecError::invalid());
                 }
                 callers.push(mode);
             }
             Some(callers)
         }
         _ => {
-            return Err(CodecError::Invalid(
-                crate::protocol::failure::ShapeReason::InvalidValue,
-            ));
+            return Err(CodecError::invalid());
         }
     };
     Ok(ToolDispatch {
@@ -87,23 +78,17 @@ pub(super) fn read_settings(
     // null never means "no tools".
     for key in ["tools", "tool_choice"] {
         if o.get(key).is_some_and(Value::is_null) {
-            return Err(CodecError::Invalid(
-                crate::protocol::failure::ShapeReason::InvalidValue,
-            ));
+            return Err(CodecError::invalid());
         }
     }
     if profile == Profile::Chat && o.get("parallel_tool_calls").is_some_and(Value::is_null) {
-        return Err(CodecError::Invalid(
-            crate::protocol::failure::ShapeReason::InvalidValue,
-        ));
+        return Err(CodecError::invalid());
     }
     settings.tools = o
         .get("tools")
         .filter(|v| !v.is_null())
         .map(|v| {
-            let a = v.as_array().ok_or(CodecError::Invalid(
-                crate::protocol::failure::ShapeReason::InvalidValue,
-            ))?;
+            let a = v.as_array().ok_or(CodecError::invalid())?;
             if a.len() > MAX_TOOLS {
                 return Err(CodecError::Limit);
             }
@@ -131,9 +116,7 @@ pub(super) fn read_tool(
         let tools = o
             .get("tools")
             .and_then(Value::as_array)
-            .ok_or(CodecError::Invalid(
-                crate::protocol::failure::ShapeReason::InvalidValue,
-            ))?;
+            .ok_or(CodecError::invalid())?;
         if tools.is_empty() || tools.len() > MAX_TOOLS {
             return Err(CodecError::Limit);
         }
@@ -141,9 +124,7 @@ pub(super) fn read_tool(
         for tool in tools {
             let tool = object(tool)?;
             if !matches!(string(tool, "type")?, "function" | "custom") {
-                return Err(CodecError::Unsupported(
-                    crate::protocol::failure::CarrierReason::Unavailable,
-                ));
+                return Err(CodecError::Unsupported(CarrierReason::Unavailable));
             }
             leaves.push(read_tool(tool, profile, direction)?);
         }
@@ -157,9 +138,7 @@ pub(super) fn read_tool(
         let o = if profile == Profile::Chat {
             reject_chat_orchestration(o)?;
             direction.fields(o, &["type", "custom"])?;
-            let custom = object(o.get("custom").ok_or(CodecError::Invalid(
-                crate::protocol::failure::ShapeReason::InvalidValue,
-            ))?)?;
+            let custom = object(o.get("custom").ok_or(CodecError::invalid())?)?;
             reject_chat_orchestration(custom)?;
             custom
         } else {
@@ -194,9 +173,7 @@ pub(super) fn read_tool(
                     "grammar" => {
                         let grammar = if profile == Profile::Chat {
                             direction.fields(f, &["type", "grammar"])?;
-                            let grammar = object(f.get("grammar").ok_or(CodecError::Invalid(
-                                crate::protocol::failure::ShapeReason::InvalidValue,
-                            ))?)?;
+                            let grammar = object(f.get("grammar").ok_or(CodecError::invalid())?)?;
                             direction.fields(grammar, &["syntax", "definition"])?;
                             grammar
                         } else {
@@ -208,9 +185,7 @@ pub(super) fn read_tool(
                                 "lark" => GrammarSyntax::Lark,
                                 "regex" => GrammarSyntax::Regex,
                                 _ => {
-                                    return Err(CodecError::Invalid(
-                                        crate::protocol::failure::ShapeReason::InvalidValue,
-                                    ));
+                                    return Err(CodecError::invalid());
                                 }
                             },
                             definition: text(
@@ -221,17 +196,13 @@ pub(super) fn read_tool(
                         }
                     }
                     _ => {
-                        return Err(CodecError::Invalid(
-                            crate::protocol::failure::ShapeReason::InvalidValue,
-                        ));
+                        return Err(CodecError::invalid());
                     }
                 })
             })
             .transpose()?;
         if profile == Profile::Chat && o.get("description").is_some_and(Value::is_null) {
-            return Err(CodecError::Invalid(
-                crate::protocol::failure::ShapeReason::InvalidValue,
-            ));
+            return Err(CodecError::invalid());
         }
         return Ok(ToolDefinition::Custom(CustomTool {
             name: text(string(o, "name")?, "custom tool name", 128)?,
@@ -245,16 +216,12 @@ pub(super) fn read_tool(
         }));
     }
     if string(o, "type")? != "function" {
-        return Err(CodecError::Unsupported(
-            crate::protocol::failure::CarrierReason::Tools,
-        ));
+        return Err(CodecError::Unsupported(CarrierReason::Tools));
     }
     let f = if profile == Profile::Chat {
         reject_chat_orchestration(o)?;
         direction.fields(o, &["type", "function"])?;
-        object(o.get("function").ok_or(CodecError::Invalid(
-            crate::protocol::failure::ShapeReason::InvalidValue,
-        ))?)?
+        object(o.get("function").ok_or(CodecError::invalid())?)?
     } else {
         o
     };
@@ -288,9 +255,7 @@ pub(super) fn read_tool(
             .any(|key| f.get(*key).is_some_and(Value::is_null))
             || !valid_chat_function_name(string(f, "name")?))
     {
-        return Err(CodecError::Invalid(
-            crate::protocol::failure::ShapeReason::InvalidValue,
-        ));
+        return Err(CodecError::invalid());
     }
     Ok(ToolDefinition::Function(FunctionTool {
         name: text(string(f, "name")?, "function name", 128)?,
@@ -333,16 +298,12 @@ fn reference(
             "function" => (ToolKind::Function, "function"),
             "custom" => (ToolKind::Custom, "custom"),
             _ => {
-                return Err(CodecError::Unsupported(
-                    crate::protocol::failure::CarrierReason::Tools,
-                ));
+                return Err(CodecError::Unsupported(CarrierReason::Tools));
             }
         };
         reject_chat_orchestration(o)?;
         direction.fields(o, &["type", field])?;
-        let f = object(o.get(field).ok_or(CodecError::Invalid(
-            crate::protocol::failure::ShapeReason::InvalidValue,
-        ))?)?;
+        let f = object(o.get(field).ok_or(CodecError::invalid())?)?;
         reject_chat_orchestration(f)?;
         direction.fields(f, &["name"])?;
         return Ok(ToolReference {
@@ -357,9 +318,7 @@ fn reference(
             "function" => ToolKind::Function,
             "custom" => ToolKind::Custom,
             _ => {
-                return Err(CodecError::Unsupported(
-                    crate::protocol::failure::CarrierReason::Tools,
-                ));
+                return Err(CodecError::Unsupported(CarrierReason::Tools));
             }
         },
         name: text(string(o, "name")?, "tool reference", 128)?,
@@ -376,18 +335,14 @@ fn read_choice(
         Some("none") => ToolChoice::None,
         Some("required") => ToolChoice::Required,
         Some(_) => {
-            return Err(CodecError::Invalid(
-                crate::protocol::failure::ShapeReason::InvalidValue,
-            ));
+            return Err(CodecError::invalid());
         }
         None => {
             let o = object(v)?;
             if string(o, "type")? == "allowed_tools" {
                 let allowed = if profile == Profile::Chat {
                     direction.fields(o, &["type", "allowed_tools"])?;
-                    let allowed = object(o.get("allowed_tools").ok_or(CodecError::Invalid(
-                        crate::protocol::failure::ShapeReason::InvalidValue,
-                    ))?)?;
+                    let allowed = object(o.get("allowed_tools").ok_or(CodecError::invalid())?)?;
                     direction.fields(allowed, &["mode", "tools"])?;
                     allowed
                 } else {
@@ -398,18 +353,13 @@ fn read_choice(
                     "auto" => false,
                     "required" => true,
                     _ => {
-                        return Err(CodecError::Invalid(
-                            crate::protocol::failure::ShapeReason::InvalidValue,
-                        ));
+                        return Err(CodecError::invalid());
                     }
                 };
-                let a =
-                    allowed
-                        .get("tools")
-                        .and_then(Value::as_array)
-                        .ok_or(CodecError::Invalid(
-                            crate::protocol::failure::ShapeReason::InvalidValue,
-                        ))?;
+                let a = allowed
+                    .get("tools")
+                    .and_then(Value::as_array)
+                    .ok_or(CodecError::invalid())?;
                 if a.len() > MAX_TOOLS {
                     return Err(CodecError::Limit);
                 }
@@ -481,9 +431,7 @@ pub(super) fn valid_chat_function_name(name: &str) -> bool {
 pub(super) fn write_tool(t: &ToolDefinition, profile: Profile) -> Result<Value, CodecError> {
     Ok(match t {
         ToolDefinition::Namespace(_) if profile == Profile::Chat => {
-            return Err(CodecError::Unsupported(
-                crate::protocol::failure::CarrierReason::Tools,
-            ));
+            return Err(CodecError::Unsupported(CarrierReason::Tools));
         }
         ToolDefinition::Namespace(group) => json!({
             "type":"namespace","name":group.name.as_str(),"description":group.description,
@@ -491,14 +439,10 @@ pub(super) fn write_tool(t: &ToolDefinition, profile: Profile) -> Result<Value, 
         }),
         ToolDefinition::Function(t) => {
             if profile == Profile::Chat && !valid_chat_function_name(t.name.as_str()) {
-                return Err(CodecError::Unsupported(
-                    crate::protocol::failure::CarrierReason::Tools,
-                ));
+                return Err(CodecError::Unsupported(CarrierReason::Tools));
             }
             if t.input_examples.is_some() {
-                return Err(CodecError::Unsupported(
-                    crate::protocol::failure::CarrierReason::Tools,
-                ));
+                return Err(CodecError::Unsupported(CarrierReason::Tools));
             }
             let mut f = json!({"name":t.name.as_str()});
             if let Some(d) = &t.description {
@@ -580,15 +524,11 @@ pub(super) fn write_choice(c: &ToolChoice, profile: Profile) -> Result<Value, Co
         }
         ToolChoice::Custom(n) => json!({"type":"custom","name":n.as_str()}),
         ToolChoice::Qualified(_) => {
-            return Err(CodecError::Unsupported(
-                crate::protocol::failure::CarrierReason::Tools,
-            ));
+            return Err(CodecError::Unsupported(CarrierReason::Tools));
         }
         ToolChoice::Allowed { required, tools } => {
             if tools.iter().any(|r| r.namespace.is_some()) {
-                return Err(CodecError::Unsupported(
-                    crate::protocol::failure::CarrierReason::Tools,
-                ));
+                return Err(CodecError::Unsupported(CarrierReason::Tools));
             }
             let refs: Vec<_> = tools
                 .iter()

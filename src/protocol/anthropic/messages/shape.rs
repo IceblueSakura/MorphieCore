@@ -1,4 +1,5 @@
 //! Closed native shapes over the shared exact, duplicate-rejecting JSON parser.
+use crate::protocol::failure::{CarrierReason, ShapeReason};
 use crate::{
     protocol::CodecError,
     semantic::{
@@ -10,7 +11,7 @@ use serde_json::{Map, Value};
 
 pub(super) fn parse(bytes: &[u8]) -> Result<Value, CodecError> {
     parse_json(bytes, JsonLimits::ENVELOPE).map_err(|e| match e {
-        JsonError::Invalid => CodecError::Invalid(crate::protocol::failure::ShapeReason::Json),
+        JsonError::Invalid => CodecError::Invalid(ShapeReason::Json),
         JsonError::Limit(resource) => CodecError::from(JsonError::Limit(resource)),
     })
 }
@@ -21,9 +22,7 @@ pub(super) fn bounded(value: &Value) -> Result<(), CodecError> {
 }
 /// Upstream shape: unknown keys are ignored so new Provider fields cannot fail a response.
 pub(super) fn object(v: &Value) -> Result<&Map<String, Value>, CodecError> {
-    v.as_object().ok_or(CodecError::Invalid(
-        crate::protocol::failure::ShapeReason::InvalidValue,
-    ))
+    v.as_object().ok_or(CodecError::invalid())
 }
 /// Request shape: unmodeled keys are rejected so no request control is silently dropped.
 pub(super) fn closed<'a>(
@@ -32,9 +31,7 @@ pub(super) fn closed<'a>(
 ) -> Result<&'a Map<String, Value>, CodecError> {
     let o = object(v)?;
     if o.keys().any(|k| !allowed.contains(&k.as_str())) {
-        return Err(CodecError::Unsupported(
-            crate::protocol::failure::CarrierReason::Unavailable,
-        ));
+        return Err(CodecError::Unsupported(CarrierReason::Unavailable));
     }
     Ok(o)
 }
@@ -43,23 +40,17 @@ pub(super) fn uncited(o: &Map<String, Value>) -> Result<(), CodecError> {
     match o.get("citations") {
         None | Some(Value::Null) => Ok(()),
         Some(Value::Array(a)) if a.is_empty() => Ok(()),
-        Some(_) => Err(CodecError::Unsupported(
-            crate::protocol::failure::CarrierReason::Unavailable,
-        )),
+        Some(_) => Err(CodecError::Unsupported(CarrierReason::Unavailable)),
     }
 }
 pub(super) fn required<'a>(
     o: &'a Map<String, Value>,
     key: &'static str,
 ) -> Result<&'a Value, CodecError> {
-    o.get(key).ok_or(CodecError::Invalid(
-        crate::protocol::failure::ShapeReason::InvalidValue,
-    ))
+    o.get(key).ok_or(CodecError::invalid())
 }
 pub(super) fn string(v: &Value) -> Result<String, CodecError> {
-    let s = v.as_str().ok_or(CodecError::Invalid(
-        crate::protocol::failure::ShapeReason::InvalidValue,
-    ))?;
+    let s = v.as_str().ok_or(CodecError::invalid())?;
     text(s)?;
     Ok(s.into())
 }
@@ -71,9 +62,7 @@ pub(super) fn text(s: &str) -> Result<usize, CodecError> {
 }
 pub(super) fn label(s: &str) -> Result<(), CodecError> {
     if s.is_empty() || s.len() > 256 || s.chars().any(|c| c.is_control() || c.is_whitespace()) {
-        return Err(CodecError::Invalid(
-            crate::protocol::failure::ShapeReason::InvalidValue,
-        ));
+        return Err(CodecError::invalid());
     }
     Ok(())
 }
@@ -84,26 +73,18 @@ pub(super) fn name(s: &str, limit: usize) -> Result<(), CodecError> {
             .bytes()
             .all(|c| c.is_ascii_alphanumeric() || matches!(c, b'_' | b'-'))
     {
-        return Err(CodecError::Invalid(
-            crate::protocol::failure::ShapeReason::InvalidValue,
-        ));
+        return Err(CodecError::invalid());
     }
     Ok(())
 }
 pub(super) fn uint(v: &Value) -> Result<u64, CodecError> {
-    v.as_u64().ok_or(CodecError::Invalid(
-        crate::protocol::failure::ShapeReason::InvalidValue,
-    ))
+    v.as_u64().ok_or(CodecError::invalid())
 }
 pub(super) fn boolean(v: &Value) -> Result<bool, CodecError> {
-    v.as_bool().ok_or(CodecError::Invalid(
-        crate::protocol::failure::ShapeReason::InvalidValue,
-    ))
+    v.as_bool().ok_or(CodecError::invalid())
 }
 pub(super) fn list(v: &Value) -> Result<&[Value], CodecError> {
-    let a = v.as_array().ok_or(CodecError::Invalid(
-        crate::protocol::failure::ShapeReason::InvalidValue,
-    ))?;
+    let a = v.as_array().ok_or(CodecError::invalid())?;
     if a.len() > MAX_ITEMS {
         return Err(CodecError::Limit);
     }
@@ -138,9 +119,7 @@ pub(super) fn put<T>(
 }
 pub(super) fn nonnull<T>(p: &Presence<T>) -> Result<(), CodecError> {
     if matches!(p, Presence::Null) {
-        return Err(CodecError::Invalid(
-            crate::protocol::failure::ShapeReason::InvalidValue,
-        ));
+        return Err(CodecError::invalid());
     }
     Ok(())
 }

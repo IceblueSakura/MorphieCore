@@ -124,6 +124,12 @@ pub enum CodecError {
     #[error(transparent)]
     Event(#[from] crate::semantic::task::generation::EventError),
 }
+impl CodecError {
+    /// The common structural rejection: a known field has an invalid value.
+    pub const fn invalid() -> Self {
+        Self::Invalid(crate::protocol::failure::ShapeReason::InvalidValue)
+    }
+}
 
 impl From<crate::semantic::value::JsonError> for CodecError {
     fn from(error: crate::semantic::value::JsonError) -> Self {

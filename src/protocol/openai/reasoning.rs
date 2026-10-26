@@ -1,4 +1,5 @@
 //! Responses reasoning object and readable reasoning items.
+use crate::protocol::failure::CarrierReason;
 use crate::protocol::openai::{
     CodecError, Profile,
     shape::{DecodeDirection, object, put_presence, read_presence, string, text},
@@ -42,9 +43,7 @@ pub(super) fn admit_configuration_mapping(
 ) -> Result<(), CodecError> {
     if let (Some(mapping), Some(control)) = (mapping, update.effort) {
         if control.scope != mapping.scope {
-            return Err(CodecError::Unsupported(
-                crate::protocol::failure::CarrierReason::Reasoning,
-            ));
+            return Err(CodecError::Unsupported(CarrierReason::Reasoning));
         }
         let level = if decode {
             mapping.decode(control.level)?
@@ -80,9 +79,7 @@ pub(super) fn request(
             values.iter().any(|v| v == "reasoning.encrypted_content")
         }
         _ => {
-            return Err(CodecError::Unsupported(
-                crate::protocol::failure::CarrierReason::Unavailable,
-            ));
+            return Err(CodecError::Unsupported(CarrierReason::Unavailable));
         }
     };
     let Some(value) = o.get("reasoning") else {
@@ -101,9 +98,7 @@ pub(super) fn request(
         &["effort", "summary", "generate_summary", "context", "mode"],
     )?;
     if !reported && reasoning.get("mode").is_some_and(Value::is_null) {
-        return Err(CodecError::Invalid(
-            crate::protocol::failure::ShapeReason::InvalidValue,
-        ));
+        return Err(CodecError::invalid());
     }
     let mut r = ReasoningRequest::present(None).with_encrypted_output(encrypted);
     read_effort(reasoning, &mut r, &mut settings.effort, "effort")?;
@@ -113,9 +108,7 @@ pub(super) fn request(
     if reasoning.contains_key("generate_summary") {
         let old = optional_label(reasoning, "generate_summary", summary)?;
         if !r.presentation.summary.is_absent() && r.presentation.summary != old {
-            return Err(CodecError::Invalid(
-                crate::protocol::failure::ShapeReason::InvalidValue,
-            ));
+            return Err(CodecError::invalid());
         }
         r.presentation.summary = old;
     }
@@ -124,16 +117,13 @@ pub(super) fn request(
             crate::semantic::value::Presence::Value(ReasoningDisplay::Summary);
     }
     r.context = optional_label(reasoning, "context", |s| {
-        s.parse::<ReasoningContext>().map_err(|_| {
-            CodecError::Unsupported(crate::protocol::failure::CarrierReason::Reasoning)
-        })
+        s.parse::<ReasoningContext>()
+            .map_err(|_| CodecError::Unsupported(CarrierReason::Reasoning))
     })?;
     r.mode = optional_label(reasoning, "mode", |s| match s {
         "standard" => Ok(ReasoningMode::Standard),
         "pro" => Ok(ReasoningMode::Pro),
-        _ => Err(CodecError::Unsupported(
-            crate::protocol::failure::CarrierReason::Reasoning,
-        )),
+        _ => Err(CodecError::Unsupported(CarrierReason::Reasoning)),
     })?;
     r.validate()?;
     settings.reasoning = r;
@@ -162,9 +152,7 @@ fn read_effort(
         None => {}
         Some(Value::Null) => *control = Presence::Null,
         Some(value) => {
-            let update = effort(value.as_str().ok_or(CodecError::Invalid(
-                crate::protocol::failure::ShapeReason::InvalidValue,
-            ))?)?;
+            let update = effort(value.as_str().ok_or(CodecError::invalid())?)?;
             reasoning.activation = update.activation.map_or(Presence::Absent, Presence::Value);
             *control = update.effort.map_or(Presence::Absent, Presence::Value);
         }
@@ -179,18 +167,14 @@ pub(super) fn write_request(
     settings.validate()?;
     let value = &settings.reasoning;
     if requires_extended_controls(settings) || !value.read_history.is_absent() {
-        return Err(CodecError::Unsupported(
-            crate::protocol::failure::CarrierReason::Reasoning,
-        ));
+        return Err(CodecError::Unsupported(CarrierReason::Reasoning));
     }
     if profile == Profile::Responses
         && value.presentation.visibility.value() == Some(&ReasoningDisplay::Omitted)
     {
         // Typed control intent cannot be replaced by absence or null. This also
         // protects reported settings on events, before a final response exists.
-        return Err(CodecError::Unsupported(
-            crate::protocol::failure::CarrierReason::Reasoning,
-        ));
+        return Err(CodecError::Unsupported(CarrierReason::Reasoning));
     }
     if value.encrypted_output() {
         o.insert("include".into(), json!(["reasoning.encrypted_content"]));
@@ -267,25 +251,19 @@ pub(super) fn decode_item(
             ItemLifecycle::InProgress
         }
         _ => {
-            return Err(CodecError::Unsupported(
-                crate::protocol::failure::CarrierReason::Reasoning,
-            ));
+            return Err(CodecError::Unsupported(CarrierReason::Reasoning));
         }
     };
     let mut parts = Vec::new();
     for part in o
         .get("summary")
         .and_then(Value::as_array)
-        .ok_or(CodecError::Invalid(
-            crate::protocol::failure::ShapeReason::InvalidValue,
-        ))?
+        .ok_or(CodecError::invalid())?
     {
         let part = object(part)?;
         direction.fields(part, &["type", "text"])?;
         if string(part, "type")? != "summary_text" {
-            return Err(CodecError::Unsupported(
-                crate::protocol::failure::CarrierReason::Unavailable,
-            ));
+            return Err(CodecError::Unsupported(CarrierReason::Unavailable));
         }
         parts.push((
             next_part()?,
@@ -300,15 +278,11 @@ pub(super) fn decode_item(
         ));
     }
     if let Some(content) = o.get("content").filter(|value| !value.is_null()) {
-        for part in content.as_array().ok_or(CodecError::Invalid(
-            crate::protocol::failure::ShapeReason::InvalidValue,
-        ))? {
+        for part in content.as_array().ok_or(CodecError::invalid())? {
             let part = object(part)?;
             direction.fields(part, &["type", "text"])?;
             if string(part, "type")? != "reasoning_text" {
-                return Err(CodecError::Unsupported(
-                    crate::protocol::failure::CarrierReason::Reasoning,
-                ));
+                return Err(CodecError::Unsupported(CarrierReason::Reasoning));
             }
             parts.push((
                 next_part()?,
@@ -334,9 +308,7 @@ pub(super) fn decode_item(
             })
         }
         _ => {
-            return Err(CodecError::Invalid(
-                crate::protocol::failure::ShapeReason::InvalidValue,
-            ));
+            return Err(CodecError::invalid());
         }
     };
     Ok(ReasoningItem {
@@ -392,11 +364,7 @@ fn optional_label<T>(
     key: &'static str,
     parse: fn(&str) -> Result<T, CodecError>,
 ) -> Result<crate::semantic::value::Presence<T>, CodecError> {
-    read_presence(o, key, |v| {
-        parse(v.as_str().ok_or(CodecError::Invalid(
-            crate::protocol::failure::ShapeReason::InvalidValue,
-        ))?)
-    })
+    read_presence(o, key, |v| parse(v.as_str().ok_or(CodecError::invalid())?))
 }
 pub(super) fn effort(value: &str) -> Result<ConfigurationUpdate, CodecError> {
     Ok(if value == "none" {
@@ -409,9 +377,9 @@ pub(super) fn effort(value: &str) -> Result<ConfigurationUpdate, CodecError> {
             activation: None,
             effort: Some(EffortControl {
                 scope: EffortScope::Reasoning,
-                level: value.parse::<EffortLevel>().map_err(|_| {
-                    CodecError::Unsupported(crate::protocol::failure::CarrierReason::Reasoning)
-                })?,
+                level: value
+                    .parse::<EffortLevel>()
+                    .map_err(|_| CodecError::Unsupported(CarrierReason::Reasoning))?,
             }),
         }
     })
@@ -422,9 +390,7 @@ fn summary(value: &str) -> Result<ReasoningSummary, CodecError> {
         "concise" => ReasoningSummary::Concise,
         "detailed" => ReasoningSummary::Detailed,
         _ => {
-            return Err(CodecError::Unsupported(
-                crate::protocol::failure::CarrierReason::Reasoning,
-            ));
+            return Err(CodecError::Unsupported(CarrierReason::Reasoning));
         }
     })
 }
@@ -434,17 +400,15 @@ pub(super) fn effort_label(
     value.validate()?;
     if let Some(effort) = value.effort {
         if effort.scope != EffortScope::Reasoning {
-            return Err(CodecError::Unsupported(
-                crate::protocol::failure::CarrierReason::Unavailable,
-            ));
+            return Err(CodecError::Unsupported(CarrierReason::Unavailable));
         }
         return Ok(Some(effort.level.into()));
     }
     match value.activation {
         Some(ReasoningActivation::Disabled) => Ok(Some("none")),
-        Some(ReasoningActivation::Enabled) => Err(CodecError::Unsupported(
-            crate::protocol::failure::CarrierReason::Reasoning,
-        )),
+        Some(ReasoningActivation::Enabled) => {
+            Err(CodecError::Unsupported(CarrierReason::Reasoning))
+        }
         None => Ok(None),
     }
 }

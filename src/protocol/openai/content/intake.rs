@@ -1,4 +1,5 @@
 //! Shared item/resource construction during OpenAI content intake.
+use crate::protocol::failure::ShapeReason;
 use crate::protocol::openai::{CodecError, shape::DecodeDirection};
 use crate::{
     protocol::fidelity::FidelityRecords,
@@ -100,9 +101,8 @@ impl<'a> Items<'a> {
         if let Some(v) = o.get("id") {
             self.fidelity.record_response_item_id(
                 id,
-                v.as_str().ok_or(CodecError::Invalid(
-                    crate::protocol::failure::ShapeReason::Identity,
-                ))?,
+                v.as_str()
+                    .ok_or(CodecError::Invalid(ShapeReason::Identity))?,
             )?;
         }
         Ok(())

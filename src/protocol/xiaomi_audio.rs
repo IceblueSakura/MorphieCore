@@ -1,6 +1,7 @@
 //! Independent MiMo Speech and Transcription codecs over the Chat JSON envelope.
 //! Sources: https://mimo.mi.com/docs/en-US/api/audio/tts
 //! https://mimo.mi.com/docs/en-US/api/audio/Speech-Recognition
+use crate::protocol::failure::CarrierReason;
 
 use crate::{
     protocol::CodecError,
@@ -33,32 +34,24 @@ pub const FORMATS: &[AudioEncoding] = &[
     AudioEncoding::PcmS16Le24KhzMono,
 ];
 
-fn invalid() -> CodecError {
-    CodecError::Invalid(crate::protocol::failure::ShapeReason::InvalidValue)
-}
-
 pub fn encode_speech(
     request: &crate::adapter::speech::Request,
     model: &str,
 ) -> Result<Value, CodecError> {
     super::openai::speech::validate_request(request)?;
     if !super::openai::speech::valid_model(model) {
-        return Err(invalid());
+        return Err(CodecError::invalid());
     }
     let task = &request.task;
     if task.speed.is_some() || !VOICES.contains(&task.voice()) {
-        return Err(CodecError::Unsupported(
-            crate::protocol::failure::CarrierReason::Unavailable,
-        ));
+        return Err(CodecError::Unsupported(CarrierReason::Unavailable));
     }
     let format = match task.requested_format() {
         AudioEncoding::Mp3 => "mp3",
         AudioEncoding::Wav => "wav",
         AudioEncoding::PcmS16Le24KhzMono => "pcm16",
         _ => {
-            return Err(CodecError::Unsupported(
-                crate::protocol::failure::CarrierReason::Unavailable,
-            ));
+            return Err(CodecError::Unsupported(CarrierReason::Unavailable));
         }
     };
     let mut messages = Vec::new();
@@ -78,11 +71,11 @@ pub fn encode_transcription(
     request: &crate::adapter::transcription::Request,
     model: &str,
 ) -> Result<Value, CodecError> {
-    request.task.validate().map_err(|_| invalid())?;
+    request.task.validate().map_err(|_| CodecError::invalid())?;
     if !super::openai::speech::valid_model(&request.model)
         || !super::openai::speech::valid_model(model)
     {
-        return Err(invalid());
+        return Err(CodecError::invalid());
     }
     if request
         .task
@@ -90,9 +83,7 @@ pub fn encode_transcription(
         .as_deref()
         .is_some_and(|v| !["zh", "en"].contains(&v))
     {
-        return Err(CodecError::Unsupported(
-            crate::protocol::failure::CarrierReason::Unavailable,
-        ));
+        return Err(CodecError::Unsupported(CarrierReason::Unavailable));
     }
     let (format, mime) = match request.task.audio.format() {
         InputFormat::Wav => ("wav", "audio/wav"),
@@ -170,16 +161,17 @@ struct TokenDetails {
 }
 fn decode(bytes: &[u8]) -> Result<(Completion, Message), CodecError> {
     let value = super::json::decode(bytes)?;
-    let mut completion: Completion = serde_json::from_value(value).map_err(|_| invalid())?;
+    let mut completion: Completion =
+        serde_json::from_value(value).map_err(|_| CodecError::invalid())?;
     if completion
         .object
         .as_deref()
         .is_some_and(|s| s != "chat.completion")
         || completion.choices.len() != 1
     {
-        return Err(invalid());
+        return Err(CodecError::invalid());
     }
-    let choice = completion.choices.pop().ok_or_else(invalid)?;
+    let choice = completion.choices.pop().ok_or_else(CodecError::invalid)?;
     if choice.index != 0
         || choice.finish_reason != "stop"
         || choice.message.role != "assistant"
@@ -190,7 +182,7 @@ fn decode(bytes: &[u8]) -> Result<(Completion, Message), CodecError> {
             .as_ref()
             .is_some_and(|v| !v.is_empty())
     {
-        return Err(invalid());
+        return Err(CodecError::invalid());
     }
     Ok((completion, choice.message))
 }
@@ -198,17 +190,17 @@ fn decode(bytes: &[u8]) -> Result<(Completion, Message), CodecError> {
 pub fn decode_speech(bytes: &[u8], task: &SpeechRequest) -> Result<SpeechResult, CodecError> {
     let (completion, message) = decode(bytes)?;
     if message.content.as_ref().is_some_and(|s| !s.is_empty()) {
-        return Err(invalid());
+        return Err(CodecError::invalid());
     }
-    let audio = message.audio.ok_or_else(invalid)?;
+    let audio = message.audio.ok_or_else(CodecError::invalid)?;
     if audio.transcript.is_some() {
-        return Err(CodecError::Unsupported(
-            crate::protocol::failure::CarrierReason::Unavailable,
-        ));
+        return Err(CodecError::Unsupported(CarrierReason::Unavailable));
     }
-    let data = STANDARD.decode(audio.data).map_err(|_| invalid())?;
-    let artifact =
-        AudioArtifact::new(data.into(), Some(task.requested_format())).map_err(|_| invalid())?;
+    let data = STANDARD
+        .decode(audio.data)
+        .map_err(|_| CodecError::invalid())?;
+    let artifact = AudioArtifact::new(data.into(), Some(task.requested_format()))
+        .map_err(|_| CodecError::invalid())?;
     SpeechResult::new(
         artifact,
         SpeechReport {
@@ -221,23 +213,23 @@ pub fn decode_speech(bytes: &[u8], task: &SpeechRequest) -> Result<SpeechResult,
             ..SpeechReport::default()
         },
     )
-    .map_err(|_| invalid())
+    .map_err(|_| CodecError::invalid())
 }
 
 pub fn decode_transcription(bytes: &[u8]) -> Result<RecognitionResult, CodecError> {
     let (completion, message) = decode(bytes)?;
     if message.audio.is_some() {
-        return Err(invalid());
+        return Err(CodecError::invalid());
     }
     RecognitionResult::new(
-        message.content.ok_or_else(invalid)?,
+        message.content.ok_or_else(CodecError::invalid)?,
         RecognitionReport {
             request_id: completion.id,
             processed_seconds: completion.usage.and_then(|u| u.seconds),
             last_sentence: None,
         },
     )
-    .map_err(|_| invalid())
+    .map_err(|_| CodecError::invalid())
 }
 
 #[cfg(test)]

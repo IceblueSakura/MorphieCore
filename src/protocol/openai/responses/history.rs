@@ -21,9 +21,7 @@ pub(super) fn seed<'a>(
         output.semantic.outcome(),
         Outcome::Completed | Outcome::Incomplete
     ) {
-        return Err(CodecError::Invalid(
-            crate::protocol::failure::ShapeReason::InvalidValue,
-        ));
+        return Err(CodecError::invalid());
     }
     output
         .fidelity
@@ -146,9 +144,7 @@ pub(super) fn seed<'a>(
                 if let ProviderOperation::Reference(ProviderOperationReference::Local(id)) =
                     &mut value.operation
                 {
-                    *id = *owners.get(id).ok_or(CodecError::Invalid(
-                        crate::protocol::failure::ShapeReason::InvalidValue,
-                    ))?;
+                    *id = *owners.get(id).ok_or(CodecError::invalid())?;
                 }
                 if let Some(output) = &mut value.output {
                     remap_output(output, &parts, &resources);

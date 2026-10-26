@@ -1,4 +1,5 @@
 //! Encoding guards also protect crate-internal callers from forged representations.
+use crate::protocol::failure::CarrierReason;
 use crate::protocol::openai::*;
 use crate::semantic::{task::generation::*, value::Text};
 
@@ -16,15 +17,11 @@ fn responses_final_encoding_and_managed_history_cannot_drop_participants() {
     };
     assert_eq!(
         responses::encode_generation(&forged),
-        Err(CodecError::Unsupported(
-            crate::protocol::failure::CarrierReason::Unavailable
-        ))
+        Err(CodecError::Unsupported(CarrierReason::Unavailable))
     );
     assert_eq!(
         responses::managed::input_items(&request.task, "synthetic", None),
-        Err(CodecError::Unsupported(
-            crate::protocol::failure::CarrierReason::Unavailable
-        ))
+        Err(CodecError::Unsupported(CarrierReason::Unavailable))
     );
 }
 
@@ -290,9 +287,7 @@ fn request_codecs_enforce_result_carriers_before_rendering() {
                     };
                     assert_eq!(
                         result,
-                        Err(CodecError::Unsupported(
-                            crate::protocol::failure::CarrierReason::Unavailable
-                        ))
+                        Err(CodecError::Unsupported(CarrierReason::Unavailable))
                     );
                 }
             } else {

@@ -1,5 +1,6 @@
 //! Output-only creator, response and routing reports bound to verified owners.
 use super::*;
+use crate::protocol::failure::CarrierReason;
 
 impl FidelityRecords {
     /// Output-only report, never caller authority or a request-history control.
@@ -15,23 +16,15 @@ impl FidelityRecords {
             Item::ToolResult(_) | Item::CustomResult(_) | Item::Compaction(_)
         ) {
             if value.is_some_and(|v| !v.is_null()) {
-                return Err(CodecError::Unsupported(
-                    crate::protocol::failure::CarrierReason::Unavailable,
-                ));
+                return Err(CodecError::Unsupported(CarrierReason::Unavailable));
             }
             return Ok(());
         }
         let actor = value
             .filter(|v| !v.is_null())
             .map(|v| {
-                Text::allowing_empty(
-                    v.as_str().ok_or(CodecError::Invalid(
-                        crate::protocol::failure::ShapeReason::InvalidValue,
-                    ))?,
-                    "created_by",
-                    256,
-                )
-                .map_err(|_| CodecError::Limit)
+                Text::allowing_empty(v.as_str().ok_or(CodecError::invalid())?, "created_by", 256)
+                    .map_err(|_| CodecError::Limit)
             })
             .transpose()?;
         let previous = self.reported_creators.get(&owner);
@@ -40,9 +33,7 @@ impl FidelityRecords {
             .zip(previous)
             .is_some_and(|(actor, old)| actor != &old.actor)
         {
-            return Err(CodecError::Invalid(
-                crate::protocol::failure::ShapeReason::InvalidValue,
-            ));
+            return Err(CodecError::invalid());
         }
         let actor = actor.or_else(|| previous.map(|old| old.actor.clone()));
         if let Some(actor) = actor {
@@ -126,15 +117,11 @@ impl FidelityRecords {
                 Some(ResponseExtras {
                     protocol,
                     profile: adaptation.profile_id,
-                    origin: adaptation.scope.clone().ok_or(CodecError::Invalid(
-                        crate::protocol::failure::ShapeReason::InvalidValue,
-                    ))?,
+                    origin: adaptation.scope.clone().ok_or(CodecError::invalid())?,
                     response_id: Text::new(
                         o.get("id")
                             .and_then(Value::as_str)
-                            .ok_or(CodecError::Invalid(
-                                crate::protocol::failure::ShapeReason::InvalidValue,
-                            ))?,
+                            .ok_or(CodecError::invalid())?,
                         "response identity",
                         256,
                     )
@@ -186,16 +173,12 @@ impl FidelityRecords {
                 || adaptation.rules.responses_usage_attribution
                 || adaptation.rules.responses_context_accounting)
             {
-                return Err(CodecError::Unsupported(
-                    crate::protocol::failure::CarrierReason::Unavailable,
-                ));
+                return Err(CodecError::Unsupported(CarrierReason::Unavailable));
             }
             Some(ResponseExtras {
                 protocol,
                 profile: adaptation.profile_id,
-                origin: adaptation.scope.clone().ok_or(CodecError::Invalid(
-                    crate::protocol::failure::ShapeReason::InvalidValue,
-                ))?,
+                origin: adaptation.scope.clone().ok_or(CodecError::invalid())?,
                 response_id: Text::new(response_id, "response identity", 256)
                     .map_err(|_| CodecError::Limit)?,
                 dependency: response_dependency(semantic),

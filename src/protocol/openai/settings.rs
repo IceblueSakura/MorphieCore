@@ -1,4 +1,5 @@
 //! Task settings shared by request parsing and provider-reported response echoes.
+use crate::protocol::failure::CarrierReason;
 use crate::protocol::openai::{CodecError, Profile, function_tools, reasoning, shape::*};
 use crate::semantic::{
     task::generation::*,
@@ -40,9 +41,7 @@ pub(super) fn instruction_content(
                 value["prompt_cache_breakpoint"] = json!({"mode":"explicit"});
             }
             _ => {
-                return Err(CodecError::Unsupported(
-                    crate::protocol::failure::CarrierReason::Unavailable,
-                ));
+                return Err(CodecError::Unsupported(CarrierReason::Unavailable));
             }
         }
         parts.push(value);
@@ -58,9 +57,7 @@ pub(super) fn read(
 ) -> Result<GenerationSettings, CodecError> {
     let instructions = read_presence(o, "instructions", |v| {
         Text::allowing_empty(
-            v.as_str().ok_or(CodecError::Invalid(
-                crate::protocol::failure::ShapeReason::InvalidValue,
-            ))?,
+            v.as_str().ok_or(CodecError::invalid())?,
             "instructions",
             MAX_TEXT_BYTES,
         )
@@ -74,9 +71,9 @@ pub(super) fn read(
     };
     reasoning::request(o, reported, direction, &mut s)?;
     if let Some(v) = o.get("top_p").filter(|v| !v.is_null()) {
-        s.controls = s.controls.with_top_p(v.as_f64().ok_or(CodecError::Invalid(
-            crate::protocol::failure::ShapeReason::InvalidValue,
-        ))?)?;
+        s.controls = s
+            .controls
+            .with_top_p(v.as_f64().ok_or(CodecError::invalid())?)?;
     }
     s.controls.top_logprobs = o
         .get("top_logprobs")
@@ -85,9 +82,7 @@ pub(super) fn read(
             v.as_u64()
                 .filter(|n| *n <= 20)
                 .map(|n| n as u8)
-                .ok_or(CodecError::Invalid(
-                    crate::protocol::failure::ShapeReason::InvalidValue,
-                ))
+                .ok_or(CodecError::invalid())
         })
         .transpose()?;
     if o.get("include")
@@ -102,24 +97,18 @@ pub(super) fn read(
         .map(|v| match v.as_str() {
             Some("auto") => Ok(Truncation::Auto),
             Some("disabled") => Ok(Truncation::Disabled),
-            _ => Err(CodecError::Invalid(
-                crate::protocol::failure::ShapeReason::InvalidValue,
-            )),
+            _ => Err(CodecError::invalid()),
         })
         .transpose()?;
     if o.get("text").is_some_and(Value::is_null) && !reported {
         // The pinned create type is non-nullable; an explicit null is not "no text".
-        return Err(CodecError::Invalid(
-            crate::protocol::failure::ShapeReason::InvalidValue,
-        ));
+        return Err(CodecError::invalid());
     }
     s.text.presence = read_presence(o, "text", |t| {
         let t = object(t)?;
         direction.fields(t, &["format", "verbosity"])?;
         if !reported && t.get("format").is_some_and(Value::is_null) {
-            return Err(CodecError::Invalid(
-                crate::protocol::failure::ShapeReason::InvalidValue,
-            ));
+            return Err(CodecError::invalid());
         }
         s.text.format = read_presence(t, "format", |v| read_format(v, reported, direction))?;
         s.text.verbosity = read_presence(t, "verbosity", verbosity)?;
@@ -149,9 +138,7 @@ pub(super) fn read_format(
             read_schema_body(o, reported)?
         }
         _ => {
-            return Err(CodecError::Unsupported(
-                crate::protocol::failure::CarrierReason::Unavailable,
-            ));
+            return Err(CodecError::Unsupported(CarrierReason::Unavailable));
         }
     })
 }
@@ -161,9 +148,7 @@ pub(super) fn read_schema_body(
     reported: bool,
 ) -> Result<OutputConstraint, CodecError> {
     if !reported && o.get("description").is_some_and(Value::is_null) {
-        return Err(CodecError::Invalid(
-            crate::protocol::failure::ShapeReason::InvalidValue,
-        ));
+        return Err(CodecError::invalid());
     }
     Ok(OutputConstraint::JsonSchema {
         name: Some(text(string(o, "name")?, "schema name", 64)?),
@@ -172,9 +157,7 @@ pub(super) fn read_schema_body(
             .filter(|v| !v.is_null())
             .map(|v| {
                 Text::allowing_empty(
-                    v.as_str().ok_or(CodecError::Invalid(
-                        crate::protocol::failure::ShapeReason::InvalidValue,
-                    ))?,
+                    v.as_str().ok_or(CodecError::invalid())?,
                     "description",
                     MAX_TEXT_BYTES,
                 )
@@ -184,18 +167,12 @@ pub(super) fn read_schema_body(
         schema: o
             .get("schema")
             .cloned()
-            .ok_or(CodecError::Invalid(
-                crate::protocol::failure::ShapeReason::InvalidValue,
-            ))?
+            .ok_or(CodecError::invalid())?
             .into(),
         strict: o
             .get("strict")
             .filter(|v| !v.is_null())
-            .map(|v| {
-                v.as_bool().ok_or(CodecError::Invalid(
-                    crate::protocol::failure::ShapeReason::InvalidValue,
-                ))
-            })
+            .map(|v| v.as_bool().ok_or(CodecError::invalid()))
             .transpose()?,
     })
 }
@@ -209,9 +186,7 @@ pub(super) fn write_schema_body(
 ) -> Result<(), CodecError> {
     schema.validate()?;
     // OpenAI requires the name; an unnamed source schema needs the adapter's named rule.
-    let name = name.ok_or(CodecError::Unsupported(
-        crate::protocol::failure::CarrierReason::Unavailable,
-    ))?;
+    let name = name.ok_or(CodecError::Unsupported(CarrierReason::Unavailable))?;
     o.insert("name".into(), json!(name.as_str()));
     if let Some(d) = description {
         o.insert("description".into(), json!(d.as_str()));
@@ -241,16 +216,15 @@ pub(super) fn write_format(f: &OutputConstraint) -> Result<Value, CodecError> {
 }
 pub(super) fn write(s: &GenerationSettings, o: &mut Map<String, Value>) -> Result<(), CodecError> {
     if s.controls.has_extended_controls() || s.automatic_prefix_cache.is_some() {
-        return Err(CodecError::Unsupported(
-            crate::protocol::failure::CarrierReason::Unavailable,
-        ));
+        return Err(CodecError::Unsupported(CarrierReason::Unavailable));
     }
     let instructions = match &s.instructions {
         Presence::Absent => Presence::Absent,
         Presence::Null => Presence::Null,
-        Presence::Value(root) => Presence::Value(root.plain_text().ok_or(
-            CodecError::Unsupported(crate::protocol::failure::CarrierReason::Unavailable),
-        )?),
+        Presence::Value(root) => Presence::Value(
+            root.plain_text()
+                .ok_or(CodecError::Unsupported(CarrierReason::Unavailable))?,
+        ),
     };
     put_presence(o, "instructions", &instructions, |t| json!(t.as_str()));
     write_control_values(&s.controls, o, "max_output_tokens");
@@ -307,9 +281,7 @@ pub(super) fn verbosity(v: &Value) -> Result<Verbosity, CodecError> {
         Some("low") => Ok(Verbosity::Low),
         Some("medium") => Ok(Verbosity::Medium),
         Some("high") => Ok(Verbosity::High),
-        _ => Err(CodecError::Invalid(
-            crate::protocol::failure::ShapeReason::InvalidValue,
-        )),
+        _ => Err(CodecError::invalid()),
     }
 }
 
@@ -321,16 +293,10 @@ pub(super) fn controls(
     c.max_output_tokens = o
         .get(key)
         .filter(|v| !v.is_null())
-        .map(|v| {
-            v.as_u64().filter(|n| *n > 0).ok_or(CodecError::Invalid(
-                crate::protocol::failure::ShapeReason::InvalidValue,
-            ))
-        })
+        .map(|v| v.as_u64().filter(|n| *n > 0).ok_or(CodecError::invalid()))
         .transpose()?;
     if let Some(t) = o.get("temperature").filter(|v| !v.is_null()) {
-        c = c.with_temperature(t.as_f64().ok_or(CodecError::Invalid(
-            crate::protocol::failure::ShapeReason::InvalidValue,
-        ))?)?;
+        c = c.with_temperature(t.as_f64().ok_or(CodecError::invalid())?)?;
     }
     Ok(c)
 }

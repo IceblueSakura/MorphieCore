@@ -34,9 +34,8 @@ fn seal(value: &ReplayValue, origin: &ReplayOrigin) -> Result<ReplayValue, Codec
     seal_as(value, origin, format)
 }
 fn open_attachment(value: &ReplayValue) -> Result<(ReplayOrigin, ReplayValue), CodecError> {
-    let (origin, format, payload) = replay_envelope::open(value.as_str()).ok_or(
-        CodecError::Invalid(crate::protocol::failure::ShapeReason::InvalidValue),
-    )?;
+    let (origin, format, payload) =
+        replay_envelope::open(value.as_str()).ok_or(CodecError::invalid())?;
     let value = match value {
         ReplayValue::Partial { .. } => ReplayValue::partial(format, payload),
         ReplayValue::Final { .. } => ReplayValue::final_value(format, payload),
@@ -63,16 +62,12 @@ pub fn seal_for_client(
                 let origin = decoded
                     .fidelity
                     .replay_origin(*id)
-                    .ok_or(CodecError::Invalid(
-                        crate::protocol::failure::ShapeReason::InvalidValue,
-                    ))?;
+                    .ok_or(CodecError::invalid())?;
                 if !decoded
                     .fidelity
                     .compaction_matches(*id, value, Some(origin))
                 {
-                    return Err(CodecError::Invalid(
-                        crate::protocol::failure::ShapeReason::InvalidValue,
-                    ));
+                    return Err(CodecError::invalid());
                 }
                 *value = seal(value, origin)?;
                 changed = true;
@@ -85,9 +80,7 @@ pub fn seal_for_client(
                                 .fidelity
                                 .replay_matches(*id, reasoning, Some(origin))
                             {
-                                return Err(CodecError::Invalid(
-                                    crate::protocol::failure::ShapeReason::InvalidValue,
-                                ));
+                                return Err(CodecError::invalid());
                             }
                             Some(seal(value, origin)?)
                         }
@@ -101,16 +94,12 @@ pub fn seal_for_client(
                     let origin = decoded
                         .fidelity
                         .replay_origin(*id)
-                        .ok_or(CodecError::Invalid(
-                            crate::protocol::failure::ShapeReason::InvalidValue,
-                        ))?;
+                        .ok_or(CodecError::invalid())?;
                     if !decoded
                         .fidelity
                         .call_replay_matches(*id, call, Some(origin))
                     {
-                        return Err(CodecError::Invalid(
-                            crate::protocol::failure::ShapeReason::InvalidValue,
-                        ));
+                        return Err(CodecError::invalid());
                     }
                     call.replay = Some(seal_as(value, origin, value.format())?);
                     changed = true;
@@ -119,11 +108,10 @@ pub fn seal_for_client(
             Item::Message(message) => {
                 for (ordinal, part) in message.parts.iter_mut().enumerate() {
                     if let Some(value) = &part.replay {
-                        let origin = decoded.fidelity.part_replay_origin(*id, part.id).ok_or(
-                            CodecError::Invalid(
-                                crate::protocol::failure::ShapeReason::InvalidValue,
-                            ),
-                        )?;
+                        let origin = decoded
+                            .fidelity
+                            .part_replay_origin(*id, part.id)
+                            .ok_or(CodecError::invalid())?;
                         if !decoded.fidelity.part_replay_matches(
                             *id,
                             message.status,
@@ -131,9 +119,7 @@ pub fn seal_for_client(
                             part,
                             Some(origin),
                         ) {
-                            return Err(CodecError::Invalid(
-                                crate::protocol::failure::ShapeReason::InvalidValue,
-                            ));
+                            return Err(CodecError::invalid());
                         }
                         part.replay = Some(seal_as(value, origin, value.format())?);
                         changed = true;
@@ -194,9 +180,7 @@ pub fn seal_event(
     fidelity: &FidelityRecords,
 ) -> Result<StreamEvent, CodecError> {
     if let StreamEvent::PartReplay { replay, .. } = &mut event {
-        let origin = replay.origin.as_ref().ok_or(CodecError::Invalid(
-            crate::protocol::failure::ShapeReason::InvalidValue,
-        ))?;
+        let origin = replay.origin.as_ref().ok_or(CodecError::invalid())?;
         replay.value = seal_as(&replay.value, origin, replay.value.format())?;
         replay.origin = Some(client.clone());
         return Ok(event);
@@ -223,9 +207,7 @@ pub fn seal_event(
                 origin: Some(client.clone()),
             }),
             None if call || current.value.format() == ReplayFormat::ResponsesCompaction => {
-                return Err(CodecError::Invalid(
-                    crate::protocol::failure::ShapeReason::InvalidValue,
-                ));
+                return Err(CodecError::invalid());
             }
             None => None,
         };
@@ -245,9 +227,7 @@ pub fn open_from_client(request: &mut Request) -> Result<(), CodecError> {
             Item::Compaction(value) => {
                 let (origin, format, payload) = replay_envelope::open(value.as_str())
                     .filter(|(_, format, _)| *format == ReplayFormat::ResponsesCompaction)
-                    .ok_or(CodecError::Invalid(
-                        crate::protocol::failure::ShapeReason::InvalidValue,
-                    ))?;
+                    .ok_or(CodecError::invalid())?;
                 origins.insert(*id, origin);
                 *value = ReplayValue::final_value(format, payload);
                 changed = true;
@@ -255,9 +235,7 @@ pub fn open_from_client(request: &mut Request) -> Result<(), CodecError> {
             Item::Reasoning(reasoning) => {
                 if let Some(value) = &reasoning.replay {
                     if crate::protocol::replay_projection::is_marker(value.as_str()) {
-                        return Err(CodecError::Invalid(
-                            crate::protocol::failure::ShapeReason::InvalidValue,
-                        ));
+                        return Err(CodecError::invalid());
                     }
                     reasoning.replay = match replay_envelope::open(value.as_str()) {
                         Some((origin, format, payload)) if value.replay_token().is_some() => {
@@ -304,9 +282,7 @@ pub fn open_from_client(request: &mut Request) -> Result<(), CodecError> {
     for (id, item) in request.task.semantic.items() {
         match item {
             Item::Compaction(value) => {
-                let origin = origins.get(id).ok_or(CodecError::Invalid(
-                    crate::protocol::failure::ShapeReason::InvalidValue,
-                ))?;
+                let origin = origins.get(id).ok_or(CodecError::invalid())?;
                 request.task.fidelity.remove_replay(*id);
                 request
                     .task
@@ -323,9 +299,7 @@ pub fn open_from_client(request: &mut Request) -> Result<(), CodecError> {
                 }
             }
             Item::ToolCall(call) if call.replay.is_some() => {
-                let origin = origins.get(id).ok_or(CodecError::Invalid(
-                    crate::protocol::failure::ShapeReason::InvalidValue,
-                ))?;
+                let origin = origins.get(id).ok_or(CodecError::invalid())?;
                 request.task.fidelity.remove_replay(*id);
                 request
                     .task
@@ -335,12 +309,9 @@ pub fn open_from_client(request: &mut Request) -> Result<(), CodecError> {
             Item::Message(message) => {
                 for (ordinal, part) in message.parts.iter().enumerate() {
                     if part.replay.is_some() {
-                        let origin =
-                            part_origins
-                                .get(&(*id, part.id))
-                                .ok_or(CodecError::Invalid(
-                                    crate::protocol::failure::ShapeReason::InvalidValue,
-                                ))?;
+                        let origin = part_origins
+                            .get(&(*id, part.id))
+                            .ok_or(CodecError::invalid())?;
                         request.task.fidelity.remove_part_replay(*id, part.id);
                         request.task.fidelity.record_part_replay(
                             *id,

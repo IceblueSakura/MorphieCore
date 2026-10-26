@@ -1,5 +1,6 @@
 use super::*;
 use crate::gateway::diagnostics::{Sink, Trace};
+use crate::protocol::failure::ShapeReason;
 use opentelemetry::logs::AnyValue;
 use serde_json::{Value, json};
 #[path = "../../../../tests/support/child_process.rs"]
@@ -62,7 +63,7 @@ async fn reports_keep_native_bodies_correlated_recovery_and_runtime_isolation() 
     });
     trace.begin_candidate(1);
     trace.decode_error(&crate::execution::AttemptError::Codec(
-        crate::protocol::CodecError::Invalid(crate::protocol::failure::ShapeReason::Json),
+        crate::protocol::CodecError::Invalid(ShapeReason::Json),
     ));
     trace.end_candidate(Some("upstream_error"), true);
     trace.begin_candidate(2);

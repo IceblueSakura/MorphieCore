@@ -1,4 +1,5 @@
 //! OpenAI request envelopes, controls and header projection.
+use crate::protocol::failure::CarrierReason;
 use crate::protocol::openai::adapter::{Adapter, ConversionFailure, Request};
 use crate::{
     lowering::generation::RepresentationError,
@@ -27,9 +28,7 @@ fn with_effort_mapping<'a>(
         profile,
         native_thinking,
     ) {
-        return Err(CodecError::Unsupported(
-            crate::protocol::failure::CarrierReason::Reasoning,
-        ));
+        return Err(CodecError::Unsupported(CarrierReason::Reasoning));
     }
     let mut items = Cow::Borrowed(request.task.semantic.items());
     for (index, (_, item)) in request.task.semantic.items().iter().enumerate() {
@@ -45,9 +44,7 @@ fn with_effort_mapping<'a>(
     let mut settings = request.task.semantic.settings().clone();
     if let Some(control) = settings.effort.value() {
         if control.scope != mapping.scope {
-            return Err(CodecError::Unsupported(
-                crate::protocol::failure::CarrierReason::Reasoning,
-            ));
+            return Err(CodecError::Unsupported(CarrierReason::Reasoning));
         }
         let mapped = mapping.encode(control.level)?;
         settings.effort = Presence::Value(crate::semantic::task::generation::EffortControl {
@@ -206,9 +203,7 @@ impl Adapter {
                             )
                         })
                     {
-                        return Err(CodecError::Unsupported(
-                            crate::protocol::failure::CarrierReason::Unavailable,
-                        ));
+                        return Err(CodecError::Unsupported(CarrierReason::Unavailable));
                     }
                     item["role"] = serde_json::json!("user");
                 }
@@ -222,9 +217,7 @@ impl Adapter {
                 .into_iter()
                 .find(|key| o.contains_key(*key))
         {
-            return Err(CodecError::Unsupported(
-                crate::protocol::failure::CarrierReason::UnknownField,
-            ));
+            return Err(CodecError::Unsupported(CarrierReason::UnknownField));
         }
         let mut native_controls = serde_json::Map::new();
         if self.adaptation.rules.thinking_controls {
@@ -246,14 +239,10 @@ impl Adapter {
             .and_then(|o| o.shift_remove("session_id"))
         {
             if !self.adaptation.cache.session_id {
-                return Err(CodecError::Unsupported(
-                    crate::protocol::failure::CarrierReason::Unavailable,
-                ));
+                return Err(CodecError::Unsupported(CarrierReason::Unavailable));
             }
             Some(crate::protocol::cache::CacheSession::new(
-                session.as_str().ok_or(CodecError::Invalid(
-                    crate::protocol::failure::ShapeReason::InvalidValue,
-                ))?,
+                session.as_str().ok_or(CodecError::invalid())?,
             )?)
         } else {
             None
@@ -481,10 +470,7 @@ impl Adapter {
             if self.adaptation.reasoning_policy.is_some()
                 && self.adaptation.effort_mapping.is_some()
             {
-                return Err(CodecError::Invalid(
-                    crate::protocol::failure::ShapeReason::InvalidValue,
-                )
-                .into());
+                return Err(CodecError::invalid().into());
             }
             if let Some(policy) = &self.adaptation.reasoning_policy
                 && let Some(semantic) =
@@ -523,7 +509,7 @@ impl Adapter {
                         if update.activation == Some(crate::semantic::task::generation::ReasoningActivation::Disabled)
                 )))
         {
-            return Err(CodecError::Unsupported(crate::protocol::failure::CarrierReason::Reasoning).into());
+            return Err(CodecError::Unsupported(CarrierReason::Reasoning).into());
         }
             if self.adaptation.rules.bailian_requests {
                 openai::dialect::bailian::check(request, self.protocol, model)?;
@@ -533,10 +519,7 @@ impl Adapter {
                 self.protocol,
                 self.adaptation.rules.thinking_controls,
             ) {
-                return Err(CodecError::Unsupported(
-                    crate::protocol::failure::CarrierReason::Reasoning,
-                )
-                .into());
+                return Err(CodecError::Unsupported(CarrierReason::Reasoning).into());
             }
             if let Some(mapping) = self.adaptation.effort_mapping {
                 let input = crate::lowering::generation::ReasoningControls::request(
@@ -579,10 +562,7 @@ impl Adapter {
                         )
                     })
             {
-                return Err(CodecError::Unsupported(
-                    crate::protocol::failure::CarrierReason::Unavailable,
-                )
-                .into());
+                return Err(CodecError::Unsupported(CarrierReason::Unavailable).into());
             }
             let (projected, changed) = with_schema_name(projected)?;
             if changed {
@@ -629,10 +609,7 @@ impl Adapter {
                         a.format != crate::semantic::task::generation::AudioFormat::Pcm16
                     })
             {
-                return Err(CodecError::Unsupported(
-                    crate::protocol::failure::CarrierReason::Unavailable,
-                )
-                .into());
+                return Err(CodecError::Unsupported(CarrierReason::Unavailable).into());
             }
             let custom_output = match request.task.semantic.tool_choice() {
                 Some(ToolChoice::None | ToolChoice::Specific(_)) => false,
@@ -653,10 +630,7 @@ impl Adapter {
                     .flat_map(ToolDefinition::leaves)
                     .any(|tool| matches!(tool, ToolDefinition::Custom(_)))
             {
-                return Err(CodecError::Unsupported(
-                    crate::protocol::failure::CarrierReason::Tools,
-                )
-                .into());
+                return Err(CodecError::Unsupported(CarrierReason::Tools).into());
             }
             let mut context = request.context.clone();
             contract.cache.project_request(
@@ -687,10 +661,7 @@ impl Adapter {
                 controls.extend(rule.evidence());
             }
             if request.cache_session.is_some() && !contract.cache.session_id {
-                return Err(CodecError::Unsupported(
-                    crate::protocol::failure::CarrierReason::Unavailable,
-                )
-                .into());
+                return Err(CodecError::Unsupported(CarrierReason::Unavailable).into());
             }
             // Candidate preflight uses this same encoder, so invalid header carriers cannot reach I/O.
             self.request_headers(request, contract.cache)?;
@@ -700,10 +671,7 @@ impl Adapter {
                     || request.task.semantic.reasoning().encrypted_output()
                     || !request.task.semantic.settings().effort.is_absent())
             {
-                return Err(CodecError::Unsupported(
-                    crate::protocol::failure::CarrierReason::Reasoning,
-                )
-                .into());
+                return Err(CodecError::Unsupported(CarrierReason::Reasoning).into());
             }
             if self.protocol == Profile::Chat && !context.max_tool_calls.is_absent() {
                 return Err(RepresentationError::UnmigratedSemantic.into());

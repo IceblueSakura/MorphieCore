@@ -13,9 +13,6 @@ use crate::{
     },
 };
 use serde_json::{Map, Value, json};
-fn invalid() -> CodecError {
-    CodecError::Invalid(crate::protocol::failure::ShapeReason::InvalidValue)
-}
 pub fn encode_request(request: &Request, model: &str) -> Result<Value, CodecError> {
     // A supported aspect ratio is not an exact pixel-size or encoding guarantee.
     // Neither size nor output_format is declared by this endpoint. Compression
@@ -25,7 +22,7 @@ pub fn encode_request(request: &Request, model: &str) -> Result<Value, CodecErro
         || request.task.size.value().is_some()
         || request.task.compression.value().is_some()
     {
-        return Err(invalid());
+        return Err(CodecError::invalid());
     }
     super::openai::images::validate_request(request)?;
     // Upstream n is an upper bound; exact local satisfaction is checked after EOF.
@@ -83,13 +80,13 @@ fn output_details(value: &Value) -> Result<ImageTokenBreakdown, CodecError> {
 }
 fn amount(value: &Value) -> Result<UsdAmount, CodecError> {
     let Value::Number(value) = value else {
-        return Err(invalid());
+        return Err(CodecError::invalid());
     };
-    UsdAmount::new(value.clone()).map_err(|_| invalid())
+    UsdAmount::new(value.clone()).map_err(|_| CodecError::invalid())
 }
 fn alias(m: &Map<String, Value>, a: &str, b: &str) -> Result<Presence<UsdAmount>, CodecError> {
     if m.contains_key(a) && m.contains_key(b) {
-        return Err(invalid());
+        return Err(CodecError::invalid());
     }
     optional(m, if m.contains_key(a) { a } else { b }, amount)
 }
@@ -141,18 +138,22 @@ fn usage(value: &Value) -> Result<ImageUsage, CodecError> {
         billing: ImageBilling {
             cost: optional(m, "cost", amount)?,
             upstream: optional(m, "cost_details", cost_details)?,
-            byok: optional(m, "is_byok", |v| v.as_bool().ok_or_else(invalid))?,
+            byok: optional(m, "is_byok", |v| {
+                v.as_bool().ok_or_else(CodecError::invalid)
+            })?,
         },
     };
-    usage.validate().map_err(|_| invalid())?;
+    usage.validate().map_err(|_| CodecError::invalid())?;
     Ok(usage)
 }
 pub fn decode_response(bytes: &[u8]) -> Result<ImageGenerationResponse, CodecError> {
     let value = super::json::decode_image_response(bytes)?;
     let map = object(&value, &["created", "data", "usage"])?;
-    let data = required(map, "data")?.as_array().ok_or_else(invalid)?;
+    let data = required(map, "data")?
+        .as_array()
+        .ok_or_else(CodecError::invalid)?;
     if !(1..=usize::from(MAX_IMAGE_COUNT)).contains(&data.len()) {
-        return Err(invalid());
+        return Err(CodecError::invalid());
     }
     let mut total = 0;
     let mut images = Vec::with_capacity(data.len());
@@ -163,15 +164,18 @@ pub fn decode_response(bytes: &[u8]) -> Result<ImageGenerationResponse, CodecErr
             &mut total,
         )?);
         if let Some(v) = item.get("media_type") {
-            image.format =
-                Presence::Value(string(v)?.parse::<ImageFormat>().map_err(|_| invalid())?);
+            image.format = Presence::Value(
+                string(v)?
+                    .parse::<ImageFormat>()
+                    .map_err(|_| CodecError::invalid())?,
+            );
         }
-        image.validate().map_err(|_| invalid())?;
+        image.validate().map_err(|_| CodecError::invalid())?;
         images.push(image);
     }
     let mut result = ImageGenerationResponse::new(number(required(map, "created")?)?, images)
-        .map_err(|_| invalid())?;
+        .map_err(|_| CodecError::invalid())?;
     result.usage = optional(map, "usage", usage)?;
-    result.validate().map_err(|_| invalid())?;
+    result.validate().map_err(|_| CodecError::invalid())?;
     Ok(result)
 }

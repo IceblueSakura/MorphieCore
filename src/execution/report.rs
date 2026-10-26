@@ -4,6 +4,7 @@ use crate::lowering::generation::{
     ConversionBoundary, Coverage, Effect, EvidenceDelta, MAX_EFFECTS, MAX_EVIDENCE_BYTES,
 };
 use crate::protocol::diagnostics::{AdaptationNotice, FailureCategory, NoticeFailure};
+use crate::protocol::failure::Observation;
 use crate::protocol::failure::SourceFailureEvidence;
 use bytes::Bytes;
 use serde::{Serialize, Serializer, ser::SerializeStruct};
@@ -316,9 +317,9 @@ impl Report {
                     ResultState::Failed
                 };
                 if let Some(e) = &mut a.source_failure
-                    && e.observation == crate::protocol::failure::Observation::Pending
+                    && e.observation == Observation::Pending
                 {
-                    e.observation = crate::protocol::failure::Observation::Interrupted;
+                    e.observation = Observation::Interrupted;
                 }
                 if success {
                     r.producing_attempt = Some(a.ordinal);
@@ -339,9 +340,9 @@ impl Report {
             {
                 a.result = ResultState::Interrupted;
                 if let Some(e) = &mut a.source_failure
-                    && e.observation == crate::protocol::failure::Observation::Pending
+                    && e.observation == Observation::Pending
                 {
-                    e.observation = crate::protocol::failure::Observation::Interrupted;
+                    e.observation = Observation::Interrupted;
                 }
             }
         });

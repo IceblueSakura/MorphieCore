@@ -1,4 +1,5 @@
 //! Chat message/item mapping shared by request history, static output and event codecs.
+use crate::protocol::failure::CarrierReason;
 use crate::protocol::openai::{CodecError, Profile, shape::*};
 use crate::protocol::openai::{
     content::call::{reject_chat_orchestration, tool_call},
@@ -11,9 +12,7 @@ pub(in crate::protocol::openai) fn reject_moderation(
 ) -> Result<(), CodecError> {
     // A known safety report cannot follow the unknown-extension ignore policy.
     if o.get("moderation").is_some_and(|v| !v.is_null()) {
-        return Err(CodecError::Unsupported(
-            crate::protocol::failure::CarrierReason::Unavailable,
-        ));
+        return Err(CodecError::Unsupported(CarrierReason::Unavailable));
     }
     Ok(())
 }
@@ -31,16 +30,12 @@ pub(super) fn request_text_parts<'a>(
                 let part = object(part)?;
                 direction.fields(part, &["type", "text"])?;
                 if string(part, "type")? != "text" {
-                    return Err(CodecError::Unsupported(
-                        crate::protocol::failure::CarrierReason::Unavailable,
-                    ));
+                    return Err(CodecError::Unsupported(CarrierReason::Unavailable));
                 }
                 string(part, "text")
             })
             .collect(),
-        _ => Err(CodecError::Invalid(
-            crate::protocol::failure::ShapeReason::InvalidValue,
-        )),
+        _ => Err(CodecError::invalid()),
     }
 }
 /// Which Chat surface a message comes from. `Output` is the response's own message;
@@ -84,23 +79,17 @@ fn decode_message(
                 })
             })
     {
-        return Err(CodecError::Unsupported(
-            crate::protocol::failure::CarrierReason::Unavailable,
-        ));
+        return Err(CodecError::Unsupported(CarrierReason::Unavailable));
     }
     if m.get("function_call").is_some_and(|v| !v.is_null()) {
-        return Err(CodecError::Unsupported(
-            crate::protocol::failure::CarrierReason::Unavailable,
-        ));
+        return Err(CodecError::Unsupported(CarrierReason::Unavailable));
     }
     if role != "assistant"
         && ["audio", "annotations", "refusal", "tool_calls"]
             .iter()
             .any(|key| m.get(*key).is_some_and(|v| !v.is_null()))
     {
-        return Err(CodecError::Invalid(
-            crate::protocol::failure::ShapeReason::InvalidValue,
-        ));
+        return Err(CodecError::invalid());
     }
     // A shared field superset would silently erase assistant-only values on
     // instruction/tool messages. Validate the role's shell before normalization.
@@ -129,24 +118,18 @@ fn decode_message(
         "tool" => &["role", "content", "tool_call_id"],
         "system" | "developer" | "user" => &["role", "name", "content"],
         _ => {
-            return Err(CodecError::Unsupported(
-                crate::protocol::failure::CarrierReason::Unavailable,
-            ));
+            return Err(CodecError::Unsupported(CarrierReason::Unavailable));
         }
     };
     direction.fields(m, allowed)?;
     if (!replay || role == "tool") && m.get("name").is_some_and(|v| !v.is_null()) {
-        return Err(CodecError::Unsupported(
-            crate::protocol::failure::CarrierReason::Unavailable,
-        ));
+        return Err(CodecError::Unsupported(CarrierReason::Unavailable));
     }
     let participant = if replay && role != "tool" {
         m.get("name")
             .map(|v| {
                 crate::semantic::value::Text::allowing_empty(
-                    v.as_str().ok_or(CodecError::Invalid(
-                        crate::protocol::failure::ShapeReason::InvalidValue,
-                    ))?,
+                    v.as_str().ok_or(CodecError::invalid())?,
                     "participant",
                     MAX_TEXT_BYTES,
                 )
@@ -158,9 +141,7 @@ fn decode_message(
     };
     if replay && role != "assistant" && m.contains_key("parsed") {
         // The pinned SDK attaches its parsed view to assistant messages only.
-        return Err(CodecError::Invalid(
-            crate::protocol::failure::ShapeReason::InvalidValue,
-        ));
+        return Err(CodecError::invalid());
     }
     // Readable provider thinking text on an assistant message maps to a
     // reasoning item ordered immediately ahead of its carrier message. Absent,
@@ -173,9 +154,7 @@ fn decode_message(
                 .map_err(|_| CodecError::Limit)?,
         ),
         _ => {
-            return Err(CodecError::Invalid(
-                crate::protocol::failure::ShapeReason::InvalidValue,
-            ));
+            return Err(CodecError::invalid());
         }
     };
     if let Some(text) = reasoning {
@@ -194,9 +173,7 @@ fn decode_message(
     match role {
         "tool" => {
             if m.contains_key("tool_calls") {
-                return Err(CodecError::Invalid(
-                    crate::protocol::failure::ShapeReason::InvalidValue,
-                ));
+                return Err(CodecError::invalid());
             }
             // Tool results own a string or an ordered text array, including an
             // explicit empty array. Never concatenate parts or parse them as arguments.
@@ -225,9 +202,7 @@ fn decode_message(
                     ToolOutput::Parts(parts)
                 }
                 _ => {
-                    return Err(CodecError::Invalid(
-                        crate::protocol::failure::ShapeReason::InvalidValue,
-                    ));
+                    return Err(CodecError::invalid());
                 }
             };
             let call_id = text(string(m, "tool_call_id")?, "call_id", 256)?;
@@ -257,17 +232,12 @@ fn decode_message(
         }
         "system" | "developer" => {
             if m.contains_key("tool_calls") || m.contains_key("tool_call_id") {
-                return Err(CodecError::Invalid(
-                    crate::protocol::failure::ShapeReason::InvalidValue,
-                ));
+                return Err(CodecError::invalid());
             }
             let mut parts = Vec::new();
-            for text in request_text_parts(
-                m.get("content").ok_or(CodecError::Invalid(
-                    crate::protocol::failure::ShapeReason::InvalidValue,
-                ))?,
-                direction,
-            )? {
+            for text in
+                request_text_parts(m.get("content").ok_or(CodecError::invalid())?, direction)?
+            {
                 parts.push(Part::new(
                     b.part_id()?,
                     crate::semantic::value::Text::allowing_empty(
@@ -289,9 +259,7 @@ fn decode_message(
         }
         "user" | "assistant" => {
             if m.contains_key("tool_call_id") || (role == "user" && m.contains_key("tool_calls")) {
-                return Err(CodecError::Invalid(
-                    crate::protocol::failure::ShapeReason::InvalidValue,
-                ));
+                return Err(CodecError::invalid());
             }
             if replay {
                 crate::protocol::openai::shape::admit_parsed(
@@ -306,11 +274,7 @@ fn decode_message(
             let calls = m
                 .get("tool_calls")
                 .filter(|v| !v.is_null())
-                .map(|v| {
-                    v.as_array().ok_or(CodecError::Invalid(
-                        crate::protocol::failure::ShapeReason::InvalidValue,
-                    ))
-                })
+                .map(|v| v.as_array().ok_or(CodecError::invalid()))
                 .transpose()?
                 // An explicitly empty list declares no calls and normalizes to
                 // absent, matching the streaming path (ADR 0008).
@@ -322,29 +286,21 @@ fn decode_message(
                         .map_err(|_| CodecError::Limit)?,
                 ),
                 _ => {
-                    return Err(CodecError::Invalid(
-                        crate::protocol::failure::ShapeReason::InvalidValue,
-                    ));
+                    return Err(CodecError::invalid());
                 }
             };
             let mut parts = match (m.get("content"), refusal) {
                 (_, Some(_)) if calls.is_some() => {
-                    return Err(CodecError::Invalid(
-                        crate::protocol::failure::ShapeReason::InvalidValue,
-                    ));
+                    return Err(CodecError::invalid());
                 }
                 (Some(value), Some(_)) if !value.is_null() && value != "" => {
-                    return Err(CodecError::Invalid(
-                        crate::protocol::failure::ShapeReason::InvalidValue,
-                    ));
+                    return Err(CodecError::invalid());
                 }
                 (_, Some(refusal)) => vec![b.refusal(refusal)?],
                 (Some(Value::String(s)), None) => vec![b.part(s)?],
                 (Some(Value::Array(values)), None) if replay && role == "user" => {
                     if values.is_empty() || values.len() > MAX_ITEMS {
-                        return Err(CodecError::Invalid(
-                            crate::protocol::failure::ShapeReason::InvalidValue,
-                        ));
+                        return Err(CodecError::invalid());
                     }
                     let mut parts = Vec::new();
                     for value in values {
@@ -395,9 +351,7 @@ fn decode_message(
                                 )?),
                             }),
                             _ => {
-                                return Err(CodecError::Unsupported(
-                                    crate::protocol::failure::CarrierReason::Unavailable,
-                                ));
+                                return Err(CodecError::Unsupported(CarrierReason::Unavailable));
                             }
                         }
                     }
@@ -426,14 +380,10 @@ fn decode_message(
                                 )?
                             }
                             "refusal" => {
-                                return Err(CodecError::Invalid(
-                                    crate::protocol::failure::ShapeReason::InvalidValue,
-                                ));
+                                return Err(CodecError::invalid());
                             }
                             _ => {
-                                return Err(CodecError::Unsupported(
-                                    crate::protocol::failure::CarrierReason::Unavailable,
-                                ));
+                                return Err(CodecError::Unsupported(CarrierReason::Unavailable));
                             }
                         });
                     }
@@ -447,9 +397,7 @@ fn decode_message(
                 }
                 (None | Some(Value::Null), None) if role == "assistant" => Vec::new(),
                 _ => {
-                    return Err(CodecError::Unsupported(
-                        crate::protocol::failure::CarrierReason::Unavailable,
-                    ));
+                    return Err(CodecError::Unsupported(CarrierReason::Unavailable));
                 }
             };
             crate::protocol::openai::chat::annotations::attach(
@@ -462,9 +410,7 @@ fn decode_message(
                     .iter()
                     .any(|p| matches!(p.content, ContentPart::Refusal(_)))
                 {
-                    return Err(CodecError::Invalid(
-                        crate::protocol::failure::ShapeReason::InvalidValue,
-                    ));
+                    return Err(CodecError::invalid());
                 }
                 parts.push(Part {
                     replay: None,
@@ -497,22 +443,16 @@ fn decode_message(
                         None | Some(Value::Null) => {}
                         Some(v) if v.as_u64() == Some(position as u64) => {}
                         _ => {
-                            return Err(CodecError::Invalid(
-                                crate::protocol::failure::ShapeReason::InvalidValue,
-                            ));
+                            return Err(CodecError::invalid());
                         }
                     }
                     let item = if string(call, "type")? == "custom" {
                         reject_chat_orchestration(call)?;
                         direction.fields(call, &["id", "type", "custom", "index"])?;
                         if call.contains_key("function") {
-                            return Err(CodecError::Invalid(
-                                crate::protocol::failure::ShapeReason::InvalidValue,
-                            ));
+                            return Err(CodecError::invalid());
                         }
-                        let custom = object(call.get("custom").ok_or(CodecError::Invalid(
-                            crate::protocol::failure::ShapeReason::InvalidValue,
-                        ))?)?;
+                        let custom = object(call.get("custom").ok_or(CodecError::invalid())?)?;
                         reject_chat_orchestration(custom)?;
                         direction.fields(custom, &["name", "input"])?;
                         Item::CustomCall(CustomCall {
@@ -523,9 +463,7 @@ fn decode_message(
                         })
                     } else {
                         if call.contains_key("custom") {
-                            return Err(CodecError::Invalid(
-                                crate::protocol::failure::ShapeReason::InvalidValue,
-                            ));
+                            return Err(CodecError::invalid());
                         }
                         Item::ToolCall(tool_call(call, Profile::Chat, None, replay, direction)?)
                     };
@@ -536,9 +474,7 @@ fn decode_message(
             }
         }
         _ => {
-            return Err(CodecError::Unsupported(
-                crate::protocol::failure::CarrierReason::Unavailable,
-            ));
+            return Err(CodecError::Unsupported(CarrierReason::Unavailable));
         }
     }
     Ok(())

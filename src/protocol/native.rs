@@ -1,5 +1,6 @@
 //! Helpers shared by native (non-OpenAI) upstream protocols: trusted replay labels,
 //! stateless request defaults and role grouping of client history. No wire shapes live here.
+use crate::protocol::failure::CarrierReason;
 use crate::{
     protocol::CodecError,
     semantic::{
@@ -41,9 +42,7 @@ impl ReplayTarget {
 }
 fn label(s: &str) -> Result<Text, CodecError> {
     if s.is_empty() || s.len() > 256 || s.chars().any(|c| c.is_control() || c.is_whitespace()) {
-        return Err(CodecError::Invalid(
-            crate::protocol::failure::ShapeReason::InvalidValue,
-        ));
+        return Err(CodecError::invalid());
     }
     Text::new(s, "native target label", 256).map_err(|_| CodecError::Limit)
 }
@@ -72,9 +71,7 @@ pub(crate) fn native_reasoning_history<'a>(
             && !formats.contains(&value.format())
         {
             if reasoning.status != ItemLifecycle::Completed || value.replay_token().is_none() {
-                return Err(CodecError::Unsupported(
-                    crate::protocol::failure::CarrierReason::Reasoning,
-                ));
+                return Err(CodecError::Unsupported(CarrierReason::Reasoning));
             }
             omitted.push(*id);
         }
@@ -115,9 +112,7 @@ pub(crate) fn native_reasoning_history<'a>(
                             if message.status != ItemLifecycle::Completed
                                 || value.replay_token().is_none()
                             {
-                                return Err(CodecError::Unsupported(
-                                    crate::protocol::failure::CarrierReason::Replay,
-                                ));
+                                return Err(CodecError::Unsupported(CarrierReason::Replay));
                             }
                             part.replay = None;
                             fidelity.remove_part_replay(*owner, part.id);
@@ -131,9 +126,7 @@ pub(crate) fn native_reasoning_history<'a>(
                     {
                         if call.status != ItemLifecycle::Completed || value.replay_token().is_none()
                         {
-                            return Err(CodecError::Unsupported(
-                                crate::protocol::failure::CarrierReason::Replay,
-                            ));
+                            return Err(CodecError::Unsupported(CarrierReason::Replay));
                         }
                         call.replay = None;
                         fidelity.remove_replay(*owner);
@@ -205,9 +198,7 @@ pub(crate) fn group_client_history(
         .iter()
         .any(|g| g.members().is_empty())
     {
-        return Err(CodecError::Unsupported(
-            crate::protocol::failure::CarrierReason::Unavailable,
-        ));
+        return Err(CodecError::Unsupported(CarrierReason::Unavailable));
     }
     let positions: std::collections::BTreeMap<_, _> = request
         .items()
@@ -219,15 +210,13 @@ pub(crate) fn group_client_history(
     for group in request.message_envelopes() {
         let mut member_position = None;
         for owner in group.members() {
-            let position = *positions.get(owner).ok_or(CodecError::Unsupported(
-                crate::protocol::failure::CarrierReason::Unavailable,
-            ))?;
+            let position = *positions
+                .get(owner)
+                .ok_or(CodecError::Unsupported(CarrierReason::Unavailable))?;
             if previous.is_some_and(|p| position <= p)
                 || member_position.is_some_and(|p| position != p + 1)
             {
-                return Err(CodecError::Unsupported(
-                    crate::protocol::failure::CarrierReason::Unavailable,
-                ));
+                return Err(CodecError::Unsupported(CarrierReason::Unavailable));
             }
             previous = Some(position);
             member_position = Some(position);
@@ -258,9 +247,7 @@ pub(crate) fn group_client_history(
             Item::Reasoning(_) | Item::ToolCall(_) => MessageEnvelopeRole::Assistant,
             Item::ToolResult(_) => MessageEnvelopeRole::User,
             _ => {
-                return Err(CodecError::Unsupported(
-                    crate::protocol::failure::CarrierReason::Unavailable,
-                ));
+                return Err(CodecError::Unsupported(CarrierReason::Unavailable));
             }
         };
         match groups.last_mut() {

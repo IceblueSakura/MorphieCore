@@ -114,16 +114,9 @@ impl ChatSseDecoder {
             return Ok(events);
         }
         let mut payload = crate::protocol::json::decode(frame.data().as_bytes())?;
-        let object = payload.as_object_mut().ok_or(CodecError::Invalid(
-            crate::protocol::failure::ShapeReason::InvalidValue,
-        ))?;
+        let object = payload.as_object_mut().ok_or(CodecError::invalid())?;
         if let Some(padding) = object.remove("obfuscation") {
-            let n = padding
-                .as_str()
-                .ok_or(CodecError::Invalid(
-                    crate::protocol::failure::ShapeReason::InvalidValue,
-                ))?
-                .len();
+            let n = padding.as_str().ok_or(CodecError::invalid())?.len();
             charge_padding(
                 &mut self.padding_bytes,
                 n,
@@ -153,9 +146,7 @@ impl ChatSseDecoder {
         let result = (|| {
             self.framing.finish_strict()?;
             if !self.done {
-                return Err(SseError::Codec(CodecError::Invalid(
-                    crate::protocol::failure::ShapeReason::InvalidValue,
-                )));
+                return Err(SseError::Codec(CodecError::invalid()));
             }
             Ok(self.codec.finish()?)
         })();
@@ -206,9 +197,7 @@ impl ChatSseEncoder {
         limits.validate()?;
         options.validate().map_err(CodecError::from)?;
         if options.obfuscation() != matches!(padding, Obfuscation::Seeded(_)) {
-            return Err(SseError::Codec(CodecError::Invalid(
-                crate::protocol::failure::ShapeReason::InvalidValue,
-            )));
+            return Err(SseError::Codec(CodecError::invalid()));
         }
         if metadata
             .created
@@ -216,9 +205,7 @@ impl ChatSseEncoder {
             .and_then(serde_json::Number::as_u64)
             .is_none()
         {
-            return Err(SseError::Codec(CodecError::Invalid(
-                crate::protocol::failure::ShapeReason::InvalidValue,
-            )));
+            return Err(SseError::Codec(CodecError::invalid()));
         }
         Ok(Self {
             notice: None,

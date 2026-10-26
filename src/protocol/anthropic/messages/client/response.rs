@@ -1,5 +1,6 @@
 //! Messages client response rendering over the shared delivery projection.
 use super::projection::{project_reasoning, redacted, tool_input};
+use crate::protocol::failure::CarrierReason;
 use crate::protocol::{CodecError, DecodedResponse, anthropic::messages as wire};
 use crate::semantic::task::generation::*;
 use serde_json::{Map, Value, json};
@@ -16,9 +17,7 @@ pub fn encode_client_response(
         .iter()
         .any(|(_, item)| item.has_replay_attachment())
     {
-        return Err(CodecError::Unsupported(
-            crate::protocol::failure::CarrierReason::Replay,
-        ));
+        return Err(CodecError::Unsupported(CarrierReason::Replay));
     }
     if !semantic.safety_reports().is_empty()
         || response
@@ -28,9 +27,7 @@ pub fn encode_client_response(
             .iter()
             .any(|r| r.settings.as_ref().is_some_and(|s| !s.safety.is_empty()))
     {
-        return Err(CodecError::Unsupported(
-            crate::protocol::failure::CarrierReason::Safety,
-        ));
+        return Err(CodecError::Unsupported(CarrierReason::Safety));
     }
     let mut content = vec![];
     let mut calls = false;
@@ -54,37 +51,27 @@ pub fn encode_client_response(
             }
             Item::Message(m) if m.role == MessageRole::Assistant => {
                 if m.phase.is_some() {
-                    return Err(CodecError::Unsupported(
-                        crate::protocol::failure::CarrierReason::Unavailable,
-                    ));
+                    return Err(CodecError::Unsupported(CarrierReason::Unavailable));
                 }
                 for part in &m.parts {
                     match &part.content {
                         ContentPart::Text(t) => {
                             if !t.logprobs().is_absent() {
-                                return Err(CodecError::Unsupported(
-                                    crate::protocol::failure::CarrierReason::Unavailable,
-                                ));
+                                return Err(CodecError::Unsupported(CarrierReason::Unavailable));
                             }
                             if !t.annotations().is_empty() {
-                                return Err(CodecError::Unsupported(
-                                    crate::protocol::failure::CarrierReason::Unavailable,
-                                ));
+                                return Err(CodecError::Unsupported(CarrierReason::Unavailable));
                             }
                             content.push(json!({"type":"text","text":t.as_str()}))
                         }
                         ContentPart::Refusal(t) => {
                             if !t.logprobs().is_absent() {
-                                return Err(CodecError::Unsupported(
-                                    crate::protocol::failure::CarrierReason::Unavailable,
-                                ));
+                                return Err(CodecError::Unsupported(CarrierReason::Unavailable));
                             }
                             content.push(json!({"type":"text","text":t.as_str()}))
                         }
                         _ => {
-                            return Err(CodecError::Unsupported(
-                                crate::protocol::failure::CarrierReason::Unavailable,
-                            ));
+                            return Err(CodecError::Unsupported(CarrierReason::Unavailable));
                         }
                     }
                 }
@@ -96,9 +83,7 @@ pub fn encode_client_response(
                     "name":call.name.as_str(),"input":input}));
             }
             _ => {
-                return Err(CodecError::Unsupported(
-                    crate::protocol::failure::CarrierReason::Unavailable,
-                ));
+                return Err(CodecError::Unsupported(CarrierReason::Unavailable));
             }
         }
     }

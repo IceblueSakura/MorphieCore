@@ -1,5 +1,6 @@
 //! Named wire mappings and classified router facts. No provider identity branches.
 //! Shared readers receive an explicit direction; modeled values remain strict.
+use crate::protocol::failure::{CarrierReason, ShapeReason};
 use crate::protocol::openai::DecodeDirection;
 use crate::protocol::openai::dialect::adaptation::Adaptation;
 use crate::protocol::openai::{CodecError, Profile, shape::bounded};
@@ -34,9 +35,7 @@ fn extract(o: &mut Map<String, Value>, profile: Profile) -> Result<Extras, Codec
     let mut extras = Extras::new();
     if let Some(value) = o.get("provider") {
         if !(value.is_null() || value.as_str().is_some_and(|s| !s.is_empty())) {
-            return Err(CodecError::Invalid(
-                crate::protocol::failure::ShapeReason::InvalidValue,
-            ));
+            return Err(CodecError::invalid());
         }
         take(o, "provider", "/provider", &mut extras);
     }
@@ -46,14 +45,10 @@ fn extract(o: &mut Map<String, Value>, profile: Profile) -> Result<Extras, Codec
                 .get("is_byok")
                 .is_some_and(|v| !v.is_null() && !v.is_boolean())
         {
-            return Err(CodecError::Invalid(
-                crate::protocol::failure::ShapeReason::InvalidValue,
-            ));
+            return Err(CodecError::invalid());
         }
         if let Some(details) = usage.get("cost_details").filter(|v| !v.is_null()) {
-            let details = details.as_object().ok_or(CodecError::Invalid(
-                crate::protocol::failure::ShapeReason::InvalidValue,
-            ))?;
+            let details = details.as_object().ok_or(CodecError::invalid())?;
             for (key, value) in details {
                 if ![
                     "upstream_inference_cost",
@@ -65,9 +60,7 @@ fn extract(o: &mut Map<String, Value>, profile: Profile) -> Result<Extras, Codec
                 .contains(&key.as_str())
                     || !money(value)
                 {
-                    return Err(CodecError::Unsupported(
-                        crate::protocol::failure::CarrierReason::Unavailable,
-                    ));
+                    return Err(CodecError::Unsupported(CarrierReason::Unavailable));
                 }
             }
         }
@@ -82,9 +75,7 @@ fn extract(o: &mut Map<String, Value>, profile: Profile) -> Result<Extras, Codec
                     if let Some(value) = details.shift_remove(*name)
                         && value.as_u64() != Some(0)
                     {
-                        return Err(CodecError::Unsupported(
-                            crate::protocol::failure::CarrierReason::Usage,
-                        ));
+                        return Err(CodecError::Unsupported(CarrierReason::Usage));
                     }
                 }
             }
@@ -103,9 +94,7 @@ fn extract(o: &mut Map<String, Value>, profile: Profile) -> Result<Extras, Codec
             .get("native_finish_reason")
             .is_some_and(|v| !v.is_null() && !v.is_string())
         {
-            return Err(CodecError::Invalid(
-                crate::protocol::failure::ShapeReason::InvalidValue,
-            ));
+            return Err(CodecError::invalid());
         }
         take(
             choice,
@@ -134,9 +123,7 @@ fn response_billing_view(
         .as_array()
         .filter(|rows| rows.len() == 1)
         .and_then(|rows| rows[0].as_object())
-        .ok_or(CodecError::Invalid(
-            crate::protocol::failure::ShapeReason::Usage,
-        ))?;
+        .ok_or(CodecError::Invalid(ShapeReason::Usage))?;
     direction.fields(
         row,
         &[
@@ -151,16 +138,12 @@ fn response_billing_view(
         ],
     )?;
     if row.get("x_billing_type").and_then(Value::as_str) != Some("response_api") {
-        return Err(CodecError::Unsupported(
-            crate::protocol::failure::CarrierReason::Usage,
-        ));
+        return Err(CodecError::Unsupported(CarrierReason::Usage));
     }
     for name in ["input_tokens", "output_tokens", "total_tokens"] {
         let count = row.get(name).and_then(Value::as_u64);
         if count.is_none() || count != usage.get(name).and_then(Value::as_u64) {
-            return Err(CodecError::Invalid(
-                crate::protocol::failure::ShapeReason::Usage,
-            ));
+            return Err(CodecError::Invalid(ShapeReason::Usage));
         }
     }
     for (name, canonical, allowed) in [
@@ -189,9 +172,9 @@ fn response_billing_view(
             merge_usage_detail(
                 usage,
                 canonical,
-                detail.as_object().ok_or(CodecError::Invalid(
-                    crate::protocol::failure::ShapeReason::Usage,
-                ))?,
+                detail
+                    .as_object()
+                    .ok_or(CodecError::Invalid(ShapeReason::Usage))?,
                 allowed,
                 direction,
             )?;
@@ -221,18 +204,16 @@ fn merge_usage_detail(
     if detail.is_null() {
         *detail = serde_json::json!({});
     }
-    let detail = detail.as_object_mut().ok_or(CodecError::Invalid(
-        crate::protocol::failure::ShapeReason::Usage,
-    ))?;
+    let detail = detail
+        .as_object_mut()
+        .ok_or(CodecError::Invalid(ShapeReason::Usage))?;
     for (name, value) in values {
         if value.as_u64().is_none()
             || detail
                 .get(name)
                 .is_some_and(|old| !old.is_null() && old != value)
         {
-            return Err(CodecError::Invalid(
-                crate::protocol::failure::ShapeReason::Usage,
-            ));
+            return Err(CodecError::Invalid(ShapeReason::Usage));
         }
         detail.insert(name.clone(), value.clone());
     }
@@ -296,18 +277,14 @@ pub(crate) fn decode_message(o: &mut Map<String, Value>) -> Result<(), CodecErro
     o.shift_remove("reasoning_details");
     if let Some(reasoning) = o.shift_remove("reasoning") {
         if !reasoning.is_null() && !reasoning.is_string() {
-            return Err(CodecError::Invalid(
-                crate::protocol::failure::ShapeReason::InvalidValue,
-            ));
+            return Err(CodecError::invalid());
         }
         if reasoning.as_str().is_some_and(|view| !view.is_empty()) {
             if o.get("reasoning_content")
                 .filter(|old| !old.is_null() && old.as_str() != Some(""))
                 .is_some_and(|old| old != &reasoning)
             {
-                return Err(CodecError::Invalid(
-                    crate::protocol::failure::ShapeReason::InvalidValue,
-                ));
+                return Err(CodecError::invalid());
             }
             o.insert("reasoning_content".into(), reasoning);
         }
@@ -340,9 +317,9 @@ pub(crate) fn decode<'a>(
         return Ok((Cow::Borrowed(value), Extras::new()));
     }
     let mut value = value.clone();
-    let o = value.as_object_mut().ok_or(CodecError::Invalid(
-        crate::protocol::failure::ShapeReason::Object,
-    ))?;
+    let o = value
+        .as_object_mut()
+        .ok_or(CodecError::Invalid(ShapeReason::Object))?;
     if profile == Profile::Responses
         && adaptation.rules.responses_reported_schema_alias
         && let Some(format) = o
@@ -354,9 +331,7 @@ pub(crate) fn decode<'a>(
         if format.get("type").and_then(Value::as_str) != Some("json_schema")
             || format.contains_key("schema")
         {
-            return Err(CodecError::Invalid(
-                crate::protocol::failure::ShapeReason::InvalidValue,
-            ));
+            return Err(CodecError::invalid());
         }
         let schema = format.shift_remove("schema_").expect("checked alias");
         format.insert("schema".into(), schema);
@@ -372,9 +347,7 @@ pub(crate) fn decode<'a>(
             && !locator.is_null()
             && locator.as_str() != Some("")
         {
-            return Err(CodecError::Unsupported(
-                crate::protocol::failure::CarrierReason::Unavailable,
-            ));
+            return Err(CodecError::Unsupported(CarrierReason::Unavailable));
         }
     }
     if profile == Profile::Responses && adaptation.rules.responses_billing_view {
@@ -420,9 +393,7 @@ pub(crate) fn decode<'a>(
             if o.get("request_id")
                 .is_some_and(|v| !v.is_null() && !v.as_str().is_some_and(|s| !s.is_empty()))
             {
-                return Err(CodecError::Invalid(
-                    crate::protocol::failure::ShapeReason::InvalidValue,
-                ));
+                return Err(CodecError::invalid());
             }
             take(o, "request_id", "/request_id", &mut extras);
         }
@@ -431,9 +402,7 @@ pub(crate) fn decode<'a>(
             if let Some(marker) = o.shift_remove("lastOne")
                 && !marker.is_boolean()
             {
-                return Err(CodecError::Invalid(
-                    crate::protocol::failure::ShapeReason::InvalidValue,
-                ));
+                return Err(CodecError::invalid());
             }
             let static_body = o.get("object").and_then(Value::as_str) == Some("chat.completion");
             if let Some(choices) = o.get_mut("choices").and_then(Value::as_array_mut)
@@ -444,9 +413,7 @@ pub(crate) fn decode<'a>(
                     .get("matched_stop")
                     .is_some_and(|v| !v.is_null() && v.as_u64().is_none())
                 {
-                    return Err(CodecError::Invalid(
-                        crate::protocol::failure::ShapeReason::InvalidValue,
-                    ));
+                    return Err(CodecError::invalid());
                 }
                 take(
                     choice,
@@ -458,9 +425,7 @@ pub(crate) fn decode<'a>(
                     && let Some(delta) = choice.shift_remove("delta")
                     && !delta.is_null()
                 {
-                    return Err(CodecError::Unsupported(
-                        crate::protocol::failure::CarrierReason::Unavailable,
-                    ));
+                    return Err(CodecError::Unsupported(CarrierReason::Unavailable));
                 }
             }
         }
@@ -505,9 +470,7 @@ pub(crate) fn reasoning_text_shorthand(value: &mut Value) -> Result<(), CodecErr
                 && !part.contains_key("type")
             {
                 if part.len() != 1 || !part.get("text").is_some_and(Value::is_string) {
-                    return Err(CodecError::Invalid(
-                        crate::protocol::failure::ShapeReason::InvalidValue,
-                    ));
+                    return Err(CodecError::invalid());
                 }
                 part.insert("type".into(), Value::String("reasoning_text".into()));
             }
@@ -530,9 +493,7 @@ pub(crate) fn reasoning_marker(value: &mut Value) -> Result<(), CodecError> {
         None => Ok(()),
         Some(f) if f.as_str() == Some("openai-responses-v1") => Ok(()),
         Some(f) if f.as_str() == Some("unknown") && readable => Ok(()),
-        Some(_) => Err(CodecError::Unsupported(
-            crate::protocol::failure::CarrierReason::Reasoning,
-        )),
+        Some(_) => Err(CodecError::Unsupported(CarrierReason::Reasoning)),
     }
 }
 

@@ -1,6 +1,7 @@
 //! Beta Messages carriers a binding may lack, and the named rules that replace them.
 //! The rewrites are pure IR edits on one candidate's copy.
 use super::RequestRule;
+use crate::protocol::failure::CarrierReason;
 use crate::{
     protocol::CodecError,
     semantic::{task::generation::*, value::Presence},
@@ -42,9 +43,7 @@ pub(super) fn project(
             }
             // Explicit enforcement is not the account default everywhere.
             Some(ReplayMismatch::Reject) => {
-                return Err(CodecError::Unsupported(
-                    crate::protocol::failure::CarrierReason::Reasoning,
-                ));
+                return Err(CodecError::Unsupported(CarrierReason::Reasoning));
             }
             None => {}
         }
@@ -56,9 +55,7 @@ pub(super) fn project(
     }
     if !carriers.tool_changes && items.iter().any(|(_, i)| matches!(i, Item::ToolChange(_))) {
         if GenerationRequirements::derive(request).tool_examples {
-            return Err(CodecError::Unsupported(
-                crate::protocol::failure::CarrierReason::Tools,
-            ));
+            return Err(CodecError::Unsupported(CarrierReason::Tools));
         }
         settings.tools = Some(collapse_tools(request.tools(), &items)?);
         items.retain(|(_, item)| !matches!(item, Item::ToolChange(_)));
@@ -97,9 +94,7 @@ fn flatten_effort(
                         effort: Some(effort),
                     } if effort.scope == EffortScope::Response => *effort,
                     _ => {
-                        return Err(CodecError::Unsupported(
-                            crate::protocol::failure::CarrierReason::Unavailable,
-                        ));
+                        return Err(CodecError::Unsupported(CarrierReason::Unavailable));
                     }
                 };
                 if user_turn == Some(true) {
@@ -153,9 +148,7 @@ fn collapse_tools(
                 tools.push((ToolDefinition::Function((**tool).clone()), true));
             }
             (_, None) => {
-                return Err(CodecError::Invalid(
-                    crate::protocol::failure::ShapeReason::InvalidValue,
-                ));
+                return Err(CodecError::invalid());
             }
         }
     }

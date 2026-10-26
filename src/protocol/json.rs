@@ -1,17 +1,18 @@
 //! Protocol error translation over the shared strict JSON value parser.
 use crate::protocol::CodecError;
+use crate::protocol::failure::ShapeReason;
 use crate::semantic::value::{JsonError, JsonLimits, parse_json};
 
 pub(crate) fn decode(input: &[u8]) -> Result<serde_json::Value, CodecError> {
     parse_json(input, JsonLimits::ENVELOPE).map_err(|error| match error {
         JsonError::Limit(resource) => CodecError::from(JsonError::Limit(resource)),
-        JsonError::Invalid => CodecError::Invalid(crate::protocol::failure::ShapeReason::Json),
+        JsonError::Invalid => CodecError::Invalid(ShapeReason::Json),
     })
 }
 pub(crate) fn decode_image_response(input: &[u8]) -> Result<serde_json::Value, CodecError> {
     crate::semantic::value::parse_image_response_json(input).map_err(|error| match error {
         JsonError::Limit(resource) => CodecError::from(JsonError::Limit(resource)),
-        JsonError::Invalid => CodecError::Invalid(crate::protocol::failure::ShapeReason::Json),
+        JsonError::Invalid => CodecError::Invalid(ShapeReason::Json),
     })
 }
 #[cfg(test)]
@@ -29,9 +30,7 @@ mod tests {
         ] {
             assert_eq!(
                 decode(input.as_bytes()),
-                Err(CodecError::Invalid(
-                    crate::protocol::failure::ShapeReason::Json
-                ))
+                Err(CodecError::Invalid(ShapeReason::Json))
             );
         }
         assert_eq!(
@@ -56,10 +55,7 @@ mod tests {
             b"\xef\xbb\xbf{}",
         ] {
             let error = decode(input).unwrap_err();
-            assert_eq!(
-                error,
-                CodecError::Invalid(crate::protocol::failure::ShapeReason::Json)
-            );
+            assert_eq!(error, CodecError::Invalid(ShapeReason::Json));
             assert_eq!(error.to_string(), "invalid JSON");
         }
         assert_eq!(
@@ -82,9 +78,7 @@ mod tests {
         assert!(value["nested"].is_object());
         assert_eq!(
             decode(br#"{"$serde_json::private::Number":"1","$serde_json::private::Number":"2"}"#),
-            Err(CodecError::Invalid(
-                crate::protocol::failure::ShapeReason::Json
-            ))
+            Err(CodecError::Invalid(ShapeReason::Json))
         );
     }
 

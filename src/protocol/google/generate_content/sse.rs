@@ -3,6 +3,9 @@
 //! event state, released only at strict EOF.
 //! Source: <https://ai.google.dev/api/generate-content>.
 use super::{accounting::usage, replay::Signed};
+use crate::protocol::failure::{
+    CarrierReason, RecognitionBasis, ShapeReason, SourceFailureEvidence,
+};
 use crate::{
     protocol::{
         CodecError, DecodedResponse, ResponseMetadata,
@@ -47,10 +50,10 @@ pub struct GenerationSseDecoder {
     closed: bool,
     rejected: bool,
 }
-pub(super) fn invalid(reason: crate::protocol::failure::ShapeReason) -> SseError {
+pub(super) fn invalid(reason: ShapeReason) -> SseError {
     CodecError::Invalid(reason).into()
 }
-fn unsupported(reason: crate::protocol::failure::CarrierReason) -> SseError {
+fn unsupported(reason: CarrierReason) -> SseError {
     CodecError::Unsupported(reason).into()
 }
 fn text(value: &str) -> Result<Text, SseError> {
@@ -60,14 +63,13 @@ pub(super) fn object<'a>(
     v: &'a Value,
     _what: &'static str,
 ) -> Result<&'a Map<String, Value>, SseError> {
-    v.as_object()
-        .ok_or_else(|| invalid(crate::protocol::failure::ShapeReason::Object))
+    v.as_object().ok_or_else(|| invalid(ShapeReason::Object))
 }
 fn string<'a>(o: &'a Map<String, Value>, key: &'static str) -> Result<Option<&'a str>, SseError> {
     match o.get(key) {
         None => Ok(None),
         Some(Value::String(s)) => Ok(Some(s)),
-        Some(_) => Err(invalid(crate::protocol::failure::ShapeReason::InvalidValue)),
+        Some(_) => Err(invalid(ShapeReason::InvalidValue)),
     }
 }
 /// Stops that end the turn honestly; the rest are failures of this attempt.
@@ -84,22 +86,13 @@ fn finish_reason(reason: &str) -> Result<Option<IncompleteReason>, SseError> {
         "RECITATION" | "IMAGE_RECITATION" => Some(IncompleteReason::Recitation),
         // The request lacked a signature the gateway should have restored.
         "MISSING_THOUGHT_SIGNATURE" => {
-            return Err(CodecError::StreamFailure(
-                crate::protocol::failure::SourceFailureEvidence::stream(400, b""),
-            )
-            .into());
+            return Err(CodecError::StreamFailure(SourceFailureEvidence::stream(400, b"")).into());
         }
         "PUP_LIMITED_DISABLED" => {
-            return Err(CodecError::StreamFailure(
-                crate::protocol::failure::SourceFailureEvidence::stream(403, b""),
-            )
-            .into());
+            return Err(CodecError::StreamFailure(SourceFailureEvidence::stream(403, b"")).into());
         }
         _ => {
-            return Err(CodecError::StreamFailure(
-                crate::protocol::failure::SourceFailureEvidence::stream(500, b""),
-            )
-            .into());
+            return Err(CodecError::StreamFailure(SourceFailureEvidence::stream(500, b"")).into());
         }
     })
 }
@@ -169,9 +162,7 @@ impl GenerationSseDecoder {
                             )
                             .into()
                         }
-                        crate::semantic::value::JsonError::Invalid => {
-                            invalid(crate::protocol::failure::ShapeReason::Json)
-                        }
+                        crate::semantic::value::JsonError::Invalid => invalid(ShapeReason::Json),
                     },
                 )?;
                 self.chunk(&value, &mut out)?;
@@ -207,19 +198,17 @@ impl GenerationSseDecoder {
                 .and_then(|c| u16::try_from(c).ok())
                 .filter(|c| (400..600).contains(c))
                 .unwrap_or(500);
-            return Err(CodecError::StreamFailure(
-                crate::protocol::failure::SourceFailureEvidence::envelope(
-                    code,
-                    crate::protocol::failure::RecognitionBasis::EnvelopeCode,
-                    None,
-                    error.get("status").and_then(Value::as_str),
-                    error.get("message").and_then(Value::as_str),
-                ),
-            )
+            return Err(CodecError::StreamFailure(SourceFailureEvidence::envelope(
+                code,
+                RecognitionBasis::EnvelopeCode,
+                None,
+                error.get("status").and_then(Value::as_str),
+                error.get("message").and_then(Value::as_str),
+            ))
             .into());
         }
         if self.finished {
-            return Err(invalid(crate::protocol::failure::ShapeReason::AfterFinish));
+            return Err(invalid(ShapeReason::AfterFinish));
         }
         let id = string(o, "responseId")?;
         let model = string(o, "modelVersion")?;
@@ -227,18 +216,15 @@ impl GenerationSseDecoder {
             if id.is_some_and(|id| Some(id) != metadata.id.as_deref())
                 || model.is_some_and(|model| model != metadata.model)
             {
-                return Err(invalid(crate::protocol::failure::ShapeReason::Identity));
+                return Err(invalid(ShapeReason::Identity));
             }
         } else {
             let metadata = ResponseMetadata {
                 delivery: None,
                 storage: None,
-                id: Some(
-                    id.ok_or_else(|| invalid(crate::protocol::failure::ShapeReason::InvalidValue))?
-                        .into(),
-                ),
+                id: Some(id.ok_or_else(|| invalid(ShapeReason::InvalidValue))?.into()),
                 model: model
-                    .ok_or_else(|| invalid(crate::protocol::failure::ShapeReason::InvalidValue))?
+                    .ok_or_else(|| invalid(ShapeReason::InvalidValue))?
                     .into(),
                 created: None,
                 context: Default::default(),
@@ -272,7 +258,7 @@ impl GenerationSseDecoder {
                     || o.get("candidates")
                         .is_some_and(|v| !v.as_array().is_some_and(Vec::is_empty)))
             {
-                return Err(invalid(crate::protocol::failure::ShapeReason::InvalidValue));
+                return Err(invalid(ShapeReason::InvalidValue));
             }
             self.emit(StreamEvent::SafetyReport(report), out)?;
             if blocked {
@@ -283,22 +269,20 @@ impl GenerationSseDecoder {
             None => return Ok(()),
             Some(v) => v
                 .as_array()
-                .ok_or_else(|| invalid(crate::protocol::failure::ShapeReason::InvalidValue))?,
+                .ok_or_else(|| invalid(ShapeReason::InvalidValue))?,
         };
         let candidate = match candidates.as_slice() {
             [] => return Ok(()),
             [one] => object(one, "candidate")?,
             _ => {
-                return Err(unsupported(
-                    crate::protocol::failure::CarrierReason::Unavailable,
-                ));
+                return Err(unsupported(CarrierReason::Unavailable));
             }
         };
         if candidate
             .get("index")
             .is_some_and(|i| i.as_u64() != Some(0))
         {
-            return Err(invalid(crate::protocol::failure::ShapeReason::InvalidValue));
+            return Err(invalid(ShapeReason::InvalidValue));
         }
         if let Some(metadata) = candidate.get("citationMetadata").filter(|v| !v.is_null()) {
             let metadata = object(metadata, "citationMetadata")?;
@@ -306,42 +290,34 @@ impl GenerationSseDecoder {
                 .get("citationSources")
                 .is_some_and(|v| v.as_array().is_none_or(|sources| !sources.is_empty()))
             {
-                return Err(unsupported(
-                    crate::protocol::failure::CarrierReason::CitationMetadata,
-                ));
+                return Err(unsupported(CarrierReason::CitationMetadata));
             }
         }
         if candidate
             .get("groundingMetadata")
             .is_some_and(|v| !v.is_null())
         {
-            return Err(unsupported(
-                crate::protocol::failure::CarrierReason::CitationMetadata,
-            ));
+            return Err(unsupported(CarrierReason::CitationMetadata));
         }
         if let Some(metadata) = candidate.get("urlContextMetadata").filter(|v| !v.is_null()) {
             let metadata = object(metadata, "urlContextMetadata")
-                .map_err(|_| invalid(crate::protocol::failure::ShapeReason::Metadata))?;
+                .map_err(|_| invalid(ShapeReason::Metadata))?;
             if let Some(entries) = metadata.get("urlMetadata") {
                 let entries = entries
                     .as_array()
-                    .ok_or_else(|| invalid(crate::protocol::failure::ShapeReason::Metadata))?;
+                    .ok_or_else(|| invalid(ShapeReason::Metadata))?;
                 if !entries.is_empty() {
-                    return Err(unsupported(
-                        crate::protocol::failure::CarrierReason::UrlContextMetadata,
-                    ));
+                    return Err(unsupported(CarrierReason::UrlContextMetadata));
                 }
             }
         }
         let reason = string(candidate, "finishReason")?;
         let explanation = match string(candidate, "finishMessage")
-            .map_err(|_| invalid(crate::protocol::failure::ShapeReason::TerminalExplanation))?
+            .map_err(|_| invalid(ShapeReason::TerminalExplanation))?
         {
             None => Presence::Absent,
             Some(_) if reason.is_none() => {
-                return Err(invalid(
-                    crate::protocol::failure::ShapeReason::TerminalExplanation,
-                ));
+                return Err(invalid(ShapeReason::TerminalExplanation));
             }
             Some(message) => Presence::Value(TerminalExplanation {
                 text: Text::allowing_empty(
@@ -359,29 +335,23 @@ impl GenerationSseDecoder {
             .unwrap_or_default();
         if let Some(value) = candidate.get("avgLogprobs") {
             if !value.as_f64().is_some_and(|n| n.is_finite() && n <= 0.0) {
-                return Err(invalid(
-                    crate::protocol::failure::ShapeReason::Probabilities,
-                ));
+                return Err(invalid(ShapeReason::Probabilities));
             }
-            return Err(unsupported(
-                crate::protocol::failure::CarrierReason::MeanLogprob,
-            ));
+            return Err(unsupported(CarrierReason::MeanLogprob));
         }
         if !probabilities.is_empty() {
             let parts = candidate
                 .get("content")
                 .and_then(|content| content.get("parts"))
                 .and_then(Value::as_array)
-                .ok_or_else(|| unsupported(crate::protocol::failure::CarrierReason::Unavailable))?;
+                .ok_or_else(|| unsupported(CarrierReason::Unavailable))?;
             let [part] = parts.as_slice() else {
-                return Err(unsupported(
-                    crate::protocol::failure::CarrierReason::Unavailable,
-                ));
+                return Err(unsupported(CarrierReason::Unavailable));
             };
             let part = object(part, "part")?;
             let fragment = string(part, "text")?
                 .filter(|text| !text.is_empty())
-                .ok_or_else(|| unsupported(crate::protocol::failure::CarrierReason::Unavailable))?;
+                .ok_or_else(|| unsupported(CarrierReason::Unavailable))?;
             // Only chunk-local, unambiguous text reports are selected. Do not
             // guess whether a mixed or cumulative report belongs to this delta.
             if part
@@ -393,20 +363,18 @@ impl GenerationSseDecoder {
                     .collect::<String>()
                     != fragment
             {
-                return Err(unsupported(
-                    crate::protocol::failure::CarrierReason::Unavailable,
-                ));
+                return Err(unsupported(CarrierReason::Unavailable));
             }
         }
         if let Some(content) = candidate.get("content") {
             let content = object(content, "content")?;
             if string(content, "role")?.is_some_and(|r| r != "model") {
-                return Err(invalid(crate::protocol::failure::ShapeReason::InvalidValue));
+                return Err(invalid(ShapeReason::InvalidValue));
             }
             if let Some(parts) = content.get("parts") {
                 for (index, part) in parts
                     .as_array()
-                    .ok_or_else(|| invalid(crate::protocol::failure::ShapeReason::InvalidValue))?
+                    .ok_or_else(|| invalid(ShapeReason::InvalidValue))?
                     .iter()
                     .enumerate()
                 {
@@ -449,18 +417,16 @@ impl GenerationSseDecoder {
             "codeExecutionResult",
         ];
         if UNMODELED.iter().any(|key| p.contains_key(*key)) {
-            return Err(unsupported(
-                crate::protocol::failure::CarrierReason::Unavailable,
-            ));
+            return Err(unsupported(CarrierReason::Unavailable));
         }
         let signature = match string(p, "thoughtSignature")? {
-            Some("") => return Err(invalid(crate::protocol::failure::ShapeReason::Signature)),
+            Some("") => return Err(invalid(ShapeReason::Signature)),
             other => other.map(str::to_owned),
         };
         let thought = match p.get("thought") {
             None => false,
             Some(Value::Bool(b)) => *b,
-            Some(_) => return Err(invalid(crate::protocol::failure::ShapeReason::InvalidValue)),
+            Some(_) => return Err(invalid(ShapeReason::InvalidValue)),
         };
         match (string(p, "text")?, p.get("functionCall")) {
             (Some(fragment), None) if thought => {
@@ -554,19 +520,19 @@ impl GenerationSseDecoder {
                 // Gemini 3 always returns call IDs; the gateway mints none.
                 let id = string(call, "id")?
                     .filter(|id| !id.is_empty())
-                    .ok_or_else(|| invalid(crate::protocol::failure::ShapeReason::InvalidValue))?;
+                    .ok_or_else(|| invalid(ShapeReason::InvalidValue))?;
                 let name = string(call, "name")?
                     .filter(|n| !n.is_empty())
-                    .ok_or_else(|| invalid(crate::protocol::failure::ShapeReason::InvalidValue))?;
+                    .ok_or_else(|| invalid(ShapeReason::InvalidValue))?;
                 let args = match call.get("args") {
                     None => Value::Object(Map::new()),
                     Some(v @ Value::Object(_)) => v.clone(),
                     Some(_) => {
-                        return Err(invalid(crate::protocol::failure::ShapeReason::InvalidValue));
+                        return Err(invalid(ShapeReason::InvalidValue));
                     }
                 };
                 if self.calls.iter().any(|c| c == id) {
-                    return Err(invalid(crate::protocol::failure::ShapeReason::CallIdentity));
+                    return Err(invalid(ShapeReason::CallIdentity));
                 }
                 self.calls.push(id.into());
                 let replay = if let Some(signature) = signature {
@@ -595,8 +561,8 @@ impl GenerationSseDecoder {
                     },
                     out,
                 )?;
-                let arguments = serde_json::to_string(&args)
-                    .map_err(|_| invalid(crate::protocol::failure::ShapeReason::InvalidValue))?;
+                let arguments =
+                    serde_json::to_string(&args).map_err(|_| invalid(ShapeReason::InvalidValue))?;
                 for event in [
                     StreamEvent::PartStarted {
                         item,
@@ -626,14 +592,14 @@ impl GenerationSseDecoder {
                         .and_then(|i| i.snapshot())
                         .map_err(CodecError::from)?
                     else {
-                        return Err(invalid(crate::protocol::failure::ShapeReason::InvalidValue));
+                        return Err(invalid(ShapeReason::InvalidValue));
                     };
                     self.fidelity
                         .record_call_replay(item, &call, Some(self.target.origin()))?;
                 }
                 Ok(())
             }
-            _ => Err(invalid(crate::protocol::failure::ShapeReason::InvalidValue)),
+            _ => Err(invalid(ShapeReason::InvalidValue)),
         }
     }
     fn delta(
@@ -649,7 +615,7 @@ impl GenerationSseDecoder {
         let open = self
             .open
             .as_mut()
-            .ok_or_else(|| invalid(crate::protocol::failure::ShapeReason::InvalidValue))?;
+            .ok_or_else(|| invalid(ShapeReason::InvalidValue))?;
         let (item, part) = (open.item, open.part);
         let start = !open.part_started;
         open.part_started = true;
@@ -694,7 +660,7 @@ impl GenerationSseDecoder {
             .and_then(|i| i.snapshot())
             .map_err(CodecError::from)?
         else {
-            return Err(invalid(crate::protocol::failure::ShapeReason::InvalidValue));
+            return Err(invalid(ShapeReason::InvalidValue));
         };
         self.fidelity
             .record_replay(item, &reasoning, Some(self.target.origin()))?;
@@ -760,7 +726,7 @@ impl GenerationSseDecoder {
                 .and_then(|i| i.snapshot())
                 .map_err(CodecError::from)?
             else {
-                return Err(invalid(crate::protocol::failure::ShapeReason::InvalidValue));
+                return Err(invalid(ShapeReason::InvalidValue));
             };
             self.fidelity.record_part_replay(
                 open.item,
@@ -829,7 +795,7 @@ impl GenerationSseDecoder {
         let result = (|| {
             self.framing.finish_strict()?;
             if !self.finished {
-                return Err(invalid(crate::protocol::failure::ShapeReason::InvalidValue));
+                return Err(invalid(ShapeReason::InvalidValue));
             }
             Ok(DecodedResponse {
                 evidence: Default::default(),
@@ -838,7 +804,7 @@ impl GenerationSseDecoder {
                 metadata: self
                     .metadata
                     .clone()
-                    .ok_or_else(|| invalid(crate::protocol::failure::ShapeReason::InvalidValue))?,
+                    .ok_or_else(|| invalid(ShapeReason::InvalidValue))?,
             })
         })();
         if result.is_err() {

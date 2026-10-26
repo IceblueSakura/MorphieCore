@@ -1,4 +1,5 @@
 //! Client Messages delivery projection, named losses and JSON rendering.
+use crate::protocol::failure::{CarrierReason, ShapeReason};
 use crate::protocol::{CodecError, DecodedResponse, anthropic::messages as wire, replay_envelope};
 use crate::semantic::{task::generation::*, value::Presence};
 use serde_json::Value;
@@ -88,9 +89,7 @@ pub(super) fn project_reasoning(
         .is_some_and(|r| redacted(r.as_str()))
         && !reasoning.parts.is_empty()
     {
-        return Err(CodecError::Unsupported(
-            crate::protocol::failure::CarrierReason::Replay,
-        ));
+        return Err(CodecError::Unsupported(CarrierReason::Replay));
     }
     if reasoning.parts.is_empty()
         || matches!(reasoning.parts.as_slice(), [(_, ReasoningContent::Summary(t))] if !t.as_str().is_empty())
@@ -98,9 +97,7 @@ pub(super) fn project_reasoning(
         return Ok(Cow::Borrowed(reasoning));
     }
     if reasoning.replay.is_some() {
-        return Err(CodecError::Unsupported(
-            crate::protocol::failure::CarrierReason::Replay,
-        ));
+        return Err(CodecError::Unsupported(CarrierReason::Replay));
     }
     let mut thinking = String::new();
     for (_, part) in &reasoning.parts {
@@ -156,18 +153,14 @@ pub(crate) fn project_snapshot(response: &mut DecodedResponse) -> Result<(), Cod
             .iter()
             .any(|r| r.settings.as_ref().is_some_and(|s| !s.safety.is_empty()))
     {
-        return Err(CodecError::Unsupported(
-            crate::protocol::failure::CarrierReason::Safety,
-        ));
+        return Err(CodecError::Unsupported(CarrierReason::Safety));
     }
     crate::protocol::reports::single_view(&mut response.metadata.context.reports)?;
     if let Some(class) = response.metadata.context.service_class().value() {
         wire::service::class_wire(*class)?;
     }
     if response.metadata.context.execution != crate::semantic::context::ExecutionHints::default() {
-        return Err(CodecError::Unsupported(
-            crate::protocol::failure::CarrierReason::Unavailable,
-        ));
+        return Err(CodecError::Unsupported(CarrierReason::Unavailable));
     }
     for report in response.metadata.context.reports.iter_mut() {
         report.settings = None;
@@ -195,9 +188,7 @@ pub(crate) fn project_snapshot(response: &mut DecodedResponse) -> Result<(), Cod
             .as_ref()
             .is_none_or(|d| d.usage.is_none())
     {
-        return Err(CodecError::Invalid(
-            crate::protocol::failure::ShapeReason::Usage,
-        ));
+        return Err(CodecError::Invalid(ShapeReason::Usage));
     }
     response.semantic = response.semantic.clone().with_usage_reports(selected)?;
     let mut details = response.semantic.details().clone();
@@ -321,23 +312,17 @@ pub(crate) fn usage_loss() -> crate::lowering::generation::Effect {
 pub(super) fn tool_input(call: &ToolCall) -> Result<Value, CodecError> {
     tool_labels(call.call_id.as_str(), call.name.as_str())?;
     if !call.context.is_direct() || call.context.alias_domain.is_some() {
-        return Err(CodecError::Unsupported(
-            crate::protocol::failure::CarrierReason::Unavailable,
-        ));
+        return Err(CodecError::Unsupported(CarrierReason::Unavailable));
     }
     let input = match &call.arguments {
         ToolArguments::Structured(value) => value.clone(),
         ToolArguments::Raw(raw) => StructuredValue::from_bytes(raw.as_bytes())?,
         ToolArguments::StructuredPartial(_) => {
-            return Err(CodecError::Unsupported(
-                crate::protocol::failure::CarrierReason::Tools,
-            ));
+            return Err(CodecError::Unsupported(CarrierReason::Tools));
         }
     };
     if !input.value().is_object() {
-        return Err(CodecError::Unsupported(
-            crate::protocol::failure::CarrierReason::Unavailable,
-        ));
+        return Err(CodecError::Unsupported(CarrierReason::Unavailable));
     }
     Ok(input.value().clone())
 }

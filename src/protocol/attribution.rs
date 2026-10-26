@@ -97,9 +97,7 @@ fn validate_label_value(value: &str) -> Result<(), CodecError> {
                 )
         })
     {
-        return Err(CodecError::Invalid(
-            crate::protocol::failure::ShapeReason::InvalidValue,
-        ));
+        return Err(CodecError::invalid());
     }
     Ok(())
 }

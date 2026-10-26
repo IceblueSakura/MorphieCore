@@ -1,5 +1,6 @@
 //! Shared bounded readers for native usage breakdowns; native names stay here.
 use super::CodecError;
+use crate::protocol::failure::ShapeReason;
 use crate::semantic::task::generation::*;
 use serde_json::Value;
 
@@ -8,18 +9,18 @@ pub(crate) fn modality_tokens(
     bucket: UsageBucket,
     google: bool,
 ) -> Result<Vec<ModalityTokens>, CodecError> {
-    let values = value.as_array().ok_or(CodecError::Invalid(
-        crate::protocol::failure::ShapeReason::Usage,
-    ))?;
+    let values = value
+        .as_array()
+        .ok_or(CodecError::Invalid(ShapeReason::Usage))?;
     if values.len() > 7 {
         return Err(CodecError::Limit);
     }
     values
         .iter()
         .map(|value| {
-            let o = value.as_object().ok_or(CodecError::Invalid(
-                crate::protocol::failure::ShapeReason::Usage,
-            ))?;
+            let o = value
+                .as_object()
+                .ok_or(CodecError::Invalid(ShapeReason::Usage))?;
             let modality = if !google && o.get("modality").is_none_or(Value::is_null) {
                 None
             } else {
@@ -37,9 +38,7 @@ pub(crate) fn modality_tokens(
                     Some("video") if !google => TokenModality::Video,
                     Some("document") if !google => TokenModality::Document,
                     _ => {
-                        return Err(CodecError::Invalid(
-                            crate::protocol::failure::ShapeReason::Usage,
-                        ));
+                        return Err(CodecError::Invalid(ShapeReason::Usage));
                     }
                 })
             };
@@ -47,16 +46,12 @@ pub(crate) fn modality_tokens(
             let tokens = match o.get(key) {
                 None if google => Some(0),
                 None | Some(Value::Null) if !google => None,
-                Some(Value::String(v)) if google => Some(v.parse().map_err(|_| {
-                    CodecError::Invalid(crate::protocol::failure::ShapeReason::InvalidValue)
-                })?),
-                Some(v) => Some(v.as_u64().ok_or(CodecError::Invalid(
-                    crate::protocol::failure::ShapeReason::InvalidValue,
-                ))?),
+                Some(Value::String(v)) if google => {
+                    Some(v.parse().map_err(|_| CodecError::invalid())?)
+                }
+                Some(v) => Some(v.as_u64().ok_or(CodecError::invalid())?),
                 None => {
-                    return Err(CodecError::Invalid(
-                        crate::protocol::failure::ShapeReason::InvalidValue,
-                    ));
+                    return Err(CodecError::invalid());
                 }
             };
             Ok(ModalityTokens {
@@ -70,34 +65,26 @@ pub(crate) fn modality_tokens(
 }
 
 pub(crate) fn grounding_counts(value: &Value) -> Result<Vec<ToolUseCount>, CodecError> {
-    let values = value.as_array().ok_or(CodecError::Invalid(
-        crate::protocol::failure::ShapeReason::InvalidValue,
-    ))?;
+    let values = value.as_array().ok_or(CodecError::invalid())?;
     if values.len() > 4 {
         return Err(CodecError::Limit);
     }
     values
         .iter()
         .map(|value| {
-            let o = value.as_object().ok_or(CodecError::Invalid(
-                crate::protocol::failure::ShapeReason::InvalidValue,
-            ))?;
+            let o = value.as_object().ok_or(CodecError::invalid())?;
             let kind = match o.get("type").and_then(Value::as_str) {
                 None if o.get("type").is_none_or(Value::is_null) => ToolUsageKind::Unreported,
                 Some("google_search") => ToolUsageKind::WebSearch,
                 Some("google_maps") => ToolUsageKind::MapSearch,
                 Some("retrieval") => ToolUsageKind::Retrieval,
                 _ => {
-                    return Err(CodecError::Invalid(
-                        crate::protocol::failure::ShapeReason::InvalidValue,
-                    ));
+                    return Err(CodecError::invalid());
                 }
             };
             let count = match o.get("count") {
                 None | Some(Value::Null) => None,
-                Some(v) => Some(v.as_u64().ok_or(CodecError::Invalid(
-                    crate::protocol::failure::ShapeReason::InvalidValue,
-                ))?),
+                Some(v) => Some(v.as_u64().ok_or(CodecError::invalid())?),
             };
             Ok(ToolUseCount { kind, count })
         })

@@ -1,5 +1,6 @@
 //! Standard inline/URL file input. No file I/O, fetching or issuer-bound IDs.
 //! Source: https://github.com/openai/openai-python/blob/be9d66628ad7377bd36fe5a76ae6d735843f0e76/src/openai/types/responses/response_input_file_param.py
+use crate::protocol::failure::CarrierReason;
 use crate::protocol::openai::{CodecError, shape::*};
 use crate::semantic::{task::generation::*, value::Text};
 use serde_json::{Map, Value, json};
@@ -9,9 +10,7 @@ pub(in crate::protocol::openai) fn read(
     direction: DecodeDirection,
 ) -> Result<Resource, CodecError> {
     if part.get("file_id").is_some_and(|v| !v.is_null()) {
-        return Err(CodecError::Unsupported(
-            crate::protocol::failure::CarrierReason::Unavailable,
-        ));
+        return Err(CodecError::Unsupported(CarrierReason::Unavailable));
     }
     direction.fields(
         part,
@@ -37,9 +36,7 @@ pub(in crate::protocol::openai) fn read(
             let (media_type, data) = raw
                 .strip_prefix("data:")
                 .and_then(|v| v.split_once(";base64,"))
-                .ok_or(CodecError::Invalid(
-                    crate::protocol::failure::ShapeReason::InvalidValue,
-                ))?;
+                .ok_or(CodecError::invalid())?;
             ResourceLocation::Inline {
                 media_type: text(media_type, "file media type", MAX_RESOURCE_MEDIA_TYPE_BYTES)?,
                 data_base64: text(data, "file data", MAX_TEXT_BYTES)?,
@@ -51,17 +48,13 @@ pub(in crate::protocol::openai) fn read(
             MAX_RESOURCE_URL_BYTES,
         )?),
         _ => {
-            return Err(CodecError::Invalid(
-                crate::protocol::failure::ShapeReason::InvalidValue,
-            ));
+            return Err(CodecError::invalid());
         }
     };
     let filename = part
         .get("filename")
         .map(|v| {
-            let name = v.as_str().ok_or(CodecError::Invalid(
-                crate::protocol::failure::ShapeReason::InvalidValue,
-            ))?;
+            let name = v.as_str().ok_or(CodecError::invalid())?;
             Text::allowing_empty(name, "filename", MAX_FILE_NAME_BYTES)
                 .map_err(|_| CodecError::Limit)
         })
@@ -70,13 +63,9 @@ pub(in crate::protocol::openai) fn read(
         .get("detail")
         .map(|v| {
             v.as_str()
-                .ok_or(CodecError::Invalid(
-                    crate::protocol::failure::ShapeReason::InvalidValue,
-                ))?
+                .ok_or(CodecError::invalid())?
                 .parse::<FileDetail>()
-                .map_err(|_| {
-                    CodecError::Invalid(crate::protocol::failure::ShapeReason::InvalidValue)
-                })
+                .map_err(|_| CodecError::invalid())
         })
         .transpose()?;
     let resource = Resource {
@@ -97,14 +86,10 @@ pub(in crate::protocol::openai) fn read_chat(
     direction: DecodeDirection,
 ) -> Result<Resource, CodecError> {
     direction.fields(part, &["type", "file"])?;
-    let file = object(part.get("file").ok_or(CodecError::Invalid(
-        crate::protocol::failure::ShapeReason::InvalidValue,
-    ))?)?;
+    let file = object(part.get("file").ok_or(CodecError::invalid())?)?;
     direction.fields(file, &["file_data", "file_id", "filename"])?;
     if file.contains_key("file_id") {
-        return Err(CodecError::Unsupported(
-            crate::protocol::failure::CarrierReason::Unavailable,
-        ));
+        return Err(CodecError::Unsupported(CarrierReason::Unavailable));
     }
     // Only Chat's own fields reach the shared reader; ignored keys stay ignored.
     let mut value: Map<String, Value> = ["file_data", "filename"]

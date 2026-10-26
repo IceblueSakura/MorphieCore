@@ -1,5 +1,6 @@
 //! Target capabilities and binding admission for stateless Interactions.
 use super::{RequestRule, encode_generation_request};
+use crate::protocol::failure::CarrierReason;
 use crate::{
     adapter::{ConversionFailure, Request},
     protocol::{
@@ -108,9 +109,7 @@ impl TargetCaps {
             || request.delivery.stream == Presence::Null
             || request.n.value().is_some_and(|n| *n != 1)
         {
-            return Err(CodecError::Unsupported(
-                crate::protocol::failure::CarrierReason::Unavailable,
-            ));
+            return Err(CodecError::Unsupported(CarrierReason::Unavailable));
         }
         Ok(request.cache_session.is_some())
     }
@@ -192,10 +191,7 @@ impl TargetCaps {
             let (wire, mut rules) =
                 encode_generation_request(&semantic, &request.task.fidelity, target)?;
             if !self.reasoning_as_text && rules.contains(&RequestRule::ReasoningAsText) {
-                return Err(CodecError::Unsupported(
-                    crate::protocol::failure::CarrierReason::Reasoning,
-                )
-                .into());
+                return Err(CodecError::Unsupported(CarrierReason::Reasoning).into());
             }
             if foreign {
                 rules.push(RequestRule::TransferVisibleHistory);
