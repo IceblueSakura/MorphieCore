@@ -212,6 +212,8 @@ git diff --check
 
 These checks use synthetic data only. Do not use real Providers or private configuration as offline test input.
 
+The committed configuration templates are exercised by `cargo test --locked --offline --lib committed_configuration_templates`: copy them into private test storage, prove unchanged Agent-key placeholders reject, replace only those keys with synthetic values, then load each model variant through the real startup path with test-owned credential pools. Capture and diagnostics stay disabled. This is configuration/catalog validation, not Provider access. Validate the Nginx template with `nginx -t` after replacing its listen address with a test-owned unprivileged loopback port and using temporary certificate/log/body paths. Do not assume configuration testing cannot open files or attempt socket binds; never start or reload a host service as part of this check.
+
 Generation Text discovery has focused wire, source-domain projection, common-subset, unknown-limit, bounds, authentication and privacy checks in `cargo test --locked --offline --lib gateway::tests::models::`. Synthetic CLI startup checks confirm text-only publication without upstream calls; `tests/gateway/test_openapi_schema.py` validates the enhanced schemas separately from standard Models. Existing SDK Models consumption remains a regression gate, not enhanced-metadata consumption or real Provider effectiveness evidence. No installed-client configuration integration is selected.
 
 Focused examples:

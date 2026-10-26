@@ -1,0 +1,70 @@
+{
+  "implicit_cache_affinity": true,
+  "models": {
+    "claude-haiku-5-5": {
+      "chat_profile": "standard",
+      "max_attempts": 2,
+      "total_timeout_ms": 180000,
+      "thinking_tokens": {
+        "minimal": 1024,
+        "low": 2048,
+        "medium": 3072,
+        "high": 8192,
+        "xhigh": 16384,
+        "max": 24576
+      },
+      "candidates": [
+        {
+          "binding": "opencode-go-haiku-messages",
+          "base_url": "https://primary.example.invalid/v1",
+          "upstream_model": "claude-haiku-5-5",
+          "credential": "opencode-go-api-key",
+          "attempt_timeout_ms": 90000,
+          "allowed_effort": ["low", "medium", "high"],
+          "maximum_output_tokens": 8192,
+          "default_output_tokens": 4096,
+          "reasoning_as_text": false,
+          "thinking_conversion": "budget_to_effort"
+        },
+        {
+          "binding": "opencode-go-haiku-messages",
+          "base_url": "https://secondary.example.invalid/v1",
+          "upstream_model": "claude-haiku-5-5",
+          "credential": "opencode-go-api-key",
+          "attempt_timeout_ms": 90000,
+          "allowed_effort": ["low", "medium", "high"],
+          "maximum_output_tokens": 8192,
+          "default_output_tokens": null,
+          "reasoning_as_text": false,
+          "thinking_conversion": "budget_to_effort"
+        }
+      ]
+    },
+    "gemini-3.8-flash": {
+      "chat_profile": "standard",
+      "max_attempts": 1,
+      "total_timeout_ms": 180000,
+      "thinking_tokens": {
+        "minimal": 1024,
+        "low": 2048,
+        "medium": 3072,
+        "high": 8192,
+        "xhigh": 16384,
+        "max": 24576
+      },
+      "candidates": [
+        {
+          "binding": "google-gemini-3.8-flash-generate-content",
+          "base_url": "https://google.example.invalid/v1beta",
+          "upstream_model": "gemini-3.8-flash",
+          "credential": "google-api-key",
+          "attempt_timeout_ms": 180000,
+          "allowed_effort": ["low", "medium", "high"],
+          "maximum_output_tokens": 32768,
+          "reasoning_as_text": false,
+          "thinking_conversion": "effort_to_budget"
+        }
+      ]
+    }
+  }
+}

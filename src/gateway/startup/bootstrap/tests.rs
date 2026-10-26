@@ -1161,3 +1161,110 @@ fn configured_failover_orders_and_limits_a_models_providers() {
     assert!(Bootstrap::from_options(&gateway_file, None, Some("http://127.0.0.1:9")).is_ok());
     assert!(Bootstrap::from_files(&gateway_file, &directory.path().join("empty-store")).is_err());
 }
+#[test]
+fn committed_configuration_templates_load_with_test_owned_credentials() {
+    use crate::credential::{CredentialPool, CredentialRef};
+    let directory = crate::test_files::private_directory();
+    let root = directory.path();
+    let manager = CredentialManager::new(root.join("credentials"), vec![]).unwrap();
+    for id in ["aliyun-tokenplan-cn", "opencode-go", "google", "openrouter"] {
+        let provider = crate::provider::catalog::get(id).unwrap();
+        manager
+            .add_api_key(
+                id,
+                "example",
+                Secret::new("synthetic-template-upstream".into()).unwrap(),
+            )
+            .unwrap();
+        manager
+            .set_pool(
+                id,
+                provider.credential_pool.as_ref().unwrap().as_str(),
+                0,
+                CredentialPool {
+                    members: vec![CredentialRef::ApiKey {
+                        alias: "example".into(),
+                    }],
+                    fallback: false,
+                    max_attempts: 1,
+                },
+            )
+            .unwrap();
+    }
+    write_private(
+        &root.join("gateway.json"),
+        include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/config/gateway.example.json"
+        )),
+    );
+    let auth = include_bytes!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/config/auth.example.json"
+    ));
+    write_private(&root.join("auth.json"), auth);
+    let basic_models = include_bytes!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/config/models.example.json"
+    ));
+    write_private(&root.join("models.json"), basic_models);
+    let error = Bootstrap::from_directory(root)
+        .err()
+        .expect("short template keys must reject");
+    assert!(matches!(error, StartupError::Credentials), "{error}");
+    let mut auth: serde_json::Value = serde_json::from_slice(auth).unwrap();
+    for (index, agent) in auth["agents"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .enumerate()
+    {
+        agent["key"] = format!("synthetic-template-agent-{index:032}").into();
+    }
+    write_private(&root.join("auth.json"), &serde_json::to_vec(&auth).unwrap());
+    for (name, model_bytes, expected) in [
+        (
+            "models.example.json",
+            basic_models.as_slice(),
+            (3, 0, 0, 0, 0),
+        ),
+        (
+            "models.advanced.example.json",
+            include_bytes!(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/config/models.advanced.example.json"
+            ))
+            .as_slice(),
+            (6, 0, 0, 0, 0),
+        ),
+        (
+            "models.tasks.example.json",
+            include_bytes!(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/config/models.tasks.example.json"
+            ))
+            .as_slice(),
+            (0, 1, 1, 1, 1),
+        ),
+    ] {
+        write_private(&root.join("models.json"), model_bytes);
+        let boot =
+            Bootstrap::from_directory(root).unwrap_or_else(|error| panic!("{name}: {error}"));
+        let state = &boot.gateway.state;
+        assert_eq!(
+            (
+                state.entries.len(),
+                state.images.len(),
+                state.speech.len(),
+                state.transcriptions.len(),
+                state.embeddings.len(),
+            ),
+            expected
+        );
+        assert!(state.capture.is_none());
+        assert!(state.diagnostics.is_none());
+        let policy = state.limits.delta_coalescing.unwrap();
+        assert_eq!((policy.max_delay_ms, policy.max_pending_bytes), (50, 16384));
+    }
+    assert!(!root.join("capture").exists());
+}

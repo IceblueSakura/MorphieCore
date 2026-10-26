@@ -4,16 +4,12 @@
 /.codex/
 .env
 .env.*
-# Planned private configuration; it may contain local upstream/downstream credentials.
-config/local.toml
-config/local.*.toml
-/config/users.toml
-/config/users.*.toml
-!/config/users.example.toml
-/config/upstream-credentials.toml
-/config/upstream-credentials.*.toml
-!/config/upstream-credentials.example.toml
-config/chatgpt/*
+# Only explicit public templates belong here. Keep edited deployment copies,
+# credentials, certificates, logs and capture files outside the repository.
+!/config/
+/config/*
+!/config/*.example.json
+!/config/*.example.conf
 
 # Standalone protocol corpus derived artifacts and Python tool environments.
 /testdata/generated/

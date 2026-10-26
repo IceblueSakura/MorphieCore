@@ -37,6 +37,8 @@ Read by task:
 
 ## Run
 
+Copyable [configuration templates](docs/usage.md#configuration-templates) live in [`config/`](config/), including an optional Nginx TLS proxy. Copy them to private deployment storage and replace the deliberately invalid Agent-key placeholders before starting.
+
 After preparing credentials, a pool, `gateway.json`, `auth.json` and `models.json` using [Usage](docs/usage.md):
 
 ```sh

@@ -10,6 +10,7 @@ This guide owns local setup, configuration and client-facing procedures for impl
   - [OAuth](#oauth)
 - [Manual upstream diagnostics](#manual-upstream-diagnostics)
 - [Configure the gateway](#configure-the-gateway)
+  - [Configuration templates](#configuration-templates)
   - [Agent API keys](#agent-api-keys)
   - [Body-free diagnostics](#body-free-diagnostics)
   - [Model configuration](#model-configuration)
@@ -193,6 +194,46 @@ The HTTP response ceiling is 4 MiB; JSON keeps shared structural limits, and SIW
 
 Create private `gateway.json`, `auth.json` and `models.json` files in `$HOME/.local/share/morphiecore` (use `%USERPROFILE%` on Windows), or select a different service file with `--config`. Their parent directories must also be private on Unix; use directory mode `0700` and file mode `0600`. Keep configuration outside the credential store. Each file is bounded to 64 KiB and rejects unknown fields and duplicate JSON keys. Changes take effect at startup; there is no hot reload.
 
+### Configuration templates
+
+The repository's [`config/`](../config/) directory contains public templates, not live configuration:
+
+| Template | Purpose |
+|---|---|
+| [`gateway.example.json`](../config/gateway.example.json) | All current service fields, default 50 ms / 16 KiB coalescing, disabled diagnostics and all capture selections off |
+| [`auth.example.json`](../config/auth.example.json) | Two independent Agent identities with deliberately too-short key placeholders; the unchanged file cannot start a gateway |
+| [`models.example.json`](../config/models.example.json) | Narrow starting point: Qwen 3.8 Flash through the existing Token Plan Chat binding, readable Chat reasoning and one attempt |
+| [`models.advanced.example.json`](../config/models.advanced.example.json) | Optional Generation controls: ordered native Messages candidates, deployment/pool overrides, output limits, inherited-default clearing and both numeric thinking conversions |
+| [`models.tasks.example.json`](../config/models.tasks.example.json) | Optional existing Embedding, Images, Speech and explicit Transcription binding selection, without Generation overrides |
+| [`nginx.example.conf`](../config/nginx.example.conf) | Optional TLS virtual host, gzip SSE, proxy safety controls and example pre-authentication connection/upload limits; include from `http {}` |
+
+Choose one model template as `models.json`, or deliberately combine selected entries under one `models` object. The loader does not merge files, expand placeholders or discover templates. The advanced template's `.invalid` origins must be replaced with trusted deployments compatible with the selected binding; it is not a ready-to-use failover or cross-account replay claim. Its second Messages candidate clears the output default, so an uncapped request is not automatically compatible with that candidate.
+
+For a **new** Unix installation, run from the repository root. This refuses to overwrite existing files or symlinks:
+
+```sh
+(
+    set -eu
+    config="$HOME/.local/share/morphiecore"
+    for name in gateway auth models; do
+        if [ -e "$config/$name.json" ] || [ -L "$config/$name.json" ]; then
+            printf 'Refusing to overwrite an existing configuration.\n' >&2
+            exit 1
+        fi
+    done
+    install -d -m 0700 "$config"
+    for name in gateway auth models; do
+        install -m 0600 "config/$name.example.json" "$config/$name.json"
+    done
+)
+```
+
+Replace **each** Agent-key placeholder with an independently generated high-entropy key of at least 32 printable non-space ASCII characters; keep those values out of source and shell output. Provision Provider credentials and pools using `morphiecore-auth`, with `--store "$HOME/.local/share/morphiecore/credentials"` to match this service template. The basic model needs the `aliyun-tokenplan-cn-api-key` pool in `aliyun-tokenplan-cn`; advanced examples use `opencode-go-api-key` and `google-api-key` in their respective domains. Task examples use `openrouter-api-key` and the Token Plan pool, with one member and fallback disabled. Activation still requires actual account access; templates are not live acceptance evidence.
+
+`proxy: null` leaves the documented environment-proxy fallback in effect; it does not force direct connections. To enable diagnostics, replace `null` with a private path whose parent already exists. Capture remains disabled until a header/body switch is explicitly enabled; then create its private parent and choose a fresh filename. Upstream credential stores are managed formats, not hand-edited templates. Provider metadata remains compiled into the program; there is no runtime `providers.json` template.
+
+Keep edited copies, credentials, certificates and captures outside the repository. Git ignores non-template files under `config/` as a secondary guard, not as permission to put secrets in public `*.example.*` files.
+
 `gateway.json` owns service settings, not key values:
 
 ```json
@@ -221,25 +262,7 @@ Paths in the service file resolve relative to that file, not the process working
 
 ### Agent API keys
 
-`auth.json` has one versioned schema. The following keys are synthetic; replace each with an independent high-entropy random key:
-
-```json
-{
-  "version": 1,
-  "agents": [
-    {
-      "agent_id": "pi-workstation",
-      "name": "Workstation Pi",
-      "key": "synthetic-pi-ingress-secret-00000001",
-      "desc": "Primary coding agent"
-    },
-    {
-      "agent_id": "opencode-workstation",
-      "key": "synthetic-opencode-secret-000000002"
-    }
-  ]
-}
-```
+`auth.json` has one versioned schema. Start from [`auth.example.json`](../config/auth.example.json) and replace its intentionally invalid key placeholders; never deploy shared example keys.
 
 | Field | Contract |
 |---|---|
@@ -278,29 +301,7 @@ After the old process exits, reuse the same path. Valid records remain; a recogn
 
 ### Model configuration
 
-`models.json` owns explicit public-model selection and ordered upstream candidates:
-
-```json
-{
-  "implicit_cache_affinity": true,
-  "models": {
-    "configured-public-model": {
-      "max_attempts": 2,
-      "total_timeout_ms": 120000,
-      "candidates": [
-        {
-          "binding": "existing-catalog-endpoint",
-          "base_url": "https://upstream.example/v1",
-          "upstream_model": "upstream-model-name",
-          "credential": "configured-pool",
-          "attempt_timeout_ms": 60000,
-          "reasoning_as_text": false
-        }
-      ]
-    }
-  }
-}
-```
+`models.json` owns explicit public-model selection and ordered upstream candidates. Start with [`models.example.json`](../config/models.example.json); the separate [advanced](../config/models.advanced.example.json) and [standalone-task](../config/models.tasks.example.json) templates demonstrate optional configuration shapes without expanding the default activation.
 
 Replace the placeholders with a registered public label, one of its catalog endpoint IDs and a pool in that endpoint's Provider domain. Binding definitions are in [the catalog](../src/topology/catalog.rs). `credential` is a pool reference, never an inline key; manage its key/account members through the existing credential CLI. Omitted deployment fields retain the selected binding's values.
 
@@ -476,46 +477,11 @@ For Rust embedding, `Gateway::new` takes a compiled topology and one `TaskEntrie
 
 Keep MorphieCore on loopback. A separately managed Nginx may expose the standard APIs over TLS; this is deployment guidance, not permission to publish a listener. The [delivery contract](architecture.md#reverse-proxy-delivery) owns cancellation, publication and trust boundaries.
 
-The following is a configuration fragment for an existing TLS virtual host, not a complete production configuration. Supply its domain/certificate separately, restrict public connection/upload resources and keep request temporary files private and space-bounded.
+Copy [`nginx.example.conf`](../config/nginx.example.conf) to deployment storage and include it from Nginx's `http {}` context, not inside another `server {}`. Replace the `.invalid` domain and certificate paths. It targets the service template's `127.0.0.1:8080`; change both sides together when moving that listener.
 
-```nginx
-# In http {}.
-upstream morphiecore {
-    server 127.0.0.1:8080;
-    keepalive 16;
-}
+The template includes example limits of 16 concurrent requests per IP and 32 for the virtual host. Review these for shared NATs and capacity; they are pre-authentication resource guards, not Agent quotas. Create its body-temporary directory with private service ownership on space-bounded storage, and protect access/error logs. The access format omits identifying headers, URLs and bodies; inherited Nginx error logs can still contain request URLs and must not be published. Do not enable debug logging for production traffic.
 
-# In the existing TLS server {}.
-underscores_in_headers on;
-client_max_body_size 32m;
-client_body_timeout 120s;
-send_timeout 300s;
-
-gzip on;
-gzip_comp_level 1;
-gzip_min_length 1024;
-gzip_types application/json text/event-stream;
-gzip_vary on;
-gzip_proxied any;
-
-location /v1/ {
-    proxy_pass http://morphiecore;
-    proxy_http_version 1.1;
-    proxy_set_header Connection "";
-    proxy_set_header Accept-Encoding "";
-
-    proxy_request_buffering on;
-    proxy_buffering off;
-    proxy_cache off;
-    proxy_next_upstream off;
-    proxy_intercept_errors off;
-    proxy_ignore_client_abort off;
-
-    proxy_connect_timeout 5s;
-    proxy_send_timeout 60s;
-    proxy_read_timeout 300s;
-}
-```
+The active HTTP/2 directive requires a suitable module and Nginx 1.25.1 or newer. HTTP/3 is a commented opt-in after build/client/UDP verification, not an enabled default. Do not deploy the template unchanged or assume it provisions certificates, filesystem quotas or a firewall.
 
 - **Compression:** Nginx owns response compression; clearing the backend `Accept-Encoding` does not clear the client's negotiation with Nginx. Start with gzip, measure incremental output, and only add br/zstd modules after client/build verification. SSE has no fixed `Content-Length`, so `gzip_min_length` is not an event-size threshold. Do not add `no-transform` while selecting proxy compression.
 - **Buffering:** `proxy_buffering off` controls responses. MorphieCore also sends `X-Accel-Buffering: no`, which Nginx normally consumes rather than forwarding. Upload buffering remains on: the gateway's default 60-second body-collection deadline then applies to the local backend transfer, not the preceding wireless upload. Nginx may spool full histories to temporary files and receives them before gateway authentication; limit that pre-authentication resource exposure separately. If spooling is forbidden, review gateway ingress bounds before disabling request buffering.

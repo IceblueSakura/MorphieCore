@@ -1,0 +1,14 @@
+{
+  "implicit_cache_affinity": true,
+  "models": {
+    "qwen3.8-flash": {
+      "chat_profile": "readable_reasoning",
+      "max_attempts": 1,
+      "candidates": [
+        {
+          "binding": "aliyun-tokenplan-cn-chat"
+        }
+      ]
+    }
+  }
+}

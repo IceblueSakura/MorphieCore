@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "agents": [
+    {
+      "agent_id": "pi-workstation",
+      "name": "Workstation Pi",
+      "key": "REPLACE_PI_KEY",
+      "desc": "Replace the short placeholder with an independent random key."
+    },
+    {
+      "agent_id": "opencode-workstation",
+      "name": "Workstation OpenCode",
+      "key": "REPLACE_OPENCODE_KEY",
+      "desc": "Replace the short placeholder with an independent random key."
+    }
+  ]
+}

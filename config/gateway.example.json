@@ -1,0 +1,36 @@
+{
+  "auth_file": "auth.json",
+  "bind": "127.0.0.1:8080",
+  "models_file": "models.json",
+  "credentials_dir": "credentials",
+  "proxy": null,
+  "concurrency": 16,
+  "exchange_timeout_ms": 3600000,
+  "delta_coalescing": {
+    "max_delay_ms": 50,
+    "max_pending_bytes": 16384
+  },
+  "diagnostics": null,
+  "capture": {
+    "path": "capture/exchanges.jsonl",
+    "client_request": {
+      "headers": false,
+      "body": false
+    },
+    "upstream_request": {
+      "headers": false,
+      "body": false
+    },
+    "upstream_response": {
+      "headers": false,
+      "body": false
+    },
+    "client_response": {
+      "headers": false,
+      "body": false
+    },
+    "max_unit_bytes": 262144,
+    "max_exchange_bytes": 4194304,
+    "max_total_bytes": 67108864
+  }
+}

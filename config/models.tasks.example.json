@@ -1,0 +1,11 @@
+{
+  "implicit_cache_affinity": false,
+  "models": {
+    "text-embedding-3-small": {},
+    "gpt-image-2.5-flare": {},
+    "qwen-audio-3.0-tts-plus": {},
+    "qwen-audio-3.0-asr-flash": {
+      "binding": "tokenplan-qwen-asr"
+    }
+  }
+}
