@@ -1,4 +1,4 @@
-//! Short-lived inference snapshots. No refresh, account selection or authority I/O.
+//! Pinned identities: network-free inference snapshots and explicit renewal maintenance.
 use crate::credential::{
     CredentialError as Error, CredentialManager, Secret, VerifiedIdentity, model,
 };
@@ -41,6 +41,29 @@ impl CredentialManager {
     }
 }
 impl AccessBinding {
+    /// Storage-operation identity, not replay provenance. Cloned managers share
+    /// the same store; aliases in unrelated stores must not be coalesced.
+    pub(crate) fn same_account(&self, other: &Self) -> bool {
+        std::sync::Arc::ptr_eq(&self.manager.store, &other.manager.store)
+            && self.profile == other.profile
+            && self.alias == other.alias
+            && self.client == other.client
+            && self.identity == other.identity
+    }
+    pub(super) fn check_identity(&self, account: &model::Account) -> Result<(), Error> {
+        if account.client_id != self.client || account.identity.as_ref() != Some(&self.identity) {
+            return Err(Error::IdentityMismatch);
+        }
+        Ok(())
+    }
+    /// Explicit maintenance, never called by inference borrowing. Eligibility
+    /// and pinned identity are rechecked under the manager's account lock.
+    pub(crate) async fn refresh_if_due(&self, ahead: u64) -> Result<bool, Error> {
+        self.manager
+            .refresh_account(&self.profile, &self.alias, Some((self, ahead)))
+            .await
+            .map(|status| status.is_some())
+    }
     pub fn profile(&self) -> &str {
         &self.profile
     }
@@ -71,9 +94,7 @@ impl AccessBinding {
             .load(&tx, &self.profile, &self.alias)?
             .account
             .ok_or(Error::LoginRequired)?;
-        if account.client_id != self.client || account.identity.as_ref() != Some(&self.identity) {
-            return Err(Error::IdentityMismatch);
-        }
+        self.check_identity(&account)?;
         let credential = account.credential.ok_or(Error::LoginRequired)?;
         self.manager
             .driver(&self.profile)?

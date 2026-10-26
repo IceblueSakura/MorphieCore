@@ -181,7 +181,16 @@ async fn rotation_and_omitted_replacement_use_account_bound_refresh() {
     let dir = Directory::new();
     let pool = authority.pool(&dir);
     login(&pool, "alice").await;
-    let first = pool.refresh("grok", "alice").await.unwrap();
+    let binding = pool.bind_access("grok", "alice").unwrap();
+    {
+        let tx = pool.store.transaction().unwrap();
+        let mut account = tx.load("grok", "alice").unwrap().account.unwrap();
+        account.credential.as_mut().unwrap().expires_at = Some(1);
+        tx.publish(&account).unwrap();
+    }
+    assert!(binding.refresh_if_due(120).await.unwrap());
+    assert_eq!(binding.borrow().unwrap().access.expose(), "new-access");
+    let first = pool.list(Some("grok")).unwrap().remove(0);
     let second = pool.refresh("grok", "alice").await.unwrap();
     assert!(second.generation > first.generation);
     assert_eq!(

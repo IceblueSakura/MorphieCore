@@ -13,7 +13,10 @@ use axum::{
     response::{IntoResponse, Response},
     routing::{get, post},
 };
-use std::{future::Future, sync::Arc};
+use std::{
+    future::{Future, IntoFuture},
+    sync::Arc,
+};
 use tokio::net::TcpListener;
 impl Gateway {
     /// Embedding callers own listener security; `serve` enforces loopback itself.
@@ -101,10 +104,16 @@ impl Gateway {
         if !listener.local_addr()?.ip().is_loopback() {
             return Err(std::io::Error::other("listener must be loopback"));
         }
+        let state = self.state.clone();
+        let _serving = state
+            .serving
+            .try_lock()
+            .map_err(|_| std::io::Error::other("gateway is already serving"))?;
         // Listener-future cancellation must also release detached body workers.
         let _owner = self.state.shutdown.clone().drop_guard();
         let router = self.router();
-        axum::serve(listener, router)
+        let maintenance = self.clone();
+        let server = axum::serve(listener, router)
             .with_graceful_shutdown(async move {
                 tokio::select! {
                     _ = shutdown => {},
@@ -112,7 +121,13 @@ impl Gateway {
                 }
                 self.shutdown();
             })
-            .await
+            .into_future();
+        tokio::pin!(server);
+        tokio::select! {
+            biased;
+            result = &mut server => result,
+            _ = maintenance.renew_credentials() => server.await,
+        }
     }
 }
 fn ingress_error(path: &str, error: ApiError) -> Response {

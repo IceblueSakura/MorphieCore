@@ -31,7 +31,7 @@ Read by task:
 
 - Generation has JSON/SSE, tool and reasoning/replay carriers and selected media inputs. A carrier is not a promise that every model or client loop works.
 - Routing is bounded, cache-affine failover, not load balancing. Publication forbids replay.
-- Credentials come from the application store; inference never logs in or refreshes credentials. The CLI listener is loopback-only.
+- Credentials come from the application store; listener-owned maintenance automatically renews bound OAuth accounts before expiry. Inference never logs in or refreshes credentials. The CLI listener is loopback-only.
 - Responses history is gateway-owned TTL memory, not durable execution or Provider-held conversation state.
 - Standalone tasks expand only through selected [stage-4 slices](docs/roadmap.md#stage-4-scope). The [Embedding path](docs/architecture.md#independent-embedding-path) is independent of Generation; planned Files, other media and stage-5 APIs are not implied by it.
 

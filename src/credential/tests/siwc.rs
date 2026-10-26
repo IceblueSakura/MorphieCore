@@ -348,6 +348,12 @@ async fn rotated_material_survives_jwks_failure_and_recovers_without_token_reuse
         .await
         .unwrap();
     let binding = manager.bind_access("openai", "personal").unwrap();
+    {
+        let tx = manager.store.transaction().unwrap();
+        let mut account = tx.load("openai", "personal").unwrap().account.unwrap();
+        account.credential.as_mut().unwrap().expires_at = Some(1);
+        tx.publish(&account).unwrap();
+    }
     let mut replacement = token("", SCOPES);
     replacement["access_token"] = json!("new-access");
     replacement["refresh_token"] = json!("replacement-refresh");
@@ -370,10 +376,12 @@ async fn rotated_material_survives_jwks_failure_and_recovers_without_token_reuse
         ),
         failure,
     ]);
-    assert!(manager.refresh("openai", "personal").await.is_err());
+    assert!(binding.refresh_if_due(120).await.is_err());
     let state = manager.list(Some("openai")).unwrap().remove(0);
     assert!(state.renewal_pending);
     assert!(binding.borrow().is_err());
+    // Automatic scans cannot resume quarantined identity verification.
+    assert!(!binding.refresh_if_due(120).await.unwrap());
     let stored = read_account(&dir.path, "openai", "personal");
     assert!(stored["credential"].is_null());
     assert_eq!(

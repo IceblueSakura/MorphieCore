@@ -71,4 +71,5 @@ pub(super) struct Runtime {
     pub(super) permits: Arc<Semaphore>,
     pub(super) transport: HttpTransport,
     pub(super) shutdown: CancellationToken,
+    pub(super) serving: tokio::sync::Mutex<()>,
 }

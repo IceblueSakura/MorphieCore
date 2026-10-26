@@ -105,7 +105,8 @@ That pool limit does not disable cross-Provider fallback on a mixed model route.
 
 ### OAuth
 
-Login, refresh and revocation are explicit operator actions:
+Login and revocation remain explicit operator actions. A running gateway
+automatically renews its bound OAuth accounts; manual refresh remains available:
 
 ```sh
 morphiecore-auth grok login --account personal
@@ -123,6 +124,28 @@ morphiecore-auth openai logout --account personal
 - `login`, `refresh` and `logout` accept `--proxy`.
 
 Callbacks listen on `127.0.0.1`. Login checks issuer, client and subject. Gateway inference never starts login or refresh.
+
+Automatic renewal needs no extra configuration: `morphiecore` / `Gateway::serve`
+checks bound OAuth accounts immediately and then every 15 seconds, renewing known
+expiry within 120 seconds (including already expired access). Unused accounts,
+API keys, unknown expiry, missing refresh tokens and accounts requiring recovery
+are not automatically changed. Construction and library `router()` embedding do
+not start maintenance; use `serve` for automatic renewal.
+
+Each renewal has a 90-second deadline. Accounts are maintained serially and
+duplicate bindings are coalesced; a process-local 60-second minimum interval
+prevents short-lived replacement tokens from causing a refresh storm. The existing
+account lock excludes concurrent manual or other-process rotation. This is not a
+cross-process rate limit or an uninterrupted-access guarantee. OAuth authority
+traffic uses the gateway's selected proxy policy, including CLI `--proxy` overrides.
+
+Refresh reuses the verified identity and persists rotated tokens in the private
+store. For rotation safety, the old credential becomes unavailable before the
+exchange. Failure, timeout or shutdown never retries a possibly consumed refresh
+token or restores old material. Inspect `morphiecore-auth list`: use explicit
+`refresh` for `renewal_pending`, or log in again when consumption is uncertain or
+the grant is revoked/expired. Maintenance never logs in, escalates permissions,
+refreshes on HTTP 401 or replays inference.
 
 ## Manual upstream diagnostics
 

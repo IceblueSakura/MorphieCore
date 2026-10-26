@@ -13,3 +13,12 @@ pub fn builtin_drivers(proxy: Option<&str>) -> Result<Vec<Arc<dyn AuthDriver>>, 
         Arc::new(SiwcAuthority::new(proxy)?),
     ])
 }
+pub(crate) fn builtin_drivers_with_environment(
+    proxy: Option<&str>,
+    environment: bool,
+) -> Result<Vec<Arc<dyn AuthDriver>>, CredentialError> {
+    Ok(vec![
+        Arc::new(GrokAuthority::with_environment(proxy, environment)?),
+        Arc::new(SiwcAuthority::with_environment(proxy, environment)?),
+    ])
+}

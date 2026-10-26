@@ -58,8 +58,14 @@ struct TokenWire {
 }
 impl SiwcAuthority {
     pub fn new(proxy: Option<&str>) -> Result<Self, Error> {
+        Self::with_environment(proxy, true)
+    }
+    pub(in crate::credential) fn with_environment(
+        proxy: Option<&str>,
+        environment: bool,
+    ) -> Result<Self, Error> {
         Ok(Self {
-            http: AuthHttp::with_user_agent(ORIGIN, proxy, USER_AGENT)?,
+            http: AuthHttp::with_user_agent(ORIGIN, proxy, USER_AGENT, environment)?,
         })
     }
     #[cfg(test)]

@@ -17,14 +17,16 @@ impl AuthHttp {
         origin: &'static str,
         proxy: Option<&str>,
         agent: &str,
+        environment: bool,
     ) -> Result<Self, Error> {
-        Self::build(origin.into(), proxy, Some(agent))
+        Self::build_with_environment(origin.into(), proxy, Some(agent), environment)
     }
     #[cfg(test)]
     /// Test-only client without default metadata.
     pub fn raw(origin: &'static str, proxy: Option<&str>) -> Result<Self, Error> {
         Self::build(origin.into(), proxy, None)
     }
+    #[cfg(test)]
     fn build(origin: String, proxy: Option<&str>, agent: Option<&str>) -> Result<Self, Error> {
         Self::build_with_environment(origin, proxy, agent, true)
     }

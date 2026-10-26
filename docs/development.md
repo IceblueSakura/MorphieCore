@@ -219,11 +219,22 @@ Generation Text discovery has focused wire, source-domain projection, common-sub
 Focused examples:
 
 ```sh
+cargo test --locked --offline --lib automatic_refresh
+cargo test --locked --offline --lib gateway::renewal
 cargo test --locked --offline --test semantic tool_calls::reported_tool_results::
 cargo test --locked --offline --test semantic provider_observations::
 cargo test --locked --offline --test gateway bootstrap::
 cargo test --locked --offline --test process
 ```
+
+Automatic OAuth renewal has synthetic eligibility, pinned-identity, exclusivity,
+deduplication, cooldown, deadline and listener-cancellation checks. Existing Grok
+rotation and OpenAI pending-verification cases also exercise the automatic path.
+The 2026-10-26 implementation passes the offline baseline, production build,
+all four Python suites, 16 SDK scenarios and 12 installed-client synthetic
+scenarios with pi 1.4.0/OpenCode 2.0.32. No live authority or Provider renewal was
+performed; these checks do not certify current account access or uninterrupted
+renewal.
 
 ### Telemetry ecosystem checks
 

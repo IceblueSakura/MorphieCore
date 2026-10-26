@@ -118,6 +118,7 @@ impl Gateway {
                 limits,
                 transport,
                 shutdown: CancellationToken::new(),
+                serving: tokio::sync::Mutex::new(()),
             }),
         })
     }

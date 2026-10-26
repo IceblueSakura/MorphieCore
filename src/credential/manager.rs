@@ -257,19 +257,53 @@ impl CredentialManager {
         driver.validate(client, Some(&grant.identity), Some(&grant.credential))
     }
     pub async fn refresh(&self, profile: &str, alias: &str) -> Result<AccountStatus, Error> {
+        self.refresh_account(profile, alias, None)
+            .await?
+            .ok_or(Error::LoginRequired)
+    }
+    pub(super) async fn refresh_account(
+        &self,
+        profile: &str,
+        alias: &str,
+        automatic: Option<(&super::AccessBinding, u64)>,
+    ) -> Result<Option<AccountStatus>, Error> {
         let driver = self.driver(profile)?;
         if !driver.can_refresh() {
-            return Err(Error::Unsupported);
+            return if automatic.is_some() {
+                Ok(None)
+            } else {
+                Err(Error::Unsupported)
+            };
         }
         let _account_lock = self.store.account_lock(profile, alias)?;
         {
             let tx = self.store.transaction()?;
             let loaded = self.load(&tx, profile, alias)?;
+            if let Some((binding, ahead)) = automatic {
+                let Some(account) = loaded.account.as_ref() else {
+                    return Ok(None);
+                };
+                binding.check_identity(account)?;
+                let deadline = super::model::now()?.saturating_add(ahead);
+                if loaded.recovery
+                    || account.state != AccountState::Active
+                    || account.login_attempt.is_some()
+                    || account.pending_renewal.is_some()
+                    || !account.credential.as_ref().is_some_and(|credential| {
+                        credential.refresh.is_some()
+                            && credential
+                                .expires_at
+                                .is_some_and(|expiry| expiry <= deadline)
+                    })
+                {
+                    return Ok(None);
+                }
+            }
             if let Some(account) = loaded.account
                 && account.pending_renewal.is_some()
             {
                 drop(tx);
-                return self.complete_renewal(driver, account).await;
+                return self.complete_renewal(driver, account).await.map(Some);
             }
         }
         let (mut account, previous) = {
@@ -301,7 +335,7 @@ impl CredentialManager {
                 account.advance()?;
                 tx.publish(&account)?;
                 drop(tx);
-                return self.complete_renewal(driver, account).await;
+                return self.complete_renewal(driver, account).await.map(Some);
             }
         };
         self.validate_grant(driver, &account.client_id, &grant)?;
@@ -323,7 +357,7 @@ impl CredentialManager {
         account.state = AccountState::Active;
         account.advance()?;
         tx.publish(&account)?;
-        self.status(&account, false)
+        self.status(&account, false).map(Some)
     }
     async fn complete_renewal(
         &self,

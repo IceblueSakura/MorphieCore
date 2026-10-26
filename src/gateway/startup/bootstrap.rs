@@ -180,7 +180,11 @@ impl Bootstrap {
         };
         let manager = CredentialManager::new(
             directory,
-            crate::credential::builtin_drivers(None).map_err(|_| StartupError::Credentials)?,
+            crate::credential::drivers::builtin_drivers_with_environment(
+                proxy.or(configuration.proxy.as_deref()),
+                environment,
+            )
+            .map_err(|_| StartupError::Credentials)?,
         )
         .map_err(|_| StartupError::Credentials)?;
         let plan = models.bind(&manager)?;

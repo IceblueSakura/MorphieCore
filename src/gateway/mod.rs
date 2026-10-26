@@ -5,6 +5,7 @@ mod diagnostics;
 mod error;
 mod generation;
 mod ingress;
+mod renewal;
 mod routing;
 mod runtime;
 pub mod startup;

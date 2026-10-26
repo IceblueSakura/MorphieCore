@@ -373,3 +373,130 @@ async fn freshness_and_client_binding_are_not_inferred_from_lifecycle_or_alias()
         CredentialError::UnknownProfile
     );
 }
+
+#[tokio::test]
+async fn automatic_refresh_skips_ineligible_accounts_without_mutation_or_authority_io() {
+    let dir = test_support::Directory::new();
+    let (manager, _, _) = manager(&dir);
+    manager
+        .login("third", "one", LoginOptions::default(), |_| {})
+        .await
+        .unwrap();
+    let binding = manager.bind_access("third", "one").unwrap();
+    for case in [
+        "unknown",
+        "fresh",
+        "no_refresh",
+        "login",
+        "pending",
+        "logout",
+    ] {
+        {
+            let tx = manager.store.transaction().unwrap();
+            let mut account = tx.load("third", "one").unwrap().account.unwrap();
+            account.state = AccountState::Active;
+            account.credential = Some(grant().credential);
+            account.credential.as_mut().unwrap().expires_at = Some(1);
+            match case {
+                "unknown" => account.credential.as_mut().unwrap().expires_at = None,
+                "fresh" => {
+                    account.credential.as_mut().unwrap().expires_at =
+                        Some(crate::credential::model::now().unwrap() + 3600)
+                }
+                "no_refresh" => account.credential.as_mut().unwrap().refresh = None,
+                "login" => account.login_attempt = Some("a".repeat(32)),
+                "pending" => {
+                    account.login_attempt = None;
+                    account.state = AccountState::NeedsReauthorization;
+                    account.pending_renewal = Some(PendingRenewal {
+                        credential: account.credential.take().unwrap(),
+                        verify_id_token: false,
+                    });
+                }
+                "logout" => {
+                    account.pending_renewal = None;
+                    account.credential = None;
+                    account.state = AccountState::SignedOut;
+                }
+                _ => unreachable!(),
+            }
+            tx.publish(&account).unwrap();
+        }
+        let before = test_support::read_account(&dir.path, "third", "one");
+        assert!(!binding.refresh_if_due(120).await.unwrap(), "{case}");
+        assert_eq!(
+            before,
+            test_support::read_account(&dir.path, "third", "one"),
+            "{case}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn automatic_refresh_rechecks_pinned_identity_before_consuming_a_due_grant() {
+    let dir = test_support::Directory::new();
+    let (manager, _, _) = manager(&dir);
+    manager
+        .login("third", "one", LoginOptions::default(), |_| {})
+        .await
+        .unwrap();
+    let binding = manager.bind_access("third", "one").unwrap();
+    for client_changed in [false, true] {
+        let before = {
+            let tx = manager.store.transaction().unwrap();
+            let mut account = tx.load("third", "one").unwrap().account.unwrap();
+            account.credential.as_mut().unwrap().expires_at = Some(1);
+            if client_changed {
+                account.identity = Some(grant().identity);
+                account.client_id = "third-other".into();
+            } else {
+                account.identity.as_mut().unwrap().subject = "changed-subject".into();
+            }
+            tx.publish(&account).unwrap();
+            account.generation
+        };
+        assert_eq!(
+            binding.refresh_if_due(120).await.unwrap_err(),
+            CredentialError::IdentityMismatch
+        );
+        assert_eq!(manager.list(None).unwrap()[0].generation, before);
+    }
+}
+
+#[tokio::test]
+async fn automatic_refresh_is_exclusive_and_rechecks_new_expiry() {
+    let dir = test_support::Directory::new();
+    let (manager, entered, release) = manager(&dir);
+    manager
+        .login("third", "one", LoginOptions::default(), |_| {})
+        .await
+        .unwrap();
+    {
+        let tx = manager.store.transaction().unwrap();
+        let mut account = tx.load("third", "one").unwrap().account.unwrap();
+        account.credential.as_mut().unwrap().expires_at = Some(1);
+        tx.publish(&account).unwrap();
+    }
+    let binding = manager.bind_access("third", "one").unwrap();
+    let provenance = binding.provenance();
+    let mut refresh = Box::pin(binding.refresh_if_due(120));
+    tokio::select! { _ = &mut refresh => panic!("must wait"), _ = entered.notified() => {} }
+    assert_eq!(
+        binding.refresh_if_due(120).await.unwrap_err(),
+        CredentialError::Busy
+    );
+    assert_eq!(
+        manager.refresh("third", "one").await.unwrap_err(),
+        CredentialError::Busy
+    );
+    assert_eq!(
+        manager.list(None).unwrap()[0].state,
+        AccountState::NeedsReauthorization
+    );
+    release.notify_one();
+    assert!(refresh.await.unwrap());
+    assert_eq!(binding.provenance(), provenance);
+    assert!(binding.borrow().is_ok());
+    // Another process's renewal is observed rather than blindly rotating again.
+    assert!(!binding.refresh_if_due(120).await.unwrap());
+}

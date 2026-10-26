@@ -1432,6 +1432,33 @@ Configuration is documented in [Usage](usage.md#delta-coalescing). It is not an 
 
 Credentials come only from the application's private store. A manager owns API keys, OAuth identities and ordered pools. Inference borrows access for a fixed identity; it never logs in or refreshes. Each borrow reads the store under its short transaction lock off the async workers; concurrent requests wait at most one second for that lock, while long-lived account operation locks still report `Busy` immediately.
 
+`Gateway::serve` owns automatic upstream OAuth renewal for its bound Generation
+accounts, independently of requests. Construction and `router()` perform no renewal.
+An immediate scan and subsequent 15-second scans select known expiry within 120
+seconds, including expired access. Unknown expiry, absent refresh material, pending
+login/verification, signed-out and quarantined accounts are not eligible. Under the
+account operation lock, the manager rechecks the pinned client/principal and current
+expiry before using the existing driver rotation and identity-verification path.
+Token rotation preserves replay provenance; it cannot rebind a changed identity.
+
+Duplicate bindings from the same manager/store are maintained once per scan.
+Renewals run serially with a 90-second per-account deadline and a process-local
+60-second minimum interval after success or error, bounding repeated short-lived
+grants. Account locks also exclude concurrent CLI/other-process operations; the
+minimum interval is not a cross-process rate limit. One runtime permits only one
+`serve` owner. Listener cancellation, failure and shutdown drop its maintenance
+future, without detached authority work. Authority HTTP follows the gateway's
+explicit proxy/environment policy, with fixed driver origins and no HTTP retries.
+
+The existing rotation safety rule remains: durably remove old credentials before
+the exchange, and quarantine replacement material until identity verification
+succeeds. Renewal can temporarily make access unavailable. Failure, timeout or
+cancellation never restores old material or retries a possibly consumed refresh
+token. Automatic maintenance does not resume pending verification; explicit
+`morphiecore-auth refresh` can recover that state, while uncertain consumption
+requires login. Serial scheduling and authority latency do not promise uninterrupted
+access. HTTP 401 does not trigger renewal, inference replay or permission escalation.
+
 Ingress resolves exactly one configured Agent key via Bearer or `x-api-key` before body collection. The immutable authenticated-Agent context exists independently of diagnostics and capture. Business data cannot select an Agent identity, origin, credential or auth/proxy header. Inbound headers are not passed through.
 
 Transport uses trusted prepared requests, no redirects and no implicit HTTP retries. Environment proxies require explicit startup opt-in. Credentials, locators, private config and upstream bodies never reach clients.
@@ -1694,6 +1721,7 @@ The 2026-10-23 standards reset supersedes conflicting historical conversion, pub
 | Decision | Consequence |
 |---|---|
 | Stable entry paths | Provider entry paths are concrete unescaped ASCII. Reject encoded dot segments, separators, whitespace/control bytes and URL-escaped syntax before topology compilation; request-path normalization must not change the path used for cache/replay identity |
+| Automatic upstream OAuth renewal (2026-10-26) | Listener-owned, identity-pinned proactive maintenance reuses the credential manager's rotation/quarantine contract; inference borrowing remains network-free. Pending verification and uncertain consumption require explicit recovery; no 401-triggered replay or downstream OAuth activation |
 | Stable routing revision | Bind complete bounded pools; scan legal successors under accumulated restrictions; gate dispatch on generation-fenced cooling with exclusive foreground recovery. Preserve stable order, exact-credential affinity, one exchange budget and no replay after publication |
 | Shared model identities across protocols | Compatible API-key, OAuth and native Messages bindings share one public model and ordered route. Endpoint protocols and credential domains stay distinct; narrower candidates reject requests they cannot represent |
 | SIWC cross-Provider fallback | A mixed route may contain one SIWC endpoint and advance to another Provider before publication within the route budget. SIWC pools remain single-account with no credential fallback; standalone SIWC routes remain single-attempt with fallback disabled |
