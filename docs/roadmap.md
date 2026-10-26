@@ -5,6 +5,7 @@ This page owns current scope, priorities, dependencies and exit gates. Start wit
 ## Contents
 
 - [Current status](#current-status)
+- [Standard request boundary repair](#standard-request-boundary-repair)
 - [Standards reset and redesign](#standards-reset-and-redesign)
 - [Planned order](#planned-order)
   - [Execution sequence and work-package rules](#execution-sequence-and-work-package-rules)
@@ -50,7 +51,9 @@ This page owns current scope, priorities, dependencies and exit gates. Start wit
 
 ## Current status
 
-**Current handoff (2026-10-26):** the selected Generation Text implementation is closed after the overall correctness, lifecycle, evidence and redundancy review. Unified [domain evidence](architecture.md#domain-evidence-interface) and [local telemetry](architecture.md#observability) are implemented, not pending migrations. The [closure checks](development.md#text-and-sse-integration-baseline) and separately bounded [current-host/Provider reacceptance](refs/2026-10-17-generation-contracts.md#current-host-closure-recheck-2026-10-25) pass with explicit exclusions. Stage 4 now contains Decision, Embedding, Audio, Images, Files/Uploads and Video at equal priority; no further operation, routing feature or deployment is activated by this handoff.
+**Next main task (selected 2026-10-26):** repair the [standard request boundary findings](#standard-request-boundary-repair) across Chat, Responses and Messages. Complete and verify this bounded correction before expanding analysis and repair to other perspectives. The five-stage plan remains; this is corrective Generation work, not a new API stage or a general reopening of routing/Provider behavior. Planning is selected; the fixes are not yet implemented.
+
+**Earlier scoped handoff (2026-10-26):** the selected Generation Text implementation passed its overall correctness, lifecycle, evidence and redundancy review. Unified [domain evidence](architecture.md#domain-evidence-interface) and [local telemetry](architecture.md#observability) are implemented, not pending migrations. The [closure checks](development.md#text-and-sse-integration-baseline) and separately bounded [current-host/Provider reacceptance](refs/2026-10-17-generation-contracts.md#current-host-closure-recheck-2026-10-25) passed with explicit exclusions; they do not resolve the later request-boundary counterexamples. Stage 4 retains Decision, Embedding, Audio, Images, Files/Uploads and Video at equal priority; no further operation, routing feature or deployment follows from the earlier handoff.
 
 The selected 2026-10-26 structure/vocabulary maintenance is complete. [Architecture](architecture.md#domain-vocabulary-and-failure-contracts) owns the implemented contracts; [verification evidence](development.md#verification-gates) separates offline, SDK and installed-client checks. No new API, binding, Google classification, retry policy or diagnostic-extension certification follows.
 
@@ -59,11 +62,11 @@ The selected Generation Text-only [model discovery](architecture.md#generation-t
 | Area | State | Next step |
 |---|---|---|
 | Routing | Functional phase complete under the [stable routing baseline](architecture.md#failover); feature development closed. Selected [controlled acceptance](#controlled-routing-acceptance) passed through Router, SDK and installed clients | [Production closure](#generation-text-production-closure) requires separate real evidence for routes promising failover; no routing feature expansion |
-| Generation IR/codec | Selected ownership/mapping corrections, standard delivery/continuation and unified evidence implemented within the [contract inventory](refs/2026-10-23-stable-protocol-contracts.md#official-contract-difference-inventory); final review repairs are verified | Preserve native-only replay, participant attribution, directional presence, sparse accounting and checked evidence; inventory exclusions and source disagreements remain explicit |
-| Client compatibility | Rejection audit, [phase transfer/return](architecture.md#message-phase-transfer), guarded extended-retention omission and retained citation rejection complete. [Downstream schema completion](architecture.md#downstream-schema-completion) implemented on 2026-10-23 with strict pinned-SDK JSON/SSE and stored-resource checks | Preserve SDK schema, source-fact and terminal-honesty regressions; broader official semantics remain explicitly scoped |
+| Generation IR/codec | Earlier selected corrections are implemented; the [2026-10-26 request review](refs/2026-10-26-standard-request-boundaries.md) reproduces additional intake, replay-opening and standard-encoding defects | Main task: [repair and verify the current findings](#standard-request-boundary-repair), preserving native-only replay, participant attribution, presence and checked evidence |
+| Client compatibility | Earlier phase/history and schema-completion selections remain implemented; request review separates strict-standard behavior from compatibility and SDK conveniences | Reconcile affected compatibility choices within the repair package; do not use them as standard-conformance evidence or silently remove required Agent behavior |
 | Integration | Selected R1a/R1b/R2 client loops and controlled routing acceptance passed their bounded scopes. R1b lifecycle reports and client history shorthand were explicitly selected on 2026-10-20 | [Production closure](#generation-text-production-closure): bounded capability and sustained-operation acceptance, not a full client/model matrix |
 | Cross-protocol conversion and counting | Stage 3 closed its selected projection and loop scope; counting is deferred | Preserve that evidence; the [Google pause](#google-api-pause) has selected text-report and stage-4 Embedding exceptions, not general Generation reopening |
-| Generation Text production readiness | Historical closure, standards-redesign reacceptance and final 2026-10-25 correctness/current-host review are complete within explicit exclusions | Preserve the [selected readiness boundary](#generation-text-production-closure); proceed to per-operation stage-4 selection, not broader production claims or deployment |
+| Generation Text production readiness | Historical closure and current-host evidence remain scoped; newly reproduced request defects are open | Close the [current corrective gate](#standard-request-boundary-repair) before broader review or new expansion; prior evidence does not certify the affected contracts or authorize deployment |
 | Code simplification | The 2026-10-25 closure removes demonstrated redundant state, forwarding and unreachable checks; no scheduled cleanup remains | Preserve independent safety assertions and production/test boundaries; no count target, speculative rewrite or measured-performance claim |
 | Decision APIs | [Dual standard-SDK direction](architecture.md#decision-api-direction) selected on 2026-10-23; initial TypeSafe/OpenAI/Perplexity/Cloudflare protocol research only | [Decision closure](#decision-api-closure) is stage-4 work at equal priority with the other API families; its design selection still precedes implementation and activation |
 | Embedding, other modalities and file resources | Sample-centered Embedding, compatible delivery and native Google/OpenAI-model integration accepted on 2026-10-23. Generation prerequisites are closed within their scoped gates; Grok static codec still has no gateway/live acceptance | API families have equal priority under [stage-4 selection](#stage-4-scope); static Generate is an Images-internal review recommendation. Later slices inherit [operation-level test acceptance](#stage-4-reuse-and-acceptance); further Embedding modalities and video remain unselected |
@@ -76,6 +79,43 @@ The selected Generation Text-only [model discovery](architecture.md#generation-t
 The [approved Generation baseline](#generation-design-review-gate) leaves inventory exclusions and binding boundaries unchanged. Other real acceptance gates remain open. Google value guards and Interactions snapshots belong to stage 3: no Google client endpoint forms a same-protocol pair. Provider-specific reset dialects, persistence and cooldown tuning need separate evidence and approval; no background probes, balancing or multi-round retries are scheduled.
 
 Phase completeness covers the declared feature scope, not all official Generation semantics; explicit rejection is safer than silent loss but is not completeness. Chat Completions, Responses and Messages are equally important for same-protocol request, response, static delivery, streaming and history replay. Google generateContent and Interactions supply upstream request encoding and SSE intake only; record missing directions rather than implying a complete same-protocol pair.
+
+## Standard request boundary repair
+
+**Selected on 2026-10-26 as the next primary work package; implementation pending.** The [dated findings](refs/2026-10-26-standard-request-boundaries.md) own counterexamples, source revisions, responsible code seams and evidence limits. They distinguish reproduced defects, source-traced concerns, existing compatibility decisions and unresolved semantics. [Architecture](architecture.md#standard-request-boundary) owns the accepted separation; this section owns execution and closure.
+
+### Scope and order
+
+Repair **standard Client request → IR**, including the shared continuation-opening boundary, then **request IR → standard Chat/Responses/Messages encoding**. No Client Provider dialect is admitted. Keep routing, binding activation and Provider egress dialects fixed. Request fixes may exercise existing response/history loops as regression evidence, but do not activate a general response/SSE audit, new API, diagnostics aggregation, deployment or production configuration change.
+
+Use the following dependency order for coherent slices; it is not a mandatory commit count or a new test framework:
+
+| Slice | Outcome |
+|---|---|
+| Continuation and explicit intent | Stop successful opaque-token/owner deletion, fail closed on damaged recognized replay envelopes, and retain Chat `store:false` through intake and standard encoding. Preserve issuer/dependency checks; no implicit authority for bare native replay |
+| Standard source admission | Separate request, response-history and SDK-derived shapes; close audio/annotation/video leaks, malformed known-field bypasses and confirmed non-nullable-field normalization. Classify official diagnostics/header semantics instead of silently discarding them |
+| Messages grammar and ownership | Apply complete tool-turn and manual-thinking constraints at the responsible source/target boundaries. Resolve unnecessary envelope/structured-argument downgrades only where owner evidence warrants a change; do not move native restrictions into universal IR validation |
+| Standard target encoding | Correct Responses union/lifecycle shapes, avoid Chat participant reassignment during call grouping, and enforce unsupported explicit guarantees inside pure standard codecs rather than only in Endpoint wrappers |
+| Compatibility reconciliation and closure | Resolve the affected history-shorthand/unsigned-thinking choices and remaining field/default questions with concrete source evidence. Keep exact mapping, approved compatibility, unsupported rejection and unresolved semantics distinct; close the applicable directional and integration gates |
+
+Repair causes, not symptoms: do not loosen identity/signature checks, infer replay authority from a public model name, repair invalid source order, fabricate thinking or terminals, or use a later encoder's tolerance to justify ingress. Prefer existing typed owners and shared protocol-local validation over parallel parsers, raw field bags or speculative IR growth.
+
+### Decisions within the package
+
+- **Bare native continuation:** the established trust boundary remains in force. Reject unsupported provenance rather than erase required state; admitting a new provenance mechanism needs explicit selection. Unknown origin is not evidence of foreign history.
+- **Existing input compatibility:** reconcile omitted Responses annotations and unsigned Messages thinking with the standard-only boundary and actual client dependence. The review does not silently revoke earlier selections or redefine the official standard.
+- **HTTP and null semantics:** verify the Messages beta/eager-default relationship and unresolved `strict:null`/`store:null` meanings before changing their treatment. Unsupported known semantics need an explicit policy; this package does not activate beta features or an official diagnostics service.
+- A blocked decision stops only its dependent change. Continue independently confirmed fixes; do not label a policy choice or an unverified concern as a reproduced implementation defect.
+
+### Exit and subsequent analysis
+
+1. Give every confirmed finding a repaired behavior and an independent regression at its responsible boundary; record decisions and any explicit remaining exclusions. A green historical suite or changed error text is not closure.
+2. Verify wire→IR separately from IR→wire against the selected official contracts, including presence, owner/order/identity, continuation, source immutability, target union shapes and direct-codec enforcement. Include positive contrasts so intended failures are not masked by unrelated rejection.
+3. Integrate applicable upstream-derived cases while changing each owner. Preserve strict JSON, authentication/origin isolation, bounds, cancellation, replay dependencies and honest terminals. The diagnostic-extension scheduling exception remains unchanged.
+4. Before publishing implementation, run the [full offline baseline](development.md#offline-baseline) and applicable [connected SDK and installed-client gates](development.md#verification-gates). Report blocked boundaries and real Provider evidence separately; request-only probes do not certify response/SSE or a deployed full loop.
+5. **Only after this repair gate closes, expand analysis and repair to additional perspectives.** Select the next domain from evidence and operational impact; the [earlier adjacent findings](refs/2026-10-26-standard-request-boundaries.md#evidence-limits-and-later-review-inputs) remain visible, not resolved by this package. Do not make a new exhaustive audit a prerequisite for fixing this batch, and do not preselect a broad Provider/routing rewrite.
+
+Previously selected, independently scoped work keeps its authorization and unrelated edits; this priority change does not absorb it into the repair package. Historical stage closure is scoped evidence, not immunity from these new defects. After completion, remove this active package and retain meaningful accepted decisions in Architecture and dated source evidence in References.
 
 ## Standards reset and redesign
 
@@ -97,7 +137,7 @@ The user resumed the six deferred correctness findings before this handoff. Owne
 
 Upstream fixtures and real SDK consumers enter each owner/codec slice as it is rewritten, not as a comprehensive cleanup after implementation. Reuse existing valuable scenarios and safety assertions; classify each affected old expectation as retained, replaced by a source-backed contract, or removed with its obsolete behavior. Keep unresolved semantics visible rather than skipping them as passed.
 
-The initial assets alone do not exhaust the selected gate; the closed [text/SSE baseline](#current-text-and-sse-gate) also exercises version-aware HTTP admission/failure envelopes, complex multi-call Router/SDK cases and deeper transport lifecycle coverage. Diagnostic-extension testing follows the deferral above. Historical success cannot certify updated releases. Runtime routing redesign, new bindings, native Google ingress, counting and stage-5 APIs remain unactivated. Further work follows equal-priority stage-4 selection; Decision is not a cross-family prerequisite.
+The initial assets alone do not exhaust the selected gate; the closed [text/SSE baseline](#current-text-and-sse-gate) also exercises version-aware HTTP admission/failure envelopes, complex multi-call Router/SDK cases and deeper transport lifecycle coverage. Diagnostic-extension testing follows the deferral above. Historical success cannot certify updated releases or the later [request-boundary findings](#standard-request-boundary-repair). Runtime routing redesign, new bindings, native Google ingress, counting and stage-5 APIs remain unactivated. Complete the current corrective gate before broader review/new expansion; subsequent stage-4 selection keeps equal API-family priority, and Decision is not a cross-family prerequisite.
 
 ## Planned order
 
@@ -127,7 +167,7 @@ The packages below refine the selected scope, not design approval or binding act
 
 Inference frameworks such as llama.cpp and SGLang are design references, not integration targets. Use their input-preparation, generation-constraint and output-interpretation designs to improve the existing gateway boundaries. This adds no backend work package, engine dependency or generic session/plugin framework; [inference-engine integration is not planned](#not-planned).
 
-1. Stage-1 selected codec work is implemented; use its [inventory and boundaries](refs/2026-10-19-same-protocol-inventory.md) for review and per-loop readiness. No all-official-semantics or real-loop completeness is implied.
+1. Historical stage-1 codec packages are implemented; the [standard request boundary repair](#standard-request-boundary-repair) is now the next main task. Use the dated inventories for scoped evidence, not all-official-semantics or real-loop completeness.
 2. The selected R1a, R2 and R1b loops completed independently under their own carriers and approval/admission gates. A future loop waits for its own readiness, not every stage-1 package; no additional client/model matrix is scheduled.
 3. R2 readiness concerns its implemented pi Haiku profile, not wider native manual-budget or sampling support. An observed defect in a carrier actually used by R2 must still be fixed before accepting it.
 4. Complete selected stage-2 loops before routing acceptance and stage-3 conversion work. Keep separately scheduled real failover distinct from controlled synthetic recovery checks.
@@ -147,7 +187,7 @@ Every implementation package follows the same bounded workflow:
 
 **Selected scope closed; the standards-reset baseline supersedes historical mappings.** Chat, Responses and Messages have independent request/result/event/history expectations within the [current contract inventory](refs/2026-10-23-stable-protocol-contracts.md#official-contract-difference-inventory). The [earlier inventory](refs/2026-10-19-same-protocol-inventory.md) retains its dated acceptance boundaries, not the current regression oracle. Google has no downstream/static pair.
 
-Accepted ownership and projection rules live in [Architecture](architecture.md#protocols); executable coverage lives in the [text/SSE baseline](development.md#text-and-sse-integration-baseline). Unsupported official fields, named losses and source disagreements remain explicit. Neither rejection nor a codec carrier establishes lossless support, binding admission or a real client loop. No stage-1 implementation package remains scheduled.
+Accepted ownership and projection rules live in [Architecture](architecture.md#protocols); executable coverage lives in the [text/SSE baseline](development.md#text-and-sse-integration-baseline). Unsupported official fields, named losses and source disagreements remain explicit. Neither rejection nor a codec carrier establishes lossless support, binding admission or a real client loop. Historical packages are closed; the later [request-boundary corrective package](#standard-request-boundary-repair) is scheduled separately above.
 
 #### Stage-1 to stage-2 handoff
 

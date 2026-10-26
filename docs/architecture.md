@@ -470,6 +470,14 @@ Encode from the current typed meaning. A source extension cannot override canoni
 
 Introduce this seam incrementally around concrete mappings. Do not add a universal protocol DTO, arbitrary extension bag, plugin registry, second stream reducer or whole-stream buffering. Existing framing limits, conflict validation, EOF-gated terminals and replay authority remain unchanged.
 
+#### Standard request boundary
+
+The 2026-10-26 review separates four responsibilities: **standard Client intake → semantic IR → standard target request encoding → Provider egress dialect**. The Client standard path has no Provider dialect; request parameters, permitted response-history items and SDK convenience objects are distinct contracts. Source protocol grammar belongs at intake even when the resulting values would satisfy shared IR validation. A standard target encoder owns its native shape and combination constraints without relying on an outer Endpoint wrapper to reject unsupported explicit guarantees.
+
+Standard parsing preserves supported typed meaning; it does not assign replay authority or delete required continuation because provenance is unavailable. The existing [replay contract](#reasoning-replay) still requires trusted issuer/dependency checks and rejects damaged or unsupported continuation. No bare-token forwarding, inferred issuer, new provenance mechanism or replacement signature is selected. Keep execution trust separate from protocol representation and do not weaken either boundary to reconnect a request.
+
+Previously selected compatibility profiles and input repairs are not official-standard evidence. Their affected placement and client dependencies must be reconciled explicitly during the [corrective package](roadmap.md#standard-request-boundary-repair), not silently promoted into the baseline or removed by a documentation change. The [dated review](refs/2026-10-26-standard-request-boundaries.md) records reproduced defects and unresolved semantics; this boundary selection is not a claim that implementation is already corrected. Routing, Provider dialects, activation and deployment retain their separate authority.
+
 #### Protocol tree ownership
 
 Organize protocol code as vendor → wire API → responsibility: `openai/{chat,responses}`, `anthropic/messages`, and `google/{generate_content,interactions}`. The vendor name is where the wire API is defined, not which Provider serves the request, so a compatible endpoint reuses the standard codec plus its dialect instead of copying one. Inside an API, the same module names carry the same role: `wire` holds DTOs, `request`/`response`/`items`/`settings` map to and from the IR, `sse` owns framing and stream lifecycle, `target` owns capabilities and admission, `accounting` owns usage, `replay` owns opaque carriers, and `dialect` owns named deviations. An operation that a protocol does not have keeps no placeholder module.
@@ -1621,6 +1629,7 @@ The 2026-10-23 standards reset supersedes conflicting historical conversion, pub
 
 | Decision | Consequence |
 |---|---|
+| Standard request boundary review (2026-10-26) | Separate standard Client intake, semantic preservation, standard target encoding and Provider egress dialects under the [request boundary](#standard-request-boundary). The next primary work repairs the bounded findings before broader analysis; no new replay authority, routing change or automatic revocation of selected compatibility follows |
 | One semantic core | Gateway and future agent library share the IR; callers own agent behavior. Beyond context edits and response continuation, agent-only machinery joins the IR when the library needs it |
 | Official Generation vocabulary | OpenAI, Anthropic and Google define semantic concepts; dialect carriers and approximation policies stay in protocol modules. Semantic expression, codec support and activated bindings are separate claims |
 | Two codec responsibilities | Normalize Provider dialects into an official API baseline plus declared extensions before semantic decoding; encode in reverse before serialization. Semantic extensions enter IR; eligible non-semantic fidelity stays scoped outside it |
