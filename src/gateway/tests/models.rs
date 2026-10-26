@@ -7,6 +7,8 @@ use axum::{
 use serde_json::{Value, json};
 use tower::ServiceExt;
 
+mod text;
+
 async fn request(gate: &Gateway, method: &str, path: &str) -> (StatusCode, Value) {
     let response = gate
         .router()
@@ -239,6 +241,9 @@ async fn discovery_authentication_and_path_failures_never_poll_or_reflect_input(
         ("POST", "/v1/models"),
         ("GET", "/v1/morphiecore/capabilities"),
         ("POST", "/v1/morphiecore/capabilities"),
+        ("GET", "/v1/morphiecore/models"),
+        ("GET", "/v1/morphiecore/models/fixture-model"),
+        ("POST", "/v1/morphiecore/models"),
     ] {
         for auth in [0, 1, 2, 3] {
             let mut request = Request::builder().method(method).uri(path);
@@ -304,6 +309,8 @@ async fn discovery_obeys_methods_and_shutdown_without_mutating_the_directory() {
         ("POST", "/v1/models/fixture-model"),
         ("POST", "/v1/morphiecore/capabilities"),
         ("DELETE", "/v1/morphiecore/capabilities"),
+        ("POST", "/v1/morphiecore/models"),
+        ("DELETE", "/v1/morphiecore/models/fixture-model"),
     ] {
         assert_eq!(
             request(&gate, method, path).await.0,
@@ -359,6 +366,8 @@ async fn discovery_obeys_methods_and_shutdown_without_mutating_the_directory() {
         ("GET", "/v1/models/fixture-model"),
         ("DELETE", "/v1/models/fixture-model"),
         ("GET", "/v1/morphiecore/capabilities"),
+        ("GET", "/v1/morphiecore/models"),
+        ("GET", "/v1/morphiecore/models/fixture-model"),
     ] {
         let (status, error) = request(&gate, method, path).await;
         assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);

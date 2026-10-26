@@ -324,6 +324,81 @@ class ModelsSchemaTests(unittest.TestCase):
                              "#/components/headers/PossibleAdaptation")
 
 
+class TextModelsSchemaTests(unittest.TestCase):
+    def test_capability_states_and_finite_control_choices(self):
+        check = validator("TextCapability")
+        check.validate({"state": "faithful"})
+        check.validate({"state": "approved_adaptation", "rules": ["example.adaptation.v1"]})
+        for state in ("unavailable", "non_uniform", "not_assessed"):
+            check.validate({"state": state})
+            self.assertFalse(check.is_valid({"state": state, "rules": ["example.v1"]}))
+        for value in (
+            {"state": "approved_adaptation"}, {"state": "approved_adaptation", "rules": []},
+            {"state": "approved_adaptation", "rules": ["same", "same"]},
+            {"state": "faithful", "rules": ["unused"]}, {"state": "supported"},
+        ):
+            self.assertFalse(check.is_valid(value))
+        effort = validator("TextEffortChoices")
+        effort.validate({"state": "faithful", "values": ["low", "high"]})
+        effort.validate({"state": "not_assessed"})
+        for values in ([], ["none"], ["low", "low"], ["unsupported"]):
+            self.assertFalse(effort.is_valid({"state": "faithful", "values": values}))
+        self.assertFalse(effort.is_valid({"state": "unavailable", "values": ["low"]}))
+        validator("TextActivationChoices").validate({
+            "state": "faithful", "values": ["disabled", "adaptive"]})
+
+    def test_text_only_envelopes_bounds_and_no_version_or_pagination(self):
+        features = {name: {"state": "not_assessed"} for name in (
+            "function_tools", "strict_tool_schema", "parallel_tool_calls",
+            "json_object_output", "json_schema_output", "max_output_tokens")}
+        limits = {"purpose": "planning", "context_window_tokens": None,
+                  "max_input_tokens": None, "max_output_tokens": 65536,
+                  "output_token_accounting": "not_assessed"}
+        interface = {
+            "task": "generation", "protocol": "responses", "delivery_modes": ["json", "sse"],
+            "generation": {
+                "scope": "route_common", "composition": "not_asserted", "token_limits": limits,
+                "features": features, "reasoning": {
+                    "activation": {"state": "unavailable"},
+                    "effort": {"response": {"state": "unavailable"},
+                               "reasoning": {"state": "faithful", "values": ["low", "high"]}},
+                },
+            },
+        }
+        model = {"id": "example-model", "name": "example-model",
+                 "owned_by": "Example Lab", "interfaces": [interface]}
+        envelope = {"object": "morphiecore.model_list", "scope": "generation_text",
+                    "coverage": "partial", "unlisted": "not_assessed",
+                    "provider_effectiveness": "not_asserted", "full_loop": "not_asserted",
+                    "data": [model]}
+        check = validator("TextModelList")
+        check.validate(envelope)
+        check.validate({**envelope, "data": []})
+        check.validate({**envelope, "data": [model] * 64})
+        validator("TextModelResponse").validate({
+            **envelope, "object": "morphiecore.model", "data": model})
+        for patch in ({"version": 1}, {"catalog_revision": "rev"},
+                      {"has_more": False}, {"data": [model] * 65}):
+            self.assertFalse(check.is_valid({**envelope, **patch}))
+        for patch in ({"task": "embedding"}, {"protocol": "embeddings"},
+                      {"delivery_modes": []}, {"delivery_modes": ["binary"]}):
+            self.assertFalse(validator("TextGenerationInterface").is_valid({**interface, **patch}))
+        for value in (0, -1, 9007199254740992, "unknown"):
+            self.assertFalse(validator("TextTokenLimits").is_valid({
+                **limits, "max_output_tokens": value}))
+        paths = DOCUMENT["paths"]
+        for path, schema in (
+            ("/v1/morphiecore/models", "TextModelList"),
+            ("/v1/morphiecore/models/{model}", "TextModelResponse"),
+        ):
+            operation = paths[path]["get"]
+            self.assertEqual(operation["responses"]["200"]["content"]["application/json"]
+                             ["schema"]["$ref"], f"#/components/schemas/{schema}")
+            for status in ("401", "405", "503"):
+                self.assertIn(status, operation["responses"])
+            self.assertNotIn("delete", paths[path])
+
+
 class ResponsesSchemaTests(unittest.TestCase):
     def test_default_storage_and_local_snapshot_operations(self):
         request = {"model": "synthetic", "input": "next", "store": True,

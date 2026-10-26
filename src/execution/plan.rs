@@ -90,7 +90,7 @@ pub fn representable(
 ) -> Result<(), RejectionReason> {
     representable_for_client(endpoint, request, None)
 }
-fn representable_for_client(
+pub(crate) fn representable_for_client(
     endpoint: &Endpoint,
     request: &crate::protocol::GenerationRequestEnvelope,
     client: Option<&crate::adapter::ClientAdapter>,

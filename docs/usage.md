@@ -28,6 +28,7 @@ This guide owns local setup, configuration and client-facing procedures for impl
 - [Stored Responses](#stored-responses)
 - [Conversation and cache affinity](#conversation-and-cache-affinity)
 - [HTTP API](#http-api)
+  - [Generation Text model discovery](#generation-text-model-discovery)
   - [Capability discovery and adaptation notice](#capability-discovery-and-adaptation-notice)
 - [Errors and limits](#errors-and-limits)
 
@@ -634,6 +635,8 @@ This ID groups routing and cache affinity; it does not store history. Body `sess
 | `GET /v1/models` | List activated public models |
 | `GET /v1/models/{model}` | Retrieve an activated public model |
 | `DELETE /v1/models/{model}` | Denied: 403 for an activated model, 404 otherwise |
+| `GET /v1/morphiecore/models` | List activated Generation Text model/interface contracts |
+| `GET /v1/morphiecore/models/{model}` | Retrieve the same enhanced text model descriptor |
 | `GET /v1/morphiecore/capabilities` | Inspect partial gateway contracts for activated Generation and Embedding clients |
 | `POST /v1/responses` | Responses, JSON or SSE |
 | `GET /v1/responses/{response_id}` | Retrieve a stored response |
@@ -664,6 +667,26 @@ Send the ordinary OpenAI request envelope to `/v1/embeddings`, for example `{"mo
 Compatible profiles preserve valid vectors even when ancillary reports are absent, while returning the complete OpenAI response shape including both usage counters. A missing model report uses the bound public label. Real usage takes precedence, followed by attested input-only derivation; remaining missing counters use the request-local [approximation rule](architecture.md#google-embedding-compatibility). No default all-zero usage or custom usage fields are emitted. Reported zeros are preserved. Approximate counts can be inaccurate across languages and models; do not treat them as exact billing or hard quota measurements. Unsupported `user` hints are omitted on Google/DashScope and forwarded on the current OpenAI-model binding. These adaptations do not claim upstream reporting or attribution.
 
 The pinned OpenAI Python SDK's strict response model still types `embedding` as a float list, so use explicit `encoding_format: "float"` with `_strict_response_validation=True`. Its ordinary mode handles Base64 and SDK-default decoding. This SDK type limitation is separate from complete usage and does not authorize changing a requested encoding; the wire schema supports both representations.
+
+### Generation Text model discovery
+
+Use the ordinary gateway Agent key with `GET /v1/morphiecore/models`, or append a public model ID for one descriptor. The enhanced view includes only activated Generation interfaces (`chat_completions`, `responses`, `messages`). Models with media capabilities may appear, but their media is not described. Standard `/v1/models` and existing capabilities remain unchanged, including their non-Generation entries.
+
+List responses use `object: "morphiecore.model_list"` with an array in `data`; retrieval uses `object: "morphiecore.model"` with the same descriptor in `data`. Each descriptor has `id`, `name`, `owned_by` and `interfaces`. Each interface identifies its public protocol and delivery modes, plus planning `token_limits`, text `features` and reasoning activation/effort choices under `generation`. The [OpenAPI schemas](openapi.json) define the complete shape and [Architecture](architecture.md#generation-text-model-discovery) defines the assessed domains.
+
+Read capability `state`, not just field presence:
+
+- `faithful`: the declared simple domain has a faithful carrier.
+- `approved_adaptation`: the domain is admitted with possible named `rules`.
+- `unavailable`: the assessed domain is rejected or has no effective control carrier.
+- `non_uniform`: candidate differences prevent a common positive statement.
+- `not_assessed`: insufficient evidence; missing declarations have the same meaning.
+
+Positive effort/activation choices include `values`; nonpositive choices have no values. Effort scopes stay separate: Chat/Responses use reasoning effort, Messages uses response-wide effort. Choices describe source requests through selected conversions, not raw upstream enums. `enabled` describes the documented minimal manual-thinking domain, not every numeric budget. Function tools, strict schemas, parallel permission, JSON-object and JSON-Schema output are independent, scoped declarations—not all combinations, schemas or tool/replay loops.
+
+Limits are planning hints; `null` means unknown, not unlimited. Context/input limits currently remain null rather than being filled from byte limits or guesses. A known output maximum is not a default; it does not guarantee the entire maximum can be visible output or combined with other maxima. Discovery implements no token counting.
+
+The view is startup-immutable, sorted and complete without pagination or version/revision fields. Authentication, `no-store`, automatic HEAD and shutdown behavior match standard Models. At most 64 text models are published; both list and detail must fit `min(response_bytes, 256 KiB)` or startup fails. Unknown/non-text labels return `model_not_found`; GET does no upstream I/O. There is no automatic pi/OpenCode configuration, model activation or health polling.
 
 ### Capability discovery and adaptation notice
 

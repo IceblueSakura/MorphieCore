@@ -25,6 +25,14 @@ impl Gateway {
             )
             .route("/v1/models", get(crate::gateway::ingress::models::list))
             .route(
+                "/v1/morphiecore/models",
+                get(crate::gateway::ingress::discovery::list),
+            )
+            .route(
+                "/v1/morphiecore/models/{model}",
+                get(crate::gateway::ingress::discovery::retrieve),
+            )
+            .route(
                 "/v1/models/{model}",
                 get(crate::gateway::ingress::models::retrieve)
                     .delete(crate::gateway::ingress::models::delete),

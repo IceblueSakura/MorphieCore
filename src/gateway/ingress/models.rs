@@ -84,14 +84,14 @@ impl ModelView {
     }
 }
 
-fn response(bytes: Bytes) -> Response {
+pub(in crate::gateway) fn response(bytes: Bytes) -> Response {
     Response::builder()
         .header("content-type", "application/json")
         .header("cache-control", "no-store")
         .body(Body::from(bytes))
         .expect("static discovery headers")
 }
-fn running(state: &Runtime) -> Result<(), ApiError> {
+pub(in crate::gateway) fn running(state: &Runtime) -> Result<(), ApiError> {
     if state.shutdown.is_cancelled() {
         return Err(ApiError::shutdown());
     }

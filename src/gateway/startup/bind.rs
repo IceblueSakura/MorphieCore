@@ -89,6 +89,11 @@ impl Gateway {
             &embeddings,
             limits.response_bytes,
         )?;
+        let text_models = crate::gateway::ingress::discovery::TextModelView::bind(
+            &topology,
+            &entries,
+            limits.response_bytes,
+        )?;
         Ok(Self {
             state: Arc::new(Runtime {
                 diagnostics: None,
@@ -107,6 +112,7 @@ impl Gateway {
                 transcriptions,
                 embeddings,
                 models,
+                text_models,
                 capabilities,
                 permits: Arc::new(Semaphore::new(limits.concurrency)),
                 limits,

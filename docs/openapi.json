@@ -8,6 +8,92 @@
   "servers": [{"url": "http://127.0.0.1:8080"}],
   "security": [{"bearerAuth": []}, {"apiKeyAuth": []}],
   "paths": {
+    "/v1/morphiecore/models": {
+      "get": {
+        "operationId": "listTextModels",
+        "summary": "List activated Generation Text model contracts",
+        "description": "Authenticated, startup-immutable Generation Text discovery. No upstream I/O, time fields, version/revision maintenance or pagination. HEAD omits the body. Other task discovery is unchanged.",
+        "responses": {
+          "200": {
+            "description": "Complete response within min(response_bytes, 256 KiB); oversize views fail startup, never truncate.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TextModelList"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "405": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/morphiecore/models/{model}": {
+      "parameters": [
+        {
+          "in": "path",
+          "name": "model",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/PublicModelLabel"
+          }
+        }
+      ],
+      "get": {
+        "operationId": "retrieveTextModel",
+        "summary": "Retrieve an activated Generation Text model contract",
+        "description": "Authenticated, startup-immutable Generation Text discovery. No upstream I/O, time fields, version/revision maintenance or pagination. HEAD omits the body. Other task discovery is unchanged.",
+        "responses": {
+          "200": {
+            "description": "Complete response within min(response_bytes, 256 KiB); oversize views fail startup, never truncate.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TextModelResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "405": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
     "/v1/morphiecore/capabilities": {
       "get": {
         "operationId": "generationCapabilities",
@@ -431,6 +517,507 @@
       "apiKeyAuth": {"type": "apiKey", "in": "header", "name": "x-api-key", "description": "The same ingress token, not an upstream key. Duplicates and simultaneous Bearer auth are rejected."}
     },
     "schemas": {
+      "TextModelList": {
+        "type": "object",
+        "required": [
+          "object",
+          "scope",
+          "coverage",
+          "unlisted",
+          "provider_effectiveness",
+          "full_loop",
+          "data"
+        ],
+        "properties": {
+          "object": {
+            "const": "morphiecore.model_list"
+          },
+          "scope": {
+            "const": "generation_text"
+          },
+          "coverage": {
+            "const": "partial"
+          },
+          "unlisted": {
+            "const": "not_assessed"
+          },
+          "provider_effectiveness": {
+            "const": "not_asserted"
+          },
+          "full_loop": {
+            "const": "not_asserted"
+          },
+          "data": {
+            "type": "array",
+            "maxItems": 64,
+            "items": {
+              "$ref": "#/components/schemas/TextModelDescriptor"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "TextModelResponse": {
+        "type": "object",
+        "required": [
+          "object",
+          "scope",
+          "coverage",
+          "unlisted",
+          "provider_effectiveness",
+          "full_loop",
+          "data"
+        ],
+        "properties": {
+          "object": {
+            "const": "morphiecore.model"
+          },
+          "scope": {
+            "const": "generation_text"
+          },
+          "coverage": {
+            "const": "partial"
+          },
+          "unlisted": {
+            "const": "not_assessed"
+          },
+          "provider_effectiveness": {
+            "const": "not_asserted"
+          },
+          "full_loop": {
+            "const": "not_asserted"
+          },
+          "data": {
+            "$ref": "#/components/schemas/TextModelDescriptor"
+          }
+        },
+        "additionalProperties": false
+      },
+      "TextModelDescriptor": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "owned_by",
+          "interfaces"
+        ],
+        "properties": {
+          "id": {
+            "$ref": "#/components/schemas/PublicModelLabel"
+          },
+          "name": {
+            "$ref": "#/components/schemas/PublicModelLabel"
+          },
+          "owned_by": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "interfaces": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 3,
+            "items": {
+              "$ref": "#/components/schemas/TextGenerationInterface"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "TextGenerationInterface": {
+        "type": "object",
+        "required": [
+          "task",
+          "protocol",
+          "delivery_modes",
+          "generation"
+        ],
+        "properties": {
+          "task": {
+            "const": "generation"
+          },
+          "protocol": {
+            "enum": [
+              "chat_completions",
+              "responses",
+              "messages"
+            ]
+          },
+          "delivery_modes": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 2,
+            "uniqueItems": true,
+            "items": {
+              "enum": [
+                "json",
+                "sse"
+              ]
+            }
+          },
+          "generation": {
+            "$ref": "#/components/schemas/TextGenerationContract"
+          }
+        },
+        "additionalProperties": false
+      },
+      "TextGenerationContract": {
+        "type": "object",
+        "required": [
+          "scope",
+          "composition",
+          "token_limits",
+          "features",
+          "reasoning"
+        ],
+        "properties": {
+          "scope": {
+            "const": "route_common"
+          },
+          "composition": {
+            "const": "not_asserted"
+          },
+          "token_limits": {
+            "$ref": "#/components/schemas/TextTokenLimits"
+          },
+          "features": {
+            "type": "object",
+            "required": [
+              "function_tools",
+              "strict_tool_schema",
+              "parallel_tool_calls",
+              "json_object_output",
+              "json_schema_output",
+              "max_output_tokens"
+            ],
+            "properties": {
+              "function_tools": {
+                "$ref": "#/components/schemas/TextCapability"
+              },
+              "strict_tool_schema": {
+                "$ref": "#/components/schemas/TextCapability"
+              },
+              "parallel_tool_calls": {
+                "$ref": "#/components/schemas/TextCapability"
+              },
+              "json_object_output": {
+                "$ref": "#/components/schemas/TextCapability"
+              },
+              "json_schema_output": {
+                "$ref": "#/components/schemas/TextCapability"
+              },
+              "max_output_tokens": {
+                "$ref": "#/components/schemas/TextCapability"
+              }
+            },
+            "additionalProperties": false
+          },
+          "reasoning": {
+            "type": "object",
+            "required": [
+              "activation",
+              "effort"
+            ],
+            "properties": {
+              "activation": {
+                "$ref": "#/components/schemas/TextActivationChoices"
+              },
+              "effort": {
+                "type": "object",
+                "required": [
+                  "response",
+                  "reasoning"
+                ],
+                "properties": {
+                  "response": {
+                    "$ref": "#/components/schemas/TextEffortChoices"
+                  },
+                  "reasoning": {
+                    "$ref": "#/components/schemas/TextEffortChoices"
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false,
+        "description": "Partial simple text request domains through public admission and configured target projection; independent features do not promise arbitrary schemas, combinations, Provider effectiveness or a complete tool/replay loop. See docs/usage.md."
+      },
+      "TextTokenLimits": {
+        "type": "object",
+        "required": [
+          "purpose",
+          "context_window_tokens",
+          "max_input_tokens",
+          "max_output_tokens",
+          "output_token_accounting"
+        ],
+        "properties": {
+          "purpose": {
+            "const": "planning"
+          },
+          "context_window_tokens": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "max_input_tokens": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "max_output_tokens": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "output_token_accounting": {
+            "const": "not_assessed"
+          }
+        },
+        "additionalProperties": false
+      },
+      "TextCapability": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "state"
+            ],
+            "properties": {
+              "state": {
+                "const": "faithful"
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "state",
+              "rules"
+            ],
+            "properties": {
+              "state": {
+                "const": "approved_adaptation"
+              },
+              "rules": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 64,
+                "uniqueItems": true,
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                }
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "state"
+            ],
+            "properties": {
+              "state": {
+                "enum": [
+                  "unavailable",
+                  "non_uniform",
+                  "not_assessed"
+                ]
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
+      },
+      "TextEffortChoices": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "state",
+              "values"
+            ],
+            "properties": {
+              "state": {
+                "const": "faithful"
+              },
+              "values": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 6,
+                "uniqueItems": true,
+                "items": {
+                  "enum": [
+                    "minimal",
+                    "low",
+                    "medium",
+                    "high",
+                    "xhigh",
+                    "max"
+                  ]
+                }
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "state",
+              "rules",
+              "values"
+            ],
+            "properties": {
+              "state": {
+                "const": "approved_adaptation"
+              },
+              "rules": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 64,
+                "uniqueItems": true,
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                }
+              },
+              "values": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 6,
+                "uniqueItems": true,
+                "items": {
+                  "enum": [
+                    "minimal",
+                    "low",
+                    "medium",
+                    "high",
+                    "xhigh",
+                    "max"
+                  ]
+                }
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "state"
+            ],
+            "properties": {
+              "state": {
+                "enum": [
+                  "unavailable",
+                  "non_uniform",
+                  "not_assessed"
+                ]
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
+      },
+      "TextActivationChoices": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "state",
+              "values"
+            ],
+            "properties": {
+              "state": {
+                "const": "faithful"
+              },
+              "values": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 3,
+                "uniqueItems": true,
+                "items": {
+                  "enum": [
+                    "enabled",
+                    "disabled",
+                    "adaptive"
+                  ]
+                }
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "state",
+              "rules",
+              "values"
+            ],
+            "properties": {
+              "state": {
+                "const": "approved_adaptation"
+              },
+              "rules": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 64,
+                "uniqueItems": true,
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                }
+              },
+              "values": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 3,
+                "uniqueItems": true,
+                "items": {
+                  "enum": [
+                    "enabled",
+                    "disabled",
+                    "adaptive"
+                  ]
+                }
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "state"
+            ],
+            "properties": {
+              "state": {
+                "enum": [
+                  "unavailable",
+                  "non_uniform",
+                  "not_assessed"
+                ]
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
+      },
       "CapabilitySnapshot": {
         "type": "object", "additionalProperties": false,
         "required": ["object", "version", "scope", "coverage", "unlisted", "provider_effectiveness", "full_loop", "data"],

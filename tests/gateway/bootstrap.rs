@@ -224,6 +224,25 @@ async fn binary_bootstraps_default_home_files_and_ignores_environment_keys() {
     assert!(models["data"].as_array().unwrap().contains(&json!({
         "id":"qwen-audio-3.0-tts-flash","object":"model","created":1784592000,"owned_by":"Alibaba"
     })));
+    let text_models: Value = client
+        .get(format!("{origin}/v1/morphiecore/models"))
+        .bearer_auth(support::CLIENT_KEY)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(text_models["scope"], "generation_text");
+    assert_eq!(text_models["data"].as_array().unwrap().len(), 1);
+    assert_eq!(text_models["data"][0]["id"], models["data"][0]["id"]);
+    assert_eq!(
+        text_models["data"][0]["interfaces"]
+            .as_array()
+            .unwrap()
+            .len(),
+        3
+    );
     // No admitted request is issued: the synthetic key must never reach a Provider.
     assert_eq!(calls.load(Ordering::SeqCst), 0);
     process.kill().await.unwrap();

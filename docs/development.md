@@ -211,6 +211,8 @@ git diff --check
 
 These checks use synthetic data only. Do not use real Providers or private configuration as offline test input.
 
+Generation Text discovery has focused wire, source-domain projection, common-subset, unknown-limit, bounds, authentication and privacy checks in `cargo test --locked --offline --lib gateway::tests::models::`. Synthetic CLI startup checks confirm text-only publication without upstream calls; `tests/gateway/test_openapi_schema.py` validates the enhanced schemas separately from standard Models. Existing SDK Models consumption remains a regression gate, not enhanced-metadata consumption or real Provider effectiveness evidence. No installed-client configuration integration is selected.
+
 Focused examples:
 
 ```sh

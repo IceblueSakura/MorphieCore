@@ -23,6 +23,7 @@ This page owns accepted principles, domain contracts and decision records. [Road
     - [Domain evidence interface](#domain-evidence-interface)
     - [Atomic evidence and output batches](#atomic-evidence-and-output-batches)
     - [Typed conversion failures](#typed-conversion-failures)
+    - [Generation Text model discovery](#generation-text-model-discovery)
 - [History and replay](#history-and-replay)
   - [Reasoning replay](#reasoning-replay)
   - [Chat reasoning extensions](#chat-reasoning-extensions)
@@ -1043,6 +1044,32 @@ Errors still use standard HTTP/error/terminal mechanisms; an extension only supp
 
 The `X-MorphieCore-Adaptation: possible` header and partial snapshot remain conservative declarations, not actual-loss evidence. The optional notice above is implemented without a universal consumer-retention claim. Extension-specific tests and information organization/aggregation are deferred to the deployer's final production-preparation decision in the [roadmap](roadmap.md#standards-reset-and-redesign); no public receipt store, new Google ingress or routing change is implied.
 
+#### Generation Text model discovery
+
+The selected enhanced surface is limited to activated **Generation Text** models: `GET /v1/morphiecore/models` and `GET /v1/morphiecore/models/{model}`. A multimodal model may appear through its text interfaces; this view makes no media declaration. Standard Models and existing capabilities retain their schemas and all-task coverage. No non-Generation discovery gap is filled.
+
+Both enhanced envelopes contain `object`, `scope: "generation_text"`, `coverage: "partial"`, `unlisted: "not_assessed"`, `provider_effectiveness: "not_asserted"`, `full_loop: "not_asserted"` and `data`. List data is a complete, sorted model array; retrieval data is the identical descriptor. A descriptor contains public `id`, display `name` (currently the ID), developer `owned_by`, and activated `interfaces`. Each interface declares `task: "generation"`, its public `protocol`, common `delivery_modes` and a `generation` contract. No creation/retirement dates, version/revision fields, pagination, hot refresh or client configuration adapter are selected.
+
+Compile the view at startup from bound entries and existing metadata. Public source decoding, semantic admission and the actual target preflight/projectors determine each interface's finite text request domain; no second per-model capability registry or Provider probe is used. Evaluate all static candidates, not only healthy or currently selected members. `scope: "route_common"` publishes common domains and `composition: "not_asserted"` withholds arbitrary feature-combination promises. These declarations do not widen admission or change routing, and do not certify Provider effectiveness or a tool/replay loop.
+
+The initial feature domains are intentionally small:
+
+| Field | Assessed domain |
+|---|---|
+| `function_tools` | A described function with explicit non-strictness and a closed object containing a required string property |
+| `strict_tool_schema` | The same declaration with explicit strictness; no promise of arbitrary schema keywords or tool counts |
+| `parallel_tool_calls` | Permission to produce parallel function calls, not serial enforcement, guaranteed calls or gateway execution |
+| `json_object_output` / `json_schema_output` | Separate text constraints; schema uses the same small closed object, with the protocol's required name/strict carrier |
+| `max_output_tokens` | An explicit bounded positive output cap, not a model maximum or default |
+| `reasoning.activation` | Source modes: Messages manual enabled at budget 1024 with a bounded output cap, adaptive, or disabled; standard Chat/Responses expose only explicit disabled activation |
+| `reasoning.effort.response` / `.reasoning` | Finite source-domain effort values through actual selected projections and post-projection model limits; scope is never inferred from a target-local level list |
+
+Each capability has a closed `state`: `faithful`, `approved_adaptation` (with nonempty possible `rules`), `unavailable`, `non_uniform`, or `not_assessed`. Positive choices include nonempty `values`; nonpositive choices have neither values nor rules. Common positive subsets are retained even when larger candidate sets differ. A blocked plain text baseline makes unrelated features unassessed rather than unavailable. Omitted controls and no-op reasoning requests do not establish effective control support; the existing named always-enabled parallel-permission omission remains a valid adaptation. Safely ignore unknown fields; unknown states and missing declarations never mean support.
+
+`token_limits` are for planning, not exact token counting or request admission. Context window and independent input limits remain null because no Generation owner currently declares them. Publish a common output maximum only when every candidate supplies a comparable, JSON-safe model ceiling; absence or unsafe values yield null, never unlimited. Inserted output defaults do not establish maxima. Reasoning/output accounting remains unassessed and maxima are not jointly consumable guarantees.
+
+The immutable list and every retrieval envelope must fit both `response_bytes` and 256 KiB, with at most 64 models and three interfaces per model. Oversize views fail startup rather than truncate. Reuse ingress authentication, shutdown checks and `Cache-Control: no-store`; HEAD has no body and GET never polls a request body, reads credentials or contacts upstreams. Responses expose only selected public fields, never private topology, origins, credentials or live health.
+
 ## History and replay
 
 ### Reasoning replay
@@ -1495,6 +1522,7 @@ The 2026-10-23 standards reset supersedes conflicting historical conversion, pub
 
 | Decision | Consequence |
 |---|---|
+| Generation Text discovery (2026-10-26) | Add the bounded read-only [text model view](#generation-text-model-discovery) from existing bound contracts. Preserve standard Models, capabilities and other tasks; omit time research, version/revision maintenance, pagination and client integration |
 | DeepSeek parallel-tool admission (2026-10-25) | User selected no upstream parallel-control field for either DeepSeek protocol; reject explicit serial intent before dispatch and omit explicit parallel permission with evidence. Instruction-authority review remains separate; no role rewrite or routing expansion |
 | Messages readable reasoning compatibility (2026-10-25) | User prioritizes ordinary cross-protocol Agent continuation and reasoning carriage over exact readable type/segmentation. Preserve unsigned bytes/order through a declared item-local delivery projection; retained snapshots match Messages history. Native replay/visibility, source IR and call identity remain protected; no model-quality or broader Provider acceptance claim |
 | Local telemetry wiring (2026-10-25) | Scoped tracing/OTel request and attempt lifetimes project the existing report into native structured logs and completed spans through the existing private writer. No global registration, ambient destination, metrics reader, new retention mechanism or network exporter; Collector/export-health integration remains separately selected |
