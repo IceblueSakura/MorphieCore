@@ -54,6 +54,7 @@ pub enum SamplingPolicy {
     Fixed,
 }
 
+/// Target-specific dialect constraints and policy enforcement for Anthropic Messages.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TargetContract {
     pub profile: Profile,
@@ -66,8 +67,9 @@ pub struct TargetContract {
     pub carriers: super::Carriers,
     pub sampling: SamplingPolicy,
     pub manual_thinking: bool,
-    /// Trusted insertion policy, independent of the model maximum.
+    /// Optional default output token ceiling injected when client omits `max_tokens`.
     pub default_output_tokens: Option<u64>,
+    /// Default TTL for automatic turn-boundary cache marker placement.
     pub automatic_cache_default: Option<crate::semantic::task::generation::PrefixCacheTtl>,
 }
 impl TargetContract {

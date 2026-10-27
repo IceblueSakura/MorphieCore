@@ -1,7 +1,26 @@
-//! Downstream carrier for upstream-issued reasoning and compaction content.
-//! The envelope is tagged, not encrypted or authenticated: the upstream
-//! issuer validates the payload, and the tag only decides whether a value may return
-//! to the same trusted target. Clients must treat the whole string as opaque.
+//! Downstream carrier envelope for upstream-issued reasoning signatures and compaction tokens.
+//!
+//! # Format
+//!
+//! Downstream clients receive opaque carrier strings encoded in the `mc1.` format:
+//!
+//! ```text
+//! mc1.<base64url-json: {o: origin_digest, f: format_tag, d: payload}>
+//! ```
+//!
+//! - `o`: Origin fingerprint binding provider, canonical model, and deployment route.
+//! - `f`: Native format identifier (e.g. `anthropic-thinking`, `openai-responses`).
+//! - `d`: Raw upstream payload string.
+//!
+//! # Security and Trust Model
+//!
+//! - **Tagged, Not Encrypted**: The envelope is tagged and Base64URL-encoded, not encrypted
+//!   or authenticated by MorphieCore. The upstream issuer cryptographically signs or encrypts
+//!   the underlying payload (`d`).
+//! - **Route Isolation**: The origin tag (`o`) prevents cross-model contamination by ensuring
+//!   that opaque tokens are only forwarded back to the matching upstream deployment route.
+//! - **Opaque Client Representation**: Downstream clients must treat the entire `mc1.` string
+//!   as opaque and echo it verbatim without modification or parsing.
 use crate::semantic::{
     task::generation::{MAX_TEXT_BYTES, ReplayFormat},
     value::{ReplayOrigin, Text},
@@ -10,18 +29,22 @@ use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 
-const PREFIX: &str = "mc1.";
+/// Canonical envelope prefix distinguishing MorphieCore replay envelopes.
+pub const PREFIX: &str = "mc1.";
 
 /// Client-source compatibility label, not execution or storage authorization.
 pub static CLIENT_ORIGIN: std::sync::LazyLock<ReplayOrigin> =
     std::sync::LazyLock::new(|| ReplayOrigin::new("client").expect("static origin"));
 
-/// Stable compatibility label; neither credentials nor public aliases participate.
+/// Computes a stable compatibility label binding provider ID and canonical model.
 pub fn issuer(provider: &str, model: &str) -> ReplayOrigin {
     fingerprint(&[provider, model])
 }
 
-/// Runtime deployment identity. Only the digest may cross the client boundary.
+/// Computes a strict runtime deployment identity fingerprint.
+///
+/// Binds provider, model, host origin, and endpoint path. Only the digest
+/// crosses the client boundary.
 pub(crate) fn deployment_issuer(
     provider: &str,
     model: &str,
@@ -50,7 +73,8 @@ struct Envelope<'a> {
     d: Cow<'a, str>,
 }
 
-fn format_tag(format: ReplayFormat) -> &'static str {
+/// Converts a semantic [`ReplayFormat`] to its wire tag string.
+pub fn format_tag(format: ReplayFormat) -> &'static str {
     match format {
         ReplayFormat::ResponsesEncrypted => "openai-responses",
         ReplayFormat::ResponsesCompaction => "openai-compaction",
@@ -62,7 +86,9 @@ fn format_tag(format: ReplayFormat) -> &'static str {
         ReplayFormat::GoogleInteractionsV1FunctionCall => "interactions-function-call",
     }
 }
-fn parse_format(tag: &str) -> Option<ReplayFormat> {
+
+/// Parses a wire tag string into a semantic [`ReplayFormat`].
+pub fn parse_format(tag: &str) -> Option<ReplayFormat> {
     Some(match tag {
         "openai-responses" => ReplayFormat::ResponsesEncrypted,
         "openai-compaction" => ReplayFormat::ResponsesCompaction,
@@ -76,8 +102,9 @@ fn parse_format(tag: &str) -> Option<ReplayFormat> {
     })
 }
 
-/// Wrap one upstream value for the downstream carrier. Fails only when the result
-/// would exceed the shared text limit.
+/// Wraps an upstream opaque value in an `mc1.` carrier envelope.
+///
+/// Returns `None` if the payload or the resulting sealed envelope exceeds [`MAX_TEXT_BYTES`].
 pub fn seal(origin: &ReplayOrigin, format: ReplayFormat, payload: &str) -> Option<Text> {
     if payload.len() > MAX_TEXT_BYTES {
         return None;
@@ -94,8 +121,10 @@ pub fn seal(origin: &ReplayOrigin, format: ReplayFormat, payload: &str) -> Optio
         .flatten()
 }
 
-/// Parse a client carrier. This validates its shape, not its claimed issuer.
-/// `None` means malformed, unsupported or oversized input.
+/// Unpacks and validates a client-provided `mc1.` carrier envelope.
+///
+/// Validates envelope formatting, JSON grammar, and format tags. Does not inspect
+/// or authenticate the enclosed payload. Returns `None` if malformed, unknown, or oversized.
 pub fn open(value: &str) -> Option<(ReplayOrigin, ReplayFormat, Text)> {
     if value.len() > MAX_TEXT_BYTES {
         return None;

@@ -6,6 +6,14 @@ use std::{
     time::{Duration, Instant},
 };
 
+/// Configuration policy for bounded text-delta coalescing during streaming delivery.
+///
+/// Merges consecutive `PartKind::Text` delta events into larger frames before encoding,
+/// reducing SSE framing overhead.
+///
+/// # Bounds
+/// - `max_delay_ms`: Window duration in milliseconds (`1..=100`, default 50 ms).
+/// - `max_pending_bytes`: Maximum buffered bytes before flushing (`1024..=1048576`, default 16 KiB).
 #[derive(Clone, Copy, Debug, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct DeltaCoalescing {
