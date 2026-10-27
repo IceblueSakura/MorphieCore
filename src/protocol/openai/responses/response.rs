@@ -62,28 +62,6 @@ pub(crate) fn decode_with(
         item_status,
         false,
     )?;
-    for (owner, item) in &mut b.items {
-        if let Item::ConfigurationUpdate(update) = item {
-            let native = update.effort;
-            crate::protocol::openai::reasoning::admit_configuration_mapping(
-                update,
-                adaptation.effort_mapping,
-                true,
-            )?;
-            if let (Some(mapping), Some(input), Some(output)) =
-                (adaptation.effort_mapping, native, update.effort)
-                && input != output
-            {
-                b.evidence.record_effort_mapping(
-                    mapping.rule,
-                    input,
-                    output,
-                    crate::protocol::conversion::generation::ConversionBoundary::ResponseDecode,
-                    crate::protocol::conversion::generation::Owner::item(*owner),
-                );
-            }
-        }
-    }
     let usage = accounting::usage(
         o.get("usage"),
         GenerationApi::Responses,
@@ -94,6 +72,7 @@ pub(crate) fn decode_with(
     let semantic = GenerationResponse::from_resources(b.items, outcome, b.resources)?
         .with_usage(usage)?
         .with_details(decode_details(o)?)?;
+    check_response_details(semantic.details())?;
     crate::protocol::openai::responses::envelope::record_vendor_shapes(
         GenerationApi::Responses,
         adaptation,

@@ -30,7 +30,27 @@ pub(in crate::protocol::openai) fn read_existing(
         }
     };
     let logprobs = read_presence(o, "logprobs", read_logprobs)?;
+    if matches!(
+        items.direction,
+        DecodeDirection::Request | DecodeDirection::Client(_)
+    ) && let Some(value) = o.get("logprobs")
+    {
+        complete_logprobs(value)?;
+    }
     Ok(TextContent::new(text, annotations, logprobs)?)
+}
+pub(in crate::protocol::openai) fn complete_logprobs(value: &Value) -> Result<(), CodecError> {
+    for p in read_logprobs(value)? {
+        if p.bytes.is_none()
+            || p.top_logprobs.as_ref().is_none_or(|top| {
+                top.iter()
+                    .any(|p| p.token.is_none() || p.logprob.is_none() || p.bytes.is_none())
+            })
+        {
+            return Err(CodecError::invalid());
+        }
+    }
+    Ok(())
 }
 pub(in crate::protocol::openai) fn read_annotations(
     v: &Value,

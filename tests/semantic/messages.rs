@@ -334,6 +334,299 @@ mod phase {
     fn labelled(label: Value) -> Value {
         json!({"type":"message","id":"m","role":"assistant","status":"completed","content":[{"type":"output_text","text":"hi","annotations":[]}],"phase":label})
     }
+    #[test]
+    fn chat_projection_preserves_part_and_call_order_through_delivery() {
+        use morphiecore::{
+            adapter::ClientAdapter,
+            execution::{Attempt, ResponseDelivery},
+            protocol::{
+                openai::{Dialect, GenerationCodec, TargetContract, obfuscation::Obfuscation},
+                stream::SseLimits,
+            },
+        };
+        let item = ItemId::new(1);
+        let p = PartId::new(1);
+        let q = PartId::new(2);
+        let delta = |part, fragment: &str| StreamEvent::Delta {
+            item,
+            part,
+            fragment: fragment.into(),
+            logprobs: vec![],
+        };
+        let mut events = vec![
+            StreamEvent::Started,
+            start(
+                1,
+                ItemKind::Message {
+                    phase: Some(Phase::FinalAnswer),
+                },
+            ),
+            StreamEvent::PartStarted {
+                item,
+                part: p,
+                kind: PartKind::Text,
+            },
+            delta(p, "A"),
+            StreamEvent::PartStarted {
+                item,
+                part: q,
+                kind: PartKind::Text,
+            },
+            delta(q, "B"),
+            delta(p, "C"),
+        ];
+        for part in [p, q] {
+            events.push(StreamEvent::ValueFinished { item, part });
+            events.push(StreamEvent::PartFinished { item, part });
+        }
+        events.extend([
+            close(1, ItemLifecycle::Completed),
+            terminal(StreamTerminal::Completed),
+        ]);
+        // A later part of an earlier message still precedes every part of a
+        // later message, even when those owners overlap on the source stream.
+        let later = ItemId::new(2);
+        let third = PartId::new(3);
+        let other = vec![
+            StreamEvent::Started,
+            start(
+                1,
+                ItemKind::Message {
+                    phase: Some(Phase::FinalAnswer),
+                },
+            ),
+            start(2, ItemKind::Message { phase: None }),
+            StreamEvent::PartStarted {
+                item,
+                part: p,
+                kind: PartKind::Text,
+            },
+            delta(p, "A"),
+            StreamEvent::PartStarted {
+                item: later,
+                part: q,
+                kind: PartKind::Text,
+            },
+            StreamEvent::PartStarted {
+                item,
+                part: third,
+                kind: PartKind::Text,
+            },
+            delta(third, "C"),
+            StreamEvent::Delta {
+                item: later,
+                part: q,
+                fragment: "B".into(),
+                logprobs: vec![],
+            },
+            StreamEvent::ValueFinished { item, part: p },
+            StreamEvent::PartFinished { item, part: p },
+            StreamEvent::ValueFinished { item, part: third },
+            StreamEvent::PartFinished { item, part: third },
+            StreamEvent::ValueFinished {
+                item: later,
+                part: q,
+            },
+            StreamEvent::PartFinished {
+                item: later,
+                part: q,
+            },
+            close(1, ItemLifecycle::Completed),
+            close(2, ItemLifecycle::Completed),
+            terminal(StreamTerminal::Completed),
+        ];
+        // A function call can open while the first text part is still live.
+        // The text owner must not close, and its later part still follows it.
+        let mut with_call = events[..4].to_vec();
+        with_call.push(start(
+            2,
+            ItemKind::ToolCall {
+                call_id: text("c"),
+                name: text("lookup"),
+                format: ArgumentFormat::Raw,
+                context: Default::default(),
+            },
+        ));
+        with_call.extend(part(2, 3, PartKind::Arguments, "not-json"));
+        with_call.extend_from_slice(&events[4..events.len() - 1]);
+        with_call.push(close(2, ItemLifecycle::Completed));
+        with_call.push(terminal(StreamTerminal::Completed));
+        for (events, has_call) in [(events, false), (other, false), (with_call, true)] {
+            for phased in [false, true] {
+                let mut events = events.clone();
+                if !phased {
+                    for event in &mut events {
+                        if let StreamEvent::ItemStarted {
+                            kind: ItemKind::Message { phase },
+                            ..
+                        } = event
+                        {
+                            *phase = None;
+                        }
+                    }
+                }
+                let source = encode(&events, GenerationApi::Responses, &Default::default());
+                let bytes = source
+                    .iter()
+                    .flat_map(|value| {
+                        morphiecore::protocol::openai::responses::sse::encode_frame(
+                            value,
+                            SseLimits::default().max_event_bytes,
+                        )
+                        .unwrap()
+                    })
+                    .collect::<Vec<_>>();
+                let codec = |api| GenerationCodec::new(api, Dialect::Standard, None);
+                let delivery = || {
+                    ResponseDelivery::new(
+                        ClientAdapter::openai(codec(GenerationApi::Chat), TargetContract::full()),
+                        "public",
+                        SseLimits::default(),
+                        morphiecore::semantic::context::StreamOptions {
+                            include_obfuscation: morphiecore::semantic::value::Presence::Value(
+                                false,
+                            ),
+                            ..Default::default()
+                        },
+                        Obfuscation::Disabled,
+                    )
+                };
+                let mut attempt = Attempt::new(
+                    codec(GenerationApi::Responses),
+                    1 << 20,
+                    SseLimits::default(),
+                );
+                attempt.begin(200, "text/event-stream").unwrap();
+                let mut stream = delivery();
+                let mut output = vec![];
+                let mut rest = bytes.as_slice();
+                while !rest.is_empty() {
+                    let (used, events) = attempt.push(rest).unwrap();
+                    assert!(used > 0);
+                    output.extend(
+                        stream
+                            .encode_events(&attempt, &events)
+                            .unwrap_or_else(|error| panic!("{error:?}: {events:?}"))
+                            .into_bytes()
+                            .into_iter()
+                            .flatten(),
+                    );
+                    if events
+                        .iter()
+                        .any(|e| matches!(e, StreamEvent::Delta {fragment,..} if fragment=="A"))
+                    {
+                        assert!(
+                            String::from_utf8_lossy(&output).contains("\"content\":\"A\""),
+                            "ready text must not wait for tool or response closure"
+                        );
+                    }
+                    rest = &rest[used..];
+                }
+                attempt.finish().unwrap();
+                output.extend(
+                    stream
+                        .finish_stream(&attempt)
+                        .unwrap()
+                        .into_bytes()
+                        .into_iter()
+                        .flatten(),
+                );
+                let wire = String::from_utf8(output).unwrap();
+                assert!(wire.contains("data: [DONE]"));
+                let text: String = wire
+                    .lines()
+                    .filter_map(|line| line.strip_prefix("data: "))
+                    .filter_map(|line| serde_json::from_str::<Value>(line).ok())
+                    .filter_map(|value| {
+                        value["choices"][0]["delta"]["content"]
+                            .as_str()
+                            .map(str::to_owned)
+                    })
+                    .collect();
+                assert_eq!(text, "ACB");
+                let snapshot: Value =
+                    serde_json::from_slice(&delivery().encode_json(&attempt).unwrap()).unwrap();
+                assert_eq!(snapshot["choices"][0]["message"]["content"], "ACB");
+                assert_eq!(snapshot["choices"][0].get("logprobs"), Some(&Value::Null));
+                if has_call {
+                    assert_eq!(
+                        snapshot["choices"][0]["message"]["tool_calls"][0]["function"]["arguments"],
+                        "not-json"
+                    );
+                    let arguments: String = wire
+                        .lines()
+                        .filter_map(|line| line.strip_prefix("data: "))
+                        .filter_map(|line| serde_json::from_str::<Value>(line).ok())
+                        .filter_map(|v| {
+                            v.pointer("/choices/0/delta/tool_calls/0/function/arguments")
+                                .and_then(Value::as_str)
+                                .map(str::to_owned)
+                        })
+                        .collect();
+                    assert_eq!(arguments, "not-json");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn removing_phase_does_not_parse_generated_raw_arguments() {
+        use morphiecore::{
+            adapter::ClientAdapter,
+            protocol::{
+                DecodedResponse,
+                openai::{Dialect, GenerationCodec, TargetContract},
+            },
+        };
+        for phase in [None, Some(Phase::FinalAnswer)] {
+            let response = DecodedResponse {
+                semantic: GenerationResponse::new(
+                    vec![
+                        (
+                            ItemId::new(1),
+                            Item::Message(Message {
+                                participant: None,
+                                role: MessageRole::Assistant,
+                                status: ItemLifecycle::Completed,
+                                phase,
+                                parts: vec![Part::new(
+                                    PartId::new(1),
+                                    ContentPart::Text(text("ok").into()),
+                                )],
+                            }),
+                        ),
+                        (
+                            ItemId::new(2),
+                            Item::ToolCall(ToolCall {
+                                call_id: text("c"),
+                                name: text("f"),
+                                arguments: ToolArguments::Raw("not-json".into()),
+                                status: ItemLifecycle::Completed,
+                                context: Default::default(),
+                                cache: None,
+                                replay: None,
+                            }),
+                        ),
+                    ],
+                    Outcome::Completed,
+                )
+                .unwrap(),
+                metadata: metadata(),
+                fidelity: Default::default(),
+                evidence: Default::default(),
+            };
+            let (_, wire) = ClientAdapter::openai(
+                GenerationCodec::new(GenerationApi::Chat, Dialect::Standard, None),
+                TargetContract::full(),
+            )
+            .snapshot(response)
+            .unwrap();
+            assert_eq!(
+                wire["choices"][0]["message"]["tool_calls"][0]["function"]["arguments"],
+                "not-json"
+            );
+        }
+    }
     fn message(d: &DecodedRequest) -> &Message {
         let Item::Message(m) = &d.semantic.items()[0].1 else {
             panic!()

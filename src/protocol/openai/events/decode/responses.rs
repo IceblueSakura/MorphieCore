@@ -10,7 +10,7 @@ use crate::protocol::{
 pub(super) struct State {
     pub(super) native_reports: Option<crate::semantic::context::ResponseReports>,
     pub(super) native_instructions: Option<Vec<(ItemId, Item)>>,
-    pub(super) native_configurations: Vec<(usize, ConfigurationUpdate)>,
+    pub(super) program_output_status: std::collections::BTreeMap<ItemId, ItemLifecycle>,
     pub(super) queued_creation_pending: bool,
 }
 
@@ -193,13 +193,13 @@ impl EventDecoder {
             return Err(CodecError::Invalid(ShapeReason::Identity));
         }
         let v = object(o.get("item").ok_or(CodecError::invalid())?)?;
-        if v.get("status")
-            .filter(|v| !v.is_null())
-            .is_some_and(|s| s.as_str() != Some("in_progress"))
+        if v.get("type").and_then(Value::as_str) != Some("program_output")
+            && v.get("status")
+                .filter(|v| !v.is_null())
+                .is_some_and(|s| s.as_str() != Some("in_progress"))
         {
             return Err(CodecError::Invalid(ShapeReason::Item));
         }
-        let mut configuration_mapping = None;
         let kind = match string(v, "type")? {
             "message" => {
                 DecodeDirection::Upstream
@@ -268,23 +268,6 @@ impl EventDecoder {
             "custom_tool_call_output" => {
                 ItemKind::CustomResult(self.read_tool_result(v, true, None, out)?)
             }
-            "configuration_update" => {
-                DecodeDirection::Upstream.fields(v, &["type", "id", "reasoning"])?;
-                let mut update = self.observe_configuration(index(o, "output_index")?, v)?;
-                let native = update.effort;
-                crate::protocol::openai::reasoning::admit_configuration_mapping(
-                    &mut update,
-                    self.adaptation.effort_mapping,
-                    true,
-                )?;
-                if let (Some(mapping), Some(input), Some(output)) =
-                    (self.adaptation.effort_mapping, native, update.effort)
-                    && input != output
-                {
-                    configuration_mapping = Some((mapping.rule, input, output));
-                }
-                ItemKind::ConfigurationUpdate(update)
-            }
             "compaction" => {
                 DecodeDirection::Upstream.fields(v, &["type", "id", "encrypted_content"])?;
                 ItemKind::Compaction
@@ -301,8 +284,10 @@ impl EventDecoder {
             "program_output" => {
                 DecodeDirection::Upstream
                     .fields(v, &["type", "id", "call_id", "result", "status"])?;
-                if v.get("status").filter(|v| !v.is_null()).is_some() {
-                    // The done snapshot owns the terminal status; added is initial.
+                if !matches!(
+                    v.get("status").and_then(Value::as_str),
+                    Some("completed" | "incomplete")
+                ) {
                     return Err(CodecError::invalid());
                 }
                 ItemKind::ProgramOutput {
@@ -340,14 +325,10 @@ impl EventDecoder {
             }
         };
         let item = self.allocate_item()?;
-        if let Some((rule, input, output)) = configuration_mapping {
-            self.evidence.record_effort_mapping(
-                rule,
-                input,
-                output,
-                crate::protocol::conversion::generation::ConversionBoundary::EventDecode,
-                crate::protocol::conversion::generation::Owner::item(item),
-            );
+        if matches!(kind, ItemKind::ProgramOutput { .. }) {
+            self.responses
+                .program_output_status
+                .insert(item, lifecycle(string(v, "status")?)?);
         }
         self.fidelity
             .record_response_item_id(item, string(v, "id")?)?;
@@ -941,11 +922,6 @@ impl EventDecoder {
         out: &mut Vec<StreamEvent>,
     ) -> Result<(), CodecError> {
         event_fields(o, &["type", "output_index", "item"])?;
-        if let Some(value) = o.get("item").and_then(Value::as_object)
-            && value.get("type").and_then(Value::as_str) == Some("configuration_update")
-        {
-            self.observe_configuration(index(o, "output_index")?, value)?;
-        }
         let item = *self
             .ids
             .get(index(o, "output_index")?)
@@ -987,6 +963,14 @@ impl EventDecoder {
                 None => ItemLifecycle::Completed,
             }
         };
+        if self
+            .responses
+            .program_output_status
+            .get(&item)
+            .is_some_and(|old| *old != status)
+        {
+            return Err(CodecError::Invalid(ShapeReason::ItemSnapshot));
+        }
         // Reasoning-text may omit generic content-part.done; its value.done still closes the value.
         let parts = self.state()?.item(item)?.parts.clone();
         for part in parts {
@@ -1049,33 +1033,6 @@ impl EventDecoder {
             return Err(CodecError::Invalid(ShapeReason::ItemSnapshot));
         }
         Ok(())
-    }
-    fn observe_configuration(
-        &mut self,
-        index: usize,
-        value: &Map<String, Value>,
-    ) -> Result<ConfigurationUpdate, CodecError> {
-        let update = crate::protocol::openai::responses::items::configuration_update(
-            value,
-            true,
-            DecodeDirection::Upstream,
-        )?;
-        if index >= MAX_ITEMS {
-            return Err(CodecError::Limit);
-        }
-        if let Some((_, old)) = self
-            .responses
-            .native_configurations
-            .iter()
-            .find(|(key, _)| *key == index)
-        {
-            if old != &update {
-                return Err(CodecError::Invalid(ShapeReason::ConfigurationConflict));
-            }
-        } else {
-            self.responses.native_configurations.push((index, update));
-        }
-        Ok(update)
     }
     fn close_terminal_reasoning(
         &mut self,
@@ -1151,15 +1108,6 @@ impl EventDecoder {
     ) -> Result<(), CodecError> {
         event_fields(o, &["type", "response"])?;
         let r = o.get("response").ok_or(CodecError::invalid())?;
-        if let Some(output) = r.get("output").and_then(Value::as_array) {
-            for (index, item) in output.iter().enumerate() {
-                if let Some(value) = item.as_object()
-                    && value.get("type").and_then(Value::as_str) == Some("configuration_update")
-                {
-                    self.observe_configuration(index, value)?;
-                }
-            }
-        }
         let mut summary;
         let r = if self.adaptation.rules.responses_event_owned_output
             && r.get("status").and_then(Value::as_str) == Some("completed")
@@ -1186,13 +1134,6 @@ impl EventDecoder {
                 true,
                 self.state()?.resources()
             )?);
-            // The synthetic terminal still enters the native decoder once.
-            // Reuse validated native controls instead of decoding canonical levels again.
-            for (index, update) in &self.responses.native_configurations {
-                if let Some(effort) = crate::protocol::openai::reasoning::effort_label(update)? {
-                    summary["output"][*index]["reasoning"] = json!({"effort":effort});
-                }
-            }
             &summary
         } else {
             r
@@ -1314,7 +1255,7 @@ mod mapping_evidence_tests {
         reasoning::ReasoningEffortMapping,
     };
     #[test]
-    fn response_and_configuration_aliases_keep_event_boundary_and_distinct_owners() {
+    fn response_alias_keeps_event_boundary_and_input_only_output_rejects() {
         let adaptation = Adaptation {
             effort_mapping: Some(&ReasoningEffortMapping {
                 canonical_model: "synthetic",
@@ -1348,30 +1289,7 @@ mod mapping_evidence_tests {
                 Change::Normalize
             )
         );
-        let mut owners = Vec::new();
-        for index in 0..2 {
-            let events=decoder.push(&serde_json::json!({"type":"response.output_item.added","sequence_number":index+1,"output_index":index,"item":{"type":"configuration_update","id":format!("configuration_{index}"),"reasoning":{"effort":"xhigh"}}})).unwrap();
-            owners.push(
-                events
-                    .iter()
-                    .find_map(|e| match e {
-                        StreamEvent::ItemStarted {
-                            item,
-                            kind: ItemKind::ConfigurationUpdate(_),
-                            ..
-                        } => Some(Owner::item(*item)),
-                        _ => None,
-                    })
-                    .unwrap(),
-            );
-        }
-        let effects = decoder.take_evidence();
-        assert_eq!(effects.len(), 2);
-        for (effect, owner) in effects.iter().zip(owners) {
-            assert_eq!(
-                (effect.boundary(), effect.owner(), effect.semantic_field()),
-                (B::EventDecode, owner, Field::Effort)
-            );
-        }
+        assert!(decoder.push(&json!({"type":"response.output_item.added","sequence_number":1,"output_index":0,"item":{"type":"configuration_update","id":"config","reasoning":{"effort":"xhigh"}}})).is_err());
+        assert!(decoder.take_evidence().is_empty());
     }
 }

@@ -13,6 +13,7 @@ pub enum ProjectionRule {
     UsageReportView,
     OmitReportedReasoningControls,
     OmitChatReportedSettings,
+    OmitChatNullMetadata,
     OmitResponsesSystemFingerprint,
     OmitResponsesInputImageTokens,
     OmitResponsesInputTextTokens,
@@ -42,6 +43,7 @@ impl ProjectionRule {
                 "responses.omit-incidental-reasoning-controls.v1"
             }
             Self::OmitChatReportedSettings => "chat.omit-incidental-settings.v1",
+            Self::OmitChatNullMetadata => "chat.omit-null-stream-metadata.v1",
             Self::OmitResponsesSystemFingerprint => "responses.omit-system-fingerprint.v1",
             Self::OmitResponsesInputImageTokens => "responses.omit-input-image-tokens.v1",
             Self::OmitResponsesInputTextTokens => "responses.omit-input-text-tokens.v1",
@@ -73,6 +75,7 @@ impl ProjectionRule {
             Self::UsageReportView => "generation.usage.reports",
             Self::OmitReportedReasoningControls => "response.reported.reasoning",
             Self::OmitChatReportedSettings => "response.reported.settings",
+            Self::OmitChatNullMetadata => "response.context.metadata",
             Self::OmitResponsesSystemFingerprint => "response.context.system_fingerprint",
             Self::OmitResponsesInputImageTokens => "generation.usage.input_image_tokens",
             Self::OmitResponsesInputTextTokens => "generation.usage.input_text_tokens",

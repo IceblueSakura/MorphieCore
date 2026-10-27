@@ -16,6 +16,11 @@ pub struct EventEncoder {
     sequence: u64,
     pub(super) chat_audio_pending: Vec<u8>,
     pub(super) projection: Vec<crate::protocol::conversion::generation::Effect>,
+    /// Atomic output items have no in-progress wire status. Hold their opener
+    /// and following frames until observed item closure supplies a lawful value.
+    pub(super) pending_program_outputs: std::collections::BTreeMap<ItemId, usize>,
+    pub(super) held_frames: Vec<Value>,
+    held_bytes: usize,
 }
 impl EventEncoder {
     pub fn new(profile: GenerationApi, metadata: ResponseMetadata) -> Result<Self, CodecError> {
@@ -32,6 +37,9 @@ impl EventEncoder {
             sequence: 0,
             chat_audio_pending: Vec::new(),
             projection: Vec::new(),
+            pending_program_outputs: Default::default(),
+            held_frames: vec![],
+            held_bytes: 0,
         })
     }
     /// Refresh reported settings/completion metadata without changing response identity.
@@ -108,6 +116,19 @@ impl EventEncoder {
         self.target_locked = true;
         let checked_projection = self.projection.len();
         let result = (|| {
+            if self.profile == GenerationApi::Chat
+                && matches!(
+                    self.metadata.context.execution.metadata,
+                    crate::semantic::value::Presence::Null
+                )
+            {
+                if self.contract.reported_facts
+                    == crate::protocol::conversion::generation::ReportedFactPolicy::StrictComplete
+                {
+                    return Err(CodecError::Unsupported(CarrierReason::Metadata));
+                }
+                self.record_loss(projection::ProjectionRule::OmitChatNullMetadata);
+            }
             if self.profile == GenerationApi::Chat
                 && (self.metadata.context.settings().is_some()
                     || self.metadata.context.instruction_messages.is_some())
@@ -205,16 +226,52 @@ impl EventEncoder {
             {
                 self.record_loss(projection::ProjectionRule::OmitResponsesSystemFingerprint);
             }
+            if !self.pending_program_outputs.is_empty() || !self.held_frames.is_empty() {
+                if matches!(event, StreamEvent::Terminal { .. })
+                    && !self.pending_program_outputs.is_empty()
+                {
+                    return Err(CodecError::invalid());
+                }
+                for value in values {
+                    // Include entry overhead and space for the eventual status.
+                    self.held_bytes = self
+                        .held_bytes
+                        .checked_add(
+                            serde_json::to_vec(&value)
+                                .map_err(|_| CodecError::invalid())?
+                                .len()
+                                + std::mem::size_of::<Value>()
+                                + 32,
+                        )
+                        .ok_or(CodecError::Limit)?;
+                    if self.held_bytes > MAX_TOTAL_BYTES || self.held_frames.len() >= MAX_ITEMS {
+                        return Err(CodecError::Limit);
+                    }
+                    self.held_frames.push(value);
+                }
+                values = if self.pending_program_outputs.is_empty() {
+                    self.held_bytes = 0;
+                    std::mem::take(&mut self.held_frames)
+                } else {
+                    vec![]
+                };
+            }
             Ok(values)
         })();
         if result.is_err() {
             self.state = None;
+            self.held_frames.clear();
+            self.pending_program_outputs.clear();
+            self.held_bytes = 0;
             self.projection.truncate(checked_projection);
         }
         result
     }
     pub fn finish(&self) -> Result<(), CodecError> {
-        if self.state.is_none() {
+        if self.state.is_none()
+            || !self.held_frames.is_empty()
+            || !self.pending_program_outputs.is_empty()
+        {
             return Err(CodecError::invalid());
         }
         end_of_stream(self.state()?)?;
@@ -278,7 +335,7 @@ fn validate_metadata(
     if profile == GenerationApi::Chat {
         crate::protocol::reports::validate_single(&metadata.context.reports)?;
         crate::protocol::openai::chat::envelope::validate_context(&metadata.context.execution)?;
-        if created.as_u64().is_none() || !metadata.context.execution.metadata.is_absent() {
+        if created.as_u64().is_none() || metadata.context.execution.metadata.value().is_some() {
             // Chat chunks have no metadata slot; never silently discard a static fact.
             return Err(CodecError::Unsupported(CarrierReason::Metadata));
         }

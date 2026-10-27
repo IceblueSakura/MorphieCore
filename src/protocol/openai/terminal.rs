@@ -55,7 +55,10 @@ pub(super) fn decode_details(o: &Map<String, Value>) -> Result<TerminalDetails, 
         .map(|v| {
             let d = object(v)?;
             DecodeDirection::Upstream.fields(d, &["reason"])?;
-            if d.get("reason").is_none_or(|v| v.is_null()) {
+            if d.get("reason").is_some_and(Value::is_null) {
+                return Err(CodecError::invalid());
+            }
+            if !d.contains_key("reason") {
                 return Ok(IncompleteReason::Unspecified);
             }
             Ok::<_, CodecError>(match string(d, "reason")? {
@@ -116,6 +119,9 @@ pub(super) fn terminal_losses(
     profile: crate::protocol::openai::GenerationApi,
 ) -> Result<Vec<ProjectionRule>, CodecError> {
     use crate::protocol::openai::GenerationApi;
+    if profile == GenerationApi::Responses {
+        check_response_details(details)?;
+    }
     let mut losses = vec![];
     if details
         .refusal
@@ -211,16 +217,60 @@ pub(super) fn encode_error(error: Option<&ResponseError>) -> Value {
         })
         .unwrap_or(Value::Null)
 }
+pub(super) fn check_response_details(details: &TerminalDetails) -> Result<(), CodecError> {
+    if details.error.as_ref().is_some_and(|error| {
+        error
+            .code
+            .as_ref()
+            .is_none_or(|code| !response_error_code(code.as_str()))
+    }) {
+        return Err(CodecError::Unsupported(CarrierReason::Terminal));
+    }
+    encode_incomplete(details.incomplete.as_ref())?;
+    Ok(())
+}
+fn response_error_code(code: &str) -> bool {
+    // OpenAI Node 7.43.0 ResponseError; event errors have a separate string domain.
+    matches!(
+        code,
+        "server_error"
+            | "rate_limit_exceeded"
+            | "invalid_prompt"
+            | "data_residency_mismatch"
+            | "bio_policy"
+            | "misalignment_policy_violation"
+            | "vector_store_timeout"
+            | "invalid_image"
+            | "invalid_image_format"
+            | "invalid_base64_image"
+            | "invalid_image_url"
+            | "image_too_large"
+            | "image_too_small"
+            | "image_parse_error"
+            | "image_content_policy_violation"
+            | "invalid_image_mode"
+            | "image_file_too_large"
+            | "unsupported_image_media_type"
+            | "empty_image_file"
+            | "failed_to_download_image"
+            | "image_file_not_found"
+    )
+}
 pub(super) fn encode_incomplete(reason: Option<&IncompleteReason>) -> Result<Value, CodecError> {
     let Some(reason) = reason else {
         return Ok(Value::Null);
     };
     let reason = match reason {
         // Responses has no context-window reason; the stop stays incomplete.
-        IncompleteReason::Unspecified | IncompleteReason::ContextWindowExceeded => Value::Null,
+        IncompleteReason::Unspecified | IncompleteReason::ContextWindowExceeded => {
+            return Ok(json!({}));
+        }
         IncompleteReason::MaxOutputTokens => json!("max_output_tokens"),
         IncompleteReason::ContentFilter | IncompleteReason::Recitation => json!("content_filter"),
-        IncompleteReason::Other(t) => json!(t.as_str()),
+        IncompleteReason::Other(t) if matches!(t.as_str(), "max_messages" | "steered") => {
+            json!(t.as_str())
+        }
+        IncompleteReason::Other(_) => return Err(CodecError::Unsupported(CarrierReason::Terminal)),
     };
     Ok(json!({ "reason": reason }))
 }

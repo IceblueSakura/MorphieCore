@@ -138,10 +138,9 @@ fn configured_messages_adaptive_forced_tools_keep_strictness_and_effort() {
         json!({"name":name,"description":"Retrieve one synthetic record.","strict":true,"input_schema":schema})
     }).collect();
     let mut body = json!({"model":"claude-haiku-5-5","max_tokens":2048,"stream":false,
-        "thinking":{"type":"adaptive","display":"summarized","block_binding":{"prefix_mismatch_behavior":"drop_block"}},
+        "thinking":{"type":"adaptive","display":"summarized"},
         "output_config":{"effort":"high"},"tools":tools,
-        "messages":[{"role":"user","content":[{"type":"text","text":"Return record 71."}]},
-            {"role":"system","content":[],"output_config":{"effort":"low"}}]});
+        "messages":[{"role":"user","content":[{"type":"text","text":"Return record 71."}]}]});
     for choice in [
         json!({"type":"any","disable_parallel_tool_use":true}),
         json!({"type":"tool","name":"inspect","disable_parallel_tool_use":true}),
@@ -171,7 +170,7 @@ fn configured_messages_adaptive_forced_tools_keep_strictness_and_effort() {
         assert_eq!(wire["thinking"], body["thinking"]);
         assert_eq!(wire["output_config"], json!({"effort":"high"}));
         assert_eq!(wire["tools"], json!(tools));
-        assert_eq!(wire["messages"][1], body["messages"][1]);
+        assert_eq!(wire["messages"], body["messages"]);
         let mut unsupported = body.clone();
         unsupported["tools"][0]["input_schema"]["properties"]["record"] =
             json!({"type":"string","enum":["cedar","birch"]});
@@ -585,18 +584,19 @@ async fn configured_messages_cache_admission_requires_all_native_candidates() {
 }
 
 #[test]
-fn native_response_admit_strict_changed_tools_and_message_effort() {
+fn native_binding_keeps_beta_carriers_without_public_activation() {
     let boot = configured_messages(&["opencode-go"]);
     let state = &boot.gateway.state;
     let entry = &state.entries[&(
         crate::protocol::ClientProtocol::Messages,
         "claude-haiku-5-5".into(),
     )];
-    // The same configured admission must accept pi's complete native profile,
-    // not only a plain tool plus cache markers.
+    // Native carrier support does not authorize beta semantics on a stable Client.
     let mut rich = cached_tool_result_input();
     rich["tools"][0]["strict"] = json!(true);
     rich["tools"][0]["eager_input_streaming"] = json!(true);
+    rich["tools"][0]["input_schema"]["properties"] = json!({});
+    rich["tools"][0]["input_schema"]["required"] = json!([]);
     rich["tools"][0]["input_schema"]["additionalProperties"] = json!(false);
     rich["tools"].as_array_mut().unwrap().push(json!({
         "name":"__pi_deferred_placeholder__","input_schema":{"type":"object"},
@@ -616,13 +616,25 @@ fn native_response_admit_strict_changed_tools_and_message_effort() {
                 "eager_input_streaming":true}}}
         ],"output_config":{"effort":"low"}}),
     ]);
-    let (_, mut request) = crate::gateway::ingress::admission::prepare(
-        state,
-        ClientProtocol::Messages,
-        &serde_json::to_vec(&rich).unwrap(),
-        &crate::execution::report::Report::default(),
-    )
-    .unwrap();
+    assert!(
+        crate::gateway::ingress::admission::prepare(
+            state,
+            ClientProtocol::Messages,
+            &serde_json::to_vec(&rich).unwrap(),
+            &crate::execution::report::Report::default(),
+        )
+        .is_err()
+    );
+    let native = crate::protocol::anthropic::messages::Profile::AdaptiveTextTools
+        .decode_generation_request(
+            &serde_json::to_vec(&rich).unwrap(),
+            crate::semantic::task::generation::LocalScope::ROOT,
+            &crate::protocol::native::ReplayTarget::new("synthetic", "claude-haiku-5-5").unwrap(),
+        )
+        .unwrap();
+    let mut request =
+        crate::protocol::GenerationRequestEnvelope::from_generation(native, "claude-haiku-5-5")
+            .unwrap();
     request.conversation =
         Some(crate::semantic::context::ConversationContext::conversation("synthetic").unwrap());
     let candidate = &entry.candidates[0];
@@ -659,11 +671,8 @@ async fn configured_messages_input_features_require_every_native_candidate() {
     let schema = json!({"type":"object","properties":{"key":{"type":"string"}},"required":["key"]});
     let root = json!({"name":"lookup","strict":false,"input_schema":schema,
         "input_examples":[{"key":"cedar"},{"key":"birch"}]});
-    let inline = json!({"name":"inspect","strict":false,"input_schema":schema,"input_examples":[]});
     let examples = json!({"model":"claude-haiku-5-5","max_tokens":64,"tools":[root],
-        "messages":[{"role":"user","content":[{"type":"text","text":"lookup"}]},
-        {"role":"system","content":[{"type":"tool_addition","tool":{
-            "type":"tool_definition","definition":inline}}]}]});
+        "messages":[{"role":"user","content":[{"type":"text","text":"lookup"}]}]});
     let context = json!({"model":"claude-haiku-5-5","max_tokens":64,
     "messages":[{"role":"user","content":[
         {"type":"document","source":{"type":"text","media_type":"text/plain","data":"cedar"},

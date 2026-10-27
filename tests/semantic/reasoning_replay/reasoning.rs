@@ -263,41 +263,28 @@ fn configuration_update_is_an_ordered_effort_item_not_a_settings_patch() {
     let mut idless = json!({"type":"configuration_update","reasoning":{"effort":"max"}});
     assert!(responses::decode_response(&envelope("completed", json!([idless.clone()]))).is_err());
     idless["id"] = json!("cu");
-    let response = responses::decode_response(&envelope("completed", json!([idless]))).unwrap();
-    let Item::ConfigurationUpdate(update) = &response.semantic.items()[0].1 else {
-        panic!("response update")
-    };
-    assert_eq!(
-        update.effort,
-        Some(EffortControl {
-            scope: EffortScope::Reasoning,
-            level: EffortLevel::Max
-        })
+    assert!(responses::decode_response(&envelope("completed", json!([idless]))).is_err());
+    let response = GenerationResponse::new(
+        vec![decoded.semantic.items()[0].clone()],
+        Outcome::Completed,
+    )
+    .unwrap();
+    assert!(
+        lower_response(
+            &response,
+            &decoded.fidelity,
+            &metadata(),
+            GenerationApi::Responses,
+            contract()
+        )
+        .is_err()
     );
     let mut d = EventDecoder::new(GenerationApi::Responses);
     d.push(&created()).unwrap();
     let item = json!({"id":"cu","type":"configuration_update","reasoning":{"effort":"low"}});
-    d.push(&json!({"type":"response.output_item.added","output_index":0,"item":item}))
-        .unwrap();
-    assert!(d.push(&json!({"type":"response.output_item.done","output_index":0,"item":{"id":"cu","type":"configuration_update","reasoning":{"effort":"high"}}})).is_err());
-    let mut ok = EventDecoder::new(GenerationApi::Responses);
-    ok.push(&created()).unwrap();
-    ok.push(&json!({"type":"response.output_item.added","output_index":0,"item":item.clone()}))
-        .unwrap();
-    ok.push(&json!({"type":"response.output_item.done","output_index":0,"item":item.clone()}))
-        .unwrap();
-    ok.push(&json!({"type":"response.completed","response":envelope("completed", json!([item]))}))
-        .unwrap();
-    let materialized = ok.materialize().unwrap();
-    let Item::ConfigurationUpdate(update) = &materialized.semantic.items()[0].1 else {
-        panic!("stream update")
-    };
-    assert_eq!(
-        update.effort,
-        Some(EffortControl {
-            scope: EffortScope::Reasoning,
-            level: EffortLevel::Low
-        })
+    assert!(
+        d.push(&json!({"type":"response.output_item.added","output_index":0,"item":item}))
+            .is_err()
     );
     use morphiecore::protocol::{
         openai::{Dialect, GenerationCodec},
@@ -365,33 +352,4 @@ fn configuration_update_is_an_ordered_effort_item_not_a_settings_patch() {
             if update.effort.unwrap().scope == EffortScope::Response)
     );
     assert_eq!(request, before);
-    let item = json!({"id":"cu","type":"configuration_update","reasoning":{"effort":"low"}});
-    let mut calibrated = adapter.event_decoder();
-    calibrated.push(&created()).unwrap();
-    calibrated
-        .push(&json!({"type":"response.output_item.added","output_index":0,"item":item}))
-        .unwrap();
-    calibrated
-        .push(&json!({"type":"response.output_item.done","output_index":0,"item":item}))
-        .unwrap();
-    calibrated
-        .push(&json!({"type":"response.completed","response":envelope("completed",json!([item]))}))
-        .unwrap();
-    let delivered = calibrated.materialize().unwrap();
-    assert!(
-        matches!(&delivered.semantic.items()[0].1, Item::ConfigurationUpdate(update)
-            if update.effort.unwrap().level == EffortLevel::High)
-    );
-    let mut conflicting = adapter.event_decoder();
-    conflicting.push(&created()).unwrap();
-    conflicting
-        .push(&json!({"type":"response.output_item.added","output_index":0,"item":item}))
-        .unwrap();
-    let mut changed = item;
-    changed["reasoning"]["effort"] = json!("medium");
-    assert!(
-        conflicting
-            .push(&json!({"type":"response.output_item.done","output_index":0,"item":changed}))
-            .is_err()
-    );
 }

@@ -217,7 +217,7 @@ fn validate_response(
     }
     if r.items()
         .iter()
-        .any(|(_, item)| matches!(item, Item::ProviderTool(_)))
+        .any(|(_, item)| matches!(item, Item::ProviderTool(_) | Item::ConfigurationUpdate(_)))
     {
         return Err(RepresentationError::UnmigratedSemantic);
     }

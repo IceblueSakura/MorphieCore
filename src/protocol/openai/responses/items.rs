@@ -364,7 +364,7 @@ pub(in crate::protocol::openai) fn decode_items(
             Some("configuration_update") => {
                 direction.fields(o, &["type", "id", "reasoning"])?;
                 if response {
-                    text(string(o, "id")?, "configuration update id", 256)?;
+                    return Err(CodecError::Unsupported(CarrierReason::Unavailable));
                 } else if o
                     .get("id")
                     .is_some_and(|v| !v.is_null() && v.as_str().is_none())
@@ -410,6 +410,13 @@ pub(in crate::protocol::openai) fn decode_items(
                 })
             }
             Some("reasoning") => {
+                if !response
+                    && ["status", "content"]
+                        .iter()
+                        .any(|key| o.get(*key).is_some_and(Value::is_null))
+                {
+                    return Err(CodecError::invalid());
+                }
                 // Wire reasoning items carry required identity; it is never invented.
                 text(string(o, "id")?, "reasoning id", 256)?;
                 let r = crate::protocol::openai::reasoning::decode_item(
@@ -437,23 +444,35 @@ pub(in crate::protocol::openai) fn decode_items(
                 }
                 let phase = read_phase(o)?;
                 let content = o.get("content").ok_or(CodecError::invalid())?;
-                if !response
-                    && role == "assistant"
-                    && content.as_array().is_some_and(|parts| {
-                        parts.iter().any(|p| {
-                            matches!(
-                                p.get("type").and_then(Value::as_str),
-                                Some("output_text" | "refusal")
-                            )
-                        })
-                    })
-                {
+                let output_message = response
+                    || role == "assistant"
+                        && content.as_array().is_some_and(|parts| {
+                            parts.iter().any(|p| {
+                                matches!(
+                                    p.get("type").and_then(Value::as_str),
+                                    Some("output_text" | "refusal")
+                                )
+                            }) || parts.is_empty() && o.contains_key("status")
+                        });
+                if output_message {
                     // Complete output-message history is not the easy-input union branch.
-                    if typ != Some("message") {
+                    if typ != Some("message") || role != "assistant" {
                         return Err(CodecError::invalid());
                     }
                     text(string(o, "id")?, "message id", 256)?;
                     string(o, "status")?;
+                    if !content.as_array().is_some_and(|parts| {
+                        parts.iter().all(|part| {
+                            matches!(
+                                part.get("type").and_then(Value::as_str),
+                                Some("output_text" | "refusal")
+                            )
+                        })
+                    }) {
+                        return Err(CodecError::invalid());
+                    }
+                } else if o.contains_key("status") && (role == "assistant" || !content.is_array()) {
+                    return Err(CodecError::invalid());
                 }
                 let values = if let Some(s) = content.as_str() {
                     if response {
@@ -791,6 +810,9 @@ pub(in crate::protocol::openai) fn encode_items(
                 v
             }
             Item::ConfigurationUpdate(update) => {
+                if response {
+                    return Err(CodecError::Unsupported(CarrierReason::Unavailable));
+                }
                 let mut v = json!({"type":"configuration_update"});
                 if let Some(effort) = crate::protocol::openai::reasoning::effort_label(update)? {
                     v["reasoning"] = json!({"effort": effort});

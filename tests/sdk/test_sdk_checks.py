@@ -6,6 +6,42 @@ from pathlib import Path
 
 
 class SdkOracleTests(unittest.TestCase):
+    def test_messages_sdk_preserves_complete_openers_and_empty_input_deltas(self):
+        import json
+        import anthropic
+        import httpx2
+        from sdk_support import require_sdk
+        require_sdk("anthropic")
+        for value in ({}, {"n": 9007199254740993, "nested": {"session_id": "data"}}):
+            events = [
+                {"type": "message_start", "message": {
+                    "id": "msg", "type": "message", "role": "assistant", "model": "m",
+                    "content": [], "stop_reason": None, "stop_sequence": None,
+                    "usage": {"input_tokens": 1, "output_tokens": 0}}},
+                {"type": "content_block_start", "index": 0, "content_block": {
+                    "type": "tool_use", "id": "c", "name": "lookup", "input": value}},
+                {"type": "content_block_delta", "index": 0, "delta": {
+                    "type": "input_json_delta", "partial_json": ""}},
+                {"type": "content_block_stop", "index": 0},
+                {"type": "message_delta", "delta": {
+                    "stop_reason": "tool_use", "stop_sequence": None}, "usage": {"output_tokens": 1}},
+                {"type": "message_stop"},
+            ]
+            wire = "".join(f"event: {e['type']}\ndata: {json.dumps(e)}\n\n" for e in events)
+            def respond(request):
+                self.assertEqual(request.url.host, "127.0.0.1")
+                return httpx2.Response(200, headers={"content-type": "text/event-stream"},
+                                       content=wire.encode())
+            with httpx2.Client(transport=httpx2.MockTransport(respond), trust_env=False) as http:
+                with anthropic.Anthropic(api_key="synthetic", base_url="http://127.0.0.1:1",
+                                         max_retries=0, http_client=http,
+                                         _strict_response_validation=True) as client:
+                    with client.messages.stream(model="m", max_tokens=8,
+                                                messages=[{"role": "user", "content": "go"}]) as stream:
+                        result = stream.get_final_message()
+            self.assertEqual(result.content[0].input, value)
+            self.assertEqual(result.stop_reason, "tool_use")
+
     def test_google_object_result_types_retain_exact_values_and_error_presence(self):
         from google.genai import types
         from google.genai._gaos.types.interactions.functionresultstep import FunctionResultStep

@@ -34,7 +34,9 @@ pub fn check_event(
         };
         super::checks::check_usage(projected, profile, &contract.adaptation.rules)?;
     }
-    if let StreamEvent::Terminal { details, .. } = event {
+    if let StreamEvent::Terminal { terminal, details } = event
+        && *terminal != StreamTerminal::Error
+    {
         // Selected approximations are recorded when the terminal is lowered.
         crate::protocol::openai::terminal::terminal_losses(details, profile)
             .map_err(|_| RepresentationError::Terminal)?;
@@ -182,11 +184,7 @@ pub fn check_event(
                 {
                     return Err(RepresentationError::Tools);
                 }
-                ItemKind::ConfigurationUpdate(update)
-                    if profile != GenerationApi::Responses
-                        || !contract.semantics.reasoning
-                        || super::super::reasoning::effort_label(update).is_err() =>
-                {
+                ItemKind::ConfigurationUpdate(_) => {
                     return Err(RepresentationError::Reasoning);
                 }
                 // Chat reasoning is provisional at event time: its carrier

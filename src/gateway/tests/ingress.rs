@@ -647,6 +647,29 @@ async fn authentication_runs_before_any_body_poll() {
 #[tokio::test]
 async fn messages_version_is_single_current_and_checked_before_body_poll() {
     let gate = gateway(Limits::default());
+    for header in ["anthropic-user-profile-id", "anthropic-workspace-id"] {
+        let forbidden = futures_util::stream::poll_fn(
+            |_| -> std::task::Poll<Option<Result<bytes::Bytes, std::io::Error>>> {
+                panic!("unsupported Messages attribution must not poll body")
+            },
+        );
+        let response = gate
+            .router()
+            .oneshot(
+                HttpRequest::builder()
+                    .method("POST")
+                    .uri("/v1/messages")
+                    .header("x-api-key", KEY)
+                    .header("content-type", "application/json")
+                    .header("anthropic-version", "2026-10-21")
+                    .header(header, "")
+                    .body(axum::body::Body::from_stream(forbidden))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), 400);
+    }
     for path in ["/v1/messages", "/v1/messages?beta=true"] {
         for (versions, beta) in [
             (vec![], None),

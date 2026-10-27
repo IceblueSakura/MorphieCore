@@ -39,8 +39,7 @@ with httpx.Client(trust_env=False, timeout=10) as http:
             {"type": "document", "source": {"type": "text", "media_type": "text/plain",
                 "data": "synthetic notes"}, "context": "summary-only", "cache_control": None},
             image,
-        ]}, {"role": "system", "content": [], "output_config": {"effort": "low"}},
-            {"role": "user", "content": "second input"}]
+        ]}, {"role": "system", "content": [{"type": "text", "text": "Keep history."}]}]
         first = client.messages.create(**shared, messages=history)
         assert first.stop_reason == "tool_use"
         assert first.content[0].type == "thinking"
@@ -102,20 +101,19 @@ with httpx.Client(trust_env=False, timeout=10) as http:
                     "type": "object", "properties": {"n": {"type": "integer"}}}}],
             )
             messages = [{"role": "user", "content": "go"}]
-            if streamed:
-                with client.messages.stream(**shared_cross, messages=messages) as stream:
-                    answer = stream.get_final_message()
+            try:
+                if streamed:
+                    with client.messages.stream(**shared_cross, messages=messages) as stream:
+                        stream.get_final_message()
+                else:
+                    client.messages.create(**shared_cross, messages=messages)
+            except anthropic.InternalServerError as error:
+                assert error.status_code == 500
             else:
-                answer = client.messages.create(**shared_cross, messages=messages)
-            assert answer.stop_reason == "tool_use"
-            assert [b.type for b in answer.content] == ["thinking", "tool_use"]
-            assert answer.content[0].thinking == "Plan 🧪 Check"
-            assert answer.content[0].signature == ""
-            assert answer.content[1].id == "call_cross"
-            assert answer.content[1].input == {"n": 7}
+                raise AssertionError("unsigned reasoning has no standard delivery carrier")
             messages += [
                 {"role": "assistant", "content": [
-                    b.model_dump(exclude_none=True) for b in answer.content]},
+                    {"type": "thinking", "thinking": "Plan", "signature": ""}]},
                 {"role": "user", "content": [
                     {"type": "tool_result", "tool_use_id": "call_cross", "content": "found"}]},
             ]

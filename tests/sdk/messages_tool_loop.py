@@ -21,9 +21,9 @@ deliveries = (False, True) if recovery_stream is None else (recovery_stream == "
 def send(client, body, streamed, session):
     headers = {"x-session-affinity": session}
     if streamed:
-        with client.beta.messages.stream(**{k: v for k, v in body.items() if k != "stream"}, extra_headers=headers) as stream:
+        with client.messages.stream(**{k: v for k, v in body.items() if k != "stream"}, extra_headers=headers) as stream:
             return stream.get_final_message()
-    return client.beta.messages.create(**body, extra_headers=headers)
+    return client.messages.create(**body, extra_headers=headers)
 
 
 with httpx.Client(trust_env=False, timeout=10,
@@ -84,14 +84,10 @@ with httpx.Client(trust_env=False, timeout=10,
                 if turn == 2:
                     body["messages"].append({"role": "system", "content": [
                         {"type": "text", "text": "Inspect mode."},
-                        {"type": "tool_removal", "tool": {"type": "tool_reference", "name": "lookup"}},
-                        {"type": "tool_addition", "tool": {"type": "tool_definition", "definition": {
-                            "name": "inspect", "input_schema": {"type": "object"},
-                            "eager_input_streaming": True, "cache_control": None,
-                        }}},
-                    ], "output_config": {"effort": "low"}})
-                else:
-                    body["messages"].append({"role": "system", "content": [], "output_config": {"effort": "high" if turn == 1 else "low"}})
+                    ]})
+                    body["tools"] = [{"name": "inspect", "input_schema": {"type": "object"},
+                        "eager_input_streaming": True, "cache_control": {"type": "ephemeral", "ttl": "1h"}}]
+                    body["output_config"] = {"effort": "low"}
 assert len(transmissions) == requests
 print(json.dumps({"requests": requests, "http_requests": len(transmissions),
                   "tool_changes": True, "ttl": "1h"}))

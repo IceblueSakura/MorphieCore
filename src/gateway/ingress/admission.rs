@@ -110,6 +110,11 @@ pub(in crate::gateway) fn headers(headers: &HeaderMap, limit: usize) -> Result<(
     Ok(())
 }
 pub(super) fn messages_version(headers: &HeaderMap) -> Result<(), ApiError> {
+    if headers.contains_key("anthropic-user-profile-id")
+        || headers.contains_key("anthropic-workspace-id")
+    {
+        return Err(ApiError::invalid());
+    }
     // The public contract selects the stable API, not caller-selected beta semantics.
     if headers
         .get_all("anthropic-beta")
@@ -214,9 +219,6 @@ fn prepare_in(
             crate::gateway::error::ErrorKind::ModelNotFound,
         ))?
         .clone();
-    if value.get("session_id").is_some() {
-        return Err(ApiError::invalid());
-    }
     let mut request = decode(&entry).map_err(invalid_request(report))?;
     crate::execution::replay::open_from_client(&mut request).map_err(invalid_request(report))?;
     // Decode/replay validation is one checked intake unit. Later public

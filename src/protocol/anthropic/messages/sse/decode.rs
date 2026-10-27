@@ -174,6 +174,9 @@ impl GenerationSseDecoder {
                         value
                     }
                     Delta::InputJson(value) => {
+                        if value.is_empty() {
+                            return Ok(out);
+                        }
                         self.json_delta = true;
                         value
                     }
@@ -191,11 +194,13 @@ impl GenerationSseDecoder {
                 let block =
                     &self.wire.message().ok_or(CodecError::invalid())?.content[index as usize];
                 let partial = matches!(block, Block::PartialToolUse { .. });
-                if matches!(block, Block::ToolUse { .. }) && !self.json_delta {
+                if let Block::ToolUse { input, .. } = block
+                    && !self.json_delta
+                {
                     out.push(StreamEvent::Delta {
                         item,
                         part,
-                        fragment: "{}".into(),
+                        fragment: input.value().to_string(),
                         logprobs: vec![],
                     });
                 }

@@ -198,7 +198,7 @@ pub fn encode(target: &ResponseRepresentation<'_>) -> Result<Value, CodecError> 
         .as_ref()
         .ok_or(CodecError::Invalid(ShapeReason::Metadata))?;
     let mut value = json!({"id":m.id,"object":"chat.completion","created":created,"model":m.model,
-        "choices":[{"index":0,"message":message,"finish_reason":finish}],
+        "choices":[{"index":0,"message":message,"finish_reason":finish,"logprobs":null}],
         "usage":m.delivery.as_ref().and_then(|d| d.usage).or_else(|| target.semantic.usage())
             .map(|usage| accounting::encode_usage(usage, GenerationApi::Chat, &target.adaptation.rules))});
     if let Some(probabilities) =

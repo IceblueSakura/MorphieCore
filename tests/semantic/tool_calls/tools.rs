@@ -322,19 +322,19 @@ fn active_tool_dispatch_and_instruction_lifecycle_round_trip_without_chat_projec
         } else {
             json!(true)
         };
-        assert!(decode(&active).is_err(), "{key}");
+        assert_eq!(decode(&active).unwrap().task, original.task, "{key}");
     }
     let mut legacy = ignored.clone();
     legacy["messages"][1]["function_call"] = json!({"name":"lookup","arguments":"{}"});
     assert!(decode(&legacy).is_err());
     let mut caller = ignored.clone();
     caller["messages"][1]["tool_calls"][0]["caller"] = json!({"type":"program","caller_id":"p"});
-    assert!(decode(&caller).is_err());
+    assert_eq!(decode(&caller).unwrap().task, original.task);
     let mut audio = ignored;
     audio["messages"][0]["audio"] = json!({"id":"a"});
     assert!(decode(&audio).is_err());
     let source = json!({"input":[
-        {"type":"message","id":"ins","role":"developer","status":"in_progress","content":"hold"},
+        {"type":"message","id":"ins","role":"developer","status":"in_progress","content":[{"type":"input_text","text":"hold"}]},
         {"type":"program","id":"p","call_id":"prog","code":"return lookup();","fingerprint":"fp"},
         {"type":"function_call","call_id":"c","name":"lookup","arguments":"{}","namespace":"pkg","async":true,"caller":{"type":"program","caller_id":"prog"}},
         {"type":"function_call_output","call_id":"c","output":"ok","caller":{"type":"program","caller_id":"prog"}},
@@ -526,14 +526,6 @@ fn program_kind() -> ItemKind {
 fn program_items_are_atomic_event_items_with_owner_bound_snapshots() {
     let mut e = vec![StreamEvent::Started, start(1, program_kind())];
     e.push(close(1, ItemLifecycle::Completed));
-    e.push(start(
-        2,
-        ItemKind::ProgramOutput {
-            call_id: text("call_p"),
-            result: "1".into(),
-        },
-    ));
-    e.push(close(2, ItemLifecycle::Completed));
     e.push(terminal(StreamTerminal::Completed));
     let wire = encode(&e, GenerationApi::Responses, &FidelityRecords::default());
     let added: Vec<_> = wire
@@ -544,15 +536,10 @@ fn program_items_are_atomic_event_items_with_owner_bound_snapshots() {
         added[0]["item"],
         json!({"id":"item_1","type":"program","call_id":"call_p","code":"c()","fingerprint":"fp-1"})
     );
-    assert_eq!(
-        added[1]["item"],
-        json!({"id":"item_2","type":"program_output","call_id":"call_p","result":"1"})
-    );
     let done: Vec<_> = wire
         .iter()
         .filter(|v| v["type"] == "response.output_item.done")
         .collect();
-    assert_eq!(done[1]["item"]["status"], json!("completed"));
     assert_eq!(done[0]["item"].get("status"), None);
     assert_eq!(
         wire.last().unwrap()["response"]["output"][0]["type"],
@@ -572,6 +559,97 @@ fn program_items_are_atomic_event_items_with_owner_bound_snapshots() {
         ),
     );
     assert!(apply(&dup).is_err());
+    // A terminal-only atomic opener waits for observed status, not a fabricated
+    // in-progress value. Missing closure still fails.
+    let mut encoder = events::EventEncoder::new(GenerationApi::Responses, metadata()).unwrap();
+    let fidelity = FidelityRecords::default();
+    encoder.encode(&StreamEvent::Started, &fidelity).unwrap();
+    assert!(
+        encoder
+            .encode(
+                &start(
+                    1,
+                    ItemKind::ProgramOutput {
+                        call_id: text("call_p"),
+                        result: "1".into(),
+                    }
+                ),
+                &fidelity
+            )
+            .unwrap()
+            .is_empty()
+    );
+    assert!(encoder.finish().is_err());
+    let wire = encoder
+        .encode(&close(1, ItemLifecycle::Completed), &fidelity)
+        .unwrap();
+    assert_eq!(wire.len(), 2);
+    assert_eq!(wire[0]["type"], "response.output_item.added");
+    assert_eq!(wire[0]["item"]["status"], "completed");
+    assert_eq!(wire[0]["item"], wire[1]["item"]);
+}
+#[test]
+fn program_output_waits_for_status_without_reordering_following_items() {
+    for status in [ItemLifecycle::Completed, ItemLifecycle::Incomplete] {
+        let fidelity = FidelityRecords::default();
+        let mut encoder = events::EventEncoder::new(GenerationApi::Responses, metadata()).unwrap();
+        let mut wire = encoder.encode(&StreamEvent::Started, &fidelity).unwrap();
+        let mut held = vec![
+            start(
+                1,
+                ItemKind::ProgramOutput {
+                    call_id: text("c"),
+                    result: "value".into(),
+                },
+            ),
+            start(2, ItemKind::Message { phase: None }),
+        ];
+        held.extend(crate::events_support::part(2, 2, PartKind::Text, "after"));
+        held.push(close(2, ItemLifecycle::Completed));
+        for event in held {
+            assert!(encoder.encode(&event, &fidelity).unwrap().is_empty());
+        }
+        wire.extend(encoder.encode(&close(1, status), &fidelity).unwrap());
+        wire.extend(
+            encoder
+                .encode(
+                    &terminal(if status == ItemLifecycle::Completed {
+                        StreamTerminal::Completed
+                    } else {
+                        StreamTerminal::Incomplete
+                    }),
+                    &fidelity,
+                )
+                .unwrap(),
+        );
+        encoder.finish().unwrap();
+        let added: Vec<_> = wire
+            .iter()
+            .filter(|e| e["type"] == "response.output_item.added")
+            .collect();
+        assert_eq!(added[0]["output_index"], 0);
+        assert_eq!(added[1]["output_index"], 1);
+        assert_eq!(
+            added[0]["item"],
+            json!({"type":"program_output","id":"item_1",
+            "call_id":"c","result":"value","status":if status==ItemLifecycle::Completed {"completed"} else {"incomplete"}})
+        );
+        assert_eq!(
+            wire.last().unwrap()["response"]["output"][0],
+            added[0]["item"]
+        );
+        let mut decoder = events::EventDecoder::new(GenerationApi::Responses);
+        for (index, frame) in wire.iter().enumerate() {
+            assert_eq!(frame["sequence_number"], index);
+            decoder.push(frame).unwrap();
+        }
+        assert_eq!(
+            decoder.materialize().unwrap().semantic.items()[0]
+                .1
+                .lifecycle(),
+            Some(status)
+        );
+    }
 }
 #[test]
 fn program_event_stream_decodes_and_changed_or_unfinished_snapshots_fail() {
@@ -579,7 +657,7 @@ fn program_event_stream_decodes_and_changed_or_unfinished_snapshots_fail() {
     d.push(&created()).unwrap();
     d.push(&json!({"type":"response.output_item.added","output_index":0,"item":{"id":"pg_1","type":"program","call_id":"call_p","code":"c()","fingerprint":"fp-1"}})).unwrap();
     d.push(&json!({"type":"response.output_item.done","output_index":0,"item":{"id":"pg_1","type":"program","call_id":"call_p","code":"c()","fingerprint":"fp-1"}})).unwrap();
-    d.push(&json!({"type":"response.output_item.added","output_index":1,"item":{"id":"pg_2","type":"program_output","call_id":"call_p","result":"1"}})).unwrap();
+    d.push(&json!({"type":"response.output_item.added","output_index":1,"item":{"id":"pg_2","type":"program_output","call_id":"call_p","result":"1","status":"completed"}})).unwrap();
     d.push(&json!({"type":"response.output_item.done","output_index":1,"item":{"id":"pg_2","type":"program_output","call_id":"call_p","result":"1","status":"completed"}})).unwrap();
     let out = json!([
         {"id":"pg_1","type":"program","call_id":"call_p","code":"c()","fingerprint":"fp-1"},
@@ -599,13 +677,13 @@ fn program_event_stream_decodes_and_changed_or_unfinished_snapshots_fail() {
         .is_err());
     let mut d = events::EventDecoder::new(GenerationApi::Responses);
     d.push(&created()).unwrap();
-    d.push(&json!({"type":"response.output_item.added","output_index":0,"item":{"id":"pg_2","type":"program_output","call_id":"call_p","result":"1"}})).unwrap();
+    d.push(&json!({"type":"response.output_item.added","output_index":0,"item":{"id":"pg_2","type":"program_output","call_id":"call_p","result":"1","status":"completed"}})).unwrap();
     assert!(d
         .push(&json!({"type":"response.output_item.done","output_index":0,"item":{"id":"pg_2","type":"program_output","call_id":"call_p","result":"1"}}))
         .is_err());
     let mut d = events::EventDecoder::new(GenerationApi::Responses);
     d.push(&created()).unwrap();
     assert!(d
-        .push(&json!({"type":"response.output_item.added","output_index":0,"item":{"id":"pg_2","type":"program_output","call_id":"call_p","result":"1","status":"completed"}}))
+        .push(&json!({"type":"response.output_item.added","output_index":0,"item":{"id":"pg_2","type":"program_output","call_id":"call_p","result":"1"}}))
         .is_err());
 }

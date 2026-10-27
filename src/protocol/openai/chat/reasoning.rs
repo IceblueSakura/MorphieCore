@@ -240,9 +240,6 @@ pub(in crate::protocol::openai) fn decode_static(
         ),
     ] {
         if !admitted && let Some(value) = clean.shift_remove(key) {
-            if b.direction.client() {
-                return Err(CodecError::Unsupported(CarrierReason::UnknownField));
-            }
             b.direction
                 .fields(&Map::from_iter([(key.into(), value)]), &[])?;
         }

@@ -170,13 +170,9 @@ fn advance(body: &mut Value, content: Value, turn: usize) {
     next["content"][0]["cache_control"] = json!({"type":"ephemeral","ttl":"1h"});
     messages.push(next);
     if turn == 2 {
-        messages.push(json!({"role":"system","content":[
-            {"type":"text","text":"Inspect mode."},
-            {"type":"tool_removal","tool":{"type":"tool_reference","name":"lookup"}},
-            {"type":"tool_addition","tool":{"type":"tool_definition","definition":{
-                "name":"inspect","input_schema":{"type":"object"},"eager_input_streaming":true}}}
-        ],"output_config":{"effort":"low"}}));
-    } else {
-        messages.push(json!({"role":"system","content":[],"output_config":{"effort":if turn < 2 {"high"}else{"low"}}}));
+        messages.push(json!({"role":"system","content":[{"type":"text","text":"Inspect mode."}]}));
+        body["tools"] = json!([{"name":"inspect","input_schema":{"type":"object"},"eager_input_streaming":true,
+            "cache_control":{"type":"ephemeral","ttl":"1h"}}]);
+        body["output_config"] = json!({"effort":"low"});
     }
 }

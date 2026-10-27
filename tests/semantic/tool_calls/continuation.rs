@@ -38,7 +38,7 @@ fn partial_or_failed_responses_do_not_offer_completed_tool_continuation() {
             wire["incomplete_details"] = json!({"reason":"max_output_tokens"});
         }
         if status == "failed" {
-            wire["error"] = json!({"code":"synthetic_failure","message":"failed"});
+            wire["error"] = json!({"code":"server_error","message":"synthetic failure"});
         }
         wire["usage"] = json!({"input_tokens":3,"output_tokens":2,"total_tokens":5});
         let mut decoded = adapter()

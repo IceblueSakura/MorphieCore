@@ -83,7 +83,6 @@ fn block_fields(kind: Option<&str>) -> &'static [&'static str] {
             "cache_control",
         ],
         Some("image") => &["type", "source", "transformations", "cache_control"],
-        Some("tool_addition" | "tool_removal") => &["type", "tool", "cache_control"],
         // `context` has a per-use owner; keep `citations` so active citation
         // requests reject instead of silently changing model-visible content.
         Some("document") => &[
@@ -109,18 +108,16 @@ fn block_fields(kind: Option<&str>) -> &'static [&'static str] {
 fn blocks(v: &mut Value, ignored: &mut BTreeSet<String>) -> Result<(), CodecError> {
     if let Some(list) = v.as_array_mut() {
         for block in list {
+            if matches!(
+                block.get("type").and_then(Value::as_str),
+                Some("tool_addition" | "tool_removal")
+            ) {
+                return Err(CodecError::Unsupported(CarrierReason::Unavailable));
+            }
             if block.get("cache_control").is_some()
                 && !matches!(
                     block.get("type").and_then(Value::as_str),
-                    Some(
-                        "text"
-                            | "image"
-                            | "document"
-                            | "tool_use"
-                            | "tool_result"
-                            | "tool_addition"
-                            | "tool_removal"
-                    )
+                    Some("text" | "image" | "document" | "tool_use" | "tool_result")
                 )
             {
                 return Err(CodecError::Unsupported(CarrierReason::Unavailable));
@@ -134,12 +131,6 @@ fn blocks(v: &mut Value, ignored: &mut BTreeSet<String>) -> Result<(), CodecErro
                 && let Some(content) = block.get_mut("content")
             {
                 blocks(content, ignored)?;
-            }
-            if let Some(tool) = block.get_mut("tool") {
-                keep(tool, &["type", "name", "definition"], ignored);
-                if let Some(definition) = tool.get_mut("definition") {
-                    tool_fields(definition, ignored)?;
-                }
             }
         }
     }
@@ -233,7 +224,13 @@ pub fn decode_client_request(bytes: &[u8]) -> Result<Request, CodecError> {
         ))?;
     }
     if let Some(choice) = o.get("tool_choice") {
-        let choice = WireChoice::read(choice)?;
+        let mut choice = choice.clone();
+        keep(
+            &mut choice,
+            &["type", "name", "disable_parallel_tool_use"],
+            &mut ignored,
+        );
+        let choice = WireChoice::read(&choice)?;
         settings.tool_choice = Some(match &choice.selection {
             Selection::Auto => ToolChoice::Auto,
             Selection::None => ToolChoice::None,
@@ -243,15 +240,15 @@ pub fn decode_client_request(bytes: &[u8]) -> Result<Request, CodecError> {
         settings.parallel_tool_calls = choice.disable_parallel_tool_use.value().map(|b| !b);
     }
     if let Some(thinking) = o.get("thinking") {
+        if thinking.get("block_binding").is_some() {
+            return Err(CodecError::Unsupported(CarrierReason::Reasoning));
+        }
         let mut thinking = thinking.clone();
         keep(
             &mut thinking,
-            &["type", "budget_tokens", "display", "block_binding"],
+            &["type", "budget_tokens", "display"],
             &mut ignored,
         );
-        if let Some(binding) = thinking.get_mut("block_binding") {
-            keep(binding, &["prefix_mismatch_behavior"], &mut ignored);
-        }
         let t = object(&thinking)?;
         match t.get("type").and_then(Value::as_str) {
             Some("enabled") => {
@@ -299,13 +296,6 @@ pub fn decode_client_request(bytes: &[u8]) -> Result<Request, CodecError> {
         if settings.reasoning.presentation.visibility == Presence::Null {
             return Err(CodecError::invalid());
         }
-        let binding = wire::request::PrefixMismatch::read(t.get("block_binding"))?;
-        if binding.is_some() && settings.reasoning.mode != Presence::Value(ReasoningMode::Adaptive)
-        {
-            return Err(CodecError::invalid());
-        }
-        settings.reasoning.replay_mismatch =
-            binding.map(crate::protocol::anthropic::messages::settings::replay_mismatch);
     }
     if let Some(config) = o.get("output_config") {
         let mut config = config.clone();
@@ -333,18 +323,14 @@ pub fn decode_client_request(bytes: &[u8]) -> Result<Request, CodecError> {
         if message.get("clear_at").is_some_and(|v| !v.is_null()) {
             return Err(CodecError::Unsupported(CarrierReason::Unavailable));
         }
-        keep(
-            &mut message,
-            &["role", "content", "output_config"],
-            &mut ignored,
-        );
-        if let Some(config) = message.get_mut("output_config") {
-            keep(config, &["effort"], &mut ignored);
+        if message.get("output_config").is_some() {
+            return Err(CodecError::Unsupported(CarrierReason::Unavailable));
         }
+        keep(&mut message, &["role", "content"], &mut ignored);
         let m = object(&message)?;
         let role = Role::read(required(m, "role")?)?;
         let content = required(m, "content")?;
-        let effort = wire::request::read_message_effort(m)?;
+        let effort = None;
         if role == Role::System {
             // An empty string renders nothing, as an empty block list does.
             let parsed: Vec<_> = if content.is_string() {
@@ -374,9 +360,6 @@ pub fn decode_client_request(bytes: &[u8]) -> Result<Request, CodecError> {
                 effort,
             });
             continue;
-        }
-        if effort.is_some() {
-            return Err(CodecError::invalid());
         }
         roles.push((role, true));
         let parsed = if content.is_string() {

@@ -135,6 +135,14 @@ fn chat_probability_request_controls_project_and_reject_invalid_combinations() {
 
 #[test]
 fn chat_probability_arrays_are_reported_even_when_empty_and_bad_owners_fail() {
+    let codec = adapter(GenerationApi::Chat);
+    let absent = codec
+        .decode_response(response(false, Value::Null).to_string().as_bytes())
+        .unwrap();
+    assert_eq!(
+        codec.encode_response(&absent, &Contract::full()).unwrap()["choices"][0].get("logprobs"),
+        Some(&Value::Null)
+    );
     for refusal in [false, true] {
         let key = if refusal { "refusal" } else { "content" };
         let decoded = adapter(GenerationApi::Chat)
@@ -147,6 +155,13 @@ fn chat_probability_arrays_are_reported_even_when_empty_and_bad_owners_fail() {
             json!([])
         );
         let other = if refusal { "content" } else { "refusal" };
+        assert_eq!(
+            adapter(GenerationApi::Chat)
+                .encode_response(&decoded, &Contract::full())
+                .unwrap()["choices"][0]["logprobs"]
+                .get(other),
+            Some(&Value::Null)
+        );
         assert!(
             adapter(GenerationApi::Chat)
                 .decode_response(response(refusal, json!({other:[]})).to_string().as_bytes())

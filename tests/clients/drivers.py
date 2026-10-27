@@ -181,8 +181,8 @@ def environment(root):
 def pi_configuration(root, origin, native, compaction=None, retry=None, provider_timeout_ms=5000):
     directory = root / "pi-agent"
     directory.mkdir(mode=0o700)
-    compat = ({"supportsMidConvoEffort": True, "supportsMidConvoSystemMessages": True,
-        "supportsMidConvoToolChanges": True, "forceAdaptiveThinking": True,
+    compat = ({"supportsMidConvoEffort": False, "supportsMidConvoSystemMessages": True,
+        "supportsMidConvoToolChanges": False, "forceAdaptiveThinking": True,
         "supportsStrictTools": True, "supportsTemperature": False,
         "sendSessionAffinityHeaders": True} if native else {
         "supportsDeveloperRole": False, "supportsStrictMode": False, "supportsStore": False,

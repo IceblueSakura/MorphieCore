@@ -9,7 +9,6 @@ use crate::{
     semantic::{task::generation::*, value::Presence},
 };
 use serde_json::Value;
-use std::borrow::Cow;
 
 /// Selected only for a trusted Google binding whose effective request has no
 /// stop sequences. This is client delivery policy, never native source decoding.
@@ -90,71 +89,31 @@ pub(crate) fn redacted(sealed: &str) -> bool {
     )
 }
 
-/// Preserve readable bytes, not an invented summary. Only unsigned delivery copies
-/// may lose the distinction between raw reasoning and summary or their boundaries.
-pub(super) fn project_reasoning(
-    reasoning: &ReasoningItem,
-) -> Result<Cow<'_, ReasoningItem>, CodecError> {
-    if reasoning
+/// Signed thinking is one unchanged summary or a redacted block. Unsigned
+/// reasoning has no standard history-safe Messages carrier.
+pub(super) fn project_reasoning(reasoning: &ReasoningItem) -> Result<&ReasoningItem, CodecError> {
+    let signature = reasoning
         .replay
         .as_ref()
-        .is_some_and(|r| redacted(r.as_str()))
-        && !reasoning.parts.is_empty()
-    {
-        return Err(CodecError::Unsupported(CarrierReason::Replay));
-    }
+        .filter(|r| !r.as_str().is_empty())
+        .ok_or(CodecError::Unsupported(CarrierReason::Replay))?;
     if reasoning.parts.is_empty()
-        || matches!(reasoning.parts.as_slice(), [(_, ReasoningContent::Summary(t))] if !t.as_str().is_empty())
+        || !redacted(signature.as_str())
+            && matches!(reasoning.parts.as_slice(), [(_, ReasoningContent::Summary(t))] if !t.as_str().is_empty())
     {
-        return Ok(Cow::Borrowed(reasoning));
-    }
-    if reasoning.replay.is_some() {
-        return Err(CodecError::Unsupported(CarrierReason::Replay));
-    }
-    let mut thinking = String::new();
-    for (_, part) in &reasoning.parts {
-        let (ReasoningContent::Summary(text) | ReasoningContent::Text(text)) = part;
-        if thinking.len().saturating_add(text.as_str().len()) > MAX_TEXT_BYTES {
-            return Err(CodecError::Limit);
-        }
-        thinking.push_str(text.as_str());
-    }
-    let mut projected = reasoning.clone();
-    projected.parts = if thinking.is_empty() {
-        vec![]
+        Ok(reasoning)
     } else {
-        vec![(
-            reasoning.parts[0].0,
-            ReasoningContent::Summary(
-                crate::semantic::value::Text::new(thinking, "thinking", MAX_TEXT_BYTES)
-                    .map_err(|_| CodecError::Limit)?,
-            ),
-        )]
-    };
-    Ok(Cow::Owned(projected))
-}
-pub(super) fn reasoning_loss(
-    item: ItemId,
-    direction: &'static str,
-) -> crate::protocol::conversion::generation::Effect {
-    crate::protocol::conversion::generation::Effect::Field {
-        rule: "messages.readable-reasoning.v1".into(),
-        field: crate::protocol::conversion::generation::Field::DeliveredProjection,
-        boundary: direction.into(),
-        change: "approximate".into(),
-        owner: crate::protocol::conversion::generation::Owner::item(item),
+        Err(CodecError::Unsupported(CarrierReason::Replay))
     }
 }
 
 /// Retained content, metadata and accounting reflect the actual Messages carrier.
 pub(crate) fn project_snapshot(response: &mut DecodedResponse) -> Result<(), CodecError> {
-    let mut items = response.semantic.items().to_vec();
-    for (_, item) in &mut items {
+    for (_, item) in response.semantic.items() {
         if let Item::Reasoning(reasoning) = item {
-            *reasoning = project_reasoning(reasoning)?.into_owned();
+            project_reasoning(reasoning)?;
         }
     }
-    response.semantic = response.semantic.clone().with_items(items)?;
     response.fidelity.retain_owners(response.semantic.items());
     response.metadata.context.validate()?;
     if !response.semantic.safety_reports().is_empty()
@@ -260,13 +219,6 @@ pub(crate) fn content_losses(
     response: &GenerationResponse,
 ) -> Vec<crate::protocol::conversion::generation::Effect> {
     let mut losses = Vec::new();
-    for (id, item) in response.items() {
-        if let Item::Reasoning(reasoning) = item
-            && project_reasoning(reasoning).is_ok_and(|r| matches!(r, Cow::Owned(_)))
-        {
-            losses.push(reasoning_loss(*id, "response.project"));
-        }
-    }
     if !response.details().explanation.is_absent() {
         losses.push(explanation_loss("response.project"));
     }

@@ -16,7 +16,7 @@ fn source() -> DecodedResponse {
             Item::Message(Message {
                 participant: None,
                 role: MessageRole::Assistant,
-                status: ItemLifecycle::Completed,
+                status: ItemLifecycle::Incomplete,
                 phase,
                 parts: vec![Part::new(
                     PartId::new(id),
@@ -146,7 +146,7 @@ pub(super) fn frames() -> Vec<Value> {
     {
         let id = format!("m{index}");
         let part = json!({"type":"output_text","text":text,"annotations":[]});
-        let item = json!({"id":id,"type":"message","role":"assistant","status":"completed","phase":phase,"content":[part.clone()]});
+        let item = json!({"id":id,"type":"message","role":"assistant","status":"incomplete","phase":phase,"content":[part.clone()]});
         events.extend([
             json!({"type":"response.output_item.added","output_index":index,"item":{"id":id,"type":"message","role":"assistant","status":"in_progress","phase":phase,"content":[]}}),
             json!({"type":"response.content_part.added","output_index":index,"item_id":id,"content_index":0,"part":{"type":"output_text","text":"","annotations":[]}}),
@@ -264,7 +264,18 @@ fn phase_stream_preserves_return_carrier_at_eof_without_changing_terminal_policy
 }
 
 #[test]
-fn unphased_streams_cannot_use_phase_grouping_to_bypass_original_chat_admission() {
+fn unphased_plain_text_uses_the_same_selected_chat_grouping() {
+    // Removing phase/grouping does not authorize rewriting an observed completed
+    // item as incomplete merely because Chat only has one terminal status.
+    let mut incompatible = source();
+    let mut items = incompatible.semantic.items().to_vec();
+    for (_, item) in &mut items {
+        if let Item::Message(message) = item {
+            message.status = ItemLifecycle::Completed;
+        }
+    }
+    incompatible.semantic = incompatible.semantic.with_items(items).unwrap();
+    assert!(client(ClientProtocol::Chat).snapshot(incompatible).is_err());
     for multiple in [false, true] {
         let mut source = source();
         source = strip(&source, true).unwrap();
@@ -276,7 +287,15 @@ fn unphased_streams_cannot_use_phase_grouping_to_bypass_original_chat_admission(
                 .unwrap();
         }
         let client = client(ClientProtocol::Chat);
-        assert!(client.snapshot(source.clone()).is_err());
+        let (_, snapshot) = client.snapshot(source.clone()).unwrap();
+        assert_eq!(
+            snapshot["choices"][0]["message"]["content"],
+            if multiple {
+                "prefixanothercheckingdone"
+            } else {
+                "prefix"
+            }
+        );
         let mut events = frames();
         if !multiple {
             events.retain(|v| v.get("output_index").is_none_or(|n| n == 0));
@@ -328,11 +347,10 @@ fn unphased_streams_cannot_use_phase_grouping_to_bypass_original_chat_admission(
                 .unwrap();
         }
         attempt.finish().unwrap();
+        let end = delivery.finish_stream(&attempt).unwrap().into_bytes();
         assert!(
-            delivery
-                .finish_stream(&attempt)
-                .map(|batch| batch.into_bytes())
-                .is_err()
+            end.iter()
+                .any(|frame| String::from_utf8_lossy(frame).contains("[DONE]"))
         );
     }
 }

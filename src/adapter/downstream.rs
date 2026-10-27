@@ -44,14 +44,24 @@ impl ClientAdapter {
             Self::Messages => Err(CodecError::ProfileMismatch),
         }
     }
-    /// Speculative streaming grouping must not admit an unphased source that the
-    /// original Chat representation rejects. No wire body or second stream is built.
+    /// Validate the same selected grouping as static delivery before publishing a
+    /// terminal. Streaming cannot hide an unrepresentable source owner or report.
     pub(crate) fn check_chat_source(
         &self,
         decoded: &DecodedResponse,
     ) -> Result<(), crate::protocol::ConversionFailure> {
         let result = (|| {
             let (adapter, contract) = self.as_openai()?;
+            if decoded
+                .semantic
+                .items()
+                .iter()
+                .any(|(_, item)| item.has_replay_attachment())
+            {
+                return Err(CodecError::Unsupported(CarrierReason::Replay).into());
+            }
+            let mut decoded = crate::protocol::replay_projection::strip(decoded, true)?;
+            crate::protocol::openai::lowering::native_response::group_chat(&mut decoded)?;
             crate::protocol::openai::lowering::lower_response(
                 &decoded.semantic,
                 &decoded.fidelity,
@@ -145,12 +155,23 @@ impl ClientAdapter {
                 }
                 if crate::protocol::phase::has_phase(decoded.semantic.items()) {
                     let mut wire = crate::protocol::replay_projection::strip(&decoded, true)?;
-                    let mut losses = self.project_native(&mut wire)?;
+                    let mut losses = if self.protocol() == ClientProtocol::Chat {
+                        crate::protocol::openai::lowering::native_response::group_chat(&mut wire)?
+                    } else {
+                        self.project_native(&mut wire)?
+                    };
                     let (projected, value, extra) = self.encode_snapshot(wire)?;
                     losses.extend(extra);
                     losses.push(crate::protocol::phase::delivery_omission("response.encode"));
                     return Ok((projected, value, losses));
                 }
+            }
+            if self.protocol() == ClientProtocol::Chat {
+                let mut losses =
+                    crate::protocol::openai::lowering::native_response::group_chat(&mut decoded)?;
+                let (projected, value, extra) = self.encode_snapshot(decoded)?;
+                losses.extend(extra);
+                return Ok((projected, value, losses));
             }
             if self.protocol() == ClientProtocol::Responses && hidden {
                 if !managed {

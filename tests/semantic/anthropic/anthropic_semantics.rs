@@ -627,7 +627,7 @@ fn native_stop_reasons_have_independent_terminal_owners() {
                 morphiecore::protocol::openai::responses::encode_response(&projected).unwrap();
             for response in [&json, &last["response"]] {
                 assert_eq!(response["status"], "incomplete");
-                assert_eq!(response["incomplete_details"], json!({"reason": null}));
+                assert_eq!(response["incomplete_details"], json!({}));
             }
             assert_eq!(last["type"], "response.incomplete");
         }

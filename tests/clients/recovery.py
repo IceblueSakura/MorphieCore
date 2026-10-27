@@ -59,6 +59,11 @@ def assert_profile(body, native):
     if native:
         check(body["thinking"]["type"] == "adaptive", "native_adaptive_thinking")
         check(body["output_config"]["effort"] == "low", "native_root_effort")
+        check("block_binding" not in body["thinking"]
+              and all("output_config" not in m for m in body["messages"])
+              and not any(b.get("type") in ("tool_addition", "tool_removal")
+                          for m in body["messages"] for b in (m.get("content") or [])
+                          if isinstance(b, dict)), "native_stable_profile")
         check(read[0]["strict"] is True and read[0]["eager_input_streaming"] is True, "native_tool_profile")
     else:
         check(body["reasoning_effort"] == "low", "chat_effort")
@@ -74,8 +79,6 @@ def assert_history(body, phase, native, path):
         history = [m for m in body["messages"] if m["role"] != "system"]
         check([m["role"] for m in history] == (["user", "assistant", "user"] if phase == 2 else
               ["user", "assistant", "user", "assistant", "user"]), "native_history_roles")
-        check(all(m["content"] == [] and m["output_config"]["effort"] == "low"
-                  for m in body["messages"] if m["role"] == "system"), "native_ordered_effort")
         assistants = [m for m in body["messages"] if m["role"] == "assistant"]
         check(assistants[0]["content"] == [
             {"type": "thinking", "thinking": PLAN, "signature": SIGNATURE},

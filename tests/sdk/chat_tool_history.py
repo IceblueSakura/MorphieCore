@@ -26,6 +26,9 @@ def chat_completion(client, params, stream, reasoning=False):
                     check(reasoning or "reasoning_content" not in extra)
         result = events.get_final_completion().model_dump(exclude_unset=True)
     message = result["choices"][0]["message"]
+    # A nullable response/accumulator field is not nullable request history.
+    if message.get("tool_calls") is None:
+        message.pop("tool_calls", None)
     # Parsed fields and delta indices belong to the SDK accumulator, not history.
     if "parsed" in message:
         check(message.pop("parsed") is None)

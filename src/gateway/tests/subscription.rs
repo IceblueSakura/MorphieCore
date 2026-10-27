@@ -168,7 +168,7 @@ async fn subscription_sse_materializes_json_or_sse_without_losing_calls_or_fakin
                 response["status"] = json!(outcome);
                 if outcome == "failed" {
                     response["error"] =
-                        json!({"code":"subscription_limit","message":"synthetic limit"});
+                        json!({"code":"rate_limit_exceeded","message":"synthetic limit"});
                 }
                 if outcome == "incomplete" {
                     response["incomplete_details"] = json!({"reason":"max_output_tokens"});

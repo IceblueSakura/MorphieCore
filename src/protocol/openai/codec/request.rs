@@ -75,16 +75,6 @@ impl GenerationCodec {
                 }
             }
         }
-        if self.protocol == GenerationApi::Chat
-            && direction.client()
-            && !self.adaptation.rules.thinking_controls
-            && let Some(o) = value.as_object()
-            && let Some(_key) = ["enable_thinking", "thinking_budget", "top_k"]
-                .into_iter()
-                .find(|key| o.contains_key(*key))
-        {
-            return Err(CodecError::Unsupported(CarrierReason::UnknownField));
-        }
         let mut native_controls = serde_json::Map::new();
         if self.adaptation.rules.thinking_controls {
             openai::dialect::bailian::source(
@@ -105,11 +95,21 @@ impl GenerationCodec {
             .and_then(|o| o.shift_remove("session_id"))
         {
             if !self.adaptation.cache.session_id {
-                return Err(CodecError::Unsupported(CarrierReason::Unavailable));
+                if direction.client() {
+                    // Unregistered body affinity is never execution authority.
+                    direction.fields(
+                        &serde_json::Map::from_iter([("session_id".into(), session)]),
+                        &[],
+                    )?;
+                    None
+                } else {
+                    return Err(CodecError::Unsupported(CarrierReason::Unavailable));
+                }
+            } else {
+                Some(crate::protocol::cache::CacheSession::new(
+                    session.as_str().ok_or(CodecError::invalid())?,
+                )?)
             }
-            Some(crate::protocol::cache::CacheSession::new(
-                session.as_str().ok_or(CodecError::invalid())?,
-            )?)
         } else {
             None
         };

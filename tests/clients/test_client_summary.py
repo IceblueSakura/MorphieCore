@@ -20,9 +20,8 @@ class ClientSummaryOracles(unittest.TestCase):
         body = {"model": "claude-haiku-5-5" if native else "qwen3.8-flash",
                 "stream": True, "tools": [tool], "messages": []}
         if native:
-            body.update(max_tokens=2048, thinking={"type": "adaptive", "display": "summarized",
-                "block_binding": {"prefix_mismatch_behavior": "drop_block"}}, output_config={"effort": "low"})
-            body["messages"] = [{"role": "system", "content": [], "output_config": {"effort": "low"}}]
+            body.update(max_tokens=2048, thinking={"type": "adaptive", "display": "summarized"},
+                        output_config={"effort": "low"})
         else:
             body.update(max_completion_tokens=2048, reasoning_effort="low")
         return body
@@ -36,7 +35,6 @@ class ClientSummaryOracles(unittest.TestCase):
             f"[Tool result]: {TEXT}\n\n[Assistant]: {TEXT}\n</conversation>\n{summary.FOCUS}"}]
         if native:
             body["cache_control"] = {"type": "ephemeral", "ttl": "5m"}
-            body["messages"].insert(0, {"role": "system", "content": [], "output_config": {"effort": "low"}})
         return body
 
     def rebuilt(self, native):
@@ -49,7 +47,6 @@ class ClientSummaryOracles(unittest.TestCase):
         ]
         if native:
             body["messages"] += [
-                {"role": "system", "content": [], "output_config": {"effort": "low"}},
                 {"role": "assistant", "content": [
                     {"type": "thinking", "thinking": PLAN, "signature": SIGNATURE},
                     {"type": "redacted_thinking", "data": REDACTED},
@@ -94,8 +91,9 @@ class ClientSummaryOracles(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "^summary_serialized_exchange$"):
                 summary.assert_summary(included, native, self.path)
             if native:
-                original["messages"].pop(0)
-                with self.assertRaisesRegex(RuntimeError, "^summary_ordered_effort$"):
+                original["messages"].insert(0, {"role": "system", "content": [],
+                                              "output_config": {"effort": "low"}})
+                with self.assertRaisesRegex(RuntimeError, "^summary_stable_profile$"):
                     summary.assert_summary(original, native, self.path)
 
     def test_rebuilt_history_requires_order_and_exact_new_tool_feedback(self):
@@ -109,20 +107,20 @@ class ClientSummaryOracles(unittest.TestCase):
                 summary.assert_rebuilt(reordered, "rebuilt-feedback", native, self.path)
             corrupted = copy.deepcopy(body)
             if native:
-                corrupted["messages"][5]["content"][0]["signature"] = "changed"
+                corrupted["messages"][4]["content"][0]["signature"] = "changed"
             else:
                 corrupted["messages"][4]["tool_calls"][0]["function"]["arguments"] = "{}"
             error = "rebuilt_signed_tool_history" if native else "rebuilt_chat_tool_call"
             with self.assertRaisesRegex(RuntimeError, f"^{error}$"):
                 summary.assert_rebuilt(corrupted, "rebuilt-feedback", native, self.path)
             if native:
-                for remove in [False, True]:
+                for beta in ["effort", "binding"]:
                     corrupted = copy.deepcopy(body)
-                    if remove:
-                        corrupted["messages"].pop(4)
+                    if beta == "effort":
+                        corrupted["messages"].insert(4, {"role": "system", "content": [], "output_config": {"effort": "low"}})
                     else:
-                        corrupted["messages"][4]["output_config"]["effort"] = "high"
-                    with self.assertRaisesRegex(RuntimeError, "^rebuilt_ordered_effort$"):
+                        corrupted["thinking"]["block_binding"] = {"prefix_mismatch_behavior": "drop_block"}
+                    with self.assertRaisesRegex(RuntimeError, "^native_stable_profile$"):
                         summary.assert_rebuilt(corrupted, "rebuilt-feedback", native, self.path)
 
     def test_cache_marker_detection_never_parses_business_strings(self):

@@ -162,6 +162,13 @@ impl ExecutionHints {
         direction: DecodeDirection<'_>,
     ) -> Result<Self, CodecError> {
         if profile == GenerationApi::Responses {
+            if matches!(
+                direction,
+                DecodeDirection::Request | DecodeDirection::Client(_)
+            ) && o.get("access_programs").is_some_and(Value::is_null)
+            {
+                return Err(CodecError::invalid());
+            }
             check_access_programs(o)?;
         }
         let mut fields: Map<_, _> = o
@@ -194,13 +201,6 @@ impl ExecutionHints {
         {
             let options = options.as_object_mut().ok_or(CodecError::invalid())?;
             let allowed: &[&str] = if profile == GenerationApi::Chat {
-                if direction.client()
-                    && ["comparison_response_id", "prewarm"]
-                        .iter()
-                        .any(|key| options.get(*key).is_some_and(|v| !v.is_null()))
-                {
-                    return Err(CodecError::Unsupported(CarrierReason::Unavailable));
-                }
                 &["mode", "ttl"]
             } else {
                 &["mode", "ttl", "comparison_response_id", "prewarm"]

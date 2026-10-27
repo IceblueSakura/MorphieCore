@@ -167,5 +167,7 @@ fn native_static_reasoning_and_usage_have_independent_delivery_expectations() {
     let encoded = adapter
         .encode_response(&output, &TargetContract::full())
         .unwrap();
-    assert_eq!(encoded, wire);
+    let mut expected = wire;
+    expected["choices"][0]["logprobs"] = json!(null);
+    assert_eq!(encoded, expected);
 }

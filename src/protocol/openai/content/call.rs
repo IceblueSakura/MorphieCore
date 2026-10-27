@@ -40,13 +40,17 @@ pub(in crate::protocol::openai) fn tool_call(
 ) -> Result<ToolCall, CodecError> {
     let (f, id) = match profile {
         GenerationApi::Chat => {
-            reject_chat_orchestration(o)?;
-            direction.fields(o, &["id", "type", "function", "index"])?;
+            if !direction.client() {
+                reject_chat_orchestration(o)?;
+            }
+            direction.fields(o, &["id", "type", "function"])?;
             if string(o, "type")? != "function" {
                 return Err(CodecError::Unsupported(CarrierReason::Tools));
             }
             let f = object(o.get("function").ok_or(CodecError::invalid())?)?;
-            reject_chat_orchestration(f)?;
+            if !direction.client() {
+                reject_chat_orchestration(f)?;
+            }
             direction.fields(f, &["name", "arguments"])?;
             (f, string(o, "id")?)
         }

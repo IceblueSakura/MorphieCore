@@ -307,7 +307,7 @@ pub(super) fn text_items(
             if profile == GenerationApi::Responses
                 && m.parts.iter().any(|p| {
                     matches!(&p.content, ContentPart::Text(t)
-                        if t.logprobs().value().is_some_and(|v| !v.iter().all(complete_logprob)))
+                        if matches!(t.logprobs(), crate::semantic::value::Presence::Null) || t.logprobs().value().is_some_and(|v| !v.iter().all(complete_logprob)))
                 })
             {
                 return Err(RepresentationError::TextMetadata);

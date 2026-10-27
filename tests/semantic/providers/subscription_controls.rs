@@ -238,9 +238,21 @@ fn native_static_directions_preserve_reasoning_phase_calls_and_usage() {
             replay_origin: adapter.adaptation.scope.clone(),
             ..TargetContract::full()
         };
+        let mut expected = wire.clone();
+        for key in [
+            "access_programs",
+            "error",
+            "incomplete_details",
+            "instructions",
+            "metadata",
+            "temperature",
+            "top_p",
+        ] {
+            expected[key] = Value::Null;
+        }
         assert_eq!(
             adapter.encode_response(&independent, &contract).unwrap(),
-            wire
+            expected
         );
         let mut decoder = adapter.event_decoder();
         for event in crate::wire::response_events(wire.clone()) {
@@ -249,7 +261,10 @@ fn native_static_directions_preserve_reasoning_phase_calls_and_usage() {
         decoder.finish().unwrap();
         let streamed = decoder.materialize().unwrap();
         assert_eq!(streamed.semantic, response(grouped, true).semantic);
-        assert_eq!(adapter.encode_response(&streamed, &contract).unwrap(), wire);
+        assert_eq!(
+            adapter.encode_response(&streamed, &contract).unwrap(),
+            expected
+        );
     }
 }
 #[test]

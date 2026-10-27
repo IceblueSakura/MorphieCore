@@ -1,6 +1,6 @@
 //! Explicit Chat dialect mappings over one semantic model.
 use morphiecore::{
-    protocol::openai::{Dialect, GenerationApi, GenerationCodec, TargetContract as Contract, chat},
+    protocol::openai::{Dialect, GenerationApi, GenerationCodec, TargetContract as Contract},
     semantic::{task::generation::*, value::Text},
 };
 use serde_json::{Value, json};
@@ -211,11 +211,172 @@ fn deferred_empty_carriers_and_nullable_call_identity_remain_consistent() {
     let mut wrong = chunks[2].clone();
     wrong["choices"][0]["delta"]["tool_calls"][0]["id"] = json!("call_b");
     assert!(conflict.push(&wrong).is_err());
-    let mut replay = json!({"messages":[{"role":"assistant","content":null,"tool_calls":[{"index":0,"id":"call_a","type":"function","function":{"name":"lookup","arguments":"{}"}}]}]});
-    assert!(chat::decode_generation(&replay).is_ok());
-    replay["messages"][0]["tool_calls"][0]["index"] = json!(7);
-    assert!(chat::decode_generation(&replay).is_err());
+    let mut replay = json!({"model":"m","messages":[{"role":"assistant","content":null,"tool_calls":[{"id":"call_a","type":"function","function":{"name":"lookup","arguments":"{}"}}]}]});
+    let codec = GenerationCodec::new(GenerationApi::Chat, Dialect::Standard, None);
+    let original = codec
+        .decode_client_request(replay.to_string().as_bytes())
+        .unwrap()
+        .task;
+    replay["messages"][0]["tool_calls"][0]["index"] = json!("ignored full-message extra");
+    assert_eq!(
+        codec
+            .decode_client_request(replay.to_string().as_bytes())
+            .unwrap()
+            .task,
+        original
+    );
 }
+#[test]
+fn tool_identity_accumulates_before_publication_without_reordering_calls() {
+    let codec = GenerationCodec::new(GenerationApi::Chat, Dialect::Standard, None);
+    let mut decoder = codec.event_decoder();
+    // Index 1 may be ready before 0; source indices are not arrival order.
+    let first = json!({"tool_calls":[
+        {"index":1,"id":"b","type":"function","function":{"name":"second","arguments":"not-json"}},
+        {"index":0,"function":{"arguments":" {\"x\":"}}]});
+    let events = decoder.push(&chunk(first, Value::Null)).unwrap();
+    assert!(!events.iter().any(|e| matches!(
+        e,
+        StreamEvent::ItemStarted {
+            kind: ItemKind::ToolCall { .. },
+            ..
+        }
+    )));
+    let events = decoder
+        .push(&chunk(
+            json!({"tool_calls":[{"index":0,"id":"a","type":"function"}]}),
+            Value::Null,
+        ))
+        .unwrap();
+    assert!(!events.iter().any(|e| matches!(
+        e,
+        StreamEvent::ItemStarted {
+            kind: ItemKind::ToolCall { .. },
+            ..
+        }
+    )));
+    let events = decoder
+        .push(&chunk(
+            json!({"tool_calls":[{"index":0,"function":{"name":"first"}}]}),
+            Value::Null,
+        ))
+        .unwrap();
+    let ids: Vec<_> = events
+        .iter()
+        .filter_map(|e| match e {
+            StreamEvent::ItemStarted {
+                kind: ItemKind::ToolCall { call_id, .. },
+                ..
+            } => Some(call_id.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(ids, ["a", "b"]);
+    decoder
+        .push(&chunk(
+            json!({"tool_calls":[{"index":0,"id":null,"type":null,
+        "function":{"name":null,"arguments":" 1 }"}}]}),
+            Value::Null,
+        ))
+        .unwrap();
+    decoder
+        .push(&chunk(json!({}), json!("tool_calls")))
+        .unwrap();
+    decoder.done().unwrap();
+    let decoded = decoder.materialize().unwrap();
+    let calls: Vec<_> = decoded
+        .semantic
+        .items()
+        .iter()
+        .filter_map(|(_, item)| match item {
+            Item::ToolCall(call) => Some((
+                call.call_id.as_str(),
+                call.name.as_str(),
+                call.arguments.as_raw().unwrap(),
+            )),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        calls,
+        [("a", "first", " {\"x\": 1 }"), ("b", "second", "not-json")]
+    );
+    let wire = codec.encode_response(&decoded, &Contract::full()).unwrap();
+    assert_eq!(
+        wire["choices"][0]["message"]["tool_calls"][0]["function"]["arguments"],
+        " {\"x\": 1 }"
+    );
+
+    let mut sparse = codec.event_decoder();
+    let events = sparse
+        .push(&chunk(
+            json!({"tool_calls":[{"index":3,"id":"c","type":"function",
+        "function":{"name":"lookup","arguments":"{"}}]}),
+            Value::Null,
+        ))
+        .unwrap();
+    assert!(!events.iter().any(|e| matches!(
+        e,
+        StreamEvent::ItemStarted {
+            kind: ItemKind::ToolCall { .. },
+            ..
+        }
+    )));
+    sparse.push(&chunk(json!({}), json!("length"))).unwrap();
+    sparse.done().unwrap();
+    let result = sparse.materialize().unwrap();
+    assert_eq!(result.semantic.outcome(), Outcome::Incomplete);
+    assert!(result.semantic.items().iter().any(|(_, item)|
+        matches!(item, Item::ToolCall(c) if c.call_id.as_str()=="c" && c.arguments.as_raw()==Some("{")
+            && c.status==ItemLifecycle::Incomplete)));
+}
+
+#[test]
+fn incomplete_or_conflicting_tool_identity_poison_the_stream() {
+    let codec = GenerationCodec::new(GenerationApi::Chat, Dialect::Standard, None);
+    for resolved in [false, true] {
+        let mut decoder = codec.event_decoder();
+        let mut call = json!({"index":0,"id":"c","type":"function","function":{"arguments":"{"}});
+        if resolved {
+            call["function"]["name"] = json!("lookup");
+        }
+        decoder
+            .push(&chunk(json!({"tool_calls":[call]}), Value::Null))
+            .unwrap();
+        assert!(
+            decoder
+                .push(&chunk(
+                    json!({"tool_calls":[{"index":0,"id":"different"}]}),
+                    Value::Null
+                ))
+                .is_err()
+        );
+        assert!(decoder.done().is_err());
+    }
+    for finish in ["tool_calls", "length"] {
+        let mut decoder = codec.event_decoder();
+        decoder.push(&chunk(json!({"tool_calls":[{"index":0,"type":"function","function":{"name":"lookup","arguments":"{}"}}]}), Value::Null)).unwrap();
+        assert!(decoder.push(&chunk(json!({}), json!(finish))).is_err());
+        assert!(decoder.done().is_err());
+    }
+    let mut decoder = codec.event_decoder();
+    decoder
+        .push(&chunk(
+            json!({"tool_calls":[{"index":0,"function":{"arguments":"x".repeat(MAX_TEXT_BYTES)}}]}),
+            Value::Null,
+        ))
+        .unwrap();
+    assert!(
+        decoder
+            .push(&chunk(
+                json!({"tool_calls":[{"index":0,"function":{"arguments":"x"}}]}),
+                Value::Null
+            ))
+            .is_err()
+    );
+    assert!(decoder.done().is_err());
+}
+
 #[test]
 fn empty_tool_calls_do_not_parse_message_text_into_a_call() {
     let mut body = response("<tool_call>");

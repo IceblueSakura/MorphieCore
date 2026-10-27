@@ -71,6 +71,14 @@ def run(base_url: str, stream: bool, opaque: bool = True) -> dict[str, object]:
             else:
                 result = client.responses.parse(**params)
             check(result.status == "completed" and result.usage.total_tokens == 8)
+            # Pydantic defaults alone cannot prove required-nullable wire presence.
+            check({"access_programs", "error", "incomplete_details", "instructions",
+                   "metadata", "temperature", "top_p"} <= result.model_fields_set,
+                  "required nullable response members must be on the wire")
+            for tool in result.tools or []:
+                if tool.type == "function":
+                    check({"parameters", "strict"} <= tool.model_fields_set,
+                          "response tool echoes are not request-shaped")
             if turn == 1:
                 calls = [item for item in result.output if item.type in ("function_call", "custom_tool_call")]
                 check(len(calls) == 2 and {call.call_id for call in calls} == {"c_lookup", "c_sql"})

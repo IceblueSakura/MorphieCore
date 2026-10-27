@@ -47,25 +47,22 @@ async fn neutral_conversation_header_is_authenticated_and_checked_before_body_po
 }
 
 #[test]
-fn public_chat_no_longer_accepts_provider_session_body() {
+fn public_chat_ignores_provider_session_body_without_affinity() {
     let gate = crate::gateway::tests::support::gateway(Limits::default());
     for session in [
         serde_json::Value::Null,
         serde_json::json!("synthetic-provider-session"),
     ] {
         let body = serde_json::json!({"model":"fixture-model","messages":[{"role":"user","content":"hello"}],"session_id":session});
-        assert_eq!(
-            admission::prepare(
-                &gate.state,
-                ClientProtocol::Chat,
-                body.to_string().as_bytes(),
-                &crate::execution::report::Report::default()
-            )
-            .err()
-            .unwrap()
-            .status,
-            400
-        );
+        let (_, request) = admission::prepare(
+            &gate.state,
+            ClientProtocol::Chat,
+            body.to_string().as_bytes(),
+            &crate::execution::report::Report::default(),
+        )
+        .unwrap();
+        assert!(request.cache_session.is_none());
+        assert!(request.conversation.is_none());
     }
 }
 

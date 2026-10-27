@@ -397,6 +397,22 @@ fn limits_http_and_attempt_cancellation_are_independent_boundaries() {
 }
 #[test]
 fn unknown_upstream_fields_and_event_types_are_ignored() {
+    for data in [
+        "not-json".to_owned(),
+        r#"{"type":"synthetic_future_event","type":"synthetic_future_event"}"#.into(),
+        r#"{"type":"message_stop"}"#.into(),
+        format!(
+            r#"{{"type":"synthetic_future_event","x":{}{}}}"#,
+            "[".repeat(200),
+            "]".repeat(200)
+        ),
+    ] {
+        let mut decoder =
+            MessageSseDecoder::new(200, "text/event-stream", SseLimits::default()).unwrap();
+        let bytes = format!("event: synthetic_future_event\ndata: {data}\n\n");
+        assert!(feed(&mut decoder, bytes.as_bytes()).is_err());
+        assert!(decoder.finish().is_err());
+    }
     let mut frames = frames();
     // Unknown extensions are distinct from modeled accounting details.
     frames[0]["message"]["usage"]["synthetic_future_usage"] = json!({"count":4});
@@ -419,6 +435,60 @@ fn unknown_upstream_fields_and_event_types_are_ignored() {
             .unwrap(),
         expected()
     );
+}
+#[test]
+fn complete_tool_openers_and_empty_json_deltas_preserve_the_observed_object() {
+    use morphiecore::semantic::task::generation::{Item, ToolArguments};
+    for input in [
+        json!({}),
+        json!({"n":9007199254740993u64,"nested":{"session_id":"data"}}),
+    ] {
+        let mut values = vec![
+            frames()[0].clone(),
+            json!({"type":"content_block_start","index":0,"content_block":{
+                "type":"tool_use","id":"c","name":"lookup","input":input}}),
+            json!({"type":"content_block_delta","index":0,"delta":{
+                "type":"input_json_delta","partial_json":""}}),
+            json!({"type":"content_block_stop","index":0}),
+            json!({"type":"message_delta","delta":{"stop_reason":"tool_use","stop_sequence":null},
+                "usage":{"output_tokens":1}}),
+            json!({"type":"message_stop"}),
+        ];
+        let bytes = wire(&values);
+        let mut native =
+            MessageSseDecoder::new(200, "text/event-stream", SseLimits::default()).unwrap();
+        feed(&mut native, &bytes).unwrap();
+        let message = native.finish().unwrap();
+        assert_eq!(
+            Profile::AdaptiveTextTools
+                .encode_response(&message)
+                .unwrap()["content"][0]["input"],
+            input
+        );
+        let mut attempt = native_attempt(ReplayTarget::new("provider", "synthetic-model").unwrap());
+        attempt.begin(200, "text/event-stream").unwrap();
+        for fragment in bytes.chunks(7) {
+            let mut rest = fragment;
+            while !rest.is_empty() {
+                let (used, _) = attempt.push(rest).unwrap();
+                rest = &rest[used..];
+            }
+        }
+        attempt.finish().unwrap();
+        assert!(attempt.response().unwrap().semantic.items().iter().any(|(_, item)|
+            matches!(item, Item::ToolCall(call)
+                if matches!(&call.arguments, ToolArguments::Structured(value) if value.value() == &input))));
+        // A fragment stream cannot silently replace a nonempty observed opener;
+        // an incomplete object cannot claim a completed tool invocation either.
+        values[2]["delta"]["partial_json"] = json!("{");
+        let mut native =
+            MessageSseDecoder::new(200, "text/event-stream", SseLimits::default()).unwrap();
+        assert!(
+            feed(&mut native, &wire(&values))
+                .and_then(|()| native.finish().map(|_| ()))
+                .is_err()
+        );
+    }
 }
 #[test]
 fn scoped_accounting_preserves_opening_ttls_and_replaces_cumulative_tool_reports() {
@@ -587,7 +657,7 @@ fn incremental_native_events_reduce_to_the_independent_static_semantics() {
         semantic::task::generation::{StreamState, materialize, reduce},
     };
     let target = ReplayTarget::new("synthetic-provider", "synthetic-model").unwrap();
-    for variant in 0..4 {
+    for variant in 0..7 {
         let mut native = frames();
         let mut final_wire = expected();
         match variant {
@@ -611,6 +681,21 @@ fn incremental_native_events_reduce_to_the_independent_static_semantics() {
             3 => {
                 native[7]["content_block"]["text"] = json!("start ");
                 final_wire["content"][1]["text"] = json!("start ok");
+            }
+            4..=6 => {
+                let input = if variant == 5 {
+                    json!({})
+                } else {
+                    json!({"n":9007199254740993u64,"nested":{"session_id":"data"}})
+                };
+                native[10]["content_block"]["input"] = input.clone();
+                native.remove(12);
+                if variant == 4 {
+                    native.remove(11);
+                } else {
+                    native[11]["delta"]["partial_json"] = json!("");
+                }
+                final_wire["content"][2]["input"] = input;
             }
             _ => {}
         }

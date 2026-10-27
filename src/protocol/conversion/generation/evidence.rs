@@ -103,6 +103,8 @@ pub enum Field {
     ReportedEffort,
     #[serde(rename = "response.reported.settings")]
     ReportedSettings,
+    #[serde(rename = "response.context.metadata")]
+    ResponseMetadata,
     #[serde(rename = "response.context.system_fingerprint")]
     SystemFingerprint,
     #[serde(rename = "response.terminal.completion")]
@@ -192,6 +194,7 @@ impl Field {
             Self::ReportedReasoning => "response.reported.reasoning",
             Self::ReportedEffort => "response.reported.effort",
             Self::ReportedSettings => "response.reported.settings",
+            Self::ResponseMetadata => "response.context.metadata",
             Self::SystemFingerprint => "response.context.system_fingerprint",
             Self::Completion => "response.terminal.completion",
             Self::Incomplete => "response.terminal.incomplete",
@@ -261,6 +264,7 @@ impl From<&'static str> for Field {
             "response.reported.reasoning" => Self::ReportedReasoning,
             "response.reported.effort" => Self::ReportedEffort,
             "response.reported.settings" => Self::ReportedSettings,
+            "response.context.metadata" => Self::ResponseMetadata,
             "response.context.system_fingerprint" => Self::SystemFingerprint,
             "response.terminal.completion" => Self::Completion,
             "response.terminal.incomplete" => Self::Incomplete,

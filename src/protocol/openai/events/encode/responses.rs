@@ -147,14 +147,8 @@ impl EventEncoder {
                     ItemKind::Compaction => {
                         json!({"id":id,"type":"compaction"})
                     }
-                    ItemKind::ConfigurationUpdate(update) => {
-                        let mut v = json!({"id":id,"type":"configuration_update"});
-                        if let Some(effort) =
-                            crate::protocol::openai::reasoning::effort_label(update)?
-                        {
-                            v["reasoning"] = json!({"effort": effort});
-                        }
-                        v
+                    ItemKind::ConfigurationUpdate(_) => {
+                        return Err(CodecError::Unsupported(CarrierReason::Unavailable));
                     }
                     ItemKind::Program {
                         call_id,
@@ -170,12 +164,9 @@ impl EventEncoder {
                         })
                     }
                     ItemKind::ProgramOutput { call_id, result } => {
-                        json!({
-                            "id": id,
-                            "type": "program_output",
-                            "call_id": call_id.as_str(),
-                            "result": result,
-                        })
+                        self.pending_program_outputs
+                            .insert(*item, self.held_frames.len());
+                        json!({"id":id,"type":"program_output","call_id":call_id.as_str(),"result":result})
                     }
                     ItemKind::ToolResult(_) | ItemKind::CustomResult(_) => {
                         item_wire(self.state()?, *item, &self.fidelity)?
@@ -332,11 +323,17 @@ impl EventEncoder {
                 "output_index":self.index(*item)?,
                 "item_id":self.fidelity.response_item_id(*item).ok_or(CodecError::invalid())?,
             })],
-            StreamEvent::ItemFinished { item, .. } => vec![json!({
-                "type": "response.output_item.done",
-                "output_index": self.index(*item)?,
-                "item": item_wire(self.state()?,*item,&self.fidelity)?,
-            })],
+            StreamEvent::ItemFinished { item, .. } => {
+                let value = item_wire(self.state()?, *item, &self.fidelity)?;
+                if let Some(slot) = self.pending_program_outputs.remove(item) {
+                    self.held_frames[slot]["item"]["status"] = value["status"].clone();
+                }
+                vec![json!({
+                    "type": "response.output_item.done",
+                    "output_index": self.index(*item)?,
+                    "item": value,
+                })]
+            }
             StreamEvent::AnnotationAdded {
                 item,
                 part,
@@ -387,6 +384,9 @@ impl EventEncoder {
                     return Err(CodecError::invalid());
                 }
                 v["type"] = json!("error");
+                if v.get("param").is_none() {
+                    v["param"] = Value::Null;
+                }
                 vec![v]
             }
             StreamEvent::Terminal { terminal, .. } => {

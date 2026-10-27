@@ -15,7 +15,6 @@ use std::{
 use tokio::net::TcpListener;
 
 pub const KEY: &str = "synthetic-messages-client-token-00000001";
-pub const BETA: &str = "mid-conversation-output-config-2026-07-01,thinking-binding-controls-2026-08-01,inline-tools-2026-09-15";
 pub struct Fixture {
     pub base: String,
     pub seen: Arc<Mutex<Vec<Value>>>,
@@ -33,17 +32,15 @@ impl Drop for Fixture {
 
 pub fn input(stream: bool) -> Value {
     json!({"model":"claude-haiku-5-5","max_tokens":2048,"stream":stream,
-        "thinking":{"type":"adaptive","display":"summarized","block_binding":{"prefix_mismatch_behavior":"drop_block"}},
+        "thinking":{"type":"adaptive","display":"summarized"},
         "output_config":{"effort":"high"},
         "system":[{"type":"text","text":"Synthetic Messages tool loop.","cache_control":{"type":"ephemeral","ttl":"1h"}}],
         "tools":[
             {"name":"lookup","strict":true,"eager_input_streaming":true,
              "input_schema":{"type":"object","properties":{"key":{"type":"string"}},"required":["key"],"additionalProperties":false},
-             "cache_control":{"type":"ephemeral","ttl":"1h"}},
-            {"name":"__pi_deferred_placeholder__","input_schema":{"type":"object"},"defer_loading":true}
+             "cache_control":{"type":"ephemeral","ttl":"1h"}}
         ],
-        "messages":[{"role":"user","content":[{"type":"text","text":"lookup","cache_control":{"type":"ephemeral","ttl":"1h"}}]},
-            {"role":"system","content":[],"output_config":{"effort":"high"}}]})
+        "messages":[{"role":"user","content":[{"type":"text","text":"lookup","cache_control":{"type":"ephemeral","ttl":"1h"}}]}]})
 }
 
 pub fn snapshot(turn: usize) -> Value {
@@ -94,8 +91,7 @@ async fn answer(
         .count();
     assert!((1..=5).contains(&turn));
     let mut expected = json!([
-        {"role":"user","content":[{"type":"text","text":"lookup"}]},
-        {"role":"system","content":[],"output_config":{"effort":"high"}}
+        {"role":"user","content":[{"type":"text","text":"lookup"}]}
     ]);
     let messages = expected.as_array_mut().unwrap();
     if turn >= 2 {
@@ -109,19 +105,13 @@ async fn answer(
             json!({"role":"user","content":[
                 {"type":"tool_result","tool_use_id":"call-second","content":"second-result","is_error":true},
                 {"type":"tool_result","tool_use_id":"call-lookup","content":"A","is_error":false}]}),
-            json!({"role":"system","content":[],"output_config":{"effort":"high"}}),
         ]);
     }
     if turn >= 3 {
         messages.extend([
             json!({"role":"assistant","content":[{"type":"text","text":"A"}]}),
             json!({"role":"user","content":[{"type":"text","text":"inspect"}]}),
-            json!({"role":"system","content":[
-                {"type":"text","text":"Inspect mode."},
-                {"type":"tool_removal","tool":{"type":"tool_reference","name":"lookup"}},
-                {"type":"tool_addition","tool":{"type":"tool_definition","definition":{
-                    "name":"inspect","input_schema":{"type":"object"},"eager_input_streaming":true}}}
-            ],"output_config":{"effort":"low"}}),
+            json!({"role":"system","content":[{"type":"text","text":"Inspect mode."}]}),
         ]);
     }
     if turn >= 4 {
@@ -131,14 +121,12 @@ async fn answer(
                 {"type":"tool_use","id":"call-inspect","name":"inspect","input":{}}
             ]}),
             json!({"role":"user","content":[{"type":"tool_result","tool_use_id":"call-inspect","content":"B","is_error":true}]}),
-            json!({"role":"system","content":[],"output_config":{"effort":"low"}}),
         ]);
     }
     if turn == 5 {
         messages.extend([
             json!({"role":"assistant","content":[{"type":"text","text":"B"}]}),
             json!({"role":"user","content":[{"type":"text","text":"repeat"}]}),
-            json!({"role":"system","content":[],"output_config":{"effort":"low"}}),
         ]);
     }
     messages
@@ -152,16 +140,17 @@ async fn answer(
     );
     // Independent of the client fixture: a changed stimulus must not redefine the oracle.
     let initial = json!({"model":"claude-haiku-5-5","max_tokens":2048,
-        "thinking":{"type":"adaptive","display":"summarized",
-            "block_binding":{"prefix_mismatch_behavior":"drop_block"}},
-        "output_config":{"effort":"high"},
+        "thinking":{"type":"adaptive","display":"summarized"},
+        "output_config":{"effort":if turn < 3 {"high"} else {"low"}},
         "system":[{"type":"text","text":"Synthetic Messages tool loop.",
             "cache_control":{"type":"ephemeral","ttl":"1h"}}],
-        "tools":[{"name":"lookup","strict":true,"eager_input_streaming":true,
+        "tools":if turn < 3 {json!([{"name":"lookup","strict":true,"eager_input_streaming":true,
             "input_schema":{"type":"object","properties":{"key":{"type":"string"}},
                 "required":["key"],"additionalProperties":false},
-            "cache_control":{"type":"ephemeral","ttl":"1h"}},
-            {"name":"__pi_deferred_placeholder__","input_schema":{"type":"object"},"defer_loading":true}]
+            "cache_control":{"type":"ephemeral","ttl":"1h"}}])} else {json!([
+            {"name":"inspect","input_schema":{"type":"object"},"eager_input_streaming":true,
+                "cache_control":{"type":"ephemeral","ttl":"1h"}}
+        ])}
     });
     for key in [
         "model",
@@ -174,12 +163,7 @@ async fn answer(
         assert_eq!(body[key], initial[key], "native Messages {key}");
     }
     assert!(body.get("cache_control").is_none() && body.get("temperature").is_none());
-    let expected_beta = if turn < 3 {
-        "mid-conversation-output-config-2026-07-01,thinking-binding-controls-2026-08-01"
-    } else {
-        BETA
-    };
-    assert_eq!(headers["anthropic-beta"], expected_beta);
+    assert!(!headers.contains_key("anthropic-beta"));
     seen.lock().unwrap().push(body.clone());
     if let Some(recovery) = &recovery
         && let Some(failure) =

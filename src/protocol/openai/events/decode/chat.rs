@@ -3,6 +3,27 @@ use crate::protocol::{
     failure::{CarrierReason, ShapeReason},
     openai::events::*,
 };
+use crate::semantic::value::Text;
+use std::collections::BTreeMap;
+
+#[derive(Default)]
+struct PendingCall {
+    id: Option<Text>,
+    name: Option<Text>,
+    function: bool,
+    arguments: String,
+}
+
+fn check_identity<'a>(
+    value: Option<&'a Value>,
+    expected: Option<&str>,
+) -> Result<Option<&'a str>, CodecError> {
+    match value {
+        None | Some(Value::Null) => Ok(None),
+        Some(Value::String(s)) if expected.is_none_or(|old| old == s) => Ok(Some(s)),
+        _ => Err(CodecError::Invalid(ShapeReason::CallIdentity)),
+    }
+}
 
 /// Chat-only chunk bookkeeping. The shared stream state stays in the decoder.
 #[derive(Default)]
@@ -12,6 +33,8 @@ pub(super) struct State {
     pub(super) extras: crate::protocol::openai::dialect::adapter_shapes::Extras,
     pub(super) owner: Option<ItemId>,
     pub(super) calls: Vec<ItemId>,
+    pending_calls: BTreeMap<usize, PendingCall>,
+    pending_bytes: usize,
     pub(super) reasoning: Option<ItemId>,
     /// Message position of the open reasoning item's first detail.
     pub(super) detail_base: u64,
@@ -507,13 +530,11 @@ impl EventDecoder {
                 }
                 DecodeDirection::Upstream.fields(call, &["index", "id", "type", "function"])?;
                 let n = index(call, "index")?;
-                match call.get("type") {
-                    None | Some(Value::Null) => {}
-                    Some(Value::String(kind)) if kind == "function" => {}
-                    _ => {
-                        return Err(CodecError::Unsupported(CarrierReason::Tools));
-                    }
-                }
+                let function = match call.get("type") {
+                    None | Some(Value::Null) => false,
+                    Some(Value::String(kind)) if kind == "function" => true,
+                    _ => return Err(CodecError::Unsupported(CarrierReason::Tools)),
+                };
                 let empty = Map::new();
                 let f = match call.get("function") {
                     None | Some(Value::Null) => &empty,
@@ -521,71 +542,150 @@ impl EventDecoder {
                 };
                 reject_chat_orchestration(f)?;
                 DecodeDirection::Upstream.fields(f, &["name", "arguments"])?;
-                let established = n < self.chat.calls.len();
-                let item = if n == self.chat.calls.len() {
-                    let item = self.allocate_item()?;
-                    let kind = ItemKind::ToolCall {
-                        format: ArgumentFormat::Raw,
-                        call_id: text(string(call, "id")?, "call id", 256)?,
-                        name: text(string(f, "name")?, "name", 128)?,
-                        context: CallContext::default(),
+                let fragment = f
+                    .get("arguments")
+                    .filter(|v| !v.is_null())
+                    .map(|v| v.as_str().ok_or(CodecError::invalid()))
+                    .transpose()?;
+                if let Some(&item) = self.chat.calls.get(n) {
+                    let ItemKind::ToolCall { call_id, name, .. } = &self.state()?.item(item)?.kind
+                    else {
+                        return Err(CodecError::invalid());
                     };
-                    self.emit(
-                        StreamEvent::ItemStarted {
-                            item,
-                            kind,
-                            replay: None,
-                        },
-                        out,
-                    )?;
-                    let part = self.allocate_part()?;
-                    self.emit(
-                        StreamEvent::PartStarted {
-                            item,
-                            part,
-                            kind: PartKind::Arguments,
-                        },
-                        out,
-                    )?;
-                    self.chat.calls.push(item);
-                    item
+                    // Only the selected Provider sentinel permits an empty continuation ID.
+                    if !(self.adaptation.rules.empty_continuation_call_id
+                        && call.get("id").and_then(Value::as_str) == Some(""))
+                    {
+                        check_identity(call.get("id"), Some(call_id.as_str()))?;
+                    }
+                    check_identity(f.get("name"), Some(name.as_str()))?;
+                    if let Some(fragment) = fragment {
+                        let part = self.state()?.item(item)?.parts[0].id;
+                        self.emit(
+                            StreamEvent::Delta {
+                                item,
+                                part,
+                                fragment: fragment.into(),
+                                logprobs: vec![],
+                            },
+                            out,
+                        )?;
+                    }
                 } else {
-                    *self.chat.calls.get(n).ok_or(CodecError::invalid())?
-                };
-                let ItemKind::ToolCall { call_id, name, .. } = &self.state()?.item(item)?.kind
-                else {
-                    return Err(CodecError::invalid());
-                };
-                // Continuation chunks reuse null for already-announced identity;
-                // only conflicting non-null values are rejected.
-                let same_identity = |value: Option<&Value>, expected: &str| match value {
-                    None | Some(Value::Null) => Ok(()),
-                    Some(Value::String(s)) if s == expected => Ok(()),
-                    _ => Err(CodecError::Invalid(ShapeReason::CallIdentity)),
-                };
-                // Only this named continuation sentinel denotes an omitted ID.
-                // Initial/unknown-index calls still require their own identity.
-                if !(established
-                    && self.adaptation.rules.empty_continuation_call_id
-                    && call.get("id").and_then(Value::as_str) == Some(""))
-                {
-                    same_identity(call.get("id"), call_id.as_str())?;
-                }
-                same_identity(f.get("name"), name.as_str())?;
-                if let Some(v) = f.get("arguments").filter(|v| !v.is_null()) {
-                    let fragment = v.as_str().ok_or(CodecError::invalid())?;
-                    let part = self.state()?.item(item)?.parts[0].id;
-                    self.emit(
-                        StreamEvent::Delta {
-                            item,
-                            part,
-                            fragment: fragment.into(),
-                            logprobs: vec![],
-                        },
-                        out,
-                    )?;
+                    let pending = self.chat.pending_calls.entry(n).or_default();
+                    let mut added = 0;
+                    for (slot, value, label, limit) in [
+                        (&mut pending.id, call.get("id"), "call id", 256),
+                        (&mut pending.name, f.get("name"), "name", 128),
+                    ] {
+                        if let Some(value) =
+                            check_identity(value, slot.as_ref().map(|v| v.as_str()))?
+                            && slot.is_none()
+                        {
+                            let value = text(value, label, limit)?;
+                            added += value.as_str().len();
+                            *slot = Some(value);
+                        }
+                    }
+                    pending.function |= function;
+                    if let Some(fragment) = fragment {
+                        if pending
+                            .arguments
+                            .len()
+                            .checked_add(fragment.len())
+                            .is_none_or(|n| n > MAX_TEXT_BYTES)
+                        {
+                            return Err(CodecError::Limit);
+                        }
+                        added += fragment.len();
+                    }
+                    self.chat.pending_bytes = self
+                        .chat
+                        .pending_bytes
+                        .checked_add(added)
+                        .ok_or(CodecError::Limit)?;
+                    // The reducer charges published owners independently. Pending payload
+                    // has its own aggregate ceiling; indexed slot overhead is also charged.
+                    if self.chat.pending_bytes.saturating_add(
+                        self.chat.pending_calls.len() * std::mem::size_of::<PendingCall>(),
+                    ) > MAX_TOTAL_BYTES
+                    {
+                        return Err(CodecError::Limit);
+                    }
+                    if let Some(fragment) = fragment {
+                        self.chat
+                            .pending_calls
+                            .get_mut(&n)
+                            .unwrap()
+                            .arguments
+                            .push_str(fragment);
+                    }
+                    self.flush_chat_calls(false, out)?;
                 }
             }
+        }
+        Ok(())
+    }
+
+    fn flush_chat_calls(
+        &mut self,
+        finalizing: bool,
+        out: &mut Vec<StreamEvent>,
+    ) -> Result<(), CodecError> {
+        while let Some((&index, call)) = self.chat.pending_calls.first_key_value() {
+            let ready = call.id.is_some() && call.name.is_some() && call.function;
+            if !ready {
+                return if finalizing {
+                    Err(CodecError::Invalid(ShapeReason::CallIdentity))
+                } else {
+                    Ok(())
+                };
+            }
+            // Before finish, a missing lower index may still arrive. Once the
+            // source closes, flush sparse observed indices without inventing calls.
+            if !finalizing && index != self.chat.calls.len() {
+                break;
+            }
+            let call = self.chat.pending_calls.remove(&index).unwrap();
+            let call_id = call.id.unwrap();
+            let name = call.name.unwrap();
+            self.chat.pending_bytes -=
+                call_id.as_str().len() + name.as_str().len() + call.arguments.len();
+            let item = self.allocate_item()?;
+            let part = self.allocate_part()?;
+            self.emit(
+                StreamEvent::ItemStarted {
+                    item,
+                    kind: ItemKind::ToolCall {
+                        format: ArgumentFormat::Raw,
+                        call_id,
+                        name,
+                        context: CallContext::default(),
+                    },
+                    replay: None,
+                },
+                out,
+            )?;
+            self.emit(
+                StreamEvent::PartStarted {
+                    item,
+                    part,
+                    kind: PartKind::Arguments,
+                },
+                out,
+            )?;
+            if !call.arguments.is_empty() {
+                self.emit(
+                    StreamEvent::Delta {
+                        item,
+                        part,
+                        fragment: call.arguments,
+                        logprobs: vec![],
+                    },
+                    out,
+                )?;
+            }
+            self.chat.calls.push(item);
         }
         Ok(())
     }
@@ -596,6 +696,7 @@ impl EventDecoder {
         terminal_usage: Option<&Value>,
         out: &mut Vec<StreamEvent>,
     ) -> Result<(), CodecError> {
+        self.flush_chat_calls(true, out)?;
         let owner = self.chat_message_owner(out)?;
         // A deferred opening fragment materializes its empty part only when
         // no other content won the part, matching static `content: ""`.

@@ -15,7 +15,7 @@ pub(in crate::protocol::openai) fn programs(
     extras: &mut Extras,
     direction: DecodeDirection,
 ) -> Result<(), CodecError> {
-    if let Some(value) = o.get_mut("access_programs") {
+    if let Some(value) = o.get_mut("access_programs").filter(|v| !v.is_null()) {
         let programs = value.as_object_mut().ok_or(CodecError::invalid())?;
         direction.fields(programs, &["cyber"])?;
         programs.retain(|name, _| name == "cyber");

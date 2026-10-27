@@ -219,9 +219,24 @@ fn google_scope_mapping_does_not_saturate_disable_or_allocate() {
             );
             assert_eq!(request, before);
         }
-        let request = messages(json!({"model":binding.model,"max_tokens":2048,
+        let body = json!({"model":binding.model,"max_tokens":2048,
             "messages":[{"role":"system","content":"","output_config":{"effort":"low"}},
-                {"role":"user","content":"go"}]}));
+                {"role":"user","content":"go"}]});
+        assert!(
+            morphiecore::adapter::ClientAdapter::Messages
+                .decode_client_request(body.to_string().as_bytes())
+                .is_err()
+        );
+        // This tests trusted native beta lowering, not the stable Client surface.
+        let decoded = morphiecore::protocol::anthropic::messages::Profile::AdaptiveTextTools
+            .decode_generation_request(
+                body.to_string().as_bytes(),
+                LocalScope::ROOT,
+                &morphiecore::protocol::native::ReplayTarget::new("synthetic", binding.model)
+                    .unwrap(),
+            )
+            .unwrap();
+        let request = Request::from_generation(decoded, binding.model).unwrap();
         assert!(
             request
                 .task

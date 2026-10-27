@@ -199,12 +199,20 @@ fn scoped_session_and_standard_cache_key_remain_independent_on_both_wires() {
             .encode_request(&active, "upstream", &Contract::full())
             .is_err()
     );
-    empty["prompt_cache_options"] = json!({"prewarm":true});
-    assert!(
-        client(GenerationApi::Chat)
-            .decode_client_request(empty.to_string().as_bytes())
-            .is_err()
-    );
+    empty["prompt_cache_options"] = json!({});
+    let original = client(GenerationApi::Chat)
+        .decode_client_request(empty.to_string().as_bytes())
+        .unwrap();
+    empty["prompt_cache_options"] = json!({"prewarm":true,"comparison_response_id":"ignored"});
+    let decoded = client(GenerationApi::Chat)
+        .decode_client_request(empty.to_string().as_bytes())
+        .unwrap();
+    assert_eq!(decoded.task, original.task);
+    assert_eq!(decoded.context, original.context);
+    let out = client(GenerationApi::Chat)
+        .encode_request(&decoded, "upstream", &Contract::full())
+        .unwrap();
+    assert_eq!(out["prompt_cache_options"], json!({}));
     for p in [GenerationApi::Chat, GenerationApi::Responses] {
         let mut wire = request(p);
         wire["prompt_cache_key"] = json!("key-a");

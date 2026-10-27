@@ -3,7 +3,14 @@ use crate::{
     protocol::{CodecError, failure::CarrierReason, openai::GenerationApi},
     semantic::task::generation::*,
 };
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, VecDeque};
+
+struct TextPart {
+    key: (ItemId, PartId),
+    message_order: usize,
+    deltas: Vec<StreamEvent>,
+    finished: bool,
+}
 
 fn order() -> CodecError {
     CodecError::Unsupported(CarrierReason::Unavailable)
@@ -12,12 +19,17 @@ pub(crate) struct EventProjection {
     losses: Vec<crate::protocol::conversion::generation::Effect>,
     profile: GenerationApi,
     phase_only: bool,
-    phase_seen: bool,
     message: Option<ItemId>,
     reasoning: Vec<ItemId>,
     text_owners: BTreeMap<ItemId, ItemId>,
+    text_messages: Vec<(ItemId, bool)>,
+    active_text_message: usize,
     text_part: Option<(PartId, PartKind)>,
     text_parts: usize,
+    /// Later parts wait for earlier parts to finish. Source reduction bounds their
+    /// total retained text; arrival order is not message-content order.
+    text_queue: VecDeque<TextPart>,
+    buffered_text_bytes: usize,
     text_metadata: bool,
     /// One final metadata snapshot for a non-coalescible text part, emitted only
     /// after its held ValueFinished. Plain absent metadata needs no separate event.
@@ -37,12 +49,15 @@ impl EventProjection {
             losses: vec![],
             profile,
             phase_only: false,
-            phase_seen: false,
             message: None,
             reasoning: vec![],
             text_owners: BTreeMap::new(),
+            text_messages: vec![],
+            active_text_message: 0,
             text_part: None,
             text_parts: 0,
+            text_queue: VecDeque::new(),
+            buffered_text_bytes: 0,
             text_metadata: false,
             text_metadata_end: None,
             text_closed: false,
@@ -62,7 +77,7 @@ impl EventProjection {
         }
     }
     pub(crate) fn needs_source_check(&self) -> bool {
-        self.phase_only && !self.phase_seen
+        self.phase_only
     }
     fn record(&mut self, loss: crate::protocol::conversion::generation::Effect) {
         if !self.losses.contains(&loss) {
@@ -131,13 +146,10 @@ impl EventProjection {
                                 self.reasoning.push(*item);
                             }
                             ItemKind::Message { phase } if self.profile == GenerationApi::Chat => {
-                                if self.phase_only {
-                                    self.phase_seen |= phase.is_some();
-                                    if phase.take().is_some() {
-                                        self.record(crate::protocol::phase::delivery_omission(
-                                            "event.project",
-                                        ));
-                                    }
+                                if self.phase_only && phase.take().is_some() {
+                                    self.record(crate::protocol::phase::delivery_omission(
+                                        "event.project",
+                                    ));
                                 }
                                 if !self.calls.is_empty() {
                                     return Err(CodecError::Unsupported(
@@ -145,6 +157,10 @@ impl EventProjection {
                                     ));
                                 }
                                 let owner = *self.message.get_or_insert(*item);
+                                if self.text_messages.len() >= MAX_ITEMS {
+                                    return Err(CodecError::Limit);
+                                }
+                                self.text_messages.push((*item, false));
                                 self.text_owners.insert(*item, owner);
                                 self.close_later(owner);
                                 if owner != *item {
@@ -159,7 +175,6 @@ impl EventProjection {
                                 *format = ArgumentFormat::Raw;
                                 if self.profile == GenerationApi::Chat {
                                     self.owner(&mut out);
-                                    self.close_text(&mut out);
                                     self.close_later(*item);
                                     self.calls.push(*item);
                                 }
@@ -172,6 +187,28 @@ impl EventProjection {
                             *kind = PartKind::Arguments;
                         }
                         if self.text_owners.contains_key(item) {
+                            if self.text_parts >= MAX_ITEMS {
+                                return Err(CodecError::Limit);
+                            }
+                            let message_order = self
+                                .text_messages
+                                .iter()
+                                .position(|(id, _)| id == item)
+                                .ok_or(CodecError::invalid())?;
+                            let position = self
+                                .text_queue
+                                .iter()
+                                .position(|p| p.message_order > message_order)
+                                .unwrap_or(self.text_queue.len());
+                            self.text_queue.insert(
+                                position,
+                                TextPart {
+                                    key: (*item, *part),
+                                    message_order,
+                                    deltas: vec![],
+                                    finished: false,
+                                },
+                            );
                             self.text_parts += 1;
                             if let Some((_, old_kind)) = self.text_part {
                                 if self.text_metadata
@@ -189,8 +226,19 @@ impl EventProjection {
                         }
                         *item = self.text_owners.get(item).copied().unwrap_or(*item);
                     }
+                    StreamEvent::PartFinished { item, part }
+                        if self.text_owners.contains_key(item) =>
+                    {
+                        let pending = self
+                            .text_queue
+                            .iter_mut()
+                            .find(|p| p.key == (*item, *part))
+                            .ok_or(CodecError::invalid())?;
+                        pending.finished = true;
+                        self.flush_text(&mut out);
+                        continue;
+                    }
                     StreamEvent::ValueFinished { item, .. }
-                    | StreamEvent::PartFinished { item, .. }
                         if self.text_owners.contains_key(item) =>
                     {
                         continue;
@@ -208,6 +256,33 @@ impl EventProjection {
                         }
                         continue;
                     }
+                    StreamEvent::Delta {
+                        item,
+                        part,
+                        fragment,
+                        ..
+                    } if self.text_owners.contains_key(item)
+                        && self.text_queue.front().is_some_and(|p| {
+                            p.key != (*item, *part) || p.message_order != self.active_text_message
+                        }) =>
+                    {
+                        self.buffered_text_bytes = self
+                            .buffered_text_bytes
+                            .checked_add(
+                                fragment
+                                    .len()
+                                    .saturating_add(std::mem::size_of::<StreamEvent>()),
+                            )
+                            .filter(|bytes| *bytes <= MAX_TOTAL_BYTES)
+                            .ok_or(CodecError::Limit)?;
+                        self.text_queue
+                            .iter_mut()
+                            .find(|p| p.key == (*item, *part))
+                            .ok_or(CodecError::invalid())?
+                            .deltas
+                            .push(event);
+                        continue;
+                    }
                     StreamEvent::Delta { item, part, .. }
                     | StreamEvent::LogprobsSnapshot { item, part, .. }
                     | StreamEvent::AnnotationAdded { item, part, .. }
@@ -222,6 +297,19 @@ impl EventProjection {
                     StreamEvent::ItemFinished { item, .. }
                         if self.profile == GenerationApi::Chat =>
                     {
+                        if let Some((_, finished)) =
+                            self.text_messages.iter_mut().find(|(id, _)| id == item)
+                        {
+                            *finished = true;
+                            while self
+                                .text_messages
+                                .get(self.active_text_message)
+                                .is_some_and(|(_, done)| *done)
+                            {
+                                self.active_text_message += 1;
+                            }
+                            self.flush_text(&mut out);
+                        }
                         if !self.reasoning.contains(item) {
                             continue;
                         }
@@ -275,7 +363,7 @@ impl EventProjection {
                         if self.profile == GenerationApi::Chat =>
                     {
                         let owner = self.owner(&mut out);
-                        self.close_text(&mut out);
+                        self.close_text(&mut out)?;
                         for item in self.pending.drain(..) {
                             out.push(StreamEvent::ItemFinished {
                                 item,
@@ -308,7 +396,10 @@ impl EventProjection {
         }
         result
     }
-    fn close_text(&mut self, out: &mut Vec<StreamEvent>) {
+    fn close_text(&mut self, out: &mut Vec<StreamEvent>) -> Result<(), CodecError> {
+        if !self.text_queue.is_empty() {
+            return Err(order());
+        }
         if !self.text_closed
             && let Some((part, _)) = self.text_part
         {
@@ -317,6 +408,32 @@ impl EventProjection {
             out.extend(self.text_metadata_end.take());
             out.push(StreamEvent::PartFinished { item, part });
             self.text_closed = true;
+        }
+        Ok(())
+    }
+    fn flush_text(&mut self, out: &mut Vec<StreamEvent>) {
+        while let Some(next) = self.text_queue.front_mut() {
+            if next.message_order > self.active_text_message {
+                break;
+            }
+            for mut event in std::mem::take(&mut next.deltas) {
+                if let StreamEvent::Delta {
+                    item,
+                    part,
+                    fragment,
+                    ..
+                } = &mut event
+                {
+                    self.buffered_text_bytes -= fragment.len() + std::mem::size_of::<StreamEvent>();
+                    *item = self.message.expect("text message");
+                    *part = self.text_part.expect("text part").0;
+                }
+                out.push(event);
+            }
+            if !next.finished {
+                break;
+            }
+            self.text_queue.pop_front();
         }
     }
 }

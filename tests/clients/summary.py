@@ -84,13 +84,11 @@ def assert_summary(body, native, path, prefix=False):
     check(body["stream"] is True, "summary_not_streaming")
     check(body["max_tokens" if native else "max_completion_tokens"] == 2048, "summary_output_cap")
     if native:
-        check(body["thinking"] == {"type": "adaptive", "display": "summarized",
-                                  "block_binding": {"prefix_mismatch_behavior": "drop_block"}},
+        check(body["thinking"] == {"type": "adaptive", "display": "summarized"},
               "summary_thinking")
         check(body["output_config"] == {"effort": "low"}, "summary_root_effort")
         controls = [m for m in messages if m["role"] == "system"]
-        check(bool(controls) and all(m["content"] == [] and m["output_config"] == {"effort": "low"}
-                                    for m in controls), "summary_ordered_effort")
+        check(all("output_config" not in m for m in controls), "summary_stable_profile")
         # No caller markers are not an instruction to disable the trusted binding default.
         cache = body.get("cache_control", {})
         check(cache.get("type") == "ephemeral" and cache.get("ttl", "5m") == "5m",
@@ -102,10 +100,6 @@ def assert_summary(body, native, path, prefix=False):
 def assert_rebuilt(body, phase, native, path, split=False):
     # The same declaration/control profile must survive context replacement.
     assert_profile(body, native)
-    if native:
-        controls = [m for m in body["messages"] if m["role"] == "system"]
-        check(bool(controls) and all(m["content"] == [] and m["output_config"] == {"effort": "low"}
-                                    for m in controls), "rebuilt_ordered_effort")
     check(SUMMARY in text(body["messages"]) and AFTER in text(body["messages"]), "rebuilt_summary_missing")
     check(READ not in text(body["messages"]), "pre_summary_prompt_retained")
     history = [m for m in body["messages"] if m["role"] != "system"]

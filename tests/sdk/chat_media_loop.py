@@ -41,7 +41,7 @@ def run(base_url):
             check(audio["transcript"] == "hello")
             check(base64.b64decode(audio["data"], validate=True) == bytes([1, 2, 3, 4]))
             history.extend([
-                {"role": "assistant", "audio": {"id": audio["id"]}},
+                {"role": "assistant", "content": None, "audio": {"id": audio["id"]}},
                 {"role": "user", "content": "repeat"},
             ])
             follow = client.chat.completions.create(model="fixture-model", messages=history)

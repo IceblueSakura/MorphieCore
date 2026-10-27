@@ -591,7 +591,7 @@ mod tests {
             .decode_client_request(
                 br#"{"model":"synthetic","input":[
                 {"role":"system","content":"rules"},
-                {"role":"developer","content":"more","status":"incomplete"},
+                {"role":"developer","content":[{"type":"input_text","text":"more"}],"status":"incomplete"},
                 {"type":"function_call","call_id":"f","name":"lookup","arguments":"{}"},
                 {"type":"function_call_output","call_id":"f","output":"found"},
                 {"type":"custom_tool_call","call_id":"c","name":"sql","input":"SELECT 1"},

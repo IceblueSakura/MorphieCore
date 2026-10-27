@@ -318,6 +318,68 @@ fn a_stream_cannot_switch_target_policy_after_publication() {
 }
 
 #[test]
+fn chat_stream_omits_only_null_metadata_under_the_selected_report_policy() {
+    use morphiecore::{
+        protocol::{conversion::generation::ReportedFactPolicy, openai::events::EventEncoder},
+        semantic::value::Presence,
+    };
+    let fidelity = FidelityRecords::default();
+    let mut meta = metadata();
+    meta.context.execution.metadata = Presence::Null;
+    let mut encoder = EventEncoder::new(GenerationApi::Chat, meta.clone()).unwrap();
+    let frames = encoder.encode(&StreamEvent::Started, &fidelity).unwrap();
+    assert!(frames.iter().all(|frame| frame.get("metadata").is_none()));
+    assert!(
+        encoder
+            .projection()
+            .iter()
+            .any(|e| e.rule() == "chat.omit-null-stream-metadata.v1")
+    );
+    let source = response();
+    let static_target = lower_response(
+        &source,
+        &fidelity,
+        &meta,
+        GenerationApi::Chat,
+        Contract::full(),
+    )
+    .unwrap();
+    assert_eq!(
+        chat::encode_response(&static_target)
+            .unwrap()
+            .get("metadata"),
+        Some(&serde_json::Value::Null)
+    );
+
+    let mut strict = Contract::full();
+    strict.reported_facts = ReportedFactPolicy::StrictComplete;
+    let mut encoder = EventEncoder::new(GenerationApi::Chat, meta.clone())
+        .unwrap()
+        .with_contract(strict.clone());
+    assert!(encoder.encode(&StreamEvent::Started, &fidelity).is_err());
+    assert!(encoder.finish().is_err());
+    let mut encoder = EventEncoder::new(GenerationApi::Chat, metadata())
+        .unwrap()
+        .with_contract(strict);
+    encoder.encode(&StreamEvent::Started, &fidelity).unwrap();
+    encoder.update_metadata(meta.clone()).unwrap();
+    assert!(encoder.encode(&text_events()[1], &fidelity).is_err());
+
+    meta.context.execution.metadata = Presence::Value(Default::default());
+    assert!(EventEncoder::new(GenerationApi::Chat, meta.clone()).is_err());
+    let mut encoder = EventEncoder::new(GenerationApi::Chat, metadata()).unwrap();
+    encoder.encode(&StreamEvent::Started, &fidelity).unwrap();
+    assert!(
+        encoder
+            .projection()
+            .iter()
+            .all(|e| e.rule() != "chat.omit-null-stream-metadata.v1")
+    );
+    assert!(encoder.update_metadata(meta).is_err());
+    assert!(encoder.finish().is_err());
+}
+
+#[test]
 fn accounting_loss_cannot_hide_group_phase_replay_or_resource_rejections() {
     let original = response();
     let fidelity = FidelityRecords::default();

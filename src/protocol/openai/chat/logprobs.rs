@@ -53,10 +53,12 @@ pub(in crate::protocol::openai) fn carrier(
     };
     Ok(match probs {
         Presence::Absent => None,
-        Presence::Null => Some(json!({key:Value::Null})),
+        Presence::Null => Some(json!({"content":null,"refusal":null})),
         Presence::Value(probs) => {
             validate(probs)?;
-            Some(json!({key:write(probs)}))
+            let mut value = json!({"content":null,"refusal":null});
+            value[key] = write(probs);
+            Some(value)
         }
     })
 }

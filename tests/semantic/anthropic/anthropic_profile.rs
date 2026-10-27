@@ -1,5 +1,6 @@
 //! Independent native wire shapes; no registry, credentials or semantic round-trip oracle.
 use morphiecore::protocol::{CodecError, anthropic::messages::Profile};
+use morphiecore::semantic::task::generation::LocalScope;
 use serde_json::{Value, json};
 
 fn request() -> Value {
@@ -158,7 +159,7 @@ fn audit_protected_client_controls_are_not_discarded() {
     let mut body = base;
     body["thinking"] = json!({"type":"adaptive"});
     let plain = decode_client_request(body.to_string().as_bytes()).unwrap();
-    // Block binding has a typed owner; `{}` and a null behavior keep the default.
+    // Block binding retains its native typed owner, but is beta-only at Client intake.
     use morphiecore::semantic::task::generation::ReplayMismatch;
     for (binding, expected) in [
         (
@@ -173,16 +174,23 @@ fn audit_protected_client_controls_are_not_discarded() {
         (json!({"prefix_mismatch_behavior":null}), None),
     ] {
         body["thinking"]["block_binding"] = binding;
-        let decoded = decode_client_request(body.to_string().as_bytes()).unwrap();
-        assert_eq!(decoded.task.semantic.reasoning().replay_mismatch, expected);
-        assert!(decoded.task.evidence.is_empty());
+        assert!(decode_client_request(body.to_string().as_bytes()).is_err());
+        let decoded = Profile::AdaptiveTextTools
+            .decode_generation_request(
+                body.to_string().as_bytes(),
+                LocalScope::ROOT,
+                &morphiecore::protocol::native::ReplayTarget::new("synthetic", "m").unwrap(),
+            )
+            .unwrap();
+        assert_eq!(decoded.semantic.reasoning().replay_mismatch, expected);
+        assert!(decoded.evidence.is_empty());
     }
     assert_eq!(plain.task.semantic.reasoning().replay_mismatch, None);
     body["thinking"]["block_binding"] = json!({"prefix_mismatch_behavior":"ignore"});
     assert!(matches!(
         decode_client_request(body.to_string().as_bytes()),
-        Err(CodecError::Invalid(
-            morphiecore::protocol::failure::ShapeReason::InvalidValue
+        Err(CodecError::Unsupported(
+            morphiecore::protocol::failure::CarrierReason::Reasoning
         ))
     ));
     // The check exists only for adaptive thinking.
@@ -191,8 +199,8 @@ fn audit_protected_client_controls_are_not_discarded() {
             "block_binding":{"prefix_mismatch_behavior":"drop_block"}});
     assert!(matches!(
         decode_client_request(body.to_string().as_bytes()),
-        Err(CodecError::Invalid(
-            morphiecore::protocol::failure::ShapeReason::InvalidValue
+        Err(CodecError::Unsupported(
+            morphiecore::protocol::failure::CarrierReason::Reasoning
         ))
     ));
 }

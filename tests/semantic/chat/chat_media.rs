@@ -162,7 +162,7 @@ fn audio_history_requires_source_clock_and_final_owner_not_just_an_id() {
     use morphiecore::semantic::value::ReplayOrigin;
     let origin = ReplayOrigin::new("synthetic-audio-source").unwrap();
     let source = GenerationCodec::new(GenerationApi::Chat, Dialect::Standard, Some(origin.clone()));
-    let wire = json!({"model":"synthetic-model","messages":[{"role":"assistant","audio":{"id":"synthetic-audio"}},{"role":"user","content":"Repeat it."}]});
+    let wire = json!({"model":"synthetic-model","messages":[{"role":"assistant","content":null,"audio":{"id":"synthetic-audio"}},{"role":"user","content":"Repeat it."}]});
     let mut request = source
         .decode_request(&serde_json::to_vec(&wire).unwrap())
         .unwrap();
@@ -231,7 +231,7 @@ fn audio_history_requires_source_clock_and_final_owner_not_just_an_id() {
             .encode_request(&changed, "synthetic-model", &contract)
             .is_err()
     );
-    let id_only = json!({"model":"synthetic-model","messages":[{"role":"assistant","audio":{"id":"synthetic-audio"}},{"role":"user","content":"Repeat it."}]});
+    let id_only = json!({"model":"synthetic-model","messages":[{"role":"assistant","content":null,"audio":{"id":"synthetic-audio"}},{"role":"user","content":"Repeat it."}]});
     let decoded = source
         .decode_request(&serde_json::to_vec(&id_only).unwrap())
         .unwrap();
@@ -388,6 +388,13 @@ fn audio_empty_text_refusal_padding_and_identity_boundaries() {
         output["choices"][0]["message"]["audio"]["transcript"],
         "hello"
     );
+    let (_, snapshot) = morphiecore::adapter::ClientAdapter::openai(
+        standard(GenerationApi::Chat),
+        Contract::full(),
+    )
+    .snapshot(good.materialize().unwrap())
+    .unwrap();
+    assert_eq!(snapshot, output);
 }
 #[test]
 fn chat_message_parts_allow_only_text_then_audio() {

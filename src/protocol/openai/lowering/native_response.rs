@@ -153,6 +153,45 @@ pub(crate) fn project(
     decoded: &mut DecodedResponse,
     profile: GenerationApi,
 ) -> Result<Vec<Effect>, CodecError> {
+    project_inner(decoded, profile, true)
+}
+
+/// Apply the selected Chat grouping without normalizing native accounting or
+/// progress. A phase is not permission to discard unrelated reported facts.
+pub(crate) fn group_chat(decoded: &mut DecodedResponse) -> Result<Vec<Effect>, CodecError> {
+    let messages: Vec<_> = decoded
+        .semantic
+        .items()
+        .iter()
+        .filter_map(|(_, item)| {
+            if let Item::Message(message) = item {
+                Some(message)
+            } else {
+                None
+            }
+        })
+        .collect();
+    // A native Chat text+audio message already has exact independent carriers.
+    // Only enter concatenation for multiple message/text owners.
+    if messages.len() <= 1
+        && messages.iter().all(|m| {
+            m.parts
+                .iter()
+                .filter(|p| !matches!(p.content, ContentPart::Audio(_)))
+                .count()
+                <= 1
+        })
+    {
+        return Ok(vec![]);
+    }
+    project_inner(decoded, GenerationApi::Chat, false)
+}
+
+fn project_inner(
+    decoded: &mut DecodedResponse,
+    profile: GenerationApi,
+    native: bool,
+) -> Result<Vec<Effect>, CodecError> {
     let source = &decoded.semantic;
     let attached = source
         .items()
@@ -179,28 +218,29 @@ pub(crate) fn project(
                         serde_json::to_string(value.value()).map_err(|_| CodecError::invalid())?,
                     );
                 }
-                ToolArguments::Raw(raw)
-                    if StructuredValue::from_bytes(raw.as_bytes())
-                        .is_ok_and(|value| value.value().is_object()) => {}
-                _ => {
-                    return Err(CodecError::invalid());
-                }
+                // Generated arguments are a raw string, not tool-execution input.
+                // Removing an unrelated message phase must not parse or rewrite it.
+                ToolArguments::Raw(_) => {}
+                ToolArguments::StructuredPartial(_) => return Err(CodecError::invalid()),
             }
         }
     }
     // Build a target representation rather than editing an observed call under
     // its source dependency adaptations. JSON serialization above preserves its value.
-    let mut projected =
+    let mut projected = if native {
         GenerationResponse::from_resources(items, source.outcome(), source.resources().clone())?
             .with_details(source.details().clone())?
             .with_safety_reports(source.safety_reports().to_vec())?
             // Derivation requires all disjoint input categories. Missing is not zero.
-            .with_usage(source.usage().map(client_usage).transpose()?.flatten())?;
+            .with_usage(source.usage().map(client_usage).transpose()?.flatten())?
+    } else {
+        source.clone()
+    };
     if attached {
         projected = projected.with_message_envelopes(source.message_envelopes().to_vec())?;
     }
     if profile == GenerationApi::Chat && !attached {
-        let status = if source.outcome() == Outcome::Incomplete {
+        let mut status = if source.outcome() == Outcome::Incomplete {
             ItemLifecycle::Incomplete
         } else {
             ItemLifecycle::Completed
@@ -218,12 +258,22 @@ pub(crate) fn project(
                 Item::Message(message)
                     if calls.is_empty() && message.role == MessageRole::Assistant =>
                 {
+                    if !native {
+                        if message.participant.is_some()
+                            || owner.is_some() && status != message.status
+                        {
+                            return Err(CodecError::Unsupported(CarrierReason::Unavailable));
+                        }
+                        status = message.status;
+                    }
                     owner.get_or_insert(*id);
                     parts.extend(message.parts.clone());
                 }
                 Item::ToolCall(call) => {
                     let mut call = call.clone();
-                    call.status = status;
+                    if native {
+                        call.status = status;
+                    }
                     calls.push((*id, Item::ToolCall(call)));
                 }
                 _ => {
@@ -292,9 +342,14 @@ pub(crate) fn project(
             MessageEnvelopeRole::Assistant,
             members,
         )?])?;
+        if !native {
+            projected = projected
+                .with_usage_reports(source.usage_reports().clone())?
+                .with_progress(source.progress())?;
+        }
     }
     let mut losses = vec![];
-    if source.usage_reports().has_unrepresented_details() {
+    if native && source.usage_reports().has_unrepresented_details() {
         losses.push(crate::protocol::usage::report_loss("response.project"));
     }
     let coalesced = profile == GenerationApi::Chat

@@ -144,11 +144,7 @@ async fn handle(
     if turn <= 2 {
         assert_eq!(
             native.value["messages"][1],
-            json!({"role":"system","content":[],"output_config":{"effort":"low"}})
-        );
-        assert_eq!(
-            native.value["messages"][2],
-            json!({"role":"user","content":[{"type":"text","text":"second input"}]})
+            json!({"role":"system","content":[{"type":"text","text":"Keep history."}]})
         );
         for part in native.value["messages"][0]["content"].as_array().unwrap() {
             assert!(part.get("cache_control").is_none());
@@ -202,7 +198,7 @@ async fn handle(
                             }))))
         ));
         assert_eq!(
-            native.value["messages"][4]["content"][0]["content"],
+            native.value["messages"][3]["content"][0]["content"],
             json!([{"type":"text","text":"found"},
                 {"type":"image","source":{"type":"url","url":"https://example.invalid/a.png"},
                     "transformations":{"oversized_image":"error"}}])
@@ -325,9 +321,7 @@ async fn sdk_messages_native_controls_history_and_partial_stream() {
 fn cross_protocol(seen: &Mutex<usize>, body: &[u8], wire: &Value) -> Response {
     use morphiecore::{
         execution::attempt::prepare,
-        protocol::openai::{
-            Dialect as OpenAiDialect, GenerationApi as OpenAiProfile, GenerationCodec,
-        },
+        protocol::openai::{Dialect, GenerationApi, GenerationCodec},
         provider::SecretMaterial,
         topology::{GenerationProtocol, catalog::API_KEY_BINDINGS},
     };
@@ -337,15 +331,18 @@ fn cross_protocol(seen: &Mutex<usize>, body: &[u8], wire: &Value) -> Response {
         *n - 6
     };
     assert!(turn < 4);
-    let feedback = turn % 2 == 1;
-    let streaming = wire["stream"] == true;
-    if feedback {
+    if turn % 2 == 1 {
         assert!(anthropic::messages::client::decode_client_request(body).is_err());
-        return Response::builder().status(400)
+        return Response::builder()
+            .status(400)
             .header("content-type", "application/json")
-            .body(Body::from(json!({"type":"error","error":{
-                "type":"invalid_request_error","message":"Unsigned thinking is not native request history"
-            }}).to_string())).unwrap();
+            .body(Body::from(
+                json!({"type":"error","error":{
+                    "type":"invalid_request_error","message":"Invalid synthetic history"
+                }})
+                .to_string(),
+            ))
+            .unwrap();
     }
     let request = anthropic::messages::client::decode_client_request(body).unwrap();
     let binding = API_KEY_BINDINGS
@@ -360,58 +357,32 @@ fn cross_protocol(seen: &Mutex<usize>, body: &[u8], wire: &Value) -> Response {
     )
     .unwrap();
     let prepared: Value = serde_json::from_slice(&upstream.body).unwrap();
-    if feedback {
-        assert_eq!(
-            prepared["messages"],
-            json!([
-                {"role":"user","content":"go"},
-                {"role":"assistant","content":null,"reasoning_content":"Plan 🧪 Check",
-                    "tool_calls":[{"id":"call_cross","type":"function","function":{"name":"lookup","arguments":"{\"n\":7}"}}]},
-                {"role":"tool","tool_call_id":"call_cross","content":"found"}
-            ])
-        );
-    } else {
-        assert_eq!(
-            prepared["messages"],
-            json!([{"role":"user","content":"go"}])
-        );
-    }
+    assert_eq!(
+        prepared["messages"],
+        json!([{"role":"user","content":"go"}])
+    );
     let chunk = |delta, finish| {
         json!({"id":"cross","object":"chat.completion.chunk",
         "created":1,"model":"synthetic","choices":[{"index":0,"delta":delta,"finish_reason":finish}]})
     };
-    let mut frames = if feedback {
-        vec![
-            chunk(json!({"role":"assistant","content":"done"}), Value::Null),
-            // Chat `stop` is natural-or-stop-sequence, not an exact Messages end_turn.
-            chunk(json!({}), json!("length")),
-        ]
-    } else {
-        vec![
-            chunk(
-                json!({"role":"assistant","reasoning_content":"Plan 🧪 "}),
-                Value::Null,
-            ),
-            chunk(json!({"reasoning_content":"Check"}), Value::Null),
-            chunk(
-                json!({"tool_calls":[{"index":0,"id":"call_cross","type":"function",
-                "function":{"name":"lookup","arguments":"{\"n\":7}"}}]}),
-                Value::Null,
-            ),
-            chunk(json!({}), json!("tool_calls")),
-        ]
-    };
-    frames.push(
+    let frames = [
+        chunk(
+            json!({"role":"assistant","reasoning_content":"Plan 🧪 "}),
+            Value::Null,
+        ),
+        chunk(json!({"reasoning_content":"Check"}), Value::Null),
+        chunk(
+            json!({"tool_calls":[{"index":0,"id":"call_cross","type":"function",
+            "function":{"name":"lookup","arguments":"{\"n\":7}"}}]}),
+            Value::Null,
+        ),
+        chunk(json!({}), json!("tool_calls")),
         json!({"id":"cross","object":"chat.completion.chunk","created":1,"model":"synthetic",
-        "choices":[],"usage":{"prompt_tokens":2,"completion_tokens":3,"total_tokens":5,
-            "prompt_tokens_details":{"cached_tokens":0}}}),
-    );
+            "choices":[],"usage":{"prompt_tokens":2,"completion_tokens":3,"total_tokens":5,
+                "prompt_tokens_details":{"cached_tokens":0}}}),
+    ];
     let mut attempt = Attempt::new(
-        UpstreamAdapter::OpenAi(Box::new(GenerationCodec::new(
-            OpenAiProfile::Chat,
-            OpenAiDialect::ChatReasoning,
-            None,
-        ))),
+        GenerationCodec::new(GenerationApi::Chat, Dialect::ChatReasoning, None),
         1 << 20,
         SseLimits::default(),
     );
@@ -423,53 +394,46 @@ fn cross_protocol(seen: &Mutex<usize>, body: &[u8], wire: &Value) -> Response {
         StreamOptions::default(),
         Obfuscation::Disabled,
     );
-    let mut output = vec![];
     let input = frames
         .iter()
         .map(|v| format!("data: {v}\n\n"))
         .collect::<String>()
         + "data: [DONE]\n\n";
+    let mut rejected = false;
+    let streaming = wire["stream"] == true;
     for fragment in input.as_bytes().chunks(7) {
         let mut rest = fragment;
         while !rest.is_empty() {
             let (used, events) = attempt.push(rest).unwrap();
-            if streaming {
-                output.extend(
-                    delivery
-                        .encode_events(&attempt, &events)
-                        .unwrap()
-                        .into_bytes()
-                        .into_iter()
-                        .flatten(),
-                );
+            if streaming && !rejected {
+                match delivery.encode_events(&attempt, &events) {
+                    Ok(batch) => assert!(batch.into_bytes().iter().all(|frame| {
+                        !std::str::from_utf8(frame).unwrap().contains("message_stop")
+                    })),
+                    Err(_) => rejected = true,
+                }
             }
             rest = &rest[used..];
         }
     }
     attempt.finish().unwrap();
+    // The upstream is valid. Its unsigned reasoning, not source damage, prevents
+    // a standard Messages completion in both JSON and streamed delivery.
     if streaming {
-        output.extend(
-            delivery
-                .finish_stream(&attempt)
-                .unwrap()
-                .into_bytes()
-                .into_iter()
-                .flatten(),
-        );
+        assert!(rejected);
+        assert!(delivery.finish_stream(&attempt).is_err());
     } else {
-        output = delivery.encode_json(&attempt).unwrap();
+        assert!(delivery.encode_json(&attempt).is_err());
     }
-    delivery.commit().unwrap();
-    delivery.complete(&attempt).unwrap();
+    assert!(delivery.complete(&attempt).is_err());
     Response::builder()
-        .header(
-            "content-type",
-            if streaming {
-                "text/event-stream"
-            } else {
-                "application/json"
-            },
-        )
-        .body(Body::from(output))
+        .status(500)
+        .header("content-type", "application/json")
+        .body(Body::from(
+            json!({"type":"error","error":{
+                "type":"api_error","message":"Unrepresentable synthetic response"
+            }})
+            .to_string(),
+        ))
         .unwrap()
 }

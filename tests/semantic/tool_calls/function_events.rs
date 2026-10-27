@@ -13,6 +13,74 @@ use morphiecore::{
 use serde_json::json;
 
 #[test]
+fn response_terminal_domains_do_not_constrain_string_error_events() {
+    use morphiecore::protocol::openai::{Dialect, GenerationCodec, TargetContract};
+    let codec = GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None);
+    let f = FidelityRecords::default();
+    for event in [
+        StreamEvent::Terminal {
+            terminal: StreamTerminal::Failed,
+            details: TerminalDetails {
+                error: Some(ResponseError {
+                    code: Some(text("foreign_code")),
+                    message: text("synthetic error"),
+                    param: None,
+                    original_type: None,
+                }),
+                ..Default::default()
+            },
+        },
+        StreamEvent::Terminal {
+            terminal: StreamTerminal::Incomplete,
+            details: TerminalDetails {
+                incomplete: Some(IncompleteReason::Other(text("foreign_reason"))),
+                ..Default::default()
+            },
+        },
+    ] {
+        let mut encoder = EventEncoder::new(GenerationApi::Responses, metadata()).unwrap();
+        encoder.encode(&StreamEvent::Started, &f).unwrap();
+        assert!(encoder.encode(&event, &f).is_err());
+        assert!(encoder.finish().is_err());
+        let response = materialize(&apply(&[StreamEvent::Started, event]).unwrap()).unwrap();
+        let decoded = morphiecore::protocol::DecodedResponse {
+            semantic: response,
+            metadata: metadata(),
+            fidelity: f.clone(),
+            evidence: Default::default(),
+        };
+        assert!(
+            codec
+                .encode_response(&decoded, &TargetContract::full())
+                .is_err()
+        );
+    }
+    let mut encoder = EventEncoder::new(GenerationApi::Responses, metadata()).unwrap();
+    let frames = encoder
+        .encode(
+            &StreamEvent::Terminal {
+                terminal: StreamTerminal::Error,
+                details: TerminalDetails {
+                    error: Some(ResponseError {
+                        code: Some(text("foreign_code")),
+                        message: text("synthetic error"),
+                        param: None,
+                        original_type: None,
+                    }),
+                    ..Default::default()
+                },
+            },
+            &f,
+        )
+        .unwrap();
+    assert_eq!(
+        frames[0],
+        json!({"type":"error","code":"foreign_code","message":"synthetic error","param":null,"sequence_number":0})
+    );
+    encoder.finish().unwrap();
+}
+
+#[test]
 fn function_done_name_echo_must_match_its_existing_call_owner() {
     for name in [json!("lookup"), json!("different"), json!(null)] {
         let mut decoder = EventDecoder::new(GenerationApi::Responses);

@@ -1,5 +1,5 @@
 //! Shared native wire reducer; only strict EOF exposes the complete aggregated message.
-use crate::protocol::anthropic::messages::{Block, Delta, Event, Message, Profile};
+use crate::protocol::anthropic::messages::{Block, Delta, Event, Message, shape};
 use crate::protocol::failure::{RecognitionBasis, ShapeReason, SourceFailureEvidence};
 use crate::{
     protocol::{
@@ -114,10 +114,14 @@ impl MessageSseDecoder {
             return Err(SseError::Limit);
         }
         let name = frame.event().ok_or(SseError::EventType)?;
+        let value = shape::parse(frame.data().as_bytes())?;
+        if value.get("type").and_then(serde_json::Value::as_str) != Some(name) {
+            return Err(invalid());
+        }
         if !Event::KNOWN.contains(&name) {
             return Ok(None);
         }
-        let event = Profile::AdaptiveTextTools.decode_event(name, frame.data().as_bytes())?;
+        let event = Event::read(&value)?;
         self.event(event.clone())?;
         Ok(Some(event))
     }
@@ -163,11 +167,6 @@ impl MessageSseDecoder {
                 if message.content.len() >= MAX_ITEMS {
                     return Err(SseError::Limit);
                 }
-                if let Block::ToolUse { input, .. } = &block
-                    && !input.value().as_object().is_some_and(|o| o.is_empty())
-                {
-                    return Err(CodecError::invalid().into());
-                }
                 self.charge(block.bytes(true)?)?;
                 let signature_started =
                     matches!(&block,Block::Thinking {signature,..} if !signature.is_empty());
@@ -202,8 +201,15 @@ impl MessageSseDecoder {
                         open.signature_started = true;
                         append(signature, &value)?;
                     }
-                    (Block::ToolUse { .. }, Delta::InputJson(value)) => {
-                        append(open.json.get_or_insert_with(String::new), &value)?
+                    (Block::ToolUse { input, .. }, Delta::InputJson(value)) => {
+                        if !value.is_empty() {
+                            // A complete opener and a fragment stream have no selected
+                            // merge/replacement semantics. Empty deltas change neither.
+                            if !input.value().as_object().is_some_and(|o| o.is_empty()) {
+                                return Err(invalid());
+                            }
+                            append(open.json.get_or_insert_with(String::new), &value)?;
+                        }
                     }
                     _ => return Err(invalid()),
                 }

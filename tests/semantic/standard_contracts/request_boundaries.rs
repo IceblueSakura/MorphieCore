@@ -49,6 +49,40 @@ fn chat_storage_and_audio_history_keep_request_meaning() {
 #[test]
 fn standard_known_fields_are_strict_and_sdk_views_are_not_authority() {
     let chat = adapter(GenerationApi::Chat);
+    for message in [
+        json!({"role":"assistant"}),
+        json!({"role":"assistant","content":"A","tool_calls":null}),
+    ] {
+        assert!(
+            chat.decode_client_request(
+                json!({"model":"m","messages":[message]})
+                    .to_string()
+                    .as_bytes()
+            )
+            .is_err()
+        );
+    }
+    let call = json!({"id":"c","type":"function","function":{"name":"f","arguments":"not-json"}});
+    let base = json!({"model":"m","messages":[{"role":"assistant","tool_calls":[call]}]});
+    let expected = chat
+        .decode_client_request(base.to_string().as_bytes())
+        .unwrap();
+    let mut extra = base.clone();
+    extra["messages"][0]["tool_calls"][0]["index"] = json!("not a chunk");
+    extra["session_id"] = json!({"not":"affinity"});
+    extra["enable_thinking"] = json!(false);
+    let actual = chat
+        .decode_client_request(extra.to_string().as_bytes())
+        .unwrap();
+    assert_eq!(actual.task, expected.task);
+    assert!(actual.cache_session.is_none());
+    assert!(actual.conversation.is_none());
+    assert!(
+        chat.decode_client_request(
+            br#"{"model":"m","messages":[{"role":"assistant","content":null}]}"#
+        )
+        .is_ok()
+    );
     for (key, value) in [
         ("functions", json!("")),
         ("functions", Value::Null),
@@ -65,6 +99,23 @@ fn standard_known_fields_are_strict_and_sdk_views_are_not_authority() {
         );
     }
     let responses = adapter(GenerationApi::Responses);
+    for fields in [
+        json!({"access_programs":null}),
+        json!({"input":[{"type":"reasoning","id":"r","summary":[],"status":null}]}),
+        json!({"input":[{"type":"reasoning","id":"r","summary":[],"content":null}]}),
+        json!({"tools":[{"type":"custom","name":"f","description":null}]}),
+    ] {
+        let mut body = json!({"model":"m","input":"x"});
+        body.as_object_mut()
+            .unwrap()
+            .extend(fields.as_object().unwrap().clone());
+        assert!(
+            responses
+                .decode_client_request(body.to_string().as_bytes())
+                .is_err(),
+            "{fields}"
+        );
+    }
     let body = json!({"model":"m","input":[{"type":"function_call","call_id":"c","name":"f","arguments":"{bad json","parsed_arguments":{"false":"view"}}]});
     let request = responses
         .decode_client_request(body.to_string().as_bytes())
@@ -149,6 +200,33 @@ fn damaged_or_unbound_continuation_never_becomes_successful_deletion() {
 fn responses_history_uses_complete_standard_union_shapes() {
     let codec = adapter(GenerationApi::Responses);
     let complete = json!({"type":"message","id":"msg_1","role":"assistant","status":"completed","content":[{"type":"output_text","text":"A","annotations":[]}]});
+    let mut mixed = complete.clone();
+    mixed["content"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!({"type":"input_text","text":"B"}));
+    assert!(
+        codec
+            .decode_client_request(json!({"model":"m","input":[mixed]}).to_string().as_bytes())
+            .is_err()
+    );
+    for probs in [Value::Null, json!([{"token":"A","logprob":-1.0}])] {
+        let mut bad = complete.clone();
+        bad["content"][0]["logprobs"] = probs;
+        assert!(
+            codec
+                .decode_client_request(json!({"model":"m","input":[bad]}).to_string().as_bytes())
+                .is_err()
+        );
+    }
+    let mut valid = complete.clone();
+    valid["content"][0]["logprobs"] =
+        json!([{"token":"A","logprob":-1.0,"bytes":[65],"top_logprobs":[]}]);
+    assert!(
+        codec
+            .decode_client_request(json!({"model":"m","input":[valid]}).to_string().as_bytes())
+            .is_ok()
+    );
     let request = codec
         .decode_client_request(
             json!({"model":"m","input":[complete]})
@@ -195,6 +273,35 @@ fn responses_history_uses_complete_standard_union_shapes() {
         item["content"],
         json!([{"type":"output_text","text":"A","annotations":[]}])
     );
+}
+
+#[test]
+fn stable_messages_filters_extras_without_enabling_beta_semantics() {
+    let base = json!({"model":"m","max_tokens":32,"messages":[{"role":"user","content":"x"}],"tool_choice":{"type":"auto"}});
+    let expected = decode_client_request(base.to_string().as_bytes()).unwrap();
+    let mut extra = base.clone();
+    extra["tool_choice"]["x_extra"] = json!(7);
+    extra["session_id"] = json!("ignored");
+    assert_eq!(
+        decode_client_request(extra.to_string().as_bytes())
+            .unwrap()
+            .task,
+        expected.task
+    );
+    for fields in [
+        json!({"thinking":{"type":"adaptive","block_binding":{"prefix_mismatch_behavior":"error"}}}),
+        json!({"messages":[{"role":"user","content":"x"},{"role":"system","content":[],"output_config":{"effort":"low"}}]}),
+        json!({"messages":[{"role":"user","content":"x"},{"role":"system","content":[{"type":"tool_removal","tool":{"type":"tool_reference","name":"f"}}]}]}),
+    ] {
+        let mut body = base.clone();
+        body.as_object_mut()
+            .unwrap()
+            .extend(fields.as_object().unwrap().clone());
+        assert!(
+            decode_client_request(body.to_string().as_bytes()).is_err(),
+            "{fields}"
+        );
+    }
 }
 
 fn message(role: MessageRole, name: Option<&str>, value: &str) -> Item {

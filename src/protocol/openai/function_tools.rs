@@ -143,10 +143,14 @@ pub(super) fn read_tool(
     }
     if string(o, "type")? == "custom" {
         let o = if profile == GenerationApi::Chat {
-            reject_chat_orchestration(o)?;
+            if !direction.client() {
+                reject_chat_orchestration(o)?;
+            }
             direction.fields(o, &["type", "custom"])?;
             let custom = object(o.get("custom").ok_or(CodecError::invalid())?)?;
-            reject_chat_orchestration(custom)?;
+            if !direction.client() {
+                reject_chat_orchestration(custom)?;
+            }
             custom
         } else {
             o
@@ -208,7 +212,13 @@ pub(super) fn read_tool(
                 })
             })
             .transpose()?;
-        if profile == GenerationApi::Chat && o.get("description").is_some_and(Value::is_null) {
+        if (profile == GenerationApi::Chat
+            || matches!(
+                direction,
+                DecodeDirection::Request | DecodeDirection::Client(_)
+            ))
+            && o.get("description").is_some_and(Value::is_null)
+        {
             return Err(CodecError::invalid());
         }
         return Ok(ToolDefinition::Custom(CustomTool {
@@ -226,7 +236,9 @@ pub(super) fn read_tool(
         return Err(CodecError::Unsupported(CarrierReason::Tools));
     }
     let f = if profile == GenerationApi::Chat {
-        reject_chat_orchestration(o)?;
+        if !direction.client() {
+            reject_chat_orchestration(o)?;
+        }
         direction.fields(o, &["type", "function"])?;
         object(o.get("function").ok_or(CodecError::invalid())?)?
     } else {
@@ -251,7 +263,9 @@ pub(super) fn read_tool(
         },
     )?;
     let dispatch = if profile == GenerationApi::Chat {
-        reject_chat_orchestration(f)?;
+        if !direction.client() {
+            reject_chat_orchestration(f)?;
+        }
         ToolDispatch::default()
     } else {
         dispatch(f)?
@@ -308,10 +322,14 @@ fn reference(
                 return Err(CodecError::Unsupported(CarrierReason::Tools));
             }
         };
-        reject_chat_orchestration(o)?;
+        if !direction.client() {
+            reject_chat_orchestration(o)?;
+        }
         direction.fields(o, &["type", field])?;
         let f = object(o.get(field).ok_or(CodecError::invalid())?)?;
-        reject_chat_orchestration(f)?;
+        if !direction.client() {
+            reject_chat_orchestration(f)?;
+        }
         direction.fields(f, &["name"])?;
         return Ok(ToolReference {
             kind,
@@ -434,6 +452,25 @@ pub(super) fn valid_chat_function_name(name: &str) -> bool {
         && name
             .bytes()
             .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'-'))
+}
+/// Complete response-only nullable keys after the ordinary tool writer has
+/// preserved strictness defaults. Request tools retain their own optionality.
+pub(super) fn complete_response_tool(tool: &mut Value) {
+    match tool.get("type").and_then(Value::as_str) {
+        Some("function") => {
+            let tool = tool.as_object_mut().expect("function object");
+            tool.entry("parameters").or_insert(Value::Null);
+            tool.entry("strict").or_insert(Value::Null);
+        }
+        Some("namespace") => {
+            if let Some(tools) = tool.get_mut("tools").and_then(Value::as_array_mut) {
+                for tool in tools {
+                    complete_response_tool(tool);
+                }
+            }
+        }
+        _ => {}
+    }
 }
 pub(super) fn write_tool(t: &ToolDefinition, profile: GenerationApi) -> Result<Value, CodecError> {
     Ok(match t {

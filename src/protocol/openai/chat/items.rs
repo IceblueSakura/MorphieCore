@@ -35,6 +35,9 @@ pub(super) fn request_text_parts<'a>(
             .iter()
             .map(|part| {
                 let part = object(part)?;
+                if part.contains_key("prompt_cache_breakpoint") {
+                    return Err(CodecError::Unsupported(CarrierReason::Unavailable));
+                }
                 direction.fields(part, &["type", "text"])?;
                 if string(part, "type")? != "text" {
                     return Err(CodecError::Unsupported(CarrierReason::Unavailable));
@@ -74,7 +77,9 @@ fn decode_message(
     let replay = side == MessageSide::History;
     let direction = b.direction;
     let role = string(m, "role")?;
-    reject_chat_orchestration(m)?;
+    if !direction.client() {
+        reject_chat_orchestration(m)?;
+    }
     // Chat lowering has no explicit-prefix carrier. Reject before permissive
     // client field filtering can discard the requested cache boundary.
     if replay
@@ -265,12 +270,15 @@ fn decode_message(
             }
             let calls = m
                 .get("tool_calls")
-                .filter(|v| !v.is_null())
+                .filter(|v| replay || !v.is_null())
                 .map(|v| v.as_array().ok_or(CodecError::invalid()))
                 .transpose()?
                 // An explicitly empty list declares no calls and normalizes to
                 // absent, matching the streaming path (ADR 0008).
                 .filter(|calls| !calls.is_empty());
+            if replay && role == "assistant" && !m.contains_key("content") && calls.is_none() {
+                return Err(CodecError::invalid());
+            }
             let refusal = match m.get("refusal") {
                 None | Some(Value::Null) => None,
                 Some(Value::String(value)) if role == "assistant" => Some(
@@ -428,26 +436,20 @@ fn decode_message(
                 }),
             ));
             if let Some(calls) = calls {
-                for (position, c) in calls.iter().enumerate() {
+                for c in calls {
                     let call = object(c)?;
-                    // The SDK's chat stream accumulation leaks the chunk index into
-                    // message-level calls and providers echo it; whenever present it
-                    // must agree with the message position.
-                    match call.get("index") {
-                        None | Some(Value::Null) => {}
-                        Some(v) if v.as_u64() == Some(position as u64) => {}
-                        _ => {
-                            return Err(CodecError::invalid());
-                        }
-                    }
                     let item = if string(call, "type")? == "custom" {
-                        reject_chat_orchestration(call)?;
-                        direction.fields(call, &["id", "type", "custom", "index"])?;
+                        if !direction.client() {
+                            reject_chat_orchestration(call)?;
+                        }
+                        direction.fields(call, &["id", "type", "custom"])?;
                         if call.contains_key("function") {
                             return Err(CodecError::invalid());
                         }
                         let custom = object(call.get("custom").ok_or(CodecError::invalid())?)?;
-                        reject_chat_orchestration(custom)?;
+                        if !direction.client() {
+                            reject_chat_orchestration(custom)?;
+                        }
                         direction.fields(custom, &["name", "input"])?;
                         Item::CustomCall(CustomCall {
                             call_id: text(string(call, "id")?, "call id", 256)?,

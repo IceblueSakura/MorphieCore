@@ -39,8 +39,11 @@ def run(base_url: str) -> None:
         native_audio_requests = check_native_audio(client)
         invalid = [
             {"reasoning": {"summary": False}},
-            {"extra_body": {"session_id": "synthetic-session"}},
-            {"extra_body": {"session_id": None}},
+            {"extra_body": {"access_programs": None}},
+            {"input": [{"type": "message", "role": "assistant", "id": "x",
+                        "status": "completed", "content": [
+                            {"type": "input_text", "text": "a"},
+                            {"type": "output_text", "text": "b", "annotations": []}]}]},
             {"tools": [{"type": "function", **function, "async": None}]},
             {"tools": [{"type": "function", **function, "defer_loading": None}]},
             {"tools": [{"type": "function", "name": "lookup", "strict": True,

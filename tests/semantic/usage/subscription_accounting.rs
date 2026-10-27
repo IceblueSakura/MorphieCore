@@ -69,12 +69,12 @@ fn siwc_uses_only_closed_public_programs_in_static_and_event_snapshots() {
         .unwrap();
     assert_eq!(projected["usage"]["attribution"], expected_attribution);
     assert_eq!(decoded.semantic.usage().unwrap().input_tokens, Some(3));
-    assert!(
+    assert_eq!(
         adapter(Dialect::MorphieCore, "one")
             .encode_response(&decoded, &Contract::full())
             .unwrap()
-            .get("access_programs")
-            .is_none()
+            .get("access_programs"),
+        Some(&Value::Null)
     );
     let mut decoder = source.event_decoder();
     for mut event in crate::wire::events(2) {

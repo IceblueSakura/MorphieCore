@@ -421,7 +421,9 @@ pub(in crate::protocol::openai) fn validate_item_snapshot(v: &Value) -> Result<(
         for p in parts {
             validate_part_snapshot(p)?;
         }
-    } else if matches!(string(o, "type")?, "reasoning" | "configuration_update") {
+    } else if string(o, "type")? == "configuration_update" {
+        return Err(CodecError::Unsupported(CarrierReason::Unavailable));
+    } else if string(o, "type")? == "reasoning" {
         // These snapshots require identity; task codecs still assign fresh identity.
         text(string(o, "id")?, "wire item id", 256)?;
     }
@@ -435,18 +437,9 @@ pub(in crate::protocol::openai) fn validate_part_snapshot(v: &Value) -> Result<(
         }
     }
     if v.get("type").and_then(Value::as_str) == Some("output_text")
-        && let Some(probs) = v.get("logprobs").filter(|v| !v.is_null())
+        && let Some(probs) = v.get("logprobs")
     {
-        for p in crate::protocol::openai::content::text::read_logprobs(probs)? {
-            if p.bytes.is_none()
-                || p.top_logprobs.as_ref().is_none_or(|v| {
-                    v.iter()
-                        .any(|p| p.token.is_none() || p.logprob.is_none() || p.bytes.is_none())
-                })
-            {
-                return Err(CodecError::invalid());
-            }
-        }
+        crate::protocol::openai::content::text::complete_logprobs(probs)?;
     }
     Ok(())
 }
@@ -489,6 +482,18 @@ pub(in crate::protocol::openai) fn write_metadata(
     metadata
         .context
         .write(&metadata.instruction_fidelity, o, completed)?;
+    // Required nullable wire members are not invented observations in the IR.
+    for field in [
+        "access_programs",
+        "error",
+        "incomplete_details",
+        "instructions",
+        "metadata",
+        "temperature",
+        "top_p",
+    ] {
+        o.entry(field).or_insert(Value::Null);
+    }
     // Fill independently: explicit empty lists and false are real observations.
     if let Some(delivery) = &metadata.delivery {
         let mut defaults = Map::new();
@@ -510,6 +515,11 @@ pub(in crate::protocol::openai) fn write_metadata(
             &storage.previous_response_id,
             |value| json!(value),
         );
+    }
+    if let Some(tools) = o.get_mut("tools").and_then(Value::as_array_mut) {
+        for tool in tools {
+            crate::protocol::openai::function_tools::complete_response_tool(tool);
+        }
     }
     Ok(())
 }
@@ -543,5 +553,31 @@ mod tests {
         assert_eq!(wire["tools"][0]["name"], "lookup");
         assert_eq!(wire["parallel_tool_calls"], false);
         assert_eq!(wire["tool_choice"], "none");
+        for key in [
+            "access_programs",
+            "error",
+            "incomplete_details",
+            "instructions",
+            "metadata",
+            "temperature",
+            "top_p",
+        ] {
+            assert_eq!(wire.get(key), Some(&Value::Null), "{key}");
+        }
+        let settings = source.metadata.delivery.as_ref().unwrap().settings.clone();
+        let mut settings = settings;
+        let ToolDefinition::Function(tool) = &mut settings.tools.as_mut().unwrap()[0] else {
+            panic!("function")
+        };
+        tool.parameters = None;
+        tool.strict = FunctionStrictness::Omitted(StrictDefault::NormalizeSchema);
+        source.metadata.delivery = Some(std::sync::Arc::new(crate::protocol::GenerationDelivery {
+            settings,
+            usage: None,
+        }));
+        wire.clear();
+        write_metadata(&source.metadata, &mut wire, false).unwrap();
+        assert_eq!(wire["tools"][0].get("parameters"), Some(&Value::Null));
+        assert_eq!(wire["tools"][0].get("strict"), Some(&Value::Null));
     }
 }

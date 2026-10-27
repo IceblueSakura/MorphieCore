@@ -173,6 +173,11 @@ pub(crate) fn decode_generation_with(
             settings.reasoning.presence = ReasoningPresence::Present;
             settings.reasoning.read_history =
                 Presence::Value(value.as_bool().ok_or(CodecError::invalid())?);
+        } else if direction.client() {
+            direction.fields(
+                &Map::from_iter([("preserve_thinking".into(), value.clone())]),
+                &[],
+            )?;
         } else {
             return Err(CodecError::Unsupported(CarrierReason::Reasoning));
         }

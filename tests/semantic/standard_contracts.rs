@@ -383,16 +383,21 @@ fn public_chat_profiles_keep_controls_and_returned_reasoning_explicit() {
     let base = json!({"model":"public","messages":[{"role":"user","content":"go"}],
         "reasoning_effort":"low"});
     for codec in [&standard, &readable] {
+        let original = codec
+            .decode_client_request(base.to_string().as_bytes())
+            .unwrap()
+            .task;
         for field in ["enable_thinking", "thinking_budget", "top_k"] {
             for value in [Value::Null, json!(false), json!(32)] {
                 let mut body = base.clone();
                 body[field] = value;
-                assert!(matches!(
-                    codec.decode_client_request(body.to_string().as_bytes()),
-                    Err(morphiecore::protocol::CodecError::Unsupported(
-                        morphiecore::protocol::failure::CarrierReason::UnknownField
-                    ))
-                ));
+                assert_eq!(
+                    codec
+                        .decode_client_request(body.to_string().as_bytes())
+                        .unwrap()
+                        .task,
+                    original
+                );
             }
         }
         let mut body = base.clone();
@@ -410,7 +415,7 @@ fn public_chat_profiles_keep_controls_and_returned_reasoning_explicit() {
     assert!(
         standard
             .decode_client_request(body.to_string().as_bytes())
-            .is_err()
+            .is_ok()
     );
     let decoded = readable
         .decode_client_request(body.to_string().as_bytes())
@@ -438,7 +443,7 @@ fn public_chat_profiles_keep_controls_and_returned_reasoning_explicit() {
         assert!(
             readable
                 .decode_client_request(body.to_string().as_bytes())
-                .is_err()
+                .is_ok()
         );
         body["messages"][0].as_object_mut().unwrap().remove(field);
     }
@@ -446,13 +451,14 @@ fn public_chat_profiles_keep_controls_and_returned_reasoning_explicit() {
     assert!(
         standard
             .decode_client_request(body.to_string().as_bytes())
-            .is_err()
+            .is_ok()
     );
 }
 
 #[test]
 fn prediction_survives_same_protocol_projection() {
     let adapter = adapter(GenerationApi::Chat);
+    assert!(adapter.decode_client_request(br#"{"model":"m","messages":[{"role":"user","content":"x"}],"prediction":{"type":"content","content":[{"type":"text","text":"A","prompt_cache_breakpoint":{"mode":"explicit"}}]}}"#).is_err());
     let wire = json!({"model":"public", "messages":[{"role":"user","content":"Edit"}],
         "prediction":{"type":"content","content":"hello"}});
     let request = adapter
@@ -829,7 +835,11 @@ fn messages_accepts_direct_only_function_tools() {
                 .push(json!({"role":"system","content":[
                 {"type":"tool_addition","tool":{"type":"tool_definition","definition":tool}}]}));
         }
-        decode_client_request(body.to_string().as_bytes()).unwrap();
+        if inline {
+            assert!(decode_client_request(body.to_string().as_bytes()).is_err());
+        } else {
+            decode_client_request(body.to_string().as_bytes()).unwrap();
+        }
         for value in [
             Value::Null,
             json!("direct"),
@@ -851,9 +861,11 @@ fn messages_accepts_direct_only_function_tools() {
             tool["allowed_callers"] = value;
             assert_eq!(
                 decode_client_request(bad.to_string().as_bytes()).unwrap_err(),
-                morphiecore::protocol::CodecError::Unsupported(
+                morphiecore::protocol::CodecError::Unsupported(if inline {
+                    morphiecore::protocol::failure::CarrierReason::Unavailable
+                } else {
                     morphiecore::protocol::failure::CarrierReason::Tools
-                )
+                })
             );
         }
         let mut bad = body.clone();
@@ -865,9 +877,11 @@ fn messages_accepts_direct_only_function_tools() {
         tool["type"] = json!("code_execution_20260521");
         assert_eq!(
             decode_client_request(bad.to_string().as_bytes()).unwrap_err(),
-            morphiecore::protocol::CodecError::Unsupported(
+            morphiecore::protocol::CodecError::Unsupported(if inline {
+                morphiecore::protocol::failure::CarrierReason::Unavailable
+            } else {
                 morphiecore::protocol::failure::CarrierReason::Tools
-            )
+            })
         );
     }
 }

@@ -269,7 +269,16 @@ fn messages_only_controls_leave_chat_targets_by_named_rules() {
     // observable: it rejects before reasoning projection.
     body["thinking"] = json!({"type":"adaptive",
             "block_binding":{"prefix_mismatch_behavior":"error"}});
-    let request = decode_client_request(body.to_string().as_bytes()).unwrap();
+    assert!(decode_client_request(body.to_string().as_bytes()).is_err());
+    let native = morphiecore::protocol::anthropic::messages::Profile::AdaptiveTextTools
+        .decode_generation_request(
+            body.to_string().as_bytes(),
+            morphiecore::semantic::task::generation::LocalScope::ROOT,
+            &morphiecore::protocol::native::ReplayTarget::new("synthetic", "m").unwrap(),
+        )
+        .unwrap();
+    let request =
+        morphiecore::protocol::GenerationRequestEnvelope::from_generation(native, "m").unwrap();
     assert!(matches!(endpoint.encode_request_with_rules(&request),
             Err(morphiecore::protocol::ConversionFailure { cause: morphiecore::protocol::ConversionCause::Codec(CodecError::Unsupported(field)), .. })
                 if matches!(field,morphiecore::protocol::failure::CarrierReason::Reasoning)));

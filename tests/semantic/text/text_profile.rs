@@ -1004,6 +1004,10 @@ fn reported_cache_context_is_an_independent_response_fact() {
         "metadata",
         "service_tier",
     ] {
-        assert!(out.get(key).is_none(), "{key}");
+        if key == "metadata" {
+            assert_eq!(out.get(key), Some(&Value::Null));
+        } else {
+            assert!(out.get(key).is_none(), "{key}");
+        }
     }
 }

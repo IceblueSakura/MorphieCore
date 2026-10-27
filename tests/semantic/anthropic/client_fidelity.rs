@@ -10,6 +10,22 @@ use morphiecore::{
 };
 use serde_json::json;
 
+/// Beta carriers remain available to trusted native bindings, not stable clients.
+fn native_request(body: &serde_json::Value) -> morphiecore::protocol::GenerationRequestEnvelope {
+    use morphiecore::protocol::{
+        GenerationRequestEnvelope, anthropic::messages::Profile, native::ReplayTarget,
+    };
+    assert!(decode_client_request(body.to_string().as_bytes()).is_err());
+    let decoded = Profile::AdaptiveTextTools
+        .decode_generation_request(
+            body.to_string().as_bytes(),
+            LocalScope::ROOT,
+            &ReplayTarget::new("synthetic", "m").unwrap(),
+        )
+        .unwrap();
+    GenerationRequestEnvelope::from_generation(decoded, "m").unwrap()
+}
+
 fn response() -> DecodedResponse {
     // Orthogonal content/usage fixtures carry an explicit, representable terminal.
     DecodedResponse {
@@ -55,90 +71,29 @@ fn response() -> DecodedResponse {
     }
 }
 #[test]
-fn unsigned_reasoning_delivery_is_not_standard_request_history() {
+fn unsigned_reasoning_delivery_rejects_without_changing_the_source() {
     use morphiecore::{adapter::ClientAdapter, semantic::value::Text};
-    let text = |s| Text::allowing_empty(s, "test", MAX_TEXT_BYTES).unwrap();
     let mut source = response();
-    let mut usage = Usage::operation(2, 3, 5);
-    usage.cached_input_tokens = Some(0);
-    source.semantic = source.semantic.with_usage(Some(usage)).unwrap();
-    let reasoning = ReasoningItem {
-        parts: vec![
-            (PartId::new(10), ReasoningContent::Text(text(" 思考\n"))),
-            (PartId::new(11), ReasoningContent::Summary(text(""))),
-            (PartId::new(12), ReasoningContent::Summary(text("summary"))),
-            (PartId::new(13), ReasoningContent::Text(text(" tail "))),
-        ],
-        status: ItemLifecycle::Completed,
-        replay: None,
-    };
-    let mut items = vec![(ItemId::new(2), Item::Reasoning(reasoning.clone()))];
+    let mut items = vec![(
+        ItemId::new(2),
+        Item::Reasoning(ReasoningItem {
+            parts: vec![(
+                PartId::new(10),
+                ReasoningContent::Summary(Text::new("plan", "test", 64).unwrap()),
+            )],
+            status: ItemLifecycle::Completed,
+            replay: None,
+        }),
+    )];
     items.extend(source.semantic.items().iter().cloned());
     source.semantic = source.semantic.with_items(items).unwrap();
     let original = source.clone();
-    let (retained, wire) = ClientAdapter::Messages.snapshot(source.clone()).unwrap();
+    assert!(ClientAdapter::Messages.snapshot(source.clone()).is_err());
     assert_eq!(
-        wire["content"],
-        json!([
-        {"type":"thinking","thinking":" 思考\nsummary tail ","signature":""},
-        {"type":"text","text":"answer"}])
-    );
-    let expected = ReasoningItem {
-        parts: vec![(
-            PartId::new(10),
-            ReasoningContent::Summary(text(" 思考\nsummary tail ")),
-        )],
-        status: ItemLifecycle::Completed,
-        replay: None,
-    };
-    assert_eq!(
-        retained.semantic.items()[0],
-        (ItemId::new(2), Item::Reasoning(expected))
-    );
-    assert_eq!(source, original);
-    let (again, second_wire) = ClientAdapter::Messages.snapshot(retained.clone()).unwrap();
-    assert_eq!(again, retained);
-    assert_eq!(second_wire, wire);
-    let request = decode_client_request(
-        json!({"model":"m","max_tokens":32,"messages":[
-            {"role":"user","content":"go"}, {"role":"assistant","content":wire["content"]},
-            {"role":"user","content":"continue"}
-        ]})
-        .to_string()
-        .as_bytes(),
-    );
-    assert!(request.is_err());
-    let mut signed = source.clone();
-    let mut items = signed.semantic.items().to_vec();
-    let Item::Reasoning(r) = &mut items[0].1 else {
-        panic!("reasoning")
-    };
-    r.replay = Some(ReplayValue::final_value(
-        ReplayFormat::AnthropicMessagesThinking,
-        text("signature"),
-    ));
-    signed.semantic = signed.semantic.with_items(items).unwrap();
-    assert_eq!(
-        encode_client_response(&signed, "m").unwrap_err(),
+        encode_client_response(&source, "m").unwrap_err(),
         CodecError::Unsupported(morphiecore::protocol::failure::CarrierReason::Replay)
     );
-    let mut large = source;
-    let mut items = large.semantic.items().to_vec();
-    let Item::Reasoning(r) = &mut items[0].1 else {
-        panic!("reasoning")
-    };
-    r.parts = vec![
-        (
-            PartId::new(10),
-            ReasoningContent::Text(text(&"x".repeat(MAX_TEXT_BYTES))),
-        ),
-        (PartId::new(11), ReasoningContent::Summary(text("y"))),
-    ];
-    large.semantic = large.semantic.with_items(items).unwrap();
-    assert_eq!(
-        encode_client_response(&large, "m").unwrap_err(),
-        CodecError::Limit
-    );
+    assert_eq!(source, original);
 }
 
 fn terminal() -> StreamEvent {
@@ -423,7 +378,7 @@ fn leading_instructions_compose_once_and_effort_boundaries_split_same_role_histo
         {"role":"user","content":"first"},
         {"role":"system","content":[],"output_config":{"effort":"low"}},
         {"role":"user","content":"second"}]});
-    let request = decode_client_request(body.to_string().as_bytes()).unwrap();
+    let request = native_request(&body);
     let original = request.clone();
     let projection = caps.encode_request(&request, &target).unwrap();
     assert_eq!(
@@ -524,7 +479,11 @@ fn nullable_tool_defaults_normalize_without_disabling_eager_input_or_inventing_c
         let body = json!({"model":"m","max_tokens":32,"tools":[definition],
             "messages":[{"role":"user","content":"go"},{"role":"system","content":[
                 {"type":"tool_addition","tool":{"type":"tool_definition","definition":later}}]}]});
-        let decoded = decode_client_request(body.to_string().as_bytes()).unwrap();
+        let decoded = native_request(&body);
+        let mut stable = body.clone();
+        stable["messages"].as_array_mut().unwrap().truncate(1);
+        let stable = decode_client_request(stable.to_string().as_bytes()).unwrap();
+        assert_eq!(stable.task.semantic.tools(), decoded.task.semantic.tools());
         let native = profile
             .decode_generation_request(body.to_string().as_bytes(), LocalScope::ROOT, &target)
             .unwrap();
@@ -656,7 +615,7 @@ fn messages_tool_examples_keep_order_presence_and_tool_change_owners() {
         "messages":[{"role":"user","content":[{"type":"text","text":"go"}]},
         {"role":"system","content":[{"type":"tool_addition","tool":{"type":"tool_definition",
             "definition":{"name":"later","strict":false,"input_schema":schema,"input_examples":[]}}}]}]});
-    let decoded = decode_client_request(body.to_string().as_bytes()).unwrap();
+    let decoded = native_request(&body);
     let ToolDefinition::Function(tool) = &decoded.task.semantic.tools()[0] else {
         panic!("function")
     };
@@ -852,10 +811,7 @@ fn messages_tool_examples_reject_nonobjects_and_account_for_resource_bounds() {
                 .decode_request(bytes.as_bytes())
                 .err()
                 .unwrap();
-            assert_eq!(
-                decode_client_request(bytes.as_bytes()).err().unwrap(),
-                native_error
-            );
+            assert!(decode_client_request(bytes.as_bytes()).is_err());
             if value.is_null() {
                 assert_eq!(
                     native_error,
@@ -1579,7 +1535,7 @@ fn pi_haiku_profile_keeps_carriers_or_records_rules() {
                     {"type":"tool_addition","tool":{"type":"tool_definition","definition":
                         {"name":"write","input_schema":strict,"strict":true}}}]},
                 {"role":"system","content":[],"output_config":{"effort":"medium"}}]});
-    let decoded = decode_client_request(body.to_string().as_bytes()).unwrap();
+    let decoded = native_request(&body);
     let semantic = &decoded.task.semantic;
     assert_eq!(
         semantic.reasoning().replay_mismatch,
@@ -1615,15 +1571,9 @@ fn pi_haiku_profile_keeps_carriers_or_records_rules() {
     caps.semantics = anthropic::messages::Profile::AdaptiveTextTools.representation_contract();
     caps.carriers = anthropic::messages::Carriers::all();
     let exact = caps.encode_request(&decoded, &target).unwrap();
-    assert_eq!(
-        exact.evidence.iter().cloned().collect::<Vec<_>>(),
-        [morphiecore::protocol::conversion::generation::Effect::new(
-            "messages.normalize-tool-arguments.v1",
-            morphiecore::protocol::conversion::generation::Field::ToolArguments,
-            morphiecore::protocol::conversion::generation::ConversionBoundary::RequestEncode,
-            morphiecore::protocol::conversion::generation::Change::Normalize
-        )
-        .at(morphiecore::protocol::conversion::generation::Owner::Item { scope: 0, index: 3 })]
+    assert!(
+        exact.evidence.is_empty(),
+        "native arguments are already structured"
     );
     let wire = &exact.value;
     assert_eq!(wire["thinking"], body["thinking"]);
@@ -1669,7 +1619,6 @@ fn pi_haiku_profile_keeps_carriers_or_records_rules() {
     assert_eq!(
         rules,
         [
-            "messages.normalize-tool-arguments.v1",
             "messages.omit-block-binding.v1",
             "messages.flatten-message-effort.v1",
             "messages.collapse-tool-changes.v1"
@@ -1699,13 +1648,13 @@ fn pi_haiku_profile_keeps_carriers_or_records_rules() {
                 {"type":"tool_use","id":"t1","name":"read","input":{"path":"a"}}]},
             {"role":"user","content":[{"type":"tool_result","tool_use_id":"t1","content":"A"}]},
             {"role":"system","content":[],"output_config":{"effort":"low"}}]);
-    let decoded = decode_client_request(pending.to_string().as_bytes()).unwrap();
+    let decoded = native_request(&pending);
     let flat = caps.encode_request(&decoded, &target).unwrap();
     assert_eq!(flat.value["output_config"], json!({"effort":"high"}));
     // Explicit enforcement has no carrier to degrade to.
     let mut enforced = pending;
     enforced["thinking"]["block_binding"]["prefix_mismatch_behavior"] = json!("error");
-    let decoded = decode_client_request(enforced.to_string().as_bytes()).unwrap();
+    let decoded = native_request(&enforced);
     assert!(caps.encode_request(&decoded, &target).is_err());
     caps.carriers.block_binding = true;
     assert_eq!(
@@ -1732,7 +1681,9 @@ fn pi_haiku_profile_keeps_carriers_or_records_rules() {
         misplaced["messages"][index] =
             json!({"role":role,"content":[{"type":"text","text":"x"},block]});
         assert_eq!(
-            decode_client_request(misplaced.to_string().as_bytes()).unwrap_err(),
+            morphiecore::protocol::anthropic::messages::Profile::AdaptiveTextTools
+                .decode_request(misplaced.to_string().as_bytes())
+                .unwrap_err(),
             CodecError::Invalid(morphiecore::protocol::failure::ShapeReason::InvalidValue)
         );
     }
@@ -1740,7 +1691,8 @@ fn pi_haiku_profile_keeps_carriers_or_records_rules() {
     let mut misplaced = body;
     misplaced["messages"][0]["output_config"] = json!({"effort":"low"});
     assert!(matches!(
-        decode_client_request(misplaced.to_string().as_bytes()),
+        morphiecore::protocol::anthropic::messages::Profile::AdaptiveTextTools
+            .decode_request(misplaced.to_string().as_bytes()),
         Err(CodecError::Invalid(
             morphiecore::protocol::failure::ShapeReason::InvalidValue
         ))
