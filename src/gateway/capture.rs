@@ -23,28 +23,39 @@ use std::{
     task::{Context, Poll},
 };
 
+/// Selection flags for capturing headers and bodies at an exchange boundary.
 #[derive(Clone, Copy, Debug, Default, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct Selection {
     pub headers: bool,
     pub body: bool,
 }
+
+/// Configuration for opt-in diagnostic HTTP exchange capture across four pipeline boundaries.
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CaptureConfig {
+    /// File path where captured JSONL exchange records are appended.
     pub path: PathBuf,
+    /// Inbound client request capture selection.
     #[serde(default)]
     pub client_request: Selection,
+    /// Outbound upstream request capture selection.
     #[serde(default)]
     pub upstream_request: Selection,
+    /// Inbound upstream response capture selection.
     #[serde(default)]
     pub upstream_response: Selection,
+    /// Outbound client response capture selection.
     #[serde(default)]
     pub client_response: Selection,
+    /// Maximum byte size permitted per individual captured unit (default 256 KiB).
     #[serde(default = "unit_limit")]
     pub max_unit_bytes: usize,
+    /// Maximum cumulative bytes captured per whole exchange (default 4 MiB).
     #[serde(default = "exchange_limit")]
     pub max_exchange_bytes: usize,
+    /// Hard total storage quota before capture halts safely (default 64 MiB).
     #[serde(default = "total_limit")]
     pub max_total_bytes: usize,
 }

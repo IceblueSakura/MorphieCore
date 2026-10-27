@@ -609,13 +609,17 @@ The declared conversation (`X-MorphieCore-Conversation-Id`) is the routing unit.
 
 ### Conversation and cache affinity
 
-- `X-MorphieCore-Conversation-Id` establishes route affinity across multi-turn exchanges.
+Affinity keys and advisory cache policies are defined in [`protocol::cache`](file:///home/sakura/development/MorphieCore/src/protocol/cache.rs):
+- `X-MorphieCore-Conversation-Id` establishes route affinity across multi-turn exchanges via hashed SHA-256 grouping keys.
 - Fallback prefix cache indexing provides best-effort routing affinity when conversation IDs are omitted.
+- Target cache capabilities are enforced via [`CacheTargetPolicy`](file:///home/sakura/development/MorphieCore/src/protocol/cache.rs#L48), omitting unsupported advisory hints under declared loss rules.
 
 ### Streaming and delivery
 
-- **Pre-publication holding:** Lifecycle-only frames are buffered (up to 64 KiB or 20s) until first content delta arrives, allowing unpublished failures to fail over cleanly.
-- **Publication freeze:** Flushing content frames irreversibly freezes advancement. Subsequent failures abort the stream with terminal error events.
+Delivery lifecycle and event streaming are coordinated by [`ResponseDelivery`](file:///home/sakura/development/MorphieCore/src/execution/delivery.rs#L100) under [`SseLimits`](file:///home/sakura/development/MorphieCore/src/protocol/stream.rs#L8):
+- **Pre-publication holding:** Lifecycle-only frames are buffered until the first content delta arrives, allowing unpublished failures to fail over cleanly.
+- **Publication freeze:** Flushing content frames irreversibly freezes candidate advancement; subsequent upstream failures abort the stream with terminal error events.
+- **Honest completion:** Streams require validated upstream EOF before downstream release.
 
 #### Semantic stream normalization
 
@@ -662,14 +666,15 @@ Configured via [`DeltaCoalescing`](file:///home/sakura/development/MorphieCore/s
 
 ### Configurable exchange capture
 
-Opt-in diagnostic capture records full HTTP headers and bodies at four boundaries:
-1. Inbound client request
-2. Outbound upstream request
-3. Inbound upstream response
-4. Outbound client response
+Opt-in diagnostic capture configured via [`gateway::capture::CaptureConfig`](file:///home/sakura/development/MorphieCore/src/gateway/capture.rs#L34) records sanitized HTTP headers and bodies at four pipeline boundaries:
+1. Inbound client request (`client_request`)
+2. Outbound upstream request (`upstream_request`)
+3. Inbound upstream response (`upstream_response`)
+4. Outbound client response (`client_response`)
 
-- **Sanitization:** Authorization headers, cookies, API keys, and query tokens are redacted before enqueueing.
-- **Isolation:** Best-effort asynchronous writer; storage saturation or write failure never interrupts inference.
+- **Sanitization:** Authorization headers, cookies, API keys, and query tokens are strictly redacted before enqueueing.
+- **Bounded quotas:** Configured per-unit (256 KiB), per-exchange (4 MiB), and total file quota (64 MiB).
+- **Isolation:** Best-effort asynchronous worker; buffer saturation or write failure never blocks inference.
 
 ## Settled decisions
 

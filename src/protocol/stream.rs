@@ -1,17 +1,26 @@
-//! Shared bounded SSE admission and codec errors; no socket I/O or wire grammar.
+//! Shared bounded SSE admission and codec limits.
+//!
+//! Enforces bounded memory and event consumption across upstream and downstream
+//! SSE event streams without socket I/O or protocol wire grammar dependencies.
 use crate::{
     protocol::CodecError, semantic::task::generation::MAX_TOTAL_BYTES,
     transport::sse::SseDecodeError,
 };
+
+/// Hard resource consumption bounds for Server-Sent Events (SSE) streams.
 #[derive(Clone, Copy, Debug)]
 pub struct SseLimits {
+    /// Maximum byte size of an individual SSE event data payload.
     pub max_event_bytes: usize,
+    /// Maximum cumulative wire byte limit allowed for an entire stream session.
     pub max_wire_bytes: usize,
+    /// Maximum total event count permitted before terminating the stream.
     pub max_events: usize,
     /// Aggregate decoded UTF-8 padding bytes; independent of wire and semantic budgets.
-    /// Zero forbids nonempty padding without disabling unpadded streams.
+    /// Zero forbids non-empty padding without disabling unpadded streams.
     pub max_obfuscation_bytes: usize,
 }
+
 impl Default for SseLimits {
     fn default() -> Self {
         Self {
@@ -22,7 +31,9 @@ impl Default for SseLimits {
         }
     }
 }
+
 impl SseLimits {
+    /// Validates that limits are non-zero.
     pub(crate) fn validate(self) -> Result<(), SseError> {
         if self.max_event_bytes == 0 || self.max_wire_bytes == 0 || self.max_events == 0 {
             return Err(SseError::Limit);
@@ -30,6 +41,10 @@ impl SseLimits {
         Ok(())
     }
 }
+
+/// Validates HTTP status and Content-Type for incoming SSE streams.
+///
+/// Requires HTTP 200 and `text/event-stream; charset=utf-8`.
 pub(crate) fn validate_http(status: u16, content_type: &str) -> Result<(), SseError> {
     let media: mime::Mime = content_type.parse().map_err(|_| SseError::Http)?;
     if status != 200
@@ -43,6 +58,8 @@ pub(crate) fn validate_http(status: u16, content_type: &str) -> Result<(), SseEr
     }
     Ok(())
 }
+
+/// SSE transport and admission error classifications.
 #[derive(Clone, Debug, thiserror::Error)]
 pub enum SseError {
     #[error("invalid SSE HTTP status or content type")]

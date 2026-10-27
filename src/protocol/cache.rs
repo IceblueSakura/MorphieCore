@@ -1,4 +1,11 @@
-//! Explicit upstream cache carriers. No cache storage, session state or routing decisions.
+//! Explicit upstream cache carriers and routing affinity keys.
+//!
+//! # Privacy and Scoping
+//! - **No Shared State**: This module does not manage cache storage, session data, or
+//!   routing execution.
+//! - **Private Identifiers**: Cache keys and caller conversation identities are hashed
+//!   via SHA-256 (`affinity_key`) and kept private; raw identifiers never cross upstream
+//!   boundaries unless supported by an explicit target carrier.
 use super::openai::CodecError;
 use crate::{
     protocol::failure::CarrierReason,
@@ -27,6 +34,7 @@ fn grouping_key(id: &[u8], kind: u8, domain: &[u8]) -> String {
         .map(|byte| format!("{byte:02x}"))
         .collect()
 }
+
 /// Candidate-local optimization input, never caller conversation identity.
 #[derive(Clone, Copy, Eq, PartialEq)]
 pub(crate) struct InferredAffinity(pub(crate) [u8; 16]);
@@ -35,16 +43,23 @@ impl std::fmt::Debug for InferredAffinity {
         f.write_str("InferredAffinity([redacted])")
     }
 }
+
+/// Explicit upstream cache carriers supported by a model target.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct CacheTargetPolicy {
+    /// Target supports native cache keys.
     pub key: bool,
+    /// Target supports cache retention settings.
     pub retention: bool,
     /// Trusted opt-in after reviewing this target's default storage policy.
     /// Only the extended-cache preference may be omitted; this is not a carrier.
     pub omit_day_retention: bool,
+    /// Target supports cache options.
     pub options: bool,
+    /// Target supports explicit session IDs.
     pub session_id: bool,
 }
+
 /// Omitted advisory execution hints. Fixed field labels only; cache values and
 /// caller identifiers stay private.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]

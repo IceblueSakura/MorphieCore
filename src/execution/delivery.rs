@@ -87,6 +87,16 @@ enum ProjectionPhase {
     Rejected,
 }
 
+/// Coordinates incremental projection, event queuing, and explicit I/O-owned commit.
+///
+/// # Delivery Invariants
+/// - **Pre-Publication Holding**: Initial lifecycle frames are held in memory until the first
+///   content delta is ready, enabling clean failover advancement on unpublished failures.
+/// - **Publication Freeze**: Flushing content frames commits the delivery, permanently
+///   freezing candidate advancement and translating subsequent upstream failures into
+///   terminal error stream events.
+/// - **Honest Completion**: Successful termination requires validated upstream EOF before
+///   releasing downstream connections.
 pub struct ResponseDelivery {
     report: Report,
     deferred_evidence: EvidenceDelta,
