@@ -340,7 +340,7 @@ impl ApiError {
             ErrorKind::ModelNotFound => (
                 StatusCode::NOT_FOUND,
                 "not_found_error",
-                "The requested model does not exist or is not available for this endpoint.".into(),
+                "model_not_found: The requested model does not exist or is not available for this endpoint.".into(),
             ),
             ErrorKind::Unauthorized => (
                 StatusCode::UNAUTHORIZED,
