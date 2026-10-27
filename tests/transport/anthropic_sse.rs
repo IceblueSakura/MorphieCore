@@ -28,8 +28,8 @@ fn frames() -> Vec<Value> {
         json!({"type":"ping"}),
         json!({"type":"content_block_start","index":0,"content_block":{"type":"thinking","thinking":"","signature":""}}),
         json!({"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"雪"}}),
-        json!({"type":"content_block_delta","index":0,"delta":{"type":"signature_delta","signature":"sig-"}}),
-        json!({"type":"content_block_delta","index":0,"delta":{"type":"signature_delta","signature":"tail"}}),
+        json!({"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":""}}),
+        json!({"type":"content_block_delta","index":0,"delta":{"type":"signature_delta","signature":"sig-tail"}}),
         json!({"type":"content_block_stop","index":0}),
         json!({"type":"content_block_start","index":1,"content_block":{"type":"text","text":""}}),
         json!({"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"ok"}}),
@@ -269,6 +269,50 @@ fn audit_nullable_usage_deltas_preserve_known_counts_but_zero_updates_them() {
         );
     }
 }
+#[test]
+fn signature_is_one_opaque_value_and_repetition_poisons_the_stream() {
+    // https://platform.claude.com/docs/en/build-with-claude/thinking:
+    // thinking deltas are followed by a single signature_delta before block stop.
+    use morphiecore::protocol::{CodecError, failure::ShapeReason};
+    let original = frames();
+    for thinking in ["雪", ""] {
+        for repeated in ["sig-tail", "another-value", ""] {
+            let mut input = original.clone();
+            input[3]["delta"]["thinking"] = json!(thinking);
+            input.insert(
+                6,
+                json!({"type":"content_block_delta","index":0,
+                "delta":{"type":"signature_delta","signature":repeated}}),
+            );
+            let mut decoder =
+                MessageSseDecoder::new(200, "text/event-stream", SseLimits::default()).unwrap();
+            // Prove the first signature was valid and rejection is at the second.
+            feed(&mut decoder, &wire(&input[..6])).unwrap();
+            assert!(matches!(
+                feed(&mut decoder, &wire(&input[6..7])),
+                Err(SseError::Codec(CodecError::Invalid(
+                    ShapeReason::InvalidValue
+                )))
+            ));
+            assert!(decoder.finish().is_err());
+            assert!(feed(&mut decoder, &wire(&input[7..])).is_err());
+        }
+    }
+    // A complete opener already carries its signature and needs no delta.
+    let mut input = original;
+    input[2]["content_block"] = json!({"type":"thinking","thinking":"雪","signature":"sig-tail"});
+    input.drain(3..6);
+    let mut decoder =
+        MessageSseDecoder::new(200, "text/event-stream", SseLimits::default()).unwrap();
+    feed(&mut decoder, &wire(&input)).unwrap();
+    assert_eq!(
+        Profile::AdaptiveTextTools
+            .encode_response(&decoder.finish().unwrap())
+            .unwrap(),
+        expected()
+    );
+}
+
 #[test]
 fn malformed_unclosed_or_trailing_streams_never_recover_success() {
     let original = frames();

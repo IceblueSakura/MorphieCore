@@ -512,7 +512,8 @@ async fn real_router_uses_provider_http_for_json_sse_tools_and_cross_profile() {
         let response = client
             .post(format!("{url}/v1/responses"))
             .bearer_auth(support::CLIENT_KEY)
-            .json(&json!({"model":"cross-model","input":"lookup","store":false,"max_output_tokens":32,"stream":stream}))
+            .json(&json!({"model":"cross-model","input":"lookup","store":false,"max_output_tokens":32,"stream":stream,
+                "metadata":{"ticket":"original"}}))
             .send()
             .await
             .unwrap();
@@ -528,6 +529,7 @@ async fn real_router_uses_provider_http_for_json_sse_tools_and_cross_profile() {
             .unwrap();
         assert_eq!(encoded["output"][1]["call_id"], "call-local");
         assert_eq!(encoded["output"][1]["arguments"], "{\"n\":1}");
+        assert_eq!(encoded["metadata"], json!({"ticket":"original"}));
         assert_eq!(observed.0.lock().unwrap().len(), before + 1);
         // Wrong result identity still fails before any upstream dispatch.
         let before = observed.0.lock().unwrap().len();

@@ -197,7 +197,10 @@ impl MessageSseDecoder {
                     {
                         append(thinking, &value)?
                     }
-                    (Block::Thinking { signature, .. }, Delta::Signature(value)) => {
+                    (Block::Thinking { signature, .. }, Delta::Signature(value))
+                        if !open.signature_started =>
+                    {
+                        // A signature is one opaque value, not a fragment stream.
                         open.signature_started = true;
                         append(signature, &value)?;
                     }

@@ -116,6 +116,10 @@ impl EventContext {
                 + report_storage
                 + owners
                 + execution
+                + metadata
+                    .delivery
+                    .as_ref()
+                    .map_or(0, |d| d.request_metadata_bytes())
                 + diagnostics
                 + self.fidelity.retained_bytes()
                 + metadata.instruction_fidelity.retained_bytes(),

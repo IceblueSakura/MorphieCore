@@ -63,6 +63,8 @@ pub enum Field {
     Verbosity,
     #[serde(rename = "generation.message.phase")]
     MessagePhase,
+    #[serde(rename = "generation.message.status")]
+    MessageStatus,
     #[serde(rename = "generation.message_envelopes")]
     MessageEnvelopes,
     #[serde(rename = "generation.usage")]
@@ -174,6 +176,7 @@ impl Field {
             Self::Sampling => "generation.sampling",
             Self::Verbosity => "generation.text.verbosity",
             Self::MessagePhase => "generation.message.phase",
+            Self::MessageStatus => "generation.message.status",
             Self::MessageEnvelopes => "generation.message_envelopes",
             Self::Usage => "generation.usage",
             Self::UsageReports => "generation.usage.reports",
@@ -244,6 +247,7 @@ impl From<&'static str> for Field {
             "generation.sampling" => Self::Sampling,
             "generation.text.verbosity" => Self::Verbosity,
             "generation.message.phase" => Self::MessagePhase,
+            "generation.message.status" => Self::MessageStatus,
             "generation.message_envelopes" => Self::MessageEnvelopes,
             "generation.usage" => Self::Usage,
             "generation.usage.reports" => Self::UsageReports,

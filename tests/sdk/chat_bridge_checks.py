@@ -23,6 +23,8 @@ def check_chat_bridge(base_url, function):
                     for event in events:
                         if hasattr(event, "response"):
                             Response.model_validate(event.response.model_dump(by_alias=True, exclude_unset=True))
+                            check(event.response.metadata == params["metadata"],
+                                  "opening and terminal Responses must echo the admitted association")
                         terminals += event.type == "response.completed"
                     result = events.get_final_response()
                 check(terminals == 1)
@@ -30,6 +32,7 @@ def check_chat_bridge(base_url, function):
                 result = client.responses.parse(**params)
             raw = result.model_dump(by_alias=True, exclude_unset=True)
             Response.model_validate(raw)
+            check(raw["metadata"] == params["metadata"])
             check(raw["tools"] == params["tools"])
             check(raw["tool_choice"] == "auto" and raw["parallel_tool_calls"] is True)
             check(raw["usage"] == {

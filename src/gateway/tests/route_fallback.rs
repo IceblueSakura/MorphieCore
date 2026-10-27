@@ -71,6 +71,15 @@ async fn ordered_route_only_falls_back_before_visible_delivery() {
         ),
         // Visible content followed by EOF must not call the next target.
         (201, true, FallbackPolicy::BeforeCommit, 2, vec!["a"], 200),
+        // A failed unpublished metadata report must not leak into the successor.
+        (
+            202,
+            true,
+            FallbackPolicy::BeforeCommit,
+            2,
+            vec!["a", "b"],
+            200,
+        ),
     ] {
         let calls = Arc::new(Mutex::new(Vec::<&str>::new()));
         let cut_stream = Arc::new(tokio::sync::Notify::new());
@@ -88,6 +97,7 @@ async fn ordered_route_only_falls_back_before_visible_delivery() {
                     assert_eq!(body["model"],format!("{id}-alias"));
                     assert_eq!(body["max_output_tokens"],32);
                     assert_eq!(body["prompt_cache_key"],"synthetic-affinity");
+                    assert_eq!(body["metadata"],json!({"ticket":"original"}));
                     assert!(body.get("session_id").is_none());
                     assert!(!headers.contains_key("x-session-affinity"));
                     assert_eq!(body["input"][0]["content"],json!([{"type":"input_text","text":"keep"},{"type":"input_image","image_url":"data:image/png;base64,AQ==","detail":"auto"}]));
@@ -96,9 +106,23 @@ async fn ordered_route_only_falls_back_before_visible_delivery() {
                     if id=="a" && status==2 { return ([("content-type","text/html")],"<html>").into_response(); }
                     // The rate limit resets at once, so its cooldown has already expired.
                     if id=="a" && status==429 {return (StatusCode::TOO_MANY_REQUESTS,[("retry-after","0")]).into_response();}
-                    if id=="a" && status!=200 && status!=201 {return StatusCode::from_u16(status).unwrap().into_response();}
+                    if id=="a" && status!=200 && status!=201 && status!=202 {return StatusCode::from_u16(status).unwrap().into_response();}
                     if stream {
-                        let initial=json!({"type":"response.created","sequence_number":1,"response":{"object":"response","id":"a-r","model":"a-alias","created_at":1,"status":"in_progress","output":[]}});
+                        let mut initial=json!({"type":"response.created","sequence_number":1,"response":{"object":"response","id":"a-r","model":"a-alias","created_at":1,"status":"in_progress","output":[]}});
+                        if status==202 {
+                            if id=="a" {
+                                initial["response"]["metadata"]=json!({"failed_candidate":"not-delivered"});
+                            } else {
+                                initial["response"]["id"]=json!("b-r");
+                                initial["response"]["model"]=json!("b-alias");
+                                let mut terminal=initial.clone();
+                                terminal["type"]=json!("response.completed");
+                                terminal["sequence_number"]=json!(2);
+                                terminal["response"]["status"]=json!("completed");
+                                return ([("content-type","text/event-stream")],
+                                    format!("data: {initial}\n\ndata: {terminal}\n\n")).into_response();
+                            }
+                        }
                         if status==201 {
                             let frames = [
                                 initial,
@@ -304,7 +328,8 @@ async fn ordered_route_only_falls_back_before_visible_delivery() {
             if session {
                 request = request.header("x-session-affinity", "synthetic-conversation");
             }
-            tokio::time::timeout(std::time::Duration::from_secs(5),request.json(&json!({"model":"public","prompt_cache_key":"synthetic-affinity","max_output_tokens":32,"stream":stream,"input":[{"role":"user","content":[{"type":"input_text","text":"keep"},{"type":"input_image","image_url":"data:image/png;base64,AQ==","detail":"auto"}]}]})).send())
+            tokio::time::timeout(std::time::Duration::from_secs(5),request.json(&json!({"model":"public","prompt_cache_key":"synthetic-affinity","max_output_tokens":32,"stream":stream,
+                "metadata":{"ticket":"original"},"input":[{"role":"user","content":[{"type":"input_text","text":"keep"},{"type":"input_image","image_url":"data:image/png;base64,AQ==","detail":"auto"}]}]})).send())
         };
         let mut response = send(true).await.unwrap().unwrap();
         assert_eq!(response.status().as_u16(), expected_status);
@@ -326,6 +351,21 @@ async fn ordered_route_only_falls_back_before_visible_delivery() {
                 }
             }
             assert!(String::from_utf8_lossy(&received).contains("visible"));
+        } else if status == 202 {
+            let text = tokio::time::timeout(std::time::Duration::from_secs(5), response.text())
+                .await
+                .unwrap()
+                .unwrap();
+            let values: Vec<Value> = text
+                .lines()
+                .filter_map(|l| l.strip_prefix("data: "))
+                .map(|l| serde_json::from_str(l).unwrap())
+                .collect();
+            assert_eq!(values.last().unwrap()["type"], "response.completed");
+            for value in values.iter().filter(|v| v.get("response").is_some()) {
+                assert_eq!(value["response"]["metadata"], json!({"ticket":"original"}));
+            }
+            assert!(!text.contains("failed_candidate"));
         } else if stream {
             assert!(
                 tokio::time::timeout(std::time::Duration::from_secs(5), response.bytes())
@@ -336,6 +376,7 @@ async fn ordered_route_only_falls_back_before_visible_delivery() {
         } else if expected_status == 200 {
             let value: Value = response.json().await.unwrap();
             assert_eq!(value["model"], "public");
+            assert_eq!(value["metadata"], json!({"ticket":"original"}));
             assert_eq!(value["output"][0]["content"][0]["text"], "ok");
         }
         assert_eq!(*calls.lock().unwrap(), expected_calls);

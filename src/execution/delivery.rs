@@ -160,6 +160,7 @@ impl ResponseDelivery {
         mut self,
         endpoint: &crate::topology::Endpoint,
         request: &crate::protocol::GenerationRequestEnvelope,
+        original: &crate::protocol::GenerationRequestEnvelope,
     ) -> Self {
         self.presentation = Some(Arc::new(crate::protocol::GenerationDelivery {
             settings: if self.client.protocol() == ClientProtocol::Responses {
@@ -168,6 +169,11 @@ impl ResponseDelivery {
                 Default::default()
             },
             usage: None,
+            request_metadata: if self.client.protocol() == ClientProtocol::Responses {
+                original.context.metadata.clone()
+            } else {
+                Default::default()
+            },
         }));
         let settings = request.task.semantic.settings();
         self.request_settings_present = [
@@ -618,8 +624,14 @@ impl ResponseDelivery {
                 .as_ref()
                 .is_some_and(|e| e.needs_phase_source_check())
             {
-                self.client
-                    .check_chat_source(&self.client_view(attempt)?.0)?;
+                for effect in self
+                    .client
+                    .check_chat_source(&self.client_view(attempt)?.0)?
+                {
+                    evidence.push(effect.with_boundary(
+                        crate::protocol::conversion::generation::ConversionBoundary::EventProject,
+                    ));
+                }
             }
             if !self.managed_responses()
                 && attempt

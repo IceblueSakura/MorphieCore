@@ -14,6 +14,8 @@ pub enum ProjectionRule {
     OmitReportedReasoningControls,
     OmitChatReportedSettings,
     OmitChatNullMetadata,
+    OmitChatTextItemStatus,
+    EchoRequestMetadata,
     OmitResponsesSystemFingerprint,
     OmitResponsesInputImageTokens,
     OmitResponsesInputTextTokens,
@@ -44,6 +46,8 @@ impl ProjectionRule {
             }
             Self::OmitChatReportedSettings => "chat.omit-incidental-settings.v1",
             Self::OmitChatNullMetadata => "chat.omit-null-stream-metadata.v1",
+            Self::OmitChatTextItemStatus => "chat.omit-text-item-status.v1",
+            Self::EchoRequestMetadata => "responses.echo-request-metadata.v1",
             Self::OmitResponsesSystemFingerprint => "responses.omit-system-fingerprint.v1",
             Self::OmitResponsesInputImageTokens => "responses.omit-input-image-tokens.v1",
             Self::OmitResponsesInputTextTokens => "responses.omit-input-text-tokens.v1",
@@ -75,7 +79,8 @@ impl ProjectionRule {
             Self::UsageReportView => "generation.usage.reports",
             Self::OmitReportedReasoningControls => "response.reported.reasoning",
             Self::OmitChatReportedSettings => "response.reported.settings",
-            Self::OmitChatNullMetadata => "response.context.metadata",
+            Self::OmitChatNullMetadata | Self::EchoRequestMetadata => "response.context.metadata",
+            Self::OmitChatTextItemStatus => "generation.message.status",
             Self::OmitResponsesSystemFingerprint => "response.context.system_fingerprint",
             Self::OmitResponsesInputImageTokens => "generation.usage.input_image_tokens",
             Self::OmitResponsesInputTextTokens => "generation.usage.input_text_tokens",
@@ -102,6 +107,75 @@ impl ProjectionRule {
             Self::OmitTerminalExplanation => "response.terminal.explanation",
         }
     }
+}
+
+/// Chat length reports an overall token stop, not the lifecycle of each source
+/// message. Build only the selected plain-text view; never edit source evidence.
+pub(crate) fn chat_text_status(
+    source: &crate::semantic::task::generation::GenerationResponse,
+    policy: super::ReportedFactPolicy,
+) -> Result<
+    Option<(
+        crate::semantic::task::generation::GenerationResponse,
+        Vec<crate::protocol::conversion::generation::Effect>,
+    )>,
+    RepresentationError,
+> {
+    use crate::{
+        protocol::conversion::generation::{ConversionBoundary, Owner},
+        semantic::task::generation::*,
+    };
+    if source.outcome() != Outcome::Incomplete
+        || source.details().incomplete != Some(IncompleteReason::MaxOutputTokens)
+        || source.items().is_empty()
+        || !source.items().iter().all(|(_, item)| {
+            matches!(item, Item::Message(m)
+                if m.role == MessageRole::Assistant && m.participant.is_none()
+                    && matches!(m.status, ItemLifecycle::Completed | ItemLifecycle::Incomplete)
+                    && !m.parts.is_empty()
+                    && m.parts.iter().all(|p|
+                        p.cache.is_none() && p.replay.is_none()
+                            && matches!(&p.content, ContentPart::Text(t) if t.is_plain())))
+        })
+    {
+        return Ok(None);
+    }
+    let effects: Vec<_> = source
+        .items()
+        .iter()
+        .filter(|(_, item)| item.lifecycle() == Some(ItemLifecycle::Completed))
+        .map(|(id, _)| {
+            ProjectionRule::OmitChatTextItemStatus
+                .effect(ConversionBoundary::ResponseProject)
+                .at(Owner::item(*id))
+        })
+        .collect();
+    if effects.is_empty() {
+        return Ok(None);
+    }
+    if policy == super::ReportedFactPolicy::StrictComplete {
+        return Err(RepresentationError::ReportedFacts);
+    }
+    let mut items = source.items().to_vec();
+    for (_, item) in &mut items {
+        if let Item::Message(message) = item {
+            message.status = ItemLifecycle::Incomplete;
+        }
+    }
+    Ok(Some((source.clone().with_items(items)?, effects)))
+}
+
+pub(crate) fn request_metadata_echo(
+    metadata: &crate::protocol::ResponseMetadata,
+    policy: super::ReportedFactPolicy,
+) -> Result<Option<ProjectionRule>, RepresentationError> {
+    if metadata.request_metadata_echo().is_none() {
+        return Ok(None);
+    }
+    if policy == super::ReportedFactPolicy::StrictComplete {
+        return Err(RepresentationError::ReportedFacts);
+    }
+    Ok(Some(ProjectionRule::EchoRequestMetadata))
 }
 
 /// This changes reported echoes only, never request admission or generated items.
@@ -193,6 +267,7 @@ impl ProjectionRule {
     ) -> crate::protocol::conversion::generation::Effect {
         use crate::protocol::conversion::generation::{Change, Effect};
         let change = match self {
+            Self::EchoRequestMetadata => Change::InferFromRequest,
             Self::RegroupChatMessageItems
             | Self::CoarsenChatCompletionCause
             | Self::RecitationAsContentFilter
@@ -261,6 +336,114 @@ pub(crate) fn responses_usage(
 mod tests {
     use super::*;
     use crate::semantic::{task::generation::*, value::Presence};
+
+    #[test]
+    fn text_status_omission_is_token_cap_only_and_strict_complete_rejects_it() {
+        use super::super::ReportedFactPolicy::{Faithful, StrictComplete};
+        use crate::protocol::openai::{Dialect, GenerationCodec, TargetContract};
+        use serde_json::json;
+        // Independent Responses shape: an item can complete before the response
+        // reaches its token cap. Chat length has no per-item status carrier.
+        let body = json!({"id":"r","object":"response","model":"m","created_at":1,
+            "status":"incomplete","incomplete_details":{"reason":"max_output_tokens"},
+            "output":[{"id":"m","type":"message","role":"assistant","status":"completed",
+                "content":[{"type":"output_text","text":"A.","annotations":[]}]}]});
+        let codec = GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None);
+        let decoded = codec.decode_response(body.to_string().as_bytes()).unwrap();
+        let source = &decoded.semantic;
+        assert_eq!(
+            source.items()[0].1.lifecycle(),
+            Some(ItemLifecycle::Completed)
+        );
+        assert_eq!(source.outcome(), Outcome::Incomplete);
+        let (view, effects) = chat_text_status(source, Faithful).unwrap().unwrap();
+        assert_eq!(
+            view.items()[0].1.lifecycle(),
+            Some(ItemLifecycle::Incomplete)
+        );
+        assert_eq!(
+            source.items()[0].1.lifecycle(),
+            Some(ItemLifecycle::Completed)
+        );
+        assert_eq!(view.details(), source.details());
+        assert_eq!(effects.len(), 1);
+        // Direct decision check: missing unrelated settings/usage cannot mask
+        // whether strict mode rejected this actual lifecycle omission.
+        assert_eq!(
+            chat_text_status(source, StrictComplete),
+            Err(RepresentationError::ReportedFacts)
+        );
+        assert!(chat_text_status(&view, Faithful).unwrap().is_none());
+        let target = super::super::lower_response(
+            source,
+            &decoded.fidelity,
+            &decoded.metadata,
+            GenerationApi::Chat,
+            TargetContract::full(),
+        )
+        .unwrap();
+        assert_eq!(target.semantic(), &view);
+        assert_eq!(target.projection(), effects.as_slice());
+        let native = super::super::lower_response(
+            source,
+            &decoded.fidelity,
+            &decoded.metadata,
+            GenerationApi::Responses,
+            TargetContract::full(),
+        )
+        .unwrap();
+        assert_eq!(native.semantic(), source);
+        assert!(
+            !native
+                .projection()
+                .iter()
+                .any(|e| e.rule() == ProjectionRule::OmitChatTextItemStatus.name())
+        );
+        for reason in [
+            IncompleteReason::ContentFilter,
+            IncompleteReason::ContextWindowExceeded,
+            IncompleteReason::Unspecified,
+        ] {
+            let other = source
+                .clone()
+                .with_details(TerminalDetails {
+                    incomplete: Some(reason),
+                    ..Default::default()
+                })
+                .unwrap();
+            assert!(chat_text_status(&other, Faithful).unwrap().is_none());
+        }
+        let extras = [
+            json!({"id":"f","type":"function_call","call_id":"c","name":"f",
+                "arguments":"{}","status":"completed"}),
+            json!({"id":"r2","type":"reasoning","summary":[{"type":"summary_text","text":"plan"}],
+                "status":"completed"}),
+            json!({"id":"m2","type":"message","role":"assistant","status":"completed",
+                "content":[{"type":"refusal","refusal":"no"}]}),
+            json!({"id":"m2","type":"message","role":"assistant","status":"completed",
+                "content":[{"type":"output_text","text":"B","annotations":[],"logprobs":[]}]}),
+        ];
+        for item in extras {
+            let mut mixed = body.clone();
+            mixed["output"].as_array_mut().unwrap().push(item);
+            let mixed = codec.decode_response(mixed.to_string().as_bytes()).unwrap();
+            assert!(
+                chat_text_status(&mixed.semantic, Faithful)
+                    .unwrap()
+                    .is_none()
+            );
+            assert!(
+                super::super::lower_response(
+                    &mixed.semantic,
+                    &mixed.fidelity,
+                    &mixed.metadata,
+                    GenerationApi::Chat,
+                    TargetContract::full()
+                )
+                .is_err()
+            );
+        }
+    }
 
     fn metadata(settings: GenerationSettings) -> crate::protocol::ResponseMetadata {
         crate::protocol::ResponseMetadata {

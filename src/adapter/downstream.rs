@@ -49,7 +49,7 @@ impl ClientAdapter {
     pub(crate) fn check_chat_source(
         &self,
         decoded: &DecodedResponse,
-    ) -> Result<(), crate::protocol::ConversionFailure> {
+    ) -> Result<Vec<Effect>, crate::protocol::ConversionFailure> {
         let result = (|| {
             let (adapter, contract) = self.as_openai()?;
             if decoded
@@ -61,7 +61,10 @@ impl ClientAdapter {
                 return Err(CodecError::Unsupported(CarrierReason::Replay).into());
             }
             let mut decoded = crate::protocol::replay_projection::strip(decoded, true)?;
-            crate::protocol::openai::lowering::native_response::group_chat(&mut decoded)?;
+            let mut effects = crate::protocol::openai::lowering::native_response::group_chat(
+                &mut decoded,
+                contract.reported_facts,
+            )?;
             crate::protocol::openai::lowering::lower_response(
                 &decoded.semantic,
                 &decoded.fidelity,
@@ -74,7 +77,14 @@ impl ClientAdapter {
                     crate::protocol::conversion::generation::ConversionBoundary::ResponseProject,
                 )
             })?;
-            Ok(())
+            // The incremental grouping already emits its own evidence, but it
+            // infers target item closure from the terminal. Only the validated
+            // source snapshot can attest which independent statuses were lost.
+            effects.retain(|effect| {
+                effect.semantic_field()
+                    == crate::protocol::conversion::generation::Field::MessageStatus
+            });
+            Ok(effects)
         })();
         result.map_err(|error: crate::protocol::ConversionFailure| {
             error.at(crate::protocol::conversion::generation::ConversionBoundary::ResponseProject)
@@ -156,7 +166,10 @@ impl ClientAdapter {
                 if crate::protocol::phase::has_phase(decoded.semantic.items()) {
                     let mut wire = crate::protocol::replay_projection::strip(&decoded, true)?;
                     let mut losses = if self.protocol() == ClientProtocol::Chat {
-                        crate::protocol::openai::lowering::native_response::group_chat(&mut wire)?
+                        crate::protocol::openai::lowering::native_response::group_chat(
+                            &mut wire,
+                            self.as_openai()?.1.reported_facts,
+                        )?
                     } else {
                         self.project_native(&mut wire)?
                     };
@@ -167,8 +180,10 @@ impl ClientAdapter {
                 }
             }
             if self.protocol() == ClientProtocol::Chat {
-                let mut losses =
-                    crate::protocol::openai::lowering::native_response::group_chat(&mut decoded)?;
+                let mut losses = crate::protocol::openai::lowering::native_response::group_chat(
+                    &mut decoded,
+                    self.as_openai()?.1.reported_facts,
+                )?;
                 let (projected, value, extra) = self.encode_snapshot(decoded)?;
                 losses.extend(extra);
                 return Ok((projected, value, losses));

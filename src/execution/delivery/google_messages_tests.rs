@@ -81,7 +81,7 @@ fn delivery(
         Default::default(),
         Obfuscation::Disabled,
     )
-    .with_request(endpoint, request)
+    .with_request(endpoint, request, request)
 }
 fn feed(
     attempt: &mut Attempt,
@@ -173,7 +173,7 @@ fn stateless_clients_reject_hidden_signatures_without_fabricated_reasoning() {
                         },
                         Obfuscation::Disabled,
                     )
-                    .with_request(&endpoint, &request);
+                    .with_request(&endpoint, &request, &request);
                     let mut all_events = vec![];
                     for frame in &frames {
                         let wire = if interactions {
@@ -384,7 +384,7 @@ fn google_finish_explanation_omission_keeps_incomplete_source_and_requires_recei
                 },
                 Obfuscation::Disabled,
             )
-            .with_request(&endpoint, &request);
+            .with_request(&endpoint, &request, &request);
             if client.protocol() == ClientProtocol::Responses {
                 delivery = delivery.with_storage(
                     "resp_stored",
@@ -507,7 +507,7 @@ fn google_service_reports_keep_processing_meaning_in_clients_and_reject_capacity
                     },
                     Obfuscation::Disabled,
                 )
-                .with_request(&endpoint, &request);
+                .with_request(&endpoint, &request, &request);
                 let mut body = feed(&mut source, &mut client, &frames, stream, interactions);
                 source.finish().unwrap();
                 let original = source.response().unwrap().clone();
@@ -597,7 +597,7 @@ fn google_messages_projection_requires_context_and_never_repairs_failure() {
             Default::default(),
             Obfuscation::Disabled,
         )
-        .with_request(&endpoint, &request);
+        .with_request(&endpoint, &request, &request);
         assert!(chat.messages_terminal.is_none());
         let (other, _, _) = fixture(!interactions, false);
         assert!(matches!(

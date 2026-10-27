@@ -265,8 +265,7 @@ fn phase_stream_preserves_return_carrier_at_eof_without_changing_terminal_policy
 
 #[test]
 fn unphased_plain_text_uses_the_same_selected_chat_grouping() {
-    // Removing phase/grouping does not authorize rewriting an observed completed
-    // item as incomplete merely because Chat only has one terminal status.
+    // Only max-output-token text is selected, not another incomplete cause.
     let mut incompatible = source();
     let mut items = incompatible.semantic.items().to_vec();
     for (_, item) in &mut items {
@@ -274,9 +273,17 @@ fn unphased_plain_text_uses_the_same_selected_chat_grouping() {
             message.status = ItemLifecycle::Completed;
         }
     }
-    incompatible.semantic = incompatible.semantic.with_items(items).unwrap();
+    incompatible.semantic = incompatible
+        .semantic
+        .with_items(items)
+        .unwrap()
+        .with_details(TerminalDetails {
+            incomplete: Some(IncompleteReason::ContentFilter),
+            ..Default::default()
+        })
+        .unwrap();
     assert!(client(ClientProtocol::Chat).snapshot(incompatible).is_err());
-    for multiple in [false, true] {
+    for (multiple, completed) in [(false, false), (false, true), (true, false), (true, true)] {
         let mut source = source();
         source = strip(&source, true).unwrap();
         if !multiple {
@@ -286,8 +293,37 @@ fn unphased_plain_text_uses_the_same_selected_chat_grouping() {
                 .with_items(source.semantic.items()[..1].to_vec())
                 .unwrap();
         }
+        if completed {
+            let mut items = source.semantic.items().to_vec();
+            let Item::Message(message) = &mut items[0].1 else {
+                unreachable!()
+            };
+            message.status = ItemLifecycle::Completed;
+            source.semantic = source.semantic.with_items(items).unwrap();
+        }
+        let before = source.clone();
         let client = client(ClientProtocol::Chat);
-        let (_, snapshot) = client.snapshot(source.clone()).unwrap();
+        let (retained, snapshot, effects) = client.snapshot_with_evidence(source.clone()).unwrap();
+        let status_rule = "chat.omit-text-item-status.v1";
+        assert_eq!(
+            effects.iter().filter(|e| e.rule() == status_rule).count(),
+            usize::from(completed)
+        );
+        if completed {
+            let effect = effects.iter().find(|e| e.rule() == status_rule).unwrap();
+            assert_eq!(effect.field(), "generation.message.status");
+            assert_eq!(
+                effect.owner(),
+                crate::protocol::conversion::generation::Owner::item(source.semantic.items()[0].0)
+            );
+            assert!(effect.change().is_loss());
+        }
+        assert_eq!(
+            retained.semantic.items()[0].1.lifecycle(),
+            Some(ItemLifecycle::Incomplete)
+        );
+        assert_eq!(snapshot["choices"][0]["finish_reason"], "length");
+        assert_eq!(source, before);
         assert_eq!(
             snapshot["choices"][0]["message"]["content"],
             if multiple {
@@ -307,6 +343,9 @@ fn unphased_plain_text_uses_the_same_selected_chat_grouping() {
         for event in &mut events {
             if let Some(item) = event.get_mut("item") {
                 item["phase"] = Value::Null;
+                if completed && item["id"] == "m0" && item["status"] == "incomplete" {
+                    item["status"] = json!("completed");
+                }
             }
             if let Some(output) = event
                 .get_mut("response")
@@ -315,6 +354,9 @@ fn unphased_plain_text_uses_the_same_selected_chat_grouping() {
             {
                 for item in output {
                     item["phase"] = Value::Null;
+                    if completed && item["id"] == "m0" {
+                        item["status"] = json!("completed");
+                    }
                 }
             }
         }
@@ -334,6 +376,7 @@ fn unphased_plain_text_uses_the_same_selected_chat_grouping() {
             },
             Obfuscation::Disabled,
         );
+        let mut output = vec![];
         for (sequence, mut event) in events.into_iter().enumerate() {
             event["sequence_number"] = json!(sequence);
             let wire = format!(
@@ -341,16 +384,152 @@ fn unphased_plain_text_uses_the_same_selected_chat_grouping() {
                 event["type"].as_str().unwrap()
             );
             let (_, events) = attempt.push(wire.as_bytes()).unwrap();
-            delivery
-                .encode_events(&attempt, &events)
-                .map(|batch| batch.into_bytes())
-                .unwrap();
+            output.extend(
+                delivery
+                    .encode_events(&attempt, &events)
+                    .map(|batch| batch.into_bytes())
+                    .unwrap()
+                    .concat(),
+            );
         }
         attempt.finish().unwrap();
+        let observation = attempt.response().unwrap().clone();
+        assert_eq!(
+            observation.semantic.items()[0].1.lifecycle(),
+            Some(if completed {
+                ItemLifecycle::Completed
+            } else {
+                ItemLifecycle::Incomplete
+            })
+        );
         let end = delivery.finish_stream(&attempt).unwrap().into_bytes();
         assert!(
             end.iter()
                 .any(|frame| String::from_utf8_lossy(frame).contains("[DONE]"))
         );
+        output.extend(end.concat());
+        assert_eq!(
+            delivery
+                .effects()
+                .iter()
+                .filter(|e| e.rule() == status_rule)
+                .count(),
+            usize::from(completed)
+        );
+        if completed {
+            let effects = delivery.effects();
+            let effect = effects.iter().find(|e| e.rule() == status_rule).unwrap();
+            assert_eq!(
+                effect.owner(),
+                crate::protocol::conversion::generation::Owner::item(
+                    observation.semantic.items()[0].0
+                )
+            );
+            assert_eq!(
+                effect.boundary(),
+                crate::protocol::conversion::generation::ConversionBoundary::EventProject
+            );
+        }
+        let (saved, body) = delivery.snapshot(&attempt).unwrap();
+        let body: Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(body["choices"], snapshot["choices"]);
+        assert_eq!(
+            saved.semantic.items()[0].1.lifecycle(),
+            Some(ItemLifecycle::Incomplete)
+        );
+        assert_eq!(attempt.response().unwrap(), &observation);
+        let mut consumer = crate::protocol::openai::chat::sse::ChatSseDecoder::new(
+            200,
+            "text/event-stream",
+            Default::default(),
+        )
+        .unwrap();
+        let mut remaining = output.as_slice();
+        while !remaining.is_empty() {
+            let (used, _) = consumer.consume(remaining).unwrap();
+            assert!(used > 0);
+            remaining = &remaining[used..];
+        }
+        consumer.finish().unwrap();
+        let streamed = consumer.materialize().unwrap();
+        assert_eq!(streamed.semantic.outcome(), Outcome::Incomplete);
+        assert_eq!(
+            streamed.semantic.details().incomplete,
+            Some(IncompleteReason::MaxOutputTokens)
+        );
+        assert_eq!(
+            streamed.semantic.items()[0].1.lifecycle(),
+            Some(ItemLifecycle::Incomplete)
+        );
+        let Item::Message(message) = &streamed.semantic.items()[0].1 else {
+            unreachable!()
+        };
+        let ContentPart::Text(text) = &message.parts[0].content else {
+            unreachable!()
+        };
+        assert_eq!(
+            text.as_str(),
+            snapshot["choices"][0]["message"]["content"]
+                .as_str()
+                .unwrap()
+        );
     }
+}
+
+#[test]
+fn unselected_item_status_loss_rejects_before_chat_stream_terminal() {
+    let mut events = frames();
+    events.retain(|v| v.get("output_index").is_none_or(|n| n == 0));
+    let terminal = events.last_mut().unwrap();
+    terminal["response"]["output"]
+        .as_array_mut()
+        .unwrap()
+        .truncate(1);
+    terminal["response"]["output"][0]["status"] = json!("completed");
+    terminal["response"]["incomplete_details"]["reason"] = json!("content_filter");
+    for event in &mut events {
+        if event["type"] == "response.output_item.done" {
+            event["item"]["status"] = json!("completed");
+        }
+    }
+    let mut attempt = Attempt::new(
+        GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None),
+        1 << 20,
+        Default::default(),
+    );
+    attempt.begin(200, "text/event-stream").unwrap();
+    let mut delivery = ResponseDelivery::new(
+        client(ClientProtocol::Chat),
+        "public",
+        Default::default(),
+        crate::semantic::context::StreamOptions {
+            include_obfuscation: crate::semantic::value::Presence::Value(false),
+            ..Default::default()
+        },
+        Obfuscation::Disabled,
+    );
+    let mut output = vec![];
+    for (sequence, mut event) in events.into_iter().enumerate() {
+        event["sequence_number"] = json!(sequence);
+        let (_, decoded) = attempt
+            .push(format!("data: {event}\n\n").as_bytes())
+            .unwrap();
+        output.extend(
+            delivery
+                .encode_events(&attempt, &decoded)
+                .unwrap()
+                .into_bytes()
+                .concat(),
+        );
+    }
+    attempt.finish().unwrap();
+    assert_eq!(
+        delivery
+            .finish_stream(&attempt)
+            .unwrap_err()
+            .representation(),
+        Some(&crate::protocol::conversion::generation::RepresentationError::Terminal)
+    );
+    assert!(!String::from_utf8_lossy(&output).contains("[DONE]"));
+    assert!(delivery.finish_stream(&attempt).is_err());
 }

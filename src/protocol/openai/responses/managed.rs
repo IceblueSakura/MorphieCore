@@ -110,6 +110,13 @@ pub(crate) fn retained_size(
         .saturating_add(input.fidelity.retained_bytes())
         .saturating_add(output.fidelity.retained_bytes())
         .saturating_add(output.metadata.context.reports.validate()?)
+        .saturating_add(
+            output
+                .metadata
+                .delivery
+                .as_ref()
+                .map_or(0, |d| d.request_metadata_bytes()),
+        )
         .saturating_add(body_bytes.saturating_mul(2))
         .saturating_add(
             (input.semantic.items().len() + output.semantic.items().len())

@@ -116,6 +116,15 @@ impl EventEncoder {
         self.target_locked = true;
         let checked_projection = self.projection.len();
         let result = (|| {
+            let metadata_echo = if self.profile == GenerationApi::Responses {
+                projection::request_metadata_echo(&self.metadata, self.contract.reported_facts)
+                    .map_err(|cause| CodecError::Representation {
+                        boundary: crate::protocol::conversion::generation::ConversionBoundary::EventProject,
+                        cause,
+                    })?
+            } else {
+                None
+            };
             if self.profile == GenerationApi::Chat
                 && matches!(
                     self.metadata.context.execution.metadata,
@@ -219,6 +228,16 @@ impl EventEncoder {
                     self.sequence += 1;
                 }
                 bounded(v)?;
+            }
+            if let Some(rule) = metadata_echo
+                && values.iter().any(|value| value.get("response").is_some())
+            {
+                record_stages(
+                    &mut self.projection,
+                    [rule.effect(
+                        crate::protocol::conversion::generation::ConversionBoundary::EventProject,
+                    )],
+                );
             }
             if self.profile == GenerationApi::Responses
                 && !values.is_empty()

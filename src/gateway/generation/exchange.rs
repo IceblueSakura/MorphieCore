@@ -284,6 +284,7 @@ pub(in crate::gateway) async fn produce_chain(
                 entry,
                 candidate,
                 &local,
+                request,
                 upstream,
                 limits,
                 &lane,

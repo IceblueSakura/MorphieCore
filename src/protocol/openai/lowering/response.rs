@@ -77,6 +77,21 @@ pub fn lower_response<'a>(
             )
         })
         .collect();
+    if profile == GenerationApi::Chat
+        && let Some((view, effects)) = projection::chat_text_status(r, c.reported_facts)?
+    {
+        semantic = std::borrow::Cow::Owned(view);
+        projection.extend(effects);
+    }
+    if profile == GenerationApi::Responses
+        && let Some(rule) = projection::request_metadata_echo(&metadata, c.reported_facts)?
+    {
+        projection.push(
+            rule.effect(
+                crate::protocol::conversion::generation::ConversionBoundary::ResponseProject,
+            ),
+        );
+    }
     if let Some(loss) = projection::reported_settings(metadata.to_mut(), profile)? {
         if c.reported_facts == ReportedFactPolicy::StrictComplete {
             return Err(RepresentationError::ReportedFacts);
@@ -113,7 +128,7 @@ pub fn lower_response<'a>(
     if let Some((groups, loss)) =
         message_groups::project(r.items(), r.message_envelopes(), profile)?
     {
-        semantic = std::borrow::Cow::Owned(r.clone().with_message_envelopes(groups)?);
+        semantic = std::borrow::Cow::Owned(semantic.into_owned().with_message_envelopes(groups)?);
         projection.push(
             (loss).effect(
                 crate::protocol::conversion::generation::ConversionBoundary::ResponseProject,

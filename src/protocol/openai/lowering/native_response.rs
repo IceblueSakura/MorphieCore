@@ -158,7 +158,17 @@ pub(crate) fn project(
 
 /// Apply the selected Chat grouping without normalizing native accounting or
 /// progress. A phase is not permission to discard unrelated reported facts.
-pub(crate) fn group_chat(decoded: &mut DecodedResponse) -> Result<Vec<Effect>, CodecError> {
+pub(crate) fn group_chat(
+    decoded: &mut DecodedResponse,
+    policy: super::ReportedFactPolicy,
+) -> Result<Vec<Effect>, crate::protocol::ConversionFailure> {
+    // Project before grouping: per-source-owner status and evidence would
+    // otherwise disappear into the shared Chat carrier.
+    let mut effects = vec![];
+    if let Some((view, losses)) = super::projection::chat_text_status(&decoded.semantic, policy)? {
+        decoded.semantic = view;
+        effects = losses;
+    }
     let messages: Vec<_> = decoded
         .semantic
         .items()
@@ -182,9 +192,10 @@ pub(crate) fn group_chat(decoded: &mut DecodedResponse) -> Result<Vec<Effect>, C
                 <= 1
         })
     {
-        return Ok(vec![]);
+        return Ok(effects);
     }
-    project_inner(decoded, GenerationApi::Chat, false)
+    effects.extend(project_inner(decoded, GenerationApi::Chat, false)?);
+    Ok(effects)
 }
 
 fn project_inner(

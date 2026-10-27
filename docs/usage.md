@@ -534,6 +534,8 @@ Both forms work at ingress. Repeated headers or both forms together are rejected
 {"model":"configured-public-model","input":"Reply with exactly pong.","max_output_tokens":64}
 ```
 
+When an admitted request includes `metadata`, Responses delivery can echo it if the upstream response omits that field. An upstream explicit null or object wins; maps are not merged. This is a request association, not proof of Provider storage or effective configuration. Send it again when needed on a later turn; stored history does not inherit it. See [delivery provenance and precedence](architecture.md#downstream-schema-completion).
+
 ### Chat Completions
 
 ```json
@@ -592,7 +594,7 @@ The generic Messages profile keeps ordered-instruction and tool-change admission
 
 For custom-capable targets, Chat JSON uses `{"type":"custom","custom":{"name":"sql","format":{"type":"text"}}}` definitions and `{"type":"custom","custom":{"name":"sql"}}` choices. Calls retain raw `custom.input`; return their ID through an ordinary `role:"tool"` message. Preserve the preceding typed call in history so the result cannot be mistaken for a function result. Grammar definitions use the nested carrier described in [protocol sources](refs/2026-10-16-chat-custom-tools.md).
 
-The pinned Chat SSE contract has no custom-call delta carrier. Chat upstream streaming that enables custom selection and downstream custom-call deltas reject explicitly; use an admitted Responses streaming path instead. Custom history and declarations remain usable for a later stream when tool choice excludes custom output. Codec support does not activate models or execute tools.
+Official Chat SSE sources disagree: Node defines custom-call deltas, while the inspected Python types and public streaming reference remain function-only. MorphieCore therefore keeps Chat upstream streaming that enables custom selection and downstream custom-call deltas rejected; use an admitted Responses streaming path instead. Custom history and declarations remain usable for a later stream when tool choice excludes custom output. The [source-qualified finding](refs/2026-10-27-client-ir-boundaries.md#custom-tools-source-disagreement-versus-a-real-carrier-gap) is not a claim that a carrier is intrinsically impossible. Codec support does not activate models or execute tools.
 
 ### Unsupported controls and delivery
 

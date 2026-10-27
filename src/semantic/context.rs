@@ -186,6 +186,32 @@ pub struct ExecutionHints {
     pub moderation: Presence<()>,
     pub context_management: Presence<Vec<()>>,
 }
+
+pub(crate) fn validate_metadata(
+    metadata: &Presence<BTreeMap<String, String>>,
+) -> Result<(), ContextError> {
+    if metadata.value().is_some_and(|m| {
+        m.len() > 16
+            || m.iter()
+                .any(|(k, v)| k.chars().count() > 64 || v.chars().count() > 512)
+    }) {
+        return Err(ContextError::Limit);
+    }
+    Ok(())
+}
+
+/// Dynamic map storage and escaped-text working space; the container is charged
+/// by its owner. Share the same accounting for reported and request-echo maps.
+pub(crate) fn metadata_retained_bytes(metadata: &Presence<BTreeMap<String, String>>) -> usize {
+    metadata.value().map_or(0, |map| {
+        map.iter().fold(0usize, |bytes, (key, value)| {
+            bytes
+                .saturating_add(1024)
+                .saturating_add(key.capacity().max(key.len().saturating_mul(64)))
+                .saturating_add(value.capacity().max(value.len().saturating_mul(64)))
+        })
+    })
+}
 impl ExecutionHints {
     /// Conservative retained storage plus escaped-text working space, without
     /// choosing a protocol's field names or serialization.
@@ -208,17 +234,7 @@ impl ExecutionHints {
         {
             bytes = bytes.saturating_add(text(value));
         }
-        if let Some(metadata) = self.metadata.value() {
-            for (key, value) in metadata {
-                // Charge a whole B-tree node per entry, including spare key/value
-                // slots and edges; sparse maps still allocate a complete node.
-                bytes = bytes
-                    .saturating_add(1024)
-                    .saturating_add(text(key))
-                    .saturating_add(text(value));
-            }
-        }
-        bytes
+        bytes.saturating_add(metadata_retained_bytes(&self.metadata))
     }
     pub fn validate(&self) -> Result<(), ContextError> {
         self.cache.validate()?;
@@ -232,13 +248,7 @@ impl ExecutionHints {
         {
             return Err(ContextError::Stateful);
         }
-        if self.metadata.value().is_some_and(|m| {
-            m.len() > 16
-                || m.iter()
-                    .any(|(k, v)| k.chars().count() > 64 || v.chars().count() > 512)
-        }) {
-            return Err(ContextError::Limit);
-        }
+        validate_metadata(&self.metadata)?;
         if self.max_tool_calls == Presence::Value(0) {
             return Err(ContextError::Invalid(ContextReason::MaxToolCalls));
         }

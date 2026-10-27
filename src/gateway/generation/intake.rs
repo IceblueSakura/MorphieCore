@@ -388,6 +388,7 @@ pub(in crate::gateway) async fn produce_candidate(
     entry: &BoundEntry,
     candidate: &BoundCandidate,
     request: &Request,
+    original: &Request,
     upstream: reqwest::Response,
     limits: &Limits,
     lane: &Lane<'_>,
@@ -527,7 +528,7 @@ pub(in crate::gateway) async fn produce_candidate(
         padding,
     )
     .with_report(trace.report.clone())
-    .with_request(&candidate.endpoint, request)
+    .with_request(&candidate.endpoint, request, original)
     .with_coalescing(stream.then_some(limits.delta_coalescing).flatten());
     if let Some(history) = history {
         delivery = delivery.with_storage(&history.id, history.options.metadata());

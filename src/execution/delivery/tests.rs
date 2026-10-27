@@ -82,6 +82,172 @@ fn finalized_json_still_needs_handoff_and_cannot_resume_after_rejection() {
 }
 
 #[test]
+fn original_request_metadata_is_attempt_local_and_matches_responses_snapshots() {
+    let chat = GenerationCodec::new(GenerationApi::Chat, Dialect::Standard, None);
+    let responses = GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None);
+    let original = responses
+        .decode_client_request(
+            br#"{"model":"public","input":"go","metadata":{"ticket":"original"}}"#,
+        )
+        .unwrap();
+    let endpoint = crate::topology::catalog::API_KEY_BINDINGS
+        .iter()
+        .find(|b| {
+            b.protocols
+                .contains(&crate::topology::GenerationProtocol::OpenAiChat)
+        })
+        .unwrap()
+        .endpoint(crate::topology::GenerationProtocol::OpenAiChat)
+        .unwrap();
+    // Candidate-local preparation is deliberately different. Independent
+    // attempts must use the same admitted association, not the last candidate.
+    for (stream, prepared_metadata) in [
+        (
+            false,
+            Presence::Value(std::collections::BTreeMap::from([(
+                "ticket".into(),
+                "prepared".into(),
+            )])),
+        ),
+        (true, Presence::Absent),
+    ] {
+        let mut request = original.clone();
+        request.context.metadata = prepared_metadata;
+        let mut attempt = Attempt::new(chat.clone(), 4096, Default::default());
+        attempt.begin(200, "text/event-stream").unwrap();
+        let mut delivery = ResponseDelivery::new(
+            ClientAdapter::openai(responses.clone(), TargetContract::full()),
+            "public",
+            Default::default(),
+            StreamOptions {
+                include_obfuscation: Presence::Value(false),
+                ..Default::default()
+            },
+            Obfuscation::Disabled,
+        )
+        .with_request(&endpoint, &request, &original);
+        let chunk = json!({"id":"r","object":"chat.completion.chunk","model":"m","created":1,
+            "choices":[{"index":0,"delta":{"content":"A."},"finish_reason":null}]});
+        let (_, events) = attempt
+            .push(format!("data: {chunk}\n\n").as_bytes())
+            .unwrap();
+        let mut output = vec![];
+        if stream {
+            let prepared = delivery.prepare_events(&attempt, &events).unwrap().unwrap();
+            let bytes = prepared.context.retained_bytes().unwrap();
+            let mut metadata = prepared.context.metadata.clone();
+            let amount = metadata.delivery.as_ref().unwrap().request_metadata_bytes();
+            let mut context = (*prepared.context).clone();
+            Arc::make_mut(metadata.delivery.as_mut().unwrap()).request_metadata = Presence::Absent;
+            context.metadata = metadata;
+            context.accounted_bytes = Default::default();
+            let absent_bytes = context.retained_bytes().unwrap();
+            assert!(bytes > absent_bytes && bytes >= amount);
+            output.extend(
+                delivery
+                    .encode_prepared(prepared)
+                    .unwrap()
+                    .into_bytes()
+                    .concat(),
+            );
+            let text = String::from_utf8_lossy(&output);
+            let opening: Value =
+                serde_json::from_str(text.lines().find_map(|l| l.strip_prefix("data: ")).unwrap())
+                    .unwrap();
+            assert_eq!(
+                opening["response"]["metadata"],
+                json!({"ticket":"original"})
+            );
+        }
+        let finish = json!({"id":"r","object":"chat.completion.chunk","model":"m","created":1,
+            "choices":[{"index":0,"delta":{},"finish_reason":"stop"}]});
+        for wire in [format!("data: {finish}\n\n"), "data: [DONE]\n\n".into()] {
+            let (_, events) = attempt.push(wire.as_bytes()).unwrap();
+            if stream {
+                output.extend(
+                    delivery
+                        .encode_events(&attempt, &events)
+                        .unwrap()
+                        .into_bytes()
+                        .concat(),
+                );
+            }
+        }
+        attempt.finish().unwrap();
+        let observation = attempt.response().unwrap().clone();
+        let delivered = if stream {
+            output.extend(
+                delivery
+                    .finish_stream(&attempt)
+                    .unwrap()
+                    .into_bytes()
+                    .concat(),
+            );
+            let text = String::from_utf8(output).unwrap();
+            let terminal: Value = text
+                .lines()
+                .filter_map(|l| l.strip_prefix("data: "))
+                .map(|l| serde_json::from_str::<Value>(l).unwrap())
+                .next_back()
+                .unwrap();
+            terminal["response"].clone()
+        } else {
+            serde_json::from_slice(&delivery.encode_json(&attempt).unwrap()).unwrap()
+        };
+        let (retained, body) = delivery.snapshot(&attempt).unwrap();
+        let saved: Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(saved["metadata"], json!({"ticket":"original"}));
+        assert_eq!(delivered["metadata"], saved["metadata"]);
+        assert!(retained.metadata.context.execution.metadata.is_absent());
+        assert_eq!(
+            retained
+                .metadata
+                .delivery
+                .as_ref()
+                .unwrap()
+                .request_metadata,
+            original.context.metadata
+        );
+        assert_eq!(attempt.response().unwrap(), &observation);
+        assert!(observation.metadata.delivery.is_none());
+        assert!(observation.metadata.context.execution.metadata.is_absent());
+        assert!(delivery.effects().iter().any(|e| e.rule()
+            == "responses.echo-request-metadata.v1"
+            && e.change() == crate::protocol::conversion::generation::Change::InferFromRequest));
+        let (_, again) = ClientAdapter::openai(responses.clone(), TargetContract::full())
+            .snapshot(retained.clone())
+            .unwrap();
+        assert_eq!(again["metadata"], saved["metadata"]);
+        let mut no_echo = retained.clone();
+        Arc::make_mut(no_echo.metadata.delivery.as_mut().unwrap()).request_metadata =
+            Presence::Absent;
+        let stored = crate::protocol::openai::responses::managed::retained_size(
+            &original.task,
+            &retained,
+            body.len(),
+        )
+        .unwrap();
+        let without = crate::protocol::openai::responses::managed::retained_size(
+            &original.task,
+            &no_echo,
+            body.len(),
+        )
+        .unwrap();
+        assert!(stored > without);
+        let (next, _) = crate::protocol::openai::responses::managed::decode(
+            &responses,
+            br#"{"model":"public","input":"next"}"#,
+            Some((&original.task, &retained)),
+        )
+        .unwrap();
+        assert!(
+            next.context.metadata.is_absent(),
+            "history does not inherit request association"
+        );
+    }
+}
+
+#[test]
 fn prepared_batches_keep_the_metadata_snapshot_from_their_intake() {
     // A later report must not become visible in an earlier pending batch.
     let adapter = GenerationCodec::new(GenerationApi::Chat, Dialect::Standard, None);

@@ -482,6 +482,9 @@ pub(in crate::protocol::openai) fn write_metadata(
     metadata
         .context
         .write(&metadata.instruction_fidelity, o, completed)?;
+    if let Some(echo) = metadata.request_metadata_echo() {
+        put_presence(o, "metadata", echo, |value| json!(value));
+    }
     // Required nullable wire members are not invented observations in the IR.
     for field in [
         "access_programs",
@@ -528,6 +531,124 @@ pub(in crate::protocol::openai) fn write_metadata(
 mod tests {
     use super::*;
     #[test]
+    fn request_metadata_echo_respects_explicit_reports_and_strict_policy() {
+        use crate::protocol::{
+            GenerationDelivery,
+            conversion::generation::{Change, ReportedFactPolicy, RepresentationError},
+            openai::lowering::projection,
+        };
+        let request_map = Presence::Value(std::collections::BTreeMap::from([(
+            "ticket".into(),
+            "original".into(),
+        )]));
+        let report_map = Presence::Value(std::collections::BTreeMap::from([(
+            "provider".into(),
+            "reported".into(),
+        )]));
+        for (report, request, expected, echoed) in [
+            (Presence::Absent, Presence::Absent, Value::Null, false),
+            (Presence::Absent, Presence::Null, Value::Null, true),
+            (
+                Presence::Absent,
+                Presence::Value(Default::default()),
+                json!({}),
+                true,
+            ),
+            (
+                Presence::Absent,
+                request_map.clone(),
+                json!({"ticket":"original"}),
+                true,
+            ),
+            (Presence::Null, request_map.clone(), Value::Null, false),
+            (
+                Presence::Value(Default::default()),
+                request_map.clone(),
+                json!({}),
+                false,
+            ),
+            (
+                report_map,
+                request_map,
+                json!({"provider":"reported"}),
+                false,
+            ),
+        ] {
+            let mut source = decode_response(&json!({"id":"r","object":"response","created_at":1,
+                "model":"m","status":"completed","output":[]}))
+            .unwrap();
+            source.metadata.context.execution.metadata = report.clone();
+            source.metadata.delivery = Some(std::sync::Arc::new(GenerationDelivery {
+                request_metadata: request,
+                ..Default::default()
+            }));
+            source.metadata.validate().unwrap();
+            for completed in [false, true] {
+                let mut wire = Map::new();
+                write_metadata(&source.metadata, &mut wire, completed).unwrap();
+                assert_eq!(wire["metadata"], expected);
+            }
+            assert_eq!(source.metadata.context.execution.metadata, report);
+            let rule =
+                projection::request_metadata_echo(&source.metadata, ReportedFactPolicy::Faithful)
+                    .unwrap();
+            assert_eq!(rule.is_some(), echoed);
+            if let Some(rule) = rule {
+                assert_eq!(
+                    rule.effect("response.project".into()).change(),
+                    Change::InferFromRequest
+                );
+                assert_eq!(
+                    projection::request_metadata_echo(
+                        &source.metadata,
+                        ReportedFactPolicy::StrictComplete
+                    ),
+                    Err(RepresentationError::ReportedFacts)
+                );
+                let mut contract = crate::protocol::openai::TargetContract::full();
+                contract.reported_facts = ReportedFactPolicy::StrictComplete;
+                let mut encoder = crate::protocol::openai::events::EventEncoder::new(
+                    GenerationApi::Responses,
+                    source.metadata.clone(),
+                )
+                .unwrap()
+                .with_contract(contract);
+                assert!(matches!(
+                    encoder.encode(
+                        &StreamEvent::Usage(Usage::operation(1, 1, 2)),
+                        &source.fidelity
+                    ),
+                    Err(CodecError::Representation {
+                        cause: RepresentationError::ReportedFacts,
+                        ..
+                    })
+                ));
+                assert!(encoder.finish().is_err());
+            } else {
+                assert!(
+                    projection::request_metadata_echo(
+                        &source.metadata,
+                        ReportedFactPolicy::StrictComplete
+                    )
+                    .unwrap()
+                    .is_none()
+                );
+            }
+        }
+        let mut source = decode_response(&json!({"id":"r","object":"response","created_at":1,
+            "model":"m","status":"completed","output":[]}))
+        .unwrap();
+        source.metadata.delivery = Some(std::sync::Arc::new(GenerationDelivery {
+            request_metadata: Presence::Value(std::collections::BTreeMap::from([(
+                "k".into(),
+                "x".repeat(513),
+            )])),
+            ..Default::default()
+        }));
+        assert!(source.metadata.validate().is_err());
+    }
+
+    #[test]
     fn required_setting_completion_preserves_each_reported_value() {
         let request = decode_request(&json!({"model":"m","input":"go",
             "tools":[{"type":"function","name":"lookup","strict":false,"parameters":{"type":"object"}}],
@@ -540,6 +661,7 @@ mod tests {
         source.metadata.delivery = Some(std::sync::Arc::new(crate::protocol::GenerationDelivery {
             settings: request.task.semantic.settings().clone(),
             usage: None,
+            ..Default::default()
         }));
         let mut wire = Map::new();
         write_metadata(&source.metadata, &mut wire, true).unwrap();
@@ -574,6 +696,7 @@ mod tests {
         source.metadata.delivery = Some(std::sync::Arc::new(crate::protocol::GenerationDelivery {
             settings,
             usage: None,
+            ..Default::default()
         }));
         wire.clear();
         write_metadata(&source.metadata, &mut wire, false).unwrap();
