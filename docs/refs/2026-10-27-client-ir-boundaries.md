@@ -162,10 +162,75 @@ Rechecked on **2026-10-27** during the [selected three-protocol work](../roadmap
 
 ### Remaining source and semantic choices
 
-- **Repeated Messages signatures:** current native reduction concatenates signature fragments, whereas the inspected Python and [TypeScript accumulator](https://github.com/anthropics/anthropic-sdk-typescript/blob/5badc765f17d373405f300ee8e69e7f490b1f172/src/lib/MessageStream.ts) assign each signature value. The guide's ordinary flow has a signature before closure and omitted thinking has a single signature delta. The existing synthetic split-signature fixture is not independent proof of a multi-delta contract. No new concatenation/overwrite/rejection rule is selected here.
+- **Repeated Messages signatures:** the subsequent [expressiveness check](#protocol-expressiveness-check) found an explicit single-signature-delta contract for ordinary thinking as well as omitted display. Current concatenation and the synthetic split-signature fixture therefore need source-backed correction, not a new lossy mapping or an assumption that SDK last-write behavior permits repeated events. No code change was made during that analysis.
 - **Nonempty opener plus JSON fragments:** preserve the opener without fragments; reject a subsequent nonempty fragment stream rather than silently replace or merge its object. Establish a source contract before adding such behavior.
 - **Messages block scheduling and richer grouping:** ordinary block/tool loops remain covered; arbitrary cross-protocol interleaving, meaningful message boundaries, annotated text merges and completed-item/incomplete-response coarsening need separate exact carriers or an explicit loss selection.
 - **Other open choices:** Chat custom-call SSE source disagreement, broader request metadata/settings echo, legacy token-ceiling equivalence and the earlier dated source disagreements remain unresolved. None activates hosted tools or new APIs.
+
+## Protocol expressiveness check
+
+Checked on **2026-10-27** against **`c8d0c96`**, current official references and pinned SDK contracts. Additional source inspection used OpenAI Python [v3.39.0](https://github.com/openai/openai-python/releases/tag/v3.39.0), revision `f97798bc86e41f4a5d18644113ef94cf58722778`, and Node [v7.45.0](https://github.com/openai/openai-node/releases/tag/v7.45.0), revision `af8336b8c13bd5402868cf2ca0d9c64530c3848f`. These October 26 release candidates for our baseline were inspected, not installed or promoted to regression pins. This is analysis, not approval for additional omissions, wrapping or inferred state.
+
+### Independent item lifecycle versus overall stopping
+
+Responses has separate output-item status and response status carriers. Its [output-message type](https://github.com/openai/openai-python/blob/e8a0fd28bbdc1699c97ff0f602b1af3dd378382d/src/openai/types/responses/response_output_message.py) and [response type](https://github.com/openai/openai-python/blob/e8a0fd28bbdc1699c97ff0f602b1af3dd378382d/src/openai/types/responses/response.py) do not require every item's status to equal the enclosing response's status. The [streaming reference](https://developers.openai.com/api/reference/resources/responses/streaming-events) separately defines item-done, response-incomplete and response-failed events. Schema expressiveness is not proof that a particular live model emits every combination.
+
+Minimal relevant fields:
+
+```json
+{
+  "status": "incomplete",
+  "incomplete_details": {"reason": "max_output_tokens"},
+  "output": [{"type": "message", "id": "m", "role": "assistant",
+    "status": "completed",
+    "content": [{"type": "output_text", "text": "A.", "annotations": []}]}]
+}
+```
+
+Chat's [finish reason](https://developers.openai.com/api/reference/resources/chat/subresources/completions/methods/create) describes why generation stopped, not an independent status for every component. `content:"A."` plus `finish_reason:"length"` preserves the text and token-cap cause above; it cannot preserve the explicit completed-item observation. Changing only that source item to incomplete yields the same Chat view. Messages has no arbitrary per-block status either: `content_block_stop` closes a block, while `stop_reason` describes the message, including truncation.
+
+**Intrinsic difference:** the explicit per-item lifecycle vector has no standard Chat/Messages carrier. **Implementation policy:** [Chat intake](../../src/protocol/openai/chat/response.rs) infers incomplete item states from `length`/`content_filter`, and [lowering](../../src/protocol/openai/lowering/response.rs) rejects a source that cannot round-trip through that inference. Equality of source item and overall status is not a Chat wire requirement.
+
+A possible future named omission could preserve source IR and overall token-cap meaning while dropping per-item observations from an otherwise representable target view. It would remain lossy and must not establish executable tool completion. Do not rewrite source items to satisfy lowering or map `failed` to `length`. Failure after partial output needs an honest error path, not successful finalization; Chat/Messages lack the same normal result envelope for output plus an overall failed object.
+
+### Custom tools: source disagreement versus a real carrier gap
+
+| Surface | Evidence and classification |
+|---|---|
+| Chat complete JSON | Current [create reference](https://developers.openai.com/api/reference/resources/chat/subresources/completions/methods/create) and both SDK families define `type:"custom"` with `custom:{name,input}`. This is a real string-input carrier |
+| Chat SSE | Both pinned and inspected [Node definitions](https://github.com/openai/openai-node/blob/af8336b8c13bd5402868cf2ca0d9c64530c3848f/src/resources/chat/completions/completions.ts) define custom deltas; its [stream accumulator](https://github.com/openai/openai-node/blob/af8336b8c13bd5402868cf2ca0d9c64530c3848f/src/lib/ChatCompletionStream.ts) concatenates custom input and finalizes custom calls. The inspected [Python chunk type](https://github.com/openai/openai-python/blob/f97798bc86e41f4a5d18644113ef94cf58722778/src/openai/types/chat/chat_completion_chunk.py) and current [streaming reference](https://developers.openai.com/api/reference/resources/chat/subresources/completions/streaming-events) remain function-only. The disagreement survives a stable-source refresh |
+| Responses JSON/SSE | `custom_tool_call` and `response.custom_tool_call_input.delta`/`.done` explicitly carry string input |
+| Messages | [Final tool-use input is always an object](https://platform.claude.com/docs/en/build-with-claude/streaming#input-json-delta). An arbitrary custom input such as `print(1)` has no direct native carrier; wrapping it in `{"input":"print(1)"}` changes the declared tool interface and requires coordinated execution/schema policy |
+
+Classify Chat custom SSE as **source-disputed**, not intrinsically impossible. Node supplies a feasible codec design, not enough evidence to override the contradictory public reference silently. Python's type disagreement does not prove runtime rejection: its tolerant/generic accumulation is a separate consumer question. An additional ignored property is different from an actionable custom-call discriminator. Buffering into one chunk cannot resolve that semantic-contract disagreement.
+
+### Metadata and configuration reports are direction-specific
+
+| Fact | Chat | Responses | Messages |
+|---|---|---|---|
+| Request metadata | Arbitrary bounded string map | Same bounded map meaning | `metadata.user_id` is request attribution, not the OpenAI arbitrary map |
+| Response metadata | Optional map in full `ChatCompletion`; no standard chunk member | Nullable map in the Response object, including lifecycle SSE | No corresponding standard Message response map |
+| Sampling/configuration echo | Request controls do not create `temperature`/`top_p` members in Chat JSON/chunks | Response objects have configuration fields and applicable nullable values | No general response settings echo; the native request control surface is independently defined |
+
+Sources: current [Chat create](https://developers.openai.com/api/reference/resources/chat/subresources/completions/methods/create), [Chat chunks](https://developers.openai.com/api/reference/resources/chat/subresources/completions/streaming-events), [Responses create](https://developers.openai.com/api/reference/resources/responses/methods/create) and [Messages create](https://platform.claude.com/docs/en/api/messages/create), corroborated by their SDK response types.
+
+Responses metadata can map exactly to full Chat JSON when valid, but aggregating chunks cannot create a standard Chat SSE metadata slot. Only the already selected null omission is authorized; `{}` and nonempty maps retain their current rejection. Likewise, arbitrary OpenAI metadata must not be relabeled as Messages `user_id`.
+
+The reverse direction has a different design question. A gateway-owned Response can echo admitted request metadata/configuration in its separate delivery context, but those values are not observations returned by the Chat upstream. Establish field meaning, precedence and original-versus-prepared request authority; never overwrite an explicit upstream value or claim unreported model-effective settings. Current [completion](../../src/execution/delivery/completion.rs) selects only tools/tool-choice/parallelism, and [envelope writing](../../src/protocol/openai/responses/envelope.rs) preserves reports before filling those missing echoes. Broader echo is unselected, not a parser defect.
+
+### Reasoning and argument representations
+
+OpenAI [reasoning summaries and encrypted continuity](https://developers.openai.com/api/docs/guides/reasoning) and Anthropic [thinking/encryption](https://platform.claude.com/docs/en/build-with-claude/thinking) have distinct native owners. Standard Chat has no corresponding reasoning-content/replay carrier; an explicitly selected private profile is not standard support. Summary text is not interchangeable with an opaque replay value, and no standard contract makes OpenAI encrypted content usable as a Messages signature. Keeping characters while changing hidden reasoning into an answer changes visibility, not just formatting.
+
+Function argument fragments may be streamed as strings in all three systems, but their complete-value contracts differ: Chat/Responses preserve generated strings, including invalid JSON, whereas complete Messages input is an object. A valid object string has a value-preserving mapping, subject to existing lexical-normalization/replay rules; an array, invalid JSON or arbitrary custom string does not. A truncated object prefix can retain incomplete streaming meaning under the selected Messages max-token path, but cannot become a complete JSON response/history object. Buffering establishes whether a value is complete; it cannot manufacture validity.
+
+**New source clarification:** the current Anthropic [Thinking page](https://platform.claude.com/docs/en/build-with-claude/thinking) explicitly states that thinking deltas are “followed by a single `signature_delta` event just before the block's `content_block_stop`,” for summarized and omitted display. The current native reducer's concatenation of multiple signature events and its synthetic split fixture are not justified by that documented shape. SDK assignment behavior does not authorize duplicate events either. Treat this as a source-validation/fixture correction to investigate next, distinct from incompatible cross-protocol replay formats.
+
+### Reproduced boundaries and recommendations
+
+A temporary standalone probe linked the current `c8d0c96` library and used only synthetic payloads. It confirmed: Responses decodes a completed item under incomplete outcome; Chat snapshot rejects it as `Representation(Terminal)`; Chat `length` intake infers incomplete item state; a nonempty Responses metadata map succeeds in Chat JSON but fails Chat SSE encoder creation; complete custom Chat JSON is accepted. A separate tool-input contrast reached the intended boundary after supplying explicit synthetic accounting: object arguments encode to Messages, arrays reject as unsupported, and malformed JSON rejects as invalid JSON. Missing usage initially blocked that contrast and was not misreported as an argument defect.
+
+Keep three decisions separate: (1) optional named omission of item-lifecycle detail, (2) provenance-aware request echo, (3) custom-tool interface adaptation. None is selected by this research. Reordering and nonsemantic extension tolerance cannot supply absent standard carriers. No production changes, dependency updates, live Provider calls or broad conformance tests were performed.
 
 ## Diagnostics and approval boundaries
 
