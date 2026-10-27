@@ -218,11 +218,74 @@ impl ApiError {
                 "server_error",
                 "The upstream is overloaded. Please retry your request.".into(),
             ),
+            ErrorKind::ModelNotFound => (
+                "invalid_request_error",
+                "The requested model does not exist or is not available for this endpoint.".into(),
+            ),
+            ErrorKind::Unauthorized => (
+                "invalid_request_error",
+                "Invalid or missing authentication credentials.".into(),
+            ),
+            ErrorKind::ResponseNotFound => (
+                "invalid_request_error",
+                "The specified previous response ID was not found.".into(),
+            ),
+            ErrorKind::HistoryCapacity => (
+                "invalid_request_error",
+                "Conversation history capacity limit exceeded.".into(),
+            ),
+            ErrorKind::UnsupportedMediaType => (
+                "invalid_request_error",
+                "Unsupported media type or Content-Type header.".into(),
+            ),
+            ErrorKind::RequestTooLarge => (
+                "invalid_request_error",
+                "Request payload exceeds the maximum permitted size limit.".into(),
+            ),
+            ErrorKind::RequestTimeout => (
+                "invalid_request_error",
+                "Request intake timed out before completion.".into(),
+            ),
+            ErrorKind::Timeout => (
+                "api_error",
+                "The upstream request timed out.".into(),
+            ),
+            ErrorKind::Unavailable => (
+                "api_error",
+                "The upstream provider is temporarily unavailable.".into(),
+            ),
+            ErrorKind::CredentialUnavailable => (
+                "api_error",
+                "No valid credentials available for the target route.".into(),
+            ),
+            ErrorKind::Shutdown => (
+                "server_error",
+                "The gateway is shutting down and cannot accept new requests.".into(),
+            ),
+            ErrorKind::GatewayBusy => (
+                "server_error",
+                "The gateway is currently handling too many concurrent requests.".into(),
+            ),
+            ErrorKind::NotFound => (
+                "invalid_request_error",
+                "The requested resource was not found.".into(),
+            ),
+            ErrorKind::MethodNotAllowed => (
+                "invalid_request_error",
+                "HTTP method not allowed for this route.".into(),
+            ),
+            ErrorKind::ModelDeletionForbidden => (
+                "invalid_request_error",
+                "Model deletion is not permitted.".into(),
+            ),
             _ if self.status.is_client_error() => (
                 "invalid_request_error",
-                "The request could not be completed.".into(),
+                format!("The request could not be completed ({}).", self.code()),
             ),
-            _ => ("api_error", "The request could not be completed.".to_string()),
+            _ => (
+                "api_error",
+                format!("The request could not be completed ({}).", self.code()),
+            ),
         };
         json!({"error":{"message":message,"type":kind,"param":null,"code":self.code()}})
     }
@@ -273,6 +336,16 @@ impl ApiError {
                 StatusCode::from_u16(529).expect("valid status"),
                 "overloaded_error",
                 "Overloaded".into(),
+            ),
+            ErrorKind::ModelNotFound => (
+                StatusCode::NOT_FOUND,
+                "not_found_error",
+                "The requested model does not exist or is not available for this endpoint.".into(),
+            ),
+            ErrorKind::Unauthorized => (
+                StatusCode::UNAUTHORIZED,
+                "authentication_error",
+                "Invalid or missing authentication credentials.".into(),
             ),
             _ => {
                 let kind = match self.status.as_u16() {

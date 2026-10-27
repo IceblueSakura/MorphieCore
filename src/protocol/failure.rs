@@ -1,50 +1,94 @@
 //! Pure source-error meaning and closed conversion rejection vocabulary.
 use crate::protocol::conversion::generation::Field;
 use serde::Serialize;
+
+/// Closed vocabulary of structural wire framing and snapshot shape validation failures.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ShapeReason {
+    /// JSON syntax or deserialization failure.
     Json,
+    /// Expected a JSON object container.
     Object,
+    /// Invalid or conflicting top-level response metadata.
     Metadata,
+    /// Response ID mutated across stream frames or snapshots.
     MetadataIdChanged,
+    /// Model identifier mutated across stream frames or snapshots.
     MetadataModelChanged,
+    /// Creation timestamp mutated across stream frames or snapshots.
     MetadataCreatedChanged,
+    /// Invalid choices container or cardinality.
     Choices,
+    /// Tool call identifier is malformed or missing.
     CallIdentity,
+    /// Content delta framing violation.
     Delta,
+    /// Usage reported after terminal EOF.
     UsageTail,
+    /// Usage reported prematurely before initial content.
     EarlyUsage,
+    /// Event received after stream has already completed or finished.
     AfterFinish,
+    /// Event sequence ordering violation.
     Sequence,
+    /// Conflicting request or response generation settings.
     SettingsConflict,
+    /// Configuration update conflicts with admitted request state.
     ConfigurationConflict,
+    /// Invalid item snapshot framing.
     ItemSnapshot,
+    /// Invalid terminal response snapshot framing.
     TerminalSnapshot,
+    /// Snapshot item container shape violation.
     SnapshotShape,
+    /// Snapshot item identifier disagreement.
     SnapshotIdentity,
+    /// Snapshot lifecycle state conflict.
     SnapshotLifecycle,
+    /// Snapshot message phase conflict.
     SnapshotPhase,
+    /// Snapshot replay attachment violation.
     SnapshotReplay,
+    /// Replay attachment unexpectedly added to existing item.
     SnapshotReplayAdded,
+    /// Replay attachment unexpectedly removed from existing item.
     SnapshotReplayRemoved,
+    /// Replay attachment mutated from previously published snapshot.
     SnapshotReplayChanged,
+    /// Snapshot reasoning summary conflict.
     SnapshotSummary,
+    /// Snapshot text content conflict.
     SnapshotText,
+    /// Snapshot history annotations conflict.
     SnapshotAnnotations,
+    /// Snapshot probability presence conflict.
     SnapshotProbabilityPresence,
+    /// Snapshot probabilities values conflict.
     SnapshotProbabilities,
+    /// Snapshot value shape violation.
     ValueSnapshot,
+    /// Reasoning control shape violation.
     Reasoning,
+    /// Log probabilities shape violation.
     Probabilities,
+    /// General item shape violation.
     Item,
+    /// Client identity hint shape violation.
     Identity,
+    /// Usage breakdown shape violation.
     Usage,
+    /// Generic invalid field value.
     InvalidValue,
+    /// Invalid response item status.
     Status,
+    /// Invalid terminal outcome status.
     TerminalStatus,
+    /// Invalid terminal explanation.
     TerminalExplanation,
+    /// Invalid cryptographic signature framing.
     Signature,
+    /// Signature payload corrupted or unparseable.
     SignaturePayload,
 }
 impl std::fmt::Display for ShapeReason {
@@ -56,27 +100,47 @@ impl std::fmt::Display for ShapeReason {
         }
     }
 }
+/// Closed vocabulary of semantic carrier absence or incompatibility rejections.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum CarrierReason {
+    /// Target has no schema carrier for structured output.
     Schema,
+    /// Target cannot represent citation coordinate metadata.
     CitationMetadata,
+    /// Target cannot represent URL context metadata.
     UrlContextMetadata,
+    /// Target has no carrier for mean log probabilities.
     MeanLogprob,
+    /// Target has no carrier for summed log probabilities.
     SumLogprob,
+    /// Target cannot carry explicit token IDs.
     TokenId,
+    /// Target cannot represent step-level error status.
     StepError,
+    /// Target cannot represent rich history annotations.
     Annotations,
+    /// Target cannot carry multipart message contents.
     MultipartContent,
+    /// Target has an unrepresented unknown field without extension carrier.
     UnknownField,
+    /// Target feature is unavailable or disabled.
     Unavailable,
+    /// Target cannot represent the requested terminal outcome.
     Terminal,
+    /// Target has no carrier for detailed usage breakdowns.
     Usage,
+    /// Target lacks a carrier for the requested replay format.
     Replay,
+    /// Target cannot represent the requested reasoning controls or tokens.
     Reasoning,
+    /// Target lacks a tool or function calling carrier.
     Tools,
+    /// Target has no carrier for safety ratings or assessments.
     Safety,
+    /// Target cannot represent request or response metadata.
     Metadata,
+    /// Target cannot represent the specified domain field.
     Field(Field),
 }
 impl std::fmt::Display for CarrierReason {
