@@ -128,6 +128,22 @@ The ordinary path already represents root/system instructions, text/images/selec
 
 **Beta-only, not stable-field omissions:** context management/compaction, MCP configuration, fallbacks/credit tokens, task budgets, toolset dispatch, advisor/MCP/compaction/fallback blocks and display `updates` remain unsupported or narrowly excepted. Accepted block binding, per-message effort and inline tool changes require the explicit-profile reconciliation above. Removed sampling fields are recognized and rejected; that is not missing support for the selected stable API.
 
+## Open-source bridge cross-check
+
+Rechecked on **2026-10-27** following the boundary review. These pinned implementations are mechanism references, not protocol authorities or newly approved compatibility policies. Five public source files were fetched successfully at their immutable revisions; the retained CLIProxyAPI source matched the fetched bytes. This was source/test inspection, not execution of those projects or Provider acceptance. No implementation was imported.
+
+| Reference | Useful mechanism | Boundary for MorphieCore |
+|---|---|---|
+| LiteLLM [`completion_extras/litellm_responses_transformation`](https://github.com/BerriAI/litellm/tree/cfe0100e1fca613e7b1af27dd1fe4807ca4d1d1a/litellm/completion_extras/litellm_responses_transformation) and [`responses/litellm_completion_transformation`](https://github.com/BerriAI/litellm/tree/cfe0100e1fca613e7b1af27dd1fe4807ca4d1d1a/litellm/responses/litellm_completion_transformation) | Distinct request, JSON and streaming paths in both directions; dense Chat tool indices independent of mixed Responses output indices; item completion separate from response completion | Do not import call-ID rewriting, unsupported-item skipping, structured-output message dropping or nonstandard reasoning carriers. Its Responses-to-Chat streaming text branch forwards arrival-order deltas; it does not solve the message/part ordering counterexample above |
+| CLIProxyAPI [`openai/openai/responses`](https://github.com/router-for-me/CLIProxyAPI/tree/1f917e77c4562623aa49e9804d999524151a2f96/internal/translator/openai/openai/responses) | Independent sequence/item/call coordinates; pending tool identity and arguments; delayed response termination to include late usage; explicit request-echo state | Do not import missing-call-ID synthesis, empty arguments becoming `{}`, completion without a finish reason, or synthesized source termination at EOF. Broad request echo does not establish Provider-effective settings |
+| OpenAI Agents Python [`chatcmpl_stream_handler.py`](https://github.com/openai/openai-agents-python/blob/b040da59037b1a34fee3a0dd4da95a571460eb98/src/agents/models/chatcmpl_stream_handler.py) | Stable announced output indices, buffered call fragments and Agent-facing event organization | This is an Agent event adapter, not a complete Responses HTTP/SSE gateway. Internal placeholder IDs and configurable compatibility behavior are not standard-wire precedents |
+
+Retain `wire → typed IR → target projection → wire`, rather than adding parallel point-to-point converters. Existing filtered call owners already supply dense Chat indices; the bounded text queue repairs ordering without a second identity map. The existing validated-EOF gate, shared item rendering and delivery completion are stronger than the references' permissive terminal paths.
+
+The cross-check exposed a compatibility limit: a new Chat tool index currently requires its ID and name together. Separate arrival can be handled by bounded codec-local pending state before immutable `ItemStarted`, but source qualification and scope selection remain necessary; never fabricate a call/result link when identity remains missing. Request-local metadata echo is also a separate selection from omitting reported metadata. Neither is automatically activated by this research.
+
+Use a small set of independent protocol expectations: mixed text/call indices; interleaved message parts; raw argument preservation; item-done versus terminal snapshots; late usage after finish; incomplete output; missing/trailing terminal evidence. Reference output is useful for discovering differences, not for declaring a difference correct. Reuse existing regressions and SDK consumers rather than adding a combinatorial matrix.
+
 ## Diagnostics and approval boundaries
 
 Official evidence does **not** justify rejecting every additional response property:

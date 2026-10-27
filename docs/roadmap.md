@@ -6,6 +6,7 @@ This page owns current scope, priorities, dependencies and exit gates. Start wit
 
 - [Current status](#current-status)
 - [Standard request boundary repair](#standard-request-boundary-repair)
+- [Three-protocol fidelity repair](#three-protocol-fidelity-repair)
 - [Standards reset and redesign](#standards-reset-and-redesign)
 - [Planned order](#planned-order)
   - [Execution sequence and work-package rules](#execution-sequence-and-work-package-rules)
@@ -51,7 +52,7 @@ This page owns current scope, priorities, dependencies and exit gates. Start wit
 
 ## Current status
 
-**Current handoff (2026-10-26):** the five-slice [standard request boundary repair](#standard-request-boundary-repair) is implemented under official-protocol priority. Standard Client intake, continuation trust and standard target encoding are separate; conflicting omitted-annotation/unsigned-thinking input compatibility is removed. The next correctness work is a separately bounded expansion of analysis and repair from the remaining evidence, not a new API stage or automatic Provider/routing reopening.
+**Current work (2026-10-27):** the selected [three-protocol fidelity repair](#three-protocol-fidelity-repair) expands the Client/IR audit into Chat, Responses and Messages request/history, JSON/SSE and retained-delivery correctness. The goal is near-lossless supported semantics, protocol-permitted unknown fields and bounded dependency-preserving SSE aggregation/reordering. Existing in-progress repairs are inputs to this work, not a completed verification baseline. This is not a new API stage, blanket loss approval or Provider/routing reopening.
 
 **Earlier scoped handoff (2026-10-26):** the selected Generation Text implementation passed its overall correctness, lifecycle, evidence and redundancy review. Unified [domain evidence](architecture.md#domain-evidence-interface) and [local telemetry](architecture.md#observability) are implemented, not pending migrations. The [closure checks](development.md#text-and-sse-integration-baseline) and separately bounded [current-host/Provider reacceptance](refs/2026-10-17-generation-contracts.md#current-host-closure-recheck-2026-10-25) passed with explicit exclusions; they do not resolve the later request-boundary counterexamples. Stage 4 retains Decision, Embedding, Audio, Images, Files/Uploads and Video at equal priority; no further operation, routing feature or deployment follows from the earlier handoff.
 
@@ -62,8 +63,8 @@ The expanded Generation Text-only [model discovery](architecture.md#generation-t
 | Area | State | Next step |
 |---|---|---|
 | Routing | Functional phase complete under the [stable routing baseline](architecture.md#failover); feature development closed. Selected [controlled acceptance](#controlled-routing-acceptance) passed through Router, SDK and installed clients | [Production closure](#generation-text-production-closure) requires separate real evidence for routes promising failover; no routing feature expansion |
-| Generation IR/codec | The [2026-10-26 request findings](refs/2026-10-26-standard-request-boundaries.md) are corrected at their source, replay-opening and standard-encoding owners | Preserve independent directional/safety checks; select the next review domain without claiming full official conformance |
-| Client compatibility | Standard-priority request corrections supersede omitted annotations and unsigned thinking intake; actual installed-client evidence uses explicit stable-profile configuration | Do not restore nonstandard repairs to reconnect a client; response/SSE unsigned delivery remains a visible separate limitation |
+| Generation IR/codec | The [2026-10-26 request findings](refs/2026-10-26-standard-request-boundaries.md) are corrected; the [three-protocol fidelity repair](#three-protocol-fidelity-repair) is selected and in progress | Reconcile directional parsing, projection and final/history agreement; retain unsupported domains and source disagreements explicitly |
+| Client compatibility | Standard-priority request corrections supersede omitted annotations and unsigned thinking intake; actual installed-client evidence uses explicit stable-profile configuration | Revalidate changed JSON/SSE/tool/history paths without restoring invalid input or fabricated signatures |
 | Integration | Selected R1a/R1b/R2 client loops and controlled routing acceptance passed their bounded scopes. R1b lifecycle reports and client history shorthand were explicitly selected on 2026-10-20 | [Production closure](#generation-text-production-closure): bounded capability and sustained-operation acceptance, not a full client/model matrix |
 | Cross-protocol conversion and counting | Stage 3 closed its selected projection and loop scope; counting is deferred | Preserve that evidence; the [Google pause](#google-api-pause) has selected text-report and stage-4 Embedding exceptions, not general Generation reopening |
 | Generation Text production readiness | Historical closure and current request correction retain explicit exclusions | No new deployment or all-standard claim; follow the [next review direction](#standard-request-boundary-repair) and existing readiness boundaries |
@@ -89,6 +90,56 @@ Broader analysis and repair may now proceed through a newly bounded selection, r
 Keep the five-stage API plan, existing routing freeze, deferred counting, diagnostic-extension exception and unscheduled stage 5. Independently selected work retains its own authority. Historical acceptance never certifies new standard claims; unsupported or blocked client behavior must remain visible, not repaired by weakening the protocol.
 
 The subsequent [Client semantic boundary clarification](architecture.md#field-handling) is accepted guidance for that review, not another completed implementation or acceptance gate. Review response extension positions against [protocol-permitted optional diagnostics](architecture.md#public-capability-and-adaptation-notice); neither prior SDK success nor deferred extension testing proves those positions conform. Do not enable a new lossy legacy-field mapping without user confirmation or turn unknown Client fields into Provider passthrough. This clarification does not activate diagnostic organization/aggregation or its deferred test work.
+
+## Three-protocol fidelity repair
+
+**Selected on 2026-10-27.** This replaces the narrow next-review recommendation with one corrective workstream for standard Chat Completions, Responses and Messages. [Architecture](architecture.md#accurate-ir-and-declared-loss) owns semantic fidelity, [field handling](architecture.md#field-handling) owns unknown/unsupported distinctions, and [stream normalization](architecture.md#semantic-stream-normalization) owns permitted aggregation/reordering. The [Client/IR audit](refs/2026-10-27-client-ir-boundaries.md) and its [open-source cross-check](refs/2026-10-27-client-ir-boundaries.md#open-source-bridge-cross-check) are evidence, not comprehensive conformance or a replacement standard.
+
+### Scope and boundaries
+
+Cover all three same-protocol paths and assess all six cross-protocol directions, through request/history decoding, IR ownership, target request encoding, upstream JSON/SSE decoding, downstream delivery and next-turn history. Directional assessment does not require a Cartesian test matrix or promise universal conversion. Preserve `wire → typed IR → target projection → wire`; correct unnecessary representation restrictions and duplicated authority, not merely the last serializer.
+
+The active domain is existing Generation Text: instructions/roles, text/refusal, ordinary function tools/results and structured-output controls, supported reasoning/replay, settings/presence, usage/reports, errors and terminals. Include already supported media/annotation/cache carriers when aggregation or history changes could damage them; this is regression protection, not complete multimodal or cache redesign. Custom-tool SSE, delayed tool identity, broader unphased grouping and request-echo candidates require source qualification; implement exact, source-established corrections within this domain, but select new semantic owners or actual losses before proceeding.
+
+Unknown protocol extension properties are accepted and discarded at legal object positions, never forwarded or assigned execution meaning. User-data maps remain intact. Classify unknown event handling separately per protocol; a novel content discriminator, known unsupported control or invalid known field is not an ignorable extra. Keep the selected stable Messages/beta boundary and no new Client profile. The approved Chat null-metadata omission remains narrow; no general metadata dropping or implicit request echo follows.
+
+Current uncommitted delivery, intake and fixture changes must be reviewed against this scope and independently checked. Preserve valid repairs and unrelated work; replace accidental restrictions or obsolete expectations rather than restoring the old implementation to make tests pass. Compilation or historical acceptance is not completion of this work.
+
+### Reference strategy
+
+Use a bounded, question-driven reference set. Official protocol contracts define semantics; SDK types, parsers and tests expose concrete shapes and ambiguities; bridge implementations expose mechanisms and counterexamples; actual clients establish consumption behavior. Conflicting official sources remain explicit. Recheck current stable releases and dated documentation, retaining reproducible regression pins until a reviewed update is integrated; do not silently replace references with repository HEAD or downgrade installed clients.
+
+| Reference family | Investigation target |
+|---|---|
+| OpenAI and Anthropic official references, versioning/changelogs, Python and TypeScript SDKs | Request/history unions, absent/null/default distinctions, full versus partial tool arguments, signatures, errors, terminal events, unknown-field/event policies and real stream accumulation |
+| WHATWG HTML EventSource, RFC 8259, EventSource Parser and applicable WPT fixtures | UTF-8/JSON and SSE framing, fragmented/multiline events, EOF and resource bounds; browser reconnection behavior does not authorize generation replay |
+| LiteLLM and CLIProxyAPI | Both OpenAI bridge directions plus actual Messages paths: identity buffering, output-index mapping, block scheduling, usage and request-echo provenance; inspect source and tests, not feature labels |
+| Vercel AI SDK and OpenAI Agents SDK | Provider normalization, typed stream consumers, incremental tool assembly and final/history materialization; distinguish their internal event models and repair policies from public wire standards |
+| Installed pi and OpenCode | Actual serialization, SDK/event consumption, tool loops, signature preservation and replay; isolated current-host acceptance, not historical source-pin execution |
+| new-api/RelayKit or another targeted comparator | Consult only to resolve a remaining concrete design question. Check license at the inspected revision; AGPL code is conceptual reference only, not an import into this MIT project |
+
+Record source revision/date, relevant path/test and license in existing references/research notes. Reuse useful upstream assets with thin adapters and independent semantic assertions; do not build an external-project runner or broad benchmark framework. No new dependency is selected merely by adding a reference.
+
+### Execution slices
+
+Slice labels are planning identifiers, not code/test names. Research and fixes may overlap where independent; unresolved choices block only dependent work.
+
+| Slice | Work and decisive questions | Exit evidence |
+|---|---|---|
+| 1. Source and boundary reconciliation | Recheck official source disagreements and current changes. Classify supported/unsupported known fields, legal unknown extras/events, user-data maps, source/target direction and existing projection losses. Identify exact carrier gaps versus genuine semantic choices | A compact directional disposition in existing research notes; affected source-derived expectations and working-tree changes classified, not a field-count target |
+| 2. Typed intake and standard envelopes | Complete known-field/union/null/requiredness repairs and stable Messages filtering. Preserve controls and history through same-protocol paths; check target preparation against admission. Keep request echo separate from reported facts | Independent wire→IR and IR→wire cases using official types/assets, legal-extra contrasts and required negative paths; no pass-through bag |
+| 3. Tool identity and argument lifecycle | Qualify separate ID/name/type arrival, interleaved calls, immutable announced identity and target indices. Preserve raw Chat/Responses arguments; enforce Messages object constraints only at their owner. Investigate partial/truncated arguments and tool-result/history association | Bounded pending state where needed; normal/late/conflicting/missing identity and raw/object/incomplete argument checks; no fabricated ID, empty-object repair or premature executable call |
+| 4. Content ordering and reasoning/replay | Unify JSON/SSE projection semantics across phase/no-phase and message/part/block grouping. Serialize lawful interleaving; retain refusal, annotations/probabilities and supported media owners. Verify thinking/signature closure, redacted/encrypted state and history provenance | Source-valid reordered/aggregated streams yield legal target prefixes and matching final/history meaning; unrepresentable protected content rejects, buffers stay bounded and ready content remains incremental |
+| 5. Terminal, usage and delivery completion | Reconcile item/block closure, late usage, actual/derived/estimated reports, required nullable fields and selected null-metadata loss. Preserve distinct incomplete/refusal/failure outcomes and validate done snapshots against deltas | No duplicated content or successful terminal after missing source evidence, trailing invalid data, cancellation or transport failure; consistent item-done/final JSON/retained snapshots under the same selected projection |
+| 6. Integrated acceptance and publication | Exercise ordinary text and tool-result-final-answer loops, then focused invalid/truncated-argument, signed/unsigned-reasoning and late-usage/interruption probes at the responsible boundaries. Review removals and documentation | Full offline baseline plus applicable pinned SDK and current installed-client gates; separately bounded Provider probes when needed for a real-behavior claim. Report exact carriage, approved loss, rejection and unverified scope distinctly |
+
+Run focused checks while repairing each owner and integrate external expectations in that slice, not after all implementation is rewritten. Reuse existing lifecycle, credential/origin, strict-JSON, bounds, cancellation and replay tests. Do not duplicate every case across all directions; do establish direction-specific evidence where contracts differ. Final equality alone does not prove legal intermediate events or incremental behavior.
+
+### Completion and exclusions
+
+Completion means the selected common text/tool loops and supported native carriers preserve meaning through their declared directions, with a small explicit set of approved losses and visible unsupported cases. It is not an invented percentage of losslessness. Record meaningful decisions in Architecture, source evidence in existing dated notes and verification in Development; remove completed slices here. The safe-to-ignore diagnostic-extension test/aggregation deferral remains unchanged.
+
+No new hosted tools, provider-held conversation emulation, beta Client selector, multi-choice contract, Google Generation expansion, media/resource API, counting, routing/retry policy, persistence or deployment is activated. Broad metadata/settings echo, hidden-reasoning visibility changes and lossy structural flattening require a minimal counterexample and explicit selection. Existing exact conversions may be repaired without asking for approval of routine implementation details.
 
 ## Standards reset and redesign
 
