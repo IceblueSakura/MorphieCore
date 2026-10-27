@@ -1,6 +1,6 @@
 # References
 
-This page indexes primary sources, licenses and dated research notes. It does not select design or certify implementation: [Architecture](architecture.md) owns accepted contracts and [Roadmap](roadmap.md) owns current scope and acceptance. Web pages are unversioned; recheck them when implementing the protocol. A pinned revision does not mean it is installed or verified locally.
+This document indexes primary protocol sources, dependency selections, test repositories, and dated research notes.
 
 ## Contents
 
@@ -14,7 +14,7 @@ This page indexes primary sources, licenses and dated research notes. It does no
   - [OpenRouter](#openrouter)
   - [OpenCode Go](#opencode-go)
   - [JSON Schema](#json-schema)
-- [OAuth / OIDC](#oauth--oidc)
+- [OAuth and OIDC](#oauth-and-oidc)
 
 ## Pinned sources
 
@@ -33,13 +33,13 @@ Resolved on **2026-10-23**. [tests/upstream/sources.lock.json](../tests/upstream
 | WPT / Google protobufs | Immutable source snapshots; these sources have no selected package release |
 | Codex | 0.164.0 reference source only; no additional client activation |
 
-OpenCode's selected release was cross-checked with npm `opencode-ai`. The pi source is the existing earendil-works fork, not the unrelated `@mariozechner/pi-coding-agent` release line. Do not replace the intended client by matching a package name alone.
+OpenCode's selected release corresponds to npm `opencode-ai`. `pi` source uses the `earendil-works/pi` fork.
 
-The [stable-release protocol recheck](refs/2026-10-23-stable-protocol-contracts.md) records material source changes and disagreements. These selections supersede the earlier mapping baseline for the [accepted reset](roadmap.md#standards-reset-and-redesign), without retroactively changing dated evidence. The [2026-10-24 candidate review](refs/2026-10-23-stable-protocol-contracts.md#latest-candidate-review-2026-10-24) identifies newer Anthropic Python/TypeScript and Vercel core releases; the table is the verified baseline, not a claim of today's latest versions.
+The [stable-release protocol recheck](refs/2026-10-23-stable-protocol-contracts.md) records material source changes. The [2026-10-24 candidate review](refs/2026-10-23-stable-protocol-contracts.md#latest-candidate-review-2026-10-24) identifies subsequent candidate releases.
 
 ### Telemetry dependency selection
 
-Resolved from crates.io release metadata and published package `.cargo_vcs_info.json` on **2026-10-24**. Exact package versions/checksums live in `Cargo.toml`/`Cargo.lock`; the same tracing/SDK pins enter local production wiring on **2026-10-25**, while OTLP export and metrics feasibility remain test-only. These are not new protocol assets in `tests/upstream/`.
+Resolved from crates.io release metadata on **2026-10-24**:
 
 | Packages | Selected release / source revision | License |
 |---|---|---|
@@ -48,11 +48,7 @@ Resolved from crates.io release metadata and published package `.cargo_vcs_info.
 | `tracing-opentelemetry` | 0.34.0 / [`8c1a02d`](https://github.com/tokio-rs/tracing-opentelemetry/tree/8c1a02d68034de317607ada0b1dd0d98abefd6cd) | MIT |
 | `opentelemetry`, `opentelemetry_sdk`, `opentelemetry-otlp`, `opentelemetry-appender-tracing` | 0.33.1 / [`372ebbc`](https://github.com/open-telemetry/opentelemetry-rust/tree/372ebbc74d4dba71bb9820732f57f7316b4e7a1e) | Apache-2.0 |
 
-The [0.33.1 release](https://github.com/open-telemetry/opentelemetry-rust/releases/tag/opentelemetry-0.33.1) stabilizes Logs/Metrics OTLP exporters; Traces remain Beta. Use published dependencies and versioned source over stale overview/examples: tracing bridge 0.34 accepts OTel 0.33, and OTLP's reqwest 0.13 range resolves to the project's existing client.
-
-Primary contract entry points: [OTLP HTTP/runtime/configuration](https://docs.rs/opentelemetry-otlp/0.33.1/opentelemetry_otlp/), [log bridge mapping](https://docs.rs/opentelemetry-appender-tracing/0.33.1/opentelemetry_appender_tracing/), [trace bridge configuration](https://docs.rs/tracing-opentelemetry/0.34.0/tracing_opentelemetry/struct.OpenTelemetryLayer.html), and [batch log processor source](https://github.com/open-telemetry/opentelemetry-rust/blob/372ebbc74d4dba71bb9820732f57f7316b4e7a1e/opentelemetry-sdk/src/logs/batch_log_processor.rs). [Development](development.md#telemetry-ecosystem-checks) owns executable evidence and limits.
-
-The separately reviewed [tracing-appender 0.2.5](https://docs.rs/tracing-appender/0.2.5/tracing_appender/) is not a drop-in replacement for private size-bounded, locked, tail-repaired storage. [tower-http 0.7.1 tracing](https://docs.rs/tower-http/0.7.1/tower_http/trace/) offers HTTP/body polling hooks, not Generation terminal or body-drop authority. Neither is added by this slice; production file storage and gateway lifecycle retain their current owners.
+Primary contract entry points: [OTLP HTTP/runtime/configuration](https://docs.rs/opentelemetry-otlp/0.33.1/opentelemetry_otlp/), [log bridge mapping](https://docs.rs/opentelemetry-appender-tracing/0.33.1/opentelemetry_appender_tracing/), [trace bridge configuration](https://docs.rs/tracing-opentelemetry/0.34.0/tracing_opentelemetry/struct.OpenTelemetryLayer.html), and [batch log processor source](https://github.com/open-telemetry/opentelemetry-rust/blob/372ebbc74d4dba71bb9820732f57f7316b4e7a1e/opentelemetry-sdk/src/logs/batch_log_processor.rs). See [Development](development.md#telemetry-ecosystem-checks) for executable checks.
 
 ### Historical evidence
 
@@ -182,7 +178,7 @@ Endpoints, session requirements and terms of use.
 
 - [2020-12 Core](https://json-schema.org/draft/2020-12/json-schema-core)
 
-## OAuth / OIDC
+## OAuth and OIDC
 
 - [RFC 6749](https://www.rfc-editor.org/rfc/rfc6749.html)
 - [RFC 7636 PKCE](https://www.rfc-editor.org/rfc/rfc7636.html)

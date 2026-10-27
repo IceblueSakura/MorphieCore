@@ -1,4 +1,22 @@
-//! Native lifecycle report validation precedes normalization and delivery.
+//! Native lifecycle report validation preceding normalization and delivery.
+//!
+//! Protocols such as OpenAI Responses and Interactions maintain distinct opening
+//! and terminal response reports. This module validates that transitions across
+//! lifecycle phases represent legitimate, evidenced runtime resolutions rather
+//! than conflicting metadata drifts.
+//!
+//! # Permitted Resolutions
+//!
+//! When `resolution` is active, the following transitions from opening to terminal
+//! reports are permitted:
+//! - **Reasoning Summary**: [`ReasoningSummary::Auto`] → [`ReasoningSummary::Detailed`].
+//! - **Reasoning Context**: Absent → [`ReasoningContext::AllTurns`].
+//! - **Reasoning Mode**: Absent → [`ReasoningMode::Standard`].
+//! - **Service Class**: [`ServiceClass::ConfiguredProcessing`] → [`ServiceClass::StandardProcessing`].
+//!
+//! All other setting mutations between opening and terminal snapshots reject with
+//! `ShapeReason::SettingsConflict`, and conflicting service class alterations reject
+//! with `ShapeReason::Metadata`.
 use super::CodecError;
 use crate::protocol::failure::{CarrierReason, ShapeReason};
 use crate::semantic::{
@@ -7,6 +25,10 @@ use crate::semantic::{
     value::Presence,
 };
 
+/// Validates relationship between opening and terminal reports within a lifecycle.
+///
+/// If `resolution` is true, permitted runtime resolutions (e.g. `auto -> detailed`)
+/// are accepted. Unpermitted modifications reject immediately.
 pub(super) fn relation(reports: &ResponseReports, resolution: bool) -> Result<(), CodecError> {
     reports.validate()?;
     let ResponseReports::Lifecycle {

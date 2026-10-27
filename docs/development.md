@@ -33,7 +33,7 @@ nix develop .#rust   # Rust only
 nix flake check      # Tool availability, not the Rust test baseline
 ```
 
-direnv users can allow the root `.envrc` once. Refresh project inputs with `nix flake update`, review their package versions, then run the applicable checks. Rust is selected independently of nixpkgs packaging lag. Do not claim every transitive/system package is the latest standalone release; dependency constraints and maintained runtime tracks remain explicit.
+direnv users can allow the root `.envrc` once. Dependencies and toolchain versions are pinned via `flake.lock` and `rust-toolchain.toml`.
 
 ## Test layout
 
@@ -156,59 +156,23 @@ Verified on **2026-10-24**, using the source/asset locks and Python SDK lock (Op
 | Framing, mutations and ingress bounds | Existing exhaustive/property-based UTF-8, CR/LF, split and malformed-event checks remain. Imported Chat and both Google streams additionally check exact event/wire/count budgets and one-under rejection for whole-buffer/single-byte intake, then absorbing failure. Google error envelopes before/after content retain classified failures; Chat padding checks aggregate decoded UTF-8 bytes independently |
 | Transport lifecycle and publication | Existing body acknowledgement/read-count assertions prove backpressure, with coalescing on/off, slow-consumer capacity, cancellation and upstream release checks. `tool_publication` adds complete protocol terminal followed by HTTP read failure: no success, stored publication or eligible-secondary replay. Native Messages retains its own publication/EOF cases |
 
-The full offline baseline, 15 connected SDK scenarios, 20 imported assets and upstream/SDK/client-oracle/OpenAPI Python checks pass. Run the documented offline and SDK commands; focused selectors include `--test gateway tool_history`, `--test gateway messages_tool_loop`, `--test gateway tool_publication`, `--test transport upstream_fixtures` and `--test transport decoded_padding`.
-
-The subsequently selected [unified evidence module](roadmap.md#observability-follow-up) migrates existing loss/source-fact assertions and adds responsible-layer provenance, typed-cause and atomic-handoff checks. Diagnostic-extension organization, parity, SDK-retention and display tests remain [deferred](roadmap.md#standards-reset-and-redesign). The six follow-up defects have owner-local repairs and independent regressions in the [contract inventory](refs/2026-10-23-stable-protocol-contracts.md#official-contract-difference-inventory). Missing native Google downstream/static directions, overlapping Messages blocks, broad Provider dialects, excluded official features and latest-candidate behavior are not certified. Browser reconnection/WPT execution, the complete Vercel runtime and installed-client/real-Provider acceptance are not inferred from this gate.
-
-The subsequent 2026-10-24 readable Chat slice adds `chat_profile: readable_reasoning`, with separate Standard intake/rejection and declared-output preflight checks. `chat_tool_history::readable_reasoning_survives_tool_feedback_and_next_turn` verifies two-call JSON/SSE and complete next-turn arrays; `openai_tool_history::chat_readable_reasoning_tool_history` adds the sixteenth connected SDK scenario using the pinned strict OpenAI accumulator, including fragmented Unicode reasoning. Native hidden signatures still reject without fabricated owners. These semantic-extension checks are not optional diagnostic tests or installed-Agent/Provider acceptance.
+The full offline baseline, 17 connected SDK scenarios, 20 imported assets, and upstream/SDK/client-oracle/OpenAPI Python checks must pass. Key focused selectors include `--test gateway tool_history`, `--test gateway messages_tool_loop`, `--test gateway tool_publication`, `--test transport upstream_fixtures`, and `--test transport decoded_padding`.
 
 ## Verification gates
 
-The **2026-10-25 Generation Text closure review** passes the full offline baseline, production-only `cargo check --locked --offline --lib --bins`, all 16 connected SDK scenarios and the separately discovered Python suites. Owner-local regressions cover Chat function null/name contracts; empty-envelope append order; source-total residuals, bounded sparse accounting and cache-detail provenance; failed unpolled Responses reservation release and final-handoff cancellation; queued-first-frame timeout classification; intake/planning/final-error ownership; actual successor advancement and authoritative handoff counters. The initial unpolled-history and sparse-accounting reproducers failed at their intended assertions before repair. No valid regression suite was pruned; cleanup removes duplicate accounting/control paths, discarded rule-name allocation, unreachable rejection and production-hosted test forwarding.
+Verification is organized into progressive, focused gates:
 
-Current-host/Provider evidence remains [separate](refs/2026-10-17-generation-contracts.md#current-host-closure-recheck-2026-10-25). The local telemetry oracle accepts normal `log`/`span` records but still rejects recording-loss status and unknown record types. Sparse accounting repairs have offline/SDK evidence, not a claim that each sparse combination occurred at a real Provider.
-
-The **2026-10-25 Agent API-key migration** retains the full offline and 16-scenario SDK baseline. `gateway::startup::bootstrap::auth_tests` checks the private versioned schema, strict fields, duplicates, metadata/identity separation and startup-only rotation/removal. Ingress checks preserve pre-body authentication and reject spoofed Agent labels with capture enabled or disabled; the CLI diagnostics test attributes successful synthetic inference to two configured Agents without recording their keys or maintenance metadata. All 12 installed-client synthetic cases pass with pi 1.4.0 and OpenCode 2.0.32 using isolated state. No real Provider acceptance was rerun; this is neither OAuth nor per-Agent usage/history attribution acceptance.
-
-The **2026-10-25 minimal diagnostic-attribution slice** adds sink-independent admission references and trusted Agent joins across inference telemetry and capture. `gateway::ingress::correlation`, `gateway::tests::ingress` and the connected Embedding capture case check namespace/sequence bounds, spoofing, independent sink switches, four-boundary joins and no upstream identity-header forwarding. Report-owned usage checks cover scope replacement, unknown/zero distinctions, source defaults and diagnostic saturation; the body-owner test uses a transport-read handshake for interruption/cancellation and static source accounting. Pending Google accounting remains observable before terminal without accepting a rejected unit.
-
-DeepSeek Chat/Responses JSON/SSE checks distinguish an explicit cache-write zero from a selected-policy default. The Responses stream reproducer first failed at the intended `source` versus `selected_policy` assertion; terminal-snapshot decoding now transfers its accepted conversion evidence. Streaming observations are not re-read at EOF after provenance was drained. These are source-accounting and attribution checks, not estimator accuracy, per-Agent aggregation, session persistence, OAuth or real Provider acceptance. Session files remain [direction-only planning](architecture.md#agent-session-files).
-
-The final attribution revision passes the full offline baseline, production-only compile, separately discovered Python suites, all 16 SDK scenarios and all 12 isolated installed-client synthetic scenarios with pi 1.4.0/OpenCode 2.0.32. No real Provider call, Collector export, public diagnostic-extension certification or session-file migration was performed.
-
-The **2026-10-25 cross-protocol maintenance** passes the full offline baseline, production-only compile, Python/provenance checks, all 16 SDK scenarios and all 12 existing installed-client synthetic scenarios with pi 1.4.0/OpenCode 2.0.32. Independent owner checks cover Messages output/history labels, unsigned reasoning bytes/order and represented snapshots, signed/interleaved rejection, joined-value limits and incomplete empty-part evidence. The extended Messages SDK case independently checks JSON/SSE tool-history return through actual upstream preparation. Existing installed-client profiles retain their native/Chat boundaries, not a new unsigned cross-protocol CLI acceptance claim. No real Provider or model-quality measurement was run; DeepSeek adaptation remains paused.
-
-The subsequent **2026-10-25 DeepSeek parallel-control slice** implements only the separately selected [request policy](architecture.md#selected-request-approximations). `providers::provider_profiles::deepseek_never_forwards_parallel_control_or_weakens_serial_intent` checks both catalog protocols, omission/true/false, preparation agreement, unchanged source/standard encoding and Messages' inverse flag. Full offline, all 16 SDK and all 12 current installed-client synthetic gates pass. Instruction conversion remains a [review with unselected changes](refs/2026-10-23-stable-protocol-contracts.md#instruction-conversion-review-2026-10-25); no real DeepSeek call or role-policy change was performed.
-
-The later **2026-10-25 canonical instruction migration** implements the [IR and dialect contract](architecture.md#instruction-authority-and-canonical-roles). `standard_contracts` independently constructs mixed-role IR and canonical Chat/Responses expectations, checks Messages string/block/empty-root normalization, multipart/cache-carrier boundaries, aggregate/empty-block bounds, and root `R` versus retained ordered `P` continuation. `provider_profiles::application_instruction_carriers_are_dialect_local_and_never_become_user` checks actual DeepSeek catalog preparation, Bailian system carriers, immutable source/standard output and native DeepSeek effective-user interpretation. Existing Messages cache/placement/identity checks remain; obsolete role-authority approximations and legacy-spelling oracles are removed. Google changes only adapt the existing owners and remove obsolete authority receipts; no new admission follows.
-
-Full offline, Clippy, formatting, production-only compilation, upstream-asset/Python checks, all 16 SDK scenarios and all 12 installed-client synthetic scenarios pass with pi 1.4.0/OpenCode 2.0.32. The existing pinned Chat SDK scenario independently checks both old system and developer becoming developer; the Messages SDK scenario supplies root string then equivalent blocks without adding requests or changing history ownership. No real Provider inference, mixed-role model-quality measurement, new binding or temporary Messages scope acceptance was performed.
-
-The subsequent **2026-10-25 Provider instruction-boundary correction** reuses the existing tests and the [earlier preparation probe](refs/2026-10-23-stable-protocol-contracts.md#vercel-provider-instruction-cross-check-2026-10-25); no tests were added or modified, as requested. Final code passes the full offline baseline, Clippy, formatting, production-only compilation, asset/Python checks, all 16 SDK and all 12 installed-client synthetic scenarios with the same actual Agent versions. Prepared bodies confirm the selected Zhipu operation split and conservative Chat rejection boundaries; the existing gates do not establish exhaustive Provider conformance, live acceptance or a text-composition policy.
-
-The **2026-10-26 structure/vocabulary maintenance** passes the full offline baseline, production-only compile, all four separately discovered Python suites, 20 pinned-asset checks, 16 SDK scenarios and 12 installed-client synthetic scenarios with actual pi 1.4.0/OpenCode 2.0.32. Focused checks cover stable leaf codes, source-versus-handling failures, native presentation-independent recovery, context presence/storage charging, frozen standalone preparation, Retry-After, strict receive lengths and capture MIME/redaction. Images retain 502 on body-read timeout while recording the precise internal cause. This verifies the selected [ownership and failure contracts](architecture.md#domain-vocabulary-and-failure-contracts), not real Providers, new operations, performance, full public extension behavior or deployment.
-
-The **2026-10-26 standard-request correction** passes the full offline baseline, Clippy with warnings denied, formatting, production library/binary build, 20 pinned-asset checks, all four Python suites, all 17 SDK scenarios and all 12 installed-client synthetic scenarios (pi 1.4.0/OpenCode 2.0.32). The added thin SDK oracle validates actual encoded requests against pinned upstream parameter unions; independent Rust cases check semantics the SDK types cannot enforce. SDK handlers use public Client decoding for SDK-derived views and genuinely sealed synthetic native thinking for manual tool continuation. Missing annotations and unsigned thinking are negative standard-input cases, not repaired success loops.
-
-The installed pi Messages gate requires an explicit empty `anthropic-beta` header list in its isolated model configuration. Automatic nonempty betas failed at admission; a null model-header value failed client configuration loading. The verified string opt-out changes neither client code nor personal settings, and nonempty beta requests still reject before body polling. These gates establish the bounded standard request correction, not unrestricted default-client compatibility, unsigned Messages continuation, fresh real Provider acceptance, deployment or complete response/SSE conformance. The [dated disposition](refs/2026-10-26-standard-request-boundaries.md#repair-disposition) preserves those exclusions.
-
-The **2026-10-27 three-protocol owner-local repair** passes the full offline baseline (including 352 library, 378 semantic and 91 transport tests), Clippy with warnings denied, formatting, production library/binary build, 20 pinned-asset checks, separately discovered Python suites (upstream 9, SDK 19, clients 32, gateway 24), all 17 SDK loopback scenarios and all 12 installed-client synthetic scenarios. Actual clients remain pi 1.4.0 and OpenCode 2.0.32, using isolated state and safe installed launchers. [Source-qualified disposition](refs/2026-10-27-client-ir-boundaries.md#source-qualified-repair-disposition) separates repaired parsing/delivery from remaining signature, scheduling and source choices.
-
-Initial checks exposed an unregistered null-metadata evidence field, phase-dependent lifecycle coercion, a text+audio grouping regression, and obsolete fixtures using beta/system placement, nullable response fields as request history or unknown fields as rejection controls. Repairs retain independent negative assertions and actual SDK accumulation; stable scenarios now construct legal request history. New Messages input tests check both wire aggregation and independently reduced semantic events, with a pinned SDK mock-transport oracle. No real Provider calls, production deployment, latency benchmark or full six-direction conformance claim is included.
-
-The **2026-10-27 signature and selected delivery follow-up** passes the full offline baseline (356 library, 378 semantic and 92 transport tests), Clippy with warnings denied, formatting, production library/binary build, 20 pinned assets, all four Python suites (9/19/32/24), all 17 SDK loopback scenarios and all 12 current-client synthetic scenarios with pi 1.4.0/OpenCode 2.0.32. Checks cover one opaque Messages signature, the narrow plain-text/token-cap item-status omission, and report-first original-request metadata echo. JSON, opening/terminal SSE and retained rendering preserve their declared target view without editing source observations. Router failover discards an unpublished candidate's metadata; a content-filter status mismatch cannot publish a Chat success terminal. The SDK Responses-over-Chat loop checks the actual echoed map on lifecycle envelopes and final JSON.
-
-The first full run exposed eight legacy corpus streams with split signatures, causing three history tests to fail. The fixtures now use one signature event with identical final values; replay-authority and interruption assertions remain. A new EOF-negative test initially failed at setup because disabled obfuscation was paired with default enabled options; the corrected fixture reaches the intended `Representation(Terminal)` guard. [Follow-up disposition](refs/2026-10-27-client-ir-boundaries.md#selected-follow-up-disposition) records selection and source limits. No dependencies/source pins, real Provider acceptance, custom-tool streaming support or production deployment changed.
-
-| Change or claim | Procedure |
+| Change type | Required verification procedure |
 |---|---|
-| Standard request corrections (2026-10-26) | Independent [source/IR/target assertions](../tests/semantic/standard_contracts/request_boundaries.rs), native replay/turn checks and [pinned SDK parameter unions](../tests/sdk/standard_requests.py); [disposition](refs/2026-10-26-standard-request-boundaries.md#repair-disposition) distinguishes corrected standard input from remaining output-only compatibility |
-| Markdown-only change | Local paths/anchors and whitespace under [documentation checks](#documentation-checks); no Rust/SDK run |
-| Implementation slice | Focused checks while iterating, then the [offline baseline](#offline-baseline) before publication |
-| Connected protocol boundary | Separate [SDK loopback gate](#sdk-loopback-gate); mark disconnected boundaries blocked, not passed |
-| Actual client or Provider behavior | Separately scoped [online acceptance](#online-acceptance); no inference from offline success |
+| Documentation-only | Local paths, anchors, and whitespace under [Documentation checks](#documentation-checks); no Rust/SDK run |
+| OpenAPI schema changes | [Python schema checks](#python-checks) against gateway route contracts |
+| Implementation slice | Focused tests while iterating, followed by the [Offline baseline](#offline-baseline) before publication |
+| Protocol / SDK boundary | [SDK loopback gate](#sdk-loopback-gate) for connected protocol surfaces |
+| Sustained delivery & proxy | [Reverse-proxy delivery gate](#reverse-proxy-delivery-gate) |
+| Synthetic agent recovery | [Installed-client synthetic recovery](#installed-client-synthetic-recovery) (pi and OpenCode) |
+| Live Provider behavior | [Online acceptance](#online-acceptance) with explicit target, request budget, and serial execution |
 
-For [safe-to-ignore diagnostic extensions](architecture.md#public-capability-and-adaptation-notice), follow the [current scheduling exception](roadmap.md#standards-reset-and-redesign): do not add dedicated field, aggregation, JSON/SSE/retrieval parity, SDK-retention or display tests now. Their organization and test construction await the deployer's final production-preparation decision. Continue the existing standard Agent-loop and safety checks for implementation slices; this exception neither certifies extension behavior nor removes existing regressions or tests for authoritative execution evidence.
+For diagnostic extensions, safe-to-ignore fields do not require dedicated tests during implementation slices; test coverage focuses on standard semantic contracts, bounds, cancellation, and terminal honesty.
 
 ### Offline baseline
 
@@ -242,18 +206,11 @@ cargo test --locked --offline --test gateway bootstrap::
 cargo test --locked --offline --test process
 ```
 
-Automatic OAuth renewal has synthetic eligibility, pinned-identity, exclusivity,
-deduplication, cooldown, deadline and listener-cancellation checks. Existing Grok
-rotation and OpenAI pending-verification cases also exercise the automatic path.
-The 2026-10-26 implementation passes the offline baseline, production build,
-all four Python suites, 16 SDK scenarios and 12 installed-client synthetic
-scenarios with pi 1.4.0/OpenCode 2.0.32. No live authority or Provider renewal was
-performed; these checks do not certify current account access or uninterrupted
-renewal.
+Automatic OAuth renewal is verified via unit tests for eligibility, identity pinning, exclusivity, deduplication, cooldown, deadlines, and listener cancellation.
 
 ### Telemetry ecosystem checks
 
-The selected [Rust telemetry stack](architecture.md#observability) has a test-only ecosystem integration verified on **2026-10-24**, followed by scoped local production trace/log wiring on **2026-10-25**. Shared tracing/OTel pins are production dependencies; additional metrics and OTLP network-export features remain development-only. Neither path installs a global provider or activates a stable public diagnostic schema, Collector deployment or private-capture migration.
+MorphieCore's telemetry stack (`tracing` and OpenTelemetry) is tested offline via synthetic tracing and log events:
 
 ```sh
 cargo test --locked --offline --test telemetry
@@ -440,7 +397,7 @@ For a pruning pass:
 3. Run each selected test with `--exact` and export its coverage.
 4. Compare coverage after pruning and inspect every newly uncovered line.
 
-Coverage proves execution, not assertions. Never remove safety-invariant tests just because their lines are covered elsewhere.
+Do not remove safety invariant tests solely because their code paths are exercised by other tests.
 
 ## Online acceptance
 
@@ -471,11 +428,12 @@ This runner fixes `aliyun-tokenplan-cn-chat` / `qwen3.8-flash`, three Generation
 
 #### Initial production-profile baseline
 
-The declarations and successful runs below retain their own dates. On 2026-10-24 the user selected the current host-installed pi 1.4.0 and OpenCode 2.0.32 for reacceptance, not older OpenCode source-lock binaries. Test-owned isolated configuration now selects readable Chat reasoning on `aliyun-tokenplan-cn-chat`, native pi Messages on `opencode-go-haiku-messages`, and separate Standard Chat controls. The user selected Token Plan after the original DashScope target returned `Arrearage`; neither the model identity nor the shared Bailian dialect changes. Protocol source pins remain independent reference evidence.
+The verified baseline uses host-installed `pi` and `opencode` with isolated test configurations:
+- **pi Chat:** readable reasoning on `aliyun-tokenplan-cn-chat` (`qwen3.8-flash`)
+- **pi Messages:** native Messages on `opencode-go-haiku-messages` (`claude-haiku-5-5`, `anthropic-version: 2026-10-21`)
+- **OpenCode Chat:** OpenAI-compatible on `aliyun-tokenplan-cn-chat`
 
-The [current-host follow-up](refs/2026-10-17-generation-contracts.md#current-host-reacceptance-2026-10-24) records the completed redesign reacceptance: all 12 installed-client synthetic recovery/summary/lifecycle scenarios, real pi 1.4.0 and OpenCode 2.0.32 Token Plan Chat loops at three requests/attempts each, and the independent three-request Go/Haiku Provider examples gate. The memory-only observer resolves the capture mismatch without weakening safety. The live OpenCode oracle checks the final CLI text independently from possible pre-tool text; the whole delivered final message and exact replay remain mandatory. Synthetic final-text assertions are unchanged. This closes only the selected delivery/replay and single-candidate profile boundary, not raw upstream fidelity, real failover, all historical capabilities, timing or deployment. Installed pi Messages selects `anthropic-version: 2026-10-21` through ordinary test-owned model headers, not gateway header rewriting or host configuration.
-
-Use the existing `aliyun-tokenplan-cn-chat` and `opencode-go-haiku-messages` bindings for the three recovery profiles below. Production initially promises a single candidate per route; the synthetic two-key recovery pool is not real failover acceptance. The drivers' explicit compat/config values are authoritative; do not substitute client defaults.
+Synthetic recovery profiles configure single-candidate routes with explicit client parameters:
 
 | Profile | Fixed client declaration | Cache, session and auxiliary calls |
 |---|---|---|

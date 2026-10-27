@@ -95,13 +95,9 @@ morphiecore-auth pool set --provider "$PROVIDER_ID" --binding "$BINDING_ID" --re
 morphiecore-auth pool list
 ```
 
-Members are ordered. To allow credential fallback, add members, set `fallback: true` and raise `max_attempts`. Exhausted quota, unavailable credentials, transport failures, timeouts and server failures may advance before publication. Authentication failures and rate limits of unknown scope do not rotate keys. See [Failover](architecture.md#failover).
+Members are ordered. Set `fallback: true` and configure `max_attempts` to enable fallback across pool members on retryable upstream failures (transport errors, timeouts, 5xx). Authentication errors (401) and unknown rate limits do not rotate keys. See [Failover](architecture.md#failover).
 
-All authorized members remain selectable; pool `max_attempts` is a runtime ceiling per endpoint, not a startup membership cutoff. With `fallback: false`, one member may be tried, but affinity/health can make a later member the first choice. Expanded candidates remain bounded to 64 per entry. Unknown-scope rate limits cool the configured pool at that deployment/model across requests; unrelated pools are not globally disabled.
-
-An OAuth member uses `{"kind":"oauth","profile":"openai","alias":"personal"}`. An `openai` subscription pool must have one member, no fallback and `max_attempts: 1`.
-
-That pool limit does not disable cross-Provider fallback on a mixed model route. Such a route may contain one SIWC endpoint; its public contract stays shared, while requests containing unsupported SIWC controls skip that candidate. The model route's `max_attempts` bounds all attempts, and publication ends fallback. There is no separate service-wide attempt field.
+OAuth pools (e.g., ChatGPT SIWC) require a single member with `fallback: false` and `max_attempts: 1`. Cross-Provider fallback remains supported at the model route level.
 
 ### OAuth
 
@@ -125,33 +121,19 @@ morphiecore-auth openai logout --account personal
 
 Callbacks listen on `127.0.0.1`. Login checks issuer, client and subject. Gateway inference never starts login or refresh.
 
-Automatic renewal needs no extra configuration: `morphiecore` / `Gateway::serve`
-checks bound OAuth accounts immediately and then every 15 seconds, renewing known
-expiry within 120 seconds (including already expired access). Unused accounts,
-API keys, unknown expiry, missing refresh tokens and accounts requiring recovery
-are not automatically changed. Construction and library `router()` embedding do
-not start maintenance; use `serve` for automatic renewal.
+Automatic renewal runs in the background when running `morphiecore` (`Gateway::serve`):
+- Checks bound OAuth accounts on startup and every 15 seconds.
+- Renews credentials expiring within 120 seconds.
+- Imposes a 90-second timeout per renewal and a 60-second minimum interval per account.
+- Persists rotated tokens in the private credential store.
 
-Each renewal has a 90-second deadline. Accounts are maintained serially and
-duplicate bindings are coalesced; a process-local 60-second minimum interval
-prevents short-lived replacement tokens from causing a refresh storm. The existing
-account lock excludes concurrent manual or other-process rotation. This is not a
-cross-process rate limit or an uninterrupted-access guarantee. OAuth authority
-traffic uses the gateway's selected proxy policy, including CLI `--proxy` overrides.
-
-Refresh reuses the verified identity and persists rotated tokens in the private
-store. For rotation safety, the old credential becomes unavailable before the
-exchange. Failure, timeout or shutdown never retries a possibly consumed refresh
-token or restores old material. Inspect `morphiecore-auth list`: use explicit
-`refresh` for `renewal_pending`, or log in again when consumption is uncertain or
-the grant is revoked/expired. Maintenance never logs in, escalates permissions,
-refreshes on HTTP 401 or replays inference.
+Use `morphiecore-auth list` to check status, or `morphiecore-auth <provider> refresh` for manual renewal.
 
 ## Manual upstream diagnostics
 
-`morphiecore-upstream` uses the same [embedded Provider metadata](architecture.md#shared-provider-metadata) as the gateway. It does not read `models.json`, register models or change routes. Each invocation makes **one upstream operation request**, without retries, failover or redirects. OAuth preparation may make separate authority requests through the existing credential manager.
+`morphiecore-upstream` uses the same [embedded Provider metadata](architecture.md#shared-provider-metadata) as the gateway. It executes **one direct upstream request** without retries or failover.
 
-Build with `cargo build --locked --offline --bin morphiecore-upstream`, then use `target/debug/morphiecore-upstream` (or an installed binary) in these examples. Provider names are positional; the old `--provider`, `--origin`, `--path` and `--auth` options are removed.
+Build with `cargo build --locked --offline --bin morphiecore-upstream`. Provider names are positional:
 
 ### List upstream models
 
@@ -598,13 +580,13 @@ Official Chat SSE sources disagree: Node defines custom-call deltas, while the i
 
 ### Unsupported controls and delivery
 
-The [Client semantic boundary](architecture.md#field-handling) distinguishes unsupported standard semantics from unknown extension fields. Known unsupported semantics reject by default unless an explicit exception is documented; malformed known fields also reject. Unknown extra fields are silently discarded, not retained in semantic IR or forwarded to Providers. Unknown content/role variants are not ignorable extras. Legacy standard fields may map to an established equivalent carrier; a new lossy mapping needs prior user approval, not merely a diagnostic notice. This policy does not promise support for every historical field.
-
-Non-null Messages `clear_at` and Chat `store: true` remain rejected. Chat history `name` is an optional nonempty participant label with an exact Chat carrier, not a tool name; targets without that carrier reject it.
-
-Supplied Chat `function_call` and `web_search_options` remain unsupported, including malformed empty sentinels. `functions` must be an array; only an empty list is inert. Messages `container`, `mcp_servers`, `context_management` and `compaction` remain unsupported. Non-null official `diagnostics` requests reject rather than losing their opt-in meaning; null `stop_sequences` and tool-use `caller` are not admitted. Other unrecognized fields are ignored by name. Messages `thinking.display` is preserved; removed `top_k` rejects at intake. Tool results must immediately follow their calls and precede ordinary user content. Manual thinking forbids forced tool choice and needs a leading thinking block in the final continuing assistant turn; older completed turns are not rewritten. Messages responses with citations or missing/ambiguous final usage fail projection rather than dropping annotations or inventing zero counts; a failure after streaming begins is not retried.
-
-Chat `moderation` remains a known unsupported semantic and rejects whenever present, before unknown-field filtering. Messages tool `input_examples` preserves ordered input objects in root and by-value definitions on admitted native routes; null lists, non-object entries and unsupported target carriers reject. Local checks bound structure/resources, not schema-instance validity. Document `context` preserves per-use absent/null/empty/text intent without prompt concatenation. Messages delivery requires terminal evidence: a finished turn plus a natural/matched cause, completed pending tool calls with no completion cause, or a supported incomplete reason. Pending calls can carry `tool_use` even when source disposition is unreported; this does not synthesize a source progress report. Unknown completed terminals without pending calls and explicit continuation reject in JSON and SSE; a completed Responses response alone does not establish a Messages `end_turn`.
+Following the [Client semantic boundary](architecture.md#field-handling):
+- **Unknown extension fields** in client requests are silently ignored without entering semantic IR or forwarding to Providers.
+- **Known unsupported controls** reject at intake with HTTP 400. Key examples:
+  - Chat: `store: true`, `moderation`, `function_call`, `web_search_options`.
+  - Messages: `clear_at`, `container`, `mcp_servers`, `context_management`, `compaction`, non-null `anthropic-beta` without explicit opt-out.
+- **Malformed fields** (e.g. invalid types or null values where non-null is required) reject immediately.
+- **Tool ordering:** Tool results must immediately follow their corresponding tool calls. In manual thinking mode, forced tool choice is rejected.
 
 ### Image input
 

@@ -355,15 +355,23 @@ pub enum DefaultBasis {
     SourceContract,
     SelectedPolicy,
 }
+/// Semantic categorization of field-level adaptation changes.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Change {
+    /// Equivalent representation under canonical normalization rules.
     Normalize,
+    /// Exact calculation from verified premises without information loss.
     Derive,
+    /// Insertion of a source-defined or target-policy default.
     Default(DefaultBasis),
+    /// Presentation echo copied directly from an admitted request.
     InferFromRequest,
+    /// Intentional omission of an unsupported field under a named rule.
     Omit,
+    /// Behavioral coarsening or qualitative mapping (e.g. stop causes).
     Approximate,
+    /// Bounded calculation filling an unknown scalar (e.g. byte-based token estimate).
     Estimate,
 }
 impl Change {
@@ -714,8 +722,19 @@ pub enum Coverage {
     Partial,
     Unassessed,
 }
+/// Maximum number of effects recorded per delta before saturation truncation.
 pub const MAX_EFFECTS: usize = 64;
+
+/// Maximum retained memory footprint (16 KiB) for evidence effects per delta.
 pub const MAX_EVIDENCE_BYTES: usize = 16 * 1024;
+
+/// Bounded, body-free evidence recording adaptation effects applied during conversion.
+///
+/// # Bounds and Truncation
+///
+/// Diagnostic allowances are capped at [`MAX_EFFECTS`] (64 entries) and
+/// [`MAX_EVIDENCE_BYTES`] (16 KiB) per delta. When saturated, new effects are dropped
+/// and `omitted_entries` is incremented, ensuring zero memory leak and bounded payload size.
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
 pub struct EvidenceDelta {
     effects: Vec<Effect>,
@@ -811,6 +830,10 @@ impl FromIterator<Effect> for EvidenceDelta {
         out
     }
 }
+/// A converted domain value paired with its declared adaptation evidence.
+///
+/// Debug formatting explicitly redacts `value` (`[redacted]`) to prevent accidental
+/// leakage of business payloads or prompt text into diagnostics logs.
 pub struct Conversion<T> {
     pub value: T,
     pub evidence: EvidenceDelta,
