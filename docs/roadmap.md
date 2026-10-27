@@ -88,6 +88,8 @@ Broader analysis and repair may now proceed through a newly bounded selection, r
 
 Keep the five-stage API plan, existing routing freeze, deferred counting, diagnostic-extension exception and unscheduled stage 5. Independently selected work retains its own authority. Historical acceptance never certifies new standard claims; unsupported or blocked client behavior must remain visible, not repaired by weakening the protocol.
 
+The subsequent [Client semantic boundary clarification](architecture.md#field-handling) is accepted guidance for that review, not another completed implementation or acceptance gate. Review response extension positions against [protocol-permitted optional diagnostics](architecture.md#public-capability-and-adaptation-notice); neither prior SDK success nor deferred extension testing proves those positions conform. Do not enable a new lossy legacy-field mapping without user confirmation or turn unknown Client fields into Provider passthrough. This clarification does not activate diagnostic organization/aggregation or its deferred test work.
+
 ## Standards reset and redesign
 
 The user accepted the complete design review on 2026-10-23 and required a current-stable dependency/source reset before implementation. [Architecture](architecture.md#protocols) owns the new contracts; [Development](development.md#upstream-test-sources) owns procedures. This is a revision of Generation stages 1–3 and their test gate, not a sixth API stage.
