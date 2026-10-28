@@ -142,7 +142,8 @@ Use existing startup fixtures, session corpora, delivery and diagnostics helpers
 |---|---|---|
 | 0 | Production-construction conformance gate: startup-built gateways over catalog bindings with loopback `base_url`; an agent-default request corpus (pi 1.4.0 shapes per API, taken from the installed source); official-shape upstream streams with every required member; two-turn replay in each client's own replay style. Extend the session corpus loop to production client construction and off-diagonal pairs | Each lane outcome equals acceptance, a named rule or a documented rejection by diagnostic failure code; unexpected outcomes fail. JSON, SSE and retained views agree. Delivered output re-decodes as history for the same route. The disposition list is reviewed with each change |
 | 1 | Same-protocol defects: binding reasoning-history contract (S11), A and Q2 (S5), Q1 (S3/S4), R planning rejection (S6), U | Permanent per-lane regressions from the probe counterexamples; same-issuer replay controls stay exact |
-| 2 | Semantic-equivalence compatibility (S2): E in delivery and admission; migrate Chat/Messages null-metadata handling out of named-loss paths; audit `is_absent`/`is_empty` guards against producer behavior and field contracts | Empty logprobs and selected null metadata pass without loss entries across applicable JSON/SSE/history views. Remove obsolete null-metadata loss rules and receipt expectations while retaining source observations, same-protocol presence, nonempty rejection and state-transition guards; no generic empty-field stripping |
+| 2a | Confirmed semantic-equivalence migrations (S2): E in delivery and admission; migrate Chat/Messages null-metadata handling out of named-loss paths | Empty logprobs and selected null metadata pass without loss entries across applicable JSON/SSE/history views. Remove obsolete null-metadata loss rules and receipt expectations while retaining source observations, same-protocol presence, nonempty rejection and state-transition guards |
+| 2b | Existing-field semantic-equivalence review (S2): review current Generation Text Chat, Responses and Messages request, response, stream and history fields, using named-loss rules and empty/default guards as entry points | Classify each candidate as semantic equivalence, actual loss or insufficient evidence. Remove redundant named-loss paths, receipts and tests that only assert obsolete loss classification for confirmed equivalents; preserve necessary encoding conversions and valuable behavioral assertions |
 | 3 | Delivery agreement and grouping: Chat JSON custom-call grouping, D, details-only usage error class (U) | Grouping: one-part/custom and multipart/function controls pass; multipart/custom preserves combined text and unchanged call identity/input; custom SSE and rich/replay negatives unchanged. One input yields one disposition across JSON, SSE and retained views |
 | 4 | Messages client terminals and enums: F for Chat and Responses sources, B, C | Accepted S1/S9 rules with independent JSON/SSE/history expectations through actual delivery; source causes stay unreported and EOF honesty holds |
 | 5 | Agent-default cross-protocol rules: G and H (S3/S4), Standard Chat omission (S6), M1 (S7); publish image-detail and effort-scope facts | Each accepted rule is named, reported and covered by the gate; cases outside the accepted rules remain documented rejections |
@@ -150,7 +151,11 @@ Use existing startup fixtures, session corpora, delivery and diagnostics helpers
 | 7 | Structural cleanup: narrow `GenerationDelivery.settings` to its three consumed values; unify usage events under a checkpoint/final contract; qualify `between_tools`, nullable output config and explicit disabled citations | Preserve report precedence, required-field completion, bounds and rejection; usage covers checkpoint → final, duplicate final, scoped reports and sparse counts; exact IR or a named projection precedes each capability change |
 | 8 | Installed-agent default acceptance: pi 1.4.0 over Responses, Chat and Messages without compat overrides beyond documented header opt-ins, offline scripted upstreams; OpenCode afterwards | Tool, reasoning and history loops pass on same-protocol lanes and selected cross-protocol lanes; actual agent versions recorded |
 
-Orders 0–2 precede the rest; 3 and 4 may run alongside once order 0 exists. Stream-header status and placeholder relocation remain optional reviews. Each implementation slice needs the [offline baseline](development.md#offline-baseline), affected [SDK consumers](development.md#sdk-loopback-gate) and applicable installed-agent checks. Real Provider gates apply only when live behavior is claimed; Q1, Q2 and U each need one bounded real call to confirm the upstream shape before their rules are finalized.
+Orders 0–2 have priority. Order 2b investigation may run alongside order 0; implementation migrations use the order-0 gate and may land with order 1 when they fix the same path. Independent work in orders 3 and 4 may proceed once order 0 exists; affected mappings and discovery must use the reviewed loss classification rather than defer it to order 7.
+
+Order 2 applies [semantic-equivalence compatibility](architecture.md#semantic-equivalence-compatibility), not generic empty-field stripping or blanket standard-field activation. Retain selected named losses for meaningful information removal. Where evidence is insufficient, preserve current behavior and record the minimal counterexample and open question in the existing research notes, with the disposition in this roadmap. New capabilities and inactive APIs keep their existing scheduling; Stage-4 families apply the principle during S4-0 rather than expanding this Generation Text review.
+
+Stream-header status and placeholder relocation remain optional reviews. Each implementation slice needs the [offline baseline](development.md#offline-baseline), affected [SDK consumers](development.md#sdk-loopback-gate) and applicable installed-agent checks. Real Provider gates apply only when live behavior is claimed; Q1, Q2 and U each need one bounded real call to confirm the upstream shape before their rules are finalized.
 
 ### Current Client/IR blocking semantics
 
@@ -189,6 +194,8 @@ The [2026-10-28 source and feasibility recheck](refs/2026-10-27-client-ir-bounda
 ### Closure boundary
 
 Reclose Client/IR stabilization when order 0 is permanent and passes with no unexpected disposition for the pi default corpus on every same-protocol lane and each selected cross-protocol lane; orders 1–5 have verified changes or reasoned retained rejections; discovery publishes the same facts; and order 8 passes. Selected paths need permanent directional regressions and applicable consumer gates; old passing suites do not cover the newly reproduced contrasts. Remaining capability gaps stay explicit with reopening conditions. Do not claim full standard-field support or new live Provider behavior. Resource APIs, session persistence and real multi-account failover keep their own packages; budget deferral does not reopen Google expansion or require a universal multi-budget model.
+
+Before resuming Stage 4, complete the order-2 review of existing Generation Text fields and remove all named-loss rules and receipts confirmed redundant by semantic equivalence. Unresolved cases need explicit dispositions, not speculative normalization. Closure does not require eliminating genuine named losses or implementing every unsupported field.
 
 ## Standards reset and redesign
 
@@ -255,7 +262,7 @@ Stage 4 API families have equal priority and advance as their contracts are sele
 
 | Package | Scope | Exit criteria |
 |---|---|---|
-| **S4-0 Per-operation design** | Pin official contracts, select targets, and define resource lifecycles | Explicit contract decisions without speculative shared abstractions |
+| **S4-0 Per-operation design** | Pin official contracts, select targets, define resource lifecycles, and apply semantic-equivalence compatibility to each family's fields | Explicit contract decisions distinguishing equivalent forms from genuine losses, without speculative shared abstractions |
 | **S4-6 Decision closure** | Complete dual-SDK design, typed answers, and synchronous execution | Verified independent oracles, both SDK loops (TypeSafe and OpenAI), and bounded Provider evidence |
 | **S4-2a Speech** | Text-to-speech with static binary and optional streaming delivery | Bounded buffering, cancellation safety, and verified audio format carriage |
 | **S4-2b Transcription** | Audio-to-text recognition with multipart upstream preparation | Accurate text/timing carriage, format rejection, and bounded resource handling |
@@ -402,7 +409,7 @@ The user accepted principles P1–P5 and selections S1–S11 on 2026-10-28, then
 | Id | Accepted rule | Owner | Order |
 |---|---|---|---|
 | S1 | Messages terminal derivation | [Google Messages terminal projection](architecture.md#google-messages-terminal-projection) | 4 |
-| S2 | Semantic-equivalence compatibility | [Semantic-equivalence compatibility](architecture.md#semantic-equivalence-compatibility) | 2 |
+| S2 | Semantic-equivalence compatibility | [Semantic-equivalence compatibility](architecture.md#semantic-equivalence-compatibility) | 2a, 2b |
 | S3 | Responses strictness resolution | [Projection principles](architecture.md#clientir-projection-principles) | 1, 5 |
 | S4 | Reasoning presentation and continuity | [Projection principles](architecture.md#clientir-projection-principles) | 1, 5 |
 | S5 | Generalized visible-history transfer | [Reasoning replay](architecture.md#reasoning-replay) | 1 |
