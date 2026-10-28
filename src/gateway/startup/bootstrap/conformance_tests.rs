@@ -121,8 +121,8 @@ fn disposition(record: &Value) -> String {
 }
 
 // The initially probed bindings cover standard, Bailian, DeepSeek and native Messages.
-type Binding = (&'static str, &'static str, &'static str, &'static str, Api);
-const BINDINGS: &[Binding] = &[
+type Binding<'a> = (&'a str, &'a str, &'a str, &'a str, Api);
+const BINDINGS: &[Binding<'static>] = &[
     (
         "glm-5.3",
         "dashscope-glm-chat",
@@ -171,7 +171,7 @@ enum Control {
 }
 
 async fn lane(
-    binding: &Binding,
+    binding: &Binding<'_>,
     client: Api,
     profile: Profile,
     stream: bool,
@@ -345,10 +345,62 @@ async fn lane(
 }
 
 #[tokio::test]
+async fn catalog_basic_production_lanes() {
+    use crate::topology::{GenerationProtocol, catalog::API_KEY_BINDINGS};
+    let mut covered = std::collections::BTreeSet::new();
+    for entry in API_KEY_BINDINGS {
+        let provider = (entry.provider)();
+        let credential = entry.credential();
+        for protocol in entry.protocols {
+            let endpoint = entry.endpoint(*protocol).unwrap();
+            let upstream = match protocol {
+                GenerationProtocol::OpenAiChat => Api::Chat,
+                GenerationProtocol::OpenAiResponses => Api::Responses,
+                _ => unreachable!(),
+            };
+            let binding = (
+                entry.model,
+                endpoint.id.as_str(),
+                provider.id.as_str(),
+                credential.as_str(),
+                upstream,
+            );
+            covered.insert(endpoint.id.as_str().to_owned());
+            for client in [Api::Chat, Api::Responses, Api::Messages] {
+                for profile in [Profile::Text, Profile::Tools] {
+                    for stream in [false, true] {
+                        let actual =
+                            lane(&binding, client, profile, stream, Control::Default).await;
+                        assert_eq!(
+                            actual,
+                            basic_expected(binding.1, client, profile),
+                            "{}/{client:?}/{profile:?}/{stream}",
+                            binding.1
+                        );
+                    }
+                }
+            }
+        }
+    }
+    let reviewed = BASIC_EXPECTATIONS
+        .iter()
+        .flat_map(|(ids, _)| ids.iter().map(|id| (*id).to_owned()))
+        .collect();
+    assert_eq!(
+        covered, reviewed,
+        "reviewed dispositions must match catalog membership"
+    );
+}
+
+#[tokio::test]
 async fn agent_default_production_lanes() {
     for binding in BINDINGS {
         for client in [Api::Chat, Api::Responses, Api::Messages] {
             for profile in [Profile::Text, Profile::Tools, Profile::Reasoning] {
+                // All API-key text/tool lanes are covered by the catalog gate.
+                if profile != Profile::Reasoning && binding.4 != Api::Messages {
+                    continue;
+                }
                 for stream in [false, true] {
                     let actual = lane(binding, client, profile, stream, Control::Default).await;
                     assert_eq!(
@@ -384,7 +436,7 @@ async fn stored_production_responses_agree_with_delivered_history() {
 async fn messages_delivery_controls_reach_post_dispatch_boundaries() {
     // Explicitly not agent-default requests: isolate delivery from the known
     // owner-local-cache admission blocker, without changing target contracts.
-    for binding in &BINDINGS[..4] {
+    for binding in BINDINGS.iter().filter(|binding| binding.4 != Api::Messages) {
         for stream in [false, true] {
             let actual = lane(
                 binding,
@@ -432,49 +484,145 @@ async fn incomplete_responses_reasoning_keeps_its_delivery_and_replay_status() {
     }
 }
 
+// Explicitly reviewed basic dispositions; columns are Chat text/tools and Responses text/tools.
+// These groups describe observed admission/delivery, not interchangeable reasoning contracts.
+const ACCEPT: &[&str] = &["accepted@1", "accepted@1"];
+const BASIC_EXPECTATIONS: &[(&[&str], [&[&str]; 4])] = &[
+    (
+        &[
+            "xiaomi-ultraspeed-responses",
+            "opencode-go-muse-responses",
+            "deepseek-responses",
+            "xiaomi-responses",
+            "xiaomi-flash-responses",
+            "openrouter-responses",
+            "nvidia-responses",
+            "zhipu-responses",
+            "zhipu-flash-responses",
+            "openrouter-glm-5.3-flash-responses",
+        ],
+        [ACCEPT, ACCEPT, ACCEPT, ACCEPT],
+    ),
+    (
+        &[
+            "xiaomi-ultraspeed-chat",
+            "opencode-go-mimo-pro-chat",
+            "opencode-go-mimo-flash-chat",
+            "openrouter-audio-chat",
+            "deepseek-chat",
+            "xiaomi-chat",
+            "xiaomi-flash-chat",
+            "openrouter-chat",
+            "nvidia-chat",
+            "modelbest-minicpm5-1b-chat",
+            "modelbest-minicpm5-2b-chat",
+            "modelbest-minicpm-v-4.7-1b-chat",
+            "modelbest-minicpm-v-4.7-35b-a3b-chat",
+            "opencode-go-chat",
+            "zhipu-chat",
+            "zhipu-flash-chat",
+            "openrouter-glm-5.3-flash-chat",
+        ],
+        [
+            ACCEPT,
+            ACCEPT,
+            ACCEPT,
+            &["planning:[\"representation.strict_default\"]@0"],
+        ],
+    ),
+    (
+        &[
+            "dashscope-flash-responses",
+            "tokenplan-max-responses",
+            "aliyun-dashscope-cn-responses",
+            "aliyun-tokenplan-cn-responses",
+        ],
+        [
+            ACCEPT,
+            &[
+                "accepted@1",
+                "planning:[\"codec.unsupported.unavailable\"]@0",
+            ],
+            &[
+                "accepted@1",
+                "planning:[\"codec.unsupported.unavailable\"]@0",
+            ],
+            &["planning:[\"codec.unsupported.unavailable\"]@0"],
+        ],
+    ),
+    (
+        &[
+            "dashscope-flash-chat",
+            "tokenplan-max-chat",
+            "aliyun-dashscope-cn-chat",
+            "aliyun-tokenplan-cn-chat",
+        ],
+        [
+            &["planning:[\"admission.client_representation\"]@0"],
+            &["planning:[\"admission.client_representation\"]@0"],
+            ACCEPT,
+            &["planning:[\"codec.unsupported.unavailable\"]@0"],
+        ],
+    ),
+    (
+        &[
+            "dashscope-kimi-chat",
+            "dashscope-glm-chat",
+            "dashscope-glm-prime-chat",
+            "tokenplan-glm-chat",
+        ],
+        [
+            ACCEPT,
+            ACCEPT,
+            ACCEPT,
+            &["planning:[\"codec.unsupported.unavailable\"]@0"],
+        ],
+    ),
+    (
+        &["openrouter-haiku-chat"],
+        [
+            ACCEPT,
+            ACCEPT,
+            ACCEPT,
+            &["admission.tool_schema_normalization@0"],
+        ],
+    ),
+];
+
+fn basic_expected(binding: &str, client: Api, profile: Profile) -> &'static [&'static str] {
+    let columns = BASIC_EXPECTATIONS
+        .iter()
+        .find_map(|(ids, columns)| ids.contains(&binding).then_some(columns))
+        .unwrap_or_else(|| panic!("unreviewed catalog binding: {binding}"));
+    let index = match (client, profile) {
+        (Api::Chat, Profile::Text) => 0,
+        (Api::Chat, Profile::Tools) => 1,
+        (Api::Responses, Profile::Text) => 2,
+        (Api::Responses, Profile::Tools) => 3,
+        (Api::Messages, Profile::Text | Profile::Tools) => return &["admission.explicit_cache@0"],
+        _ => panic!("basic gate cannot assert a reasoning contract"),
+    };
+    columns[index]
+}
+
 fn expected(binding: &str, client: Api, profile: Profile) -> &'static [&'static str] {
     use Api::*;
     use Profile::*;
-    const ACCEPT: &[&str] = &["accepted@1", "accepted@1"];
-    // Failure code plus dispatch count pins both the cause and pre/post-dispatch boundary.
+    if profile != Reasoning && binding != "opencode-go-haiku-messages" {
+        return basic_expected(binding, client, profile);
+    }
     match (binding, client, profile) {
-        (
-            "dashscope-glm-chat"
-            | "deepseek-chat"
-            | "openrouter-responses"
-            | "dashscope-flash-responses",
-            Messages,
-            _,
-        ) => &["admission.explicit_cache@0"],
-        ("dashscope-glm-chat", Chat, Text | Tools) => ACCEPT,
-        ("dashscope-glm-chat", Chat, Reasoning) => {
+        (_, Messages, _) if binding != "opencode-go-haiku-messages" => {
+            &["admission.explicit_cache@0"]
+        }
+        ("dashscope-glm-chat", Chat | Responses, Reasoning) => {
             &["planning:[\"codec.unsupported.reasoning\"]@0"]
         }
-        ("dashscope-glm-chat", Responses, Text) => ACCEPT,
-        ("dashscope-glm-chat", Responses, Tools) => {
-            &["planning:[\"codec.unsupported.unavailable\"]@0"]
-        }
-        ("dashscope-glm-chat", Responses, Reasoning) => {
-            &["planning:[\"codec.unsupported.reasoning\"]@0"]
-        }
-        ("deepseek-chat", Chat, Text | Tools) | ("deepseek-chat", Responses, Text) => ACCEPT,
         ("deepseek-chat", Chat, Reasoning) => &["representation.reasoning@1"],
-        ("deepseek-chat", Responses, Tools) => &["planning:[\"representation.strict_default\"]@0"],
         ("deepseek-chat", Responses, Reasoning) => &["planning:[\"representation.reasoning\"]@0"],
-        ("openrouter-responses", Chat, Text | Tools) | ("openrouter-responses", Responses, _) => {
-            ACCEPT
-        }
+        ("openrouter-responses", Responses, Reasoning) => ACCEPT,
         ("openrouter-responses" | "dashscope-flash-responses", Chat, Reasoning) => {
             &["representation.reasoning@1"]
-        }
-        ("dashscope-flash-responses", Chat, Text) => ACCEPT,
-        ("dashscope-flash-responses", Chat, Tools)
-        | ("dashscope-flash-responses", Responses, Text) => &[
-            "accepted@1",
-            "planning:[\"codec.unsupported.unavailable\"]@0",
-        ],
-        ("dashscope-flash-responses", Responses, Tools) => {
-            &["planning:[\"codec.unsupported.unavailable\"]@0"]
         }
         ("dashscope-flash-responses", Responses, Reasoning) => {
             &["planning:[\"codec.unsupported.reasoning\"]@0"]
