@@ -42,6 +42,7 @@ This page defines accepted principles, domain contracts, and architectural decis
     - [Model-effective values](#model-effective-values)
   - [Request and reported meaning](#request-and-reported-meaning)
     - [Accurate IR and declared loss](#accurate-ir-and-declared-loss)
+    - [Semantic-equivalence compatibility](#semantic-equivalence-compatibility)
     - [Client/IR projection principles](#clientir-projection-principles)
     - [Downstream schema completion](#downstream-schema-completion)
     - [Reported text configuration](#reported-text-configuration)
@@ -386,19 +387,29 @@ Order of precedence: **Lossless mapping → Bounded approximation → Meaningful
 | Output ceilings | Preserve explicit ceilings; insert target default only when client ceiling is absent |
 | Terminal stops | Coarsen natural/stop-sequence causes to `stop` or `end_turn` under named rules |
 
-- `chat.omit-null-stream-metadata.v1`: Chat SSE omits reported `metadata: null`.
-- `messages.omit-null-response-metadata.v1`: Messages JSON and SSE omit only reported `metadata: null`, losing explicit-null presence on the delivered/retained view while preserving the upstream observation. Absent metadata needs no receipt; empty/nonempty maps and other unsupported execution hints still reject. The rule does not echo request metadata or reinterpret it as `metadata.user_id`.
 - `chat.omit-text-item-status.v1`: Plain-text incomplete message items omit individual item status when overall finish reason is `length`.
 (See [`ProjectionRule`](file:///home/sakura/development/MorphieCore/src/protocol/openai/lowering/projection.rs#L10) for the complete lowering inventory).
 
+#### Semantic-equivalence compatibility
+
+Accepted on 2026-10-28; implementation migration pending in [repair order 2](roadmap.md#repair-order-and-exit-gates). Protocol-defined equivalent empty values, empty collections, defaults and structural placeholders belong to lossless mapping. Accept, normalize, omit or supply them as the target grammar requires, without a separate named-omission path or loss receipt.
+
+Equivalence depends on the field, direction and lifecycle contract, not emptiness alone. It must preserve content, control intent, explicit constraints, identity, report facts and subsequent behavior. Preserve source observations; apply target representation changes in the existing codec/projection owners. Do not introduce recursive empty-field stripping or globally equate absent, null, empty, false and zero. Unknown fields and malformed known values retain their existing admission rules.
+
+Selected applications are reported `metadata:null` on Chat SSE and Messages delivery, and `logprobs:[]` on Messages delivery and history admission. These carry no metadata entries or token-probability observations to lose. Same-protocol carriers still preserve source presence where representable, and target-required fields remain required. Null metadata does not echo request metadata or become Messages `metadata.user_id`; empty/nonempty metadata maps and other unsupported execution hints retain their current dispositions. Nonempty logprobs still reject where no carrier exists, and an explicit request for probabilities is checked independently of an empty output report.
+
+An empty update that clears state, an empty restriction set, an identity-bearing block or a terminal report is not equivalent to omission merely because its payload is empty. Stream accumulation must not erase earlier reports or suppress completion. Tests belong at the responsible boundaries: equivalent forms agree across JSON/SSE/history; meaningful nonempty values, source observations and state transitions remain protected.
+
+This decision supersedes the loss classification of `chat.omit-null-stream-metadata.v1` and `messages.omit-null-response-metadata.v1`; current code still emits those receipts until migration. Actual removal of meaningful information continues to require a selected named loss or rejection.
+
 #### Client/IR projection principles
 
-Accepted on 2026-10-28 for Client/IR stabilization. Every new projection rule is classified under one of these principles. Sections marked *implementation pending* state the target design; current behavior is unchanged until the corresponding [repair-order](roadmap.md#repair-order-and-exit-gates) slice lands.
+Accepted on 2026-10-28 for Client/IR stabilization. Apply [semantic-equivalence compatibility](#semantic-equivalence-compatibility) first; classify remaining projection rules under the principles below. Sections marked *implementation pending* state the target design; current behavior is unchanged until the corresponding [repair-order](roadmap.md#repair-order-and-exit-gates) slice lands.
 
 | Principle | Rule |
 |---|---|
 | P1 Request-context deduction | A fact implied by the admitted request and the source grammar is an exact derivation recorded as `infer_from_request`; the source observation stays unreported |
-| P2 Carrier-less non-content facts | Advisory controls, presentation requests and report facts without a target carrier take named omission. Visible content and explicit constraints never do |
+| P2 Carrier-less non-content facts | Meaningful advisory controls, presentation requests and report facts without a target carrier take selected named omission when no exact mapping exists. Semantically equivalent forms need no loss receipt. Visible content and explicit constraints never take this omission |
 | P3 Delivery closure | Anything delivered on a route is admissible as history on that route, exactly or through a named projection |
 | P4 Planning-time impossibility | A failure determined by the request and the binding contract occurs before dispatch, never after publication |
 | P5 Conditional source defaults | An omitted field with a documented conditional default is resolved per target by that documented rule, not by a fixed value |
@@ -407,7 +418,7 @@ Accepted applications:
 
 - **Omitted Responses strictness (P5):** the [Responses reference](https://developers.openai.com/api/reference/resources/responses/methods/create) (read 2026-10-28) defines omission as strict validation when the schema is compatible and non-strict otherwise. Each tool is evaluated against the documented strict-schema subset: incompatible → explicit non-strict (exact); compatible with an equivalent strict carrier → strict (exact); compatible without one → non-strict under a named loss. The IR default is named for this conditional rule, not for schema normalization.
 - **Reasoning presentation and continuity requests (P2):** `summary:"auto"` selects the most detailed available summarizer, so a target without summaries satisfies it exactly; explicit `concise`/`detailed` take a named omission. Encrypted-reasoning `include` is exact when the target emits no reasoning items and takes a named continuity omission when reasoning has no opaque carrier.
-- **Carrier-less reports (P2):** empty `logprobs:[]` on Messages delivery and history admission follows the null-metadata precedent with a named omission; nonempty logprobs still reject on delivery. Served service classes and refusal categories without an OpenAI carrier are omitted on delivery copies, extending [explanatory terminal reports](#explanatory-terminal-reports). Anthropic standard capacity and OpenAI default processing remain distinct classes; no approximate tier is reported.
+- **Carrier-less reports (P2):** served service classes and refusal categories without an OpenAI carrier are omitted on delivery copies, extending [explanatory terminal reports](#explanatory-terminal-reports). Anthropic standard capacity and OpenAI default processing remain distinct classes; no approximate tier is reported. Empty probability reports instead follow [semantic-equivalence compatibility](#semantic-equivalence-compatibility).
 - **Messages terminal derivation (P1):** see [Google Messages terminal projection](#google-messages-terminal-projection).
 - **Messages baseline:** the `2026-10-21` version and beta-header rejection remain; a legacy version would be a separate client grammar. Agents avoid unsupported beta features through [discovery](#generation-text-model-discovery).
 
@@ -812,11 +823,11 @@ Authoritative log of accepted architectural decisions and their systemic consequ
 | Upstream protocol tests | 2026-10-23 | Pinned official SDK and upstream fixtures serve as regression baseline |
 | Delta coalescing | 2026-10-26 | Default 50ms / 16 KiB buffer merges adjacent text deltas |
 | Messages ordered block delivery | 2026-10-28 | Codec-local bounded serialization preserves owner/part order, incremental head output and signed history; incomplete text-owner wire closure preserves source lifecycle, native intake and EOF authority |
-| Messages null metadata omission | 2026-10-28 | Selected JSON/SSE null-only omission with per-view evidence; source observations remain unchanged and maps/other unsupported execution hints reject |
-| Client/IR projection principles | 2026-10-28 | P1–P5 classify every projection rule: request-context deduction, carrier-less non-content omission, delivery closure, planning-time impossibility and conditional source defaults |
+| Semantic-equivalence compatibility | 2026-10-28 | Protocol-equivalent empty/default forms use ordinary lossless mapping without named omissions or loss receipts; supersedes Chat/Messages null-metadata loss classification and covers empty logprobs; source observations and meaningful constraints remain protected |
+| Client/IR projection principles | 2026-10-28 | After semantic-equivalence handling, P1–P5 classify remaining projections: request-context deduction, carrier-less non-content omission, delivery closure, planning-time impossibility and conditional source defaults |
 | Responses strictness resolution | 2026-10-28 | Omitted `strict` resolves per tool and target by the documented compatibility rule; non-strict loss only where a compatible schema lacks an equivalent carrier |
 | Reasoning presentation and continuity | 2026-10-28 | `summary:"auto"` and encrypted `include` resolve against target availability; explicit summarizers and missing opaque carriers take named omissions |
-| Carrier-less report omission | 2026-10-28 | Empty logprobs, served service classes and refusal categories without carriers are omitted on delivery copies; no approximate service tier |
+| Carrier-less report omission | 2026-10-28 | Served service classes and refusal categories without carriers are omitted on delivery copies; no approximate service tier; empty logprobs use semantic-equivalence compatibility instead |
 | Messages terminal derivation | 2026-10-28 | Completed call-free outcomes without admitted stop sequences derive `end_turn` from any source |
 | Generalized visible-history transfer | 2026-10-28 | Revises scoped opaque replay: uncarried reasoning of any issuer or lifecycle is omitted; same-issuer incomplete reasoning forwards exactly to Responses |
 | Binding reasoning-history contract | 2026-10-28 | One binding fact (`unsupported`/`ignored`/`accepted`/`required_with_tools`) drives projection, delivery, planning and discovery |

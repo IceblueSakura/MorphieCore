@@ -142,7 +142,7 @@ Use existing startup fixtures, session corpora, delivery and diagnostics helpers
 |---|---|---|
 | 0 | Production-construction conformance gate: startup-built gateways over catalog bindings with loopback `base_url`; an agent-default request corpus (pi 1.4.0 shapes per API, taken from the installed source); official-shape upstream streams with every required member; two-turn replay in each client's own replay style. Extend the session corpus loop to production client construction and off-diagonal pairs | Each lane outcome equals acceptance, a named rule or a documented rejection by diagnostic failure code; unexpected outcomes fail. JSON, SSE and retained views agree. Delivered output re-decodes as history for the same route. The disposition list is reviewed with each change |
 | 1 | Same-protocol defects: binding reasoning-history contract (S11), A and Q2 (S5), Q1 (S3/S4), R planning rejection (S6), U | Permanent per-lane regressions from the probe counterexamples; same-issuer replay controls stay exact |
-| 2 | Presence/empty agreement: E in delivery and admission, plus one audit of `is_absent`/`is_empty` guards against producer behavior | `logprobs:[]` passes Messages delivery and history admission without a loss entry; nonempty logprobs still reject |
+| 2 | Semantic-equivalence compatibility (S2): E in delivery and admission; migrate Chat/Messages null-metadata handling out of named-loss paths; audit `is_absent`/`is_empty` guards against producer behavior and field contracts | Empty logprobs and selected null metadata pass without loss entries across applicable JSON/SSE/history views. Remove obsolete null-metadata loss rules and receipt expectations while retaining source observations, same-protocol presence, nonempty rejection and state-transition guards; no generic empty-field stripping |
 | 3 | Delivery agreement and grouping: Chat JSON custom-call grouping, D, details-only usage error class (U) | Grouping: one-part/custom and multipart/function controls pass; multipart/custom preserves combined text and unchanged call identity/input; custom SSE and rich/replay negatives unchanged. One input yields one disposition across JSON, SSE and retained views |
 | 4 | Messages client terminals and enums: F for Chat and Responses sources, B, C | Accepted S1/S9 rules with independent JSON/SSE/history expectations through actual delivery; source causes stay unreported and EOF honesty holds |
 | 5 | Agent-default cross-protocol rules: G and H (S3/S4), Standard Chat omission (S6), M1 (S7); publish image-detail and effort-scope facts | Each accepted rule is named, reported and covered by the gate; cases outside the accepted rules remain documented rejections |
@@ -397,12 +397,12 @@ Real cross-account failover requires distinct, advanceable production credential
 
 ### Client/IR stabilization decisions
 
-The user accepted principles P1–P5 and selections S1–S11 on 2026-10-28. [Architecture](architecture.md#clientir-projection-principles) owns their content; this table maps scheduling ids to owners and orders.
+The user accepted principles P1–P5 and selections S1–S11 on 2026-10-28, then generalized S2 to semantic-equivalence compatibility without named omissions or loss receipts. [Architecture](architecture.md#clientir-projection-principles) owns their content; this table maps scheduling ids to owners and orders.
 
 | Id | Accepted rule | Owner | Order |
 |---|---|---|---|
 | S1 | Messages terminal derivation | [Google Messages terminal projection](architecture.md#google-messages-terminal-projection) | 4 |
-| S2 | Empty logprobs omission | [Projection principles](architecture.md#clientir-projection-principles) | 2 |
+| S2 | Semantic-equivalence compatibility | [Semantic-equivalence compatibility](architecture.md#semantic-equivalence-compatibility) | 2 |
 | S3 | Responses strictness resolution | [Projection principles](architecture.md#clientir-projection-principles) | 1, 5 |
 | S4 | Reasoning presentation and continuity | [Projection principles](architecture.md#clientir-projection-principles) | 1, 5 |
 | S5 | Generalized visible-history transfer | [Reasoning replay](architecture.md#reasoning-replay) | 1 |

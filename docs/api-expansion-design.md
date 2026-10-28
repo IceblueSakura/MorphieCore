@@ -198,7 +198,7 @@ The user selected the candidate-local configuration, explicit-cap-only generic c
 
 #### Messages null response metadata
 
-The user selected the null-only JSON/SSE omission on 2026-10-28. [Architecture](architecture.md#accurate-ir-and-declared-loss) owns the accepted rule; [Development](development.md#sdk-loopback-gate) owns directional and consumer verification. No broader metadata omission, request echo or new Messages strict-complete mode was selected.
+The user selected null-only JSON/SSE omission on 2026-10-28, then replaced its named-loss classification with [semantic-equivalence compatibility](architecture.md#semantic-equivalence-compatibility). Architecture owns the accepted rule; [Development](development.md#sdk-loopback-gate) owns current directional and consumer verification. Receipt removal is pending in [repair order 2](roadmap.md#repair-order-and-exit-gates). No broader metadata-map omission, request echo or new Messages strict-complete mode was selected.
 
 #### Google output report owners (unselected)
 
