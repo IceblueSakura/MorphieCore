@@ -1,6 +1,6 @@
 # Chat custom-tool carriers
 
-Checked on 2026-10-16 against the [pinned OpenAI Python SDK](https://github.com/openai/openai-python/tree/be9d66628ad7377bd36fe5a76ae6d735843f0e76) and the live [Chat create reference](https://developers.openai.com/api/reference/resources/chat/subresources/completions/methods/create). These are protocol facts, not model-binding or live acceptance claims.
+Checked on 2026-10-16 against the [then-inspected OpenAI Python SDK](https://github.com/openai/openai-python/tree/be9d66628ad7377bd36fe5a76ae6d735843f0e76) and the live [Chat create reference](https://developers.openai.com/api/reference/resources/chat/subresources/completions/methods/create). These are dated source observations, not the current regression pin, model-binding or live acceptance claims. The [2026-10-27 comparison](2026-10-27-client-ir-boundaries.md#custom-tools-source-disagreement-versus-a-real-carrier-gap) qualifies the Python-only streaming observation below: Node does define and accumulate custom deltas.
 
 See [References](../references.md#research-notes) for related evidence, [Architecture](../architecture.md#settled-decisions) for selected contracts and [Roadmap](../roadmap.md#integration-handoff) for current admission/acceptance boundaries.
 

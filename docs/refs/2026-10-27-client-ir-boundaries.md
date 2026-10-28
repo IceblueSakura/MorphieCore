@@ -2,6 +2,27 @@
 
 Reviewed on **2026-10-27** at **`1b4f828`**, after the five-slice request repair. This is a source-backed review and capability inventory, not implementation approval, a new work queue or a conformance certificate. [Architecture](../architecture.md#field-handling) owns the clarified rules; [Roadmap](../roadmap.md#standard-request-boundary-repair) owns subsequent scope. The earlier [request review](2026-10-26-standard-request-boundaries.md) retains its original date and repair disposition.
 
+## Contents
+
+- [Scope and evidence](#scope-and-evidence)
+- [Resolved boundary counterexamples](#resolved-boundary-counterexamples)
+- [Remaining source disagreements](#remaining-source-disagreements)
+- [Supported baseline and missing standard capabilities](#supported-baseline-and-missing-standard-capabilities)
+  - [Chat Completions](#chat-completions)
+  - [Responses](#responses)
+  - [Messages](#messages)
+- [Open-source bridge cross-check](#open-source-bridge-cross-check)
+- [Source-qualified repair disposition](#source-qualified-repair-disposition)
+- [Protocol expressiveness check](#protocol-expressiveness-check)
+  - [Independent item lifecycle versus overall stopping](#independent-item-lifecycle-versus-overall-stopping)
+  - [Custom tools: source disagreement versus a real carrier gap](#custom-tools-source-disagreement-versus-a-real-carrier-gap)
+  - [Metadata and configuration reports are direction-specific](#metadata-and-configuration-reports-are-direction-specific)
+  - [Reasoning and argument representations](#reasoning-and-argument-representations)
+  - [Selected follow-up disposition](#selected-follow-up-disposition)
+- [Diagnostics and approval boundaries](#diagnostics-and-approval-boundaries)
+- [Follow-up source and feasibility review (2026-10-28)](#follow-up-source-and-feasibility-review-2026-10-28)
+- [Agent-default production probe (2026-10-28)](#agent-default-production-probe-2026-10-28)
+
 ## Scope and evidence
 
 Covered standard Chat Completions, Responses and Messages: public request/history intake, envelope and execution-context admission, semantic ownership, downstream JSON/SSE rendering, final snapshots and returned history. Pure closed request decoding is not the public Client decoder. Provider dialects, upstream model effectiveness, deployment, credential lifecycle and unrelated APIs were not audited. Representable IR, codec support, public-model admission and an activated service operation are different claims.
@@ -15,57 +36,45 @@ Primary source entry points:
 - Anthropic [create parameters](https://github.com/anthropics/anthropic-sdk-python/blob/9313f13a5a643ceed10fafba6785eab8e04b6e6e/src/anthropic/types/message_create_params.py), [message union](https://github.com/anthropics/anthropic-sdk-python/blob/9313f13a5a643ceed10fafba6785eab8e04b6e6e/src/anthropic/types/message_param.py), [content union](https://github.com/anthropics/anthropic-sdk-python/blob/9313f13a5a643ceed10fafba6785eab8e04b6e6e/src/anthropic/types/message_content_param.py), [tool union](https://github.com/anthropics/anthropic-sdk-python/blob/9313f13a5a643ceed10fafba6785eab8e04b6e6e/src/anthropic/types/tool_union_param.py) and separate [beta types](https://github.com/anthropics/anthropic-sdk-python/tree/9313f13a5a643ceed10fafba6785eab8e04b6e6e/src/anthropic/types/beta).
 - Current official [Chat create](https://developers.openai.com/api/reference/resources/chat/subresources/completions/methods/create), [Chat streaming](https://developers.openai.com/api/reference/resources/chat/subresources/completions/streaming-events) and [Responses create](https://developers.openai.com/api/reference/resources/responses/methods/create) references.
 
-**Evidence labels:** **R** means reproduced through public codec/adapter APIs using synthetic input or independently constructed typed IR; **D** means reproduced through `Attempt` and `ResponseDelivery`, including successful stream finalization; **S** means code and source trace only. No real Provider calls or production changes occurred. Thirty non-nullable root-field contrasts were derived independently from SDK parameter ASTs; accepted `user:null` was subsequently downgraded to a source disagreement after reading the current reference. Temporary probes are not committed regression tests. The last verified library covers the unchanged implementation; subsequent commits before this review were documentation-only.
+Evidence combined source traces, public codec/adapter probes with synthetic input or independently constructed IR, and `Attempt`/`ResponseDelivery` contrasts. No live Provider calls accompanied the review. SDK-derived nullability contrasts were checked against the service reference; `user:null` remained a source disagreement rather than a confirmed defect. Temporary probes and later permanent regressions are distinct evidence.
 
 The inventory compares all create-request root fields and the relevant nested content/tool/history/output/event families. Unsupported discriminated families are grouped: rejecting a family also leaves its nested options unsupported. This is not an assertion that every value/combination has been executed or every future field discovered.
 
-## Boundary defects
+## Resolved boundary counterexamples
 
-### Delivery, events and returned history
+The original review used synthetic public codec/delivery probes at `1b4f828`; the following are source distinctions, not an open defect list. The subsequent repair is owned by [Architecture](../architecture.md#accurate-ir-and-declared-loss).
 
-| Finding | Trigger and observation | Responsible owner and evidence |
-|---|---|---|
-| Chat text order changes between JSON and SSE | One phase-bearing assistant message has parts `p1`, `p2`; deltas arrive `p1:A`, `p2:B`, `p1:C`. Source part values are `AC`, `B`. Successfully finalized Chat SSE yields **`ABC`**, while JSON for the same materialized response yields **`ACB`**. Declared grouping/phase loss does not authorize character reordering | **D**. [Incremental native projection](../../src/protocol/openai/lowering/native_response/events.rs), `EventProjection::project`, redirects both parts into one arrival-order stream. [Static projection](../../src/protocol/openai/lowering/native_response.rs), `project`, joins completed parts in part order. The synthetic Responses stream is accepted by the real decoder; no live-model reachability is claimed |
-| A message phase changes the contract for unrelated tool arguments | Completed direct call `arguments:"not-json"` is delivered as a Chat string when an adjacent message has no phase. Adding only `phase:final_answer` makes static snapshot projection reject it as invalid object JSON. The stream counterpart has no matching object check | **R** for static phase/no-phase contrast; **S** for argument SSE contrast. [Client snapshot dispatch](../../src/adapter/downstream.rs), `snapshot_with_history`, invokes [native projection](../../src/protocol/openai/lowering/native_response.rs) on phase removal. Generated Chat arguments are strings and are officially documented as potentially invalid JSON, not validated tool execution input |
-| Unsigned Messages thinking cannot form a standard history loop | Readable reasoning without replay renders as completed `thinking` with `signature:""`. Feeding the delivered blocks back through public Messages intake rejects. SSE closes without a signature delta when none exists | **R** for actual adapter JSON/history, **S** for SSE. [Client response](../../src/protocol/anthropic/messages/client/response.rs), [client SSE](../../src/protocol/anthropic/messages/client/sse.rs), [thinking intake](../../src/protocol/anthropic/messages/wire/content.rs). Historical output adaptation, explicitly outside the previous request repair; not authorization to weaken intake or fabricate a signature |
-| Required nullable output members are absent | Ordinary Chat JSON omits `choices[].logprobs`; a non-null probability object emits only its populated channel instead of both nullable `content` and `refusal`. Responses JSON and SSE snapshots can omit required nullable `access_programs`, `error`, `incomplete_details`, `instructions`, `metadata`, `temperature`, `top_p` | **R** for ordinary codec JSON and Chat production delivery; **S** for nested probability and Responses SSE paths. [Chat response](../../src/protocol/openai/chat/response.rs), [logprobs](../../src/protocol/openai/chat/logprobs.rs), [Responses response](../../src/protocol/openai/responses/response.rs), [event renderer](../../src/protocol/openai/events/encode/responses.rs). Both Node types and current reference support these requiredness claims. Gateway [completion](../../src/execution/delivery/completion.rs) supplies tools/tool-choice/parallelism, not the listed nullable members |
-| Responses response-tool echoes use request optionality | Function-tool echo omits `parameters`/`strict` when their nullable values are absent/normalized. The response Tool contract requires those nullable members | **S**. [Function tools](../../src/protocol/openai/function_tools.rs), `read_tool`/`write_tool`; Node `FunctionTool`. Omitted-strictness policy is not a waiver of response shape |
-| An input-only variant reaches Responses output | Independently constructed `ConfigurationUpdate` emits `type:configuration_update` in `Response.output`; the pinned output union has no such member, although the input/list-resource union does | **R** for static codec; **S** for output-item SSE. [Items](../../src/protocol/openai/responses/items.rs), `encode_items`; [events](../../src/protocol/openai/events/encode/responses.rs). Keep the valid request IR owner; constrain the output boundary |
-| Program-output SSE opener has no status | `ItemStarted(ProgramOutput)` renders without the required output-item `status`; its official union admits completed/incomplete output, not a status-free opener | **S**, [Responses event encoder](../../src/protocol/openai/events/encode/responses.rs). Needs a lawful streaming representation or explicit rejection; do not invent successful completion |
-| Arbitrary terminal classifications cross into the standard domain | Typed failed response with `code:"foreign_code"` or incomplete response with `Other("foreign_reason")` is emitted unchanged. The selected Responses contracts enumerate codes/reasons. A semantic error-event renderer can also omit required nullable `param` | **R** for static foreign code/reason, **S** for error-event `param`, [terminal rendering](../../src/protocol/openai/terminal.rs), [event rendering](../../src/protocol/openai/events/encode/responses.rs). This proves missing target-domain enforcement, not an approved mapping of another protocol's error. Generic gateway error framing is a separate path |
+| Minimal counterexample | Durable distinction |
+|---|---|
+| Parts receive `p1:A, p2:B, p1:C`; final parts are `AC, B` | Arrival-order forwarding yields `ABC`, while part-order materialization yields `ACB`. Grouping/phase loss does not authorize text reordering |
+| Adding only a message phase makes adjacent `arguments:"not-json"` reject | Phase removal must not introduce object-JSON validation into Chat's generated string-argument contract |
+| Unsigned reasoning becomes `thinking` with an empty signature | Readable text cannot manufacture native replay authority; completed output must also form valid native history |
+| Required nullable fields disappear from Chat/Responses snapshots or tool echoes | Use explicit null where the response contract requires it; never guess sampling settings or failure causes |
+| Input-only `ConfigurationUpdate` reaches Responses output | Input/history/output unions are distinct, even when they share semantic owners |
+| `ProgramOutput` has no in-progress status | Buffer until actual closure and emit a lawful added/done pair; do not invent completion or infer that no added-event carrier exists |
+| Foreign error code/incomplete reason crosses unchanged into a standard response | A semantic string is not necessarily a valid target enum; enforce the target domain |
+| Chat assistant shell lacks both content and calls; Responses mixes input/output parts | Validate a whole request/history branch, not independent permissive fields |
+| Chunk `index` or SDK convenience fields alter complete-message intake | Unknown nonsemantic extras must not acquire request meaning |
+| Nullable report logic accepts non-nullable request values | Check request nullability independently, including complete history logprob members |
+| Messages tool-choice extra rejects; unsupported attribution headers disappear | Ignore unknown object extras, but reject recognized unsupported HTTP semantics before body polling |
+| Stable Messages accepts beta-only controls without a Client selector | Stable Client admission and trusted native beta capability are separate boundaries |
 
-Do not fill unknown semantic facts with invented defaults while repairing required keys. Explicit null where allowed is different from guessing sampling settings, tool behavior or failure causes. Also do not infer that every output member marked required by one SDK is required by the current reference; the disagreements below matter.
+[Request rules](../architecture.md#standard-request-boundary), [stream normalization](../architecture.md#semantic-stream-normalization) and [schema completion](../architecture.md#downstream-schema-completion) own current behavior. Source IR remains immutable; no repaired boundary activates hosted tools or another API.
 
-### Public request validation and filtering
+## Remaining source disagreements
 
-| Finding | Minimal contrast and effect | Responsible owner and evidence |
-|---|---|---|
-| Assistant request grammar is incomplete | Chat accepts `{"role":"assistant"}` without content or calls, and accepts `tool_calls:null` with text. The pinned and current request contract require content unless a call is supplied and do not make the call list nullable | **R**, [Chat items](../../src/protocol/openai/chat/items.rs). Do not confuse nullable response `tool_calls` with request history |
-| An SDK/chunk-only history property changes acceptance | A valid Chat function call passes without `index`; adding `index:"extra"` or a nonmatching number rejects. Full-message history has no such field | **R**, [Chat items](../../src/protocol/openai/chat/items.rs), call loop. This leftover SDK-accumulation repair contradicts ignoring nonsemantic extras |
-| Prediction cache intent is dropped | `prediction.content:[{type:"text",text:"answer",prompt_cache_breakpoint:{mode:"explicit"}}]` becomes prediction text alone. Other message positions explicitly reject the breakpoint | **R** for discard, [request text parts](../../src/protocol/openai/chat/items.rs). Pinned/current prediction content reuses the official text-part type with this control; confirm applicability at this position before implementing it, but do not silently treat the known carrier as meaningless |
-| Responses accepts a hybrid message union | Complete assistant message with one `input_text` and one `output_text` is accepted as one message, despite belonging to neither official input-message nor output-message branch | **R**, [Responses items](../../src/protocol/openai/responses/items.rs). Select and validate a whole union branch rather than independently admitting each part |
-| Known Responses values inherit nullable report handling | Reasoning history `status:null`/`content:null`, custom-tool `description:null`, and root `access_programs:null` pass. The supplied request values are non-nullable in the selected parameter contracts | **R**, [reasoning](../../src/protocol/openai/reasoning.rs), [function tools](../../src/protocol/openai/function_tools.rs), [context](../../src/protocol/openai/context.rs). Explicit unsupported access programs reject, but null bypasses that known-field boundary |
-| Responses history logprobs are less strict than snapshots | `output_text.logprobs:null` or an entry with `token`/`logprob` but no required `bytes`/`top_logprobs` passes intake | **R**, [text reader](../../src/protocol/openai/content/text.rs). Required complete-snapshot checks in [envelope](../../src/protocol/openai/responses/envelope.rs) are not applied to this history branch |
-| Messages tool-choice extras are rejected | Valid `tool_choice:{type:"auto"}` passes; adding `x_extra:7` rejects instead of being ignored | **R**, [client request](../../src/protocol/anthropic/messages/client/request.rs) calls the closed [wire choice reader](../../src/protocol/anthropic/messages/wire/request.rs) without the public filtering used elsewhere |
-| Recognized Messages HTTP controls disappear | `anthropic-user-profile-id` and `anthropic-workspace-id` have documented attribution/workspace meaning and are emitted as headers by the SDK; ingress neither represents nor explicitly rejects them | **S**, [HTTP admission](../../src/gateway/ingress/admission.rs), [header validation](../../src/gateway/ingress/http.rs). Request-body properties are not equivalent. Prefer explicit unsupported rejection until a trusted mapping/exception is selected; never let client input select upstream credentials or tenancy |
+- **`user:null`:** pinned Python request types and current OpenAI reference differ; do not tighten solely from one SDK.
+- **Chat response `message.refusal`:** Node required-nullable and reference optional-nullable differ. This is distinct from required `choice.logprobs`.
+- **Custom Chat SSE:** Node declares/accumulates custom deltas; Python and the streaming reference remain function-only. See the [detailed comparison](#custom-tools-source-disagreement-versus-a-real-carrier-gap).
+- **Legacy token ceilings:** `max_tokens` conversion exists, but deprecated versus visible-plus-reasoning ceiling semantics still require domain-specific equivalence evidence.
+- **Responses image detail:** generated types require it while prose supplies default `auto`; omission alone is not a confirmed violation.
+- **Other source drift:** Python/Node Responses `async` carriers and newer per-breakpoint TTL declarations need explicit source/version review, not silent baseline promotion.
 
-## Existing exceptions and source disagreements
-
-These need reconciliation, not automatic removal or a newly claimed data-loss defect.
-
-1. **Private-field rejection versus unknown-extra policy.** `session_id` rejects in both OpenAI public codecs and unconditionally in shared HTTP admission for all three protocols. Standard Chat also rejects recognized private controls such as `enable_thinking` and `thinking_budget`; orchestration/reasoning guard lists contain other nonstandard names. These are historical explicit restrictions, not accidental generic parser behavior. Under the clarified default, either document the precise continuing exception or ignore the field without execution effect. Do not forward it. The generic `x_extra` control was accepted in the probes. Owners: [codec request](../../src/protocol/openai/codec/request.rs), [admission](../../src/gateway/ingress/admission.rs), [Chat reasoning](../../src/protocol/openai/chat/reasoning.rs).
-2. **Messages beta semantics have no distinct Client selector.** Standard public intake accepts `thinking.block_binding`, per-message `output_config.effort`, and inline `tool_addition`/`tool_removal`; trusted upstream [target logic](../../src/protocol/anthropic/messages/target.rs) derives beta headers from the body. Nonempty incoming beta headers meanwhile reject. Adaptive block-binding intake was reproduced. These capabilities were previously selected; decide their explicit Client semantic-profile boundary rather than silently broadening stable Messages. Ordinary stable `role:system` is not itself this issue.
-3. **`user:null`: do not tighten based only on the Python pin.** Both OpenAI public decoders accept it. Pinned Python create types say `user:str`, but the current official Chat and Responses references explicitly allow null. This is a source disagreement, not a confirmed standard violation.
-4. **Chat response `message.refusal` requiredness disagrees.** Node marks it required-nullable, whereas the current reference says optional-nullable. Omission is reproduced but is not counted as a confirmed defect here. This does not remove the separate required `choice.logprobs` problem.
-5. **Chat custom-call SSE is a source disagreement and support candidate.** Pinned Node exposes `delta.tool_calls[].custom.{name,input}` and `type:function|custom`; pinned Python and the current streaming reference still describe function-only deltas. Current code rejects custom streaming. Do not continue claiming that every official source lacks a carrier, or enable it solely by copying a Node type. JSON custom calls are already represented.
-6. **Legacy token ceiling conversion is implemented, not missing.** Chat [envelope normalization](../../src/protocol/openai/chat/envelope.rs) renames `max_tokens` to `max_completion_tokens` and rejects simultaneous presence. Official text explicitly describes the latter as visible-plus-reasoning tokens; it describes the former as deprecated and incompatible with o-series. Verify equivalence within the admitted domain before labelling every conversion lossless. A changed cap meaning needs user approval, not a new alias shim.
-7. **Required image detail versus documented default.** Responses generated types require `detail`, but official prose gives default `auto`; omission alone is not a confirmed defect. Likewise, optional/default and null must be checked field by field.
-8. **Discarded hypothesis:** a standard response with `error.code:null` was suggested by the serializer, but an independent typed construction fails `GenerationResponse` validation with `InvalidResponse`. It is not a reachable finding from a valid IR in these probes. The arbitrary non-null code/reason cases remain reachable.
-9. **Other source drift:** Python and Node disagree on some Responses `async` carriers. Current Chat text/image/audio/file cache-breakpoint types also expose per-breakpoint TTLs `30m|12h`, beyond the pinned narrower definitions. Keep these as explicit source-refresh/IR-review inputs, not silently approved support.
+The earlier hypotheses about `error.code:null` did not survive valid-IR construction and are not retained as defects. Private extras now follow the selected ignore-without-execution policy; stable Messages beta-only fields and unsupported attribution/workspace headers reject. These are resolved policy boundaries, not remaining source disagreements.
 
 ## Supported baseline and missing standard capabilities
 
-The tables name missing capability families, not a demand to implement all of them. Explicit rejection is compliant with the accepted bounded implementation rule. A supported carrier may still be unavailable on a particular public model. Already approved projections remain scoped decisions, not newly approved losses.
+The tables retain the 2026-10-27 capability-family review, with corrected dispositions for the resolved boundaries above. They are not a continuously maintained support matrix or a demand to implement every family. Explicit rejection is compliant with the accepted bounded implementation rule. A supported carrier may still be unavailable on a particular public model. Already approved projections remain scoped decisions, not newly approved losses.
 
 ### Chat Completions
 
@@ -79,11 +88,11 @@ The normal text/tool loop already represents model/messages, all ordinary roles,
 | `web_search_options` and nested location/context size | Reject | Search configuration/report families; not just a root string option |
 | `moderation` policy and response/chunk reports | Reject active standard semantics | Safety-policy and reported assessment ownership, independent of gateway error formatting |
 | `store:true` and stored-completion operations | Reject/unavailable | Execution/resource lifecycle, not model content IR |
-| `prompt_cache_breakpoint` on content and prediction | Message locations reject; prediction location is the discard finding above | Existing cache owners cover some related meanings; exact use/TTL support is incomplete |
+| `prompt_cache_breakpoint` on content and prediction | Unsupported locations reject; no implicit prediction exception | Existing cache owners cover some related meanings; exact use/TTL support is incomplete |
 | Custom `audio.voice:{id:...}` | Reject; string voices and six format labels represented | Explicit custom voice reference and authority, not coercion into a built-in label |
 | File IDs and some inline-file forms | File IDs reject; inline reader requires a data URL rather than arbitrary bare-base64 text | Resource identity/provenance and media-type interpretation; not authorization for Provider-owned file-ID forwarding |
 | Custom-tool streaming and streaming citations | Reject; custom streaming has the source disagreement above | Often a missing codec/event carrier rather than missing custom-call/citation IR |
-| Mixed text/refusal or multiple output parts without an approved projection | Some layouts reject; phase projection has the reproduced ordering defect | Existing part owners are present; prioritize lawful output representation before changing semantic owners |
+| Mixed text/refusal or multiple output parts without an approved projection | Some layouts reject; plain-text grouping preserves source order; richer grouping remains restricted | Existing part owners are present; prioritize lawful output representation before changing semantic owners |
 
 `max_tokens` is already recognized. Standard Chat does not acquire Provider reasoning/video controls merely because another protocol supports them. Output-format/model restrictions and catalog admission must not be reported as absent parser fields.
 
@@ -93,7 +102,7 @@ The ordinary path already represents easy/input/output message history, instruct
 
 | Missing or restricted standard surface | Current disposition | Later IR-review relevance |
 |---|---|---|
-| `access_programs.cyber` | Non-null request/report rejects; request null is a validation defect | Entitlement/execution intent and reported effective selection, not a Provider-only spelling |
+| `access_programs.cyber` | Unsupported request/report semantics reject; request nullability is checked separately | Entitlement/execution intent and reported effective selection, not a Provider-only spelling |
 | `background:true`, cancel/resume/streamed retrieval | Unavailable; false/null do not implement background execution | Execution lifecycle; separate from generation-content IR |
 | `conversation`, prompt/template ID/version/variables | Active values reject | Managed resource/input-resolution semantics; existing local previous-response history is not Conversations support |
 | Nonempty `context_management` / automatic compaction controls | Reject | Context transformation intent; opaque compaction history alone does not implement it |
@@ -117,7 +126,7 @@ The ordinary path already represents root/system instructions, text/images/selec
 | `max_tokens:0` prewarming | Reject; positive cap required | Cache/execution operation, not zero-length normal generation |
 | `diagnostics.previous_message_id` | Non-null request rejects; official diagnostics output has no supported owner | Official diagnostics intent is distinct from optional MorphieCore notices |
 | `container`, `inference_geo`, `speed` and related reports | Active requests reject; Client report coverage absent | Execution context/placement/service facts, not plain text settings |
-| `anthropic-user-profile-id`, `anthropic-workspace-id` | HTTP semantics currently ignored, as above | Trusted attribution/tenancy policy outside task content; default rejection until selected |
+| `anthropic-user-profile-id`, `anthropic-workspace-id` | Unsupported headers reject before body polling | Trusted attribution/tenancy policy outside task content; default rejection until selected |
 | Programmatic `allowed_callers` and non-direct caller histories | Reject; direct/omitted subset supported | Existing common call-context owners may help, but this is not program execution support |
 | Hosted/versioned tools | Bash; memory; text editor; code execution; browser/computer toolsets; web search/fetch; BM25/regex tool search reject | Family rejection includes version-specific domains, use/token caps, location, URL policies, browser/computer options and result controls |
 | Hosted content/history | Search results, server-tool use/results, container upload; nested result search/tool-reference/browser-state variants reject | Content/result/resource meanings and terminal progress, not passthrough |
@@ -126,45 +135,24 @@ The ordinary path already represents root/system instructions, text/images/selec
 | `pause_turn` and server-tool continuation | No selected Client output carrier/loop | Existing interaction-progress distinctions need assessment before new IR variants |
 | Usage geography/speed and beta accounting | Geography/speed lack Client coverage; beta iteration/fallback-credit accounting unavailable | Sparse accounting/report ownership, not invented aggregate counts |
 
-**Beta-only, not stable-field omissions:** context management/compaction, MCP configuration, fallbacks/credit tokens, task budgets, toolset dispatch, advisor/MCP/compaction/fallback blocks and display `updates` remain unsupported or narrowly excepted. Accepted block binding, per-message effort and inline tool changes require the explicit-profile reconciliation above. Removed sampling fields are recognized and rejected; that is not missing support for the selected stable API.
+**Beta-only, not stable-field omissions:** context management/compaction, MCP configuration, fallbacks/credit tokens, task budgets, toolset dispatch, advisor/MCP/compaction/fallback blocks and display `updates` remain unsupported or narrowly excepted. Block binding, per-message effort and inline tool changes remain trusted-native capabilities, not stable Client admission. Removed sampling fields are recognized and rejected; that is not missing support for the selected stable API.
 
 ## Open-source bridge cross-check
 
-Rechecked on **2026-10-27** following the boundary review. These pinned implementations are mechanism references, not protocol authorities or newly approved compatibility policies. Five public source files were fetched successfully at their immutable revisions; the retained CLIProxyAPI source matched the fetched bytes. This was source/test inspection, not execution of those projects or Provider acceptance. No implementation was imported.
+The initial **2026-10-27** review inspected LiteLLM `cfe0100e1fca613e7b1af27dd1fe4807ca4d1d1a` and CLIProxyAPI `1f917e77c4562623aa49e9804d999524151a2f96`. The [release-qualified client/proxy guide](2026-10-27-client-and-proxy-sources.md) now owns navigation, licenses and mechanism cautions. It does not change those earlier observations or select a point-to-point gateway architecture.
 
-| Reference | Useful mechanism | Boundary for MorphieCore |
-|---|---|---|
-| LiteLLM [`completion_extras/litellm_responses_transformation`](https://github.com/BerriAI/litellm/tree/cfe0100e1fca613e7b1af27dd1fe4807ca4d1d1a/litellm/completion_extras/litellm_responses_transformation) and [`responses/litellm_completion_transformation`](https://github.com/BerriAI/litellm/tree/cfe0100e1fca613e7b1af27dd1fe4807ca4d1d1a/litellm/responses/litellm_completion_transformation) | Distinct request, JSON and streaming paths in both directions; dense Chat tool indices independent of mixed Responses output indices; item completion separate from response completion | Do not import call-ID rewriting, unsupported-item skipping, structured-output message dropping or nonstandard reasoning carriers. Its Responses-to-Chat streaming text branch forwards arrival-order deltas; it does not solve the message/part ordering counterexample above |
-| CLIProxyAPI [`openai/openai/responses`](https://github.com/router-for-me/CLIProxyAPI/tree/1f917e77c4562623aa49e9804d999524151a2f96/internal/translator/openai/openai/responses) | Independent sequence/item/call coordinates; pending tool identity and arguments; delayed response termination to include late usage; explicit request-echo state | Do not import missing-call-ID synthesis, empty arguments becoming `{}`, completion without a finish reason, or synthesized source termination at EOF. Broad request echo does not establish Provider-effective settings |
-| OpenAI Agents Python [`chatcmpl_stream_handler.py`](https://github.com/openai/openai-agents-python/blob/b040da59037b1a34fee3a0dd4da95a571460eb98/src/agents/models/chatcmpl_stream_handler.py) | Stable announced output indices, buffered call fragments and Agent-facing event organization | This is an Agent event adapter, not a complete Responses HTTP/SSE gateway. Internal placeholder IDs and configurable compatibility behavior are not standard-wire precedents |
-
-Retain `wire → typed IR → target projection → wire`, rather than adding parallel point-to-point converters. Existing filtered call owners already supply dense Chat indices; the bounded text queue repairs ordering without a second identity map. The existing validated-EOF gate, shared item rendering and delivery completion are stronger than the references' permissive terminal paths.
-
-The initial cross-check exposed a compatibility limit: a new Chat tool index required its ID and name together. The subsequent source qualification and repair below address it with bounded codec-local pending state before immutable `ItemStarted`, never a fabricated call/result link. Request-local metadata echo remains a separate selection from omitting reported metadata.
-
-Use a small set of independent protocol expectations: mixed text/call indices; interleaved message parts; raw argument preservation; item-done versus terminal snapshots; late usage after finish; incomplete output; missing/trailing terminal evidence. Reference output is useful for discovering differences, not for declaring a difference correct. Reuse existing regressions and SDK consumers rather than adding a combinatorial matrix.
+The additional [OpenAI Agents Python handler](https://github.com/openai/openai-agents-python/blob/b040da59037b1a34fee3a0dd4da95a571460eb98/src/agents/models/chatcmpl_stream_handler.py) shows stable announced indices and buffered call fragments. It is an Agent event adapter, not a complete Responses HTTP/SSE gateway; placeholder IDs are not standard-wire precedents.
 
 ## Source-qualified repair disposition
 
-Rechecked on **2026-10-27** during the [selected three-protocol work](../roadmap.md#three-protocol-fidelity-repair). The original findings above retain their review baseline. This disposition describes owner-local corrections, not universal three-protocol conformance; [Development](../development.md#verification-gates) owns completed gate evidence.
+The **2026-10-27** corrections use existing owners: preserve source text order and raw arguments; enforce required nullable/output unions; separate stable intake from native beta carriers; require genuine Messages signatures; and reject unsupported HTTP controls. [Architecture](../architecture.md#field-handling) owns these decisions; [Development](../development.md#verification-gates) owns acceptance.
 
-| Area | Correction and independent expectation |
-|---|---|
-| Chat/Responses delivery | Preserve raw generated arguments regardless of phase. Plain-text message/part grouping uses source content order in JSON and SSE, with or without phase; an open tool does not terminate an independent text part. Existing text+audio carriage stays unchanged. Metadata-bearing grouping and crossing an intervening call remain unsupported; item-status omission is limited to the subsequent [selected follow-up](#selected-follow-up-disposition) |
-| Standard output shapes | Emit required nullable response fields and function-tool echoes; Chat probability objects keep both nullable channels. Restrict response terminal codes/reasons to their official domains and supply error-event `param:null`. Input-only configuration updates cannot become output items |
-| Atomic Responses output | `ProgramOutput.status` is completed/incomplete, but `ResponseOutputItemAddedEvent.item` includes this union: lack of an in-progress variant does not prohibit an added event. Buffer the opener and following frames until actual closure, then publish a matching added/done pair without changing output order. A preliminary blanket rejection was replaced by this bounded exact representation |
-| Stable intake | Validate whole Responses message branches, known nullability and complete history logprobs; distinguish Chat request grammar from output/chunk fields. Ignore nonsemantic private extras without forwarding/affinity effects. Stable Messages rejects beta-only block binding, inline tool changes and per-message output configuration, retaining trusted native carriers. Unsupported attribution/workspace headers reject before body polling |
-| Messages reasoning | Remove unsigned thinking output rather than restoring invalid history acceptance. JSON and SSE require genuine signature/redacted state; no fabricated signature or reasoning-as-answer conversion |
-| Chat tool fragments | The current [function-calling guide](https://platform.openai.com/docs/guides/function-calling) accumulates `id`, `type` and `function.name` with nullish assignment, while appending argument fragments. The [pinned chunk types](https://github.com/openai/openai-python/blob/e8a0fd28bbdc1699c97ff0f602b1af3dd378382d/src/openai/types/chat/chat_completion_chunk.py) make these delta fields optional/nullable. Bind them independently, reject contradictions, and hold unresolved calls; missing identity never becomes a generated call ID. Sparse-index finalization follows numeric index semantics, not a claimed live Provider sample |
-| Messages input deltas | The [streaming guide](https://platform.claude.com/docs/en/build-with-claude/streaming) distinguishes partial JSON strings from final object input. The [pinned Python accumulator](https://github.com/anthropics/anthropic-sdk-python/blob/9313f13a5a643ceed10fafba6785eab8e04b6e6e/src/anthropic/lib/streaming/_messages.py) parses only nonempty accumulated input. The official start-event union carries ordinary tool objects. Preserve complete opener input and treat zero-byte deltas as no-ops; whitespace/truncated prefixes do not become empty objects. Independent semantic-event reduction and a pinned SDK mock-transport consumer cover these cases |
-| Unknown Messages events | The guide requires JSON data and matching event/body type. Strict JSON, duplicate/depth/node and framing limits precede extension filtering; valid unknown events remain ignored without supplying lifecycle evidence |
-| Null metadata | User selected only `metadata:null` omission in standard Chat SSE, with a named loss and strict-complete rejection. Empty/nonempty objects still reject; static Chat metadata remains. An unregistered evidence field initially caused a panic and was registered in the existing typed evidence owner |
+Additional source distinctions retained from the repair:
 
-### Remaining source and semantic choices
-
-- **Nonempty opener plus JSON fragments:** preserve the opener without fragments; reject a subsequent nonempty fragment stream rather than silently replace or merge its object. Establish a source contract before adding such behavior.
-- **Messages block scheduling and richer grouping:** ordinary block/tool loops remain covered; arbitrary cross-protocol interleaving, meaningful message boundaries, annotated text merges and lifecycle coarsening outside the selected plain-text/token-cap rule need separate exact carriers or an explicit loss selection.
-- **Other open choices:** Chat custom-call SSE source disagreement, broader settings echo, legacy token-ceiling equivalence and the earlier dated source disagreements remain unresolved. None activates hosted tools or new APIs.
+- The [OpenAI function-calling guide](https://platform.openai.com/docs/guides/function-calling) binds optional `id`, `type` and `function.name` independently while appending arguments. Hold unresolved calls in bounded codec-local state; contradictory/missing identity must not become a fabricated call ID.
+- The [Messages streaming guide](https://platform.claude.com/docs/en/build-with-claude/streaming) and [pinned accumulator](https://github.com/anthropics/anthropic-sdk-python/blob/9313f13a5a643ceed10fafba6785eab8e04b6e6e/src/anthropic/lib/streaming/_messages.py) distinguish complete opener input, zero-byte deltas and nonempty partial JSON. Whitespace/truncation cannot become `{}`. A nonempty opener followed by nonempty fragments remains unsupported without an established merge/replacement contract.
+- Strict JSON/framing validation precedes unknown-event filtering. Valid unknown Messages events do not supply lifecycle evidence.
+- Arbitrary cross-protocol block interleaving, annotated grouping and broader settings echo remain separate choices. Null-metadata omission and the narrow lifecycle projection below do not generalize to those cases.
 
 ## Protocol expressiveness check
 
@@ -190,7 +178,7 @@ Chat's [finish reason](https://developers.openai.com/api/reference/resources/cha
 
 **Intrinsic difference:** the explicit per-item lifecycle vector has no standard Chat/Messages carrier. **Implementation policy:** [Chat intake](../../src/protocol/openai/chat/response.rs) infers incomplete item states from `length`/`content_filter`, and [lowering](../../src/protocol/openai/lowering/response.rs) rejects a source that cannot round-trip through that inference. Equality of source item and overall status is not a Chat wire requirement.
 
-A possible future named omission could preserve source IR and overall token-cap meaning while dropping per-item observations from an otherwise representable target view. It would remain lossy and must not establish executable tool completion. Do not rewrite source items to satisfy lowering or map `failed` to `length`. Failure after partial output needs an honest error path, not successful finalization; Chat/Messages lack the same normal result envelope for output plus an overall failed object.
+The subsequently selected narrow omission preserves source IR and overall token-cap meaning while dropping eligible plain-text per-item observations. It remains lossy and must not establish executable tool completion. Do not rewrite source items to satisfy lowering or map `failed` to `length`. Failure after partial output needs an honest error path, not successful finalization; Chat/Messages lack the same normal result envelope for output plus an overall failed object.
 
 ### Custom tools: source disagreement versus a real carrier gap
 
@@ -225,21 +213,13 @@ Function argument fragments may be streamed as strings in all three systems, but
 
 **New source clarification:** the current Anthropic [Thinking page](https://platform.claude.com/docs/en/build-with-claude/thinking) explicitly states that thinking deltas are “followed by a single `signature_delta` event just before the block's `content_block_stop`,” for summarized and omitted display. The reviewed native reducer's concatenation of multiple signature events and its synthetic split fixture were not justified by that documented shape. SDK assignment behavior does not authorize duplicate events either. This established a source-validation/fixture correction, distinct from incompatible cross-protocol replay formats.
 
-### Reproduced boundaries and recommendations
-
-A temporary standalone probe linked the current `c8d0c96` library and used only synthetic payloads. It confirmed: Responses decodes a completed item under incomplete outcome; Chat snapshot rejects it as `Representation(Terminal)`; Chat `length` intake infers incomplete item state; a nonempty Responses metadata map succeeds in Chat JSON but fails Chat SSE encoder creation; complete custom Chat JSON is accepted. A separate tool-input contrast reached the intended boundary after supplying explicit synthetic accounting: object arguments encode to Messages, arrays reject as unsupported, and malformed JSON rejects as invalid JSON. Missing usage initially blocked that contrast and was not misreported as an argument defect.
-
-Keep three decisions separate: (1) optional named omission of item-lifecycle detail, (2) provenance-aware request echo, (3) custom-tool interface adaptation. None is selected by this research. Reordering and nonsemantic extension tolerance cannot supply absent standard carriers. No production changes, dependency updates, live Provider calls or broad conformance tests were performed.
-
 ### Selected follow-up disposition
 
-The user subsequently authorized the recommended order on **2026-10-27**, including the narrow text-status omission, and explicitly selected original-request metadata echo with whole-field report precedence and strict-complete rejection. [Architecture](../architecture.md#accurate-ir-and-declared-loss) owns the item-status policy; [schema completion](../architecture.md#downstream-schema-completion) owns metadata provenance. This supersedes the two unselected recommendations above, not the remaining custom-tool disagreement.
+Synthetic probes at `c8d0c96` confirmed independent item/response status, Chat metadata JSON/SSE asymmetry and the complete-object versus string-argument boundary. These were not live Provider observations.
 
-- Messages intake now accepts one opaque signature delta; repeats poison intake. The synthetic eight-turn corpus previously split each signature and failed three history regressions after validation tightened. Those eight fixtures now use one event with the unchanged final signature; replay, interruption and returned-history assertions remain.
-- Chat text-status omission is source-owner-specific and restricted to the selected plain-text/token-cap domain. Direct lowering, grouping, SSE EOF validation and retained snapshots agree; unsupported content-filter status loss still fails before a successful terminal. Source item statuses remain unchanged.
-- Responses metadata echo retains admitted original request authority across prepared requests and attempts. Independent presence-table, strict-policy, retained-size/history, Router failover and pinned SDK checks exercise the implementation. The added failover contrast discards an unpublished failed candidate's metadata before another candidate echoes the original association.
+On **2026-10-27**, the user selected narrow plain-text/token-cap item-status omission and original-request Responses metadata echo with whole-field report precedence and strict-complete rejection. [Architecture](../architecture.md#accurate-ir-and-declared-loss) owns the lifecycle policy; [schema completion](../architecture.md#downstream-schema-completion) owns metadata provenance. Messages accepts one opaque native signature delta; repeated deltas reject rather than concatenate.
 
-[Development](../development.md#verification-gates) records final gates and limits. No custom Chat SSE, Messages custom-input wrapping, broader settings echo, live Provider acceptance or deployment is included.
+The selection preserves source item statuses and reported metadata, does not make incomplete tools executable, and does not infer Provider-effective settings. Custom Chat SSE, Messages custom-input wrapping and broader settings echo remain unselected. [Development](../development.md#verification-gates) records verification separately.
 
 ## Diagnostics and approval boundaries
 
@@ -251,14 +231,6 @@ Official evidence does **not** justify rejecting every additional response prope
 The current bounded [notice attachment](../../src/protocol/diagnostics.rs) uses extra object properties in existing envelopes, does not overwrite standard fields, and removes the optional notice if the complete payload exceeds its budget. JSON/SSE continuation does not require a notice echo. No new concrete violation was established merely from the `morphiecore` field's existence. SDK retention and diagnostic aggregation remain deferred, not certified. These notices cannot cure unsigned thinking, reordered text, an invalid output union or absent required standard members.
 
 Previously approved usage completion, phase/report omission, reasoning concatenation, refusal-as-text and terminal coarsening remain named policies to assess against the clarified output contract. They are not new loss approvals. New legacy-field conversions must distinguish exactness from changed meaning and obtain user confirmation for loss before implementation.
-
-## Recommended review order and limits
-
-1. Repair demonstrated delivery/history inconsistency, required standard shapes and discriminator/known-field validation without adding new feature owners.
-2. Reconcile explicit private-field and Messages beta-profile exceptions; resolve source disagreements before tightening `user:null`, response refusal or enabling custom Chat streaming.
-3. Use the missing-family inventory as input to the later IR review. Separate **codec-only gaps**, **candidate semantic owners**, and **execution/resource APIs**; do not treat every unsupported field as evidence that IR needs another container.
-
-This order is a recommendation, not a selected implementation package. The review did not rerun the complete baseline or real Agent/Provider acceptance: its evidence is source inspection, independent synthetic boundary probes and one successful JSON/SSE delivery contrast. It does not certify every enum combination, error path, cancellation boundary or future protocol addition. Subsequent fixes need independent official-contract regressions; neither round trips nor tolerant SDK parsing alone establish conformance.
 
 ## Follow-up source and feasibility review (2026-10-28)
 
@@ -302,3 +274,48 @@ The [Chat create reference](https://developers.openai.com/api/reference/resource
 Both Anthropic accumulators replace tool input from a separate fragment buffer; that implementation choice does not select a service-defined merge/replacement contract for a nonempty opener. The existing permanent negative test uses `"{"`; its next relevant extension should use complete `"{\"b\":2}"` to isolate this boundary from truncation.
 
 Legacy `role:function` results identify a name rather than a modern call ID; two outstanding same-name calls expose ambiguous association. Broader settings echo also needs field-specific authority: requested `service_tier:"auto"` is not the actual served tier described by the [Responses type](https://github.com/openai/openai-node/blob/af8336b8c13bd5402868cf2ca0d9c64530c3848f/src/resources/responses/responses.ts). Neither case justifies an automatic adapter or blanket request echo.
+
+## Agent-default production probe (2026-10-28)
+
+Rechecked implementation **`b5094d6`** with disposable, uncommitted probes; no Provider calls. [Roadmap](../roadmap.md#agent-default-production-findings) owns the resulting dispositions and order; selections remain pending.
+
+### Method
+
+- **Production construction:** a crate-internal probe loaded the gateway through the startup fixture with real catalog bindings, a test-owned credential store and per-candidate `base_url` overrides to a loopback fake upstream. Each case used a fresh gateway with body-free diagnostics; failure codes come from the request record. Bindings: `dashscope-glm-chat`, `deepseek-chat`, `openrouter-responses` (`gpt-6-luna`), `dashscope-flash-responses` (`qwen3.8-flash`) and `opencode-go-haiku-messages`. Google bindings were not probed ([pause](../roadmap.md#google-api-pause)).
+- **Request shapes:** installed pi 1.4.0 defaults per API, read from its bundled `@earendil-works/pi-ai` dist (`openai-responses`, `openai-completions`, `anthropic-messages`): Responses `developer` items without `type`, tools without `strict`, `reasoning:{effort,summary:"auto"}` plus `include:["reasoning.encrypted_content"]`, `prompt_cache_key`; Chat `reasoning_effort`, `stream_options`; Messages `cache_control` on system/last user block/last tool, `eager_input_streaming`, manual `thinking`. pi's replay transforms (reasoning items verbatim, rebuilt assistant messages, `function_call` without `status`) built second turns from the gateway's own delivered output; a verbatim-output replay was checked alongside.
+- **Upstream shapes:** official-shape streams per protocol, including required `logprobs:[]` on Responses text events ([`response_text_done_event.py`](https://github.com/openai/openai-python/blob/f97798bc86e41f4a5d18644113ef94cf58722778/src/openai/types/responses/response_text_done_event.py)).
+- **Cross-product codec probe:** every `testdata/repair-and-recall` upstream corpus through every client encoder (JSON/SSE), and every client request corpus through every target encoder. Its adapters used test contracts; only findings reproduced through production construction or exact code traces are recorded below.
+
+Probe artifacts excluded from findings: Messages-target admission without catalog `explicit_cache`; a changed loopback port that made sealed reasoning foreign under the [deployment issuer](../../src/topology/endpoint.rs) (stripped by `transfer-visible-history`, consistent with design); Chat clients routed to a Responses-only binding with Chat-shaped upstream bytes.
+
+### Findings
+
+| Id | Lane | Observation | Code |
+|---|---|---|---|
+| A | Responses → Responses | A delivered reasoning item with `status:"incomplete"` (after `max_output_tokens`) is rejected as next-turn history (`representation.terminal`, before dispatch). pi keeps length-stopped turns and replays reasoning verbatim | [checks.rs](../../src/protocol/openai/lowering/checks.rs) request lifecycle guard |
+| Q1 | Responses → Bailian Responses | pi defaults reject before dispatch: `summary:"auto"` (`codec.unsupported.reasoning`), encrypted `include` and tools without `strict` (`codec.unsupported.unavailable`). `strict:false` and effort-only pass | [Bailian dialect](../../src/protocol/openai/dialect/bailian.rs) |
+| Q2 | Responses → Bailian Responses | The gateway delivers sealed reasoning from this binding, then rejects any reasoning item in the next request (`codec.unsupported.unknown_field`) | Bailian history guard in the same file |
+| E | Responses upstream → Messages client | Every text answer fails after dispatch: `TextMetadata{logprobs:[]}` hits `!is_absent()` while the neighbouring delta guard uses `!is_empty()`. Removing `logprobs:[]` leaves only the terminal gap F | [client SSE](../../src/protocol/anthropic/messages/client/sse.rs), [requirements](../../src/semantic/task/generation/requirements.rs) for the request-side twin |
+| F | Chat/Responses upstream → Messages client | Ordinary completion (`finish_reason:"stop"`, Responses `completed`) rejects `codec.unsupported.terminal` after dispatch; tool-use turns succeed | [terminal encode](../../src/protocol/anthropic/messages/terminal.rs) |
+| G | Responses client → Chat/Messages/Bailian | Omitted `strict` rejects (`representation.strict_default`, `admission.tool_schema_normalization`, `unavailable`) | Chat lowering, Messages request, Bailian dialect |
+| H | Responses client → Chat | `summary` and encrypted `include` reject (`representation.reasoning`) | [checks.rs](../../src/protocol/openai/lowering/checks.rs) presentation/encrypted-output guards |
+| R | Standard Chat client ← reasoning-emitting upstream | Upstream reasoning fails at event projection after dispatch; SSE ends without a Chat terminal (pi treats it as retryable), JSON returns 502. The `readable_reasoning` profile passes the same lanes | Chat delivery projection |
+| M1 | Messages client → non-Messages routes | pi's default `cache_control` rejects at `admission.explicit_cache` | [requirements](../../src/semantic/task/generation/requirements.rs) |
+| M2 | Messages client → Haiku | pi's bundled `@anthropic-ai/sdk` sends `anthropic-version: 2023-06-01`; pi adds `interleaved-thinking-2025-05-14` for manual thinking. Both reject before body collection ([usage](../usage.md#messages)); manual thinking is disabled on this binding. Adaptive thinking with signed replay passes | [admission](../../src/gateway/ingress/admission.rs) |
+| B/C/D | Messages upstream → OpenAI clients | `service_tier:"standard"` and refusal `category:"cyber"` hit catch-alls; `max_tokens`-truncated tool input succeeds in SSE but fails JSON/retained (`Invalid`) | [service](../../src/protocol/openai/service.rs), [terminal](../../src/protocol/openai/terminal.rs), [native response](../../src/protocol/openai/lowering/native_response.rs) |
+| U | Chat upstream; Interactions → Messages | Chat finish-chunk usage followed by the standard trailing usage chunk reduces as a duplicate final; an Interactions details-only final usage reports `Invalid` in JSON but `Unsupported` in SSE | [Chat decode](../../src/protocol/openai/events/decode/chat.rs), [reduce](../../src/semantic/task/generation/stream/reduce.rs), [Messages accounting](../../src/protocol/anthropic/messages/accounting.rs) |
+
+Also observed: `glm-5.3` accepts only `low`/`high` effort; effort scope blocks Chat/Responses reasoning effort on Messages targets without a configured conversion; Responses `function_call_output.status` rejects on Messages; explicit `detail:"auto"` rejects on Messages ([usage](../usage.md#image-input)). These are documented or binding facts that discovery must publish rather than defects.
+
+Passing controls: plain text and non-reasoning tool loops on every same-protocol lane; Responses and Messages same-issuer reasoning/signature replay over two turns (`gpt-6-luna`, Haiku adaptive); cross-protocol tool-call turns into Messages clients; Responses clients on Chat and Messages upstreams with explicit `strict:false` and no reasoning presentation.
+
+### Defect-history classes
+
+About 115 defect items fixed from 2026-10-17 to 10-28 were classified from commit documentation diffs; counts depend on how bundled commits are split. Same-protocol intake strictness dominated through 10-23 (16 of ~55); from 10-24 consumer catch-alls rejecting another producer's state rose from 2 to 9, required-field completion from 1 to 5 and JSON/SSE/retained divergence from 2 to 4. Presence/null/default confusion stayed high in both windows (10, then 14). Reading audits found most items. Through 10-23, installed clients found 3 and live Providers 8, the latter all lifecycle or presence assumptions; from 10-24 offline probes and SDK consumers found most cross-protocol items.
+
+The structural causes are test-side:
+
+- [Session corpus tests](../../tests/semantic/history/sessions.rs) are the only delivered-output feedback loop. They run diagonal pairs only and decode with `Dialect::MorphieCore`, wider than [production client construction](../../src/gateway/startup/bind.rs).
+- Delivery unit fixtures hand-build IR without required standard members such as `logprobs:[]`.
+- [Installed-client scenarios](../../tests/clients/drivers.py) override pi compat and Messages headers, and never drive pi over Responses. Agent default shapes and cross-protocol lanes are unexercised.
+- Most rejections that depend on the response shape surface only after dispatch, so a single reachable upstream state fails a whole lane.

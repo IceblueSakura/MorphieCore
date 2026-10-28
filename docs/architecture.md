@@ -42,6 +42,7 @@ This page defines accepted principles, domain contracts, and architectural decis
     - [Model-effective values](#model-effective-values)
   - [Request and reported meaning](#request-and-reported-meaning)
     - [Accurate IR and declared loss](#accurate-ir-and-declared-loss)
+    - [Client/IR projection principles](#clientir-projection-principles)
     - [Downstream schema completion](#downstream-schema-completion)
     - [Reported text configuration](#reported-text-configuration)
     - [Message phase transfer](#message-phase-transfer)
@@ -68,6 +69,7 @@ This page defines accepted principles, domain contracts, and architectural decis
     - [Generation Text model discovery](#generation-text-model-discovery)
 - [History and replay](#history-and-replay)
   - [Reasoning replay](#reasoning-replay)
+    - [Binding reasoning-history contract](#binding-reasoning-history-contract)
   - [Chat reasoning extensions](#chat-reasoning-extensions)
   - [Compacted history](#compacted-history)
   - [Stateful history](#stateful-history)
@@ -389,6 +391,26 @@ Order of precedence: **Lossless mapping → Bounded approximation → Meaningful
 - `chat.omit-text-item-status.v1`: Plain-text incomplete message items omit individual item status when overall finish reason is `length`.
 (See [`ProjectionRule`](file:///home/sakura/development/MorphieCore/src/protocol/openai/lowering/projection.rs#L10) for the complete lowering inventory).
 
+#### Client/IR projection principles
+
+Accepted on 2026-10-28 for Client/IR stabilization. Every new projection rule is classified under one of these principles. Sections marked *implementation pending* state the target design; current behavior is unchanged until the corresponding [repair-order](roadmap.md#repair-order-and-exit-gates) slice lands.
+
+| Principle | Rule |
+|---|---|
+| P1 Request-context deduction | A fact implied by the admitted request and the source grammar is an exact derivation recorded as `infer_from_request`; the source observation stays unreported |
+| P2 Carrier-less non-content facts | Advisory controls, presentation requests and report facts without a target carrier take named omission. Visible content and explicit constraints never do |
+| P3 Delivery closure | Anything delivered on a route is admissible as history on that route, exactly or through a named projection |
+| P4 Planning-time impossibility | A failure determined by the request and the binding contract occurs before dispatch, never after publication |
+| P5 Conditional source defaults | An omitted field with a documented conditional default is resolved per target by that documented rule, not by a fixed value |
+
+Accepted applications:
+
+- **Omitted Responses strictness (P5):** the [Responses reference](https://developers.openai.com/api/reference/resources/responses/methods/create) (read 2026-10-28) defines omission as strict validation when the schema is compatible and non-strict otherwise. Each tool is evaluated against the documented strict-schema subset: incompatible → explicit non-strict (exact); compatible with an equivalent strict carrier → strict (exact); compatible without one → non-strict under a named loss. The IR default is named for this conditional rule, not for schema normalization.
+- **Reasoning presentation and continuity requests (P2):** `summary:"auto"` selects the most detailed available summarizer, so a target without summaries satisfies it exactly; explicit `concise`/`detailed` take a named omission. Encrypted-reasoning `include` is exact when the target emits no reasoning items and takes a named continuity omission when reasoning has no opaque carrier.
+- **Carrier-less reports (P2):** empty `logprobs:[]` on Messages delivery and history admission follows the null-metadata precedent with a named omission; nonempty logprobs still reject on delivery. Served service classes and refusal categories without an OpenAI carrier are omitted on delivery copies, extending [explanatory terminal reports](#explanatory-terminal-reports). Anthropic standard capacity and OpenAI default processing remain distinct classes; no approximate tier is reported.
+- **Messages terminal derivation (P1):** see [Google Messages terminal projection](#google-messages-terminal-projection).
+- **Messages baseline:** the `2026-10-21` version and beta-header rejection remain; a legacy version would be a separate client grammar. Agents avoid unsupported beta features through [discovery](#generation-text-model-discovery).
+
 #### Downstream schema completion
 
 Generation Text returns complete downstream schemas: **Upstream facts → Justified inference → Simple estimates**.
@@ -439,13 +461,15 @@ Gemini 3.8 Flash bindings map native completions to Messages terminals:
 - `messages.google-tool-stop.v1`: Tool stops without explicit causes map to `tool_use`.
 - `messages.google-stop-without-sequences.v1`: Natural stops on requests without stop sequences map to `end_turn`.
 
+Accepted generalization (2026-10-28, P1; implementation pending): a completed, call-free outcome maps to `end_turn` for any source when the admitted request has no stop sequence. Responses has no stop-sequence parameter, and Chat defines `stop` as a natural stop or a provided sequence, so the derivation is exact. With declared stop sequences an unreported cause still rejects.
+
 ### Reasoning controls
 
 #### Reasoning activation and effort scope
 
 The IR decouples reasoning activation from effort level and scope:
 - **Activation:** `ReasoningRequest` (enabled vs disabled).
-- **Effort Control:** `EffortControl { scope, level }` with [`EffortScope::Reasoning`](file:///home/sakura/development/MorphieCore/src/semantic/task/generation.rs) (per-thought) or [`EffortScope::Response`](file:///home/sakura/development/MorphieCore/src/semantic/task/generation.rs) (turn-wide).
+- **Effort Control:** `EffortControl { scope, level }` with [`EffortScope::Reasoning`](file:///home/sakura/development/MorphieCore/src/semantic/task/generation/content/reasoning.rs#L27) (per-thought) or [`EffortScope::Response`](file:///home/sakura/development/MorphieCore/src/semantic/task/generation/content/reasoning.rs#L27) (turn-wide).
 - Explicit `disabled` reasoning takes precedence over response-wide effort settings.
 
 ##### Google response-effort projection
@@ -477,7 +501,7 @@ Bindings declare model-specific qualitative level translation via [`ReasoningEff
 
 ##### Implementation owners
 
-- [`semantic::task::generation`](file:///home/sakura/development/MorphieCore/src/semantic/task/generation.rs): Activation and scoped effort types.
+- [`semantic::task::generation`](file:///home/sakura/development/MorphieCore/src/semantic/task/generation/mod.rs): Activation and scoped effort types.
 - [`protocol::reasoning`](file:///home/sakura/development/MorphieCore/src/protocol/reasoning.rs): Quantization presets, nearest-level resolution, and policy projection.
 - [`topology::catalog::bindings`](file:///home/sakura/development/MorphieCore/src/topology/catalog/bindings.rs): Binding-level policy selection and limits.
 
@@ -526,6 +550,8 @@ Transformations return `Result<Conversion<T>, ConversionFailure>`. Evidence is c
 - **Descriptors:** Supported protocols, delivery modes (JSON/SSE), token limits (context window, max output), and evaluated feature states (`faithful`, `approved_adaptation`, `unavailable`, `not_assessed`).
 - **Pi Integration:** Context windows and image capabilities project directly to Pi client configurations.
 
+Accepted extension (2026-10-28; implementation pending): the gateway publishes, in client-agnostic vocabulary, each model's preferred client interface and each interface's adaptation rules. Preference follows the primary candidate, with a `basis` field and a uniformity flag; no candidate count, order or identity is disclosed. One compiled owner derives these facts from the agent-default conformance corpus; the models endpoint owns Generation while `/capabilities` keeps other tasks. A body-hash `ETag` is allowed; no maintained revision is introduced.
+
 ## History and replay
 
 ### Reasoning replay
@@ -535,12 +561,20 @@ Upstream opaque tokens and signatures are delivered in tagged [`mc1.`](file:///h
 - **Foreign history transfer:** Routing to an incompatible model strips foreign reasoning on candidate copies (`transfer-visible-history.v1`) via [`protocol::replay_projection`](file:///home/sakura/development/MorphieCore/src/protocol/replay_projection.rs), preserving visible messages and tool calls.
 - **Supported replay carriers:** Anthropic thinking signatures and `redacted_thinking`, Responses `encrypted_content`, Google `thoughtSignature`, and Interactions `function_call.signature`.
 
+Accepted revision (2026-10-28, P3; implementation pending): the transfer rule covers any reasoning a candidate cannot carry, including a foreign issuer, an unsupported lifecycle or a binding without a history carrier, not only complete foreign reasoning. Same-issuer `incomplete` reasoning is forwarded exactly to Responses, whose input union admits that status.
+
+#### Binding reasoning-history contract
+
+Accepted on 2026-10-28 (P3, P4; implementation pending). Each Generation binding declares one reasoning-history fact: `unsupported`, `ignored`, `accepted` or `required_with_tools`. Request projection, delivery, planning and discovery read it instead of dialect-local guards. `required_with_tools` covers targets that reject tool continuations without prior reasoning, as documented for [DeepSeek thinking mode](https://api-docs.deepseek.com/guides/thinking_mode/) (read 2026-10-28).
+
 ### Chat reasoning extensions
 
 Public Chat defaults to the official Standard dialect. The trusted model profile `chat_profile: readable_reasoning` enables:
 - `reasoning_content` in assistant JSON, SSE deltas, and returned history.
 - `preserve_thinking` history reading intent.
 - Unsigned, readable reasoning only; opaque signatures and structured reasoning details reject under this profile.
+
+Accepted revision (2026-10-28, P2, P4; implementation pending): the Standard profile omits upstream readable reasoning under a named rule, matching official Chat, which exposes reasoning only through usage. When the binding's [reasoning-history contract](#binding-reasoning-history-contract) is `required_with_tools`, a Standard tool request rejects at planning unless the public model selects `readable_reasoning`.
 
 ### Compacted history
 
@@ -577,6 +611,8 @@ Selected architectural direction for downstream session persistence:
 ### Owner-local cache admission
 
 Explicit cache breakpoints are admitted when all candidates on a route support native Messages caching (Go/Haiku binding). Mixed routes remain cache-closed.
+
+Accepted revision (2026-10-28, P2; implementation pending): owner-local breakpoints are admitted on every route. Native Messages candidates preserve them; other candidates omit them under a named rule, so no candidate is skipped and route membership is unchanged.
 
 ### Caller-selected automatic cache admission
 
@@ -777,6 +813,17 @@ Authoritative log of accepted architectural decisions and their systemic consequ
 | Delta coalescing | 2026-10-26 | Default 50ms / 16 KiB buffer merges adjacent text deltas |
 | Messages ordered block delivery | 2026-10-28 | Codec-local bounded serialization preserves owner/part order, incremental head output and signed history; incomplete text-owner wire closure preserves source lifecycle, native intake and EOF authority |
 | Messages null metadata omission | 2026-10-28 | Selected JSON/SSE null-only omission with per-view evidence; source observations remain unchanged and maps/other unsupported execution hints reject |
+| Client/IR projection principles | 2026-10-28 | P1–P5 classify every projection rule: request-context deduction, carrier-less non-content omission, delivery closure, planning-time impossibility and conditional source defaults |
+| Responses strictness resolution | 2026-10-28 | Omitted `strict` resolves per tool and target by the documented compatibility rule; non-strict loss only where a compatible schema lacks an equivalent carrier |
+| Reasoning presentation and continuity | 2026-10-28 | `summary:"auto"` and encrypted `include` resolve against target availability; explicit summarizers and missing opaque carriers take named omissions |
+| Carrier-less report omission | 2026-10-28 | Empty logprobs, served service classes and refusal categories without carriers are omitted on delivery copies; no approximate service tier |
+| Messages terminal derivation | 2026-10-28 | Completed call-free outcomes without admitted stop sequences derive `end_turn` from any source |
+| Generalized visible-history transfer | 2026-10-28 | Revises scoped opaque replay: uncarried reasoning of any issuer or lifecycle is omitted; same-issuer incomplete reasoning forwards exactly to Responses |
+| Binding reasoning-history contract | 2026-10-28 | One binding fact (`unsupported`/`ignored`/`accepted`/`required_with_tools`) drives projection, delivery, planning and discovery |
+| Standard Chat reasoning omission | 2026-10-28 | Revises readable Chat reasoning: Standard omits readable reasoning; required reasoning history rejects at planning without the readable profile |
+| Owner-local cache omission | 2026-10-28 | Revises owner-local cache admission: all routes admit breakpoints; non-native candidates omit them by named rule |
+| Messages baseline retained | 2026-10-28 | Legacy `anthropic-version` and nonempty beta headers keep rejecting; discovery lets agents avoid beta-only behavior |
+| Agent-facing discovery | 2026-10-28 | Gateway-published preferred interface and adaptation rules from one compiled owner over the conformance corpus |
 | Scoped source accounting | 2026-10-20 | Retains raw usage scopes independently without premature summation |
 | Honest delivery | 2026-10-20 | Publication freezes failover; completion requires validated upstream EOF |
 | Configurable capture | 2026-10-20 | Four opt-in capture boundaries with mandatory credential redaction |

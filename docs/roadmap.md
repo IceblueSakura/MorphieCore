@@ -8,6 +8,7 @@ This page owns current scope, priorities, dependencies, and exit gates. [Archite
 - [Standard request boundary repair](#standard-request-boundary-repair)
 - [Three-protocol fidelity repair](#three-protocol-fidelity-repair)
   - [Client/IR audit follow-up](#clientir-audit-follow-up)
+  - [Agent-default production findings](#agent-default-production-findings)
   - [Repair order and exit gates](#repair-order-and-exit-gates)
   - [Current Client/IR blocking semantics](#current-clientir-blocking-semantics)
   - [Remaining issue dispositions](#remaining-issue-dispositions)
@@ -38,6 +39,7 @@ This page owns current scope, priorities, dependencies, and exit gates. [Archite
   - [P7 boundary review](#p7-boundary-review)
   - [Controlled routing acceptance](#controlled-routing-acceptance)
 - [Pending decisions](#pending-decisions)
+  - [Client/IR stabilization decisions](#clientir-stabilization-decisions)
   - [Ownership and projection decisions](#ownership-and-projection-decisions)
   - [Scheduling and product decisions](#scheduling-and-product-decisions)
 - [Deferred work](#deferred-work)
@@ -56,15 +58,15 @@ This page owns current scope, priorities, dependencies, and exit gates. [Archite
 
 ## Current status
 
-**Current focus (2026-10-28):** The [three-protocol fidelity repair](#three-protocol-fidelity-repair) is narrowly reopened by the [Client/IR audit](#clientir-audit-follow-up): repair Chat JSON custom-call grouping, select a Responses-to-Messages terminal projection, then perform targeted structural cleanup. Ordered Messages delivery, incomplete text-owner closure and null-only metadata omission remain completed baselines. Budget adjustment stays deferred. This follow-up does not activate new capabilities or bindings, change equal priority among Stage-4 families, or schedule Stage 5.
+**Current focus (2026-10-28):** The [three-protocol fidelity repair](#three-protocol-fidelity-repair) is reopened as Client/IR stabilization. The [agent-default production findings](#agent-default-production-findings) show installed pi 1.4.0 default requests failing on several same-protocol lanes and most cross-protocol lanes, while existing gates pass only curated client configurations. Build the production-construction conformance gate first, then follow the [repair order](#repair-order-and-exit-gates). The next stage starts after the [closure boundary](#closure-boundary). Ordered Messages delivery, incomplete text-owner closure and null-only metadata omission remain completed baselines. Budget adjustment stays deferred. Stabilization does not activate new capabilities or bindings, change equal priority among Stage-4 families, or schedule Stage 5.
 
 **Completed baseline:** Generation Text correctness/lifecycle reviews, domain evidence, telemetry and standard request boundary repairs preceded the 2026-10-27 parsing/stream corrections. Single Messages signature validation, narrow Chat text/token-cap status projection and original-request Responses metadata echo are implemented. Their offline, SDK and installed-client evidence is separate from live acceptance; see [verification gates](development.md#verification-gates). Stage 4 retains equal priority across its API families.
 
 | Area | State | Next step |
 |---|---|---|
 | Routing | Stable routing baseline frozen; controlled synthetic recovery verified across Router, SDK, and installed clients | Real-failover production evidence required for multi-credential routes; no routing feature additions |
-| Generation IR / Codec | Completed fidelity baseline retained; bounded Client/IR follow-up reopened | Resolve the two concrete delivery gaps before targeted IR/envelope cleanup; no broad IR redesign |
-| Client compatibility | Standard request intake enforced; installed-client validation uses explicit stable profiles | Revalidate JSON/SSE/tool/history flows on changed paths |
+| Generation IR / Codec | Fidelity baseline retained; Client/IR stabilization reopened with confirmed same-protocol and cross-protocol gaps | Production-construction conformance gate, then the ordered repairs; no broad IR redesign |
+| Client compatibility | Standard request intake enforced; installed-client gates use curated compat and never drive pi over Responses | Agent-default corpus and default-profile installed-agent acceptance |
 | Integration | R1a/R1b/R2 loops, controlled recovery and bounded production-profile closure passed | Revalidate changed paths; retain real-failover exclusions without reopening a blanket model/client matrix |
 | Cross-protocol conversion | Stage 3 closed for selected projections; `count_tokens` deferred | Preserve verified evidence; Google API remains paused except text-report and Stage-4 Embedding paths |
 | Decision APIs | Dual standard-SDK direction selected; initial TypeSafe/OpenAI protocol research complete | Contract selection and Stage-4 implementation at equal priority with other modalities |
@@ -116,19 +118,39 @@ The structural findings support local cleanup, not deletion of large parts of th
 
 Retain independently meaningful owners: root versus ordered instructions; requested, reported and delivery-completed values; response outcome, item lifecycle and interaction progress; value versus part completion; readable reasoning, opaque replay and dependency provenance; sparse usage totals and components. Public Responses storage facts also remain distinct from upstream execution intent. Unsupported client carriage alone is not evidence that an official-union field is redundant.
 
+### Agent-default production findings
+
+The [2026-10-28 probe](refs/2026-10-27-client-ir-boundaries.md#agent-default-production-probe-2026-10-28) drove installed pi 1.4.0 default request shapes and official-shape upstream streams through production startup construction over catalog bindings. Ids refer to its findings table.
+
+| Lane class | Confirmed gaps | Disposition |
+|---|---|---|
+| Same-protocol Responses | A: delivered incomplete reasoning rejects as history. Q1: Bailian Responses rejects pi's default reasoning summary, encrypted include and omitted strictness. Q2: it rejects its own delivered reasoning in the next turn | Order 1 under [S3/S4](#clientir-stabilization-decisions) for Q1, S5 and S11 for Q2 and A |
+| Same-protocol Chat | Standard profile fails after dispatch when the upstream emits reasoning (R); `readable_reasoning` passes. Standard trailing usage after finish-chunk usage reduces as a duplicate final (U) | R under S6 and S11; U in order 1 |
+| Same-protocol Messages | pi's bundled SDK version and beta header reject before body collection (M2); manual thinking is unavailable on the Haiku binding; adaptive signed history passes | Retained under S8; binding facts belong in discovery (S10) |
+| Into Messages clients | E (`logprobs:[]`) and F (unreported completion cause) fail every ordinary text answer from Chat/Responses upstreams after dispatch | Orders 2 and 4 |
+| Messages upstream into OpenAI clients | B/C enum catch-alls; D succeeds in SSE but fails JSON/retained | Orders 3 and 4 |
+| Responses/Chat clients into other protocols | G (omitted strictness), H (reasoning summary/encrypted include), effort scope without configured conversion, explicit image detail | Order 5 under S3/S4 |
+| Messages clients into other protocols | M1: pi's default owner-local `cache_control` rejects on every non-Messages route | Order 5 under S7 |
+
+Root cause: consumers default-reject IR states from producers they are never tested with, and current gates exercise neither agent default shapes nor production client construction off the diagonal. Response-side impossibilities also surface only after dispatch, so one reachable upstream state fails a whole lane.
+
 ### Repair order and exit gates
 
-Use existing grouping/projection, delivery completion, report reduction and test helpers; no new framework or broad compatibility layer. Planning this order does not select a new loss policy, terminal inference, or deferred capability.
+Use existing startup fixtures, session corpora, delivery and diagnostics helpers; no new framework or broad compatibility layer. Mapping correctness keeps independent wire→IR and IR→wire expectations; the conformance gate classifies reachability and dispositions only. Each slice implements only its accepted [decision](#clientir-stabilization-decisions); deferred capabilities stay unselected.
 
 | Order | Work | Exit gate |
 |---|---|---|
-| 1 | Fix Chat JSON custom-call grouping, including the progress guard and preservation branch | Permanent three-way regression: one-part/custom and multipart/function controls pass; multipart/custom preserves combined text and unchanged call identity/input. Custom SSE and rich/replay negatives remain unchanged |
-| 2 | Qualify and select the Responses-to-Messages normal-completion mapping, then implement only the chosen rule | Agree source authority, eligible content/stop conditions, evidence and rejection cases first. Independent JSON/SSE/history expectations through actual delivery, source immutability and EOF honesty; missing facts never silently become source observations |
-| 3 | Narrow `GenerationDelivery.settings` to its three consumed completion values | Preserve each reported value's precedence, required-field completion and original-request metadata authority; unrelated settings cannot constrain this fallback |
-| 4 | Unify usage event representation under an explicit checkpoint/final contract | Cover checkpoint → final, duplicate final, scoped reports, sparse counts, replacement and bounds across producers/reducers/consumers; no mechanical alias replacement that changes acceptance unnoticed |
-| 5 | Review demand-qualified Client capability gaps | Qualify `between_tools`, nullable output config and explicit disabled citations separately against pinned contracts. Decide exact IR expression or a named projection before implementation; prewarming, full citations and hosted tools retain their existing scheduling gates |
+| 0 | Production-construction conformance gate: startup-built gateways over catalog bindings with loopback `base_url`; an agent-default request corpus (pi 1.4.0 shapes per API, taken from the installed source); official-shape upstream streams with every required member; two-turn replay in each client's own replay style. Extend the session corpus loop to production client construction and off-diagonal pairs | Each lane outcome equals acceptance, a named rule or a documented rejection by diagnostic failure code; unexpected outcomes fail. JSON, SSE and retained views agree. Delivered output re-decodes as history for the same route. The disposition list is reviewed with each change |
+| 1 | Same-protocol defects: binding reasoning-history contract (S11), A and Q2 (S5), Q1 (S3/S4), R planning rejection (S6), U | Permanent per-lane regressions from the probe counterexamples; same-issuer replay controls stay exact |
+| 2 | Presence/empty agreement: E in delivery and admission, plus one audit of `is_absent`/`is_empty` guards against producer behavior | `logprobs:[]` passes Messages delivery and history admission without a loss entry; nonempty logprobs still reject |
+| 3 | Delivery agreement and grouping: Chat JSON custom-call grouping, D, details-only usage error class (U) | Grouping: one-part/custom and multipart/function controls pass; multipart/custom preserves combined text and unchanged call identity/input; custom SSE and rich/replay negatives unchanged. One input yields one disposition across JSON, SSE and retained views |
+| 4 | Messages client terminals and enums: F for Chat and Responses sources, B, C | Accepted S1/S9 rules with independent JSON/SSE/history expectations through actual delivery; source causes stay unreported and EOF honesty holds |
+| 5 | Agent-default cross-protocol rules: G and H (S3/S4), Standard Chat omission (S6), M1 (S7); publish image-detail and effort-scope facts | Each accepted rule is named, reported and covered by the gate; cases outside the accepted rules remain documented rejections |
+| 6 | Discovery extension: probes use the order-0 corpus; publish preferred interface and per-interface adaptation rules from one compiled owner | Discovery facts match order-0 dispositions for every activated interface; see [Models discovery interfaces](#models-discovery-interfaces) |
+| 7 | Structural cleanup: narrow `GenerationDelivery.settings` to its three consumed values; unify usage events under a checkpoint/final contract; qualify `between_tools`, nullable output config and explicit disabled citations | Preserve report precedence, required-field completion, bounds and rejection; usage covers checkpoint → final, duplicate final, scoped reports and sparse counts; exact IR or a named projection precedes each capability change |
+| 8 | Installed-agent default acceptance: pi 1.4.0 over Responses, Chat and Messages without compat overrides beyond documented header opt-ins, offline scripted upstreams; OpenCode afterwards | Tool, reasoning and history loops pass on same-protocol lanes and selected cross-protocol lanes; actual agent versions recorded |
 
-Orders 1 and 2 precede structural implementation; terminal research may run alongside the grouping fix. Stream-header status and placeholder relocation are optional reviews, not additional required rewrites. Each implementation slice needs the [offline baseline](development.md#offline-baseline), affected [SDK consumers](development.md#sdk-loopback-gate), and applicable current-client checks. Real Provider gates apply only when live behavior is claimed; reuse valid evidence for unchanged paths.
+Orders 0–2 precede the rest; 3 and 4 may run alongside once order 0 exists. Stream-header status and placeholder relocation remain optional reviews. Each implementation slice needs the [offline baseline](development.md#offline-baseline), affected [SDK consumers](development.md#sdk-loopback-gate) and applicable installed-agent checks. Real Provider gates apply only when live behavior is claimed; Q1, Q2 and U each need one bounded real call to confirm the upstream shape before their rules are finalized.
 
 ### Current Client/IR blocking semantics
 
@@ -140,7 +162,7 @@ These are Client intake/history or downstream delivery restrictions, not a catal
 | Responses → IR | Unselected hosted tools/items and `include` families, background execution, active conversation/prompt/moderation and context-management operations. Public local `store`/`previous_response_id` are supported through [managed ingress](../src/gateway/ingress/admission.rs), not blanket blockers |
 | Messages → IR | `between_tools` lacks an exact admitted mode; nullable output effort/format, task budgets, per-message configuration, block binding/tool changes and citation controls reject. Direct ordinary tools remain distinct from hosted/programmatic callers. Execution extensions and zero-token prewarming are unselected; removed sampling controls still reject |
 | Resources and protected history → IR | File-ID carriers need trusted resource resolution; supported URL/data media remain available. Raw external reasoning signatures/tokens may pass syntax but fail [replay opening](../src/execution/replay.rs); gateway-sealed history is the supported continuation path |
-| IR → Chat | Standard reasoning has no carrier without an explicitly selected profile. Custom calls and some annotations reject in SSE; metadata maps lack a chunk carrier. Independent lifecycle and rich grouping have limits; the JSON custom-grouping defect is order 1 above |
+| IR → Chat | Standard reasoning has no carrier without an explicitly selected profile. Custom calls and some annotations reject in SSE; metadata maps lack a chunk carrier. Independent lifecycle and rich grouping have limits; the JSON custom-grouping defect is order 3 above |
 | IR → Responses | Incompatible replay formats/bindings, unrepresentable reported settings and some annotation SSE carriers reject. JSON cancellation does not imply an available cancellation SSE event |
 | IR → Messages | Unsigned/multi-summary or incompatible redacted reasoning; custom string-input calls, non-object tool input, unrepresentable call context, annotations/logprobs/generated media, metadata maps and other unsupported execution hints. Normal terminal meaning, continuation, service-class and already-published usage constraints remain; partial structured tool input has only the selected max-token SSE path |
 
@@ -166,7 +188,7 @@ The [2026-10-28 source and feasibility recheck](refs/2026-10-27-client-ir-bounda
 
 ### Closure boundary
 
-Reclose this bounded follow-up after the grouping defect is repaired, the terminal restriction has a selected and verified mapping or an explicitly retained rejection, and the structural candidates have verified changes or reasoned retain/defer dispositions. Selected paths need permanent directional regressions and applicable consumer gates; old passing suites do not cover the newly reproduced contrasts. Remaining capability gaps stay explicit with reopening conditions. Do not claim full standard-field support or new live Provider behavior. Resource APIs, session persistence and real multi-account failover keep their own packages; budget deferral does not reopen Google expansion or require a universal multi-budget model.
+Reclose Client/IR stabilization when order 0 is permanent and passes with no unexpected disposition for the pi default corpus on every same-protocol lane and each selected cross-protocol lane; orders 1–5 have verified changes or reasoned retained rejections; discovery publishes the same facts; and order 8 passes. Selected paths need permanent directional regressions and applicable consumer gates; old passing suites do not cover the newly reproduced contrasts. Remaining capability gaps stay explicit with reopening conditions. Do not claim full standard-field support or new live Provider behavior. Resource APIs, session persistence and real multi-account failover keep their own packages; budget deferral does not reopen Google expansion or require a universal multi-budget model.
 
 ## Standards reset and redesign
 
@@ -203,9 +225,9 @@ Every work package follows this lifecycle:
 ### Stage 2 work plan
 
 **Status: Closed.** Verified client interaction loops:
-- Chat tool/reasoning history ([R1a evidence](refs/2026-10-17-generation-contracts.md)).
-- Responses native history and lifecycle reports ([R1b evidence](refs/2026-10-17-generation-contracts.md)).
-- Native Messages signed history and cache controls ([R2 evidence](refs/2026-10-17-generation-contracts.md)).
+- Chat tool/reasoning history ([R1a gate](development.md#sdk-loopback-gate)).
+- Responses native history and lifecycle reports ([R1b gate](development.md#sdk-loopback-gate)).
+- Native Messages signed history and cache controls ([R2 gate](development.md#sdk-loopback-gate)).
 
 ### Stage 3 work plan
 
@@ -373,6 +395,24 @@ Real cross-account failover requires distinct, advanceable production credential
 
 ## Pending decisions
 
+### Client/IR stabilization decisions
+
+The user accepted principles P1–P5 and selections S1–S11 on 2026-10-28. [Architecture](architecture.md#clientir-projection-principles) owns their content; this table maps scheduling ids to owners and orders.
+
+| Id | Accepted rule | Owner | Order |
+|---|---|---|---|
+| S1 | Messages terminal derivation | [Google Messages terminal projection](architecture.md#google-messages-terminal-projection) | 4 |
+| S2 | Empty logprobs omission | [Projection principles](architecture.md#clientir-projection-principles) | 2 |
+| S3 | Responses strictness resolution | [Projection principles](architecture.md#clientir-projection-principles) | 1, 5 |
+| S4 | Reasoning presentation and continuity | [Projection principles](architecture.md#clientir-projection-principles) | 1, 5 |
+| S5 | Generalized visible-history transfer | [Reasoning replay](architecture.md#reasoning-replay) | 1 |
+| S6 | Standard Chat reasoning omission | [Chat reasoning extensions](architecture.md#chat-reasoning-extensions) | 1, 5 |
+| S7 | Owner-local cache omission | [Owner-local cache admission](architecture.md#owner-local-cache-admission) | 5 |
+| S8 | Messages baseline retained | [Projection principles](architecture.md#clientir-projection-principles) | — |
+| S9 | Carrier-less report omission | [Projection principles](architecture.md#clientir-projection-principles) | 4 |
+| S10 | Agent-facing discovery | [Generation Text model discovery](architecture.md#generation-text-model-discovery) | 6 |
+| S11 | Binding reasoning-history contract | [Binding reasoning-history contract](architecture.md#binding-reasoning-history-contract) | 1 |
+
 ### Ownership and projection decisions
 
 | Issue | Status | Action |
@@ -412,7 +452,7 @@ Dynamic tool discovery and native Provider web search remain unscheduled Stage 5
 `POST /v1/messages/count_tokens` is deferred. The gateway returns 404 rather than generating synthetic or estimated counts. Reopening requires defining upstream reliability criteria and coarse estimation provenance.
 
 ### Models discovery interfaces
-Generation Text model discovery is operational. Discovery for other task families (Embeddings, Media, Decision) remains schema-only until those operations are publicly activated.
+Generation Text model discovery is operational. Its agent-facing extension (preferred interface, adaptation rules, agent-default probe forms) is order 6 of the [repair order](#repair-order-and-exit-gates), with S10 pending. Discovery for other task families (Embeddings, Media, Decision) remains schema-only until those operations are publicly activated.
 
 ### Messages citations
 Unified citation delivery ([1C proposal](api-expansion-design.md#1c-design-messages-citations)) remains unscheduled. Requests requiring citation output are rejected.

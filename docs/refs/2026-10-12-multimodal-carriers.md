@@ -12,7 +12,7 @@ Current media decisions belong to [Architecture](../architecture.md#media), expa
 - [Provider file APIs](#provider-file-apis)
 - [Generated media](#generated-media)
 - [Client behavior](#client-behavior)
-- [Consequences for MorphieCore](#consequences-for-morphiecore)
+- [Representation and authorization boundaries](#representation-and-authorization-boundaries)
 
 ## Sources
 
@@ -82,27 +82,27 @@ A Provider file reference names data owned by the credential's workspace or proj
 
 | Protocol | Output carrier |
 |---|---|
-| OpenAI Chat | `message.audio` (already in the IR as generated audio) |
+| OpenAI Chat | `message.audio` |
 | OpenAI Responses | `image_generation_call` items (a Provider tool), including completed base64 results and partial-image events; no generic image message part |
 | Anthropic Messages | None; Claude does not generate images |
 | Gemini generateContent | `responseModalities` `TEXT`/`IMAGE`/`AUDIO`; candidate parts carry `inlineData`. The final part, including `inlineData`, may carry a `thoughtSignature` that the API does not enforce |
 | Interactions v1 | `model_output` content `image`/`audio`/`document`; streamed as `image`/`audio` deltas; `response_format` for image, audio and video output |
 
-Responses has a standard Provider-tool image carrier, not a generic assistant-image carrier. Chat and Messages have no standard assistant-image carrier. MorphieCore does not implement these generation outputs.
+Responses has a standard Provider-tool image carrier, not a generic assistant-image carrier. Chat and Messages have no standard assistant-image carrier. Current operation activation belongs to the roadmap, not this source table.
 
 ## Client behavior
+
+Historical source snapshot from this note's original review, not current installed-client acceptance. Use the [client source guide](2026-10-27-client-and-proxy-sources.md) and [model-discovery recheck](2026-10-26-model-discovery.md) for later pi evidence.
 
 | Client | Sends |
 |---|---|
 | pi | Images only, always inline base64. Messages: `image` in user and `tool_result`. Responses: `input_image` with `detail: "auto"` in user and `function_call_output`. Chat: `image_url` in user; tool-result images become a following user message (client-side). Gemini 3: `functionResponse.parts` without `displayName` |
 | opencode | Image, audio, video and PDF when the model declares the modality. Chat: `image_url` and inline PDF `file`; other media fail in the client. Responses: non-image media become `input_file` with an `audio/*` or `video/*` data URL; video in tool results becomes `input_video`. Messages: `image` and `document` |
 
-## Consequences for MorphieCore
+## Representation and authorization boundaries
 
-1. Video needs its own resource kind. A Chat `video_url` URL has no media type, so it cannot be a File.
-2. A File whose inline type is `video/*` (opencode over Responses) stays a File; targets that dispatch by MIME may still carry it.
-3. URL sources need no IR media type: Gemini `fileData.mimeType` and Interactions `mime_type` are optional.
-4. Client-supplied Provider file IDs and file URIs are rejected. Forwarding one would read the gateway credential's workspace or project.
-5. Without a gateway file service, large media are limited to inline data within the gateway body and IR budgets, or public URLs.
-6. Detail, resolution, fps and similar per-use options are not automatically equivalent across protocols. The earlier blanket omission recommendation is superseded by [the selected media policy](../architecture.md#selected-request-approximations): prefer exact carriers; image/file detail omission needs proven target-default equivalence, and other approximations need evidence-backed directional rules. Without a selected rule, an unavailable carrier rejects. Inbound options with no IR slot that change visible content remain rejected. A file name and a Messages document `title` are both the model-visible document name and map to each other; a present name requires an exact carrier.
-7. Generated media stays out of scope until its semantic contract and selected client carrier are implemented. Do not relabel a native assistant image as a Provider tool call.
+A URL-only video carrier does not become a File merely because both reference bytes. Conversely, a File carrying `video/*` remains a File unless the target contract establishes MIME-based interpretation. Optional URL MIME fields do not justify inventing a type. Per-use detail/resolution/fps and visible names need their own carriers or a selected directional approximation.
+
+Provider file IDs/URIs are credential-bound resources, not portable public URLs. Forwarding an arbitrary client ID could access the gateway credential's workspace. Generated assistant media cannot be relabeled as a Provider tool call to fit a target union.
+
+[Architecture's media policy](../architecture.md#media) owns current admission/default/projection rules; [Roadmap](../roadmap.md#stage-4-scope) owns activation. The source tables do not authorize a downloader, file service or new media operation.

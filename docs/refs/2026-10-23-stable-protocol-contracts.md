@@ -1,6 +1,6 @@
 # Stable-release protocol contracts
 
-Checked **2026-10-23** against official releases, SDK source, and current API documentation. The [source lock](../../tests/upstream/sources.lock.json) owns exact release revisions; [Architecture](../architecture.md) owns accepted design, and [Roadmap](../roadmap.md#standards-reset-and-redesign) owns execution.
+Checked **2026-10-23**, with dated rechecks below, against official releases, SDK source, and then-current API documentation. The [source lock](../../tests/upstream/sources.lock.json) owns exact release revisions; [Architecture](../architecture.md) owns accepted design, and [Roadmap](../roadmap.md#standards-reset-and-redesign) owns execution.
 
 ## Contents
 
@@ -13,10 +13,7 @@ Checked **2026-10-23** against official releases, SDK source, and current API do
 - [Google API versions and semantic differences](#google-api-versions-and-semantic-differences)
 - [Remaining mapping recheck](#remaining-mapping-recheck)
 - [Consumer and fixture evidence](#consumer-and-fixture-evidence)
-- [Official contract difference inventory](#official-contract-difference-inventory)
-  - [OpenAI](#openai)
-  - [Anthropic](#anthropic)
-  - [Google](#google)
+- [Protocol distinctions](#protocol-distinctions)
 - [Instruction authority research](#instruction-authority-research)
 - [Imported asset boundaries](#imported-asset-boundaries)
 
@@ -26,7 +23,7 @@ Pins use registry stable releases and matching tags, not HEAD branches. OpenAI P
 
 ### Latest-candidate review (2026-10-24)
 
-Candidate drift evaluated using `tests/upstream/candidates.py` across 14 release sources: 11 remained unchanged, and 3 exhibited candidate releases. No pins were automatically promoted.
+Candidates inspected on that date; no pins were promoted. The [2026-10-27 SDK guide](2026-10-27-official-sdk-sources.md#source-selection-and-licenses) supersedes this as a release-navigation entry point, not as a regression baseline.
 
 | Candidate | Source delta and boundary |
 |---|---|
@@ -38,7 +35,7 @@ The verified **2026-10-23 baseline** remains in effect. Thread APIs, automatic t
 
 ## Anthropic API 2026-10-21
 
-Sources: [migration guide](https://platform.claude.com/docs/en/api/migration-2026-10-21), Python 2.1.0 source.
+Sources: [migration guide](https://platform.claude.com/docs/en/api/migration-2026-10-21), pinned [Python 2.1.0 types](https://github.com/anthropics/anthropic-sdk-python/tree/9313f13a5a643ceed10fafba6785eab8e04b6e6e/src/anthropic/types).
 
 - `temperature`, `top_p`, and `top_k` are removed from Messages requests; sending them returns 400.
 - Direct documents in assistant messages reject; documents nested in tool results remain supported.
@@ -66,8 +63,8 @@ Rechecked **2026-10-24** at pinned OpenAI Python revision.
 
 ## Google API versions and semantic differences
 
-- Interactions v1 omits sampling controls; current generateContent models ignore sampling on Gemini 3.6+.
-- Interactions signatures exist on thought/built-in steps, not ordinary function calls.
+- Interactions v1 omits sampling controls. For generateContent, schema presence and model-effective sampling support are separate checks; use the selected target contract rather than a family-wide version threshold.
+- The pinned Interactions [thought step](https://github.com/googleapis/python-genai/blob/92f72b3a236a5bc56e8e3327ab9563f77dd119c3/google/genai/_gaos/types/interactions/thoughtstep.py) and built-in steps declare signatures; the ordinary [function-call step](https://github.com/googleapis/python-genai/blob/92f72b3a236a5bc56e8e3327ab9563f77dd119c3/google/genai/_gaos/types/interactions/functioncallstep.py) does not. Do not infer generateContent call-signature support from that separate union.
 - `responseFormat.text.{mimeType, schema}` replaces older carriers while retaining deprecations.
 - generateContent `store` controls logging; Interactions `store` controls resource continuation.
 - Thinking budgets (`thinkingBudget` int32 vs `thinking_level`) are validated per target model capability.
@@ -85,54 +82,18 @@ Rechecked **2026-10-24**:
 - SDK permissive parsing does not imply gateway compatibility. Anthropic stream accumulator only retains enumerated delta fields in its final message.
 - OpenAI Responses classified error events require `message`, `sequence_number`, and `type: "error"`. Gateway classifications use standalone `error` events rather than fabricated response objects.
 
-## Official contract difference inventory
+## Protocol distinctions
 
-Bounded inventory of request, response, event, and HTTP boundaries checked **2026-10-23** (updated **2026-10-25**).
+The October 23–25 review established several distinctions that remain useful beyond the repair:
 
-### OpenAI
+- Responses omitted `strict` requests service normalization/fallback; it is not Chat's non-strict default. Required nullable response fields must be checked separately from request optionality.
+- Prediction is an optimization, not an output constraint. Exact native carriage and omission on an unsupported target are different operations.
+- Thinking activation, effort scope and display are independent facts. Messages can express disabled thinking plus response-wide effort; Google `minimal` does not establish disabled thinking. Client budget presets are [allocation policy](2026-10-27-client-and-proxy-sources.md#pi-actual-consumer-and-history-behavior), not universal level equivalence.
+- Google `parameters` and `parametersJsonSchema` are different schema carriers; constrained function-choice modes are not OpenAI schema normalization.
+- Matching service-tier names do not prove equal latency, billing or priority guarantees. Requested policy and reported effective service remain separate.
+- Single-choice generation, unsupported moderation/citations and Google media restrictions are bounded implementation choices, not reasons to weaken known fields.
 
-| Boundary / Minimal example | Behavior and evidence | Classification |
-|---|---|---|
-| Responses `stream_options` sibling fields | Directional field admission matching Chat | Corrected 2026-10-25 |
-| Chat `prediction: {type: content}` | Retained until target selection; supported Chat is exact | Corrected; catalog support explicit |
-| Chat function parameters/description null, long name | Strict 64-char name limit, non-null descriptions | Corrected 2026-10-25 |
-| Responses `prompt_cache_breakpoint` | Inherited boundary owned by `Part.cache` | Corrected; native TTL distinct |
-| Chat history participant `name` | Retained through context edits and request encoding | Corrected; unsupported targets reject |
-| Responses schema `oneOf` without `strict` | Omission preserved for service fallback | Corrected; no invented false report |
-| Format / schema descriptions null | Strict rejection of null request format controls | Corrected |
-| Gateway error before frame or post-publication | Emits standalone `error` event with continuous sequence | Corrected standard error carrier |
-| Chat `n > 1` or multiple choices | Single candidate supported | Explicit coverage exclusion |
-| Moderation controls/reports | Rejection at intake | Known safety-report gap |
-
-### Anthropic
-
-| Boundary / Minimal example | Behavior and evidence | Classification |
-|---|---|---|
-| Tool ID > 64 chars or invalid label grammar | Strict public grammar validation before publishing | Corrected 2026-10-25 |
-| Unsigned reasoning returned in history | Compatibility-first summary projection with declared loss | Implemented 2026-10-25 |
-| Version header `anthropic-version: 2026-10-21` | Required before request body collection | Corrected HTTP/version gate |
-| Removed sampling parameters (`temperature` etc.) | Immediate 400 rejection at intake | Corrected |
-| Text citations in assistant history | Rejection at shape validation | Explicit citation gap |
-| Ordinary tools `allowed_callers: [direct]` | Normalizes direct-only to inactive hosted dispatch | Corrected |
-| Tool `eager_input_streaming` or `cache_control` null | Null normalized to absent owner | Corrected |
-| Top-level controls null | Strict rejection of non-nullable request controls | Corrected 2026-10-24 |
-| Multiple leading instructions | Ordered composition preserving system boundaries | Corrected |
-| Thinking `display: null` | Rejection at intake | SDK/schema discrepancy |
-| Manufactured empty signed thinking blocks | Removed; native signatures preserved, missing rejected | Corrected 2026-10-24 |
-| Stream block sequence safety | Rejects out-of-order block starts | Corrected |
-
-### Google
-
-| Boundary / Minimal example | Behavior and evidence | Classification |
-|---|---|---|
-| Interactions v1 sampling fields | Omitted by encoder; rejected for generic targets | Corrected |
-| generateContent sampling on Gemini 3.8+ | Binding selects omission with declared field loss | Corrected model capability |
-| Structured function result objects | Exact JSON preserved; native object carrier | Corrected |
-| Empty assistant envelope | Rejected rather than silently dropped | Corrected 2026-10-24 |
-| Interactions result subcontent (audio/video) | Rejection at boundary | Public schema disagreement |
-| Thought signature opening empty placeholder | Accepted, followed by real deltas | Corrected |
-| Inline generateContent tool-result media | Rejected due to missing public linkage support | Corrected |
-| Interactions terminal EOF without DONE | Final envelope accepted at clean EOF | Corrected |
+The old corrected/implemented field matrix is superseded by the [request counterexamples](2026-10-26-standard-request-boundaries.md) and [Client/IR source distinctions](2026-10-27-client-ir-boundaries.md). In particular, unsigned Messages reasoning is not a supported compatibility projection: current standard delivery requires genuine native replay/signature state. Accepted policies live in [Architecture](../architecture.md#field-handling).
 
 ## Instruction authority research
 

@@ -4,33 +4,17 @@ Researched **2026-10-25** against official API references, SDK implementations, 
 
 ## Contents
 
-- [Instruction conversion review](#instruction-conversion-review-2026-10-25)
 - [Instruction authority research: current, legacy and Provider dialects](#instruction-authority-research-current-legacy-and-provider-dialects)
-  - [OpenAI: API system versus Model Spec authority](#openai-api-system-is-not-automatically-model-spec-system-authority)
-  - [Messages: operator system and placement](#messages-operator-system-placement-and-version-are-independent)
-  - [Provider dialects](#provider-dialects-accepted-spelling-versus-effective-role)
-  - [Directional conversion recommendation](#directional-conversion-recommendation)
-- [Vercel Provider instruction cross-check](#vercel-provider-instruction-cross-check-2026-10-25)
+  - [OpenAI: API system is not automatically Model Spec system authority](#openai-api-system-is-not-automatically-model-spec-system-authority)
+  - [Messages: operator system, placement and version are independent](#messages-operator-system-placement-and-version-are-independent)
+  - [Provider dialects: accepted spelling versus effective role](#provider-dialects-accepted-spelling-versus-effective-role)
+- [Vercel Provider instruction cross-check, 2026-10-25](#vercel-provider-instruction-cross-check-2026-10-25)
   - [Source boundary](#source-boundary)
   - [Findings by operation](#findings-by-operation)
-  - [Counterexamples and disposition](#minimal-counterexamples-and-disposition)
-
-## Instruction conversion review, 2026-10-25
-
-Review of Messages, Chat, and Responses instruction intake, target encoding, and typed continuation.
-
-| Source | IR / Target behavior | Assessment |
-|---|---|---|
-| Explicit Chat/Responses system/developer | Ordered instruction owner; authority and position survive Chat/Responses. Messages uses native placement subset | Preserve order; do not hoist later instructions |
-| Responses root `instructions` | Request setting, leading developer for default Chat, or root system for Messages | Target-specific projection; current request scope |
-| Messages `system:"P"` vs `system:[{type:text,text:P}]` | String maps to root settings; blocks map to leading System instruction | Representation-dependent authority discrepancy resolved by canonical Developer normalization |
-| Managed Responses continuation | New settings replace old root instructions; explicit instruction history persists | Ownership follows continuation contract; does not flatten history |
-| Named or cached instructions | Unsupported participant or cache carriers reject at target boundary | Intentional boundary; text compatibility does not imply carrier support |
-| Later instructions in Messages | Native system-message placement checked; invalid positions reject | Preserves turn boundaries without silent reordering |
 
 ## Instruction authority research: current, legacy and Provider dialects
 
-Separates wire role spelling, instruction author authority, temporal placement, and target model capabilities.
+Separates wire role spelling, instruction author authority, temporal placement, and target model capabilities. Primary entry points: pinned OpenAI [system](https://github.com/openai/openai-python/blob/e8a0fd28bbdc1699c97ff0f602b1af3dd378382d/src/openai/types/chat/chat_completion_system_message_param.py) and [developer](https://github.com/openai/openai-python/blob/e8a0fd28bbdc1699c97ff0f602b1af3dd378382d/src/openai/types/chat/chat_completion_developer_message_param.py) parameters; Anthropic [mid-conversation system guide](https://platform.claude.com/docs/en/build-with-claude/mid-conversation-system-messages); [Bailian operation references](2026-10-19-bailian-compatible-requests.md#primary-sources). The Provider comparisons retain their October 25 observation date; recheck the target operation before extending a binding.
 
 ### OpenAI: API system is not automatically Model Spec system authority
 
@@ -66,16 +50,7 @@ Responses root `instructions` are defined as "a system (or developer) message in
 | Xiaomi Chat / Responses | `developer` and `system` supported | Developer instructions supported; root instructions separate in Responses |
 | OpenRouter Chat / Responses | `developer` and `system` admitted in schema | Route-dependent; downstream models normalize independently |
 
-### Directional conversion recommendation
-
-| Source → Target | Evidence-backed relation | Boundary rule |
-|---|---|---|
-| Legacy OpenAI system → current developer | Documented application-channel modernization | Dependent on target model support |
-| Current developer → provider operator system | Preserves application-operator role | Requires target system support; declare loss |
-| Messages root system → developer / instructions | Canonical application authority | String and block forms normalize identically |
-| Developer → Messages system | Operator-channel mapping | Leading to root; mid-turn to supported positions |
-| Privileged instruction → user text | Prohibited fallback | Authority loss; reject rather than silently demote |
-| Mixed caller system + developer | Order-preserving retention | Preserve source order; do not invent arbitrary precedence |
+The selected canonical application role and exact target spellings belong to [Architecture](../architecture.md#instruction-authority-and-canonical-roles). The earlier directional recommendation table is not a separate loss policy. Role spelling, temporal order and authority must be assessed independently; changing a carrier name does not itself prove demotion or equivalence.
 
 ## Vercel Provider instruction cross-check, 2026-10-25
 
@@ -99,11 +74,3 @@ Inspection of pinned Vercel repository revision [`594495a5af70547d9d7a13d6df334a
 | DashScope Responses | No native Vercel factory | Admits `developer` and `system` | Preserve `developer` |
 | Xiaomi Chat / Responses | Generic compatible emits `system` | Schema documents `developer` | Retain `developer` |
 | DeepSeek Chat / Responses | Native provider emits `system` | Responses treats developer as user | Map to `system` dialect |
-
-### Minimal counterexamples and disposition
-
-1. **Zhipu Chat**: Use `system` application carrier; enforce string representation.
-2. **Zhipu Responses**: Preserve `developer`; include `type:message` discriminator.
-3. **NVIDIA Chat**: Enforce single initial instruction and string content; reject multipart arrays.
-4. **Bailian / DashScope Chat**: Enforce string system content; reject multipart arrays without lossy flattening.
-5. **Canonical IR**: MorphieCore normalizes all application instructions to canonical `Developer` in IR, while dialects handle target wire spelling (`developer` vs `system`) and content shape (string vs array).

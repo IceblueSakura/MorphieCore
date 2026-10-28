@@ -12,7 +12,7 @@ Checked **2026-10-19**. These are mutable official definitions, not live Provide
 - [Context cache](https://help.aliyun.com/zh/model-studio/context-cache): owner-local markers and creation/TTL reports are distinct from ordinary implicit cached-token counts; this request correction does not activate explicit cache.
 - [Text-generation API reference](https://help.aliyun.com/zh/model-studio/qwen-api-reference): native DashScope RPC is a separate `input`/`parameters` layout, not either compatible endpoint.
 
-TokenPlan's shared dialect and separate authority follow the [existing source note](2026-10-19-same-protocol-inventory.md#shared-aliyun-dialect). No credential, origin, billing or replay-issuer equivalence is inferred.
+TokenPlan's shared dialect and separate authority follow the [accepted billing-domain boundary](../architecture.md#shared-aliyun-billing-dialect). No credential, origin, billing or replay-issuer equivalence is inferred.
 
 ## Observed definitions and selected treatment
 
@@ -36,8 +36,4 @@ The public gateway owns typed activation/allocation/top-k spellings, not an arbi
 
 ## Evidence boundary
 
-`src/protocol/openai/dialect/bailian.rs` owns native request checks and writers; adapter intake, candidate encoding and full native envelopes apply them. The model-bearing direct adapter path installs the same effort mapping as catalog endpoints; the envelope rejects an uncalibrated label. Generic lowering retains its other protections.
-
-`tests/semantic/providers.rs::bailian_spec` independently states native wire→IR expectations and IR→native wire values, then checks actual shared-model bindings, omitted defaults, invalid types, aliases, direct-adapter/envelope bypasses, local delivery options, strict defaults and result adjacency. Existing planning assertions distinguish model image ability from the narrower native function-output carrier. These are offline checks, not evidence of effective temperature, hard token enforcement, replay validity or live plan acceptance.
-
-Existing result/SSE/accounting domains remain scoped by the [stage-1 inventory](2026-10-19-same-protocol-inventory.md). This correction does not claim exact native cache type/TTL reports, every `x_details` extension, hosted/citation/OCR outputs, standalone media or RPC streaming. Do not infer coverage of those domains from successful request tests or a pinned SDK loopback. Broader public/candidate value readiness remains subject to the roadmap's P7 and integration gates.
+The [Bailian dialect](../../src/protocol/openai/dialect/bailian.rs) owns native checks and writers; current binding admission belongs to the catalog and Architecture. Directional offline tests do not establish effective temperature, hard token enforcement, replay validity or live plan acceptance. This source subset does not claim every cache/`x_details` report, hosted/citation/OCR output, standalone modality or native RPC stream. [Development](../development.md#verification-gates) owns verification, not a second field-support inventory.
