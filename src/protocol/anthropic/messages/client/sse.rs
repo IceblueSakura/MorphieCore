@@ -18,7 +18,8 @@ use crate::{
 };
 use bytes::Bytes;
 use serde_json::{Value, json};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
+mod schedule;
 
 enum OpenItem {
     Text,
@@ -36,16 +37,8 @@ enum OpenItem {
         arguments_started: bool,
     },
 }
-impl OpenItem {
-    fn index(self) -> Option<usize> {
-        match self {
-            Self::Text => None,
-            Self::Thinking { index, .. } => index,
-            Self::ToolUse { index, .. } => Some(index),
-        }
-    }
-}
 pub struct ClientEventEncoder {
+    schedule: schedule::Schedule,
     notice: Option<crate::protocol::diagnostics::AdaptationNotice>,
     losses: Vec<crate::protocol::conversion::generation::Effect>,
     id: String,
@@ -56,8 +49,7 @@ pub struct ClientEventEncoder {
     rejected: bool,
     service_class: Presence<ServiceClass>,
     open: BTreeMap<ItemId, OpenItem>,
-    owner_order: BTreeMap<ItemId, usize>,
-    last_block_owner: usize,
+    owners_seen: BTreeSet<ItemId>,
     text_parts: BTreeMap<(ItemId, PartId), usize>,
     next: usize,
     calls: bool,
@@ -75,17 +67,58 @@ pub struct ClientEventEncoder {
 fn thinking_block() -> Value {
     json!({"type":"thinking","thinking":"","signature":""})
 }
-fn open_block(next: &mut usize, out: &mut Vec<Bytes>, block: Value) -> usize {
+// Bound each frame before serializing and each batch while draining queued owners.
+struct Frames {
+    values: Vec<Bytes>,
+    limits: crate::protocol::stream::SseLimits,
+    events: usize,
+    wire_bytes: usize,
+}
+impl Frames {
+    fn new(encoder: &ClientEventEncoder) -> Self {
+        Self {
+            values: vec![],
+            limits: encoder.limits,
+            events: encoder.events,
+            wire_bytes: encoder.wire_bytes,
+        }
+    }
+    fn available(&self) -> usize {
+        self.limits
+            .max_event_bytes
+            .min(self.limits.max_wire_bytes.saturating_sub(self.wire_bytes))
+    }
+    fn push(&mut self, value: &Value) -> Result<(), CodecError> {
+        use crate::protocol::failure::Resource;
+        if self.events >= self.limits.max_events {
+            return Err(CodecError::Resource(Resource::Events));
+        }
+        let kind = value["type"].as_str().ok_or(CodecError::invalid())?;
+        let overhead = kind
+            .len()
+            .checked_add(16)
+            .ok_or(CodecError::Resource(Resource::Bytes))?;
+        let available = self
+            .available()
+            .checked_sub(overhead)
+            .ok_or(CodecError::Resource(Resource::Bytes))?;
+        let size = crate::semantic::value::json_size(value, available)
+            .map_err(|_| CodecError::Resource(Resource::Bytes))?;
+        self.values
+            .push(Bytes::from(format!("event: {kind}\ndata: {value}\n\n")));
+        self.events += 1;
+        self.wire_bytes += overhead + size;
+        Ok(())
+    }
+}
+fn open_block(next: &mut usize, out: &mut Frames, block: Value) -> Result<usize, CodecError> {
+    if *next >= crate::semantic::task::generation::MAX_ITEMS {
+        return Err(CodecError::Limit);
+    }
     let index = *next;
     *next += 1;
-    out.push(frame(
-        &json!({"type":"content_block_start","index":index,"content_block":block}),
-    ));
-    index
-}
-fn frame(v: &Value) -> Bytes {
-    let kind = v["type"].as_str().unwrap_or("error");
-    Bytes::from(format!("event: {kind}\ndata: {v}\n\n"))
+    out.push(&json!({"type":"content_block_start","index":index,"content_block":block}))?;
+    Ok(index)
 }
 impl ClientEventEncoder {
     pub(crate) fn set_notice(&mut self, notice: crate::protocol::diagnostics::AdaptationNotice) {
@@ -93,6 +126,7 @@ impl ClientEventEncoder {
     }
     pub fn new(id: &str, model: &str) -> Self {
         Self {
+            schedule: schedule::Schedule::default(),
             notice: None,
             losses: vec![],
             id: id.into(),
@@ -103,8 +137,7 @@ impl ClientEventEncoder {
             rejected: false,
             service_class: Presence::Absent,
             open: BTreeMap::new(),
-            owner_order: BTreeMap::new(),
-            last_block_owner: 0,
+            owners_seen: BTreeSet::new(),
             text_parts: BTreeMap::new(),
             next: 0,
             calls: false,
@@ -129,6 +162,9 @@ impl ClientEventEncoder {
     }
     pub(crate) fn reject(&mut self) {
         self.rejected = true;
+        self.schedule = schedule::Schedule::default();
+        self.open.clear();
+        self.text_parts.clear();
     }
     pub(crate) fn update_delivery(
         &mut self,
@@ -160,11 +196,11 @@ impl ClientEventEncoder {
             Ok(())
         })();
         if result.is_err() {
-            self.rejected = true;
+            self.reject();
         }
         result
     }
-    fn start(&mut self, out: &mut Vec<Bytes>) {
+    fn start(&mut self, out: &mut Frames) -> Result<(), CodecError> {
         if !self.started {
             self.started = true;
             let mut usage = match &self.usage {
@@ -180,20 +216,13 @@ impl ClientEventEncoder {
                 &self.service_class,
             )
             .expect("validated reported service");
-            out.push(frame(&json!({"type":"message_start","message":{
+            out.push(&json!({"type":"message_start","message":{
                 "id":self.id,"type":"message","role":"assistant","model":self.model,"content":[],
-                "stop_reason":null,"stop_sequence":null,"usage":usage}})));
+                "stop_reason":null,"stop_sequence":null,"usage":usage}}))?;
         }
-    }
-    fn check_block_order(&mut self, item: ItemId) -> Result<(), CodecError> {
-        let order = *self.owner_order.get(&item).ok_or(CodecError::invalid())?;
-        if order < self.last_block_owner {
-            return Err(CodecError::Unsupported(CarrierReason::Unavailable));
-        }
-        self.last_block_owner = order;
         Ok(())
     }
-    fn report(&mut self, source: &UsageReport, out: &mut Vec<Bytes>) -> Result<(), CodecError> {
+    fn report(&mut self, source: &UsageReport, out: &mut Frames) -> Result<(), CodecError> {
         source.validate()?;
         let selected = match crate::protocol::anthropic::messages::accounting::project(source) {
             Ok(selected) => selected,
@@ -235,7 +264,7 @@ impl ClientEventEncoder {
                 }
             }
             self.usage = Some(wire);
-            self.start(out);
+            self.start(out)?;
         } else if source.scope == UsageScope::Operation {
             self.usage = None;
             let published_details = self.opening_usage.as_ref().is_some_and(|usage| {
@@ -261,45 +290,53 @@ impl ClientEventEncoder {
             return Err(CodecError::invalid());
         }
         let checkpoint = self.losses.len();
-        let result = self
-            .encode_open(event)
-            .and_then(|frames| self.check_frames(frames));
+        let result = (|| {
+            let queued = self.schedule.push(event, self.limits)?;
+            let terminal = matches!(event, StreamEvent::Terminal { .. });
+            let mut out = Frames::new(self);
+            while let Some(ready) = self.schedule.pop(terminal) {
+                match ready {
+                    schedule::Ready::Event(event) => self.encode_open(&event, &mut out)?,
+                    schedule::Ready::ClosePart(item, part) => {
+                        let index = self
+                            .text_parts
+                            .remove(&(item, part))
+                            .ok_or(CodecError::invalid())?;
+                        out.push(&json!({"type":"content_block_stop","index":index}))?;
+                    }
+                    schedule::Ready::CloseOwner(item) => {
+                        match self.open.remove(&item).ok_or(CodecError::invalid())? {
+                            OpenItem::Thinking { .. } => {
+                                return Err(CodecError::Unsupported(CarrierReason::Replay));
+                            }
+                            OpenItem::ToolUse { index, .. } => {
+                                out.push(&json!({"type":"content_block_stop","index":index}))?
+                            }
+                            OpenItem::Text => {}
+                        }
+                    }
+                }
+            }
+            if !queued {
+                self.encode_open(event, &mut out)?;
+            }
+            self.events = out.events;
+            self.wire_bytes = out.wire_bytes;
+            Ok(out.values)
+        })();
         if result.is_err() {
             self.losses.truncate(checkpoint);
             self.reject();
         }
         result
     }
-    fn check_frames(&mut self, frames: Vec<Bytes>) -> Result<Vec<Bytes>, CodecError> {
-        use crate::protocol::failure::Resource;
-        for frame in &frames {
-            self.events = self
-                .events
-                .checked_add(1)
-                .ok_or(CodecError::Resource(Resource::Events))?;
-            self.wire_bytes = self
-                .wire_bytes
-                .checked_add(frame.len())
-                .ok_or(CodecError::Resource(Resource::Bytes))?;
-            if self.events > self.limits.max_events {
-                return Err(CodecError::Resource(Resource::Events));
-            }
-            if frame.len() > self.limits.max_event_bytes
-                || self.wire_bytes > self.limits.max_wire_bytes
-            {
-                return Err(CodecError::Resource(Resource::Bytes));
-            }
-        }
-        Ok(frames)
-    }
-    fn encode_open(&mut self, event: &StreamEvent) -> Result<Vec<Bytes>, CodecError> {
+    fn encode_open(&mut self, event: &StreamEvent, out: &mut Frames) -> Result<(), CodecError> {
         if matches!(
             event,
             StreamEvent::PartInterrupted { .. } | StreamEvent::CompactionProgress { .. }
         ) {
             return Err(CodecError::Unsupported(CarrierReason::Unavailable));
         }
-        let mut out = vec![];
         match event {
             // Wait for opening accounting or the first content owner, without buffering content.
             StreamEvent::Started => self.seen_start = true,
@@ -307,14 +344,13 @@ impl ClientEventEncoder {
                 if replay.is_some() && matches!(kind, ItemKind::ToolCall { .. }) {
                     return Err(CodecError::Unsupported(CarrierReason::Replay));
                 }
-                if self.owner_order.len() >= crate::semantic::task::generation::MAX_ITEMS {
+                if self.owners_seen.len() >= crate::semantic::task::generation::MAX_ITEMS {
                     return Err(CodecError::Limit);
                 }
-                let order = self.owner_order.len();
-                if self.owner_order.insert(*item, order).is_some() {
+                if !self.owners_seen.insert(*item) {
                     return Err(CodecError::invalid());
                 }
-                self.start(&mut out);
+                self.start(out)?;
                 let block = match kind {
                     ItemKind::Message { phase: None } => OpenItem::Text,
                     // Opens on its first delta or at its end, once a redacted value is known.
@@ -335,21 +371,20 @@ impl ClientEventEncoder {
                             return Err(CodecError::Unsupported(CarrierReason::Unavailable));
                         }
                         super::projection::tool_labels(call_id.as_str(), name.as_str())?;
-                        self.check_block_order(*item)?;
                         self.calls = true;
                         OpenItem::ToolUse {
                             prefix: String::new(),
                             arguments_started: false,
                             index: open_block(
                                 &mut self.next,
-                                &mut out,
+                                out,
                                 json!({
                                     "type": "tool_use",
                                     "id": call_id.as_str(),
                                     "name": name.as_str(),
                                     "input": {},
                                 }),
-                            ),
+                            )?,
                         }
                     }
                     _ => {
@@ -393,14 +428,13 @@ impl ClientEventEncoder {
                 .get(item)
                 .is_some_and(|block| matches!(block, OpenItem::Text)) =>
             {
-                self.check_block_order(*item)?;
                 if *kind == PartKind::Refusal {
                     let loss = super::projection::refusal_loss("event.encode");
                     if !self.losses.contains(&loss) {
                         self.losses.push(loss);
                     }
                 }
-                let index = open_block(&mut self.next, &mut out, json!({"type":"text","text":""}));
+                let index = open_block(&mut self.next, out, json!({"type":"text","text":""}))?;
                 self.text_parts.insert((*item, *part), index);
             }
             StreamEvent::PartFinished { item, part }
@@ -413,7 +447,7 @@ impl ClientEventEncoder {
                     .text_parts
                     .remove(&(*item, *part))
                     .ok_or(CodecError::invalid())?;
-                out.push(frame(&json!({"type":"content_block_stop","index":index})));
+                out.push(&json!({"type":"content_block_stop","index":index}))?;
             }
             StreamEvent::Delta { logprobs, .. } if !logprobs.is_empty() => {
                 return Err(CodecError::Unsupported(CarrierReason::Unavailable));
@@ -430,12 +464,6 @@ impl ClientEventEncoder {
                 fragment,
                 ..
             } if !fragment.is_empty() => {
-                if matches!(
-                    self.open.get(item),
-                    Some(OpenItem::Thinking { index: None, .. })
-                ) {
-                    self.check_block_order(*item)?;
-                }
                 let block = self.open.get_mut(item).ok_or(CodecError::invalid())?;
                 let (index, delta) = match block {
                     OpenItem::Text => (
@@ -458,10 +486,11 @@ impl ClientEventEncoder {
                         if *bytes > crate::semantic::task::generation::MAX_TEXT_BYTES {
                             return Err(CodecError::Limit);
                         }
+                        if index.is_none() {
+                            *index = Some(open_block(&mut self.next, out, thinking_block())?);
+                        }
                         (
-                            *index.get_or_insert_with(|| {
-                                open_block(&mut self.next, &mut out, thinking_block())
-                            }),
+                            index.expect("opened thinking"),
                             json!({"type":"thinking_delta","thinking":fragment}),
                         )
                     }
@@ -481,7 +510,7 @@ impl ClientEventEncoder {
                                 .bytes()
                                 .all(|b| matches!(b, b' ' | b'\t' | b'\r' | b'\n'))
                             {
-                                return Ok(out);
+                                return Ok(());
                             }
                             *arguments_started = true;
                             (
@@ -496,9 +525,7 @@ impl ClientEventEncoder {
                         }
                     }
                 };
-                out.push(frame(
-                    &json!({"type":"content_block_delta","index":index,"delta":delta}),
-                ));
+                out.push(&json!({"type":"content_block_delta","index":index,"delta":delta}))?;
             }
             StreamEvent::ItemFinished {
                 item,
@@ -511,7 +538,7 @@ impl ClientEventEncoder {
                         if self.text_parts.keys().any(|(owner, _)| owner == item) {
                             return Err(CodecError::invalid());
                         }
-                        return Ok(out);
+                        return Ok(());
                     }
                     OpenItem::ToolUse { index, .. } => {
                         if replay.is_some() {
@@ -520,8 +547,8 @@ impl ClientEventEncoder {
                         if *status == crate::semantic::task::generation::ItemLifecycle::Incomplete {
                             self.incomplete_calls = true;
                         }
-                        out.push(frame(&json!({"type":"content_block_stop","index":index})));
-                        return Ok(out);
+                        out.push(&json!({"type":"content_block_stop","index":index}))?;
+                        return Ok(());
                     }
                     OpenItem::Thinking {
                         index,
@@ -553,23 +580,20 @@ impl ClientEventEncoder {
                     && signature
                         .as_deref()
                         .is_some_and(super::projection::redacted);
-                if index.is_none() {
-                    self.check_block_order(*item)?;
-                }
                 let index = match index {
                     Some(index) => index,
                     None if redacted => open_block(
                         &mut self.next,
-                        &mut out,
+                        out,
                         json!({"type":"redacted_thinking","data":signature}),
-                    ),
-                    None => open_block(&mut self.next, &mut out, thinking_block()),
+                    )?,
+                    None => open_block(&mut self.next, out, thinking_block())?,
                 };
                 if !redacted && let Some(signature) = signature {
-                    out.push(frame(&json!({"type":"content_block_delta","index":index,
-                        "delta":{"type":"signature_delta","signature":signature}})));
+                    out.push(&json!({"type":"content_block_delta","index":index,
+                        "delta":{"type":"signature_delta","signature":signature}}))?;
                 }
-                out.push(frame(&json!({"type":"content_block_stop","index":index})));
+                out.push(&json!({"type":"content_block_stop","index":index}))?;
             }
             StreamEvent::AnnotationAdded { .. } => {
                 return Err(CodecError::Unsupported(CarrierReason::Unavailable));
@@ -592,11 +616,11 @@ impl ClientEventEncoder {
                 return Err(CodecError::Unsupported(CarrierReason::Replay));
             }
             StreamEvent::Usage(usage) => {
-                self.report(&UsageReport::operation(*usage), &mut out)?;
+                self.report(&UsageReport::operation(*usage), out)?;
             }
             StreamEvent::Progress(progress) => self.progress = *progress,
             StreamEvent::UsageReport(report) => {
-                self.report(report, &mut out)?;
+                self.report(report, out)?;
             }
             StreamEvent::Terminal { terminal, details } => {
                 if self.incomplete_calls && (*terminal != StreamTerminal::Incomplete
@@ -604,7 +628,7 @@ impl ClientEventEncoder {
                 {
                     return Err(CodecError::Unsupported(CarrierReason::Terminal));
                 }
-                self.start(&mut out);
+                self.start(out)?;
                 let outcome = match terminal {
                     StreamTerminal::Completed => Outcome::Completed,
                     StreamTerminal::Incomplete => Outcome::Incomplete,
@@ -626,25 +650,8 @@ impl ClientEventEncoder {
                     self.calls,
                     &details,
                 )?;
-                if self
-                    .open
-                    .values()
-                    .any(|block| matches!(block, OpenItem::Thinking { .. }))
-                {
-                    return Err(CodecError::Unsupported(CarrierReason::Replay));
-                }
-                // Close every started block by its wire index. Text items own no block;
-                // a thinking item without content has not opened one yet.
-                let mut started: Vec<usize> =
-                    std::mem::take(&mut self.text_parts).into_values().collect();
-                started.extend(
-                    std::mem::take(&mut self.open)
-                        .into_values()
-                        .filter_map(OpenItem::index),
-                );
-                started.sort_unstable();
-                for index in started {
-                    out.push(frame(&json!({"type":"content_block_stop","index":index})));
+                if !self.open.is_empty() || !self.text_parts.is_empty() {
+                    return Err(CodecError::invalid());
                 }
                 let mut wire = self.usage.clone();
                 if let Some(counts) = self.delivery_usage {
@@ -670,30 +677,22 @@ impl ClientEventEncoder {
                     event["delta"].as_object_mut().expect("message delta"),
                     &details.refusal,
                 );
-                let stop = frame(&json!({"type":"message_stop"}));
                 if let Some(mut notice) = self.notice.take() {
                     notice.add_effects(&self.losses);
-                    let pending = out.iter().map(Bytes::len).sum::<usize>();
-                    let available = self
-                        .limits
-                        .max_event_bytes
-                        .min(
-                            self.limits
-                                .max_wire_bytes
-                                .saturating_sub(self.wire_bytes)
-                                .saturating_sub(pending)
-                                .saturating_sub(stop.len()),
-                        )
-                        .saturating_sub("message_delta".len() + 16);
+                    let stop_bytes =
+                        "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n".len();
+                    let available = out
+                        .available()
+                        .saturating_sub("message_delta".len() + 16 + stop_bytes);
                     notice.attach(&mut event, available, false);
                 }
-                out.push(frame(&event));
-                out.push(stop);
+                out.push(&event)?;
+                out.push(&json!({"type":"message_stop"}))?;
                 self.finished = true;
             }
             _ => {}
         }
-        Ok(out)
+        Ok(())
     }
     /// A terminal was encoded.
     pub fn finish(&self) -> Result<(), CodecError> {
@@ -720,7 +719,7 @@ impl ClientEventEncoder {
         self.finished = true;
         let mut value = error.clone();
         if value.get("type").and_then(Value::as_str) != Some("error") {
-            self.rejected = true;
+            self.reject();
             return Err(CodecError::invalid());
         }
         if let Some(notice) = self.notice.take() {
@@ -733,8 +732,9 @@ impl ClientEventEncoder {
                 false,
             );
         }
-        let result = self.check_frames(vec![frame(&value)]);
-        self.rejected = true;
+        let mut out = Frames::new(self);
+        let result = out.push(&value).map(|()| out.values);
+        self.reject();
         result
     }
 }
@@ -832,7 +832,7 @@ mod tests {
     }
 
     #[test]
-    fn late_block_starts_cannot_reverse_source_owner_order() {
+    fn late_block_starts_wait_without_reversing_source_owner_order() {
         let first = ItemId::new(1);
         let second = ItemId::new(2);
         let tool = StreamEvent::ItemStarted {
@@ -886,11 +886,7 @@ mod tests {
             for event in &events[..events.len() - 1] {
                 encoder.encode(event).unwrap();
             }
-            assert_eq!(
-                encoder.encode(events.last().unwrap()),
-                Err(CodecError::Unsupported(CarrierReason::Unavailable)),
-            );
-            assert!(encoder.encode(&StreamEvent::Started).is_err());
+            assert!(encoder.encode(events.last().unwrap()).is_ok());
             assert!(encoder.finish().is_err());
         }
         let mut encoder = ClientEventEncoder::new("r", "m");
@@ -919,9 +915,253 @@ mod tests {
                 }
             }
         }
+        assert_eq!(starts, vec![(json!(0), json!("text"))]);
+    }
+
+    fn blocked(kind: ItemKind, limits: crate::protocol::stream::SseLimits) -> ClientEventEncoder {
+        let mut encoder = ClientEventEncoder::new("r", "m")
+            .with_limits(limits)
+            .unwrap();
+        encoder
+            .encode(&StreamEvent::ItemStarted {
+                item: ItemId::new(1),
+                kind: ItemKind::Message { phase: None },
+                replay: None,
+            })
+            .unwrap();
+        encoder
+            .encode(&StreamEvent::PartStarted {
+                item: ItemId::new(1),
+                part: PartId::new(1),
+                kind: PartKind::Text,
+            })
+            .unwrap();
+        assert!(
+            encoder
+                .encode(&StreamEvent::ItemStarted {
+                    item: ItemId::new(2),
+                    kind,
+                    replay: None,
+                })
+                .unwrap()
+                .is_empty()
+        );
+        encoder
+    }
+    fn tool() -> ItemKind {
+        ItemKind::ToolCall {
+            format: ArgumentFormat::Raw,
+            call_id: Text::new("c", "id", 32).unwrap(),
+            name: Text::new("lookup", "name", 32).unwrap(),
+            context: Default::default(),
+        }
+    }
+    fn blocked_delta(s: &str) -> StreamEvent {
+        StreamEvent::Delta {
+            item: ItemId::new(2),
+            part: PartId::new(2),
+            fragment: s.into(),
+            logprobs: vec![],
+        }
+    }
+
+    #[test]
+    fn blocked_content_limits_and_failure_release_pending_events() {
+        let mut bounded = blocked(
+            tool(),
+            crate::protocol::stream::SseLimits {
+                max_events: 6,
+                ..Default::default()
+            },
+        );
+        for _ in 0..1000 {
+            assert!(bounded.encode(&blocked_delta("")).unwrap().is_empty());
+        }
+        for _ in 0..5 {
+            assert!(bounded.encode(&blocked_delta("x")).unwrap().is_empty());
+        }
+        assert_eq!(bounded.encode(&blocked_delta("x")), Err(CodecError::Limit));
+        assert!(bounded.schedule.pop(true).is_none());
+        assert!(bounded.open.is_empty());
+        assert!(bounded.encode(&blocked_delta("")).is_err());
+        assert!(bounded.finish().is_err());
+
+        let mut bytes = blocked(tool(), Default::default());
+        let payload = "x".repeat(crate::semantic::task::generation::MAX_TEXT_BYTES);
+        assert!(bytes.encode(&blocked_delta(&payload)).unwrap().is_empty());
         assert_eq!(
-            starts,
-            vec![(json!(0), json!("text")), (json!(1), json!("tool_use"))]
+            bytes.encode(&blocked_delta(&payload)),
+            Err(CodecError::Limit)
+        );
+        assert!(bytes.schedule.pop(true).is_none());
+
+        let mut failed = blocked(tool(), Default::default());
+        failed.encode(&blocked_delta("{")).unwrap();
+        let frames = failed
+            .fail(&json!({"type":"error","error":{"type":"api_error","message":"synthetic"}}))
+            .unwrap();
+        assert_eq!(frames.len(), 1);
+        assert!(
+            std::str::from_utf8(&frames[0])
+                .unwrap()
+                .starts_with("event: error\n")
+        );
+        assert!(failed.schedule.pop(true).is_none());
+        assert!(failed.finish().is_err());
+    }
+
+    #[test]
+    fn blocked_unsupported_reasoning_rejects_before_the_head_can_publish_more() {
+        let mut encoder = blocked(ItemKind::Reasoning, Default::default());
+        for part in [2, 3] {
+            let result = encoder.encode(&StreamEvent::PartStarted {
+                item: ItemId::new(2),
+                part: PartId::new(part),
+                kind: PartKind::Summary,
+            });
+            if part == 2 {
+                assert!(result.unwrap().is_empty());
+                encoder.encode(&blocked_delta("plan")).unwrap();
+                encoder
+                    .encode(&StreamEvent::ValueFinished {
+                        item: ItemId::new(2),
+                        part: PartId::new(2),
+                    })
+                    .unwrap();
+                encoder
+                    .encode(&StreamEvent::PartFinished {
+                        item: ItemId::new(2),
+                        part: PartId::new(2),
+                    })
+                    .unwrap();
+            } else {
+                assert_eq!(
+                    result,
+                    Err(CodecError::Unsupported(CarrierReason::Reasoning))
+                );
+            }
+        }
+        assert!(
+            encoder
+                .encode(&StreamEvent::Delta {
+                    item: ItemId::new(1),
+                    part: PartId::new(1),
+                    fragment: "must not escape".into(),
+                    logprobs: vec![],
+                })
+                .is_err()
+        );
+        assert!(encoder.schedule.pop(true).is_none());
+    }
+
+    #[test]
+    fn queued_redacted_thinking_opens_only_after_its_predecessor_closes() {
+        let mut unsigned = blocked(ItemKind::Reasoning, Default::default());
+        assert_eq!(
+            unsigned.encode(&StreamEvent::ItemFinished {
+                item: ItemId::new(2),
+                status: crate::semantic::task::generation::ItemLifecycle::Completed,
+                replay: None,
+            }),
+            Err(CodecError::Unsupported(CarrierReason::Replay))
+        );
+        use crate::semantic::task::generation::{
+            ItemLifecycle, ItemReplay, ReplayFormat, ReplayValue,
+        };
+        let mut encoder = blocked(ItemKind::Reasoning, Default::default());
+        let signature = crate::protocol::replay_envelope::seal(
+            &crate::protocol::replay_envelope::CLIENT_ORIGIN,
+            ReplayFormat::AnthropicMessagesRedactedThinking,
+            "synthetic-redacted",
+        )
+        .unwrap();
+        assert!(
+            encoder
+                .encode(&StreamEvent::ItemFinished {
+                    item: ItemId::new(2),
+                    status: ItemLifecycle::Completed,
+                    replay: Some(ItemReplay {
+                        origin: None,
+                        value: ReplayValue::final_value(
+                            ReplayFormat::AnthropicMessagesRedactedThinking,
+                            signature.clone(),
+                        )
+                    }),
+                })
+                .unwrap()
+                .is_empty()
+        );
+        encoder
+            .encode(&StreamEvent::PartFinished {
+                item: ItemId::new(1),
+                part: PartId::new(1),
+            })
+            .unwrap();
+        let frames = encoder
+            .encode(&StreamEvent::ItemFinished {
+                item: ItemId::new(1),
+                status: ItemLifecycle::Completed,
+                replay: None,
+            })
+            .unwrap();
+        let events: Vec<Value> = frames
+            .iter()
+            .map(|frame| {
+                serde_json::from_str(
+                    std::str::from_utf8(frame)
+                        .unwrap()
+                        .lines()
+                        .find_map(|line| line.strip_prefix("data: "))
+                        .unwrap(),
+                )
+                .unwrap()
+            })
+            .collect();
+        assert_eq!(
+            events,
+            vec![
+                json!({"type":"content_block_start","index":1,"content_block":{"type":"redacted_thinking","data":signature.as_str()}}),
+                json!({"type":"content_block_stop","index":1}),
+            ]
+        );
+    }
+
+    #[test]
+    fn queued_drain_checks_wire_limits_and_escaped_frame_size() {
+        use crate::protocol::failure::Resource;
+        let limits = crate::protocol::stream::SseLimits {
+            max_wire_bytes: 1024,
+            max_event_bytes: 512,
+            ..Default::default()
+        };
+        let mut encoder = blocked(tool(), limits);
+        for _ in 0..20 {
+            encoder.encode(&blocked_delta("x")).unwrap();
+        }
+        encoder
+            .encode(&StreamEvent::PartFinished {
+                item: ItemId::new(1),
+                part: PartId::new(1),
+            })
+            .unwrap();
+        assert_eq!(
+            encoder.encode(&StreamEvent::ItemFinished {
+                item: ItemId::new(1),
+                status: crate::semantic::task::generation::ItemLifecycle::Completed,
+                replay: None,
+            }),
+            Err(CodecError::Resource(Resource::Bytes))
+        );
+        assert!(encoder.schedule.pop(true).is_none());
+        let mut escaped = blocked(tool(), limits);
+        assert_eq!(
+            escaped.encode(&StreamEvent::Delta {
+                item: ItemId::new(1),
+                part: PartId::new(1),
+                fragment: "\u{1}".repeat(100),
+                logprobs: vec![],
+            }),
+            Err(CodecError::Resource(Resource::Bytes))
         );
     }
 

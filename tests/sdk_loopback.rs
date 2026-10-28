@@ -16,6 +16,9 @@ mod embedding_loop;
 mod embedding_support;
 #[path = "sdk/embeddings.rs"]
 mod embeddings;
+#[path = "support/semantic_events.rs"]
+#[allow(dead_code)]
+mod events_support;
 #[path = "support/filesystem.rs"]
 mod filesystem;
 #[path = "sdk/gateway.rs"]

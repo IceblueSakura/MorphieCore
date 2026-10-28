@@ -635,6 +635,10 @@ Codecs validate and reduce upstream events in source order, emitting legal targe
 - Emits block openers before deltas, and closes blocks before terminal events.
 - Interleaving tool calls and text parts are serialized to conform to target grammar.
 
+Messages downstream delivery uses one active wire block in semantic owner/part declaration order, independently of numeric IDs. The head streams incrementally; successors wait for its actual owner finish, including a delayed thinking signature. Thinking emits one signature immediately before block stop; redacted blocks keep their native shape. Reports retain their existing independent timing and authority.
+
+The codec-local [scheduler](../src/protocol/anthropic/messages/client/sse/schedule.rs) bounds retained payloads and container overhead, releases drained capacity, and rejects known unsupported content before queueing. [Frame construction](../src/protocol/anthropic/messages/client/sse.rs) checks serialized size and cumulative wire/event budgets during drainage. Cancellation or rejection discards pending content. EOF-authorized incomplete termination may close unfinished text/tool wire blocks without inventing semantic completion; source reduction, argument validation and publication rules remain outside the scheduler. Native Messages intake is unchanged.
+
 #### Reverse-proxy delivery
 
 MorphieCore operates behind a loopback-bound reverse proxy:
@@ -768,6 +772,7 @@ Authoritative log of accepted architectural decisions and their systemic consequ
 |---|---|---|
 | Upstream protocol tests | 2026-10-23 | Pinned official SDK and upstream fixtures serve as regression baseline |
 | Delta coalescing | 2026-10-26 | Default 50ms / 16 KiB buffer merges adjacent text deltas |
+| Messages ordered block delivery | 2026-10-28 | Codec-local bounded serialization preserves owner/part order, incremental head output and signed history; native intake and EOF authority remain unchanged |
 | Scoped source accounting | 2026-10-20 | Retains raw usage scopes independently without premature summation |
 | Honest delivery | 2026-10-20 | Publication freezes failover; completion requires validated upstream EOF |
 | Configurable capture | 2026-10-20 | Four opt-in capture boundaries with mandatory credential redaction |

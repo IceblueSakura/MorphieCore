@@ -102,3 +102,83 @@ pub fn created() -> Value {
 pub fn call_item(id: &str, call_id: &str, args: &str, status: &str) -> Value {
     json!({"id":id,"type":"function_call","call_id":call_id,"name":"lookup","arguments":args,"status":status})
 }
+
+/// Later owners and parts finish first; the first owner's signature arrives last.
+pub fn interleaved_messages(replay: ItemReplay) -> Vec<StreamEvent> {
+    let begin = |item, part, kind| StreamEvent::PartStarted {
+        item: ItemId::new(item),
+        part: PartId::new(part),
+        kind,
+    };
+    let delta = |item, part, s: &str| StreamEvent::Delta {
+        item: ItemId::new(item),
+        part: PartId::new(part),
+        fragment: s.into(),
+        logprobs: vec![],
+    };
+    let end = |item, part| {
+        [
+            StreamEvent::ValueFinished {
+                item: ItemId::new(item),
+                part: PartId::new(part),
+            },
+            StreamEvent::PartFinished {
+                item: ItemId::new(item),
+                part: PartId::new(part),
+            },
+        ]
+    };
+    let mut usage = Usage::operation(1, 2, 3);
+    usage.input_relation = InputTokenRelation::ExcludesCacheReadAndWrite;
+    let mut events = vec![
+        StreamEvent::Started,
+        StreamEvent::Usage(usage),
+        start(10, ItemKind::Reasoning),
+        start(3, ItemKind::Message { phase: None }),
+    ];
+    // Deliberately non-monotonic IDs: declaration order, not ID sorting, is authority.
+    for (item, id) in [(8, "first"), (2, "second")] {
+        events.push(start(
+            item,
+            ItemKind::ToolCall {
+                format: ArgumentFormat::Raw,
+                call_id: text(id),
+                name: text("lookup"),
+                context: Default::default(),
+            },
+        ));
+    }
+    events.extend([
+        begin(10, 1, PartKind::Summary),
+        delta(10, 1, "Plan"),
+        begin(3, 9, PartKind::Text),
+        delta(3, 9, "A"),
+        begin(3, 4, PartKind::Text),
+        delta(3, 4, "B"),
+        delta(3, 9, "C"),
+        begin(8, 8, PartKind::Arguments),
+        delta(8, 8, " \n"),
+        delta(8, 8, "{\"n\":"),
+        begin(2, 2, PartKind::Arguments),
+        delta(2, 2, "{\"n\":2}"),
+    ]);
+    events.extend(end(2, 2));
+    events.push(close(2, ItemLifecycle::Completed));
+    events.push(delta(8, 8, "1}"));
+    events.extend(end(8, 8));
+    events.push(close(8, ItemLifecycle::Completed));
+    events.extend(end(3, 4));
+    events.extend(end(3, 9));
+    events.push(close(3, ItemLifecycle::Completed));
+    events.extend(end(10, 1));
+    events.push(StreamEvent::ItemFinished {
+        item: ItemId::new(10),
+        status: ItemLifecycle::Completed,
+        replay: Some(replay),
+    });
+    events.push(StreamEvent::Progress(
+        InteractionProgress::AwaitingToolResults,
+    ));
+    events.push(terminal(StreamTerminal::Completed));
+    events
+}

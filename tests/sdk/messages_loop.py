@@ -123,4 +123,53 @@ with httpx.Client(trust_env=False, timeout=10) as http:
                 assert error.status_code == 400
             else:
                 raise AssertionError("unsigned thinking cannot become standard history")
-print(json.dumps({"requests": 9, "partial": True, "refusal_details": True, "unsigned_replay_rejected": True}))
+        active = None
+        callbacks = {"text": [], "thinking": [], "signature": [], "input_json": [], "stops": []}
+        previous_raw = None
+        with client.messages.stream(model="schedule", max_tokens=64,
+                messages=[{"role": "user", "content": "go"}]) as stream:
+            for event in stream:
+                if event.type == "content_block_start":
+                    assert active is None
+                    active = event.index
+                elif event.type == "content_block_delta":
+                    assert active == event.index
+                elif event.type == "content_block_stop":
+                    assert active == event.index
+                    if active == 0:
+                        assert previous_raw == ("content_block_delta", "signature_delta")
+                    active = None
+                    callbacks["stops"].append(event.content_block.model_dump(exclude_none=True))
+                elif event.type == "text":
+                    callbacks["text"].append(event.text)
+                elif event.type == "thinking":
+                    callbacks["thinking"].append(event.thinking)
+                elif event.type == "signature":
+                    callbacks["signature"].append(event.signature)
+                elif event.type == "input_json":
+                    callbacks["input_json"].append(event.partial_json)
+                if event.type in ("content_block_start", "content_block_delta", "content_block_stop"):
+                    previous_raw = (event.type, event.delta.type if event.type == "content_block_delta" else None)
+            final = stream.get_final_message()
+        assert active is None and final.stop_reason == "tool_use"
+        assert "".join(callbacks["text"]) == "ACB"
+        assert "".join(callbacks["thinking"]) == "Plan"
+        assert callbacks["signature"] == [final.content[0].signature]
+        assert final.content[0].signature.startswith("mc1.")
+        assert "".join(callbacks["input_json"]) == ' \n{"n":1}{"n":2}'
+        content = [block.model_dump(exclude_none=True) for block in final.content]
+        assert callbacks["stops"] == content
+        assert content[1:] == [
+            {"type": "text", "text": "AC"}, {"type": "text", "text": "B"},
+            {"type": "tool_use", "id": "first", "name": "lookup", "input": {"n": 1}},
+            {"type": "tool_use", "id": "second", "name": "lookup", "input": {"n": 2}},
+        ]
+        replayed = client.messages.create(model="schedule", max_tokens=64, messages=[
+            {"role": "user", "content": "go"}, {"role": "assistant", "content": content},
+            {"role": "user", "content": [
+                {"type": "tool_result", "tool_use_id": "second", "content": "two"},
+                {"type": "tool_result", "tool_use_id": "first", "content": "one"},
+            ]},
+        ])
+        assert replayed.content[0].text == "replayed"
+print(json.dumps({"requests": 11, "partial": True, "refusal_details": True, "unsigned_replay_rejected": True, "scheduled_history": True}))

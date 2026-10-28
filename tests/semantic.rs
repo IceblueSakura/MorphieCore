@@ -5,6 +5,8 @@ mod chat_wire;
 mod events_support;
 #[path = "support/image_generation.rs"]
 mod image_support;
+#[path = "support/messages_stream.rs"]
+mod messages_stream;
 #[path = "support/resources.rs"]
 mod resources_support;
 #[path = "support/properties.rs"]

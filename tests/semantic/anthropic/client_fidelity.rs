@@ -1176,6 +1176,180 @@ fn messages_rejects_audio_in_static_output_and_each_event_shape() {
 }
 
 #[test]
+fn messages_serializes_interleaved_owners_parts_and_delayed_signatures() {
+    use crate::events_support::interleaved_messages;
+    for thinking in [false, true] {
+        let mut events = interleaved_messages(ItemReplay {
+            value: ReplayValue::final_value(
+                ReplayFormat::AnthropicMessagesThinking,
+                crate::events_support::text("synthetic-signature"),
+            ),
+            origin: None,
+        });
+        if !thinking {
+            events.retain(|event| {
+                !matches!(event,
+                StreamEvent::ItemStarted { item, .. } | StreamEvent::ItemFinished { item, .. }
+                | StreamEvent::PartStarted { item, .. } | StreamEvent::Delta { item, .. }
+                | StreamEvent::ValueFinished { item, .. } | StreamEvent::PartFinished { item, .. }
+                if *item == ItemId::new(10))
+            });
+        }
+        let mut state = StreamState::new();
+        let mut encoder = ClientEventEncoder::new("r", "m");
+        let mut wire = String::new();
+        for event in &events {
+            state = reduce(state, event.clone()).unwrap();
+            let frames = encoder.encode(event).unwrap();
+            let batch = frames
+                .iter()
+                .map(|f| std::str::from_utf8(f).unwrap())
+                .collect::<String>();
+            if matches!(event, StreamEvent::Delta { item, fragment, .. }
+                if *item == ItemId::new(if thinking { 10 } else { 3 })
+                    && fragment == if thinking { "Plan" } else { "A" })
+            {
+                assert!(
+                    batch.contains(if thinking {
+                        "thinking_delta"
+                    } else {
+                        "text_delta"
+                    }),
+                    "head content must publish before later owners or EOF"
+                );
+            }
+            if thinking
+                && matches!(event, StreamEvent::ItemFinished { item, .. } if *item != ItemId::new(10))
+            {
+                assert!(
+                    batch.is_empty(),
+                    "later completion cannot pass the signature barrier"
+                );
+            }
+            wire.push_str(&batch);
+        }
+        encoder.finish().unwrap();
+        let mut expected = vec![
+            json!({"type":"text","text":"AC"}),
+            json!({"type":"text","text":"B"}),
+            json!({"type":"tool_use","id":"first","name":"lookup","input":{"n":1}}),
+            json!({"type":"tool_use","id":"second","name":"lookup","input":{"n":2}}),
+        ];
+        if thinking {
+            expected.insert(
+                0,
+                json!({"type":"thinking","thinking":"Plan","signature":"synthetic-signature"}),
+            );
+            assert_eq!(wire.matches("\"type\":\"signature_delta\"").count(), 1);
+        }
+        let streamed = crate::messages_stream::messages_stream_body(&wire);
+        assert_eq!(streamed["content"], json!(expected));
+        assert_eq!(streamed["stop_reason"], "tool_use");
+        let mut source = response();
+        source.semantic = materialize(&state).unwrap();
+        let before = source.clone();
+        let static_wire = encode_client_response(&source, "m").unwrap();
+        assert_eq!(static_wire["content"], json!(expected));
+        assert_eq!(source, before);
+        if !thinking {
+            use morphiecore::{
+                adapter::ClientAdapter,
+                execution::{Attempt, ResponseDelivery},
+                protocol::{openai::obfuscation::Obfuscation, stream::SseLimits},
+            };
+            let limits = SseLimits::default();
+            let chunk = |delta, finish| {
+                json!({
+                    "id":"scheduled","object":"chat.completion.chunk","created":1,"model":"synthetic",
+                    "choices":[{"index":0,"delta":delta,"finish_reason":finish}]
+                })
+            };
+            let frames = [
+                chunk(
+                    json!({"role":"assistant","content":"A"}),
+                    serde_json::Value::Null,
+                ),
+                chunk(
+                    json!({"tool_calls":[{"index":0,"id":"first","type":"function",
+                    "function":{"name":"lookup","arguments":" \n{\"n\":"}}]}),
+                    serde_json::Value::Null,
+                ),
+                chunk(
+                    json!({"tool_calls":[{"index":1,"id":"second","type":"function",
+                    "function":{"name":"lookup","arguments":"{\"n\":2}"}}]}),
+                    serde_json::Value::Null,
+                ),
+                chunk(json!({"content":"B"}), serde_json::Value::Null),
+                chunk(
+                    json!({"tool_calls":[{"index":0,"function":{"arguments":"1}"}}]}),
+                    serde_json::Value::Null,
+                ),
+                chunk(json!({}), json!("tool_calls")),
+                json!({"id":"scheduled","object":"chat.completion.chunk","created":1,"model":"synthetic",
+                    "choices":[],"usage":{"prompt_tokens":1,"completion_tokens":2,"total_tokens":3,
+                        "prompt_tokens_details":{"cached_tokens":0}}}),
+            ];
+            let input = frames
+                .iter()
+                .map(|frame| format!("data: {frame}\n\n"))
+                .collect::<String>()
+                + "data: [DONE]\n\n";
+            let mut attempt = Attempt::new(
+                GenerationCodec::new(GenerationApi::Chat, Dialect::Standard, None),
+                1 << 20,
+                limits,
+            );
+            attempt.begin(200, "text/event-stream").unwrap();
+            let mut delivery = ResponseDelivery::new(
+                ClientAdapter::Messages,
+                "m",
+                limits,
+                Default::default(),
+                Obfuscation::Disabled,
+            );
+            let mut output = vec![];
+            for fragment in input.as_bytes().chunks(13) {
+                let mut rest = fragment;
+                while !rest.is_empty() {
+                    let (used, events) = attempt.push(rest).unwrap();
+                    assert!(used > 0);
+                    output.extend(
+                        delivery
+                            .encode_events(&attempt, &events)
+                            .unwrap()
+                            .into_bytes()
+                            .into_iter()
+                            .flatten(),
+                    );
+                    rest = &rest[used..];
+                }
+            }
+            assert!(!String::from_utf8_lossy(&output).contains("message_stop"));
+            attempt.finish().unwrap();
+            output.extend(
+                delivery
+                    .finish_stream(&attempt)
+                    .unwrap()
+                    .into_bytes()
+                    .into_iter()
+                    .flatten(),
+            );
+            let delivered =
+                crate::messages_stream::messages_stream_body(std::str::from_utf8(&output).unwrap());
+            assert_eq!(
+                delivered["content"],
+                json!([
+                    {"type":"text","text":"AB"},
+                    {"type":"tool_use","id":"first","name":"lookup","input":{"n":1}},
+                    {"type":"tool_use","id":"second","name":"lookup","input":{"n":2}},
+                ])
+            );
+            assert_eq!(delivered["stop_reason"], "tool_use");
+        }
+    }
+}
+
+#[test]
 fn messages_preserves_parts_and_rejects_unrepresentable_calls() {
     let mut response = response();
     let mut usage = Usage::operation(0, 3, 3);
@@ -1201,6 +1375,28 @@ fn messages_preserves_parts_and_rejects_unrepresentable_calls() {
             part: PartId::new(1),
             kind: PartKind::Refusal,
         },
+        StreamEvent::ItemStarted {
+            item: ItemId::new(2),
+            kind: ItemKind::Message { phase: None },
+            replay: None,
+        },
+        StreamEvent::PartStarted {
+            item: ItemId::new(2),
+            part: PartId::new(2),
+            kind: PartKind::Text,
+        },
+        StreamEvent::Delta {
+            item: ItemId::new(2),
+            part: PartId::new(2),
+            fragment: "later".into(),
+            logprobs: vec![],
+        },
+        StreamEvent::Delta {
+            item: ItemId::new(1),
+            part: PartId::new(1),
+            fragment: "first".into(),
+            logprobs: vec![],
+        },
         StreamEvent::Usage(usage),
         StreamEvent::Terminal {
             terminal: StreamTerminal::Incomplete,
@@ -1219,6 +1415,14 @@ fn messages_preserves_parts_and_rejects_unrepresentable_calls() {
         .collect();
     assert!(frames.contains(r#"{"type":"content_block_stop","index":0}"#));
     assert!(!frames.contains(r#""index":null"#));
+    let folded = crate::messages_stream::messages_stream_body(&frames);
+    assert_eq!(
+        folded["content"],
+        json!([
+            {"type":"text","text":"first"},{"type":"text","text":"later"},
+        ])
+    );
+    assert_eq!(folded["stop_reason"], "max_tokens");
     let mut split = response.clone();
     let mut items = split.semantic.items().to_vec();
     let Item::Message(message) = &mut items[0].1 else {

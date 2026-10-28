@@ -532,6 +532,14 @@ fn complete_tool_openers_and_empty_json_deltas_preserve_the_observed_object() {
                 .and_then(|()| native.finish().map(|_| ()))
                 .is_err()
         );
+        if !input.as_object().unwrap().is_empty() {
+            values[2]["delta"]["partial_json"] = json!("{\"replacement\":1}");
+            let mut native =
+                MessageSseDecoder::new(200, "text/event-stream", SseLimits::default()).unwrap();
+            feed(&mut native, &wire(&values[..2])).unwrap();
+            assert!(feed(&mut native, &wire(&values[2..3])).is_err());
+            assert!(native.finish().is_err());
+        }
     }
 }
 #[test]
