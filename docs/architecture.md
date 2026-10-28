@@ -392,7 +392,7 @@ Order of precedence: **Lossless mapping → Bounded approximation → Meaningful
 
 #### Semantic-equivalence compatibility
 
-Accepted on 2026-10-28; implementation migration pending in [repair order 2](roadmap.md#repair-order-and-exit-gates). Protocol-defined equivalent empty values, empty collections, defaults and structural placeholders belong to lossless mapping. Accept, normalize, omit or supply them as the target grammar requires, without a separate named-omission path or loss receipt.
+Accepted on 2026-10-28; the selected null-metadata and empty-logprobs applications are implemented. Broader field review continues in [repair order 2b](roadmap.md#repair-order-and-exit-gates). Protocol-defined equivalent empty values, empty collections, defaults and structural placeholders belong to lossless mapping. Accept, normalize, omit or supply them as the target grammar requires, without a separate named-omission path or loss receipt.
 
 Equivalence depends on the field, direction and lifecycle contract, not emptiness alone. It must preserve content, control intent, explicit constraints, identity, report facts and subsequent behavior. Preserve source observations; apply target representation changes in the existing codec/projection owners. Do not introduce recursive empty-field stripping or globally equate absent, null, empty, false and zero. Unknown fields and malformed known values retain their existing admission rules.
 
@@ -400,7 +400,7 @@ Selected applications are reported `metadata:null` on Chat SSE and Messages deli
 
 An empty update that clears state, an empty restriction set, an identity-bearing block or a terminal report is not equivalent to omission merely because its payload is empty. Stream accumulation must not erase earlier reports or suppress completion. Tests belong at the responsible boundaries: equivalent forms agree across JSON/SSE/history; meaningful nonempty values, source observations and state transitions remain protected.
 
-This decision supersedes the loss classification of `chat.omit-null-stream-metadata.v1` and `messages.omit-null-response-metadata.v1`; current code still emits those receipts until migration. Actual removal of meaningful information continues to require a selected named loss or rejection.
+This decision removes `chat.omit-null-stream-metadata.v1` and `messages.omit-null-response-metadata.v1` and their receipts. Actual removal of meaningful information continues to require a selected named loss or rejection.
 
 #### Client/IR projection principles
 

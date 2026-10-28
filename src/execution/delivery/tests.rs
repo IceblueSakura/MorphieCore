@@ -82,8 +82,8 @@ fn finalized_json_still_needs_handoff_and_cannot_resume_after_rejection() {
 }
 
 #[test]
-fn messages_null_metadata_matches_json_stream_and_retained_views() {
-    let part = json!({"type":"output_text","text":"partial","annotations":[]});
+fn messages_empty_reports_match_json_stream_and_retained_views_without_loss() {
+    let part = json!({"type":"output_text","text":"partial","annotations":[],"logprobs":[]});
     let item = json!({"id":"msg","type":"message","role":"assistant","status":"incomplete","content":[part]});
     for (hints, allowed) in [
         (json!({}), true),
@@ -255,11 +255,11 @@ fn messages_null_metadata_matches_json_stream_and_retained_views() {
                         .evidence
                         .entries
                         .iter()
-                        .filter(|e| e.view == view
-                            && e.effect.rule() == "messages.omit-null-response-metadata.v1"
-                            && e.effect.field() == "response.context.metadata")
+                        .filter(
+                            |e| e.view == view && e.effect.field() == "response.context.metadata"
+                        )
                         .count(),
-                    usize::from(omitted)
+                    0
                 );
             }
             let mut encoder = ClientAdapter::Messages
@@ -274,9 +274,9 @@ fn messages_null_metadata_matches_json_stream_and_retained_views() {
                 encoder
                     .effects()
                     .iter()
-                    .filter(|e| e.rule() == "messages.omit-null-response-metadata.v1")
+                    .filter(|e| e.field() == "response.context.metadata")
                     .count(),
-                usize::from(omitted)
+                0
             );
             let mut unsupported = observed.metadata.clone();
             unsupported.context.execution.metadata = Presence::Value(Default::default());

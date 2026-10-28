@@ -232,6 +232,17 @@ fn probability_deltas_and_final_metadata_share_the_part_budget() {
     assert!(matches!(
         reduce(
             state.clone(),
+            StreamEvent::LogprobsSnapshot {
+                item,
+                part,
+                logprobs: vec![]
+            }
+        ),
+        Err(EventError::Lifecycle)
+    ));
+    assert!(matches!(
+        reduce(
+            state.clone(),
             StreamEvent::Delta {
                 item,
                 part,
@@ -248,6 +259,10 @@ fn probability_deltas_and_final_metadata_share_the_part_budget() {
         annotations: vec![],
         logprobs: Presence::Value(logprobs),
     };
+    assert!(matches!(
+        reduce(state.clone(), metadata(vec![])),
+        Err(EventError::Lifecycle)
+    ));
     assert!(matches!(
         reduce(
             state.clone(),

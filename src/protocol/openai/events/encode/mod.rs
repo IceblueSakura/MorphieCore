@@ -126,19 +126,6 @@ impl EventEncoder {
                 None
             };
             if self.profile == GenerationApi::Chat
-                && matches!(
-                    self.metadata.context.execution.metadata,
-                    crate::semantic::value::Presence::Null
-                )
-            {
-                if self.contract.reported_facts
-                    == crate::protocol::conversion::generation::ReportedFactPolicy::StrictComplete
-                {
-                    return Err(CodecError::Unsupported(CarrierReason::Metadata));
-                }
-                self.record_loss(projection::ProjectionRule::OmitChatNullMetadata);
-            }
-            if self.profile == GenerationApi::Chat
                 && (self.metadata.context.settings().is_some()
                     || self.metadata.context.instruction_messages.is_some())
             {

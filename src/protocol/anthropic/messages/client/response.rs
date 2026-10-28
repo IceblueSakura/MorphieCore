@@ -3,6 +3,7 @@ use super::projection::{project_reasoning, redacted, tool_input};
 use crate::protocol::failure::CarrierReason;
 use crate::protocol::{CodecError, DecodedResponse, anthropic::messages as wire};
 use crate::semantic::task::generation::*;
+use crate::semantic::value::Presence;
 use serde_json::{Map, Value, json};
 
 /// Render projected execution hints; ClientAdapter owns omission and evidence.
@@ -60,7 +61,9 @@ pub fn encode_client_response(
                 for part in &m.parts {
                     match &part.content {
                         ContentPart::Text(t) => {
-                            if !t.logprobs().is_absent() {
+                            if !t.logprobs().is_absent()
+                                && !matches!(t.logprobs(), Presence::Value(probs) if probs.is_empty())
+                            {
                                 return Err(CodecError::Unsupported(CarrierReason::Unavailable));
                             }
                             if !t.annotations().is_empty() {
@@ -69,7 +72,9 @@ pub fn encode_client_response(
                             content.push(json!({"type":"text","text":t.as_str()}))
                         }
                         ContentPart::Refusal(t) => {
-                            if !t.logprobs().is_absent() {
+                            if !t.logprobs().is_absent()
+                                && !matches!(t.logprobs(), Presence::Value(probs) if probs.is_empty())
+                            {
                                 return Err(CodecError::Unsupported(CarrierReason::Unavailable));
                             }
                             content.push(json!({"type":"text","text":t.as_str()}))

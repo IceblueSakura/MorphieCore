@@ -105,6 +105,262 @@ fn terminal() -> StreamEvent {
         },
     }
 }
+
+#[test]
+fn empty_probability_reports_need_no_messages_carrier_or_loss() {
+    use morphiecore::protocol::{
+        anthropic::messages::{Dialect as MessagesDialect, Profile, TargetContract},
+        native::ReplayTarget,
+    };
+    let codec = GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None);
+    for probs in [
+        vec![],
+        vec![Logprob {
+            token: "answer".into(),
+            logprob: serde_json::Number::from(-1),
+            bytes: Some(b"answer".to_vec()),
+            top_logprobs: Some(vec![]),
+        }],
+    ] {
+        let allowed = probs.is_empty();
+        let decoded=codec.decode_client_request(json!({
+            "model":"m","max_output_tokens":32,"input":[
+                {"role":"user","content":"begin"},
+                {"id":"m","type":"message","role":"assistant","status":"completed","content":[
+                    {"type":"output_text","text":"answer","annotations":[],"logprobs":probs}
+                ]},{"role":"user","content":"continue"}
+            ]
+        }).to_string().as_bytes()).unwrap();
+        let original = decoded.clone();
+        assert_eq!(
+            GenerationRequirements::derive(&decoded.task.semantic).text_metadata,
+            !allowed
+        );
+        if allowed {
+            assert_eq!(
+                Profile::AdaptiveTextTools
+                    .semantic_contract()
+                    .check(&decoded.task.semantic)
+                    .err(),
+                None
+            );
+        }
+        let encoded = TargetContract::new(Profile::AdaptiveTextTools, MessagesDialect::Standard)
+            .encode_request(&decoded, &ReplayTarget::new("synthetic", "m").unwrap());
+        assert_eq!(
+            encoded.is_ok(),
+            allowed,
+            "history: {:?}",
+            encoded.as_ref().err()
+        );
+        if let Ok(encoded) = encoded {
+            assert_eq!(
+                encoded.value["messages"][1],
+                json!({"role":"assistant","content":[{"type":"text","text":"answer"}]})
+            );
+            assert!(encoded.evidence.is_empty());
+        }
+        assert_eq!(decoded, original);
+
+        let mut source = response();
+        let mut items = source.semantic.items().to_vec();
+        let Item::Message(message) = &mut items[0].1 else {
+            unreachable!()
+        };
+        let ContentPart::Text(text) = &message.parts[0].content else {
+            unreachable!()
+        };
+        message.parts[0].content = ContentPart::Text(
+            text.clone()
+                .with_logprobs(Presence::Value(probs.clone()))
+                .unwrap(),
+        );
+        source.semantic = source
+            .semantic
+            .with_items(items)
+            .unwrap()
+            .with_usage(Some(Usage {
+                cached_input_tokens: Some(0),
+                input_cache_write_tokens: Some(0),
+                ..Usage::operation(1, 1, 2)
+            }))
+            .unwrap();
+        let original = source.clone();
+        let wire = encode_client_response(&source, "m");
+        assert_eq!(wire.is_ok(), allowed, "response: {:?}", wire.as_ref().err());
+        if let Ok(wire) = wire {
+            assert_eq!(wire["content"], json!([{"type":"text","text":"answer"}]));
+        }
+        assert_eq!(source, original);
+
+        for event in [
+            StreamEvent::Delta {
+                item: ItemId::new(1),
+                part: PartId::new(1),
+                fragment: String::new(),
+                logprobs: probs.clone(),
+            },
+            StreamEvent::LogprobsSnapshot {
+                item: ItemId::new(1),
+                part: PartId::new(1),
+                logprobs: probs.clone(),
+            },
+            StreamEvent::TextMetadata {
+                item: ItemId::new(1),
+                part: PartId::new(1),
+                annotations: vec![],
+                logprobs: Presence::Value(probs.clone()),
+            },
+        ] {
+            let mut stream = ClientEventEncoder::new("r", "m");
+            for opening in [
+                StreamEvent::Started,
+                crate::events_support::start(1, ItemKind::Message { phase: None }),
+                StreamEvent::PartStarted {
+                    item: ItemId::new(1),
+                    part: PartId::new(1),
+                    kind: PartKind::Text,
+                },
+                StreamEvent::Delta {
+                    item: ItemId::new(1),
+                    part: PartId::new(1),
+                    fragment: "answer".into(),
+                    logprobs: vec![],
+                },
+            ] {
+                stream.encode(&opening).unwrap();
+            }
+            if matches!(event, StreamEvent::TextMetadata { .. }) {
+                stream
+                    .encode(&StreamEvent::ValueFinished {
+                        item: ItemId::new(1),
+                        part: PartId::new(1),
+                    })
+                    .unwrap();
+            }
+            let result = stream.encode(&event);
+            assert_eq!(result.is_ok(), allowed, "{event:?}");
+            if !allowed {
+                assert_eq!(
+                    result.unwrap_err(),
+                    CodecError::Unsupported(
+                        morphiecore::protocol::failure::CarrierReason::Unavailable
+                    )
+                );
+                assert!(stream.encode(&terminal()).is_err());
+            } else {
+                if !matches!(event, StreamEvent::TextMetadata { .. }) {
+                    stream
+                        .encode(&StreamEvent::ValueFinished {
+                            item: ItemId::new(1),
+                            part: PartId::new(1),
+                        })
+                        .unwrap();
+                }
+                for closing in [
+                    StreamEvent::PartFinished {
+                        item: ItemId::new(1),
+                        part: PartId::new(1),
+                    },
+                    crate::events_support::close(1, ItemLifecycle::Completed),
+                    StreamEvent::Progress(InteractionProgress::TurnFinished),
+                    StreamEvent::Usage(Usage {
+                        cached_input_tokens: Some(0),
+                        input_cache_write_tokens: Some(0),
+                        ..Usage::operation(1, 1, 2)
+                    }),
+                    terminal(),
+                ] {
+                    stream.encode(&closing).unwrap();
+                }
+                stream.finish().unwrap();
+            }
+        }
+    }
+}
+
+#[test]
+fn messages_empty_probabilities_preserve_null_and_refusal_boundaries() {
+    use morphiecore::semantic::value::Text;
+    for refusal in [false, true] {
+        for (logprobs, allowed) in [
+            (Presence::Absent, true),
+            (Presence::Null, false),
+            (Presence::Value(vec![]), true),
+            (
+                Presence::Value(vec![Logprob {
+                    token: "answer".into(),
+                    logprob: (-1).into(),
+                    bytes: None,
+                    top_logprobs: None,
+                }]),
+                false,
+            ),
+        ] {
+            let mut source = response();
+            let mut items = source.semantic.items().to_vec();
+            let Item::Message(message) = &mut items[0].1 else {
+                unreachable!()
+            };
+            let text = Text::new("answer", "fixture", 64).unwrap();
+            message.parts[0].content = if refusal {
+                ContentPart::Refusal(RefusalContent::new(text, logprobs.clone()).unwrap())
+            } else {
+                ContentPart::Text(TextContent::new(text, vec![], logprobs.clone()).unwrap())
+            };
+            source.semantic = source
+                .semantic
+                .with_items(items)
+                .unwrap()
+                .with_usage(Some(Usage {
+                    cached_input_tokens: Some(0),
+                    input_cache_write_tokens: Some(0),
+                    ..Usage::operation(1, 1, 2)
+                }))
+                .unwrap();
+            let original = source.clone();
+            let requirements = GenerationResponseRequirements::derive(&source.semantic);
+            assert_eq!(requirements.logprobs, !allowed);
+            assert_eq!(requirements.text_metadata, !allowed);
+            assert_eq!(encode_client_response(&source, "m").is_ok(), allowed);
+            assert_eq!(source, original);
+            let mut stream = ClientEventEncoder::new("r", "m");
+            for event in [
+                StreamEvent::Started,
+                crate::events_support::start(1, ItemKind::Message { phase: None }),
+                StreamEvent::PartStarted {
+                    item: ItemId::new(1),
+                    part: PartId::new(1),
+                    kind: if refusal {
+                        PartKind::Refusal
+                    } else {
+                        PartKind::Text
+                    },
+                },
+                StreamEvent::Delta {
+                    item: ItemId::new(1),
+                    part: PartId::new(1),
+                    fragment: "answer".into(),
+                    logprobs: vec![],
+                },
+                StreamEvent::ValueFinished {
+                    item: ItemId::new(1),
+                    part: PartId::new(1),
+                },
+            ] {
+                stream.encode(&event).unwrap();
+            }
+            let metadata = StreamEvent::TextMetadata {
+                item: ItemId::new(1),
+                part: PartId::new(1),
+                annotations: vec![],
+                logprobs,
+            };
+            assert_eq!(stream.encode(&metadata).is_ok(), allowed);
+        }
+    }
+}
+
 #[test]
 fn content_cache_null_defaults_do_not_erase_business_values_or_invent_boundaries() {
     use morphiecore::protocol::{anthropic::messages::Profile as Messages, native::ReplayTarget};

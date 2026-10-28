@@ -318,7 +318,7 @@ fn a_stream_cannot_switch_target_policy_after_publication() {
 }
 
 #[test]
-fn chat_stream_omits_only_null_metadata_under_the_selected_report_policy() {
+fn chat_stream_null_metadata_is_lossless_even_under_strict_reporting() {
     use morphiecore::{
         protocol::{conversion::generation::ReportedFactPolicy, openai::events::EventEncoder},
         semantic::value::Presence,
@@ -333,7 +333,7 @@ fn chat_stream_omits_only_null_metadata_under_the_selected_report_policy() {
         encoder
             .projection()
             .iter()
-            .any(|e| e.rule() == "chat.omit-null-stream-metadata.v1")
+            .all(|e| e.field() != "response.context.metadata")
     );
     let source = response();
     let static_target = lower_response(
@@ -356,14 +356,29 @@ fn chat_stream_omits_only_null_metadata_under_the_selected_report_policy() {
     let mut encoder = EventEncoder::new(GenerationApi::Chat, meta.clone())
         .unwrap()
         .with_contract(strict.clone());
-    assert!(encoder.encode(&StreamEvent::Started, &fidelity).is_err());
-    assert!(encoder.finish().is_err());
+    for event in text_events() {
+        encoder.encode(&event, &fidelity).unwrap();
+    }
+    assert!(
+        encoder
+            .projection()
+            .iter()
+            .all(|e| e.field() != "response.context.metadata")
+    );
     let mut encoder = EventEncoder::new(GenerationApi::Chat, metadata())
         .unwrap()
         .with_contract(strict);
     encoder.encode(&StreamEvent::Started, &fidelity).unwrap();
     encoder.update_metadata(meta.clone()).unwrap();
-    assert!(encoder.encode(&text_events()[1], &fidelity).is_err());
+    for event in text_events().into_iter().skip(1) {
+        encoder.encode(&event, &fidelity).unwrap();
+    }
+    assert!(
+        encoder
+            .projection()
+            .iter()
+            .all(|e| e.field() != "response.context.metadata")
+    );
 
     meta.context.execution.metadata = Presence::Value(Default::default());
     assert!(EventEncoder::new(GenerationApi::Chat, meta.clone()).is_err());
@@ -373,7 +388,7 @@ fn chat_stream_omits_only_null_metadata_under_the_selected_report_policy() {
         encoder
             .projection()
             .iter()
-            .all(|e| e.rule() != "chat.omit-null-stream-metadata.v1")
+            .all(|e| e.field() != "response.context.metadata")
     );
     assert!(encoder.update_metadata(meta).is_err());
     assert!(encoder.finish().is_err());

@@ -107,7 +107,7 @@ pub(super) fn project_reasoning(reasoning: &ReasoningItem) -> Result<&ReasoningI
     }
 }
 
-/// Reported null metadata is the only selected execution-hint omission.
+/// Reported null metadata is equivalent to absence on the Messages target.
 pub(crate) fn validate_execution(
     execution: &crate::semantic::context::ExecutionHints,
 ) -> Result<(), CodecError> {
@@ -189,15 +189,6 @@ pub(crate) fn metadata_losses(
     metadata: &crate::protocol::ResponseMetadata,
 ) -> Vec<crate::protocol::conversion::generation::Effect> {
     let mut losses = vec![];
-    if matches!(metadata.context.execution.metadata, Presence::Null) {
-        losses.push(crate::protocol::conversion::generation::Effect::Field {
-            rule: "messages.omit-null-response-metadata.v1".into(),
-            field: "response.context.metadata".into(),
-            boundary: "response.project".into(),
-            change: "omit".into(),
-            owner: crate::protocol::conversion::generation::Owner::Root,
-        });
-    }
     if metadata
         .context
         .reports

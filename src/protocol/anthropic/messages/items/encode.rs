@@ -24,7 +24,13 @@ pub(in crate::protocol::anthropic::messages) fn item_blocks(
             m.parts
                 .iter()
                 .map(|p| match &p.content {
-                    ContentPart::Text(t) if t.is_plain() => Ok(Block::Text(t.as_str().into())),
+                    ContentPart::Text(t)
+                        if t.annotations().is_empty()
+                            && (t.logprobs().is_absent()
+                                || matches!(t.logprobs(), Presence::Value(probs) if probs.is_empty())) =>
+                    {
+                        Ok(Block::Text(t.as_str().into()))
+                    }
                     ContentPart::Resource(r) if m.role == MessageRole::User => {
                         Ok(Block::Media(media(r)?))
                     }

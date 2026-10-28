@@ -153,10 +153,13 @@ impl GenerationRequirements {
                         match &p.content {
                             ContentPart::Text(t) => {
                                 x.text_part_count += 1;
-                                x.text_metadata |= !t.is_plain();
+                                x.text_metadata |= !t.annotations().is_empty()
+                                    || !t.logprobs().is_absent()
+                                        && !matches!(t.logprobs(), Presence::Value(probs) if probs.is_empty());
                             }
                             ContentPart::Refusal(t) => {
-                                x.text_metadata |= !t.logprobs().is_absent();
+                                x.text_metadata |= !t.logprobs().is_absent()
+                                    && !matches!(t.logprobs(), Presence::Value(probs) if probs.is_empty());
                             }
                             ContentPart::Audio(_) | ContentPart::AudioReference(_) => {
                                 x.audio_history = true
@@ -301,12 +304,16 @@ impl GenerationResponseRequirements {
                     for part in &message.parts {
                         match &part.content {
                             ContentPart::Text(text) => {
-                                q.text_metadata |= !text.is_plain();
-                                q.logprobs |= !text.logprobs().is_absent();
+                                let probabilities = !text.logprobs().is_absent()
+                                    && !matches!(text.logprobs(), Presence::Value(probs) if probs.is_empty());
+                                q.text_metadata |= !text.annotations().is_empty() || probabilities;
+                                q.logprobs |= probabilities;
                             }
                             ContentPart::Refusal(text) => {
-                                q.text_metadata |= !text.logprobs().is_absent();
-                                q.logprobs |= !text.logprobs().is_absent();
+                                let probabilities = !text.logprobs().is_absent()
+                                    && !matches!(text.logprobs(), Presence::Value(probs) if probs.is_empty());
+                                q.text_metadata |= probabilities;
+                                q.logprobs |= probabilities;
                             }
                             ContentPart::Resource(_) => {}
                             ContentPart::Audio(_) | ContentPart::AudioReference(_) => {

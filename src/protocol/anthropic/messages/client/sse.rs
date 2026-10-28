@@ -452,10 +452,13 @@ impl ClientEventEncoder {
             StreamEvent::Delta { logprobs, .. } if !logprobs.is_empty() => {
                 return Err(CodecError::Unsupported(CarrierReason::Unavailable));
             }
-            StreamEvent::LogprobsSnapshot { .. } => {
+            StreamEvent::LogprobsSnapshot { logprobs, .. } if !logprobs.is_empty() => {
                 return Err(CodecError::Unsupported(CarrierReason::Unavailable));
             }
-            StreamEvent::TextMetadata { logprobs, .. } if !logprobs.is_absent() => {
+            StreamEvent::TextMetadata { logprobs, .. }
+                if !logprobs.is_absent()
+                    && !matches!(logprobs, Presence::Value(probs) if probs.is_empty()) =>
+            {
                 return Err(CodecError::Unsupported(CarrierReason::Unavailable));
             }
             StreamEvent::Delta {
