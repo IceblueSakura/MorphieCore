@@ -1350,6 +1350,88 @@ fn messages_serializes_interleaved_owners_parts_and_delayed_signatures() {
 }
 
 #[test]
+fn incomplete_text_item_closure_matches_terminal_only_delivery_without_completing_source_parts() {
+    use crate::events_support::{apply, incomplete_text_items};
+    let expected = json!([
+        {"type":"text","text":"AC"}, {"type":"text","text":"B"}, {"type":"text","text":"D"},
+    ]);
+    for explicit in [false, true] {
+        let events = incomplete_text_items(explicit);
+        let state = apply(&events).expect("valid incomplete semantic stream");
+        assert!(
+            state
+                .items()
+                .iter()
+                .all(|item| item.parts.iter().all(|part| !part.finished))
+        );
+        let mut decoded = response();
+        decoded.semantic = materialize(&state).unwrap();
+        let source = decoded.clone();
+        let (retained, static_wire) = morphiecore::adapter::ClientAdapter::Messages
+            .snapshot(decoded)
+            .unwrap();
+        assert_eq!(static_wire["content"], expected);
+        assert_eq!(static_wire["stop_reason"], "max_tokens");
+        assert_eq!(retained.semantic.items(), source.semantic.items());
+
+        let mut encoder = ClientEventEncoder::new("r", "m");
+        let mut output = String::new();
+        for event in &events {
+            let frames = encoder.encode(event).unwrap();
+            let wire = frames
+                .iter()
+                .map(|frame| std::str::from_utf8(frame).unwrap())
+                .collect::<String>();
+            if let StreamEvent::ItemFinished { item, .. } = event {
+                if *item == ItemId::new(2) {
+                    assert!(wire.is_empty(), "later owner must wait");
+                } else {
+                    assert_eq!(wire.matches("\"type\":\"content_block_stop\"").count(), 3);
+                    assert!(!wire.contains("message_stop"));
+                }
+            }
+            output.push_str(&wire);
+        }
+        encoder.finish().unwrap();
+        let folded = crate::messages_stream::messages_stream_body(&output);
+        assert_eq!(folded["content"], expected);
+        assert_eq!(folded["stop_reason"], "max_tokens");
+
+        let mut truncated = ClientEventEncoder::new("r", "m");
+        for event in &events[..events.len() - 1] {
+            truncated.encode(event).unwrap();
+        }
+        assert!(
+            truncated.finish().is_err(),
+            "block closure is not a successful terminal"
+        );
+    }
+    let mut invalid = incomplete_text_items(true);
+    let close = invalid
+        .iter_mut()
+        .find(|event| matches!(event, StreamEvent::ItemFinished { .. }))
+        .unwrap();
+    let StreamEvent::ItemFinished { status, .. } = close else {
+        unreachable!()
+    };
+    *status = ItemLifecycle::Completed;
+    assert!(
+        apply(&invalid).is_err(),
+        "completed items still require finished parts"
+    );
+    let mut encoder = ClientEventEncoder::new("r", "m");
+    for event in &invalid {
+        let result = encoder.encode(event);
+        if matches!(event, StreamEvent::ItemFinished { .. }) {
+            assert!(result.is_err());
+            assert!(encoder.finish().is_err());
+            break;
+        }
+        result.unwrap();
+    }
+}
+
+#[test]
 fn messages_preserves_parts_and_rejects_unrepresentable_calls() {
     let mut response = response();
     let mut usage = Usage::operation(0, 3, 3);

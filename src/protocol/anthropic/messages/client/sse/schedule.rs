@@ -2,7 +2,7 @@
 //! An owner stays ahead of its successors until its actual finish; text parts have
 //! the same barrier independently. Only blocked events are retained between calls.
 use super::*;
-use crate::semantic::task::generation::{MAX_ITEMS, MAX_TOTAL_BYTES};
+use crate::semantic::task::generation::{ItemLifecycle, MAX_ITEMS, MAX_TOTAL_BYTES};
 use std::collections::VecDeque;
 
 #[derive(Clone, Copy)]
@@ -65,7 +65,7 @@ fn bytes(event: &StreamEvent) -> usize {
 
 pub(super) enum Ready {
     Event(Box<StreamEvent>),
-    // EOF-authorized wire closure; never synthesize semantic completion events.
+    // Observed incomplete-owner or EOF wire closure, never semantic completion.
     ClosePart(ItemId, PartId),
     CloseOwner(ItemId),
 }
@@ -215,8 +215,17 @@ impl Schedule {
         {
             return Err(CodecError::Unsupported(CarrierReason::Replay));
         }
-        if part.is_none() && text && owner.parts.values().any(|p| !p.closed) {
-            // Preserve explicit incomplete-item admission; terminal-only closure is separate.
+        if part.is_none()
+            && text
+            && owner.parts.values().any(|p| !p.closed)
+            && !matches!(
+                event,
+                StreamEvent::ItemFinished {
+                    status: ItemLifecycle::Incomplete,
+                    ..
+                }
+            )
+        {
             return Err(CodecError::invalid());
         }
         self.charge_event(event, limits)?;
@@ -266,6 +275,14 @@ impl Schedule {
     pub(super) fn pop(&mut self, terminal: bool) -> Option<Ready> {
         let item = *self.order.front()?;
         let owner = self.owners.get_mut(&item).expect("ordered owner");
+        let close_parts = terminal
+            || matches!(
+                owner.finish.as_deref(),
+                Some(StreamEvent::ItemFinished {
+                    status: ItemLifecycle::Incomplete,
+                    ..
+                })
+            );
         let event = if let Some(start) = owner.start.take() {
             start
         } else if let Some(event) = pop(&mut owner.events) {
@@ -278,7 +295,7 @@ impl Schedule {
                     self.events -= 1;
                     return Some(Ready::Event(event));
                 }
-                if !pending.closed && !terminal {
+                if !pending.closed && !close_parts {
                     return None;
                 }
                 let closed = pending.closed;

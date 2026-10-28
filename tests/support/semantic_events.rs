@@ -182,3 +182,45 @@ pub fn interleaved_messages(replay: ItemReplay) -> Vec<StreamEvent> {
     events.push(terminal(StreamTerminal::Completed));
     events
 }
+
+/// Incomplete owners may finish without value/part completion events.
+pub fn incomplete_text_items(explicit_finish: bool) -> Vec<StreamEvent> {
+    let begin = |item, part| StreamEvent::PartStarted {
+        item: ItemId::new(item),
+        part: PartId::new(part),
+        kind: PartKind::Text,
+    };
+    let delta = |item, part, fragment: &str| StreamEvent::Delta {
+        item: ItemId::new(item),
+        part: PartId::new(part),
+        fragment: fragment.into(),
+        logprobs: vec![],
+    };
+    let mut usage = Usage::operation(1, 2, 3);
+    usage.input_relation = InputTokenRelation::ExcludesCacheReadAndWrite;
+    let mut events = vec![
+        StreamEvent::Started,
+        StreamEvent::Usage(usage),
+        start(1, ItemKind::Message { phase: None }),
+        begin(1, 1),
+        delta(1, 1, "A"),
+        start(2, ItemKind::Message { phase: None }),
+        begin(2, 2),
+        delta(2, 2, "D"),
+    ];
+    if explicit_finish {
+        events.push(close(2, ItemLifecycle::Incomplete));
+    }
+    events.extend([begin(1, 3), delta(1, 3, "B"), delta(1, 1, "C")]);
+    if explicit_finish {
+        events.push(close(1, ItemLifecycle::Incomplete));
+    }
+    events.push(StreamEvent::Terminal {
+        terminal: StreamTerminal::Incomplete,
+        details: TerminalDetails {
+            incomplete: Some(IncompleteReason::MaxOutputTokens),
+            ..Default::default()
+        },
+    });
+    events
+}

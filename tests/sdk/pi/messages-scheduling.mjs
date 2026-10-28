@@ -55,4 +55,21 @@ const replayed = await client.messages.create({ model: 'schedule', max_tokens: 6
   ] },
 ] });
 assert.equal(replayed.content[0].text, 'replayed');
+const incomplete = client.messages.stream({ model: 'schedule-incomplete', max_tokens: 64,
+  messages: [{ role: 'user', content: 'go' }] });
+const partialText = [], partialBlocks = [];
+incomplete.on('text', (text) => partialText.push(text));
+incomplete.on('contentBlock', (block) => partialBlocks.push(structuredClone(block)));
+const partial = await incomplete.finalMessage();
+assert.equal(partial.stop_reason, 'max_tokens');
+assert.deepEqual(partialBlocks, partial.content);
+assert.deepEqual(partial.content, [
+  { type: 'text', text: 'AC' }, { type: 'text', text: 'B' }, { type: 'text', text: 'D' },
+]);
+assert.equal(partialText.join(''), 'ACBD');
+const continued = await client.messages.create({ model: 'schedule-incomplete', max_tokens: 64, messages: [
+  { role: 'user', content: 'go' }, { role: 'assistant', content: partial.content },
+  { role: 'user', content: 'continue' },
+] });
+assert.equal(continued.content[0].text, 'replayed');
 console.log('Messages TypeScript callbacks and returned history passed');

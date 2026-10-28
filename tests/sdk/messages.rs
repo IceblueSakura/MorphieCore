@@ -50,7 +50,10 @@ async fn handle(
     assert_eq!(versions.len(), 1);
     assert_eq!(versions[0], "2026-10-21");
     let wire: Value = serde_json::from_slice(&body).unwrap();
-    if wire["model"] == "schedule" {
+    if matches!(
+        wire["model"].as_str(),
+        Some("schedule" | "schedule-incomplete")
+    ) {
         return scheduled_history(&seen, &body, &wire);
     }
     if wire["model"] == "cross-model" {
@@ -311,11 +314,11 @@ async fn sdk_messages_native_controls_history_and_partial_stream() {
         "synthetic Messages SDK failure: {}",
         String::from_utf8_lossy(&output.stderr)
     );
-    assert_eq!(*observed.lock().unwrap(), 11);
+    assert_eq!(*observed.lock().unwrap(), 13);
     let report: Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(
         report,
-        json!({"requests":11,"partial":true,"refusal_details":true,"unsigned_replay_rejected":true,"scheduled_history":true})
+        json!({"requests":13,"partial":true,"refusal_details":true,"unsigned_replay_rejected":true,"scheduled_history":true,"incomplete_history":true})
     );
     let mut node = tokio::process::Command::new("node");
     node.env_clear()
@@ -334,7 +337,7 @@ async fn sdk_messages_native_controls_history_and_partial_stream() {
         "Messages TypeScript callbacks: {}",
         String::from_utf8_lossy(&output.stderr)
     );
-    assert_eq!(*observed.lock().unwrap(), 13);
+    assert_eq!(*observed.lock().unwrap(), 17);
     guard.0.abort();
     let _ = server.await;
 }
@@ -342,65 +345,88 @@ async fn sdk_messages_native_controls_history_and_partial_stream() {
 fn scheduled_history(seen: &Mutex<usize>, body: &[u8], wire: &Value) -> Response {
     use anthropic::messages::client::{encode_client_response, sse::ClientEventEncoder};
     *seen.lock().unwrap() += 1;
-    assert!(*seen.lock().unwrap() <= 13);
-    let target = ReplayTarget::new("synthetic-schedule", "schedule").unwrap();
-    let expected = json!([
-        {"type":"thinking","thinking":"Plan","signature":"synthetic-native-signature"},
-        {"type":"text","text":"AC"},{"type":"text","text":"B"},
-        {"type":"tool_use","id":"first","name":"lookup","input":{"n":1}},
-        {"type":"tool_use","id":"second","name":"lookup","input":{"n":2}},
-    ]);
+    assert!(*seen.lock().unwrap() <= 17);
+    let model = wire["model"].as_str().unwrap();
+    let incomplete = model == "schedule-incomplete";
+    let target = ReplayTarget::new("synthetic-schedule", model).unwrap();
+    let expected = if incomplete {
+        json!([
+            {"type":"text","text":"AC"},{"type":"text","text":"B"},{"type":"text","text":"D"},
+        ])
+    } else {
+        json!([
+            {"type":"thinking","thinking":"Plan","signature":"synthetic-native-signature"},
+            {"type":"text","text":"AC"},{"type":"text","text":"B"},
+            {"type":"tool_use","id":"first","name":"lookup","input":{"n":1}},
+            {"type":"tool_use","id":"second","name":"lookup","input":{"n":2}},
+        ])
+    };
     if wire["messages"].as_array().unwrap().len() > 1 {
         let mut request = anthropic::messages::client::decode_client_request(body).unwrap();
         morphiecore::execution::replay::open_from_client(&mut request).unwrap();
         let mut caps = TargetContract::new(Profile::AdaptiveTextTools, Dialect::Standard);
         caps.semantics = Profile::AdaptiveTextTools.representation_contract();
         let native = caps.encode_request(&request, &target).unwrap();
+        let feedback = if incomplete {
+            json!([{"type":"text","text":"continue"}])
+        } else {
+            json!([
+                {"type":"tool_result","tool_use_id":"second","content":"two"},
+                {"type":"tool_result","tool_use_id":"first","content":"one"},
+            ])
+        };
         assert_eq!(
             native.value["messages"],
             json!([
                 {"role":"user","content":[{"type":"text","text":"go"}]},
                 {"role":"assistant","content":expected},
-                {"role":"user","content":[
-                    {"type":"tool_result","tool_use_id":"second","content":"two"},
-                    {"type":"tool_result","tool_use_id":"first","content":"one"},
-                ]},
+                {"role":"user","content":feedback},
             ])
         );
         return Response::builder().header("content-type", "application/json")
-            .body(Body::from(json!({"id":"replayed","type":"message","role":"assistant","model":"schedule",
+            .body(Body::from(json!({"id":"replayed","type":"message","role":"assistant","model":model,
                 "content":[{"type":"text","text":"replayed"}],"stop_reason":"end_turn","stop_sequence":null,
                 "usage":{"input_tokens":1,"output_tokens":1}}).to_string())).unwrap();
     }
     assert_eq!(wire["stream"], true);
     assert_eq!(wire["messages"], json!([{"role":"user","content":"go"}]));
     let mut decoded = Profile::AdaptiveTextTools.decode_generation_response(
-        json!({"id":"scheduled","type":"message","role":"assistant","model":"schedule","content":expected,
-            "stop_reason":"tool_use","stop_sequence":null,"usage":{"input_tokens":1,"output_tokens":2}})
+        json!({"id":"scheduled","type":"message","role":"assistant","model":model,"content":expected,
+            "stop_reason":if incomplete {"max_tokens"} else {"tool_use"},"stop_sequence":null,"usage":{"input_tokens":1,"output_tokens":2}})
             .to_string().as_bytes(), LocalScope::new(2), &target).unwrap();
     morphiecore::execution::replay::seal_for_client(
         &mut decoded,
         &morphiecore::protocol::replay_envelope::CLIENT_ORIGIN,
     )
     .unwrap();
-    let Item::Reasoning(reasoning) = &decoded.semantic.items()[0].1 else {
-        panic!("reasoning")
+    let events = if incomplete {
+        crate::events_support::incomplete_text_items(true)
+    } else {
+        let Item::Reasoning(reasoning) = &decoded.semantic.items()[0].1 else {
+            panic!("reasoning")
+        };
+        crate::events_support::interleaved_messages(ItemReplay {
+            value: reasoning.replay.clone().unwrap(),
+            origin: None,
+        })
     };
-    let events = crate::events_support::interleaved_messages(ItemReplay {
-        value: reasoning.replay.clone().unwrap(),
-        origin: None,
-    });
     let mut source = StreamState::new();
-    let mut encoder = ClientEventEncoder::new("scheduled", "schedule");
+    let mut encoder = ClientEventEncoder::new("scheduled", model);
     let mut output = vec![];
     for event in events {
         source = reduce(source, event.clone()).unwrap();
         output.extend(encoder.encode(&event).unwrap().into_iter().flatten());
     }
     encoder.finish().unwrap();
-    assert_eq!(materialize(&source).unwrap().items().len(), 4);
-    let static_wire = encode_client_response(&decoded, "schedule").unwrap();
-    assert_eq!(static_wire["content"].as_array().unwrap().len(), 5);
+    assert_eq!(
+        materialize(&source).unwrap().items().len(),
+        if incomplete { 2 } else { 4 }
+    );
+    let static_wire = encode_client_response(&decoded, model).unwrap();
+    assert_eq!(
+        static_wire["content"].as_array().unwrap().len(),
+        if incomplete { 3 } else { 5 }
+    );
     Response::builder()
         .header("content-type", "text/event-stream")
         .body(Body::from(output))

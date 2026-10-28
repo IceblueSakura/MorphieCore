@@ -52,7 +52,7 @@ This page owns current scope, priorities, dependencies, and exit gates. [Archite
 
 ## Current status
 
-**Active work (2026-10-28):** The [three-protocol fidelity repair](#three-protocol-fidelity-repair) now focuses on bounded token-budget rule selection and remaining directional delivery contracts. Messages ordered block delivery is implemented; source disagreements and remaining carrier restrictions have explicit dispositions rather than an open-ended feature queue.
+**Active work (2026-10-28):** The [three-protocol fidelity repair](#three-protocol-fidelity-repair) now focuses on the Messages null-metadata choice and remaining directional delivery contracts. Ordered block delivery and incomplete text-owner closure are implemented. Budget adjustment is deferred: no qualified active conflict was identified in the reviewed catalog/examples. Source disagreements and remaining carrier restrictions have explicit dispositions rather than an open-ended feature queue.
 
 **Completed baseline:** Generation Text correctness/lifecycle reviews, domain evidence, telemetry and standard request boundary repairs preceded the 2026-10-27 parsing/stream corrections. Single Messages signature validation, narrow Chat text/token-cap status projection and original-request Responses metadata echo are implemented. Their offline, SDK and installed-client evidence is separate from live acceptance; see [verification gates](development.md#verification-gates). Stage 4 retains equal priority across its API families.
 
@@ -98,11 +98,10 @@ Selected on 2026-10-27, this workstream addresses semantic fidelity across stand
 
 | Slice | Focus | Exit criteria |
 |---|---|---|
-| 1. Token-budget rule selection | Trace an actual supported target conflict; compare default-ceiling expansion with derived-preset adjustment under the [budget proposal](api-expansion-design.md#independent-output-ceilings-unselected) | Select target, source of each limit, useful reserve, maximum, provenance and infeasible behavior before implementation; otherwise record a deferred disposition |
-| 2. Affected delivery contracts | Resolve concrete lifecycle/report, text/refusal/annotation grouping or field-echo failures exposed by changed paths | Independent directional expectations; no blanket settings echo, custom-input wrapping or new loss policy |
-| 3. Acceptance and closure | Extend existing offline and SDK cases, then current installed-client loops and bounded Provider checks where live behavior is claimed | Separate synthetic and live evidence; retained rejection/deferred cases remain explicit; no full model/client matrix |
+| 1. Affected delivery contracts | Select the [Messages null-metadata rule](api-expansion-design.md#messages-null-response-metadata-unselected); resolve other concrete lifecycle/report, grouping or field-echo failures exposed by changed paths | Independent directional expectations; no blanket settings echo, custom-input wrapping or unselected loss policy |
+| 2. Acceptance and closure | Extend existing offline and SDK cases, then current installed-client loops and bounded Provider checks where live behavior is claimed | Separate synthetic and live evidence; retained rejection/deferred cases remain explicit; no full model/client matrix |
 
-Budget and delivery-contract investigation are independent. Source qualification below is bounded and may proceed alongside them. Budget research does not reopen paused Google expansion, activate a binding, or require a new universal budget model. [Architecture](architecture.md#semantic-stream-normalization) owns implemented Messages scheduling; [Development](development.md#sdk-loopback-gate) owns its directional consumer checks.
+Budget deferral does not block delivery repair. Reopening budget research does not reopen paused Google expansion, activate a binding, or require a new universal budget model. [Architecture](architecture.md#semantic-stream-normalization) owns implemented Messages scheduling and incomplete-owner closure; [Development](development.md#sdk-loopback-gate) owns their directional consumer checks.
 
 ### Remaining issue dispositions
 
@@ -112,8 +111,8 @@ The [2026-10-28 source and feasibility recheck](refs/2026-10-27-client-ir-bounda
 |---|---|---|
 | Chat custom-tool SSE | Retain standard rejection; investigate upstream intake and downstream delivery separately | Official event contract resolves the disagreement, or a separately selected dialect/client contract supplies independent wire/consumer evidence |
 | Nonempty Messages tool opener plus nonempty fragments | Retain rejection, including a complete-fragment negative regression; complete opener plus zero-byte deltas remains supported | Authoritative replacement/merge semantics exist |
-| Explicit incomplete text-item finish with unfinished parts | Existing Messages rejection retained; terminal-only incomplete closure remains supported | Review the minimal item-finish/terminal contrast and agree static/SSE/history behavior |
-| Responses execution metadata to Messages | Non-absent metadata, including required `metadata:null`, still rejects at delivery setup | Select a Messages-specific omission or exact carrier; the existing Chat null-omission rule does not apply |
+| Responses execution metadata to Messages | Non-absent metadata, including required `metadata:null`, still rejects at delivery setup | Select the proposed null-only JSON/SSE omission or retain rejection; maps and other execution hints remain unsupported |
+| Bounded token-budget adjustment | Deferred: catalog/example review identified no qualified active conflict; preserve native effort and existing validation | An authorized target plus failing request, limit provenance, useful reserve, finite maximum and infeasible behavior qualify a target-local rule; private deployment activation was not inspected |
 | `user:null`, Chat refusal requiredness, Responses image-detail default | Preserve current intake; optional egress canonicalization is not an established defect | Service contract clarifies the discrepancy or a selected strict consumer exposes a concrete failure |
 | Legacy function carriers | Defer; preserve explicit rejection | A real client needs a constrained association/default/conflict/history contract |
 | Broader settings echo and richer output grouping | Case-specific design only | A concrete failure has an exact mapping or a separately selected named loss; preserve report authority and content-coordinate ownership |
