@@ -1,0 +1,657 @@
+{
+  "source": "@earendil-works/pi-ai@1.4.0",
+  "requests": {
+    "chat": {
+      "text": {
+        "model": "synthetic-model",
+        "messages": [
+          {
+            "role": "system",
+            "content": "Repair the synthetic configuration."
+          },
+          {
+            "role": "user",
+            "content": "Repair configuration; preserve naïve 🧪 and exact IDs."
+          }
+        ],
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        },
+        "store": false,
+        "max_completion_tokens": 16384
+      },
+      "tools": {
+        "model": "synthetic-model",
+        "messages": [
+          {
+            "role": "system",
+            "content": "Repair the synthetic configuration."
+          },
+          {
+            "role": "user",
+            "content": "Repair configuration; preserve naïve 🧪 and exact IDs."
+          }
+        ],
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        },
+        "store": false,
+        "max_completion_tokens": 16384,
+        "tools": [
+          {
+            "type": "function",
+            "function": {
+              "name": "read",
+              "description": "Inspect or repair a synthetic configuration.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "path": {
+                    "type": "string"
+                  },
+                  "serial": {
+                    "type": "integer"
+                  },
+                  "label": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "type": "function",
+            "function": {
+              "name": "locate",
+              "description": "Inspect or repair a synthetic configuration.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "glob": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "type": "function",
+            "function": {
+              "name": "patch",
+              "description": "Inspect or repair a synthetic configuration.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "path": {
+                    "type": "string"
+                  },
+                  "value": {
+                    "type": "string"
+                  },
+                  "revision": {
+                    "type": "integer"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "type": "function",
+            "function": {
+              "name": "verify",
+              "description": "Inspect or repair a synthetic configuration.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "suite": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        ]
+      },
+      "reasoning": {
+        "model": "synthetic-model",
+        "messages": [
+          {
+            "role": "developer",
+            "content": "Repair the synthetic configuration."
+          },
+          {
+            "role": "user",
+            "content": "Repair configuration; preserve naïve 🧪 and exact IDs."
+          }
+        ],
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        },
+        "store": false,
+        "max_completion_tokens": 16384,
+        "tools": [
+          {
+            "type": "function",
+            "function": {
+              "name": "read",
+              "description": "Inspect or repair a synthetic configuration.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "path": {
+                    "type": "string"
+                  },
+                  "serial": {
+                    "type": "integer"
+                  },
+                  "label": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "type": "function",
+            "function": {
+              "name": "locate",
+              "description": "Inspect or repair a synthetic configuration.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "glob": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "type": "function",
+            "function": {
+              "name": "patch",
+              "description": "Inspect or repair a synthetic configuration.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "path": {
+                    "type": "string"
+                  },
+                  "value": {
+                    "type": "string"
+                  },
+                  "revision": {
+                    "type": "integer"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "type": "function",
+            "function": {
+              "name": "verify",
+              "description": "Inspect or repair a synthetic configuration.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "suite": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        ],
+        "reasoning_effort": "medium"
+      }
+    },
+    "responses": {
+      "text": {
+        "model": "synthetic-model",
+        "input": [
+          {
+            "role": "system",
+            "content": "Repair the synthetic configuration."
+          },
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "input_text",
+                "text": "Repair configuration; preserve naïve 🧪 and exact IDs."
+              }
+            ]
+          }
+        ],
+        "stream": true,
+        "prompt_cache_key": "synthetic-session",
+        "store": false,
+        "max_output_tokens": 16384
+      },
+      "tools": {
+        "model": "synthetic-model",
+        "input": [
+          {
+            "role": "system",
+            "content": "Repair the synthetic configuration."
+          },
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "input_text",
+                "text": "Repair configuration; preserve naïve 🧪 and exact IDs."
+              }
+            ]
+          }
+        ],
+        "stream": true,
+        "prompt_cache_key": "synthetic-session",
+        "store": false,
+        "max_output_tokens": 16384,
+        "tools": [
+          {
+            "type": "function",
+            "name": "read",
+            "description": "Inspect or repair a synthetic configuration.",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string"
+                },
+                "serial": {
+                  "type": "integer"
+                },
+                "label": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          {
+            "type": "function",
+            "name": "locate",
+            "description": "Inspect or repair a synthetic configuration.",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "glob": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          {
+            "type": "function",
+            "name": "patch",
+            "description": "Inspect or repair a synthetic configuration.",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string"
+                },
+                "value": {
+                  "type": "string"
+                },
+                "revision": {
+                  "type": "integer"
+                }
+              }
+            }
+          },
+          {
+            "type": "function",
+            "name": "verify",
+            "description": "Inspect or repair a synthetic configuration.",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "suite": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "reasoning": {
+        "model": "synthetic-model",
+        "input": [
+          {
+            "role": "developer",
+            "content": "Repair the synthetic configuration."
+          },
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "input_text",
+                "text": "Repair configuration; preserve naïve 🧪 and exact IDs."
+              }
+            ]
+          }
+        ],
+        "stream": true,
+        "prompt_cache_key": "synthetic-session",
+        "store": false,
+        "max_output_tokens": 16384,
+        "tools": [
+          {
+            "type": "function",
+            "name": "read",
+            "description": "Inspect or repair a synthetic configuration.",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string"
+                },
+                "serial": {
+                  "type": "integer"
+                },
+                "label": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          {
+            "type": "function",
+            "name": "locate",
+            "description": "Inspect or repair a synthetic configuration.",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "glob": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          {
+            "type": "function",
+            "name": "patch",
+            "description": "Inspect or repair a synthetic configuration.",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string"
+                },
+                "value": {
+                  "type": "string"
+                },
+                "revision": {
+                  "type": "integer"
+                }
+              }
+            }
+          },
+          {
+            "type": "function",
+            "name": "verify",
+            "description": "Inspect or repair a synthetic configuration.",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "suite": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        ],
+        "reasoning": {
+          "effort": "medium",
+          "summary": "auto"
+        },
+        "include": [
+          "reasoning.encrypted_content"
+        ]
+      }
+    },
+    "messages": {
+      "text": {
+        "model": "synthetic-model",
+        "messages": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "Repair configuration; preserve naïve 🧪 and exact IDs.",
+                "cache_control": {
+                  "type": "ephemeral"
+                }
+              }
+            ]
+          }
+        ],
+        "max_tokens": 16384,
+        "stream": true,
+        "system": [
+          {
+            "type": "text",
+            "text": "Repair the synthetic configuration.",
+            "cache_control": {
+              "type": "ephemeral"
+            }
+          }
+        ]
+      },
+      "tools": {
+        "model": "synthetic-model",
+        "messages": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "Repair configuration; preserve naïve 🧪 and exact IDs.",
+                "cache_control": {
+                  "type": "ephemeral"
+                }
+              }
+            ]
+          }
+        ],
+        "max_tokens": 16384,
+        "stream": true,
+        "system": [
+          {
+            "type": "text",
+            "text": "Repair the synthetic configuration.",
+            "cache_control": {
+              "type": "ephemeral"
+            }
+          }
+        ],
+        "tools": [
+          {
+            "name": "read",
+            "description": "Inspect or repair a synthetic configuration.",
+            "eager_input_streaming": true,
+            "input_schema": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string"
+                },
+                "serial": {
+                  "type": "integer"
+                },
+                "label": {
+                  "type": "string"
+                }
+              },
+              "required": []
+            }
+          },
+          {
+            "name": "locate",
+            "description": "Inspect or repair a synthetic configuration.",
+            "eager_input_streaming": true,
+            "input_schema": {
+              "type": "object",
+              "properties": {
+                "glob": {
+                  "type": "string"
+                }
+              },
+              "required": []
+            }
+          },
+          {
+            "name": "patch",
+            "description": "Inspect or repair a synthetic configuration.",
+            "eager_input_streaming": true,
+            "input_schema": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string"
+                },
+                "value": {
+                  "type": "string"
+                },
+                "revision": {
+                  "type": "integer"
+                }
+              },
+              "required": []
+            }
+          },
+          {
+            "name": "verify",
+            "description": "Inspect or repair a synthetic configuration.",
+            "eager_input_streaming": true,
+            "input_schema": {
+              "type": "object",
+              "properties": {
+                "suite": {
+                  "type": "string"
+                }
+              },
+              "required": []
+            },
+            "cache_control": {
+              "type": "ephemeral"
+            }
+          }
+        ]
+      },
+      "reasoning": {
+        "model": "synthetic-model",
+        "messages": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "Repair configuration; preserve naïve 🧪 and exact IDs.",
+                "cache_control": {
+                  "type": "ephemeral"
+                }
+              }
+            ]
+          }
+        ],
+        "max_tokens": 16384,
+        "stream": true,
+        "system": [
+          {
+            "type": "text",
+            "text": "Repair the synthetic configuration.",
+            "cache_control": {
+              "type": "ephemeral"
+            }
+          }
+        ],
+        "tools": [
+          {
+            "name": "read",
+            "description": "Inspect or repair a synthetic configuration.",
+            "eager_input_streaming": true,
+            "input_schema": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string"
+                },
+                "serial": {
+                  "type": "integer"
+                },
+                "label": {
+                  "type": "string"
+                }
+              },
+              "required": []
+            }
+          },
+          {
+            "name": "locate",
+            "description": "Inspect or repair a synthetic configuration.",
+            "eager_input_streaming": true,
+            "input_schema": {
+              "type": "object",
+              "properties": {
+                "glob": {
+                  "type": "string"
+                }
+              },
+              "required": []
+            }
+          },
+          {
+            "name": "patch",
+            "description": "Inspect or repair a synthetic configuration.",
+            "eager_input_streaming": true,
+            "input_schema": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string"
+                },
+                "value": {
+                  "type": "string"
+                },
+                "revision": {
+                  "type": "integer"
+                }
+              },
+              "required": []
+            }
+          },
+          {
+            "name": "verify",
+            "description": "Inspect or repair a synthetic configuration.",
+            "eager_input_streaming": true,
+            "input_schema": {
+              "type": "object",
+              "properties": {
+                "suite": {
+                  "type": "string"
+                }
+              },
+              "required": []
+            },
+            "cache_control": {
+              "type": "ephemeral"
+            }
+          }
+        ],
+        "thinking": {
+          "type": "enabled",
+          "budget_tokens": 8192,
+          "display": "summarized"
+        }
+      }
+    }
+  }
+}

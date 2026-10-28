@@ -2,6 +2,8 @@
 #[cfg(test)]
 mod auth_tests;
 #[cfg(test)]
+mod conformance_tests;
+#[cfg(test)]
 mod managed_key_tests;
 #[cfg(test)]
 mod media_tests;

@@ -125,7 +125,7 @@ The [2026-10-28 probe](refs/2026-10-27-client-ir-boundaries.md#agent-default-pro
 | Lane class | Confirmed gaps | Disposition |
 |---|---|---|
 | Same-protocol Responses | A: delivered incomplete reasoning rejects as history. Q1: Bailian Responses rejects pi's default reasoning summary, encrypted include and omitted strictness. Q2: it rejects its own delivered reasoning in the next turn | Order 1 under [S3/S4](#clientir-stabilization-decisions) for Q1, S5 and S11 for Q2 and A |
-| Same-protocol Chat | Standard profile fails after dispatch when the upstream emits reasoning (R); `readable_reasoning` passes. Standard trailing usage after finish-chunk usage reduces as a duplicate final (U) | R under S6 and S11; U in order 1 |
+| Same-protocol Chat | Standard profile fails after dispatch when the upstream emits reasoning (R); `readable_reasoning` passes. Two nonnull usage reports on finish and trailing chunks reduce as a duplicate final (U); this sequence needs Provider qualification | R under S6 and S11; qualify U before an order-1 change |
 | Same-protocol Messages | pi's bundled SDK version and beta header reject before body collection (M2); manual thinking is unavailable on the Haiku binding; adaptive signed history passes | Retained under S8; binding facts belong in discovery (S10) |
 | Into Messages clients | E (`logprobs:[]`) and F (unreported completion cause) fail every ordinary text answer from Chat/Responses upstreams after dispatch | Orders 2 and 4 |
 | Messages upstream into OpenAI clients | B/C enum catch-alls; D succeeds in SSE but fails JSON/retained | Orders 3 and 4 |
@@ -137,6 +137,8 @@ Root cause: consumers default-reject IR states from producers they are never tes
 ### Repair order and exit gates
 
 Use existing startup fixtures, session corpora, delivery and diagnostics helpers; no new framework or broad compatibility layer. Mapping correctness keeps independent wire→IR and IR→wire expectations; the conformance gate classifies reachability and dispositions only. Each slice implements only its accepted [decision](#clientir-stabilization-decisions); deferred capabilities stay unselected.
+
+Order 0 has an initial permanent [five-binding production-construction gate](development.md#sdk-loopback-gate), using captured pi 1.4.0 defaults, actual second-upstream history, JSON/SSE failure checks and Responses retrieval controls. Extend it to the remaining catalog bindings, raw Messages header dispositions and selected incomplete/reasoning replay contrasts before declaring order 0 complete. The existing gate can already verify focused repairs; its documented rejections are not compatibility acceptance.
 
 | Order | Work | Exit gate |
 |---|---|---|

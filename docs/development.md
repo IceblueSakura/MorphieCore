@@ -288,6 +288,12 @@ This corpus exercises public codec/Attempt/delivery APIs with synthetic profiles
 
 ### SDK loopback gate
 
+The production-construction companion runs with `cargo test --locked --offline --lib gateway::startup::bootstrap::conformance_tests`. It loads the five bindings from the 2026-10-28 probe through private startup fixtures, uses Standard clients and loopback upstreams, and reuses repair-and-recall source snapshots. The committed `agent-defaults.json` contains nine HTTP bodies captured from installed pi-ai 1.4.0: text, tools and medium reasoning for each client API, without body compat overrides. Regenerate for review with `node tests/clients/pi_default_shapes.mjs /absolute/path/to/installed/pi-ai`; its fetch is intercepted, credentials are synthetic, and no network request is made. It does not install or select an older Agent.
+
+The companion pins per-lane diagnostic failure codes and dispatch counts, checks client-visible failure/terminal honesty, consumes JSON/SSE outputs and checks actual second-upstream history. Responses storage controls compare retrieval with delivered output. JSON, `store:true` and cache-free Messages requests are explicitly labelled controls, not pi defaults. Messages body cases use the documented version/beta header opt-ins. The history adapter follows pi's reconstruction, including non-`fc_` item-ID omission and the corpus's JavaScript unsafe-integer rounding; native delivery still checks exact original arguments. This is not installed-Agent loop acceptance. Remaining binding/header/incomplete-history coverage is tracked in [Roadmap](roadmap.md#repair-order-and-exit-gates).
+
+**Verified on 2026-10-28:** the initial three production-construction tests and full offline baseline pass, including Clippy, formatting, production-only compilation, 20 pinned assets and all four Python suites. The intercepted pi serializer confirms the committed initial request corpus; no live Provider or new installed-Agent loop acceptance is claimed.
+
 Use the shared locked environment from [Python checks](#python-checks). Run the ignored SDK scenarios explicitly and serially:
 
 ```sh
