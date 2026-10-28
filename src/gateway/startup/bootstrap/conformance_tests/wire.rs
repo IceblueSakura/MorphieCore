@@ -21,6 +21,13 @@ pub(super) enum Profile {
     Tools,
     Reasoning,
 }
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum ReasoningShape {
+    Summary,
+    Opaque,
+    Readable,
+    Signed,
+}
 impl Api {
     pub(super) fn path(self) -> &'static str {
         match self {
@@ -198,12 +205,34 @@ pub(super) fn upstream(
     turn: usize,
     stream: bool,
     model: &str,
-    incomplete: bool,
-    reports: Option<bool>,
+    control: super::Control,
 ) -> String {
+    let incomplete = matches!(control, super::Control::Incomplete { .. }) && turn == 0;
+    let reasoning = control.reasoning();
     let mut value = snapshot(api, profile, turn);
+    if matches!(
+        reasoning,
+        Some(ReasoningShape::Summary | ReasoningShape::Opaque)
+    ) {
+        assert_eq!(api, Api::Responses);
+        let items = value["output"].as_array_mut().unwrap();
+        items.retain(|i| i["type"] != "reasoning");
+        let mut item = json!({
+            "id":format!("reason-{turn}"),"type":"reasoning","status":"completed","summary":[]
+        });
+        if reasoning == Some(ReasoningShape::Summary) {
+            item["summary"] = json!([{"type":"summary_text","text":"Plan 🧪"}]);
+            // Isolate the documented summary-history carrier from phase support.
+            for item in items.iter_mut() {
+                item.as_object_mut().unwrap().remove("phase");
+            }
+        } else {
+            item["encrypted_content"] = json!(format!("synthetic-reason-{turn}"));
+        }
+        items.insert(0, item);
+    }
     value["model"] = json!(model);
-    if let Some(refusal) = reports {
+    if let super::Control::ReportedFacts { refusal, .. } = control {
         assert_eq!(api, Api::Messages);
         value["usage"]["service_tier"] = json!("standard");
         if refusal {
@@ -315,11 +344,14 @@ pub(super) fn upstream(
                         events.push(json!({"type":"response.content_part.done","output_index":index,"item_id":id,"content_index":0,"part":part}));
                     }
                     "reasoning" => {
-                        let part = &item["summary"][0];
-                        events.push(json!({"type":"response.reasoning_summary_part.added","output_index":index,"item_id":id,"summary_index":0,"part":{"type":"summary_text","text":""}}));
-                        events.push(json!({"type":"response.reasoning_summary_text.delta","output_index":index,"item_id":id,"summary_index":0,"delta":part["text"]}));
-                        events.push(json!({"type":"response.reasoning_summary_text.done","output_index":index,"item_id":id,"summary_index":0,"text":part["text"]}));
-                        events.push(json!({"type":"response.reasoning_summary_part.done","output_index":index,"item_id":id,"summary_index":0,"part":part}));
+                        for (summary_index, part) in
+                            item["summary"].as_array().unwrap().iter().enumerate()
+                        {
+                            events.push(json!({"type":"response.reasoning_summary_part.added","output_index":index,"item_id":id,"summary_index":summary_index,"part":{"type":"summary_text","text":""}}));
+                            events.push(json!({"type":"response.reasoning_summary_text.delta","output_index":index,"item_id":id,"summary_index":summary_index,"delta":part["text"]}));
+                            events.push(json!({"type":"response.reasoning_summary_text.done","output_index":index,"item_id":id,"summary_index":summary_index,"text":part["text"]}));
+                            events.push(json!({"type":"response.reasoning_summary_part.done","output_index":index,"item_id":id,"summary_index":summary_index,"part":part}));
+                        }
                     }
                     "function_call" => {
                         events.push(json!({"type":"response.function_call_arguments.delta","output_index":index,"item_id":id,"delta":item["arguments"]}));
@@ -379,7 +411,47 @@ pub(super) fn delivered(api: Api, bytes: &[u8], stream: bool) -> Value {
             ));
             let mut opened = std::collections::BTreeMap::new();
             let mut completed = Vec::new();
+            let mut fragments = std::collections::BTreeMap::<(u64, &str, u64), String>::new();
+            let mut finished = std::collections::BTreeMap::new();
             for event in &events {
+                let kind = match event["type"].as_str().unwrap() {
+                    "response.output_text.delta" | "response.output_text.done" => {
+                        Some(("text", "content_index", "text"))
+                    }
+                    "response.reasoning_summary_text.delta"
+                    | "response.reasoning_summary_text.done" => {
+                        Some(("summary", "summary_index", "text"))
+                    }
+                    "response.function_call_arguments.delta"
+                    | "response.function_call_arguments.done" => {
+                        Some(("arguments", "", "arguments"))
+                    }
+                    _ => None,
+                };
+                if let Some((kind, index, field)) = kind {
+                    let key = (
+                        event["output_index"].as_u64().unwrap(),
+                        kind,
+                        if index.is_empty() {
+                            0
+                        } else {
+                            event[index].as_u64().unwrap()
+                        },
+                    );
+                    if event["type"].as_str().unwrap().ends_with(".delta") {
+                        fragments
+                            .entry(key)
+                            .or_default()
+                            .push_str(event["delta"].as_str().unwrap());
+                    } else {
+                        let text = fragments.remove(&key).unwrap_or_default();
+                        assert_eq!(text, event[field].as_str().unwrap(), "incremental {kind}");
+                        assert!(
+                            finished.insert(key, text).is_none(),
+                            "duplicate value completion"
+                        );
+                    }
+                }
                 if event["type"] == "response.output_item.added" {
                     assert!(
                         opened
@@ -401,10 +473,35 @@ pub(super) fn delivered(api: Api, bytes: &[u8], stream: bool) -> Value {
                             "opening identity {key}"
                         );
                     }
+                    let item = &event["item"];
+                    let index = event["output_index"].as_u64().unwrap();
+                    match item["type"].as_str().unwrap() {
+                        "function_call" => assert_eq!(
+                            finished.remove(&(index, "arguments", 0)).unwrap(),
+                            item["arguments"].as_str().unwrap()
+                        ),
+                        "message" | "reasoning" => {
+                            let (field, kind) = if item["type"] == "message" {
+                                ("content", "text")
+                            } else {
+                                ("summary", "summary")
+                            };
+                            for (part, value) in item[field].as_array().unwrap().iter().enumerate()
+                            {
+                                assert_eq!(
+                                    finished.remove(&(index, kind, part as u64)).unwrap(),
+                                    value["text"].as_str().unwrap(),
+                                    "completed item cannot replace incremental {kind}"
+                                );
+                            }
+                        }
+                        other => panic!("delivered item {other}"),
+                    }
                     completed.push(event["item"].clone());
                 }
             }
             assert!(opened.is_empty());
+            assert!(fragments.is_empty() && finished.is_empty());
             let response = events.last().unwrap()["response"].clone();
             assert_eq!(
                 json!(completed),
@@ -432,13 +529,22 @@ pub(super) fn delivered(api: Api, bytes: &[u8], stream: bool) -> Value {
             let mut message = json!({"role":"assistant","content":""});
             let mut calls = std::collections::BTreeMap::<u64, Value>::new();
             let mut terminal = None;
+            let mut usage = Value::Null;
             for data in data.into_iter().filter(|s| *s != "[DONE]") {
                 let event: Value = serde_json::from_str(data).unwrap();
+                if !event["usage"].is_null() {
+                    assert!(usage.is_null(), "one final Chat usage observation");
+                    usage = event["usage"].clone();
+                }
                 for choice in event["choices"].as_array().unwrap() {
                     let delta = &choice["delta"];
                     if let Some(text) = delta["content"].as_str() {
                         message["content"] =
                             json!(format!("{}{text}", message["content"].as_str().unwrap()));
+                    }
+                    if let Some(text) = delta["reasoning_content"].as_str() {
+                        let prefix = message["reasoning_content"].as_str().unwrap_or("");
+                        message["reasoning_content"] = json!(format!("{prefix}{text}"));
                     }
                     if let Some(values) = delta["tool_calls"].as_array() {
                         for value in values {
@@ -464,13 +570,81 @@ pub(super) fn delivered(api: Api, bytes: &[u8], stream: bool) -> Value {
             if !calls.is_empty() {
                 message["tool_calls"] = json!(calls.into_values().collect::<Vec<_>>());
             }
-            json!({"choices":[{"message":message,"finish_reason":terminal.unwrap()}]})
+            json!({"choices":[{"message":message,"finish_reason":terminal.unwrap()}],"usage":usage})
         }
     }
 }
 
-pub(super) fn assert_delivery(api: Api, profile: Profile, turn: usize, value: &Value) {
-    if profile == Profile::Reasoning {
+/// Compare content, accounting and terminals across transports. Request-specific
+/// IDs/timestamps and issuer-bound seals differ between isolated loopback gateways.
+pub(super) fn delivery_view(api: Api, value: &Value) -> Value {
+    let mut view = match api {
+        Api::Chat => json!({
+            "message":value["choices"][0]["message"],
+            "terminal":value["choices"][0]["finish_reason"],"usage":value["usage"]
+        }),
+        Api::Responses => json!({
+            "output":value["output"],"terminal":value["status"],
+            "incomplete_details":value["incomplete_details"],"usage":value["usage"]
+        }),
+        Api::Messages => json!({
+            "content":value["content"],"terminal":value["stop_reason"],
+            "stop_sequence":value["stop_sequence"],"stop_details":value["stop_details"],
+            "usage":value["usage"]
+        }),
+    };
+    match api {
+        Api::Chat => {
+            let message = view["message"].as_object_mut().unwrap();
+            if message
+                .get("content")
+                .is_none_or(|v| v.is_null() || v == "")
+            {
+                message.insert("content".into(), Value::Null);
+            }
+            // JSON has a required nullable refusal; chunks have no absent-value update.
+            if message.get("refusal").is_some_and(Value::is_null) {
+                message.remove("refusal");
+            }
+        }
+        Api::Responses => {
+            for (index, item) in view["output"]
+                .as_array_mut()
+                .unwrap()
+                .iter_mut()
+                .enumerate()
+            {
+                if item["id"].is_string() {
+                    item["id"] = json!(format!("owner-{index}"));
+                }
+                if item["encrypted_content"].is_string() {
+                    item["encrypted_content"] = json!("<sealed>");
+                }
+            }
+        }
+        Api::Messages => {
+            for block in view["content"].as_array_mut().unwrap() {
+                for key in ["signature", "data"] {
+                    if block[key].is_string() {
+                        block[key] = json!("<sealed>");
+                    }
+                }
+            }
+        }
+    }
+    view
+}
+
+pub(super) fn assert_delivery(
+    api: Api,
+    profile: Profile,
+    turn: usize,
+    value: &Value,
+    shape: Option<ReasoningShape>,
+) {
+    if let Some(shape) = shape {
+        assert_reasoning(api, shape, value, false, turn == 0);
+    } else if profile == Profile::Reasoning {
         // This is the accepted native Responses reasoning lane, not a tool-only control.
         assert_eq!(api, Api::Responses);
         let reasoning = value["output"]
@@ -732,8 +906,16 @@ pub(super) fn assert_failure(api: Api, stream: bool, status: u16, bytes: &[u8], 
     );
 }
 
-pub(super) fn assert_history(api: Api, profile: Profile, body: &Value) {
+pub(super) fn assert_history(
+    api: Api,
+    profile: Profile,
+    body: &Value,
+    shape: Option<ReasoningShape>,
+) {
     let history = body[api.history()].as_array().unwrap();
+    if let Some(shape) = shape {
+        assert_reasoning(api, shape, body, true, true);
+    }
     if profile == Profile::Text {
         let text = snapshot(Api::Chat, profile, 0)["choices"][0]["message"]["content"]
             .as_str()
@@ -836,7 +1018,7 @@ pub(super) fn assert_history(api: Api, profile: Profile, body: &Value) {
         ],
         "reverse-order feedback must reach upstream"
     );
-    if profile == Profile::Reasoning {
+    if profile == Profile::Reasoning && shape.is_none() {
         let reasoning = history.iter().find(|i| i["type"] == "reasoning").unwrap();
         assert_eq!(
             reasoning["encrypted_content"], "synthetic-reason-0",
@@ -846,5 +1028,71 @@ pub(super) fn assert_history(api: Api, profile: Profile, body: &Value) {
             reasoning["summary"],
             json!([{"type":"summary_text","text":"Plan 🧪"}])
         );
+    }
+}
+
+fn assert_reasoning(api: Api, shape: ReasoningShape, value: &Value, history: bool, first: bool) {
+    let items = if history {
+        value[api.history()].as_array().unwrap().clone()
+    } else {
+        match api {
+            Api::Responses => value["output"].as_array().unwrap().clone(),
+            Api::Messages => vec![json!({"content":value["content"]})],
+            Api::Chat => vec![value["choices"][0]["message"].clone()],
+        }
+    };
+    match shape {
+        ReasoningShape::Summary | ReasoningShape::Opaque => {
+            assert_eq!(api, Api::Responses);
+            let item = items.iter().find(|i| i["type"] == "reasoning").unwrap();
+            if shape == ReasoningShape::Summary {
+                assert_eq!(
+                    item["summary"],
+                    json!([{"type":"summary_text","text":"Plan 🧪"}])
+                );
+                assert!(item.get("encrypted_content").is_none());
+            } else {
+                assert_eq!(item["summary"], json!([]));
+                let token = item["encrypted_content"].as_str().unwrap();
+                if history {
+                    assert_eq!(token, "synthetic-reason-0");
+                } else {
+                    assert!(token.starts_with("mc1."));
+                }
+            }
+        }
+        ReasoningShape::Readable => {
+            assert_eq!(api, Api::Chat);
+            let item = items
+                .iter()
+                .find(|i| i["reasoning_content"].is_string())
+                .unwrap();
+            assert_eq!(item["reasoning_content"], "Plan 🧪");
+        }
+        ReasoningShape::Signed => {
+            assert_eq!(api, Api::Messages);
+            let blocks: Vec<_> = items
+                .iter()
+                .flat_map(|i| i["content"].as_array().into_iter().flatten())
+                .collect();
+            let thinking = blocks.iter().find(|b| b["type"] == "thinking").unwrap();
+            assert_eq!(thinking["thinking"], "Plan 🧪");
+            let mut tokens = vec![(thinking, "signature", "synthetic-thinking-0")];
+            if first {
+                let redacted = blocks
+                    .iter()
+                    .find(|b| b["type"] == "redacted_thinking")
+                    .unwrap();
+                tokens.push((redacted, "data", "synthetic-redacted"));
+            }
+            for (block, key, expected) in tokens {
+                let token = block[key].as_str().unwrap();
+                if history {
+                    assert_eq!(token, expected);
+                } else {
+                    assert!(token.starts_with("mc1."));
+                }
+            }
+        }
     }
 }

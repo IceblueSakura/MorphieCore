@@ -173,14 +173,7 @@ fn deepseek_never_forwards_parallel_control_or_weakens_serial_intent() {
             } else {
                 let (value, rules) = encoded.unwrap();
                 assert!(value.get("parallel_tool_calls").is_none());
-                assert_eq!(
-                    rules,
-                    if parallel.is_some() {
-                        vec!["deepseek.omit-parallel-tool-permission.v1"]
-                    } else {
-                        vec![]
-                    }
-                );
+                assert!(rules.is_empty());
                 let (prepared, prepared_rules) = prepared.unwrap();
                 assert_eq!(
                     serde_json::from_slice::<Value>(&prepared.body).unwrap(),

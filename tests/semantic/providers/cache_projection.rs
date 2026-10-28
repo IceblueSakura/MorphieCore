@@ -110,7 +110,7 @@ fn scoped_session_and_standard_cache_key_remain_independent_on_both_wires() {
             .encode_request_with_rules(&decoded, "upstream", &Contract::full())
             .unwrap();
     assert!(without_options.get("prompt_cache_options").is_none());
-    assert!(rules.contains(&"cache.omit-inactive-options.v1"));
+    assert!(rules.is_empty());
     assert_eq!(decoded.context, saved);
     empty["prompt_cache_options"] = Value::Null;
     assert!(

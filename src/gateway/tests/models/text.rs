@@ -285,7 +285,7 @@ fn text_contract_uses_actual_dialect_checks_and_does_not_advertise_omitted_contr
     let value = descriptor(entry.clone());
     assert_eq!(
         value["features"]["parallel_tool_calls"],
-        json!({"state":"approved_adaptation","rules":["deepseek.omit-parallel-tool-permission.v1"]})
+        json!({"state":"faithful"})
     );
     // A plain request blocked by the client-reasoning boundary is not evidence
     // that unrelated function declarations are unsupported.

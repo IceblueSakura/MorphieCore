@@ -251,7 +251,7 @@ pub(crate) fn metadata_losses(
             owner: crate::protocol::conversion::generation::Owner::Root,
         });
     }
-    if !metadata.context.system_fingerprint.is_absent() {
+    if metadata.context.system_fingerprint.value().is_some() {
         losses.push(crate::protocol::conversion::generation::Effect::Field {
             rule: crate::protocol::conversion::generation::RuleId::new(
                 "messages.omit-system-fingerprint.v1",
@@ -281,7 +281,7 @@ pub(crate) fn content_losses(
     response: &GenerationResponse,
 ) -> Vec<crate::protocol::conversion::generation::Effect> {
     let mut losses = Vec::new();
-    if !response.details().explanation.is_absent() {
+    if response.details().explanation.value().is_some() {
         losses.push(explanation_loss("response.project"));
     }
     if wire::accounting::project_reports(response.usage_reports())

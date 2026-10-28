@@ -71,12 +71,13 @@ impl EventEncoder {
         {
             return Err(CodecError::Unsupported(CarrierReason::Unavailable));
         }
-        let fingerprint = if !delivered.context.system_fingerprint.is_absent() {
-            delivered.context.system_fingerprint = crate::semantic::value::Presence::Absent;
-            Some(projection::ProjectionRule::OmitResponsesSystemFingerprint)
-        } else {
-            None
-        };
+        let fingerprint = delivered
+            .context
+            .system_fingerprint
+            .value()
+            .is_some()
+            .then_some(projection::ProjectionRule::OmitResponsesSystemFingerprint);
+        delivered.context.system_fingerprint = crate::semantic::value::Presence::Absent;
         crate::protocol::openai::responses::envelope::write_metadata(
             &delivered,
             v.as_object_mut().expect("object"),

@@ -73,12 +73,6 @@ pub fn lower_request<'a>(
                 let mut settings = semantic.settings().clone();
                 settings.parallel_tool_calls = None;
                 semantic = std::borrow::Cow::Owned(semantic.into_owned().with_settings(settings)?);
-                projection.push(crate::protocol::conversion::generation::Effect::new(
-                    "deepseek.omit-parallel-tool-permission.v1",
-                    crate::protocol::conversion::generation::Field::ParallelTools,
-                    crate::protocol::conversion::generation::ConversionBoundary::RequestProject,
-                    crate::protocol::conversion::generation::Change::Omit,
-                ));
             }
             None => {}
         }

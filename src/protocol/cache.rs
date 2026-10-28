@@ -65,7 +65,6 @@ pub struct CacheTargetPolicy {
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
 pub enum HintRule {
     OmitKey,
-    OmitInactiveOptions,
     OmitIdentityHints,
     OmitDayRetention,
     OmitLegacyUserBucketing,
@@ -74,7 +73,6 @@ impl HintRule {
     pub const fn name(self) -> &'static str {
         match self {
             Self::OmitKey => "cache.omit-key.v1",
-            Self::OmitInactiveOptions => "cache.omit-inactive-options.v1",
             Self::OmitIdentityHints => "generation.omit-identity-hints.v1",
             Self::OmitDayRetention => "cache.omit-day-retention.v1",
             Self::OmitLegacyUserBucketing => "cache.omit-legacy-user-bucketing.v1",
@@ -85,7 +83,6 @@ impl HintRule {
         let (field, change) = match self {
             Self::OmitIdentityHints => (Field::Identity, Change::Omit),
             Self::OmitLegacyUserBucketing => (Field::IdentityBucket, Change::Omit),
-            Self::OmitInactiveOptions => (Field::CacheOptions, Change::Normalize),
             Self::OmitKey => (Field::CacheKey, Change::Omit),
             Self::OmitDayRetention => (Field::CacheRetention, Change::Omit),
         };
@@ -111,10 +108,6 @@ impl CacheTargetPolicy {
             (
                 !self.key && !context.cache.prompt_cache_key.is_absent(),
                 HintRule::OmitKey,
-            ),
-            (
-                !self.options && !context.cache.prompt_cache_options.is_absent(),
-                HintRule::OmitInactiveOptions,
             ),
         ]
         .into_iter()

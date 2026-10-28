@@ -251,7 +251,7 @@ impl EventEncoder {
             }
             if self.profile == GenerationApi::Responses
                 && !values.is_empty()
-                && !self.metadata.context.system_fingerprint.is_absent()
+                && self.metadata.context.system_fingerprint.value().is_some()
             {
                 self.record_loss(projection::ProjectionRule::OmitResponsesSystemFingerprint);
             }

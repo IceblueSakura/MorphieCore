@@ -640,13 +640,13 @@ impl ClientEventEncoder {
                 };
                 let mut details = details.clone();
                 details.validate(outcome)?;
-                if !details.explanation.is_absent() {
+                if details.explanation.value().is_some() {
                     let loss = super::projection::explanation_loss("event.encode");
                     if !self.losses.contains(&loss) {
                         self.losses.push(loss);
                     }
-                    details.explanation = Presence::Absent;
                 }
+                details.explanation = Presence::Absent;
                 let (stop, sequence) = crate::protocol::anthropic::messages::terminal::encode(
                     outcome,
                     self.progress,

@@ -128,12 +128,15 @@ pub fn lower_response<'a>(
         );
     }
     if profile == GenerationApi::Responses && !metadata.context.system_fingerprint.is_absent() {
+        let observed = metadata.context.system_fingerprint.value().is_some();
         metadata.to_mut().context.system_fingerprint = crate::semantic::value::Presence::Absent;
-        projection.push(
-            (projection::ProjectionRule::OmitResponsesSystemFingerprint).effect(
-                crate::protocol::conversion::generation::ConversionBoundary::ResponseProject,
-            ),
-        );
+        if observed {
+            projection.push(
+                (projection::ProjectionRule::OmitResponsesSystemFingerprint).effect(
+                    crate::protocol::conversion::generation::ConversionBoundary::ResponseProject,
+                ),
+            );
+        }
     }
     if let Some((groups, loss)) =
         message_groups::project(r.items(), r.message_envelopes(), profile)?

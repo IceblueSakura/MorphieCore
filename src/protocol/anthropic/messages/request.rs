@@ -472,7 +472,10 @@ pub(in crate::protocol::anthropic::messages) fn project(
         return Err(unsupported());
     }
     if s.controls.top_logprobs.is_some()
-        || !s.controls.logprobs.is_absent()
+        || !matches!(
+            s.controls.logprobs,
+            Presence::Absent | Presence::Value(false)
+        )
         || s.controls.truncation.is_some()
         || !s.text.verbosity.is_absent()
         || !s.output_modalities.is_absent()

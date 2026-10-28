@@ -393,7 +393,7 @@ Order of precedence: **Lossless mapping → Bounded approximation → Meaningful
 
 #### Semantic-equivalence compatibility
 
-Accepted on 2026-10-28; the selected null-metadata and empty-logprobs applications are implemented. Broader field review continues in [repair order 2b](roadmap.md#repair-order-and-exit-gates). Protocol-defined equivalent empty values, empty collections, defaults and structural placeholders belong to lossless mapping. Accept, normalize, omit or supply them as the target grammar requires, without a separate named-omission path or loss receipt.
+Accepted on 2026-10-28. The selected null-metadata, empty-logprobs and [reviewed equivalent forms](refs/2026-10-27-client-ir-boundaries.md#semantic-equivalence-review-2026-10-28) are implemented. Broader field review continues in [repair order 2b](roadmap.md#repair-order-and-exit-gates). Protocol-defined equivalent empty values, empty collections, defaults and structural placeholders belong to lossless mapping. Accept, normalize, omit or supply them as the target grammar requires, without a separate named-omission path or loss receipt.
 
 Equivalence depends on the field, direction and lifecycle contract, not emptiness alone. It must preserve content, control intent, explicit constraints, identity, report facts and subsequent behavior. Preserve source observations; apply target representation changes in the existing codec/projection owners. Do not introduce recursive empty-field stripping or globally equate absent, null, empty, false and zero. Unknown fields and malformed known values retain their existing admission rules.
 
@@ -402,6 +402,8 @@ Selected applications are reported `metadata:null` on Chat SSE and Messages deli
 An empty update that clears state, an empty restriction set, an identity-bearing block or a terminal report is not equivalent to omission merely because its payload is empty. Stream accumulation must not erase earlier reports or suppress completion. Tests belong at the responsible boundaries: equivalent forms agree across JSON/SSE/history; meaningful nonempty values, source observations and state transitions remain protected.
 
 This decision removes `chat.omit-null-stream-metadata.v1` and `messages.omit-null-response-metadata.v1` and their receipts. Actual removal of meaningful information continues to require a selected named loss or rejection.
+
+Further selected applications: null-only system fingerprints on Responses/Messages and terminal explanations on Messages carry no report value; explicit `logprobs:false` needs no Messages probability carrier. Empty cache options normalize without a dedicated rule. On trusted always-parallel targets, explicit parallel permission is exact; explicit serial intent still rejects. The obsolete `cache.omit-inactive-options.v1` and `deepseek.omit-parallel-tool-permission.v1` rules are removed. Meaningful fingerprints/explanations, active cache controls and requests for probabilities retain their loss/rejection contracts.
 
 #### Client/IR projection principles
 
@@ -467,7 +469,6 @@ Opaque user attribution projects across protocols via [`protocol::attribution`](
 #### Selected request approximations
 
 - `openai.wrap-tool-result-errors.v1`: Prefixes tool results with boolean status text when target lacks native error flags.
-- `deepseek.omit-parallel-tool-permission.v1`: Removes explicit `parallel_tool_calls: true` for DeepSeek targets; explicit `false` rejects.
 - Terminal approximations: Coarsens stop causes to OpenAI `stop`, Anthropic `end_turn`, or `tool_use`.
 
 #### Messages terminal projection
@@ -578,7 +579,7 @@ Upstream opaque tokens and signatures are delivered in tagged [`mc1.`](file:///h
 - **Foreign history transfer:** Routing to an incompatible model strips foreign reasoning on candidate copies (`transfer-visible-history.v1`) via [`protocol::replay_projection`](file:///home/sakura/development/MorphieCore/src/protocol/replay_projection.rs), preserving visible messages and tool calls.
 - **Supported replay carriers:** Anthropic thinking signatures and `redacted_thinking`, Responses `encrypted_content`, Google `thoughtSignature`, and Interactions `function_call.signature`.
 
-Accepted revision (2026-10-28, P3): same-issuer `incomplete` reasoning with a finalized replay token is forwarded exactly to Responses, whose input union admits that status; implemented with preserved item identity/status and issuer checks. `in_progress` partial tokens remain non-replayable. The broader transfer revision remains pending: omit reasoning a candidate cannot carry because of a foreign issuer, unsupported lifecycle or missing binding history carrier, not only complete foreign reasoning.
+Accepted revision (2026-10-28, P3): same-issuer `incomplete` reasoning with a finalized replay token is forwarded exactly to Responses, whose input union admits that status; implemented with preserved item identity/status and issuer checks. Finalized foreign reasoning and finalized native reasoning with an incompatible carrier format are omitted independently of item lifecycle, preserving visible history and tool links. Client `in_progress` partial tokens remain invalid at replay opening; partial native values and required compaction/attachments retain their guards. The remaining transfer revision depends on the binding history contract: uncarried same-issuer or unattributed readable reasoning must not be confused with foreign opaque replay.
 
 #### Binding reasoning-history contract
 
@@ -829,7 +830,7 @@ Authoritative log of accepted architectural decisions and their systemic consequ
 | Upstream protocol tests | 2026-10-23 | Pinned official SDK and upstream fixtures serve as regression baseline |
 | Delta coalescing | 2026-10-26 | Default 50ms / 16 KiB buffer merges adjacent text deltas |
 | Messages ordered block delivery | 2026-10-28 | Codec-local bounded serialization preserves owner/part order, incremental head output and signed history; incomplete text-owner wire closure preserves source lifecycle, native intake and EOF authority |
-| Semantic-equivalence compatibility | 2026-10-28 | Protocol-equivalent empty/default forms use ordinary lossless mapping without named omissions or loss receipts; supersedes Chat/Messages null-metadata loss classification and covers empty logprobs; source observations and meaningful constraints remain protected |
+| Semantic-equivalence compatibility | 2026-10-28 | Protocol-equivalent empty/default forms use ordinary lossless mapping without named omissions or loss receipts; covers null-only reports, empty logprobs/cache options and already-enabled permissions; source observations and meaningful constraints remain protected |
 | Client/IR projection principles | 2026-10-28 | After semantic-equivalence handling, P1–P5 classify remaining projections: request-context deduction, carrier-less non-content omission, delivery closure, planning-time impossibility and conditional source defaults |
 | Responses strictness resolution | 2026-10-28 | Omitted `strict` resolves per tool and target by the documented compatibility rule; non-strict loss only where a compatible schema lacks an equivalent carrier |
 | Reasoning presentation and continuity | 2026-10-28 | `summary:"auto"` and encrypted `include` resolve against target availability; explicit summarizers and missing opaque carriers take named omissions |

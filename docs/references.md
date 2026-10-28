@@ -94,7 +94,7 @@ Keep dated evidence that is not better owned by a current source guide, accepted
 |---|---|
 | [Protocol reset, 2026-10-23](refs/2026-10-23-stable-protocol-contracts.md) | API migration, strictness/cache/effort distinctions and imported-fixture boundaries |
 | [Request boundaries, 2026-10-26](refs/2026-10-26-standard-request-boundaries.md) | Independent request/history union, nullability, grammar and replay counterexamples; resolved disposition, not an open defect list |
-| [Client/IR boundaries, 2026-10-27](refs/2026-10-27-client-ir-boundaries.md) | Output/history distinctions, dated capability families, item status, metadata and custom-tool source disagreement |
+| [Client/IR boundaries, 2026-10-27](refs/2026-10-27-client-ir-boundaries.md) | Output/history distinctions, dated capability families, item status, metadata, binding-history source gaps, semantic-equivalence review and custom-tool source disagreement |
 | [Google and cross-protocol distinctions, 2026-10-17 onward](refs/2026-10-17-generation-contracts.md) | Lifecycle/resource versus event meaning, unresolved streamed score scope and sparse accounting relationships |
 | [Instruction authority, 2026-10-25](refs/2026-10-25-instruction-authority.md) | Application versus vendor authority, legacy roles and Provider/Vercel comparisons |
 | [Model discovery, 2026-10-26](refs/2026-10-26-model-discovery.md) | Capacity source/applicability, unknown limits and pi image carriers |

@@ -112,6 +112,37 @@ fn empty_probability_reports_need_no_messages_carrier_or_loss() {
         anthropic::messages::{Dialect as MessagesDialect, Profile, TargetContract},
         native::ReplayTarget,
     };
+    let chat = GenerationCodec::new(GenerationApi::Chat, Dialect::Standard, None);
+    for logprobs in [false, true] {
+        let decoded = chat
+            .decode_client_request(
+                json!({
+                    "model":"m","max_completion_tokens":32,"logprobs":logprobs,
+                    "messages":[{"role":"user","content":"go"}]
+                })
+                .to_string()
+                .as_bytes(),
+            )
+            .unwrap();
+        let original = decoded.clone();
+        let encoded = TargetContract::new(Profile::AdaptiveTextTools, MessagesDialect::Standard)
+            .encode_request(&decoded, &ReplayTarget::new("synthetic", "m").unwrap());
+        if logprobs {
+            assert!(
+                encoded.is_err(),
+                "requested probabilities still need a carrier"
+            );
+        } else {
+            let encoded = encoded.unwrap();
+            assert!(encoded.value.get("logprobs").is_none());
+            assert_eq!(
+                encoded.value["messages"],
+                json!([{"role":"user","content":[{"type":"text","text":"go"}]}])
+            );
+            assert!(encoded.evidence.is_empty());
+        }
+        assert_eq!(decoded, original);
+    }
     let codec = GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None);
     for probs in [
         vec![],

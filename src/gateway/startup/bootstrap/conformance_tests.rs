@@ -4,7 +4,7 @@ use super::test_support::{Fixture, service};
 use axum::{
     Json, Router,
     body::{Body, to_bytes},
-    http::Request,
+    http::{HeaderMap, Request},
     response::IntoResponse,
     routing::post,
 };
@@ -17,7 +17,7 @@ use std::{
 use tower::ServiceExt;
 
 mod wire;
-use wire::{Api, Profile};
+use wire::{Api, Profile, ReasoningShape};
 
 const KEY: &str = "synthetic-gateway-client-token-0001";
 const LIMIT: usize = 1 << 20;
@@ -167,8 +167,24 @@ enum Control {
     WithoutCache,
     LegacyVersion,
     ThinkingBeta,
+    Uncapped,
+    SummaryHistory,
+    OpaqueHistory,
+    ReadableHistory,
+    AdaptiveHistory,
     Incomplete { stored: bool },
     ReportedFacts { refusal: bool, stored: bool },
+}
+impl Control {
+    fn reasoning(self) -> Option<ReasoningShape> {
+        match self {
+            Self::SummaryHistory => Some(ReasoningShape::Summary),
+            Self::OpaqueHistory => Some(ReasoningShape::Opaque),
+            Self::ReadableHistory => Some(ReasoningShape::Readable),
+            Self::AdaptiveHistory => Some(ReasoningShape::Signed),
+            _ => None,
+        }
+    }
 }
 
 async fn lane(
@@ -178,14 +194,62 @@ async fn lane(
     stream: bool,
     control: Control,
 ) -> Vec<String> {
+    observe(binding, client, profile, stream, control).await.0
+}
+
+async fn transports(
+    binding: &Binding<'_>,
+    client: Api,
+    profile: Profile,
+    control: Control,
+) -> Vec<String> {
+    let json = observe(binding, client, profile, false, control).await;
+    let sse = observe(binding, client, profile, true, control).await;
+    assert_eq!(
+        json, sse,
+        "{}/{client:?}/{profile:?}: JSON/SSE agreement",
+        binding.1
+    );
+    json.0
+}
+
+async fn observe(
+    binding: &Binding<'_>,
+    client: Api,
+    profile: Profile,
+    stream: bool,
+    control: Control,
+) -> (Vec<String>, Vec<Value>) {
     let &(model, binding, provider, pool, upstream) = binding;
+    let subscription = crate::topology::catalog::SUBSCRIPTION_BINDINGS
+        .iter()
+        .find(|entry| entry.endpoint_id().as_str() == binding);
+    let oauth = subscription.map(|entry| entry.profile);
     let calls = Arc::new(Mutex::new(Vec::<Value>::new()));
     let captured = calls.clone();
     let router = Router::new().route(
         upstream.path(),
-        post(move |Json(body): Json<Value>| {
+        post(move |headers: HeaderMap, Json(body): Json<Value>| {
             let calls = captured.clone();
             async move {
+                assert_eq!(
+                    headers[if upstream == Api::Messages {
+                        "x-api-key"
+                    } else {
+                        "authorization"
+                    }],
+                    if upstream == Api::Messages {
+                        "synthetic-upstream-key"
+                    } else if oauth.is_some() {
+                        "Bearer synthetic-oauth-access"
+                    } else {
+                        "Bearer synthetic-upstream-key"
+                    }
+                );
+                if oauth == Some("openai") {
+                    assert_eq!(body["stream"], true, "SIWC always streams upstream");
+                    assert_eq!(body["store"], false, "upstream stays stateless");
+                }
                 let turn = {
                     let mut calls = calls.lock().unwrap();
                     let turn = calls.len();
@@ -199,11 +263,7 @@ async fn lane(
                     turn,
                     body["stream"] == true,
                     body["model"].as_str().unwrap(),
-                    matches!(control, Control::Incomplete { .. }) && turn == 0,
-                    match control {
-                        Control::ReportedFacts { refusal, .. } => Some(refusal),
-                        _ => None,
-                    },
+                    control,
                 );
                 let content_type = if body["stream"] == true {
                     "text/event-stream"
@@ -224,18 +284,37 @@ async fn lane(
     config["concurrency"] = json!(1);
     config["exchange_timeout_ms"] = json!(3000);
     config["delta_coalescing"] = Value::Null;
-    let boot = Fixture::new(
-        config,
-        json!({"models":{model:{"max_attempts":1,"candidates":[{
-            "binding":binding,"base_url":origin,"attempt_timeout_ms":2000
-        }]}}}),
-        &[(provider, pool, "synthetic-upstream-key")],
-    )
+    let mut models = json!({"models":{model:{"max_attempts":1,"candidates":[{
+        "binding":binding,"base_url":origin,"attempt_timeout_ms":2000
+    }]}}});
+    if control == Control::ReadableHistory {
+        models["models"][model]["chat_profile"] = json!("readable_reasoning");
+    }
+    let boot = if let Some(profile) = oauth {
+        Fixture::with_oauth(config, models, profile, pool)
+    } else {
+        Fixture::new(
+            config,
+            models,
+            &[(provider, pool, "synthetic-upstream-key")],
+        )
+    }
     .unwrap();
     let mut request = wire::request(client, profile, model, stream);
+    if control == Control::Uncapped {
+        assert_eq!(client, Api::Responses);
+        request.as_object_mut().unwrap().remove("max_output_tokens");
+    }
+    if control == Control::AdaptiveHistory {
+        assert_eq!(client, Api::Messages);
+        request["thinking"] = json!({"type":"adaptive","display":"summarized"});
+        request["output_config"] = json!({"effort":"medium"});
+    }
     let stored = matches!(
         control,
         Control::Stored
+            | Control::SummaryHistory
+            | Control::OpaqueHistory
             | Control::Incomplete { stored: true }
             | Control::ReportedFacts { stored: true, .. }
     );
@@ -244,6 +323,7 @@ async fn lane(
         request["store"] = json!(true);
     }
     let mut outcomes = Vec::new();
+    let mut views = Vec::new();
     for turn in 0..2 {
         if control == Control::WithoutCache {
             assert_eq!(client, Api::Messages);
@@ -295,7 +375,12 @@ async fn lane(
         );
         assert!(!failed, "successful diagnostic with aborted client body");
         if turn == 1 {
-            wire::assert_history(upstream, profile, &calls.lock().unwrap()[1]);
+            wire::assert_history(
+                upstream,
+                profile,
+                &calls.lock().unwrap()[1],
+                control.reasoning(),
+            );
             if matches!(control, Control::Incomplete { .. }) {
                 let calls = calls.lock().unwrap();
                 let item = calls[1]["input"]
@@ -308,7 +393,8 @@ async fn lane(
             }
         }
         let value = wire::delivered(client, &bytes, stream);
-        wire::assert_delivery(client, profile, turn, &value);
+        wire::assert_delivery(client, profile, turn, &value, control.reasoning());
+        views.push(wire::delivery_view(client, &value));
         if let Control::ReportedFacts { refusal, .. } = control {
             if client == Api::Messages {
                 assert_eq!(value["usage"]["service_tier"], "standard");
@@ -377,7 +463,7 @@ async fn lane(
         wire::append(client, profile, turn, &mut request, value);
     }
     boot.gateway.shutdown();
-    outcomes
+    (outcomes, views)
 }
 
 #[tokio::test]
@@ -435,16 +521,13 @@ async fn catalog_basic_production_lanes() {
             covered.insert(endpoint.id.as_str().to_owned());
             for client in [Api::Chat, Api::Responses, Api::Messages] {
                 for profile in [Profile::Text, Profile::Tools] {
-                    for stream in [false, true] {
-                        let actual =
-                            lane(&binding, client, profile, stream, Control::Default).await;
-                        assert_eq!(
-                            actual,
-                            basic_expected(binding.1, client, profile),
-                            "{}/{client:?}/{profile:?}/{stream}",
-                            binding.1
-                        );
-                    }
+                    let actual = transports(&binding, client, profile, Control::Default).await;
+                    assert_eq!(
+                        actual,
+                        basic_expected(binding.1, client, profile),
+                        "{}/{client:?}/{profile:?}",
+                        binding.1
+                    );
                 }
             }
         }
@@ -456,6 +539,100 @@ async fn catalog_basic_production_lanes() {
     assert_eq!(
         covered, reviewed,
         "reviewed dispositions must match catalog membership"
+    );
+}
+
+#[tokio::test]
+async fn catalog_subscription_production_lanes() {
+    use crate::topology::catalog::SUBSCRIPTION_BINDINGS;
+    let mut subscriptions = Vec::new();
+    for entry in SUBSCRIPTION_BINDINGS {
+        let provider = (entry.provider)();
+        let endpoint = entry.endpoint_id();
+        let credential = entry.credential();
+        let binding = (
+            entry.model,
+            endpoint.as_str(),
+            provider.id.as_str(),
+            credential.as_str(),
+            Api::Responses,
+        );
+        subscriptions.push(endpoint.as_str().to_owned());
+        for client in [Api::Chat, Api::Responses, Api::Messages] {
+            for profile in [Profile::Text, Profile::Tools, Profile::Reasoning] {
+                // Common protocol controls, not each subscription's emitted reasoning shape.
+                let actual = transports(&binding, client, profile, Control::Default).await;
+                let expected = if entry.profile == "openai" && entry.model != "gpt-6-luna" {
+                    &["admission.max_output_tokens@0"][..]
+                } else if client == Api::Messages {
+                    &["admission.explicit_cache@0"][..]
+                } else if entry.profile == "openai" {
+                    &["planning:[\"codec.unsupported.unavailable\"]@0"][..]
+                } else if profile == Profile::Reasoning && client == Api::Chat {
+                    &["representation.reasoning@1"][..]
+                } else {
+                    ACCEPT
+                };
+                assert_eq!(actual, expected, "{}/{client:?}/{profile:?}", binding.1);
+            }
+        }
+        if entry.profile == "openai" {
+            assert_eq!(
+                transports(&binding, Api::Responses, Profile::Text, Control::Uncapped).await,
+                ACCEPT,
+                "explicitly uncapped subscription control: {}",
+                binding.1
+            );
+        }
+    }
+    assert_eq!(
+        subscriptions,
+        [
+            "openai-responses",
+            "openai-astra-responses",
+            "openai-luna-responses",
+            "grok-responses"
+        ]
+    );
+}
+
+#[tokio::test]
+async fn native_reasoning_history_contracts_are_distinct() {
+    for (id, profile, control) in [
+        (
+            "dashscope-flash-responses",
+            Profile::Text,
+            Control::SummaryHistory,
+        ),
+        (
+            "deepseek-chat",
+            Profile::Reasoning,
+            Control::ReadableHistory,
+        ),
+        (
+            "opencode-go-haiku-messages",
+            Profile::Reasoning,
+            Control::AdaptiveHistory,
+        ),
+    ] {
+        let binding = BINDINGS.iter().find(|b| b.1 == id).unwrap();
+        assert_eq!(
+            transports(binding, binding.4, profile, control).await,
+            ACCEPT,
+            "{id}"
+        );
+    }
+    let grok = (
+        "grok-4.7",
+        "grok-responses",
+        "grok",
+        "grok-oauth",
+        Api::Responses,
+    );
+    // Grok may return an opaque reasoning owner even without a reasoning request.
+    assert_eq!(
+        transports(&grok, Api::Responses, Profile::Text, Control::OpaqueHistory).await,
+        ACCEPT
     );
 }
 

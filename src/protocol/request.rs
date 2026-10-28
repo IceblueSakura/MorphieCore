@@ -84,8 +84,9 @@ impl GenerationRequestEnvelope {
 }
 impl GenerationRequestEnvelope {
     /// Transfer visible history, not another model's internal reasoning state.
-    /// Only complete, demonstrably incompatible reasoning is omitted. Unattributed
-    /// readable reasoning is not inferred to be foreign. Required context remains.
+    /// Demonstrably incompatible reasoning is omitted regardless of item lifecycle;
+    /// its opaque value must still be finalized. Unattributed readable reasoning is
+    /// not inferred to be foreign. Required context remains.
     pub(crate) fn without_foreign_reasoning(
         &self,
         target: Option<&crate::semantic::value::ReplayOrigin>,
@@ -154,8 +155,8 @@ impl GenerationRequestEnvelope {
         }
         if self.task.semantic.items().iter().any(|(id, item)| {
             foreign.contains(id)
-                && matches!(item, Item::Reasoning(r) if r.status != ItemLifecycle::Completed
-                    || r.replay.as_ref().is_some_and(|v| v.replay_token().is_none()))
+                && matches!(item, Item::Reasoning(r)
+                    if r.replay.as_ref().is_some_and(|v| v.replay_token().is_none()))
         }) {
             return Err(CodecError::Unsupported(CarrierReason::Reasoning));
         }

@@ -170,7 +170,7 @@ fn responses_fingerprint_projection_is_explicit_and_keeps_source_metadata() {
                 .iter()
                 .filter(|s| s.rule() == "responses.omit-system-fingerprint.v1")
                 .count(),
-            usize::from(!fingerprint.is_absent())
+            usize::from(fingerprint.value().is_some())
         );
         let back = projected
             .reproject(GenerationApi::Chat, Contract::full())
@@ -206,7 +206,7 @@ fn responses_fingerprint_projection_is_explicit_and_keeps_source_metadata() {
                 .iter()
                 .filter(|stage| stage.change().is_loss())
                 .count(),
-            usize::from(!fingerprint.is_absent())
+            usize::from(fingerprint.value().is_some())
         );
         let mut failed = EventEncoder::new(GenerationApi::Responses, meta.clone()).unwrap();
         for event in text_events() {
@@ -219,7 +219,7 @@ fn responses_fingerprint_projection_is_explicit_and_keeps_source_metadata() {
                 .iter()
                 .filter(|stage| stage.change().is_loss())
                 .count(),
-            usize::from(!fingerprint.is_absent())
+            usize::from(fingerprint.value().is_some())
         );
         assert!(failed.finish().is_err());
         let output = encoder
@@ -237,7 +237,7 @@ fn responses_fingerprint_projection_is_explicit_and_keeps_source_metadata() {
                 .iter()
                 .filter(|s| s.change().is_loss())
                 .count(),
-            usize::from(!fingerprint.is_absent())
+            usize::from(fingerprint.value().is_some())
         );
     }
     for value in [String::new(), "x".repeat(257)] {

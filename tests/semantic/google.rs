@@ -212,6 +212,7 @@ fn cross_format_reasoning_is_removed_before_grouping_but_partial_values_reject()
         (ItemLifecycle::Completed, false),
         (ItemLifecycle::Completed, true),
         (ItemLifecycle::Incomplete, false),
+        (ItemLifecycle::InProgress, false),
     ] {
         let value = Text::new("opaque", "synthetic", 64).unwrap();
         let reasoning = ReasoningItem {
@@ -238,7 +239,7 @@ fn cross_format_reasoning_is_removed_before_grouping_but_partial_values_reject()
         items.insert(1, (owner, Item::Reasoning(reasoning)));
         let request = source.task.semantic.clone().with_items(items).unwrap();
         let result = encode_generation_request(&request, &fidelity, &target(), None);
-        if status == ItemLifecycle::Completed && !partial {
+        if !partial {
             let (body, rules) = result.unwrap();
             assert_eq!(
                 body["contents"],

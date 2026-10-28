@@ -126,18 +126,32 @@ fn another_target_gets_visible_history_without_foreign_thinking() {
         morphiecore::protocol::anthropic::messages::Dialect::Standard,
     );
     native.encode_request(&request, &target).unwrap();
-    let mut partial = body;
-    partial["input"][1]["status"] = json!("incomplete");
-    let mut partial = client()
-        .decode_request(partial.to_string().as_bytes())
-        .unwrap();
-    open_from_client(&mut partial).unwrap();
-    assert!(
-        upstream("other/model-b")
-            .encode_request_with_rules(&partial, "model-b", &allowed)
-            .is_err()
-    );
-    assert!(native.encode_request(&partial, &target).is_err());
+    for status in ["incomplete", "in_progress"] {
+        let mut body = body.clone();
+        body["input"][1]["status"] = json!(status);
+        let mut request = client()
+            .decode_request(body.to_string().as_bytes())
+            .unwrap();
+        if status == "in_progress" {
+            assert!(
+                open_from_client(&mut request).is_err(),
+                "partial client tokens cannot open"
+            );
+            continue;
+        }
+        open_from_client(&mut request).unwrap();
+        let original = request.clone();
+        let (transferred, rules) = upstream("other/model-b")
+            .encode_request_with_rules(&request, "model-b", &allowed)
+            .unwrap();
+        assert_eq!(
+            transferred, wire,
+            "foreign {status} reasoning is not replayed"
+        );
+        assert_eq!(rules, ["responses.transfer-visible-history.v1"]);
+        native.encode_request(&request, &target).unwrap();
+        assert_eq!(request, original);
+    }
 }
 
 #[test]

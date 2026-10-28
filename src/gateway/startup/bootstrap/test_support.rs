@@ -83,10 +83,29 @@ impl Fixture {
         models: serde_json::Value,
         credentials: &[(&str, &str, &str)],
     ) -> Result<Self, StartupError> {
+        Self::with_credentials(service, models, credentials, &[])
+    }
+
+    pub(super) fn with_oauth(
+        service: serde_json::Value,
+        models: serde_json::Value,
+        provider: &str,
+        pool: &str,
+    ) -> Result<Self, StartupError> {
+        Self::with_credentials(service, models, &[], &[(provider, pool)])
+    }
+
+    fn with_credentials(
+        service: serde_json::Value,
+        models: serde_json::Value,
+        credentials: &[(&str, &str, &str)],
+        oauth: &[(&str, &str)],
+    ) -> Result<Self, StartupError> {
         let directory = crate::test_files::private_directory();
-        let manager =
-            crate::credential::CredentialManager::new(directory.path().join("credentials"), vec![])
-                .unwrap();
+        let root = directory.path().join("credentials");
+        let drivers =
+            crate::credential::drivers::builtin_drivers_with_environment(None, false).unwrap();
+        let manager = crate::credential::CredentialManager::new(&root, drivers).unwrap();
         for &(provider, pool, key) in credentials {
             manager
                 .add_api_key(
@@ -102,6 +121,48 @@ impl Fixture {
                     0,
                     crate::credential::CredentialPool {
                         members: vec![crate::credential::CredentialRef::ApiKey {
+                            alias: "one".into(),
+                        }],
+                        fallback: false,
+                        max_attempts: 1,
+                    },
+                )
+                .unwrap();
+        }
+        for &(profile, pool) in oauth {
+            let siwc = profile == "openai";
+            let account = serde_json::json!({
+                "profile":profile,"alias":"one",
+                "client_id":if siwc {"oaiapp_synthetic"} else {"synthetic-client"},
+                "identity":{"subject":"synthetic-subject","scope":null},
+                "revision":2,"generation":1,"login_attempt":null,"state":"active",
+                "credential":{
+                    "access":"synthetic-oauth-access","refresh":"synthetic-refresh",
+                    "id_token":if siwc {Some("synthetic-id-token")} else {None},
+                    "expires_at":4000000000u64,
+                    "scopes":if siwc {
+                        "openid profile email offline_access resource.invoke chatgpt.tokens.use.direct"
+                    } else {
+                        "openid profile email offline_access grok-cli:access api:access"
+                    }
+                }
+            });
+            write_private(
+                &root.join(format!("{profile}.json")),
+                &serde_json::to_vec(&serde_json::json!({
+                    "provider":profile,"revision":1,"oauth":{"one":account},
+                    "api_keys":{},"pools":{}
+                }))
+                .unwrap(),
+            );
+            manager
+                .set_pool(
+                    profile,
+                    pool,
+                    0,
+                    crate::credential::CredentialPool {
+                        members: vec![crate::credential::CredentialRef::OAuth {
+                            profile: profile.into(),
                             alias: "one".into(),
                         }],
                         fallback: false,

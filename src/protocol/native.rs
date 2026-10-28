@@ -47,7 +47,7 @@ fn label(s: &str) -> Result<Text, CodecError> {
     Text::new(s, "native target label", 256).map_err(|_| CodecError::Limit)
 }
 
-/// Direct native codecs first verify issuer/dependencies, then omit complete
+/// Direct native codecs first verify issuer/dependencies, then omit finalized
 /// reasoning in an incompatible carrier format before assembling target groups.
 pub(crate) fn native_reasoning_history<'a>(
     request: &'a GenerationRequest,
@@ -70,7 +70,7 @@ pub(crate) fn native_reasoning_history<'a>(
             && let Some(value) = &reasoning.replay
             && !formats.contains(&value.format())
         {
-            if reasoning.status != ItemLifecycle::Completed || value.replay_token().is_none() {
+            if value.replay_token().is_none() {
                 return Err(CodecError::Unsupported(CarrierReason::Reasoning));
             }
             omitted.push(*id);
