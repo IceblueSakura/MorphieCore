@@ -627,6 +627,128 @@ mod phase {
             );
         }
     }
+    #[test]
+    fn chat_plain_text_grouping_preserves_custom_and_function_calls() {
+        use morphiecore::{
+            adapter::ClientAdapter,
+            protocol::openai::{Dialect, GenerationCodec, TargetContract, responses},
+        };
+        let client = ClientAdapter::openai(
+            GenerationCodec::new(GenerationApi::Chat, Dialect::Standard, None),
+            TargetContract::full(),
+        );
+        for phase in [None, Some("final_answer")] {
+            for multipart in [false, true] {
+                for custom in [false, true] {
+                    let input = "  not JSON,\nnot executed  ";
+                    let call = if custom {
+                        json!({"id":"custom-owner","type":"custom_tool_call","call_id":"call-unique","name":"f","input":input})
+                    } else {
+                        json!({"id":"function-owner","type":"function_call","status":"completed","call_id":"call-unique","name":"f","arguments":input})
+                    };
+                    let mut content =
+                        vec![json!({"type":"output_text","text":"left","annotations":[]})];
+                    if multipart {
+                        content
+                            .push(json!({"type":"output_text","text":" right","annotations":[]}));
+                    }
+                    let mut message = json!({"id":"text-owner","type":"message","role":"assistant","status":"completed","content":content});
+                    if let Some(phase) = phase {
+                        message["phase"] = json!(phase);
+                    }
+                    let wire = json!({"id":"r","object":"response","model":"m","created_at":1,"status":"completed",
+                        "output":[message,call],"error":null,"incomplete_details":null});
+                    let source = responses::decode_response(&wire).unwrap();
+                    let original = source.clone();
+                    let Item::Message(message) = &source.semantic.items()[0].1 else {
+                        panic!("text owner")
+                    };
+                    assert_eq!(
+                        message
+                            .parts
+                            .iter()
+                            .map(|p| match &p.content {
+                                ContentPart::Text(t) => t.as_str(),
+                                _ => panic!("text part"),
+                            })
+                            .collect::<Vec<_>>(),
+                        if multipart {
+                            vec!["left", " right"]
+                        } else {
+                            vec!["left"]
+                        }
+                    );
+                    let original_call = source.semantic.items().last().unwrap().clone();
+                    let (projected, output) = client.snapshot(source.clone()).unwrap_or_else(|e| {
+                        panic!("phase={phase:?}, multipart={multipart}, custom={custom}: {e:?}")
+                    });
+                    assert_eq!(
+                        output["choices"][0]["message"]["content"],
+                        if multipart { "left right" } else { "left" }
+                    );
+                    assert_eq!(output["choices"][0]["finish_reason"], "tool_calls");
+                    let expected = if custom {
+                        json!({"id":"call-unique","type":"custom","custom":{"name":"f","input":input}})
+                    } else {
+                        json!({"id":"call-unique","type":"function","function":{"name":"f","arguments":input}})
+                    };
+                    assert_eq!(
+                        output["choices"][0]["message"]["tool_calls"],
+                        json!([expected])
+                    );
+                    assert_eq!(
+                        projected
+                            .semantic
+                            .items()
+                            .iter()
+                            .find(|(id, _)| *id == original_call.0),
+                        Some(&original_call)
+                    );
+                    assert_eq!(source, original);
+
+                    if multipart && custom {
+                        let mut rich = source.clone();
+                        let mut items = rich.semantic.items().to_vec();
+                        let Item::Message(message) = &mut items[0].1 else {
+                            unreachable!()
+                        };
+                        let ContentPart::Text(value) = &message.parts[0].content else {
+                            unreachable!()
+                        };
+                        message.parts[0].content = ContentPart::Text(
+                            value
+                                .clone()
+                                .with_logprobs(morphiecore::semantic::value::Presence::Value(vec![
+                                    Logprob {
+                                        token: "left".into(),
+                                        logprob: (-1).into(),
+                                        bytes: None,
+                                        top_logprobs: None,
+                                    },
+                                ]))
+                                .unwrap(),
+                        );
+                        rich.semantic = rich.semantic.with_items(items).unwrap();
+                        assert!(
+                            client.snapshot(rich).is_err(),
+                            "grouping cannot drop real probabilities"
+                        );
+                        let mut reordered = wire.clone();
+                        let mut late = reordered["output"][0].clone();
+                        late["id"] = json!("late-owner");
+                        reordered["output"].as_array_mut().unwrap().push(late);
+                        assert!(
+                            client
+                                .snapshot(responses::decode_response(&reordered).unwrap())
+                                .is_err(),
+                            "grouping cannot move text across calls"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
     fn message(d: &DecodedRequest) -> &Message {
         let Item::Message(m) = &d.semantic.items()[0].1 else {
             panic!()

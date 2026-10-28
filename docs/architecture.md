@@ -383,6 +383,7 @@ Order of precedence: **Lossless mapping → Bounded approximation → Meaningful
 | Prediction / advisory controls | Preserve in IR; apply exact native carrier, or omit via named receipt |
 | Reasoning allocation / effort | Preserve budget and effort; apply directional quantization or scope approximation |
 | Tool-result errors | Preserve native error flag; wrap in `[tool result is_error=...]` if target lacks boolean carrier |
+| Chat JSON grouping | Concatenate contiguous plain assistant text before function/custom calls, preserving call identity, order and raw arguments/input. Do not flatten rich/replay-bearing parts or reorder text across calls; custom SSE remains unsupported |
 | Instruction roles | Canonical Developer mapping; preserve root vs. ordered lifetimes |
 | Output ceilings | Preserve explicit ceilings; insert target default only when client ceiling is absent |
 | Terminal stops | Coarsen natural/stop-sequence causes to `stop` or `end_turn` under named rules |

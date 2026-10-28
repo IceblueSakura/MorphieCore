@@ -215,7 +215,7 @@ fn project_inner(
             if source
                 .items()
                 .iter()
-                .any(|(_, item)| matches!(item, Item::ToolCall(_))) => {}
+                .any(|(_, item)| matches!(item, Item::ToolCall(_) | Item::CustomCall(_))) => {}
         _ => {
             return Err(CodecError::Unsupported(CarrierReason::Unavailable));
         }
@@ -287,6 +287,7 @@ fn project_inner(
                     }
                     calls.push((*id, Item::ToolCall(call)));
                 }
+                Item::CustomCall(_) => calls.push((*id, item.clone())),
                 _ => {
                     return Err(CodecError::Unsupported(CarrierReason::Unavailable));
                 }
@@ -399,6 +400,34 @@ mod tests {
         profile
             .decode_generation_response(BODY, LocalScope::new(3), &target)
             .unwrap()
+    }
+
+    #[test]
+    fn native_pending_custom_call_keeps_its_identity_and_input() {
+        let mut source = fixture();
+        let text = |s| crate::semantic::value::Text::new(s, "fixture", 64).unwrap();
+        let call = (
+            ItemId::new(9),
+            Item::CustomCall(CustomCall {
+                call_id: text("custom-call"),
+                name: text("sql"),
+                input: "  SELECT 1;\n".into(),
+                context: Default::default(),
+            }),
+        );
+        source.semantic = GenerationResponse::new(vec![call.clone()], Outcome::Completed)
+            .unwrap()
+            .with_progress(InteractionProgress::AwaitingToolResults)
+            .unwrap();
+        let before = source.clone();
+        let mut projected = source.clone();
+        project(&mut projected, GenerationApi::Chat).unwrap();
+        assert_eq!(projected.semantic.items().last(), Some(&call));
+        assert_eq!(
+            projected.semantic.progress(),
+            InteractionProgress::Unreported
+        );
+        assert_eq!(source, before);
     }
     #[test]
     fn reports_without_scalar_views_have_equal_static_and_event_omission() {

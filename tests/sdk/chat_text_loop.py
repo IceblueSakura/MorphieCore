@@ -142,6 +142,7 @@ def run(base_url: str, stream: bool) -> dict[str, object]:
                 tool_choice={"type": "custom", "custom": {"name": "sql"}})
             check(result.choices[0].finish_reason == "tool_calls")
             message = result.choices[0].message
+            check(message.content == "custom call")
             call = message.tool_calls[0]
             check(call.type == "custom" and call.id == "call-custom")
             check(call.custom.name == "sql" and call.custom.input == "SELECT 1")
