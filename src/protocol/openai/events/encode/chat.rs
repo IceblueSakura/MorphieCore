@@ -27,10 +27,13 @@ impl EventEncoder {
         );
         crate::protocol::openai::service::write_class(
             value.as_object_mut().expect("object"),
-            self.metadata.context.service_class(),
+            &crate::protocol::openai::lowering::projection::service_class_view(
+                self.metadata.context.service_class(),
+                GenerationApi::Chat,
+            ),
             GenerationApi::Chat,
         )
-        .expect("validated reported service");
+        .expect("projected reported service");
         value
     }
     fn call_index(&self, item: ItemId) -> Result<usize, CodecError> {

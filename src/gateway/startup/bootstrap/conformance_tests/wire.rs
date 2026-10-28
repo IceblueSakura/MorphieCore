@@ -199,9 +199,19 @@ pub(super) fn upstream(
     stream: bool,
     model: &str,
     incomplete: bool,
+    reports: Option<bool>,
 ) -> String {
     let mut value = snapshot(api, profile, turn);
     value["model"] = json!(model);
+    if let Some(refusal) = reports {
+        assert_eq!(api, Api::Messages);
+        value["usage"]["service_tier"] = json!("standard");
+        if refusal {
+            value["stop_reason"] = json!("refusal");
+            value["stop_details"] =
+                json!({"type":"refusal","category":"cyber","explanation":"synthetic category"});
+        }
+    }
     if incomplete {
         assert_eq!(api, Api::Responses);
         value["status"] = json!("incomplete");
@@ -231,7 +241,11 @@ pub(super) fn upstream(
                     }
                     if event["type"] == "message_delta" {
                         for key in ["container", "stop_details", "stop_sequence"] {
-                            event["delta"][key] = Value::Null;
+                            event["delta"]
+                                .as_object_mut()
+                                .unwrap()
+                                .entry(key)
+                                .or_insert(Value::Null);
                         }
                         for key in [
                             "input_tokens",
@@ -240,7 +254,11 @@ pub(super) fn upstream(
                             "output_tokens_details",
                             "server_tool_use",
                         ] {
-                            event["usage"][key] = Value::Null;
+                            event["usage"]
+                                .as_object_mut()
+                                .unwrap()
+                                .entry(key)
+                                .or_insert(Value::Null);
                         }
                     }
                     event

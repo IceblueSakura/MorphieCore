@@ -442,12 +442,15 @@ Responses preserves `commentary` and `final_answer` labels. Targets without phas
 
 - Anthropic `stop_details` maps to `TerminalDetails.refusal`.
 - Google `finishMessage` maps to `TerminalExplanation`.
-- Explanations are omitted on cross-protocol delivery copies when no carrier exists, without modifying the underlying stop cause.
+- OpenAI delivery omits the carrier-less refusal report, including its stable category, under `openai.omit-explanatory-refusal-details.v1`. Refusal remains an incomplete/content-filter outcome; report text never becomes generated content or successful completion.
+- Other carrier-less explanations are omitted on delivery copies without modifying the underlying stop cause. Native representations retain their original reports.
+- Null-only refusal/explanation reports carry no report content and need no omission receipt; they follow semantic-equivalence compatibility, without stripping non-null report objects or changing source observations.
 
 #### Service policies and reports
 
-- Maps Anthropic service tiers and OpenAI priority flags to `StandardProcessing`, `FlexibleProcessing`, and `PriorityProcessing`.
-- Service tier reports in stream deltas are rejected if altered after the stream opening snapshot.
+- Requested service policies and served classes have separate owners. Anthropic `standard`/`priority` capacity and OpenAI `default`/`flex`/`priority` processing classes remain distinct; explicit policy constraints require a supported target meaning.
+- `openai.omit-unrepresentable-service-class.v1` omits served classes without an OpenAI carrier on delivery copies. It never substitutes an approximate tier; strict-complete reporting rejects this omission.
+- Stream encoders validate original service observations before projecting rendering copies. Conflicting single-report or lifecycle updates still reject even when both classes would be omitted.
 
 #### Lifecycle settings and service reports
 

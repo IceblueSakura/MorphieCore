@@ -55,7 +55,11 @@ pub fn messages_stream_body(wire: &str) -> Value {
             }
             "message_delta" => {
                 assert_eq!(open, None);
-                message["stop_reason"] = event["delta"]["stop_reason"].clone();
+                for key in ["stop_reason", "stop_sequence", "stop_details"] {
+                    if let Some(value) = event["delta"].get(key) {
+                        message[key] = value.clone();
+                    }
+                }
                 for (key, value) in event["usage"].as_object().unwrap() {
                     if !value.is_null() {
                         message["usage"][key] = value.clone();

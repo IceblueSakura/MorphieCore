@@ -123,17 +123,10 @@ pub(super) fn terminal_losses(
         check_response_details(details)?;
     }
     let mut losses = vec![];
-    if details
-        .refusal
-        .value()
-        .is_some_and(|report| report.category.value().is_some())
-    {
-        return Err(CodecError::Unsupported(CarrierReason::Unavailable));
-    }
-    if !details.refusal.is_absent() {
+    if details.refusal.value().is_some() {
         losses.push(ProjectionRule::OmitExplanatoryRefusalDetails);
     }
-    if !details.explanation.is_absent() {
+    if details.explanation.value().is_some() {
         losses.push(ProjectionRule::OmitTerminalExplanation);
     }
     match (&details.completion, profile) {

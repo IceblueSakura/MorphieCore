@@ -62,6 +62,7 @@ impl EventEncoder {
         });
         let mut delivered = self.metadata.clone();
         crate::protocol::reports::opening_view(&mut delivered.context.reports)?;
+        let service = projection::reported_service_class(&mut delivered, self.profile);
         let loss = projection::reported_settings(&mut delivered, self.profile)
             .map_err(|_| CodecError::Unsupported(CarrierReason::Unavailable))?;
         if loss.is_some()
@@ -81,7 +82,7 @@ impl EventEncoder {
             v.as_object_mut().expect("object"),
             status == "completed",
         )?;
-        for loss in loss.into_iter().chain(fingerprint) {
+        for loss in loss.into_iter().chain(fingerprint).chain(service) {
             self.record_loss(loss);
         }
         Ok(v)

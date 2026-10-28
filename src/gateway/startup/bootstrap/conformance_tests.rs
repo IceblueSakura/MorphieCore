@@ -168,6 +168,7 @@ enum Control {
     LegacyVersion,
     ThinkingBeta,
     Incomplete { stored: bool },
+    ReportedFacts { refusal: bool, stored: bool },
 }
 
 async fn lane(
@@ -199,6 +200,10 @@ async fn lane(
                     body["stream"] == true,
                     body["model"].as_str().unwrap(),
                     matches!(control, Control::Incomplete { .. }) && turn == 0,
+                    match control {
+                        Control::ReportedFacts { refusal, .. } => Some(refusal),
+                        _ => None,
+                    },
                 );
                 let content_type = if body["stream"] == true {
                     "text/event-stream"
@@ -230,7 +235,9 @@ async fn lane(
     let mut request = wire::request(client, profile, model, stream);
     let stored = matches!(
         control,
-        Control::Stored | Control::Incomplete { stored: true }
+        Control::Stored
+            | Control::Incomplete { stored: true }
+            | Control::ReportedFacts { stored: true, .. }
     );
     if stored {
         assert_eq!(client, Api::Responses);
@@ -302,6 +309,35 @@ async fn lane(
         }
         let value = wire::delivered(client, &bytes, stream);
         wire::assert_delivery(client, profile, turn, &value);
+        if let Control::ReportedFacts { refusal, .. } = control {
+            if client == Api::Messages {
+                assert_eq!(value["usage"]["service_tier"], "standard");
+                assert_eq!(
+                    value["stop_reason"],
+                    if refusal { "refusal" } else { "end_turn" }
+                );
+                if refusal {
+                    assert_eq!(value["stop_details"]["category"], "cyber");
+                }
+            } else {
+                assert!(value["service_tier"].is_null());
+                assert!(value.get("stop_details").is_none());
+                if client == Api::Chat {
+                    assert_eq!(
+                        value["choices"][0]["finish_reason"],
+                        if refusal { "content_filter" } else { "stop" }
+                    );
+                } else {
+                    assert_eq!(
+                        value["status"],
+                        if refusal { "incomplete" } else { "completed" }
+                    );
+                    if refusal {
+                        assert_eq!(value["incomplete_details"]["reason"], "content_filter");
+                    }
+                }
+            }
+        }
         if turn == 0 && matches!(control, Control::Incomplete { .. }) {
             assert_eq!(value["status"], "incomplete");
             assert_eq!(value["incomplete_details"]["reason"], "max_output_tokens");
@@ -342,6 +378,37 @@ async fn lane(
     }
     boot.gateway.shutdown();
     outcomes
+}
+
+#[tokio::test]
+async fn native_reports_project_without_changing_content_or_terminal_outcome() {
+    let binding = BINDINGS
+        .iter()
+        .find(|binding| binding.4 == Api::Messages)
+        .unwrap();
+    for client in [Api::Chat, Api::Responses, Api::Messages] {
+        for refusal in [false, true] {
+            for stream in [false, true] {
+                for stored in [false, true] {
+                    if stored && client != Api::Responses {
+                        continue;
+                    }
+                    let actual = lane(
+                        binding,
+                        client,
+                        Profile::Text,
+                        stream,
+                        Control::ReportedFacts { refusal, stored },
+                    )
+                    .await;
+                    assert_eq!(
+                        actual, ACCEPT,
+                        "reports {client:?}/{refusal}/{stream}/{stored}"
+                    );
+                }
+            }
+        }
+    }
 }
 
 #[tokio::test]

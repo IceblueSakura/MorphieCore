@@ -342,9 +342,11 @@ fn stable_refusal_details_have_independent_native_directions_and_guarded_deliver
                 unreachable!()
             };
             message.status = ItemLifecycle::Incomplete;
+            let mut details = manual.semantic.details().clone();
+            details.explanation = Presence::Null;
             let report_only = GenerationResponse::new(items, Outcome::Incomplete)
                 .unwrap()
-                .with_details(manual.semantic.details().clone())
+                .with_details(details)
                 .unwrap();
             let metadata = crate::events_support::metadata();
             let result = morphiecore::protocol::openai::lowering::lower_response(
@@ -354,26 +356,29 @@ fn stable_refusal_details_have_independent_native_directions_and_guarded_deliver
                 profile,
                 morphiecore::protocol::openai::TargetContract::full(),
             );
-            if expected
-                .value()
-                .is_some_and(|v| v.category.value().is_some())
-            {
-                assert_eq!(
-                    result.err(),
-                    Some(morphiecore::protocol::conversion::generation::RepresentationError::Terminal)
-                );
-            } else {
-                let lowered = result.unwrap();
-                assert!(lowered.semantic().details().refusal.is_absent());
-                assert_eq!(report_only.details().refusal, expected);
-                assert_eq!(
-                    lowered
-                        .projection()
-                        .iter()
-                        .any(|v| v.rule() == "openai.omit-explanatory-refusal-details.v1"),
-                    !expected.is_absent()
-                );
-            }
+            let lowered = result.unwrap();
+            assert!(lowered.semantic().details().refusal.is_absent());
+            assert_eq!(lowered.semantic().outcome(), Outcome::Incomplete);
+            assert_eq!(
+                lowered.semantic().details().incomplete,
+                Some(IncompleteReason::ContentFilter)
+            );
+            assert_eq!(report_only.details().refusal, expected);
+            assert_eq!(report_only.details().explanation, Presence::Null);
+            assert!(lowered.semantic().details().explanation.is_absent());
+            assert!(
+                !lowered
+                    .projection()
+                    .iter()
+                    .any(|effect| effect.rule() == "openai.omit-terminal-explanation.v1")
+            );
+            assert_eq!(
+                lowered
+                    .projection()
+                    .iter()
+                    .any(|v| v.rule() == "openai.omit-explanatory-refusal-details.v1"),
+                expected.value().is_some()
+            );
         }
         if let Some(report) = expected.value() {
             assert!(!format!("{report:?}").contains("synthetic explanation"));

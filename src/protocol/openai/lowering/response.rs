@@ -104,6 +104,16 @@ pub fn lower_response<'a>(
     }
     crate::protocol::reports::relation(&metadata.context.reports, true)
         .map_err(|_| RepresentationError::Metadata)?;
+    if let Some(loss) = projection::reported_service_class(metadata.to_mut(), profile) {
+        if c.reported_facts == ReportedFactPolicy::StrictComplete {
+            return Err(RepresentationError::ReportedFacts);
+        }
+        projection.push(
+            loss.effect(
+                crate::protocol::conversion::generation::ConversionBoundary::ResponseProject,
+            ),
+        );
+    }
     if profile == GenerationApi::Responses
         && crate::protocol::reports::terminal_view(&mut metadata.to_mut().context.reports)
             .map_err(|_| RepresentationError::Metadata)?

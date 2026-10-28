@@ -220,10 +220,11 @@ async fn answer(
             "truncated" => response["stop_reason"] = json!("max_tokens"),
             "refusal" => {
                 response["stop_reason"] = json!("refusal");
-                // This lane tests explanation-only cross-protocol delivery.
-                // A reported policy category has no selected OpenAI carrier.
+                // The stable category is retained by native Messages and omitted
+                // under the selected report rule, never converted into success.
                 response["stop_details"] =
-                    json!({"type":"refusal","category":null,"explanation":"synthetic"});
+                    json!({"type":"refusal","category":"cyber","explanation":"synthetic"});
+                response["usage"]["service_tier"] = json!("standard");
             }
             "malformed" => response["usage"]["input_tokens"] = json!("invalid"),
             "bad-signature" => {
@@ -536,6 +537,68 @@ async fn json_and_stream_clients_replay_native_thinking_and_tools() {
                 assert_eq!(payload.as_str(), "synthetic-redacted");
             }
             if stream {
+                let mut refusal = input.clone();
+                refusal[if responses { "input" } else { "messages" }] =
+                    json!([{"role":"user","content":"refusal"}]);
+                let before = seen.lock().unwrap().len();
+                let result = client
+                    .post(format!("{base}{path}"))
+                    .bearer_auth("synthetic-client-identity-00000001")
+                    .json(&refusal)
+                    .send()
+                    .await
+                    .unwrap();
+                assert_eq!(result.status(), 200);
+                let wire = result.text().await.unwrap();
+                assert_eq!(seen.lock().unwrap().len(), before + 1);
+                let events: Vec<Value> = wire
+                    .lines()
+                    .filter_map(|line| line.strip_prefix("data: "))
+                    .filter(|data| *data != "[DONE]")
+                    .map(|data| serde_json::from_str(data).unwrap())
+                    .collect();
+                assert!(!wire.contains("\"cyber\"") && !wire.contains("\"stop_details\""));
+                if responses {
+                    let terminals: Vec<_> = events
+                        .iter()
+                        .filter(|event| {
+                            matches!(
+                                event["type"].as_str(),
+                                Some(
+                                    "response.completed"
+                                        | "response.incomplete"
+                                        | "response.failed"
+                                        | "error"
+                                )
+                            )
+                        })
+                        .collect();
+                    assert_eq!(terminals.len(), 1);
+                    assert_eq!(terminals[0]["type"], "response.incomplete");
+                    assert_eq!(
+                        terminals[0]["response"]["incomplete_details"]["reason"],
+                        "content_filter"
+                    );
+                    assert!(
+                        events
+                            .iter()
+                            .any(|event| event["type"] == "response.output_text.delta"
+                                && event["delta"] == "partial")
+                    );
+                } else {
+                    let reasons: Vec<_> = events
+                        .iter()
+                        .flat_map(|event| event["choices"].as_array().unwrap())
+                        .filter_map(|choice| choice["finish_reason"].as_str())
+                        .collect();
+                    assert_eq!(reasons, ["content_filter"]);
+                    assert!(
+                        events
+                            .iter()
+                            .any(|event| event["choices"][0]["delta"]["content"] == "partial")
+                    );
+                    assert_eq!(wire.matches("data: [DONE]").count(), 1);
+                }
                 continue;
             }
             input["stream"] = json!(false);
@@ -688,7 +751,7 @@ async fn json_and_stream_clients_replay_native_thinking_and_tools() {
                 "cache_control":{"type":"ephemeral"}}]}));
         }
     }
-    assert_eq!(seen.lock().unwrap().len(), 24);
+    assert_eq!(seen.lock().unwrap().len(), 26);
     // Error classes in Anthropic's shapes: an HTTP envelope, or an `error` event
     // after content.
     for (prompt, stream) in [("overflow", false), ("overloaded", true)] {
@@ -741,7 +804,7 @@ async fn json_and_stream_clients_replay_native_thinking_and_tools() {
             );
         }
     }
-    assert_eq!(seen.lock().unwrap().len(), 26);
+    assert_eq!(seen.lock().unwrap().len(), 28);
     // Standard error events preserve classes without inventing a failed Response.
     for profile in [GenerationApi::Responses, GenerationApi::Chat] {
         let responses = profile == GenerationApi::Responses;
@@ -846,7 +909,7 @@ async fn json_and_stream_clients_replay_native_thinking_and_tools() {
             }
         }
     }
-    assert_eq!(seen.lock().unwrap().len(), 44);
+    assert_eq!(seen.lock().unwrap().len(), 46);
     diagnostic_owner.flush_diagnostics().await;
     let records = std::fs::read_to_string(diagnostics).unwrap();
     let reports: Vec<Value> = records

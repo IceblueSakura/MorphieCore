@@ -33,6 +33,7 @@ pub enum ProjectionRule {
     OmitResponsesContextWindowReason,
     OmitExplanatoryRefusalDetails,
     OmitTerminalExplanation,
+    OmitUnrepresentableServiceClass,
 }
 impl ProjectionRule {
     pub const fn name(self) -> &'static str {
@@ -68,6 +69,7 @@ impl ProjectionRule {
             Self::OmitResponsesContextWindowReason => "responses.omit-context-window-reason.v1",
             Self::OmitExplanatoryRefusalDetails => "openai.omit-explanatory-refusal-details.v1",
             Self::OmitTerminalExplanation => "openai.omit-terminal-explanation.v1",
+            Self::OmitUnrepresentableServiceClass => "openai.omit-unrepresentable-service-class.v1",
         }
     }
     pub const fn field(self) -> &'static str {
@@ -103,8 +105,38 @@ impl ProjectionRule {
             | Self::OmitResponsesContextWindowReason => "response.terminal.incomplete",
             Self::OmitExplanatoryRefusalDetails => "response.terminal.refusal",
             Self::OmitTerminalExplanation => "response.terminal.explanation",
+            Self::OmitUnrepresentableServiceClass => "generation.service_class",
         }
     }
+}
+
+/// A served class is not the requested policy. Never invent an approximate tier.
+pub(crate) fn service_class_view(
+    class: &crate::semantic::value::Presence<crate::semantic::context::ServiceClass>,
+    profile: GenerationApi,
+) -> crate::semantic::value::Presence<crate::semantic::context::ServiceClass> {
+    if class
+        .value()
+        .is_some_and(|class| crate::protocol::openai::service::class_wire(*class, profile).is_err())
+    {
+        crate::semantic::value::Presence::Absent
+    } else {
+        class.clone()
+    }
+}
+
+/// Project rendering copies only; callers validate original lifecycle relations first.
+pub(crate) fn reported_service_class(
+    metadata: &mut crate::protocol::ResponseMetadata,
+    profile: GenerationApi,
+) -> Option<ProjectionRule> {
+    let mut changed = false;
+    for report in metadata.context.reports.iter_mut() {
+        let view = service_class_view(&report.service_class, profile);
+        changed |= view != report.service_class;
+        report.service_class = view;
+    }
+    changed.then_some(ProjectionRule::OmitUnrepresentableServiceClass)
 }
 
 /// Chat length reports an overall token stop, not the lifecycle of each source
@@ -461,6 +493,170 @@ mod tests {
             },
             instruction_fidelity: Default::default(),
         }
+    }
+
+    #[test]
+    fn served_classes_omit_only_missing_carriers_and_preserve_source_drift_checks() {
+        use crate::protocol::openai::{
+            Dialect, GenerationCodec, TargetContract, events::EventEncoder,
+        };
+        use crate::semantic::context::ServiceClass;
+        use serde_json::json;
+        let decoded=GenerationCodec::new(GenerationApi::Responses,Dialect::Standard,None).decode_response(
+            json!({"id":"r","object":"response","model":"m","created_at":1,"status":"completed",
+                "output":[{"id":"m","type":"message","role":"assistant","status":"completed",
+                    "content":[{"type":"output_text","text":"A","annotations":[]}]}]}).to_string().as_bytes()
+        ).unwrap();
+        for class in [
+            ServiceClass::StandardCapacity,
+            ServiceClass::PriorityCapacity,
+            ServiceClass::BatchProcessing,
+            ServiceClass::StandardProcessing,
+        ] {
+            for profile in [GenerationApi::Chat, GenerationApi::Responses] {
+                let mut metadata = decoded.metadata.clone();
+                metadata.context.reports =
+                    crate::semantic::context::ResponseReports::single(Default::default());
+                let report = metadata.context.reports.iter_mut().next().unwrap();
+                report.service_class = Presence::Value(class);
+                if profile == GenerationApi::Responses {
+                    report.settings = Some(GenerationSettings {
+                        tools: Some(vec![]),
+                        tool_choice: Some(ToolChoice::Auto),
+                        parallel_tool_calls: Some(true),
+                        ..Default::default()
+                    });
+                }
+                let source = metadata.clone();
+                let omitted = class != ServiceClass::StandardProcessing;
+                let view = super::super::lower_response(
+                    &decoded.semantic,
+                    &decoded.fidelity,
+                    &metadata,
+                    profile,
+                    TargetContract::full(),
+                )
+                .unwrap();
+                assert_eq!(view.metadata().context.service_class().is_absent(), omitted);
+                assert_eq!(
+                    view.projection()
+                        .iter()
+                        .any(|e| e.rule() == "openai.omit-unrepresentable-service-class.v1"),
+                    omitted
+                );
+                assert_eq!(metadata, source);
+                let mut encoder = EventEncoder::new(profile, metadata.clone()).unwrap();
+                let opening = encoder
+                    .encode(&StreamEvent::Started, &decoded.fidelity)
+                    .unwrap();
+                for event in opening {
+                    let body = if profile == GenerationApi::Responses {
+                        &event["response"]
+                    } else {
+                        &event
+                    };
+                    if omitted {
+                        assert!(body.get("service_tier").is_none());
+                    } else {
+                        assert_eq!(body["service_tier"], "default");
+                    }
+                }
+                let mut changed = metadata.clone();
+                changed
+                    .context
+                    .reports
+                    .iter_mut()
+                    .next()
+                    .unwrap()
+                    .service_class = Presence::Value(if class == ServiceClass::PriorityCapacity {
+                    ServiceClass::StandardCapacity
+                } else {
+                    ServiceClass::PriorityCapacity
+                });
+                assert!(encoder.update_metadata(changed).is_err());
+                if profile == GenerationApi::Responses {
+                    let mut strict = TargetContract::full();
+                    strict.reported_facts = super::super::ReportedFactPolicy::StrictComplete;
+                    let result = super::super::lower_response(
+                        &decoded.semantic,
+                        &decoded.fidelity,
+                        &metadata,
+                        profile,
+                        strict.clone(),
+                    );
+                    if omitted {
+                        assert_eq!(result.err(), Some(RepresentationError::ReportedFacts));
+                    } else {
+                        assert!(result.is_ok());
+                    }
+                    let mut encoder = EventEncoder::new(profile, metadata)
+                        .unwrap()
+                        .with_contract(strict);
+                    assert_eq!(
+                        encoder
+                            .encode(&StreamEvent::Started, &decoded.fidelity)
+                            .is_err(),
+                        omitted
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn uncarried_lifecycle_classes_still_reject_conflicting_reports() {
+        use crate::protocol::openai::{
+            Dialect, GenerationCodec, TargetContract, events::EventEncoder,
+        };
+        use crate::semantic::context::{ResponseReport, ResponseReports, ServiceClass};
+        let decoded=GenerationCodec::new(GenerationApi::Responses,Dialect::Standard,None).decode_response(
+            br#"{"id":"r","object":"response","model":"m","created_at":1,"status":"completed","output":[]}"#
+        ).unwrap();
+        let mut metadata = decoded.metadata.clone();
+        metadata.context.reports = ResponseReports::Lifecycle {
+            opening: Some(Box::new(ResponseReport {
+                service_class: Presence::Value(ServiceClass::StandardCapacity),
+                ..Default::default()
+            })),
+            terminal: Some(Box::new(ResponseReport {
+                service_class: Presence::Value(ServiceClass::PriorityCapacity),
+                ..Default::default()
+            })),
+        };
+        assert_eq!(
+            super::super::lower_response(
+                &decoded.semantic,
+                &decoded.fidelity,
+                &metadata,
+                GenerationApi::Responses,
+                TargetContract::full()
+            )
+            .err(),
+            Some(RepresentationError::Metadata)
+        );
+        assert!(EventEncoder::new(GenerationApi::Responses, metadata.clone()).is_err());
+        let mut opening = metadata.clone();
+        let ResponseReports::Lifecycle { terminal, .. } = &mut opening.context.reports else {
+            unreachable!()
+        };
+        *terminal = None;
+        let mut encoder = EventEncoder::new(GenerationApi::Responses, opening.clone()).unwrap();
+        encoder
+            .encode(&StreamEvent::Started, &decoded.fidelity)
+            .unwrap();
+        let item = StreamEvent::ItemStarted {
+            item: ItemId::scoped(LocalScope::new(1), 1),
+            kind: ItemKind::Message { phase: None },
+            replay: None,
+        };
+        let mut valid = EventEncoder::new(GenerationApi::Responses, opening).unwrap();
+        valid
+            .encode(&StreamEvent::Started, &decoded.fidelity)
+            .unwrap();
+        valid.encode(&item, &decoded.fidelity).unwrap();
+        assert!(encoder.update_metadata(metadata).is_err());
+        assert!(encoder.encode(&item, &decoded.fidelity).is_err());
+        assert!(encoder.finish().is_err());
     }
 
     /// Settings echoes lose only controls without a target carrier; protected reports reject.

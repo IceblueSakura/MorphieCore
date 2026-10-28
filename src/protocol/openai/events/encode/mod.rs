@@ -116,6 +116,20 @@ impl EventEncoder {
         self.target_locked = true;
         let checked_projection = self.projection.len();
         let result = (|| {
+            if self.contract.reported_facts
+                == crate::protocol::conversion::generation::ReportedFactPolicy::StrictComplete
+                && self.metadata.context.reports.iter().any(|report| {
+                    projection::service_class_view(&report.service_class, self.profile)
+                        != report.service_class
+                })
+            {
+                return Err(CodecError::Representation {
+                    boundary:
+                        crate::protocol::conversion::generation::ConversionBoundary::EventProject,
+                    cause:
+                        crate::protocol::conversion::generation::RepresentationError::ReportedFacts,
+                });
+            }
             let metadata_echo = if self.profile == GenerationApi::Responses {
                 projection::request_metadata_echo(&self.metadata, self.contract.reported_facts)
                     .map_err(|cause| CodecError::Representation {
@@ -209,6 +223,15 @@ impl EventEncoder {
             } else {
                 self.chat(event, probabilities)?
             };
+            if self.profile == GenerationApi::Chat
+                && !values.is_empty()
+                && projection::service_class_view(
+                    self.metadata.context.service_class(),
+                    self.profile,
+                ) != *self.metadata.context.service_class()
+            {
+                self.record_loss(projection::ProjectionRule::OmitUnrepresentableServiceClass);
+            }
             for v in &mut values {
                 if self.profile == GenerationApi::Responses {
                     v["sequence_number"] = json!(self.sequence);
@@ -323,9 +346,6 @@ fn validate_metadata(
     metadata: &ResponseMetadata,
 ) -> Result<(), CodecError> {
     for report in metadata.context.reports.iter() {
-        if let Some(class) = report.service_class.value() {
-            crate::protocol::openai::service::class_wire(*class, profile)?;
-        }
         if let Some(settings) = &report.settings {
             settings.validate()?;
             if !settings.safety.is_empty() {
