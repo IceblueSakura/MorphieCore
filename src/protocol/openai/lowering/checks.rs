@@ -125,7 +125,10 @@ pub(super) fn represent_reasoning(
             if value.format() != ReplayFormat::ResponsesEncrypted {
                 return Err(RepresentationError::ReplayFormat);
             }
-            if (profile == GenerationApi::Chat || request) && r.status != ItemLifecycle::Completed {
+            if (profile == GenerationApi::Chat || request)
+                && r.status != ItemLifecycle::Completed
+                && !(profile == GenerationApi::Responses && r.status == ItemLifecycle::Incomplete)
+            {
                 return Err(RepresentationError::Terminal);
             }
         }

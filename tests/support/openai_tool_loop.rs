@@ -112,14 +112,26 @@ async fn answer(
         return failure;
     }
     let reasoning = history[0]["content"] == "reasoning";
+    let mode = history[0]["content"]
+        .as_str()
+        .or_else(|| history[0]["content"][0]["text"].as_str())
+        .unwrap();
+    let incomplete = !chat && mode == "incomplete" && turn == 1;
     let stream = body["stream"] == true;
     let bytes = if stream {
         let mut bytes = Vec::new();
-        for event in events(profile, turn, reasoning) {
-            let mode = history[0]["content"]
-                .as_str()
-                .or_else(|| history[0]["content"][0]["text"].as_str())
-                .unwrap();
+        for mut event in events(profile, turn, reasoning) {
+            if incomplete {
+                if event["type"] == "response.output_item.done"
+                    && event["item"]["type"] == "reasoning"
+                {
+                    event["item"]["status"] = serde_json::json!("incomplete");
+                }
+                if event["type"] == "response.completed" {
+                    event["type"] = serde_json::json!("response.incomplete");
+                    responses::make_incomplete(&mut event["response"]);
+                }
+            }
             if matches!(mode, "cut" | "cancel")
                 && (event["type"] == "response.completed"
                     || event["choices"][0]["finish_reason"].is_string())
@@ -133,12 +145,12 @@ async fn answer(
         }
         bytes
     } else {
-        serde_json::to_vec(&snapshot(profile, turn, reasoning)).unwrap()
+        let mut value = snapshot(profile, turn, reasoning);
+        if incomplete {
+            responses::make_incomplete(&mut value);
+        }
+        serde_json::to_vec(&value).unwrap()
     };
-    let mode = history[0]["content"]
-        .as_str()
-        .or_else(|| history[0]["content"][0]["text"].as_str())
-        .unwrap();
     if matches!(mode, "hold" | "cut" | "cancel" | "terminal-cut") {
         let cut = matches!(mode, "cut" | "terminal-cut");
         let stream = futures_util::stream::unfold(

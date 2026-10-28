@@ -47,7 +47,7 @@ fn opaque_value_is_semantic_and_debug_is_redacted() {
 }
 
 #[test]
-fn partial_output_is_reportable_but_incomplete_owner_cannot_be_replayed() {
+fn final_incomplete_reasoning_replays_exactly_but_partial_tokens_do_not() {
     for status in ["in_progress", "incomplete", "completed"] {
         let mut d = responses::decode_response(&envelope(
             "incomplete",
@@ -71,6 +71,21 @@ fn partial_output_is_reportable_but_incomplete_owner_cannot_be_replayed() {
         let history =
             GenerationRequest::new(d.semantic.items().to_vec(), GenerationControls::default())
                 .unwrap();
-        assert_eq!(encode(&history, &d.fidelity).is_ok(), status == "completed");
+        let encoded = encode(&history, &d.fidelity);
+        assert_eq!(encoded.is_ok(), status != "in_progress");
+        if let Ok(encoded) = encoded {
+            assert_eq!(encoded["input"][0]["encrypted_content"], "synthetic-token");
+            assert_eq!(encoded["input"][0]["id"], "rs");
+            if status == "incomplete" {
+                assert_eq!(encoded["input"][0]["status"], "incomplete");
+            }
+            let mut foreign = contract();
+            foreign.replay_origin =
+                Some(morphiecore::semantic::value::ReplayOrigin::new("different-issuer").unwrap());
+            assert!(matches!(
+                lower_request(&history, &d.fidelity, GenerationApi::Responses, foreign),
+                Err(morphiecore::protocol::openai::lowering::RepresentationError::ReplayOrigin)
+            ));
+        }
     }
 }

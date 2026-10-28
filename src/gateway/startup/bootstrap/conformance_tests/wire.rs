@@ -52,6 +52,18 @@ fn corpus(api: Api) -> Value {
     serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap()
 }
 
+pub(super) fn raw_messages_headers() -> (String, String) {
+    let corpus: Value = serde_json::from_str(include_str!(
+        "../../../../../testdata/repair-and-recall/agent-defaults.json"
+    ))
+    .unwrap();
+    let headers = &corpus["raw_messages_headers"];
+    (
+        headers["anthropic-version"].as_str().unwrap().into(),
+        headers["anthropic-beta"].as_str().unwrap().into(),
+    )
+}
+
 pub(super) fn request(api: Api, profile: Profile, model: &str, stream: bool) -> Value {
     let corpus: Value = serde_json::from_str(include_str!(
         "../../../../../testdata/repair-and-recall/agent-defaults.json"
@@ -186,9 +198,20 @@ pub(super) fn upstream(
     turn: usize,
     stream: bool,
     model: &str,
+    incomplete: bool,
 ) -> String {
     let mut value = snapshot(api, profile, turn);
     value["model"] = json!(model);
+    if incomplete {
+        assert_eq!(api, Api::Responses);
+        value["status"] = json!("incomplete");
+        value["incomplete_details"] = json!({"reason":"max_output_tokens"});
+        for item in value["output"].as_array_mut().unwrap() {
+            if item["type"] == "reasoning" {
+                item["status"] = json!("incomplete");
+            }
+        }
+    }
     if !stream {
         return value.to_string();
     }
@@ -247,6 +270,7 @@ pub(super) fn upstream(
             initial["status"] = json!("in_progress");
             initial["output"] = json!([]);
             initial["usage"] = Value::Null;
+            initial["incomplete_details"] = Value::Null;
             let mut events = vec![json!({"type":"response.created","response":initial})];
             for (index, item) in value["output"].as_array().unwrap().iter().enumerate() {
                 let id = &item["id"];
@@ -289,7 +313,7 @@ pub(super) fn upstream(
                     json!({"type":"response.output_item.done","output_index":index,"item":item}),
                 );
             }
-            events.push(json!({"type":"response.completed","response":value}));
+            events.push(json!({"type":if incomplete {"response.incomplete"}else{"response.completed"},"response":value}));
             for (i, event) in events.iter_mut().enumerate() {
                 event["sequence_number"] = json!(i);
             }
@@ -316,11 +340,25 @@ pub(super) fn delivered(api: Api, bytes: &[u8], stream: bool) -> Value {
             assert_eq!(
                 events
                     .iter()
-                    .filter(|e| e["type"] == "response.completed")
+                    .filter(|e| matches!(
+                        e["type"].as_str(),
+                        Some("response.completed" | "response.incomplete")
+                    ))
                     .count(),
                 1
             );
-            assert_eq!(events.last().unwrap()["type"], "response.completed");
+            let terminal = events.last().unwrap();
+            assert_eq!(
+                terminal["type"],
+                format!(
+                    "response.{}",
+                    terminal["response"]["status"].as_str().unwrap()
+                )
+            );
+            assert!(matches!(
+                terminal["type"].as_str(),
+                Some("response.completed" | "response.incomplete")
+            ));
             let mut opened = std::collections::BTreeMap::new();
             let mut completed = Vec::new();
             for event in &events {
@@ -655,7 +693,7 @@ pub(super) fn assert_failure(api: Api, stream: bool, status: u16, bytes: &[u8], 
         let event: Value = serde_json::from_str(data).unwrap();
         assert!(!matches!(
             event["type"].as_str(),
-            Some("response.completed" | "message_stop")
+            Some("response.completed" | "response.incomplete" | "message_stop")
         ));
         if api == Api::Chat {
             assert!(

@@ -18,10 +18,12 @@ for (const [api, name] of [
 ]) {
   const corpus = JSON.parse(readFileSync(new URL(`../../testdata/repair-and-recall/${name}/session.json`, import.meta.url), "utf8"));
   result.requests[name] = {};
-  for (const profile of ["text", "tools", "reasoning"]) {
+  for (const profile of ["text", "tools", "reasoning", ...(name === "messages" ? ["raw_headers"] : [])]) {
+    const rawHeaders = profile === "raw_headers";
+    const reasoning = profile === "reasoning" || rawHeaders;
     const model = {
       id: "synthetic-model", name: "Synthetic", api, provider: "synthetic",
-      baseUrl: "http://127.0.0.1:1/v1", reasoning: profile === "reasoning", input: ["text"],
+      baseUrl: "http://127.0.0.1:1/v1", reasoning, input: ["text"],
       cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
       contextWindow: 200000, maxTokens: 16384,
     };
@@ -38,13 +40,20 @@ for (const [api, name] of [
     let calls = 0;
     const stream = streamSimple(model, context, {
       apiKey: "synthetic-key", env: {}, sessionId: "synthetic-session",
-      reasoning: profile === "reasoning" ? "medium" : undefined,
+      reasoning: reasoning ? "medium" : undefined,
       maxRetries: 0, timeoutMs: 2000,
-      headers: api === "anthropic-messages" ? { "anthropic-version": "2026-10-21", "anthropic-beta": "" } : undefined,
+      headers: api === "anthropic-messages" && !rawHeaders ? { "anthropic-version": "2026-10-21", "anthropic-beta": "" } : undefined,
       fetch: async (url, init) => {
         assert.equal(new URL(url).origin, "http://127.0.0.1:1");
         calls++;
-        result.requests[name][profile] = JSON.parse(init.body);
+        if (rawHeaders) {
+          const headers = new Headers(init.headers);
+          result.raw_messages_headers = Object.fromEntries(
+            ["anthropic-version", "anthropic-beta"].map(name => [name, headers.get(name)])
+          );
+        } else {
+          result.requests[name][profile] = JSON.parse(init.body);
+        }
         return new Response(JSON.stringify({ error: { message: "Synthetic capture complete", type: "invalid_request_error" } }), {
           status: 400, headers: { "content-type": "application/json" },
         });

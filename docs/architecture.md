@@ -572,7 +572,7 @@ Upstream opaque tokens and signatures are delivered in tagged [`mc1.`](file:///h
 - **Foreign history transfer:** Routing to an incompatible model strips foreign reasoning on candidate copies (`transfer-visible-history.v1`) via [`protocol::replay_projection`](file:///home/sakura/development/MorphieCore/src/protocol/replay_projection.rs), preserving visible messages and tool calls.
 - **Supported replay carriers:** Anthropic thinking signatures and `redacted_thinking`, Responses `encrypted_content`, Google `thoughtSignature`, and Interactions `function_call.signature`.
 
-Accepted revision (2026-10-28, P3; implementation pending): the transfer rule covers any reasoning a candidate cannot carry, including a foreign issuer, an unsupported lifecycle or a binding without a history carrier, not only complete foreign reasoning. Same-issuer `incomplete` reasoning is forwarded exactly to Responses, whose input union admits that status.
+Accepted revision (2026-10-28, P3): same-issuer `incomplete` reasoning with a finalized replay token is forwarded exactly to Responses, whose input union admits that status; implemented with preserved item identity/status and issuer checks. `in_progress` partial tokens remain non-replayable. The broader transfer revision remains pending: omit reasoning a candidate cannot carry because of a foreign issuer, unsupported lifecycle or missing binding history carrier, not only complete foreign reasoning.
 
 #### Binding reasoning-history contract
 

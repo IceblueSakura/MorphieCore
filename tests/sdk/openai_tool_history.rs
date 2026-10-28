@@ -6,7 +6,7 @@ use std::time::Duration;
 async fn history_case(profile: GenerationApi, recovery_stream: Option<bool>) {
     let (script, requests) = match profile {
         GenerationApi::Chat => ("tests/sdk/chat_tool_history.py", 6),
-        GenerationApi::Responses => ("tests/sdk/responses_history.py", 12),
+        GenerationApi::Responses => ("tests/sdk/responses_history.py", 16),
     };
     let requests = if recovery_stream.is_some() {
         4

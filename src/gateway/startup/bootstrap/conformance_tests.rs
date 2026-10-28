@@ -30,20 +30,25 @@ impl Drop for Server {
     }
 }
 
-async fn send(boot: &Fixture, api: Api, body: Value) -> (u16, Vec<u8>, bool) {
+async fn send(
+    boot: &Fixture,
+    api: Api,
+    body: Value,
+    headers: &[(&str, &str)],
+) -> (u16, Vec<u8>, bool) {
+    let mut request = Request::builder()
+        .method("POST")
+        .uri(api.path())
+        .header("authorization", format!("Bearer {KEY}"))
+        .header("content-type", "application/json");
+    for &(name, value) in headers {
+        request = request.header(name, value);
+    }
     let response = tokio::time::timeout(
         DEADLINE,
-        boot.gateway.router().oneshot(
-            Request::builder()
-                .method("POST")
-                .uri(api.path())
-                .header("authorization", format!("Bearer {KEY}"))
-                .header("content-type", "application/json")
-                .header("anthropic-version", "2026-10-21")
-                .header("anthropic-beta", "")
-                .body(Body::from(body.to_string()))
-                .unwrap(),
-        ),
+        boot.gateway
+            .router()
+            .oneshot(request.body(Body::from(body.to_string())).unwrap()),
     )
     .await
     .unwrap()
@@ -160,6 +165,9 @@ enum Control {
     Default,
     Stored,
     WithoutCache,
+    LegacyVersion,
+    ThinkingBeta,
+    Incomplete { stored: bool },
 }
 
 async fn lane(
@@ -190,6 +198,7 @@ async fn lane(
                     turn,
                     body["stream"] == true,
                     body["model"].as_str().unwrap(),
+                    matches!(control, Control::Incomplete { .. }) && turn == 0,
                 );
                 let content_type = if body["stream"] == true {
                     "text/event-stream"
@@ -219,7 +228,11 @@ async fn lane(
     )
     .unwrap();
     let mut request = wire::request(client, profile, model, stream);
-    if control == Control::Stored {
+    let stored = matches!(
+        control,
+        Control::Stored | Control::Incomplete { stored: true }
+    );
+    if stored {
         assert_eq!(client, Api::Responses);
         request["store"] = json!(true);
     }
@@ -230,7 +243,26 @@ async fn lane(
             wire::without_cache(&mut request);
         }
         let before = calls.lock().unwrap().len();
-        let (status, bytes, failed) = send(&boot, client, request.clone()).await;
+        let raw_headers = wire::raw_messages_headers();
+        let headers = [
+            (
+                "anthropic-version",
+                if control == Control::LegacyVersion {
+                    raw_headers.0.as_str()
+                } else {
+                    "2026-10-21"
+                },
+            ),
+            (
+                "anthropic-beta",
+                if control == Control::ThinkingBeta {
+                    raw_headers.1.as_str()
+                } else {
+                    ""
+                },
+            ),
+        ];
+        let (status, bytes, failed) = send(&boot, client, request.clone(), &headers).await;
         let record = report(&boot, turn + 1).await;
         let outcome = disposition(&record);
         let after = calls.lock().unwrap().len();
@@ -238,6 +270,13 @@ async fn lane(
         outcomes.push(format!("{outcome}@{}", after - before));
         if outcome != "accepted" {
             wire::assert_failure(client, stream, status, &bytes, failed);
+            if matches!(control, Control::LegacyVersion | Control::ThinkingBeta) {
+                assert_eq!(status, 400);
+                assert_eq!(
+                    serde_json::from_slice::<Value>(&bytes).unwrap()["error"]["type"],
+                    "invalid_request_error"
+                );
+            }
             break;
         }
         assert_eq!(status, 200);
@@ -250,10 +289,31 @@ async fn lane(
         assert!(!failed, "successful diagnostic with aborted client body");
         if turn == 1 {
             wire::assert_history(upstream, profile, &calls.lock().unwrap()[1]);
+            if matches!(control, Control::Incomplete { .. }) {
+                let calls = calls.lock().unwrap();
+                let item = calls[1]["input"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .find(|i| i["type"] == "reasoning")
+                    .unwrap();
+                assert_eq!(item["status"], "incomplete");
+            }
         }
         let value = wire::delivered(client, &bytes, stream);
         wire::assert_delivery(client, profile, turn, &value);
-        if control == Control::Stored {
+        if turn == 0 && matches!(control, Control::Incomplete { .. }) {
+            assert_eq!(value["status"], "incomplete");
+            assert_eq!(value["incomplete_details"]["reason"], "max_output_tokens");
+            let item = value["output"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|i| i["type"] == "reasoning")
+                .unwrap();
+            assert_eq!(item["status"], "incomplete");
+        }
+        if stored {
             let response = tokio::time::timeout(
                 DEADLINE,
                 boot.gateway.router().oneshot(
@@ -338,6 +398,38 @@ async fn messages_delivery_controls_reach_post_dispatch_boundaries() {
             // unreported-completion-cause restriction is the remaining boundary.
             let expected = &["codec.unsupported.terminal@1"];
             assert_eq!(actual, expected, "delivery {}/{stream}", binding.1);
+        }
+    }
+}
+
+#[tokio::test]
+async fn installed_messages_headers_reject_before_dispatch() {
+    let binding = BINDINGS.iter().find(|b| b.4 == Api::Messages).unwrap();
+    for control in [Control::LegacyVersion, Control::ThinkingBeta] {
+        assert_eq!(
+            lane(binding, Api::Messages, Profile::Text, true, control).await,
+            ["gateway.invalid_request@0"]
+        );
+    }
+}
+
+#[tokio::test]
+async fn incomplete_responses_reasoning_keeps_its_delivery_and_replay_status() {
+    let binding = BINDINGS
+        .iter()
+        .find(|b| b.1 == "openrouter-responses")
+        .unwrap();
+    for stored in [false, true] {
+        for stream in [false, true] {
+            let actual = lane(
+                binding,
+                Api::Responses,
+                Profile::Reasoning,
+                stream,
+                Control::Incomplete { stored },
+            )
+            .await;
+            assert_eq!(actual, ["accepted@1", "accepted@1"]);
         }
     }
 }

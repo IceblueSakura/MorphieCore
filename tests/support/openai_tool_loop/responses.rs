@@ -24,6 +24,16 @@ pub fn snapshot(turn: usize) -> Value {
         ])},"usage":{"input_tokens":11,"output_tokens":7,"total_tokens":18,
             "input_tokens_details":{"cached_tokens":3},"output_tokens_details":{"reasoning_tokens":2}}})
 }
+pub fn make_incomplete(response: &mut Value) {
+    response["status"] = json!("incomplete");
+    response["incomplete_details"] = json!({"reason":"max_output_tokens"});
+    for item in response["output"].as_array_mut().unwrap() {
+        if item["type"] == "reasoning" {
+            item["status"] = json!("incomplete");
+        }
+    }
+}
+
 pub fn events(turn: usize) -> Vec<Value> {
     let mut events = crate::responses_wire::response_events(snapshot(turn));
     if turn == 1 {
@@ -88,6 +98,8 @@ pub fn assert_request(body: &Value) -> usize {
         "properties":{"key":{"type":"string"}},"required":["key"]})
     );
     let history = body["input"].as_array().unwrap();
+    let incomplete =
+        history[0]["content"] == "incomplete" || history[0]["content"][0]["text"] == "incomplete";
     let turn = if history.iter().any(|v| {
         v["role"] == "user" && (v["content"] == "next" || v["content"][0]["text"] == "next")
     }) {
@@ -99,7 +111,7 @@ pub fn assert_request(body: &Value) -> usize {
     };
     if turn >= 2 {
         let mut expected = vec![
-            json!({"type":"message","role":"user","content":[{"type":"input_text","text":"lookup"}]}),
+            json!({"type":"message","role":"user","content":[{"type":"input_text","text":if incomplete{"incomplete"}else{"lookup"}}]}),
             json!({"id":"reason","type":"reasoning",
             "summary":[{"type":"summary_text","text":"Plan 🧪"}],
             "content":[{"type":"reasoning_text","text":"Check"}],"encrypted_content":"synthetic-final-token"}),
@@ -112,6 +124,9 @@ pub fn assert_request(body: &Value) -> usize {
             json!({"type":"function_call_output","call_id":"call-second","output":"second-result"}),
             json!({"type":"function_call_output","call_id":"call-lookup","output":RESULT}),
         ];
+        if incomplete {
+            expected[1]["status"] = json!("incomplete");
+        }
         if turn == 3 {
             expected.extend([
                 json!({"id":"answer-2","type":"message","role":"assistant","status":"completed","phase":"final_answer",
