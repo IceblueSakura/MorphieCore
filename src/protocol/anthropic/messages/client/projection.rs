@@ -107,6 +107,24 @@ pub(super) fn project_reasoning(reasoning: &ReasoningItem) -> Result<&ReasoningI
     }
 }
 
+/// Reported null metadata is the only selected execution-hint omission.
+pub(crate) fn validate_execution(
+    execution: &crate::semantic::context::ExecutionHints,
+) -> Result<(), CodecError> {
+    let allowed = crate::semantic::context::ExecutionHints {
+        metadata: if matches!(execution.metadata, Presence::Null) {
+            Presence::Null
+        } else {
+            Presence::Absent
+        },
+        ..Default::default()
+    };
+    if execution != &allowed {
+        return Err(CodecError::Unsupported(CarrierReason::Unavailable));
+    }
+    Ok(())
+}
+
 /// Retained content, metadata and accounting reflect the actual Messages carrier.
 pub(crate) fn project_snapshot(response: &mut DecodedResponse) -> Result<(), CodecError> {
     for (_, item) in response.semantic.items() {
@@ -130,9 +148,8 @@ pub(crate) fn project_snapshot(response: &mut DecodedResponse) -> Result<(), Cod
     if let Some(class) = response.metadata.context.service_class().value() {
         wire::service::class_wire(*class)?;
     }
-    if response.metadata.context.execution != crate::semantic::context::ExecutionHints::default() {
-        return Err(CodecError::Unsupported(CarrierReason::Unavailable));
-    }
+    validate_execution(&response.metadata.context.execution)?;
+    response.metadata.context.execution.metadata = Presence::Absent;
     for report in response.metadata.context.reports.iter_mut() {
         report.settings = None;
     }
@@ -172,6 +189,15 @@ pub(crate) fn metadata_losses(
     metadata: &crate::protocol::ResponseMetadata,
 ) -> Vec<crate::protocol::conversion::generation::Effect> {
     let mut losses = vec![];
+    if matches!(metadata.context.execution.metadata, Presence::Null) {
+        losses.push(crate::protocol::conversion::generation::Effect::Field {
+            rule: "messages.omit-null-response-metadata.v1".into(),
+            field: "response.context.metadata".into(),
+            boundary: "response.project".into(),
+            change: "omit".into(),
+            owner: crate::protocol::conversion::generation::Owner::Root,
+        });
+    }
     if metadata
         .context
         .reports

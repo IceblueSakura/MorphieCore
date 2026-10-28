@@ -385,6 +385,7 @@ Order of precedence: **Lossless mapping → Bounded approximation → Meaningful
 | Terminal stops | Coarsen natural/stop-sequence causes to `stop` or `end_turn` under named rules |
 
 - `chat.omit-null-stream-metadata.v1`: Chat SSE omits reported `metadata: null`.
+- `messages.omit-null-response-metadata.v1`: Messages JSON and SSE omit only reported `metadata: null`, losing explicit-null presence on the delivered/retained view while preserving the upstream observation. Absent metadata needs no receipt; empty/nonempty maps and other unsupported execution hints still reject. The rule does not echo request metadata or reinterpret it as `metadata.user_id`.
 - `chat.omit-text-item-status.v1`: Plain-text incomplete message items omit individual item status when overall finish reason is `length`.
 (See [`ProjectionRule`](file:///home/sakura/development/MorphieCore/src/protocol/openai/lowering/projection.rs#L10) for the complete lowering inventory).
 
@@ -775,6 +776,7 @@ Authoritative log of accepted architectural decisions and their systemic consequ
 | Upstream protocol tests | 2026-10-23 | Pinned official SDK and upstream fixtures serve as regression baseline |
 | Delta coalescing | 2026-10-26 | Default 50ms / 16 KiB buffer merges adjacent text deltas |
 | Messages ordered block delivery | 2026-10-28 | Codec-local bounded serialization preserves owner/part order, incremental head output and signed history; incomplete text-owner wire closure preserves source lifecycle, native intake and EOF authority |
+| Messages null metadata omission | 2026-10-28 | Selected JSON/SSE null-only omission with per-view evidence; source observations remain unchanged and maps/other unsupported execution hints reject |
 | Scoped source accounting | 2026-10-20 | Retains raw usage scopes independently without premature summation |
 | Honest delivery | 2026-10-20 | Publication freezes failover; completion requires validated upstream EOF |
 | Configurable capture | 2026-10-20 | Four opt-in capture boundaries with mandatory credential redaction |

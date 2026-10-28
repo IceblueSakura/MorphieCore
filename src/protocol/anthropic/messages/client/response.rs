@@ -5,11 +5,15 @@ use crate::protocol::{CodecError, DecodedResponse, anthropic::messages as wire};
 use crate::semantic::task::generation::*;
 use serde_json::{Map, Value, json};
 
+/// Render projected execution hints; ClientAdapter owns omission and evidence.
 pub fn encode_client_response(
     response: &DecodedResponse,
     model: &str,
 ) -> Result<Value, CodecError> {
     response.metadata.validate()?;
+    if response.metadata.context.execution != crate::semantic::context::ExecutionHints::default() {
+        return Err(CodecError::Unsupported(CarrierReason::Unavailable));
+    }
     crate::protocol::reports::validate_single(&response.metadata.context.reports)?;
     let semantic = &response.semantic;
     if semantic

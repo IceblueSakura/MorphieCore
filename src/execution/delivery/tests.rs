@@ -82,6 +82,220 @@ fn finalized_json_still_needs_handoff_and_cannot_resume_after_rejection() {
 }
 
 #[test]
+fn messages_null_metadata_matches_json_stream_and_retained_views() {
+    let part = json!({"type":"output_text","text":"partial","annotations":[]});
+    let item = json!({"id":"msg","type":"message","role":"assistant","status":"incomplete","content":[part]});
+    for (hints, allowed) in [
+        (json!({}), true),
+        (json!({"metadata":null}), true),
+        (json!({"metadata":{}}), false),
+        (json!({"metadata":{"ticket":"reported"}}), false),
+        (json!({"metadata":null,"background":false}), false),
+    ] {
+        for (stream, late) in [(false, false), (true, false), (true, true)] {
+            let mut response = json!({"id":"r","object":"response","created_at":1,"model":"m",
+                "status":"incomplete","output":[item],"incomplete_details":{"reason":"max_output_tokens"},
+                "usage":{"input_tokens":1,"output_tokens":2,"total_tokens":3,"input_tokens_details":{"cached_tokens":0}}});
+            response
+                .as_object_mut()
+                .unwrap()
+                .extend(hints.as_object().unwrap().clone());
+            let codec = GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None);
+            let mut attempt = Attempt::new(codec, 65536, Default::default());
+            let mut delivery = ResponseDelivery::new(
+                ClientAdapter::Messages,
+                "public",
+                Default::default(),
+                Default::default(),
+                Obfuscation::Disabled,
+            );
+            let mut output = vec![];
+            let mut error = None;
+            if stream {
+                attempt.begin(200, "text/event-stream").unwrap();
+                let mut opening = json!({"id":"r","object":"response","created_at":1,"model":"m",
+                    "status":"in_progress","output":[]});
+                if !late {
+                    opening
+                        .as_object_mut()
+                        .unwrap()
+                        .extend(hints.as_object().unwrap().clone());
+                }
+                let frames = [
+                    json!({"type":"response.created","response":opening}),
+                    json!({"type":"response.output_item.added","output_index":0,"item":{
+                        "id":"msg","type":"message","role":"assistant","status":"in_progress","content":[]}}),
+                    json!({"type":"response.content_part.added","output_index":0,"item_id":"msg","content_index":0,
+                        "part":{"type":"output_text","text":"","annotations":[]}}),
+                    json!({"type":"response.output_text.delta","output_index":0,"item_id":"msg","content_index":0,"delta":"partial","logprobs":[]}),
+                    json!({"type":"response.output_text.done","output_index":0,"item_id":"msg","content_index":0,"text":"partial","logprobs":[]}),
+                    json!({"type":"response.content_part.done","output_index":0,"item_id":"msg","content_index":0,"part":part}),
+                    json!({"type":"response.output_item.done","output_index":0,"item":item}),
+                    json!({"type":"response.incomplete","response":response}),
+                ];
+                for (sequence, mut frame) in frames.into_iter().enumerate() {
+                    frame["sequence_number"] = sequence.into();
+                    let wire = format!(
+                        "event: {}\ndata: {frame}\n\n",
+                        frame["type"].as_str().unwrap()
+                    );
+                    for fragment in wire.as_bytes().chunks(7) {
+                        let mut rest = fragment;
+                        while !rest.is_empty() {
+                            let (used, events) = attempt.push(rest).unwrap();
+                            assert!(used > 0);
+                            rest = &rest[used..];
+                            if error.is_none() {
+                                match delivery.encode_events(&attempt, &events) {
+                                    Ok(batch) => {
+                                        output.extend(batch.into_bytes().into_iter().flatten());
+                                        if !output.is_empty()
+                                            && delivery.lifecycle().may_retry_or_fallback()
+                                        {
+                                            delivery.commit().unwrap();
+                                        }
+                                    }
+                                    Err(e) => error = Some(e),
+                                }
+                            }
+                        }
+                    }
+                }
+                assert!(!String::from_utf8_lossy(&output).contains("message_stop"));
+                if late {
+                    assert!(String::from_utf8_lossy(&output).contains("partial"));
+                    assert!(!delivery.lifecycle().may_retry_or_fallback());
+                }
+            } else {
+                attempt.begin(200, "application/json").unwrap();
+                attempt
+                    .push(&serde_json::to_vec(&response).unwrap())
+                    .unwrap();
+            }
+            attempt.finish().unwrap();
+            let observed = attempt.response().unwrap().clone();
+            if hints.get("background").is_some() {
+                assert_eq!(
+                    observed.metadata.context.execution.background,
+                    Presence::Value(false)
+                );
+            }
+            let result = if stream {
+                delivery
+                    .finish_stream(&attempt)
+                    .map(|batch| batch.into_bytes().concat())
+            } else {
+                delivery.encode_json(&attempt)
+            };
+            if !allowed {
+                assert!(
+                    result.is_err(),
+                    "rejection must prevent terminal finalization"
+                );
+                let error = error.unwrap_or_else(|| result.unwrap_err());
+                assert!(
+                    matches!(
+                        error.codec(),
+                        Some(CodecError::Unsupported(CarrierReason::Unavailable))
+                    ),
+                    "{stream} {late} {hints}: {error:?}"
+                );
+                assert!(delivery.complete(&attempt).is_err());
+                assert!(!String::from_utf8_lossy(&output).contains("message_stop"));
+                assert!(
+                    ClientAdapter::Messages
+                        .stream_encoder(
+                            observed.metadata.clone(),
+                            Default::default(),
+                            Default::default(),
+                            Obfuscation::Disabled
+                        )
+                        .is_err()
+                );
+                assert!(
+                    crate::protocol::anthropic::messages::client::encode_client_response(
+                        &observed, "m"
+                    )
+                    .is_err()
+                );
+                continue;
+            }
+            assert!(error.is_none(), "{stream} {late} {hints}: {error:?}");
+            output.extend(result.unwrap());
+            delivery.commit().unwrap();
+            delivery.complete(&attempt).unwrap();
+            let (retained, wire) = delivery.snapshot(&attempt).unwrap();
+            let wire: Value = serde_json::from_slice(&wire).unwrap();
+            assert_eq!(wire["content"], json!([{"type":"text","text":"partial"}]));
+            assert_eq!(wire["stop_reason"], "max_tokens");
+            assert!(wire.get("metadata").is_none());
+            assert!(retained.metadata.context.execution.metadata.is_absent());
+            assert_eq!(attempt.response().unwrap(), &observed);
+            if stream {
+                let wire = String::from_utf8(output).unwrap();
+                assert!(wire.contains("\"stop_reason\":\"max_tokens\""));
+                assert_eq!(wire.matches("event: message_stop").count(), 1);
+                assert!(!wire.contains("\"metadata\""));
+            } else {
+                assert_eq!(serde_json::from_slice::<Value>(&output).unwrap(), wire);
+            }
+            let omitted = hints.get("metadata") == Some(&Value::Null);
+            for view in [
+                if stream {
+                    View::DownstreamSse
+                } else {
+                    View::DownstreamJson
+                },
+                View::RetainedJson,
+            ] {
+                assert_eq!(
+                    delivery
+                        .report
+                        .attempt()
+                        .evidence
+                        .entries
+                        .iter()
+                        .filter(|e| e.view == view
+                            && e.effect.rule() == "messages.omit-null-response-metadata.v1"
+                            && e.effect.field() == "response.context.metadata")
+                        .count(),
+                    usize::from(omitted)
+                );
+            }
+            let mut encoder = ClientAdapter::Messages
+                .stream_encoder(
+                    observed.metadata.clone(),
+                    Default::default(),
+                    Default::default(),
+                    Obfuscation::Disabled,
+                )
+                .unwrap();
+            assert_eq!(
+                encoder
+                    .effects()
+                    .iter()
+                    .filter(|e| e.rule() == "messages.omit-null-response-metadata.v1")
+                    .count(),
+                usize::from(omitted)
+            );
+            let mut unsupported = observed.metadata.clone();
+            unsupported.context.execution.metadata = Presence::Value(Default::default());
+            assert!(encoder.update_metadata(unsupported).is_err());
+            assert!(encoder.update_metadata(observed.metadata.clone()).is_err());
+            assert!(encoder.finish().is_err());
+            // Raw rendering requires a projected view so it cannot silently omit a fact.
+            assert_eq!(
+                crate::protocol::anthropic::messages::client::encode_client_response(
+                    &observed, "m"
+                )
+                .is_err(),
+                omitted
+            );
+        }
+    }
+}
+
+#[test]
 fn original_request_metadata_is_attempt_local_and_matches_responses_snapshots() {
     let chat = GenerationCodec::new(GenerationApi::Chat, Dialect::Standard, None);
     let responses = GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None);

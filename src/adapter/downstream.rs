@@ -351,16 +351,19 @@ impl ClientAdapter {
         }
         let encoder = match self {
             Self::Messages => {
-                let mut encoder =
+                let encoder =
                     crate::protocol::anthropic::messages::client::sse::ClientEventEncoder::new(
                         metadata.required_id()?,
                         &metadata.model,
                     )
                     .with_limits(limits)?;
-                crate::protocol::reports::validate_single(&metadata.context.reports)?;
-                encoder.update_service_class(metadata.context.service_class().clone())?;
-                encoder.update_delivery(metadata.delivery.as_deref());
-                Encoder::Messages(encoder)
+                let mut client = ClientEncoder {
+                    encoder: Encoder::Messages(encoder),
+                    native_projection: None,
+                    losses: vec![],
+                };
+                client.update_metadata(metadata)?;
+                return Ok(client);
             }
             Self::OpenAi { adapter, contract } => match adapter.protocol {
                 GenerationApi::Chat => Encoder::Chat(ChatSseEncoder::new(
@@ -536,10 +539,11 @@ impl ClientEncoder {
                     e.reject();
                     return Err(CodecError::Unsupported(CarrierReason::Safety).into());
                 }
-                if metadata.context.execution != crate::semantic::context::ExecutionHints::default()
-                {
+                if let Err(error) = crate::protocol::anthropic::messages::client::validate_execution(
+                    &metadata.context.execution,
+                ) {
                     e.reject();
-                    return Err(CodecError::Unsupported(CarrierReason::Unavailable).into());
+                    return Err(error.into());
                 }
                 e.update_service_class(metadata.context.service_class().clone())?;
                 e.update_delivery(metadata.delivery.as_deref());

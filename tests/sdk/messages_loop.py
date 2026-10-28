@@ -172,24 +172,25 @@ with httpx.Client(trust_env=False, timeout=10) as http:
             ]},
         ])
         assert replayed.content[0].text == "replayed"
-        stops, text = [], []
-        with client.messages.stream(model="schedule-incomplete", max_tokens=64,
-                messages=[{"role": "user", "content": "go"}]) as stream:
-            for event in stream:
-                if event.type == "content_block_stop":
-                    stops.append(event.content_block.model_dump(exclude_none=True))
-                elif event.type == "text":
-                    text.append(event.text)
-            partial = stream.get_final_message()
-        assert partial.stop_reason == "max_tokens"
-        content = [block.model_dump(exclude_none=True) for block in partial.content]
-        assert stops == content == [
-            {"type": "text", "text": "AC"}, {"type": "text", "text": "B"}, {"type": "text", "text": "D"},
-        ]
-        assert "".join(text) == "ACBD"
-        replayed = client.messages.create(model="schedule-incomplete", max_tokens=64, messages=[
-            {"role": "user", "content": "go"}, {"role": "assistant", "content": content},
-            {"role": "user", "content": "continue"},
-        ])
-        assert replayed.content[0].text == "replayed"
-print(json.dumps({"requests": 13, "partial": True, "refusal_details": True, "unsigned_replay_rejected": True, "scheduled_history": True, "incomplete_history": True}))
+        for model in ("schedule-incomplete", "schedule-metadata"):
+            stops, text = [], []
+            with client.messages.stream(model=model, max_tokens=64,
+                    messages=[{"role": "user", "content": "go"}]) as stream:
+                for event in stream:
+                    if event.type == "content_block_stop":
+                        stops.append(event.content_block.model_dump(exclude_none=True))
+                    elif event.type == "text":
+                        text.append(event.text)
+                partial = stream.get_final_message()
+            assert partial.stop_reason == "max_tokens"
+            content = [block.model_dump(exclude_none=True) for block in partial.content]
+            assert stops == content == [
+                {"type": "text", "text": "AC"}, {"type": "text", "text": "B"}, {"type": "text", "text": "D"},
+            ]
+            assert "".join(text) == "ACBD"
+            replayed = client.messages.create(model=model, max_tokens=64, messages=[
+                {"role": "user", "content": "go"}, {"role": "assistant", "content": content},
+                {"role": "user", "content": "continue"},
+            ])
+            assert replayed.content[0].text == "replayed"
+print(json.dumps({"requests": 15, "partial": True, "refusal_details": True, "unsigned_replay_rejected": True, "scheduled_history": True, "incomplete_history": True, "null_metadata_history": True}))

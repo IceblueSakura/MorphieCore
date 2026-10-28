@@ -52,7 +52,7 @@ async fn handle(
     let wire: Value = serde_json::from_slice(&body).unwrap();
     if matches!(
         wire["model"].as_str(),
-        Some("schedule" | "schedule-incomplete")
+        Some("schedule" | "schedule-incomplete" | "schedule-metadata")
     ) {
         return scheduled_history(&seen, &body, &wire);
     }
@@ -314,11 +314,11 @@ async fn sdk_messages_native_controls_history_and_partial_stream() {
         "synthetic Messages SDK failure: {}",
         String::from_utf8_lossy(&output.stderr)
     );
-    assert_eq!(*observed.lock().unwrap(), 13);
+    assert_eq!(*observed.lock().unwrap(), 15);
     let report: Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(
         report,
-        json!({"requests":13,"partial":true,"refusal_details":true,"unsigned_replay_rejected":true,"scheduled_history":true,"incomplete_history":true})
+        json!({"requests":15,"partial":true,"refusal_details":true,"unsigned_replay_rejected":true,"scheduled_history":true,"incomplete_history":true,"null_metadata_history":true})
     );
     let mut node = tokio::process::Command::new("node");
     node.env_clear()
@@ -337,7 +337,7 @@ async fn sdk_messages_native_controls_history_and_partial_stream() {
         "Messages TypeScript callbacks: {}",
         String::from_utf8_lossy(&output.stderr)
     );
-    assert_eq!(*observed.lock().unwrap(), 17);
+    assert_eq!(*observed.lock().unwrap(), 21);
     guard.0.abort();
     let _ = server.await;
 }
@@ -345,9 +345,9 @@ async fn sdk_messages_native_controls_history_and_partial_stream() {
 fn scheduled_history(seen: &Mutex<usize>, body: &[u8], wire: &Value) -> Response {
     use anthropic::messages::client::{encode_client_response, sse::ClientEventEncoder};
     *seen.lock().unwrap() += 1;
-    assert!(*seen.lock().unwrap() <= 17);
+    assert!(*seen.lock().unwrap() <= 21);
     let model = wire["model"].as_str().unwrap();
-    let incomplete = model == "schedule-incomplete";
+    let incomplete = model != "schedule";
     let target = ReplayTarget::new("synthetic-schedule", model).unwrap();
     let expected = if incomplete {
         json!([
@@ -410,6 +410,9 @@ fn scheduled_history(seen: &Mutex<usize>, body: &[u8], wire: &Value) -> Response
             origin: None,
         })
     };
+    if model == "schedule-metadata" {
+        return responses_null_metadata(events, model);
+    }
     let mut source = StreamState::new();
     let mut encoder = ClientEventEncoder::new("scheduled", model);
     let mut output = vec![];
@@ -427,6 +430,88 @@ fn scheduled_history(seen: &Mutex<usize>, body: &[u8], wire: &Value) -> Response
         static_wire["content"].as_array().unwrap().len(),
         if incomplete { 3 } else { 5 }
     );
+    Response::builder()
+        .header("content-type", "text/event-stream")
+        .body(Body::from(output))
+        .unwrap()
+}
+
+fn responses_null_metadata(events: Vec<StreamEvent>, model: &str) -> Response {
+    use morphiecore::protocol::{
+        fidelity::FidelityRecords,
+        openai::{Dialect, GenerationApi, GenerationCodec, events::EventEncoder},
+    };
+    use morphiecore::semantic::value::Presence;
+    let mut metadata = crate::events_support::metadata();
+    metadata.context.execution.metadata = Presence::Null;
+    let mut producer = EventEncoder::new(GenerationApi::Responses, metadata)
+        .unwrap()
+        .with_contract(crate::events_support::contract());
+    let mut attempt = Attempt::new(
+        GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None),
+        1 << 20,
+        SseLimits::default(),
+    );
+    attempt.begin(200, "text/event-stream").unwrap();
+    let mut delivery = ResponseDelivery::new(
+        ClientAdapter::Messages,
+        model,
+        SseLimits::default(),
+        StreamOptions::default(),
+        Obfuscation::Disabled,
+    );
+    let mut output = vec![];
+    for mut event in events {
+        if let StreamEvent::Usage(usage) = &mut event {
+            usage.input_relation = InputTokenRelation::IncludesCache;
+            usage.cached_input_tokens = Some(0);
+        }
+        for value in producer
+            .encode(&event, &FidelityRecords::default())
+            .unwrap()
+        {
+            let wire = format!("data: {value}\n\n");
+            for fragment in wire.as_bytes().chunks(7) {
+                let mut rest = fragment;
+                while !rest.is_empty() {
+                    let (used, events) = attempt.push(rest).unwrap();
+                    assert!(used > 0);
+                    rest = &rest[used..];
+                    output.extend(
+                        delivery
+                            .encode_events(&attempt, &events)
+                            .unwrap()
+                            .into_bytes()
+                            .into_iter()
+                            .flatten(),
+                    );
+                }
+            }
+        }
+    }
+    producer.finish().unwrap();
+    assert!(!String::from_utf8_lossy(&output).contains("message_stop"));
+    attempt.finish().unwrap();
+    output.extend(
+        delivery
+            .finish_stream(&attempt)
+            .unwrap()
+            .into_bytes()
+            .into_iter()
+            .flatten(),
+    );
+    delivery.commit().unwrap();
+    delivery.complete(&attempt).unwrap();
+    assert!(matches!(
+        attempt
+            .response()
+            .unwrap()
+            .metadata
+            .context
+            .execution
+            .metadata,
+        Presence::Null
+    ));
     Response::builder()
         .header("content-type", "text/event-stream")
         .body(Body::from(output))

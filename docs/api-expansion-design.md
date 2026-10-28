@@ -8,7 +8,7 @@
   - [Proposed ownership](#proposed-ownership)
   - [Generation boundary review](#generation-boundary-review)
     - [Missing Messages output ceilings](#missing-messages-output-ceilings)
-    - [Messages null response metadata (unselected)](#messages-null-response-metadata-unselected)
+    - [Messages null response metadata](#messages-null-response-metadata)
     - [Google output report owners (unselected)](#google-output-report-owners-unselected)
   - [Resource and execution safety](#resource-and-execution-safety)
 - [Operation contracts](#operation-contracts)
@@ -196,13 +196,9 @@ Current Messages intake requires a manual budget of at least `1024` and strictly
 
 The user selected the candidate-local configuration, explicit-cap-only generic constructors and Go/Haiku `32000` catalog default on 2026-10-20. The accepted [missing-output-ceiling contract](architecture.md#missing-output-ceilings) now owns these rules; [Usage](usage.md#model-configuration) owns implemented configuration. No alternative default framework or independent output-limit IR extension is selected here.
 
-#### Messages null response metadata (unselected)
+#### Messages null response metadata
 
-Proposed on 2026-10-28; [Roadmap](roadmap.md#remaining-issue-dispositions) retains rejection until selection. Responses can explicitly report `metadata:null`; Messages has no standard response carrier. Omitting null loses reported presence, even though no key/value is lost. Existing Chat SSE omission does not authorize this direction.
-
-The recommended narrow rule is `messages.omit-null-response-metadata.v1` for Messages JSON and SSE: omit only reported null on the projected delivery/retained copy, recording `response.context.metadata` as an omitted root field. Preserve the original upstream observation. Absent metadata needs no action or receipt; empty/nonempty maps and other unsupported execution hints still reject. Do not echo request metadata or reinterpret it as Messages request `metadata.user_id`.
-
-Use the same representability check for snapshot projection and SSE initialization/updates; the raw JSON renderer must receive projected metadata rather than silently omit unsupported hints. Check independent absent/null/map cases, late rejection without success, source immutability, retained-history parity and actual SDK continuation. Messages currently has no selectable strict-complete report mode; do not add one for this rule or change OpenAI's existing strict behavior. The alternative is to retain the current rejection.
+The user selected the null-only JSON/SSE omission on 2026-10-28. [Architecture](architecture.md#accurate-ir-and-declared-loss) owns the accepted rule; [Development](development.md#sdk-loopback-gate) owns directional and consumer verification. No broader metadata omission, request echo or new Messages strict-complete mode was selected.
 
 #### Google output report owners (unselected)
 
