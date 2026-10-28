@@ -272,5 +272,42 @@ def run(base_url: str) -> None:
                      "protocols": 2, "deliveries": 2, "image_requests": 3, "speech_requests": speech_requests}))
 
 
+def run_messages(base_url):
+    import anthropic
+    import httpx2 as httpx
+    require_sdk("anthropic")
+    check(urlsplit(base_url).hostname == "127.0.0.1")
+    requests = 0
+    with httpx.Client(trust_env=False, follow_redirects=False, timeout=5) as http:
+        with anthropic.Anthropic(
+            api_key="synthetic-gateway-client-token-0001", base_url=base_url.removesuffix("/v1"),
+            max_retries=0, http_client=http, _strict_response_validation=True,
+            default_headers={"anthropic-version": "2026-10-21"},
+        ) as client:
+            for model in ("public-model", "cross-model"):
+                for stream in (False, True):
+                    history = [{"role": "user", "content": "begin"}]
+                    for _ in range(2):
+                        params = dict(model=model, max_tokens=32, messages=history)
+                        if stream:
+                            with client.messages.stream(**params) as events:
+                                text = "".join(events.text_stream)
+                                value = events.get_final_message()
+                            check(text == "bridge answer")
+                        else:
+                            value = client.messages.create(**params)
+                        requests += 1
+                        check(value.stop_reason == "end_turn" and value.stop_sequence is None)
+                        check(value.content[0].type == "text" and value.content[0].text == "bridge answer")
+                        history.extend([
+                            {"role": "assistant", "content": [part.model_dump(exclude_none=True) for part in value.content]},
+                            {"role": "user", "content": "continue"},
+                        ])
+    print(json.dumps({"requests": requests, "source_protocols": 2, "deliveries": 2}))
+
+
 if __name__ == "__main__":
-    run(sys.argv[1])
+    if len(sys.argv) == 3 and sys.argv[2] == "messages":
+        run_messages(sys.argv[1])
+    else:
+        run(sys.argv[1])

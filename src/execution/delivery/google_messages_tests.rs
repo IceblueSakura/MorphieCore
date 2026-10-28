@@ -570,6 +570,39 @@ fn google_service_reports_keep_processing_meaning_in_clients_and_reject_capacity
 }
 
 #[test]
+fn google_tool_stop_requires_its_separate_projection_policy() {
+    let (endpoint, request, frames) = fixture(false, true);
+    let mut attempt = Attempt::new(endpoint.adapter().unwrap(), 65536, Default::default());
+    attempt.begin(200, "text/event-stream").unwrap();
+    feed(
+        &mut attempt,
+        &mut delivery(&endpoint, &request),
+        &frames,
+        false,
+        false,
+    );
+    attempt.finish().unwrap();
+    let mut disabled = endpoint.clone();
+    let crate::lowering::target::TargetContract::GoogleGenerateContent(contract) =
+        &mut disabled.representation
+    else {
+        unreachable!()
+    };
+    contract.messages_terminal_projection = false;
+    let error = delivery(&disabled, &request)
+        .encode_json(&attempt)
+        .unwrap_err();
+    assert!(matches!(
+        error.codec(),
+        Some(CodecError::Unsupported(CarrierReason::Terminal))
+    ));
+    let wire: Value =
+        serde_json::from_slice(&delivery(&endpoint, &request).encode_json(&attempt).unwrap())
+            .unwrap();
+    assert_eq!(wire["stop_reason"], "tool_use");
+}
+
+#[test]
 fn google_messages_projection_requires_context_and_never_repairs_failure() {
     for interactions in [false, true] {
         let (endpoint, request, frames) = fixture(interactions, false);
@@ -640,6 +673,14 @@ fn google_messages_projection_requires_context_and_never_repairs_failure() {
                 delivery(&selected, &request)
             };
             assert!(d.messages_terminal.is_none());
+            if guard == "disabled" {
+                // Generic call-free derivation uses admitted request context;
+                // the Google-only flag still owns its separate tool-stop rule.
+                let wire: serde_json::Value =
+                    serde_json::from_slice(&d.encode_json(&attempt).unwrap()).unwrap();
+                assert_eq!(wire["stop_reason"], "end_turn");
+                continue;
+            }
             let error = d.encode_json(&attempt).unwrap_err();
             assert!(
                 matches!(

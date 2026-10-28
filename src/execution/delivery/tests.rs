@@ -82,6 +82,272 @@ fn finalized_json_still_needs_handoff_and_cannot_resume_after_rejection() {
 }
 
 #[test]
+fn messages_end_turn_derivation_uses_original_request_without_mutating_reports() {
+    use crate::semantic::task::generation::{
+        CompletionCause, InteractionProgress, Item, TerminalDetails,
+    };
+    let binding = crate::topology::catalog::API_KEY_BINDINGS
+        .iter()
+        .find(|b| b.endpoint_prefix == "openrouter")
+        .unwrap();
+    for api in [GenerationApi::Chat, GenerationApi::Responses] {
+        let codec = GenerationCodec::new(api, Dialect::Standard, None);
+        let endpoint = binding
+            .endpoint(if api == GenerationApi::Chat {
+                crate::topology::GenerationProtocol::OpenAiChat
+            } else {
+                crate::topology::GenerationProtocol::OpenAiResponses
+            })
+            .unwrap();
+        let wire = if api == GenerationApi::Chat {
+            json!({"id":"r","object":"chat.completion","created":1,"model":"m","choices":[
+                {"index":0,"message":{"role":"assistant","content":"answer"},"finish_reason":"stop","logprobs":null}
+            ],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2,
+                "prompt_tokens_details":{"cached_tokens":0,"cache_write_tokens":0}}})
+        } else {
+            json!({"id":"r","object":"response","created_at":1,"model":"m","status":"completed","metadata":null,
+                "output":[{"id":"msg","type":"message","role":"assistant","status":"completed",
+                    "content":[{"type":"output_text","text":"answer","annotations":[],"logprobs":[]}]}],
+                "usage":{"input_tokens":1,"output_tokens":1,"total_tokens":2,
+                    "input_tokens_details":{"cached_tokens":0,"cache_write_tokens":0}}})
+        };
+        let mut attempt = Attempt::new(codec, 65536, Default::default());
+        attempt.begin(200, "application/json").unwrap();
+        attempt.push(wire.to_string().as_bytes()).unwrap();
+        assert!(attempt.response().is_err());
+        attempt.finish().unwrap();
+        let source = attempt.response().unwrap().clone();
+        assert_eq!(source.semantic.progress(), InteractionProgress::Unreported);
+        assert_eq!(
+            source.semantic.details().completion,
+            (api == GenerationApi::Chat).then_some(CompletionCause::NaturalOrStopSequence)
+        );
+        for (bound, original_stops, effective_stops) in [
+            (true, false, false),
+            (false, false, false),
+            (true, true, false),
+            (true, false, true),
+        ] {
+            let mut original=GenerationCodec::new(GenerationApi::Chat,Dialect::Standard,None)
+                .decode_client_request(br#"{"model":"m","messages":[{"role":"user","content":"go"}],"max_completion_tokens":32}"#).unwrap();
+            let mut settings = original.task.semantic.settings().clone();
+            if original_stops {
+                settings
+                    .controls
+                    .stop_sequences
+                    .push(crate::semantic::value::Text::new("END", "fixture", 16).unwrap());
+            }
+            original.task.semantic = original.task.semantic.with_settings(settings).unwrap();
+            let mut effective = original.clone();
+            let mut settings = effective.task.semantic.settings().clone();
+            settings.controls.stop_sequences.clear();
+            if effective_stops {
+                settings
+                    .controls
+                    .stop_sequences
+                    .push(crate::semantic::value::Text::new("END", "fixture", 16).unwrap());
+            }
+            effective.task.semantic = effective.task.semantic.with_settings(settings).unwrap();
+            let mut delivery = ResponseDelivery::new(
+                ClientAdapter::Messages,
+                "public",
+                Default::default(),
+                Default::default(),
+                Obfuscation::Disabled,
+            );
+            if bound {
+                delivery = delivery.with_request(&endpoint, &effective, &original);
+            }
+            let result = delivery.encode_json(&attempt);
+            if bound && !original_stops && !effective_stops {
+                let output: Value = serde_json::from_slice(&result.unwrap()).unwrap();
+                assert_eq!(output["stop_reason"], "end_turn");
+                assert_eq!(output["stop_sequence"], Value::Null);
+                assert_eq!(output["content"], json!([{"type":"text","text":"answer"}]));
+                delivery.commit().unwrap();
+                delivery.complete(&attempt).unwrap();
+                let (retained, _) = delivery.snapshot(&attempt).unwrap();
+                assert_eq!(
+                    retained.semantic.progress(),
+                    InteractionProgress::TurnFinished
+                );
+                assert_eq!(
+                    retained.semantic.details().completion,
+                    Some(CompletionCause::Natural)
+                );
+                assert!(
+                    delivery
+                        .report
+                        .attempt()
+                        .evidence
+                        .entries
+                        .iter()
+                        .any(|entry| entry.effect.rule()
+                            == "messages.infer-end-turn-from-request.v1")
+                );
+            } else {
+                assert!(matches!(
+                    result.unwrap_err().codec(),
+                    Some(CodecError::Unsupported(CarrierReason::Terminal))
+                ));
+            }
+            assert_eq!(attempt.response().unwrap(), &source);
+        }
+        let continued = source
+            .semantic
+            .clone()
+            .with_progress(InteractionProgress::NeedsContinuation)
+            .unwrap();
+        assert!(
+            crate::protocol::anthropic::messages::client::completed_without_stops(
+                &continued,
+                "response.project"
+            )
+            .unwrap()
+            .is_none()
+        );
+        let stopped = source
+            .semantic
+            .clone()
+            .with_details(TerminalDetails {
+                completion: Some(CompletionCause::StopSequence(
+                    crate::semantic::value::Text::new("END", "fixture", 16).unwrap(),
+                )),
+                ..Default::default()
+            })
+            .unwrap();
+        assert!(
+            crate::protocol::anthropic::messages::client::completed_without_stops(
+                &stopped,
+                "response.project"
+            )
+            .unwrap()
+            .is_none()
+        );
+        assert!(
+            source
+                .semantic
+                .items()
+                .iter()
+                .all(|(_, item)| matches!(item, Item::Message(_)))
+        );
+    }
+}
+
+#[test]
+fn messages_end_turn_stream_waits_for_eof_and_final_metadata() {
+    use crate::semantic::task::generation::{CompletionCause, InteractionProgress};
+    let endpoint = crate::topology::catalog::API_KEY_BINDINGS
+        .iter()
+        .find(|b| b.endpoint_prefix == "openrouter")
+        .unwrap()
+        .endpoint(crate::topology::GenerationProtocol::OpenAiResponses)
+        .unwrap();
+    let request = ClientAdapter::Messages
+        .decode_client_request(
+            br#"{"model":"m","max_tokens":32,"messages":[{"role":"user","content":"go"}]}"#,
+        )
+        .unwrap();
+    for mode in ["complete", "before-eof", "cancel", "late-metadata"] {
+        let codec = GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None);
+        let mut attempt = Attempt::new(codec, 65536, Default::default());
+        let mut delivery = ResponseDelivery::new(
+            ClientAdapter::Messages,
+            "public",
+            Default::default(),
+            Default::default(),
+            Obfuscation::Disabled,
+        )
+        .with_request(&endpoint, &request, &request);
+        attempt.begin(200, "text/event-stream").unwrap();
+        let part = json!({"type":"output_text","text":"answer","annotations":[],"logprobs":[]});
+        let item = json!({"id":"msg","type":"message","role":"assistant","status":"completed","content":[part]});
+        let response = json!({"id":"r","object":"response","created_at":1,"model":"m","status":"completed","output":[item],
+            "metadata":if mode=="late-metadata" {json!({"must_keep":"value"})}else{Value::Null},
+            "usage":{"input_tokens":1,"output_tokens":1,"total_tokens":2,"input_tokens_details":{"cached_tokens":0,"cache_write_tokens":0}}});
+        let frames = [
+            json!({"type":"response.created","response":{"id":"r","object":"response","created_at":1,"model":"m","status":"in_progress","output":[],"metadata":null}}),
+            json!({"type":"response.output_item.added","output_index":0,"item":{"id":"msg","type":"message","role":"assistant","status":"in_progress","content":[]}}),
+            json!({"type":"response.content_part.added","output_index":0,"item_id":"msg","content_index":0,"part":{"type":"output_text","text":"","annotations":[],"logprobs":[]}}),
+            json!({"type":"response.output_text.delta","output_index":0,"item_id":"msg","content_index":0,"delta":"answer","logprobs":[]}),
+            json!({"type":"response.output_text.done","output_index":0,"item_id":"msg","content_index":0,"text":"answer","logprobs":[]}),
+            json!({"type":"response.content_part.done","output_index":0,"item_id":"msg","content_index":0,"part":part}),
+            json!({"type":"response.output_item.done","output_index":0,"item":item}),
+            json!({"type":"response.completed","response":response}),
+        ];
+        let mut output = vec![];
+        let mut encoding_error = None;
+        for (sequence, mut frame) in frames.into_iter().enumerate() {
+            frame["sequence_number"] = sequence.into();
+            let wire = format!("data: {frame}\n\n");
+            let (used, events) = attempt.push(wire.as_bytes()).unwrap();
+            assert_eq!(used, wire.len());
+            if encoding_error.is_none() {
+                match delivery.encode_events(&attempt, &events) {
+                    Ok(batch) => {
+                        output.extend(batch.into_bytes().into_iter().flatten());
+                        if !output.is_empty() && delivery.lifecycle().may_retry_or_fallback() {
+                            delivery.commit().unwrap();
+                        }
+                    }
+                    Err(error) => encoding_error = Some(error),
+                }
+            }
+        }
+        let text = String::from_utf8_lossy(&output);
+        assert!(text.contains("answer"));
+        assert!(!text.contains("message_stop"));
+        if mode == "before-eof" {
+            assert!(matches!(
+                delivery.finish_stream(&attempt),
+                Err(AttemptError::Protocol(
+                    crate::execution::attempt::ProtocolReason::AttemptNotFinished
+                ))
+            ));
+            continue;
+        }
+        attempt.finish().unwrap();
+        let source = attempt.response().unwrap().clone();
+        let terminal = attempt.terminal_event().unwrap().clone();
+        if mode == "cancel" {
+            delivery.cancel();
+        }
+        let result = delivery.finish_stream(&attempt);
+        if mode == "complete" {
+            assert!(encoding_error.is_none());
+            output.extend(result.unwrap().into_bytes().into_iter().flatten());
+            let text = String::from_utf8_lossy(&output);
+            assert_eq!(text.matches("event: message_stop\n").count(), 1);
+            assert!(text.contains("\"stop_reason\":\"end_turn\""));
+            delivery.complete(&attempt).unwrap();
+            let (snapshot, _) = delivery.snapshot(&attempt).unwrap();
+            assert_eq!(
+                snapshot.semantic.progress(),
+                InteractionProgress::TurnFinished
+            );
+            assert_eq!(
+                snapshot.semantic.details().completion,
+                Some(CompletionCause::Natural)
+            );
+        } else if mode == "late-metadata" {
+            assert!(result.is_err());
+            let error = encoding_error.unwrap_or_else(|| result.unwrap_err());
+            assert!(matches!(
+                error.codec(),
+                Some(CodecError::Unsupported(CarrierReason::Unavailable))
+            ));
+        } else {
+            assert!(result.is_err());
+        }
+        assert_eq!(attempt.response().unwrap(), &source);
+        assert_eq!(attempt.terminal_event().unwrap(), &terminal);
+        if mode != "complete" {
+            assert!(!String::from_utf8_lossy(&output).contains("message_stop"));
+        }
+    }
+}
+
+#[test]
 fn messages_empty_reports_match_json_stream_and_retained_views_without_loss() {
     let part = json!({"type":"output_text","text":"partial","annotations":[],"logprobs":[]});
     let item = json!({"id":"msg","type":"message","role":"assistant","status":"incomplete","content":[part]});

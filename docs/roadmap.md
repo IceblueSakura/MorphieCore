@@ -102,11 +102,7 @@ Selected on 2026-10-27, this workstream repairs semantic fidelity across standar
 
 ### Client/IR audit follow-up
 
-The audit covers Generation IR, its stream state and associated codec/delivery envelopes, not every standalone modality IR. Read/write tracing and bounded offline probes identified this remaining terminal gap; it does not require a duplicate semantic fact:
-
-- **Responses-to-Messages terminal restriction:** ordinary completed Responses text with `metadata:null` still rejects through actual Attempt/ResponseDelivery with `Unsupported(Terminal)`; explicit `max_output_tokens` incomplete text succeeds. [Messages terminal encoding](../src/protocol/anthropic/messages/terminal.rs) needs a supported completion cause/progress combination. Null-only metadata compatibility does not supply it. Implement the selected S1 derivation in order 4 while leaving source reports unchanged.
-
-The structural findings support local cleanup, not deletion of large parts of the semantic union:
+The audit covers Generation IR, its stream state and associated codec/delivery envelopes, not every standalone modality IR. Its remaining structural findings support local cleanup, not deletion of large parts of the semantic union:
 
 | Candidate | Finding | Disposition |
 |---|---|---|
@@ -126,7 +122,6 @@ The [2026-10-28 probe](refs/2026-10-27-client-ir-boundaries.md#agent-default-pro
 | Same-protocol Responses | Q1: Bailian Responses rejects pi's default reasoning summary, encrypted include and omitted strictness. Q2: it rejects its own delivered reasoning in the next turn | Order 1 under [S3/S4](#clientir-stabilization-decisions) for Q1, S5 and S11 for Q2 |
 | Same-protocol Chat | Standard profile fails after dispatch when the upstream emits reasoning (R); `readable_reasoning` passes. Two nonnull usage reports on finish and trailing chunks reduce as a duplicate final (U); this sequence needs Provider qualification | R under S6 and S11; qualify U before an order-1 change |
 | Same-protocol Messages | pi's bundled SDK version and beta header reject before body collection (M2); manual thinking is unavailable on the Haiku binding; adaptive signed history passes | Retained under S8; binding facts belong in discovery (S10) |
-| Into Messages clients | Empty probability reports now pass; F (unreported completion cause) still rejects ordinary Chat/Responses completion after dispatch | Order 4 |
 | Messages upstream into OpenAI clients | B/C enum catch-alls; D succeeds in SSE but fails JSON/retained | Orders 3 and 4 |
 | Responses/Chat clients into other protocols | G (omitted strictness), H (reasoning summary/encrypted include), effort scope without configured conversion, explicit image detail | Order 5 under S3/S4 |
 | Messages clients into other protocols | M1: pi's default owner-local `cache_control` rejects on every non-Messages route | Order 5 under S7 |
@@ -145,7 +140,7 @@ Order 0 has an initial permanent [five-binding production-construction gate](dev
 | 1 | Same-protocol defects: binding reasoning-history contract (S11), Q2 and remaining visible-history transfer (S5), Q1 (S3/S4), R planning rejection (S6), qualified U | Permanent per-lane regressions from the probe counterexamples; completed and finalized-incomplete same-issuer replay controls stay exact |
 | 2b | Existing-field semantic-equivalence review (S2): review current Generation Text Chat, Responses and Messages request, response, stream and history fields, using named-loss rules and empty/default guards as entry points | Classify each candidate as semantic equivalence, actual loss or insufficient evidence. Remove redundant named-loss paths, receipts and tests that only assert obsolete loss classification for confirmed equivalents; preserve necessary encoding conversions and valuable behavioral assertions |
 | 3 | Delivery agreement: D and details-only usage error class (U) | One input yields one disposition across JSON, SSE and retained views; preserve the completed text/custom-call grouping and rich/replay/SSE rejection controls |
-| 4 | Messages client terminals and enums: F for Chat and Responses sources, B, C | Accepted S1/S9 rules with independent JSON/SSE/history expectations through actual delivery; source causes stay unreported and EOF honesty holds |
+| 4 | Messages client enum reports: B, C | Accepted S9 rules with independent JSON/SSE/history expectations through actual delivery; preserve request-grounded terminal derivation, original source reports and EOF honesty |
 | 5 | Agent-default cross-protocol rules: G and H (S3/S4), Standard Chat omission (S6), M1 (S7); publish image-detail and effort-scope facts | Each accepted rule is named, reported and covered by the gate; cases outside the accepted rules remain documented rejections |
 | 6 | Discovery extension: probes use the order-0 corpus; publish preferred interface and per-interface adaptation rules from one compiled owner | Discovery facts match order-0 dispositions for every activated interface; see [Models discovery interfaces](#models-discovery-interfaces) |
 | 7 | Structural cleanup: narrow `GenerationDelivery.settings` to its three consumed values; unify usage events under a checkpoint/final contract; qualify `between_tools`, nullable output config and explicit disabled citations | Preserve report precedence, required-field completion, bounds and rejection; usage covers checkpoint → final, duplicate final, scoped reports and sparse counts; exact IR or a named projection precedes each capability change |
@@ -238,7 +233,7 @@ Every work package follows this lifecycle:
 
 ### Stage 3 work plan
 
-**Status: Closed for Generation Text projections; token counting deferred.** Implemented contracts: [model-effective guards](architecture.md#model-effective-values), [trusted missing-cap defaults](architecture.md#missing-output-ceilings), [attribution](architecture.md#end-user-attribution), [foreground Google intake](architecture.md#google-foreground-intake), and [Messages terminal projection](architecture.md#google-messages-terminal-projection).
+**Status: Closed for Generation Text projections; token counting deferred.** Implemented contracts: [model-effective guards](architecture.md#model-effective-values), [trusted missing-cap defaults](architecture.md#missing-output-ceilings), [attribution](architecture.md#end-user-attribution), [foreground Google intake](architecture.md#google-foreground-intake), and [Messages terminal projection](architecture.md#messages-terminal-projection).
 
 #### Google API pause
 
@@ -408,7 +403,6 @@ The user accepted principles P1–P5 and selections S1–S11 on 2026-10-28, then
 
 | Id | Accepted rule | Owner | Order |
 |---|---|---|---|
-| S1 | Messages terminal derivation | [Google Messages terminal projection](architecture.md#google-messages-terminal-projection) | 4 |
 | S2 | Semantic-equivalence compatibility | [Semantic-equivalence compatibility](architecture.md#semantic-equivalence-compatibility) | 2b |
 | S3 | Responses strictness resolution | [Projection principles](architecture.md#clientir-projection-principles) | 1, 5 |
 | S4 | Reasoning presentation and continuity | [Projection principles](architecture.md#clientir-projection-principles) | 1, 5 |

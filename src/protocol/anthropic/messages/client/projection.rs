@@ -57,12 +57,12 @@ impl GoogleTerminalPolicy {
             ) => (
                 Some(CompletionCause::Natural),
                 "messages.google-stop-without-sequences.v1",
-                "resolve",
+                "infer",
             ),
             (Self::InteractionsWithoutStops, InteractionProgress::TurnFinished, false, None) => (
                 Some(CompletionCause::Natural),
                 "messages.interactions-completed-as-end-turn.v1",
-                "approximate",
+                "infer",
             ),
             _ => return Ok(None),
         };
@@ -79,6 +79,51 @@ impl GoogleTerminalPolicy {
             },
         )))
     }
+}
+
+/// The caller supplies the admitted/effective no-stop premise. Source reports
+/// remain unchanged; the Messages target derives both end-turn facts.
+pub(crate) fn completed_without_stops(
+    source: &GenerationResponse,
+    direction: &'static str,
+) -> Result<
+    Option<(
+        TerminalDetails,
+        crate::protocol::conversion::generation::Effect,
+    )>,
+    CodecError,
+> {
+    source.details().validate(source.outcome())?;
+    if source.outcome() != Outcome::Completed
+        || !matches!(
+            source.progress(),
+            InteractionProgress::Unreported | InteractionProgress::TurnFinished
+        )
+        || source
+            .items()
+            .iter()
+            .any(|(_, item)| !matches!(item, Item::Message(_) | Item::Reasoning(_)))
+        || !matches!(
+            source.details().completion,
+            None | Some(CompletionCause::Natural | CompletionCause::NaturalOrStopSequence)
+        )
+        || source.progress() == InteractionProgress::TurnFinished
+            && source.details().completion == Some(CompletionCause::Natural)
+    {
+        return Ok(None);
+    }
+    let mut details = source.details().clone();
+    details.completion = Some(CompletionCause::Natural);
+    Ok(Some((
+        details,
+        crate::protocol::conversion::generation::Effect::Field {
+            rule: "messages.infer-end-turn-from-request.v1".into(),
+            field: crate::protocol::conversion::generation::Field::Completion,
+            boundary: direction.into(),
+            change: crate::protocol::conversion::generation::Change::InferFromRequest,
+            owner: crate::protocol::conversion::generation::Owner::Root,
+        },
+    )))
 }
 
 /// Client values are sealed envelopes; the format tag keeps a redacted block's type.

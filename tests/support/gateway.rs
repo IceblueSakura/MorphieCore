@@ -25,13 +25,17 @@ mod speech_support;
 pub const CLIENT_KEY: &str = "synthetic-gateway-client-token-0001";
 #[allow(dead_code)] // Shared SDK gates use this variant; the Router smoke selects embeddings.
 pub fn gateway(origin: &str, limits: Limits) -> Gateway {
-    bound_gateway(origin, limits, false)
+    bound_gateway(origin, limits, false, false)
 }
 #[allow(dead_code)]
 pub fn gateway_with_embeddings(origin: &str, limits: Limits) -> Gateway {
-    bound_gateway(origin, limits, true)
+    bound_gateway(origin, limits, true, false)
 }
-fn bound_gateway(origin: &str, limits: Limits, embeddings: bool) -> Gateway {
+#[allow(dead_code)]
+pub fn gateway_with_messages(origin: &str, limits: Limits) -> Gateway {
+    bound_gateway(origin, limits, false, true)
+}
+fn bound_gateway(origin: &str, limits: Limits, embeddings: bool, messages: bool) -> Gateway {
     let provider = ProviderDefinition {
         id: ProviderId::new("fixture").unwrap(),
         origin: TrustedOrigin::parse(origin).unwrap(),
@@ -241,6 +245,16 @@ fn bound_gateway(origin: &str, limits: Limits, embeddings: bool) -> Gateway {
         },
     ];
     let mut entries = entries;
+    if messages {
+        for (model, endpoint) in [("public-model", "responses"), ("cross-model", "chat")] {
+            entries.push(Entry {
+                chat_profile: Default::default(),
+                model: model.into(),
+                protocol: morphiecore::protocol::ClientProtocol::Messages,
+                endpoint: EndpointId::new(endpoint).unwrap(),
+            });
+        }
+    }
     entries.push(Entry {
         chat_profile: Default::default(),
         model: "no-files-model".into(),

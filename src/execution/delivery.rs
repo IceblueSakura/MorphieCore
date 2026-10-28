@@ -102,6 +102,7 @@ pub struct ResponseDelivery {
     deferred_evidence: EvidenceDelta,
     client: ClientAdapter,
     messages_terminal: Option<crate::protocol::anthropic::messages::client::GoogleTerminalPolicy>,
+    messages_without_stops: bool,
     public_label: String,
     limits: SseLimits,
     options: StreamOptions,
@@ -137,6 +138,7 @@ impl ResponseDelivery {
             deferred_evidence: EvidenceDelta::default(),
             client,
             messages_terminal: None,
+            messages_without_stops: false,
             public_label: public_label.into(),
             limits,
             options,
@@ -193,7 +195,19 @@ impl ResponseDelivery {
         ];
         self.input_estimate = completion::input_estimate(&request.task.semantic);
         if self.is_messages() {
-            self.messages_terminal = endpoint.representation.messages_terminal_policy(request);
+            self.messages_without_stops = original
+                .task
+                .semantic
+                .settings()
+                .controls
+                .stop_sequences
+                .is_empty()
+                && settings.controls.stop_sequences.is_empty();
+            self.messages_terminal = if self.messages_without_stops {
+                endpoint.representation.messages_terminal_policy(request)
+            } else {
+                None
+            };
         }
         self
     }
@@ -388,6 +402,21 @@ impl ResponseDelivery {
                 .with_details(details)
                 .map_err(crate::protocol::CodecError::from)?;
             losses.push(loss);
+        }
+        if self.messages_without_stops
+            && let Some((details, effect)) =
+                crate::protocol::anthropic::messages::client::completed_without_stops(
+                    &decoded.semantic,
+                    "response.project",
+                )?
+        {
+            decoded.semantic = decoded
+                .semantic
+                .with_progress(crate::semantic::task::generation::InteractionProgress::TurnFinished)
+                .map_err(CodecError::from)?
+                .with_details(details)
+                .map_err(CodecError::from)?;
+            losses.push(effect);
         }
         if self.client.protocol() == ClientProtocol::Responses || attempt.is_native() {
             for (owner, _) in decoded.semantic.items() {
@@ -617,6 +646,8 @@ impl ResponseDelivery {
                     attempt.response()?,
                 )?;
             }
+            let mut projected_terminal = false;
+            let mut progress = None;
             if let Some(policy) = self.messages_terminal
                 && let Some((details, effect)) =
                     policy.project(&attempt.response()?.semantic, "event.project")?
@@ -627,6 +658,26 @@ impl ResponseDelivery {
                 {
                     *target = details;
                 }
+                evidence.push(effect);
+                projected_terminal = true;
+            }
+            if !projected_terminal
+                && self.messages_without_stops
+                && let Some((details, effect)) =
+                    crate::protocol::anthropic::messages::client::completed_without_stops(
+                        &attempt.response()?.semantic,
+                        "event.project",
+                    )?
+            {
+                if let StreamEvent::Terminal {
+                    details: target, ..
+                } = &mut terminal
+                {
+                    *target = details;
+                }
+                progress = Some(StreamEvent::Progress(
+                    crate::semantic::task::generation::InteractionProgress::TurnFinished,
+                ));
                 evidence.push(effect);
             }
             if self
@@ -653,7 +704,8 @@ impl ResponseDelivery {
             {
                 return Err(CodecError::Unsupported(CarrierReason::Replay).into());
             }
-            let mut prepared = self.prepare(attempt, std::slice::from_ref(&terminal))?;
+            let terminal_events: Vec<_> = progress.into_iter().chain([terminal]).collect();
+            let mut prepared = self.prepare(attempt, &terminal_events)?;
             prepared.evidence.extend(evidence);
             let (frames, evidence) = self.encode_prepared_raw(prepared)?;
             self.encoder

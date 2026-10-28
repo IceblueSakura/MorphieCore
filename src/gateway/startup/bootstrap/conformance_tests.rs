@@ -394,9 +394,7 @@ async fn messages_delivery_controls_reach_post_dispatch_boundaries() {
                 Control::WithoutCache,
             )
             .await;
-            // Empty probability reports now pass; the independently scheduled
-            // unreported-completion-cause restriction is the remaining boundary.
-            let expected = &["codec.unsupported.terminal@1"];
+            let expected = &["accepted@1", "accepted@1"];
             assert_eq!(actual, expected, "delivery {}/{stream}", binding.1);
         }
     }

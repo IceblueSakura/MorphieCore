@@ -52,7 +52,7 @@ This page defines accepted principles, domain contracts, and architectural decis
     - [Lifecycle settings and service reports](#lifecycle-settings-and-service-reports)
     - [End-user attribution](#end-user-attribution)
     - [Selected request approximations](#selected-request-approximations)
-    - [Google Messages terminal projection](#google-messages-terminal-projection)
+    - [Messages terminal projection](#messages-terminal-projection)
   - [Reasoning controls](#reasoning-controls)
     - [Reasoning activation and effort scope](#reasoning-activation-and-effort-scope)
       - [Google response-effort projection](#google-response-effort-projection)
@@ -420,7 +420,7 @@ Accepted applications:
 - **Omitted Responses strictness (P5):** the [Responses reference](https://developers.openai.com/api/reference/resources/responses/methods/create) (read 2026-10-28) defines omission as strict validation when the schema is compatible and non-strict otherwise. Each tool is evaluated against the documented strict-schema subset: incompatible → explicit non-strict (exact); compatible with an equivalent strict carrier → strict (exact); compatible without one → non-strict under a named loss. The IR default is named for this conditional rule, not for schema normalization.
 - **Reasoning presentation and continuity requests (P2):** `summary:"auto"` selects the most detailed available summarizer, so a target without summaries satisfies it exactly; explicit `concise`/`detailed` take a named omission. Encrypted-reasoning `include` is exact when the target emits no reasoning items and takes a named continuity omission when reasoning has no opaque carrier.
 - **Carrier-less reports (P2):** served service classes and refusal categories without an OpenAI carrier are omitted on delivery copies, extending [explanatory terminal reports](#explanatory-terminal-reports). Anthropic standard capacity and OpenAI default processing remain distinct classes; no approximate tier is reported. Empty probability reports instead follow [semantic-equivalence compatibility](#semantic-equivalence-compatibility).
-- **Messages terminal derivation (P1):** see [Google Messages terminal projection](#google-messages-terminal-projection).
+- **Messages terminal derivation (P1):** see [Messages terminal projection](#messages-terminal-projection).
 - **Messages baseline:** the `2026-10-21` version and beta-header rejection remain; a legacy version would be a separate client grammar. Agents avoid unsupported beta features through [discovery](#generation-text-model-discovery).
 
 #### Downstream schema completion
@@ -467,13 +467,15 @@ Opaque user attribution projects across protocols via [`protocol::attribution`](
 - `deepseek.omit-parallel-tool-permission.v1`: Removes explicit `parallel_tool_calls: true` for DeepSeek targets; explicit `false` rejects.
 - Terminal approximations: Coarsens stop causes to OpenAI `stop`, Anthropic `end_turn`, or `tool_use`.
 
-#### Google Messages terminal projection
+#### Messages terminal projection
 
-Gemini 3.8 Flash bindings map native completions to Messages terminals:
-- `messages.google-tool-stop.v1`: Tool stops without explicit causes map to `tool_use`.
-- `messages.google-stop-without-sequences.v1`: Natural stops on requests without stop sequences map to `end_turn`.
+A completed, call-free outcome maps to `end_turn` for any source when both the admitted and effective request have no stop sequence. Responses has no stop-sequence parameter, and Chat defines `stop` as a natural stop or a provided sequence, so this is exact request-grounded inference (`InferFromRequest`). `messages.infer-end-turn-from-request.v1` supplies target-only natural completion and finished-turn progress; source response and terminal reports remain unchanged. JSON, SSE and retained views use the same premise.
 
-Accepted generalization (2026-10-28, P1; implementation pending): a completed, call-free outcome maps to `end_turn` for any source when the admitted request has no stop sequence. Responses has no stop-sequence parameter, and Chat defines `stop` as a natural stop or a provided sequence, so the derivation is exact. With declared stop sequences an unreported cause still rejects.
+Explicit stop causes are preserved. Unbound requests, declared stop sequences, continuation, incomplete/failed/cancelled outcomes and calls do not gain a generic end-turn derivation. SSE still requires validated upstream EOF and final metadata before publishing its terminal.
+
+Existing Gemini 3.8 Flash bindings retain their narrower rules:
+- `messages.google-stop-without-sequences.v1` and `messages.interactions-completed-as-end-turn.v1` use the same request-grounded inference classification for their call-free completions.
+- `messages.google-tool-stop.v1` remains a separately selected tool-stop projection. Disabling that Google-specific policy does not disable generic call-free inference and does not permit the ambiguous tool-stop case.
 
 ### Reasoning controls
 

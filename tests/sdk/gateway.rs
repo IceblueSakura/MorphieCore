@@ -16,6 +16,140 @@ use std::{
     time::Duration,
 };
 use tokio::{net::TcpListener, process::Command, sync::oneshot};
+
+#[tokio::test]
+#[ignore = "requires pinned Anthropic SDK; synthetic Chat/Responses completion and Messages history"]
+async fn sdk_messages_completion_from_openai_sources() {
+    let seen = Arc::new(Mutex::new(BTreeMap::<(bool, bool), usize>::new()));
+    let observed = seen.clone();
+    let answer = move |headers: HeaderMap, axum::Json(body): axum::Json<Value>| {
+        let seen = seen.clone();
+        async move {
+            assert_eq!(
+                headers["authorization"],
+                "Bearer synthetic-upstream-credential-0001"
+            );
+            let chat = body.get("messages").is_some();
+            let stream = body["stream"] == true;
+            let count = {
+                let mut seen = seen.lock().unwrap();
+                let count = seen.entry((chat, stream)).or_default();
+                *count += 1;
+                assert!(*count <= 2);
+                *count
+            };
+            assert_eq!(body["model"], "private-model");
+            if count == 2 {
+                let history = body[if chat { "messages" } else { "input" }]
+                    .as_array()
+                    .unwrap();
+                assert!(history.iter().any(|m| m["role"] == "assistant"
+                    && (m["content"] == "bridge answer"
+                        || m["content"][0]["text"] == "bridge answer")));
+            }
+            let response = if chat {
+                json!({"id":"chat","object":"chat.completion","created":1,"model":"private-model",
+                    "choices":[{"index":0,"message":{"role":"assistant","content":"bridge answer"},"finish_reason":"stop","logprobs":null}],
+                    "usage":{"prompt_tokens":3,"completion_tokens":1,"total_tokens":4,
+                        "prompt_tokens_details":{"cached_tokens":0,"cache_write_tokens":0}}})
+            } else {
+                json!({"id":"response","object":"response","created_at":1,"model":"private-model","status":"completed",
+                    "error":null,"incomplete_details":null,"metadata":null,"instructions":null,
+                    "access_programs":null,"temperature":null,"top_p":null,"parallel_tool_calls":true,"tool_choice":"auto","tools":[],
+                    "output":[{"id":"message","type":"message","role":"assistant","status":"completed",
+                        "content":[{"type":"output_text","text":"bridge answer","annotations":[],"logprobs":[]}]}],
+                    "usage":{"input_tokens":3,"output_tokens":1,"total_tokens":4,"input_tokens_details":{"cached_tokens":0,"cache_write_tokens":0}}})
+            };
+            let bytes = if !stream {
+                response.to_string()
+            } else if chat {
+                let chunk = |delta: Value, finish: Value| {
+                    json!({"id":"chat","object":"chat.completion.chunk","created":1,
+                    "model":"private-model","choices":[{"index":0,"delta":delta,"finish_reason":finish,"logprobs":null}],"usage":null})
+                };
+                let usage = json!({"id":"chat","object":"chat.completion.chunk","created":1,"model":"private-model","choices":[],"usage":response["usage"]});
+                format!(
+                    "data: {}\n\ndata: {}\n\ndata: {usage}\n\ndata: [DONE]\n\n",
+                    chunk(
+                        json!({"role":"assistant","content":"bridge answer"}),
+                        Value::Null
+                    ),
+                    chunk(json!({}), json!("stop"))
+                )
+            } else {
+                wire::response_events(response)
+                    .iter()
+                    .map(|event| format!("data: {event}\n\n"))
+                    .collect()
+            };
+            Response::builder()
+                .header(
+                    "content-type",
+                    if stream {
+                        "text/event-stream"
+                    } else {
+                        "application/json"
+                    },
+                )
+                .body(Body::from(bytes))
+                .unwrap()
+        }
+    };
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let origin = format!("http://{}", listener.local_addr().unwrap());
+    let router = Router::new()
+        .route("/chat/completions", post(answer.clone()))
+        .route("/responses", post(answer));
+    let upstream = tokio::spawn(async move {
+        axum::serve(listener, router).await.unwrap();
+    });
+    let _upstream = ServerGuard(upstream.abort_handle());
+    let gateway = support::gateway_with_messages(&origin, Limits::default());
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}/v1", listener.local_addr().unwrap());
+    let (stop, stopped) = oneshot::channel();
+    let serving = tokio::spawn(gateway.serve(listener, async {
+        let _ = stopped.await;
+    }));
+    let _server = ServerGuard(serving.abort_handle());
+    let mut command = Command::new(
+        std::env::var_os("MORPHIECORE_SDK_PYTHON").unwrap_or_else(|| "python3".into()),
+    );
+    let home = tempfile::tempdir().unwrap();
+    command
+        .env_clear()
+        .env("PATH", std::env::var_os("PATH").unwrap())
+        .env("HOME", home.path());
+    command
+        .args(["tests/sdk/gateway_text_loop.py", &base, "messages"])
+        .current_dir(env!("CARGO_MANIFEST_DIR"));
+    let output = super::child_process::run(&mut command, b"", Duration::from_secs(20), 64 << 10)
+        .await
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "Messages SDK: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let report: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(report["requests"], 8);
+    assert_eq!(
+        observed
+            .lock()
+            .unwrap()
+            .values()
+            .copied()
+            .collect::<Vec<_>>(),
+        vec![2; 4]
+    );
+    stop.send(()).unwrap();
+    tokio::time::timeout(Duration::from_secs(3), serving)
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+}
+
 fn tool_response(turn: u8) -> Value {
     let mut response = wire::response(turn);
     if turn == 1 {
