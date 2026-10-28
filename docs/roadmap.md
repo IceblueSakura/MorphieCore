@@ -7,6 +7,10 @@ This page owns current scope, priorities, dependencies, and exit gates. [Archite
 - [Current status](#current-status)
 - [Standard request boundary repair](#standard-request-boundary-repair)
 - [Three-protocol fidelity repair](#three-protocol-fidelity-repair)
+  - [Client/IR audit follow-up](#clientir-audit-follow-up)
+  - [Repair order and exit gates](#repair-order-and-exit-gates)
+  - [Current Client/IR blocking semantics](#current-clientir-blocking-semantics)
+  - [Remaining issue dispositions](#remaining-issue-dispositions)
 - [Standards reset and redesign](#standards-reset-and-redesign)
 - [Planned order](#planned-order)
   - [Execution sequence and work-package rules](#execution-sequence-and-work-package-rules)
@@ -52,14 +56,14 @@ This page owns current scope, priorities, dependencies, and exit gates. [Archite
 
 ## Current status
 
-**Current focus (2026-10-28):** The [three-protocol fidelity repair](#three-protocol-fidelity-repair) is closed within its selected scope, including ordered Messages delivery, incomplete text-owner closure and the selected null-metadata omission. Budget adjustment remains deferred: no qualified active conflict was identified in the reviewed catalog/examples. The next work is [Stage-4 operation contract selection](#stage-4-scope); no new operation or binding is activated by this closure.
+**Current focus (2026-10-28):** The [three-protocol fidelity repair](#three-protocol-fidelity-repair) is narrowly reopened by the [Client/IR audit](#clientir-audit-follow-up): repair Chat JSON custom-call grouping, select a Responses-to-Messages terminal projection, then perform targeted structural cleanup. Ordered Messages delivery, incomplete text-owner closure and null-only metadata omission remain completed baselines. Budget adjustment stays deferred. This follow-up does not activate new capabilities or bindings, change equal priority among Stage-4 families, or schedule Stage 5.
 
 **Completed baseline:** Generation Text correctness/lifecycle reviews, domain evidence, telemetry and standard request boundary repairs preceded the 2026-10-27 parsing/stream corrections. Single Messages signature validation, narrow Chat text/token-cap status projection and original-request Responses metadata echo are implemented. Their offline, SDK and installed-client evidence is separate from live acceptance; see [verification gates](development.md#verification-gates). Stage 4 retains equal priority across its API families.
 
 | Area | State | Next step |
 |---|---|---|
 | Routing | Stable routing baseline frozen; controlled synthetic recovery verified across Router, SDK, and installed clients | Real-failover production evidence required for multi-credential routes; no routing feature additions |
-| Generation IR / Codec | Request boundary corrections and scoped three-protocol fidelity repair complete | Preserve directional contracts; reopen only concrete failures or selected extensions |
+| Generation IR / Codec | Completed fidelity baseline retained; bounded Client/IR follow-up reopened | Resolve the two concrete delivery gaps before targeted IR/envelope cleanup; no broad IR redesign |
 | Client compatibility | Standard request intake enforced; installed-client validation uses explicit stable profiles | Revalidate JSON/SSE/tool/history flows on changed paths |
 | Integration | R1a/R1b/R2 loops, controlled recovery and bounded production-profile closure passed | Revalidate changed paths; retain real-failover exclusions without reopening a blanket model/client matrix |
 | Cross-protocol conversion | Stage 3 closed for selected projections; `count_tokens` deferred | Preserve verified evidence; Google API remains paused except text-report and Stage-4 Embedding paths |
@@ -74,7 +78,7 @@ The five-slice request correction was completed on 2026-10-26. [Architecture](ar
 
 ## Three-protocol fidelity repair
 
-Selected on 2026-10-27 and scoped-closed on 2026-10-28, this workstream repaired semantic fidelity across standard Chat Completions, Responses, and Messages. Authoritative contracts: [semantic fidelity](architecture.md#accurate-ir-and-declared-loss), [field handling](architecture.md#field-handling), and [stream normalization](architecture.md#semantic-stream-normalization). Supporting evidence lives in the [Client/IR audit](refs/2026-10-27-client-ir-boundaries.md); [Development](development.md#sdk-loopback-gate) separates offline/consumer verification from live acceptance.
+Selected on 2026-10-27, this workstream repairs semantic fidelity across standard Chat Completions, Responses, and Messages. The 2026-10-28 audit at `5b04a03` reopens the scoped closure for the concrete follow-up below. Authoritative contracts: [semantic fidelity](architecture.md#accurate-ir-and-declared-loss), [field handling](architecture.md#field-handling), and [stream normalization](architecture.md#semantic-stream-normalization). Supporting protocol research lives in the [Client/IR notes](refs/2026-10-27-client-ir-boundaries.md); [Development](development.md#sdk-loopback-gate) separates offline/consumer verification from live acceptance.
 
 ### Scope and boundaries
 
@@ -94,9 +98,59 @@ Selected on 2026-10-27 and scoped-closed on 2026-10-28, this workstream repaired
 | Vercel AI SDK & OpenAI Agents SDK | Typed stream consumers, incremental tool assembly, and history materialization |
 | Installed pi and OpenCode | Real-world CLI/TUI serialization, SDK event consumption, and signature replay |
 
+### Client/IR audit follow-up
+
+The audit covers Generation IR, its stream state and associated codec/delivery envelopes, not every standalone modality IR. Read/write tracing and bounded offline probes identified two delivery gaps; neither requires a duplicate semantic fact:
+
+- **Chat JSON grouping defect:** one text part plus a custom call succeeds, and two text parts plus a function call succeed, but two text parts plus a custom call reject. The [grouping path](../src/protocol/openai/lowering/native_response.rs) recognizes only function calls in both pending-call progress and call preservation. Extend the already selected plain-text grouping without opening custom-tool SSE.
+- **Responses-to-Messages terminal restriction:** ordinary completed Responses text with `metadata:null` still rejects through actual Attempt/ResponseDelivery with `Unsupported(Terminal)`; explicit `max_output_tokens` incomplete text succeeds. [Messages terminal encoding](../src/protocol/anthropic/messages/terminal.rs) needs a supported completion cause/progress combination. Null-only metadata omission does not supply it. A bounded terminal inference needs separate selection and must leave the source's unreported cause unchanged.
+
+The structural findings support local cleanup, not deletion of large parts of the semantic union:
+
+| Candidate | Finding | Disposition |
+|---|---|---|
+| `StreamEvent::Usage` / `UsageReport` | Two event representations feed the same report owner. [Reduction](../src/semantic/task/generation/stream/reduce.rs) rejects checkpoint → flat final `Usage`, but accepts checkpoint → final operation `UsageReport` | Prefer a canonical report event after resolving the transition contract; preserve protocol-specific rejection and resource accounting |
+| Stream result-header `ToolResult.status` / `StreamItem.status` | The [snapshot](../src/semantic/task/generation/stream/snapshot.rs) replaces the embedded initial status with the outer lifecycle | Low-priority stream-header cleanup only if it removes complexity; preserve opening validation and materialized/history result status |
+| `GenerationDelivery.settings` | An entire `GenerationSettings` is retained, but [construction](../src/execution/delivery/completion.rs) and [Responses completion](../src/protocol/openai/responses/envelope.rs) consume only tools, tool choice and parallel permission. A manually supplied valid `top_k` causes an irrelevant rendering rejection; production construction avoids it | Narrow the delivery container; this is envelope overbreadth, not duplicate core IR payload |
+| Unit/null `ExecutionHints` placeholders | `previous_response_id`, `conversation`, `prompt`, `moderation` and `context_management` currently retain bounded presence/inactive values rather than full active operations | Ownership review only, not dead-field deletion. Any relocation must preserve absent/null/empty distinctions and known-active-field rejection |
+
+Retain independently meaningful owners: root versus ordered instructions; requested, reported and delivery-completed values; response outcome, item lifecycle and interaction progress; value versus part completion; readable reasoning, opaque replay and dependency provenance; sparse usage totals and components. Public Responses storage facts also remain distinct from upstream execution intent. Unsupported client carriage alone is not evidence that an official-union field is redundant.
+
+### Repair order and exit gates
+
+Use existing grouping/projection, delivery completion, report reduction and test helpers; no new framework or broad compatibility layer. Planning this order does not select a new loss policy, terminal inference, or deferred capability.
+
+| Order | Work | Exit gate |
+|---|---|---|
+| 1 | Fix Chat JSON custom-call grouping, including the progress guard and preservation branch | Permanent three-way regression: one-part/custom and multipart/function controls pass; multipart/custom preserves combined text and unchanged call identity/input. Custom SSE and rich/replay negatives remain unchanged |
+| 2 | Qualify and select the Responses-to-Messages normal-completion mapping, then implement only the chosen rule | Agree source authority, eligible content/stop conditions, evidence and rejection cases first. Independent JSON/SSE/history expectations through actual delivery, source immutability and EOF honesty; missing facts never silently become source observations |
+| 3 | Narrow `GenerationDelivery.settings` to its three consumed completion values | Preserve each reported value's precedence, required-field completion and original-request metadata authority; unrelated settings cannot constrain this fallback |
+| 4 | Unify usage event representation under an explicit checkpoint/final contract | Cover checkpoint → final, duplicate final, scoped reports, sparse counts, replacement and bounds across producers/reducers/consumers; no mechanical alias replacement that changes acceptance unnoticed |
+| 5 | Review demand-qualified Client capability gaps | Qualify `between_tools`, nullable output config and explicit disabled citations separately against pinned contracts. Decide exact IR expression or a named projection before implementation; prewarming, full citations and hosted tools retain their existing scheduling gates |
+
+Orders 1 and 2 precede structural implementation; terminal research may run alongside the grouping fix. Stream-header status and placeholder relocation are optional reviews, not additional required rewrites. Each implementation slice needs the [offline baseline](development.md#offline-baseline), affected [SDK consumers](development.md#sdk-loopback-gate), and applicable current-client checks. Real Provider gates apply only when live behavior is claimed; reuse valid evidence for unchanged paths.
+
+### Current Client/IR blocking semantics
+
+These are Client intake/history or downstream delivery restrictions, not a catalog of Provider capability failures. Unknown extension fields are discarded; malformed known values remain grammar errors. The principal active boundaries are:
+
+| Boundary | Remaining blocking semantics |
+|---|---|
+| Chat → IR | Multi-result `n > 1`, tokenizer-unbound `logit_bias`, `web_search_options`, nonempty legacy `functions`, `function_call` and `role:function`; custom tools are not blanket-rejected |
+| Responses → IR | Unselected hosted tools/items and `include` families, background execution, active conversation/prompt/moderation and context-management operations. Public local `store`/`previous_response_id` are supported through [managed ingress](../src/gateway/ingress/admission.rs), not blanket blockers |
+| Messages → IR | `between_tools` lacks an exact admitted mode; nullable output effort/format, task budgets, per-message configuration, block binding/tool changes and citation controls reject. Direct ordinary tools remain distinct from hosted/programmatic callers. Execution extensions and zero-token prewarming are unselected; removed sampling controls still reject |
+| Resources and protected history → IR | File-ID carriers need trusted resource resolution; supported URL/data media remain available. Raw external reasoning signatures/tokens may pass syntax but fail [replay opening](../src/execution/replay.rs); gateway-sealed history is the supported continuation path |
+| IR → Chat | Standard reasoning has no carrier without an explicitly selected profile. Custom calls and some annotations reject in SSE; metadata maps lack a chunk carrier. Independent lifecycle and rich grouping have limits; the JSON custom-grouping defect is order 1 above |
+| IR → Responses | Incompatible replay formats/bindings, unrepresentable reported settings and some annotation SSE carriers reject. JSON cancellation does not imply an available cancellation SSE event |
+| IR → Messages | Unsigned/multi-summary or incompatible redacted reasoning; custom string-input calls, non-object tool input, unrepresentable call context, annotations/logprobs/generated media, metadata maps and other unsupported execution hints. Normal terminal meaning, continuation, service-class and already-published usage constraints remain; partial structured tool input has only the selected max-token SSE path |
+
+The [pinned Anthropic SDK](../tests/upstream/sources.lock.json) types already include `between_tools`, optional-nullable output configuration and zero-token cache prewarming; these rejections are capability/semantic-selection gaps, not all invalid source syntax. Offline contrasts also confirmed that an otherwise admitted text document rejects explicit `citations:{"enabled":false}`. Review null/default equivalence before normalization. Full citation delivery and prewarming are not activated by reviewing these narrow cases.
+
+Do not re-list repaired owner ordering, incomplete text closure or null-only metadata omission as blockers. Nonempty Messages tool openers followed by nonempty fragments concern native upstream SSE intake, not Client request intake. Missing scalar usage alone is not a general runtime blocker where selected delivery completion applies.
+
 ### Remaining issue dispositions
 
-The [2026-10-28 source and feasibility recheck](refs/2026-10-27-client-ir-boundaries.md#follow-up-source-and-feasibility-review-2026-10-28) supports these dispositions. They are not blanket protocol-conformance claims.
+The [2026-10-28 source and feasibility recheck](refs/2026-10-27-client-ir-boundaries.md#follow-up-source-and-feasibility-review-2026-10-28) supports these retained dispositions. The two active delivery gaps and structural follow-up are owned by the [repair order](#repair-order-and-exit-gates), not deferred by this table.
 
 | Issue | Current disposition | Reopen or complete when |
 |---|---|---|
@@ -112,7 +166,7 @@ The [2026-10-28 source and feasibility recheck](refs/2026-10-27-client-ir-bounda
 
 ### Closure boundary
 
-Scoped closure preserves selected directional contracts and leaves each remaining case as an explicit rejection, deferred feature or bounded source disagreement with a reopening condition. It does not claim full standard-field support or new live Provider behavior. Keep resource APIs, session persistence and real multi-account failover in their own packages; select one Stage-4 operation by demand, contract readiness and actual dependencies. Budget deferral does not reopen paused Google expansion, activate a binding or require a universal multi-budget model.
+Reclose this bounded follow-up after the grouping defect is repaired, the terminal restriction has a selected and verified mapping or an explicitly retained rejection, and the structural candidates have verified changes or reasoned retain/defer dispositions. Selected paths need permanent directional regressions and applicable consumer gates; old passing suites do not cover the newly reproduced contrasts. Remaining capability gaps stay explicit with reopening conditions. Do not claim full standard-field support or new live Provider behavior. Resource APIs, session persistence and real multi-account failover keep their own packages; budget deferral does not reopen Google expansion or require a universal multi-budget model.
 
 ## Standards reset and redesign
 
@@ -344,7 +398,7 @@ Real cross-account failover requires distinct, advanceable production credential
 ### Deferred Generation semantics
 - Turn-scoped system messages (`clear_at`).
 - Generated audio/video inside Chat (beyond basic static audio).
-- Completion persistence (`store: true`).
+- Chat completion persistence (`store: true`); local managed Responses history is already supported.
 - Tokenizer-unbound `logit_bias`.
 - Multi-candidate (`n > 1`) execution.
 
