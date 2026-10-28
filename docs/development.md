@@ -174,6 +174,10 @@ Verification is organized into progressive, focused gates:
 
 For diagnostic extensions, safe-to-ignore fields do not require dedicated tests during implementation slices; test coverage focuses on standard semantic contracts, bounds, cancellation, and terminal honesty.
 
+**Delivered fidelity baseline, 2026-10-27:** `c8d0c96` and `14bddfe` contain the parsing/stream corrections, single Messages signature validation, narrow text/token-cap projection and original-request Responses metadata echo. The latter passed the full offline baseline, 17 SDK scenarios and 12 installed-client synthetic scenarios (pi 1.4.0, OpenCode 2.0.32). These are historical checks, not fresh Provider or deployment acceptance.
+
+**Bounded design check, 2026-10-28:** three disposable public-API probes at `1e3fdca` confirmed an overlapping Messages block emitted from a valid IR prefix but rejected by native intake, rejection of an earlier owner's delayed first part, and rejection of a complete nonempty JSON fragment after a nonempty tool opener. The probes asserted current limitations, not repaired behavior, and were removed. Existing `--test semantic requests_reject_unselected_controls_while_incidental_reports_project` (one test) and `--test semantic native_controls` (seven tests) passed with `--locked --offline`, confirming preset conflicts, default ordering and explicit-cap/model-limit guards. No full baseline, connected SDK/client or live Provider gate was rerun for this documentation slice. SDK callback concerns remain source-derived until executable consumer checks are added.
+
 ### Offline baseline
 
 Run affected targets first, then the full baseline:
@@ -268,7 +272,7 @@ The story covers two ordered `read` calls with reverse-order results, missing-fi
 |---|---|---|
 | Chat | MorphieCore Chat | Raw argument whitespace/escapes and `9007199254740993`, interleaved indexed call fragments, null-content assistant shell, unreported progress |
 | Responses | MorphieCore Responses | Item IDs distinct from call IDs, commentary/final phases, encrypted reasoning, explicit empty report arrays |
-| Messages | Messages | Signed and redacted thinking, split signature deltas, structured arguments, explicit error flags, response-scoped effort and disjoint cache accounting |
+| Messages | Messages | Signed and redacted thinking, one opaque signature delta per thinking block, structured arguments, explicit error flags, response-scoped effort and disjoint cache accounting |
 | generateContent | MorphieCore Responses | Signed call owners, two identical `OK` texts with different signatures, original STOP ambiguity, split accounting |
 | Interactions v1 | MorphieCore Responses | Separate thought/call signatures, argument fragments and full step snapshots, explicit `requires_action`, unknown accounting relationships |
 

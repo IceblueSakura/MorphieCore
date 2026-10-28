@@ -178,8 +178,18 @@ A future Responses hosted image-tool observation may contain image artifacts wit
 
 The 2026-10-19 Bailian review selected [existing-IR-only adaptation](architecture.md#shared-aliyun-billing-dialect), not a budget-scope extension. Qwen Chat's reply-only `max_tokens:128` plus `thinking_budget:64` is a minimal counterexample: replacing them with total `192` permits an oversized reply when fewer thoughts are used; total `128` can truncate an otherwise valid 128-reply/64-thought result. Neither summation nor clipping is an exact mapping.
 
-A future proposal would need independently owned answer/thought/total limits, precedence and contradiction rules, native source/target mappings and cross-protocol refusal behavior. No representation is selected here. Current codecs reject the unrepresentable combination and numeric allocations outside the existing IR relation; they do not widen IR or reinterpret effort as tokens.
+A future independent-ceiling representation would need answer/thought/total ownership, precedence, contradiction rules and directional mappings. No such representation or summation rule is selected. The [2026-10-28 budget direction](architecture.md#bounded-token-budget-adaptation) permits bounded adaptation review without requiring that redesign.
 
+The source/code recheck identifies two smaller candidates:
+
+| Candidate | Applicability and trade-off | Selection still needed |
+|---|---|---|
+| Raise a gateway-provided output default | Client omitted its ceiling; a verified target supports numeric thinking. Preserves explicit thinking intent but may increase output cost. Go/Haiku already defaults to `32000` and disables manual thinking, so raising that default alone is not a demonstrated fix | Concrete target, finite maximum, meaningful answer reserve and bounded growth. `budget + 1` satisfies Messages syntax only, not useful answer capacity |
+| Adjust a gateway-derived thinking preset | Exact native effort is unavailable and an already selected effort-to-budget fallback exceeds an explicit output ceiling. Preserves that ceiling but approximates effort more aggressively | Target-legal/useful budget, reserve and infeasible behavior; distinguish configured preset from applied allocation in evidence. Never silently reduce an explicit numeric budget |
+
+Prefer an existing exact control or a reachable target-local rule over a universal multi-budget schema. Apply any selected adjustment before construction/validation of the projected settings; late wire rewriting cannot repair an already rejected IR. Preflight, encoding and discovery must use the same selected rule, with checked arithmetic and immutable source intent.
+
+Current Messages intake requires a manual budget of at least `1024` and strictly less than `max_tokens`; that is source grammar, not a removable default. Startup currently exposes configured effort-to-budget conversion only for generateContent, whose general expansion remains paused. A synthetic generic conversion failure therefore establishes a policy edge, not a live Haiku defect or permission to activate Google targets. Current validation remains in force pending a concrete rule.
 
 #### Missing Messages output ceilings
 
@@ -942,6 +952,7 @@ These recommendations have not been adopted merely by requesting this document.
 | Decision | Options and recommendation | Blocks |
 |---|---|---|
 | Dual-SDK Decision contract | Both standard SDK families and shared IR/codec/dialect adaptation are selected. The [Decision review](#decision-execution-and-review-choices) owns remaining roots, evidence/result types, projections, delivery and execution choices | Decision implementation and integration, not independent source research |
+| Bounded token-budget rule | [Default expansion and derived-preset adjustment](#independent-output-ceilings-unselected) are candidates under the accepted adaptation direction; target, reserve, finite bound and loss provenance remain unselected | Budget implementation only; not Messages stream scheduling or unrelated Stage-4 design |
 | Images contract | The [Image review](#image-design-review) owns pending structural choices. The selected Embedding contract has moved to [Architecture](architecture.md#independent-embedding-path); future extensions remain unselected | Dependent S4-3 implementation and integration |
 | Task grouping and shared content | Recommend independent TokenCount/Compaction, AudioToText variants, and Image Generate/Edit variants; share content without inheriting Generation execution | New task type and public Rust contract changes |
 | Counting companion surface | Recommend Responses input-token counting; image generations/edits already belong to stage 4 | Adding the Responses counting surface to delivery scope |

@@ -52,16 +52,16 @@ This page owns current scope, priorities, dependencies, and exit gates. [Archite
 
 ## Current status
 
-**Active work (2026-10-27):** The [three-protocol fidelity repair](#three-protocol-fidelity-repair) addresses source-qualified Client/IR boundaries across standard Chat Completions, Responses, and Messages. Current focus: single Messages signature-delta validation, narrow plain-text token-cap projection, and original-request Responses metadata echo.
+**Active work (2026-10-28):** The [three-protocol fidelity repair](#three-protocol-fidelity-repair) now focuses on Messages block scheduling, bounded token-budget adaptation review, and changed-path delivery/history acceptance. Source disagreements have explicit dispositions rather than an open-ended feature queue.
 
-**Completed baseline (2026-10-26):** Generation Text passed correctness, lifecycle, evidence, and redundancy reviews. Domain evidence, local telemetry, and standard request boundary repairs are implemented. Stage 4 covers Decision, Embedding, Audio, Images, Files/Uploads, and Video at equal priority.
+**Completed baseline:** Generation Text correctness/lifecycle reviews, domain evidence, telemetry and standard request boundary repairs preceded the 2026-10-27 parsing/stream corrections. Single Messages signature validation, narrow Chat text/token-cap status projection and original-request Responses metadata echo are implemented. Their offline, SDK and installed-client evidence is separate from live acceptance; see [verification gates](development.md#verification-gates). Stage 4 retains equal priority across its API families.
 
 | Area | State | Next step |
 |---|---|---|
 | Routing | Stable routing baseline frozen; controlled synthetic recovery verified across Router, SDK, and installed clients | Real-failover production evidence required for multi-credential routes; no routing feature additions |
 | Generation IR / Codec | Request boundary corrections complete; three-protocol fidelity repair in progress | Reconcile directional parsing, projection, and final/history agreement across Chat, Responses, and Messages |
 | Client compatibility | Standard request intake enforced; installed-client validation uses explicit stable profiles | Revalidate JSON/SSE/tool/history flows on changed paths |
-| Integration | R1a/R1b/R2 client loops and controlled recovery passed; pi and OpenCode verified | Production closure for sustained operations; no blanket model/client matrix |
+| Integration | R1a/R1b/R2 loops, controlled recovery and bounded production-profile closure passed | Revalidate changed paths; retain real-failover exclusions without reopening a blanket model/client matrix |
 | Cross-protocol conversion | Stage 3 closed for selected projections; `count_tokens` deferred | Preserve verified evidence; Google API remains paused except text-report and Stage-4 Embedding paths |
 | Decision APIs | Dual standard-SDK direction selected; initial TypeSafe/OpenAI protocol research complete | Contract selection and Stage-4 implementation at equal priority with other modalities |
 | Embedding & Media | Text Embedding operational (Google native, OpenAI via OpenRouter, DashScope); Grok static image codec implemented | Stage-4 contract selection for Images Generate/Edit, Audio, Files/Uploads, and Video |
@@ -82,6 +82,7 @@ Selected on 2026-10-27, this workstream addresses semantic fidelity across stand
 - **Domain:** Generation Text (instructions/roles, text/refusal, function tools/results, structured output, reasoning/replay, presence/settings, usage, errors, and terminal events).
 - **Extension properties:** Unknown protocol extension fields are accepted and discarded at legal object positions, never forwarded or given semantic execution meaning. Known unsupported controls reject.
 - **Precedence:** Plain-text token-cap output may omit item status under named rules; Responses metadata echoes the admitted request only when upstream metadata is omitted.
+- **Budget direction:** Bounded relaxation may preserve functionality when gateway-derived budgets conflict. The [accepted boundary](architecture.md#bounded-token-budget-adaptation) does not select a formula, relax source grammar, or raise model limits.
 
 ### Reference strategy
 
@@ -97,9 +98,31 @@ Selected on 2026-10-27, this workstream addresses semantic fidelity across stand
 
 | Slice | Focus | Exit criteria |
 |---|---|---|
-| 1. Source qualification | Reconcile Chat custom-call SSE boundaries, tool openers, and legacy discrepancies | Explicit supported/unsupported dispositions; confirm exact carriage or declared loss |
-| 2. Messages scheduling | Validate block lifecycle interleaving, delayed thinking signatures, and independently ready tool calls | Legal intermediate events, stable identities, bounded pending state, and incremental streaming |
-| 3. Delivery policy & acceptance | Verify settings echo, ordinary text/tool loops, and bounded Provider checks | Directional expectations verified across offline, SDK, and installed-client test suites |
+| 1. Messages scheduling | Serialize downstream blocks in semantic owner/part order; hold only blocked successors, including delayed signatures and reverse-finishing calls | Independently checked intermediate events, incremental head delivery, bounded pending state, unchanged final/history facts and honest cancellation/EOF |
+| 2. Token-budget rule selection | Trace an actual supported target conflict; compare default-ceiling expansion with derived-preset adjustment under the [budget proposal](api-expansion-design.md#independent-output-ceilings-unselected) | Select target, source of each limit, useful reserve, maximum, provenance and infeasible behavior before implementation; otherwise record a deferred disposition |
+| 3. Affected delivery contracts | Resolve concrete text/refusal/annotation grouping or field-echo failures exposed by changed paths | Independent directional expectations; no blanket settings echo, custom-input wrapping or new loss policy |
+| 4. Acceptance and closure | Extend existing offline and SDK cases, then current installed-client loops and bounded Provider checks where live behavior is claimed | Separate synthetic and live evidence; retained rejection/deferred cases remain explicit; no full model/client matrix |
+
+Scheduling and budget investigation are independent. Source qualification below is bounded and may proceed alongside them. Budget research does not reopen paused Google expansion, activate a binding, or block scheduling on a new universal budget model.
+
+### Remaining issue dispositions
+
+The [2026-10-28 source and feasibility recheck](refs/2026-10-27-client-ir-boundaries.md#follow-up-source-and-feasibility-review-2026-10-28) supports these dispositions. They are not blanket protocol-conformance claims.
+
+| Issue | Current disposition | Reopen or complete when |
+|---|---|---|
+| Messages owner/part overlap and late first content | Confirmed local scheduling inconsistency; next implementation slice | Serial output preserves final/history order and consumer callbacks within existing bounds |
+| Chat custom-tool SSE | Retain standard rejection; investigate upstream intake and downstream delivery separately | Official event contract resolves the disagreement, or a separately selected dialect/client contract supplies independent wire/consumer evidence |
+| Nonempty Messages tool opener plus nonempty fragments | Retain rejection; complete opener plus zero-byte deltas remains supported | Authoritative replacement/merge semantics exist; add a complete-fragment negative case with the next relevant test edit |
+| `user:null`, Chat refusal requiredness, Responses image-detail default | Preserve current intake; optional egress canonicalization is not an established defect | Service contract clarifies the discrepancy or a selected strict consumer exposes a concrete failure |
+| Legacy function carriers | Defer; preserve explicit rejection | A real client needs a constrained association/default/conflict/history contract |
+| Broader settings echo and richer output grouping | Case-specific design only | A concrete failure has an exact mapping or a separately selected named loss; preserve report authority and content-coordinate ownership |
+| Messages custom-input wrapping | Defer as an end-to-end tool-interface adaptation | Declaration, arguments, return/history mapping and client execution expectations are selected together |
+| Token scope and SDK drift | Investigate only the selected target/field; no automatic source-pin promotion | A bounded budget rule or reviewed version change has independent expectations and a reachable target path |
+
+### Closure boundary
+
+Close this repair when supported paths preserve their selected contracts, changed paths pass applicable gates, and every remaining case is an explicit rejection, deferred feature or bounded source disagreement with a reopening condition. Full support for every standard field is not required. Keep resource APIs, session persistence and real multi-account failover in their own packages; after closure select one Stage-4 operation by demand, contract readiness and actual dependencies.
 
 ## Standards reset and redesign
 

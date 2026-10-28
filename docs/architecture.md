@@ -56,6 +56,7 @@ This page defines accepted principles, domain contracts, and architectural decis
       - [Google response-effort projection](#google-response-effort-projection)
     - [Reasoning level calibration](#reasoning-level-calibration)
       - [Thinking-budget quantization](#thinking-budget-quantization)
+      - [Bounded token-budget adaptation](#bounded-token-budget-adaptation)
       - [Initial mapping plan](#initial-mapping-plan)
       - [Implementation owners](#implementation-owners)
   - [Media](#media)
@@ -459,7 +460,13 @@ Explicit hand-authored mappings define canonical model bindings. Fixed or ignore
 When targets require discrete qualitative levels, numeric token budgets are quantized to discrete presets defined in [`ThinkingBudgets`](file:///home/sakura/development/MorphieCore/src/protocol/reasoning.rs#L35):
 - Canonical presets are maintained in [`SHARED_BUDGETS`](file:///home/sakura/development/MorphieCore/src/protocol/reasoning.rs#L49) (6 discrete tiers spanning minimal to max).
 - Selection matches minimal absolute token distance via [`ThinkingBudgets::nearest`](file:///home/sakura/development/MorphieCore/src/protocol/reasoning.rs#L108); exact ties resolve upward to the higher effort level.
-- P3b rejects requests whose thinking budget exceeds the client-specified maximum output token ceiling.
+- Current validation rejects requests whose thinking budget exceeds the client-specified maximum output token ceiling.
+
+##### Bounded token-budget adaptation
+
+Selected on **2026-10-28**: functionality may take precedence over conservative gateway-derived token defaults or presets through bounded, target-qualified adaptation. Prefer exact native controls; distinguish original client intent, derived allocation and actual model limits.
+
+This direction does not select an adjustment formula or change current validation. A concrete rule must name the changed guarantee, target, finite bound, useful answer reserve and evidence. Explicit client ceilings or numeric thinking intent are not silently overridden; any relaxation of them needs its own selected rule. Source protocol validity, model maxima, memory/wire limits, timeouts and terminal honesty remain enforced. Unknown capacity is not unlimited capacity. The [budget proposal](api-expansion-design.md#independent-output-ceilings-unselected) owns unresolved alternatives.
 
 ##### Initial mapping plan
 
@@ -729,6 +736,7 @@ Authoritative log of accepted architectural decisions and their systemic consequ
 | Phase transfer | 2026-10-18 | Responses phase labels omitted on Chat/Messages delivery copies |
 | Preset thinking quantization | 2026-10-20 | 6-level discrete token budget quantization with upward tie-breaking |
 | Thinking budget ceiling guard | 2026-10-20 | P3b rejects requests where thinking budget exceeds client output ceiling |
+| Bounded token-budget adaptation | 2026-10-28 | Allows target-qualified review of gateway-derived defaults/presets to preserve functionality; concrete adjustment rules remain unselected |
 | Messages missing ceiling default | 2026-10-20 | Go/Haiku injects `32000` default output tokens when client ceiling is omitted |
 | Tool-result error wrapping | 2026-10-20 | Prefixes tool results with boolean status text for targets lacking native flags |
 | Google terminal projection | 2026-10-21 | Gemini 3.8 Flash completions map to Messages `tool_use` or `end_turn` |
