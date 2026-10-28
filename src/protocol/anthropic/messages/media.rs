@@ -50,9 +50,17 @@ pub enum Media {
 impl Media {
     pub(super) fn read(kind: &str, v: &Value) -> Result<Self, CodecError> {
         let o = object(v)?;
-        // Citations still need their own source/quote owners.
-        if o.get("citations").is_some_and(|v| !v.is_null()) {
-            return Err(CodecError::Unsupported(CarrierReason::Unavailable));
+        if let Some(citations) = o.get("citations").filter(|v| !v.is_null()) {
+            // Document citations are opt-in; enabled citations still need source/quote owners.
+            if kind != "document"
+                || object(citations)?
+                    .get("enabled")
+                    .map(boolean)
+                    .transpose()?
+                    .unwrap_or(false)
+            {
+                return Err(CodecError::Unsupported(CarrierReason::Unavailable));
+            }
         }
         let source = object(required(o, "source")?)?;
         let field = |key| required(source, key).and_then(string);

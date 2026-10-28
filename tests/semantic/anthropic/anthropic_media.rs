@@ -667,7 +667,37 @@ fn image_transformation_known_fields_are_strict_and_defaults_are_equivalent() {
 
 #[test]
 fn unrepresentable_sources_and_uncalibrated_options_fail_without_losing_filenames() {
+    use morphiecore::protocol::anthropic::messages::client::decode_client_request;
+    let document = json!({"type":"document","title":"Notes",
+        "source":{"type":"text","media_type":"text/plain","data":"notes"}});
+    let wire =
+        |block| json!({"model":"m","max_tokens":8,"messages":[{"role":"user","content":[block]}]});
+    let uncited = decode_client_request(wire(document.clone()).to_string().as_bytes()).unwrap();
+    let mut disabled = document.clone();
+    disabled["citations"] = json!({"enabled":false});
+    let disabled = decode_client_request(wire(disabled).to_string().as_bytes()).unwrap();
+    assert_eq!(disabled, uncited);
+    let encoded = morphiecore::protocol::anthropic::messages::TargetContract::new(
+        Profile::AdaptiveTextTools,
+        morphiecore::protocol::anthropic::messages::Dialect::Standard,
+    )
+    .encode_request(&disabled, &target())
+    .unwrap();
+    assert_eq!(
+        encoded.value["messages"],
+        wire(document.clone())["messages"]
+    );
+    assert!(encoded.evidence.is_empty());
+    let mut malformed = document.clone();
+    malformed["citations"] = json!({"enabled":null});
+    assert_eq!(
+        decode_client_request(wire(malformed).to_string().as_bytes()).unwrap_err(),
+        morphiecore::protocol::CodecError::invalid()
+    );
+    let mut cited = document;
+    cited["citations"] = json!({"enabled":true});
     for block in [
+        cited,
         json!({"type":"image","source":{"type":"file","file_id":"file_synthetic"}}),
         json!({"type":"document","source":{"type":"content","content":"x"}}),
         json!({"type":"document","context":{},"source":{"type":"url","url":"https://example.invalid/a.pdf"}}),
