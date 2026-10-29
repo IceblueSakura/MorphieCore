@@ -76,6 +76,7 @@ pub fn representation_contract() -> GenerationFeatureSet {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TargetContract {
     pub semantics: GenerationFeatureSet,
+    pub reasoning_history: Option<crate::protocol::reasoning::ReasoningHistory>,
     pub sampling: super::super::SamplingPolicy,
     pub model_limits: crate::protocol::model_limits::ModelLimits,
     /// Supplied by the boundary; pure codecs never read a clock.
@@ -92,6 +93,7 @@ impl Default for TargetContract {
     fn default() -> Self {
         Self {
             semantics: semantic_contract(),
+            reasoning_history: None,
             sampling: super::super::SamplingPolicy::Native,
             model_limits: Default::default(),
             resource_time: None,

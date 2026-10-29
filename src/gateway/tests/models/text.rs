@@ -151,6 +151,7 @@ fn descriptor(entry: BoundEntry) -> Value {
 
 #[test]
 fn text_contract_intersects_source_efforts_and_comparable_limits_without_inventing_defaults() {
+    use crate::protocol::reasoning::ReasoningHistory;
     use crate::semantic::task::generation::EffortLevel::{High, Low};
     let gate = crate::gateway::tests::support::gateway(Limits::default());
     let mut entry = gate.state.entries[&(ClientProtocol::Chat, "fixture-model".into())]
@@ -158,6 +159,18 @@ fn text_contract_intersects_source_efforts_and_comparable_limits_without_inventi
         .clone();
     let mut first = entry.candidates[0].as_ref().clone();
     let mut second = first.clone();
+    first
+        .endpoint
+        .representation
+        .openai_mut()
+        .unwrap()
+        .reasoning_history = Some(ReasoningHistory::Accepted);
+    second
+        .endpoint
+        .representation
+        .openai_mut()
+        .unwrap()
+        .reasoning_history = Some(ReasoningHistory::Accepted);
     let limits = first.endpoint.representation.model_limits_mut();
     limits.allowed_effort = Some(vec![Low, High].into());
     limits.context_window_tokens = Some(200_000);
@@ -172,6 +185,7 @@ fn text_contract_intersects_source_efforts_and_comparable_limits_without_inventi
     entry.candidates = vec![Arc::new(first), Arc::new(second)];
     assert_eq!(interface(entry.clone())["delivery_modes"], json!(["json"]));
     let value = descriptor(entry.clone());
+    assert_eq!(value["reasoning"]["history"], "accepted");
     assert_eq!(value["token_limits"]["max_output_tokens"], 4096);
     assert_eq!(value["token_limits"]["context_window_tokens"], 100_000);
     assert_eq!(value["token_limits"]["max_input_tokens"], 90_000);
@@ -180,6 +194,12 @@ fn text_contract_intersects_source_efforts_and_comparable_limits_without_inventi
         json!({"state":"faithful","values":["high"]})
     );
     let mut second = entry.candidates[1].as_ref().clone();
+    second
+        .endpoint
+        .representation
+        .openai_mut()
+        .unwrap()
+        .reasoning_history = Some(ReasoningHistory::RequiredWithTools);
     second
         .endpoint
         .representation
@@ -197,6 +217,19 @@ fn text_contract_intersects_source_efforts_and_comparable_limits_without_inventi
         .context_window_tokens = None;
     entry.candidates[1] = Arc::new(second);
     let value = descriptor(entry.clone());
+    assert_eq!(value["reasoning"]["history"], "non_uniform");
+    let mut unassessed = entry.candidates[1].as_ref().clone();
+    unassessed
+        .endpoint
+        .representation
+        .openai_mut()
+        .unwrap()
+        .reasoning_history = None;
+    entry.candidates.push(Arc::new(unassessed));
+    assert_eq!(
+        descriptor(entry.clone())["reasoning"]["history"],
+        "not_assessed"
+    );
     assert_eq!(value["token_limits"]["max_output_tokens"], Value::Null);
     assert_eq!(value["token_limits"]["context_window_tokens"], Value::Null);
     assert_eq!(value["token_limits"]["max_input_tokens"], 90_000);

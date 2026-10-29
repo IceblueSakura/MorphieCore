@@ -723,10 +723,16 @@
           "reasoning": {
             "type": "object",
             "required": [
+              "history",
               "activation",
               "effort"
             ],
             "properties": {
+              "history": {
+                "type": "string",
+                "enum": ["unsupported", "ignored", "accepted", "required_with_tools", "non_uniform", "not_assessed"],
+                "description": "Route-common binding declaration, independent of wire carriers and full-loop acceptance. Any unassessed candidate yields not_assessed; differing established facts yield non_uniform. Required history scope follows the endpoint contract."
+              },
               "activation": {
                 "$ref": "#/components/schemas/TextActivationChoices"
               },

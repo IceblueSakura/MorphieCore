@@ -70,6 +70,7 @@ pub fn representation_contract() -> GenerationFeatureSet {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TargetContract {
     pub semantics: GenerationFeatureSet,
+    pub reasoning_history: Option<crate::protocol::reasoning::ReasoningHistory>,
     pub sampling: super::super::SamplingPolicy,
     pub model_limits: crate::protocol::model_limits::ModelLimits,
     pub cache: CacheTargetPolicy,
@@ -82,6 +83,7 @@ impl Default for TargetContract {
     fn default() -> Self {
         Self {
             semantics: semantic_contract(),
+            reasoning_history: None,
             sampling: super::super::SamplingPolicy::Reject,
             model_limits: Default::default(),
             cache: CacheTargetPolicy::default(),

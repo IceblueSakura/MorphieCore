@@ -753,7 +753,6 @@ const BASIC_EXPECTATIONS: &[(&[&str], [&[&str]; 4])] = &[
             "opencode-go-mimo-pro-chat",
             "opencode-go-mimo-flash-chat",
             "openrouter-audio-chat",
-            "deepseek-chat",
             "xiaomi-chat",
             "xiaomi-flash-chat",
             "openrouter-chat",
@@ -763,13 +762,20 @@ const BASIC_EXPECTATIONS: &[(&[&str], [&[&str]; 4])] = &[
             "modelbest-minicpm-v-4.7-1b-chat",
             "modelbest-minicpm-v-4.7-35b-a3b-chat",
             "opencode-go-chat",
-            "zhipu-chat",
-            "zhipu-flash-chat",
             "openrouter-glm-5.3-flash-chat",
         ],
         [
             ACCEPT,
             ACCEPT,
+            ACCEPT,
+            &["planning:[\"representation.strict_default\"]@0"],
+        ],
+    ),
+    (
+        &["deepseek-chat", "zhipu-chat", "zhipu-flash-chat"],
+        [
+            ACCEPT,
+            &["planning:[\"admission.client_representation\"]@0"],
             ACCEPT,
             &["planning:[\"representation.strict_default\"]@0"],
         ],
@@ -862,7 +868,7 @@ fn expected(binding: &str, client: Api, profile: Profile) -> &'static [&'static 
         ("dashscope-glm-chat", Chat | Responses, Reasoning) => {
             &["planning:[\"codec.unsupported.reasoning\"]@0"]
         }
-        ("deepseek-chat", Chat, Reasoning) => &["representation.reasoning@1"],
+        ("deepseek-chat", Chat, Reasoning) => &["planning:[\"admission.client_representation\"]@0"],
         ("deepseek-chat", Responses, Reasoning) => &["planning:[\"representation.reasoning\"]@0"],
         ("openrouter-responses", Responses, Reasoning) => ACCEPT,
         ("openrouter-responses" | "dashscope-flash-responses", Chat, Reasoning) => {

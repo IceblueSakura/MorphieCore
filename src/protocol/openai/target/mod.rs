@@ -7,6 +7,7 @@ use crate::{
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TargetContract {
     pub adaptation: crate::protocol::openai::dialect::adaptation::Adaptation,
+    pub reasoning_history: Option<crate::protocol::reasoning::ReasoningHistory>,
     /// Selected Bailian Chat bindings require a reasoning-capable client while
     /// thinking is active or uses its enabled default. Not parser capability.
     pub chat_thinking_output: bool,
@@ -34,6 +35,7 @@ impl TargetContract {
     pub fn full() -> Self {
         Self {
             adaptation: Default::default(),
+            reasoning_history: None,
             chat_thinking_output: false,
             reasoning_as_text: false,
             replay_origin: None,

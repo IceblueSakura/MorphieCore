@@ -114,6 +114,7 @@ struct TokenLimits {
 }
 #[derive(Serialize)]
 struct Reasoning {
+    history: &'static str,
     activation: Choices,
     effort: BTreeMap<&'static str, Choices>,
 }
@@ -166,6 +167,16 @@ impl Interface {
         let activation = Choices::new(
             ["enabled", "disabled", "adaptive"].map(|mode| (mode, assess(Case::Activation(mode)))),
         );
+        let history = entry
+            .candidates
+            .iter()
+            .map(|candidate| candidate.endpoint.representation.reasoning_history())
+            .collect::<Option<Vec<_>>>();
+        let history = match history.as_deref() {
+            Some([first, rest @ ..]) if rest.iter().all(|fact| fact == first) => first.name(),
+            Some([_, ..]) => "non_uniform",
+            _ => "not_assessed",
+        };
         // Only complete comparable declarations produce a route-common planning ceiling.
         let common_limit =
             |select: fn(&crate::protocol::model_limits::ModelLimits) -> Option<u64>| {
@@ -204,7 +215,11 @@ impl Interface {
                 output,
                 token_limits,
                 features,
-                reasoning: Reasoning { activation, effort },
+                reasoning: Reasoning {
+                    history,
+                    activation,
+                    effort,
+                },
             },
         }
     }

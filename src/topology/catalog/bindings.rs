@@ -1,6 +1,9 @@
 //! Deployment bindings, not model discovery. Aliases and profiles are explicit.
 use crate::{
-    protocol::{openai::Dialect, reasoning::ReasoningEffortMapping},
+    protocol::{
+        openai::Dialect,
+        reasoning::{ReasoningEffortMapping, ReasoningHistory},
+    },
     provider::{ProviderDefinition, catalog},
     semantic::task::generation::{EffortLevel as E, EffortScope},
     topology::GenerationProtocol,
@@ -59,6 +62,8 @@ pub struct ApiKeyBinding {
     pub upstream: &'static str,
     pub protocols: &'static [GenerationProtocol],
     pub effort_mappings: &'static [(GenerationProtocol, &'static ReasoningEffortMapping)],
+    /// Missing protocol members are explicitly unassessed.
+    pub reasoning_history: &'static [(GenerationProtocol, ReasoningHistory)],
     pub replay_responses: bool,
     pub replay_chat: bool,
     pub public_slice: RequestSlice,
@@ -156,7 +161,16 @@ impl ApiKeyBinding {
         if mappings.next().is_some() {
             return Err(TopologyError::InvalidModelBinding);
         }
+        let mut history = self
+            .reasoning_history
+            .iter()
+            .filter(|(member, _)| *member == protocol);
+        let reasoning_history = history.next().map(|(_, fact)| *fact);
+        if history.next().is_some() {
+            return Err(TopologyError::InvalidModelBinding);
+        }
         let contract = TargetContract {
+            reasoning_history,
             // Official thinking-mode contract: reasoning_content is separate
             // from the answer. An off request must use the native boolean.
             chat_thinking_output: family == crate::protocol::openai::GenerationApi::Chat
@@ -213,6 +227,25 @@ const BOTH: &[GenerationProtocol] = &[
 ];
 const CHAT: &[GenerationProtocol] = &[GenerationProtocol::OpenAiChat];
 const RESPONSES: &[GenerationProtocol] = &[GenerationProtocol::OpenAiResponses];
+// Endpoint-qualified facts; carrier support and history scope remain separate.
+// Source: docs/refs/2026-10-27-client-ir-boundaries.md#binding-history-source-review-2026-10-28.
+const ACCEPTED_HISTORY: &[(GenerationProtocol, ReasoningHistory)] = &[
+    (GenerationProtocol::OpenAiChat, ReasoningHistory::Accepted),
+    (
+        GenerationProtocol::OpenAiResponses,
+        ReasoningHistory::Accepted,
+    ),
+];
+const TOOL_HISTORY: &[(GenerationProtocol, ReasoningHistory)] = &[
+    (
+        GenerationProtocol::OpenAiChat,
+        ReasoningHistory::RequiredWithTools,
+    ),
+    (
+        GenerationProtocol::OpenAiResponses,
+        ReasoningHistory::Accepted,
+    ),
+];
 // Documented wire aliases, not a claim of distinct effective thinking strength.
 // https://mimo.mi.com/docs/zh-CN/api/chat/responses
 const MIMO_FLASH_RESPONSES_EFFORT: ReasoningEffortMapping = ReasoningEffortMapping {
@@ -270,6 +303,7 @@ pub const API_KEY_BINDINGS: &[ApiKeyBinding] = &[
         canonical_model: "mimo-v2.6-pro-ultraspeed",
         upstream: "mimo-v2.6-pro-ultraspeed",
         protocols: BOTH,
+        reasoning_history: ACCEPTED_HISTORY,
         replay_responses: false,
         replay_chat: false,
         public_slice: RequestSlice::Canonical,
@@ -285,6 +319,7 @@ pub const API_KEY_BINDINGS: &[ApiKeyBinding] = &[
         canonical_model: "muse-spark-1.3-contributor",
         upstream: "muse-spark-1.3-contributor",
         protocols: RESPONSES,
+        reasoning_history: &[],
         replay_responses: false,
         replay_chat: false,
         public_slice: RequestSlice::OpenCodeHy4,
@@ -299,6 +334,7 @@ pub const API_KEY_BINDINGS: &[ApiKeyBinding] = &[
         canonical_model: "mimo-v2.6-pro",
         upstream: "mimo-v2.6-pro",
         protocols: CHAT,
+        reasoning_history: &[],
         replay_responses: false,
         replay_chat: false,
         public_slice: RequestSlice::Canonical,
@@ -313,6 +349,7 @@ pub const API_KEY_BINDINGS: &[ApiKeyBinding] = &[
         canonical_model: "mimo-v2.6-flash",
         upstream: "mimo-v2.6-flash",
         protocols: CHAT,
+        reasoning_history: &[],
         replay_responses: false,
         replay_chat: false,
         public_slice: RequestSlice::Canonical,
@@ -327,6 +364,7 @@ pub const API_KEY_BINDINGS: &[ApiKeyBinding] = &[
         canonical_model: "qwen3.8-flash",
         upstream: "qwen3.8-flash",
         protocols: BOTH,
+        reasoning_history: ACCEPTED_HISTORY,
         replay_responses: false,
         replay_chat: false,
         public_slice: RequestSlice::Canonical,
@@ -342,6 +380,7 @@ pub const API_KEY_BINDINGS: &[ApiKeyBinding] = &[
         canonical_model: "kimi-k3",
         upstream: "kimi-k3",
         protocols: CHAT,
+        reasoning_history: &[],
         replay_responses: false,
         replay_chat: false,
         public_slice: RequestSlice::Canonical,
@@ -356,6 +395,7 @@ pub const API_KEY_BINDINGS: &[ApiKeyBinding] = &[
         canonical_model: "glm-5.3",
         upstream: "glm-5.3",
         protocols: CHAT,
+        reasoning_history: &[],
         replay_responses: false,
         replay_chat: false,
         public_slice: RequestSlice::Canonical,
@@ -372,6 +412,7 @@ pub const API_KEY_BINDINGS: &[ApiKeyBinding] = &[
         canonical_model: "glm-5.3",
         upstream: "glm-5.3-prime",
         protocols: CHAT,
+        reasoning_history: &[],
         replay_responses: false,
         replay_chat: false,
         public_slice: RequestSlice::Canonical,
@@ -386,6 +427,7 @@ pub const API_KEY_BINDINGS: &[ApiKeyBinding] = &[
         canonical_model: "qwen3.8-max",
         upstream: "qwen3.8-max",
         protocols: BOTH,
+        reasoning_history: &[],
         replay_responses: false,
         replay_chat: false,
         public_slice: RequestSlice::Canonical,
@@ -400,6 +442,7 @@ pub const API_KEY_BINDINGS: &[ApiKeyBinding] = &[
         canonical_model: "glm-5.3",
         upstream: "glm-5.3",
         protocols: CHAT,
+        reasoning_history: &[],
         replay_responses: false,
         replay_chat: false,
         public_slice: RequestSlice::Canonical,
@@ -415,6 +458,7 @@ pub const API_KEY_BINDINGS: &[ApiKeyBinding] = &[
         canonical_model: "gpt-audio-mini",
         upstream: "openai/gpt-audio-mini",
         protocols: CHAT,
+        reasoning_history: &[],
         replay_responses: false,
         replay_chat: false,
         public_slice: RequestSlice::AudioText,
@@ -429,6 +473,7 @@ pub const API_KEY_BINDINGS: &[ApiKeyBinding] = &[
         canonical_model: "deepseek-flash",
         upstream: "deepseek-flash",
         protocols: BOTH,
+        reasoning_history: TOOL_HISTORY,
         replay_responses: true,
         replay_chat: false,
         public_slice: RequestSlice::Canonical,
@@ -443,6 +488,7 @@ pub const API_KEY_BINDINGS: &[ApiKeyBinding] = &[
         canonical_model: "mimo-v2.6-pro",
         upstream: "mimo-v2.6-pro",
         protocols: BOTH,
+        reasoning_history: ACCEPTED_HISTORY,
         replay_responses: false,
         replay_chat: false,
         public_slice: RequestSlice::Canonical,
@@ -460,6 +506,7 @@ pub const API_KEY_BINDINGS: &[ApiKeyBinding] = &[
         canonical_model: "mimo-v2.6-flash",
         upstream: "mimo-v2.6-flash",
         protocols: BOTH,
+        reasoning_history: ACCEPTED_HISTORY,
         replay_responses: false,
         replay_chat: false,
         public_slice: RequestSlice::Canonical,
@@ -476,6 +523,7 @@ pub const API_KEY_BINDINGS: &[ApiKeyBinding] = &[
         canonical_model: "gpt-6-luna",
         upstream: "openai/gpt-6-luna",
         protocols: BOTH,
+        reasoning_history: &[],
         replay_responses: true,
         replay_chat: true,
         public_slice: RequestSlice::RestrictedLuna,
@@ -490,6 +538,7 @@ pub const API_KEY_BINDINGS: &[ApiKeyBinding] = &[
         canonical_model: "nemotron-3-super",
         upstream: "nvidia/nemotron-3-super-120b-a12b",
         protocols: BOTH,
+        reasoning_history: &[],
         replay_responses: false,
         replay_chat: false,
         public_slice: RequestSlice::Canonical,
@@ -504,6 +553,7 @@ pub const API_KEY_BINDINGS: &[ApiKeyBinding] = &[
         canonical_model: "qwen3.8-max",
         upstream: "qwen3.8-max",
         protocols: BOTH,
+        reasoning_history: ACCEPTED_HISTORY,
         replay_responses: false,
         replay_chat: false,
         public_slice: RequestSlice::Canonical,
@@ -518,6 +568,7 @@ pub const API_KEY_BINDINGS: &[ApiKeyBinding] = &[
         canonical_model: "qwen3.8-flash",
         upstream: "qwen3.8-flash",
         protocols: BOTH,
+        reasoning_history: &[],
         replay_responses: false,
         replay_chat: false,
         public_slice: RequestSlice::Canonical,
@@ -532,6 +583,7 @@ pub const API_KEY_BINDINGS: &[ApiKeyBinding] = &[
         canonical_model: "minicpm5-1b",
         upstream: "MiniCPM5-1B",
         protocols: CHAT,
+        reasoning_history: &[],
         replay_responses: false,
         replay_chat: false,
         public_slice: RequestSlice::Canonical,
@@ -546,6 +598,7 @@ pub const API_KEY_BINDINGS: &[ApiKeyBinding] = &[
         canonical_model: "minicpm5-2b",
         upstream: "MiniCPM5-2B",
         protocols: CHAT,
+        reasoning_history: &[],
         replay_responses: false,
         replay_chat: false,
         public_slice: RequestSlice::Canonical,
@@ -560,6 +613,7 @@ pub const API_KEY_BINDINGS: &[ApiKeyBinding] = &[
         canonical_model: "MiniCPM-V-4.7-1B",
         upstream: "MiniCPM-V-4.7-1B",
         protocols: CHAT,
+        reasoning_history: &[],
         replay_responses: false,
         replay_chat: false,
         public_slice: RequestSlice::Canonical,
@@ -574,6 +628,7 @@ pub const API_KEY_BINDINGS: &[ApiKeyBinding] = &[
         canonical_model: "MiniCPM-V-4.7-35B-A3B",
         upstream: "MiniCPM-V-4.7-35B-A3B",
         protocols: CHAT,
+        reasoning_history: &[],
         replay_responses: false,
         replay_chat: false,
         public_slice: RequestSlice::Canonical,
@@ -588,6 +643,7 @@ pub const API_KEY_BINDINGS: &[ApiKeyBinding] = &[
         canonical_model: "hy4-preview",
         upstream: "hy4-preview",
         protocols: CHAT,
+        reasoning_history: &[],
         replay_responses: false,
         replay_chat: false,
         public_slice: RequestSlice::OpenCodeHy4,
@@ -605,6 +661,7 @@ pub const API_KEY_BINDINGS: &[ApiKeyBinding] = &[
         canonical_model: "glm-5.3",
         upstream: "glm-5.3",
         protocols: BOTH,
+        reasoning_history: TOOL_HISTORY,
         replay_responses: false,
         replay_chat: false,
         public_slice: RequestSlice::Canonical,
@@ -620,6 +677,7 @@ pub const API_KEY_BINDINGS: &[ApiKeyBinding] = &[
         canonical_model: "claude-haiku-5-5",
         upstream: "anthropic/claude-haiku-5.5",
         protocols: CHAT,
+        reasoning_history: &[],
         replay_responses: false,
         replay_chat: true,
         public_slice: RequestSlice::Canonical,
@@ -637,6 +695,7 @@ pub const API_KEY_BINDINGS: &[ApiKeyBinding] = &[
         canonical_model: "glm-5.3-flash",
         upstream: "glm-5.3-flash",
         protocols: BOTH,
+        reasoning_history: TOOL_HISTORY,
         replay_responses: false,
         replay_chat: false,
         public_slice: RequestSlice::Canonical,
@@ -653,6 +712,7 @@ pub const API_KEY_BINDINGS: &[ApiKeyBinding] = &[
         canonical_model: "glm-5.3-flash",
         upstream: "z-ai/glm-5.3-flash",
         protocols: BOTH,
+        reasoning_history: &[],
         replay_responses: false,
         replay_chat: false,
         public_slice: RequestSlice::Canonical,

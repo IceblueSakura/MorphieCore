@@ -59,6 +59,7 @@ pub enum SamplingPolicy {
 pub struct TargetContract {
     pub profile: Profile,
     pub dialect: Dialect,
+    pub reasoning_history: Option<crate::protocol::reasoning::ReasoningHistory>,
     pub semantics: GenerationFeatureSet,
     pub model_limits: crate::protocol::model_limits::ModelLimits,
     pub cache: CacheTargetPolicy,
@@ -77,6 +78,7 @@ impl TargetContract {
         Self {
             profile,
             dialect,
+            reasoning_history: None,
             semantics: profile.semantic_contract(),
             model_limits: Default::default(),
             reasoning_policy: None,

@@ -25,6 +25,28 @@ use crate::{
 };
 use std::borrow::Cow;
 
+/// Endpoint history behavior, independent of wire carriers and replay identity.
+/// An absent declaration is unassessed, not an inferred behavior.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ReasoningHistory {
+    Unsupported,
+    Ignored,
+    Accepted,
+    /// Thinking requests with tools require returned reasoning. The endpoint
+    /// contract determines whether this covers all prior turns or the tool cycle.
+    RequiredWithTools,
+}
+impl ReasoningHistory {
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Unsupported => "unsupported",
+            Self::Ignored => "ignored",
+            Self::Accepted => "accepted",
+            Self::RequiredWithTools => "required_with_tools",
+        }
+    }
+}
+
 /// Explicit numeric presets mapping qualitative [`EffortLevel`] variants to
 /// representative token budgets.
 ///

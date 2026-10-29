@@ -361,6 +361,7 @@ class TextModelsSchemaTests(unittest.TestCase):
                 "input": {"text": {"state": "faithful"}, "image": []},
                 "output": {"text": {"state": "faithful"}},
                 "features": features, "reasoning": {
+                    "history": "not_assessed",
                     "activation": {"state": "unavailable"},
                     "effort": {"response": {"state": "unavailable"},
                                "reasoning": {"state": "faithful", "values": ["low", "high"]}},

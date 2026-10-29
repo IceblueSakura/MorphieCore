@@ -133,10 +133,23 @@ pub(crate) fn representable_for_client(
         && !adapter.adaptation.rules.readable_reasoning
         && endpoint.protocol == crate::topology::GenerationProtocol::OpenAiChat
         && let crate::lowering::target::TargetContract::OpenAi(caps) = &endpoint.representation
-        && caps.chat_thinking_output
-        && value.get("enable_thinking") != Some(&serde_json::Value::Bool(false))
     {
-        return Err(RejectionReason::Representation);
+        // The existing output-carrier guard remains independent of unassessed
+        // history. Required history is a separate, endpoint-qualified fact.
+        let thinking = value.get("enable_thinking") != Some(&serde_json::Value::Bool(false));
+        let required = endpoint.representation.reasoning_history()
+            == Some(crate::protocol::reasoning::ReasoningHistory::RequiredWithTools)
+            && value
+                .get("tools")
+                .and_then(serde_json::Value::as_array)
+                .is_some_and(|tools| !tools.is_empty())
+            && value
+                .get("reasoning_effort")
+                .and_then(serde_json::Value::as_str)
+                != Some("none");
+        if thinking && (caps.chat_thinking_output || required) {
+            return Err(RejectionReason::Representation);
+        }
     }
     crate::semantic::value::json_size(&value, endpoint.execution.request_body_limit)
         .map_err(|_| RejectionReason::BodyLimit)?;
@@ -327,6 +340,54 @@ mod tests {
         assert_eq!(wire["enable_thinking"], false);
         select_candidates_for_client(&off, CandidatePolicy::RequireAll, [endpoint], Some(&plain))
             .unwrap();
+
+        let required = topology
+            .endpoint(&EndpointId::new("deepseek-chat").unwrap())
+            .unwrap();
+        let tool_request = |effort| {
+            standard
+                .decode_client_request(
+                    serde_json::json!({"model":"deepseek-flash","reasoning_effort":effort,
+                    "messages":[{"role":"user","content":"go"}],
+                    "tools":[{"type":"function","function":{"name":"read",
+                        "parameters":{"type":"object","properties":{}}}}]})
+                    .to_string()
+                    .as_bytes(),
+                )
+                .unwrap()
+        };
+        let tools = tool_request("low");
+        let original = tools.clone();
+        assert!(
+            !required.encode_request(&tools).unwrap()["tools"]
+                .as_array()
+                .unwrap()
+                .is_empty()
+        );
+        assert_eq!(
+            representable_for_client(required, &tools, Some(&plain)),
+            Err(RejectionReason::Representation)
+        );
+        representable_for_client(required, &tools, Some(&readable)).unwrap();
+        let mut unassessed = required.clone();
+        unassessed
+            .representation
+            .openai_mut()
+            .unwrap()
+            .reasoning_history = None;
+        representable_for_client(&unassessed, &tools, Some(&plain)).unwrap();
+        let off = tool_request("none");
+        assert_eq!(
+            required.encode_request(&off).unwrap()["reasoning_effort"],
+            "none"
+        );
+        representable_for_client(required, &off, Some(&plain)).unwrap();
+        let mut settings = tools.task.semantic.settings().clone();
+        settings.tools = None;
+        let mut text = tools.clone();
+        text.task.semantic = text.task.semantic.with_settings(settings).unwrap();
+        representable_for_client(required, &text, Some(&plain)).unwrap();
+        assert_eq!(tools, original);
     }
 
     #[test]

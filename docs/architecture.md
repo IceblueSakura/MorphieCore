@@ -583,7 +583,11 @@ Accepted revision (2026-10-28, P3): same-issuer `incomplete` reasoning with a fi
 
 #### Binding reasoning-history contract
 
-Accepted on 2026-10-28 (P3, P4; implementation pending). Each Generation binding declares one reasoning-history fact: `unsupported`, `ignored`, `accepted` or `required_with_tools`. Request projection, delivery, planning and discovery read it instead of dialect-local guards. `required_with_tools` covers targets that reject tool continuations without prior reasoning, as documented for [DeepSeek thinking mode](https://api-docs.deepseek.com/guides/thinking_mode/) (read 2026-10-28).
+Accepted on 2026-10-28 (P3, P4), with phased migration and explicit unassessed declarations accepted on 2026-10-29. An assessed Generation binding declares one reasoning-history fact: `unsupported`, `ignored`, `accepted` or `required_with_tools`. `None` means unassessed and preserves existing behavior, not inferred acceptance, ignoring or rejection. The selected protocol target owns the declaration; a common accessor supplies consumers without dialect inference. Wire carriers, replay isolation and thinking controls remain separate.
+
+The first migration declares endpoint-qualified facts for native Xiaomi, direct DashScope Qwen, DeepSeek, native Zhipu and the SIWC/Grok subscriptions. Other bindings remain unassessed. Planning reads `required_with_tools` for Standard Chat clients on Chat candidates: nonempty projected tools with thinking not off reject before dispatch unless the client selects readable reasoning. Tool-free requests and admitted off controls add no history requirement; the pre-existing Qwen output-carrier guard remains independent. Discovery reads the same declarations and publishes a common fact, `non_uniform` for differing assessed facts, or `not_assessed` if any candidate is unassessed.
+
+Request/history projection and delivery migration remain pending; neither a declaration nor successful encoding establishes full-loop carriage. DeepSeek's [thinking contract](https://api-docs.deepseek.com/guides/thinking_mode/) (read 2026-10-28) requires **all previous turns' reasoning** when a thinking request carries tools; Zhipu's documented requirement concerns the current tool cycle. The shared fact does not collapse those scopes or authorize dropping explicit read-history intent.
 
 ### Chat reasoning extensions
 
@@ -837,7 +841,8 @@ Authoritative log of accepted architectural decisions and their systemic consequ
 | Carrier-less report omission | 2026-10-28 | Served service classes and refusal categories without carriers are omitted on delivery copies; no approximate service tier; empty logprobs use semantic-equivalence compatibility instead |
 | Messages terminal derivation | 2026-10-28 | Completed call-free outcomes without admitted stop sequences derive `end_turn` from any source |
 | Generalized visible-history transfer | 2026-10-28 | Revises scoped opaque replay: uncarried reasoning of any issuer or lifecycle is omitted; same-issuer incomplete reasoning forwards exactly to Responses |
-| Binding reasoning-history contract | 2026-10-28 | One binding fact (`unsupported`/`ignored`/`accepted`/`required_with_tools`) drives projection, delivery, planning and discovery |
+| Binding reasoning-history contract | 2026-10-28 | One assessed binding fact (`unsupported`/`ignored`/`accepted`/`required_with_tools`) is the shared owner for projection, delivery, planning and discovery |
+| Phased binding-history qualification | 2026-10-29 | Explicit unassessed declarations preserve current behavior; established facts migrate without inferring Provider history semantics from replay switches or output |
 | Standard Chat reasoning omission | 2026-10-28 | Revises readable Chat reasoning: Standard omits readable reasoning; required reasoning history rejects at planning without the readable profile |
 | Owner-local cache omission | 2026-10-28 | Revises owner-local cache admission: all routes admit breakpoints; non-native candidates omit them by named rule |
 | Messages baseline retained | 2026-10-28 | Legacy `anthropic-version` and nonempty beta headers keep rejecting; discovery lets agents avoid beta-only behavior |

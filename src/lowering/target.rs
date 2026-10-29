@@ -39,6 +39,16 @@ impl From<google_interactions::TargetContract> for TargetContract {
     }
 }
 impl TargetContract {
+    /// One declaration on the selected protocol target; no dialect inference.
+    pub fn reasoning_history(&self) -> Option<crate::protocol::reasoning::ReasoningHistory> {
+        match self {
+            Self::OpenAi(c) => c.reasoning_history,
+            Self::AnthropicMessages(c) => c.reasoning_history,
+            Self::GoogleGenerateContent(c) => c.reasoning_history,
+            Self::GoogleInteractions(c) => c.reasoning_history,
+        }
+    }
+
     pub fn model_limits(&self) -> &crate::protocol::model_limits::ModelLimits {
         match self {
             Self::OpenAi(c) => &c.model_limits,

@@ -7,12 +7,14 @@ pub struct SubscriptionBinding {
     pub model: &'static str,
     pub upstream: &'static str,
     pub dialect: Dialect,
+    pub reasoning_history: Option<crate::protocol::reasoning::ReasoningHistory>,
     pub provider: fn() -> crate::provider::ProviderDefinition,
 }
 pub const SUBSCRIPTION_BINDINGS: &[SubscriptionBinding] = &[
     SubscriptionBinding {
         profile: "openai",
         identity: "openai",
+        reasoning_history: Some(crate::protocol::reasoning::ReasoningHistory::Accepted),
         model: "gpt-6.1-sol",
         upstream: "gpt-6.1-sol",
         dialect: Dialect::Siwc,
@@ -21,6 +23,7 @@ pub const SUBSCRIPTION_BINDINGS: &[SubscriptionBinding] = &[
     SubscriptionBinding {
         profile: "openai",
         identity: "openai-astra",
+        reasoning_history: Some(crate::protocol::reasoning::ReasoningHistory::Accepted),
         model: "gpt-6-astra",
         upstream: "gpt-6-astra",
         dialect: Dialect::Siwc,
@@ -29,6 +32,7 @@ pub const SUBSCRIPTION_BINDINGS: &[SubscriptionBinding] = &[
     SubscriptionBinding {
         profile: "openai",
         identity: "openai-luna",
+        reasoning_history: Some(crate::protocol::reasoning::ReasoningHistory::Accepted),
         model: "gpt-6-luna",
         upstream: "gpt-6-luna",
         dialect: Dialect::Siwc,
@@ -37,6 +41,7 @@ pub const SUBSCRIPTION_BINDINGS: &[SubscriptionBinding] = &[
     SubscriptionBinding {
         profile: "grok",
         identity: "grok",
+        reasoning_history: Some(crate::protocol::reasoning::ReasoningHistory::Accepted),
         model: "grok-4.7",
         upstream: "grok-4.7",
         dialect: Dialect::Grok,
@@ -89,6 +94,7 @@ impl SubscriptionBinding {
             Some(scope.clone()),
         );
         let contract = TargetContract {
+            reasoning_history: self.reasoning_history,
             semantics: self.contract(),
             replay_origin: Some(scope),
             cache: adapter.adaptation.cache,
