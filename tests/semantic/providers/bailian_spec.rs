@@ -482,6 +482,64 @@ fn responses_non_strict_defaults_and_single_function_selection_have_native_oracl
     assert!(wire["tools"][0].get("strict").is_none());
 }
 #[test]
+fn responses_history_keeps_summary_and_transfers_uncarried_readable_reasoning() {
+    let target = endpoint("dashscope-flash", GenerationProtocol::OpenAiResponses);
+    let summary = json!({"type":"reasoning","id":"reason-0",
+        "summary":[{"type":"summary_text","text":"plan"}]});
+    let mut body = json!({"model":"qwen3.8-flash","input":[
+        {"role":"user","content":"first"}, summary,
+        {"type":"message","id":"message-kept","status":"completed","role":"assistant",
+         "content":[{"type":"output_text","text":"answer","annotations":[]}]},
+        {"role":"user","content":"next"}
+    ]});
+    let input = client(GenerationApi::Responses)
+        .decode_client_request(body.to_string().as_bytes())
+        .unwrap();
+    let (wire, rules) = target.encode_request_with_rules(&input).unwrap();
+    assert_eq!(wire["input"][1], body["input"][1]);
+    assert!(rules.is_empty());
+
+    body["input"][1]["content"] =
+        json!([{"type":"reasoning_text","text":"uncarried full reasoning"}]);
+    let input = client(GenerationApi::Responses)
+        .decode_client_request(body.to_string().as_bytes())
+        .unwrap();
+    let original = input.clone();
+    let (wire, rules) = target.encode_request_with_rules(&input).unwrap();
+    assert_eq!(
+        wire["input"],
+        json!([
+            {"type":"message","role":"user","content":[{"type":"input_text","text":"first"}]},
+        {"type":"message","id":"message-kept","status":"completed","role":"assistant",
+         "content":[{"type":"output_text","text":"answer","annotations":[]}]},
+            {"type":"message","role":"user","content":[{"type":"input_text","text":"next"}]}
+        ])
+    );
+    assert_eq!(rules, ["responses.transfer-visible-history.v1"]);
+    assert_eq!(input, original);
+    assert!(
+        endpoint("aliyun-tokenplan-cn", GenerationProtocol::OpenAiResponses)
+            .encode_request(&input)
+            .is_err()
+    );
+    let mut explicit = input.clone();
+    let mut settings = explicit.task.semantic.settings().clone();
+    settings.reasoning.presence = ReasoningPresence::Present;
+    settings.reasoning.read_history = Presence::Value(true);
+    explicit.task.semantic = explicit.task.semantic.with_settings(settings).unwrap();
+    assert!(matches!(
+        target.encode_request(&explicit),
+        Err(ConversionFailure {
+            cause: morphiecore::protocol::ConversionCause::Codec(CodecError::Unsupported(
+                morphiecore::protocol::failure::CarrierReason::Reasoning
+            )),
+            ..
+        })
+    ));
+    assert_eq!(input, original);
+}
+
+#[test]
 fn responses_unlisted_guarantees_and_non_adjacent_results_reject_without_reordering() {
     let target = endpoint("dashscope-flash", GenerationProtocol::OpenAiResponses);
     for patch in [

@@ -186,6 +186,74 @@ fn tool_turn_transfer_keeps_real_results_and_forgets_paired_wire_ids_only() {
         .encode_request(&request, "model-a", &contract("openai/model-a"))
         .unwrap();
     assert_eq!(native["input"][3]["id"], "fc_paired");
+    let summary_target = GenerationCodec::new(
+        GenerationApi::Responses,
+        Dialect::Bailian,
+        Some(origin("openai/model-a")),
+    );
+    let assessed = Contract {
+        reasoning_history: Some(morphiecore::protocol::reasoning::ReasoningHistory::Accepted),
+        ..Contract::full()
+    };
+    assert!(
+        summary_target
+            .encode_request(&request, "qwen3.8-flash", &Contract::full())
+            .is_err(),
+        "unassessed same-issuer behavior remains unchanged"
+    );
+    let (transferred, losses) = summary_target
+        .encode_request_with_rules(&request, "qwen3.8-flash", &assessed)
+        .unwrap();
+    assert_eq!(transferred["input"], wire["input"]);
+    assert_eq!(losses, ["responses.transfer-visible-history.v1"]);
+    assert_eq!(request, before);
+    for status in ["incomplete", "in_progress"] {
+        let mut native_body = body.clone();
+        native_body["input"][1]["status"] = json!(status);
+        native_body["input"][1]["encrypted_content"] = json!("synthetic-final-token");
+        // Decode a trusted native value, bypassing client-envelope opening.
+        let phased = upstream("openai/model-a")
+            .decode_request(native_body.to_string().as_bytes())
+            .unwrap();
+        let original = phased.clone();
+        let result = summary_target.encode_request(&phased, "qwen3.8-flash", &assessed);
+        if status == "incomplete" {
+            assert_eq!(result.unwrap()["input"], wire["input"]);
+        } else {
+            assert!(matches!(
+                result,
+                Err(morphiecore::protocol::ConversionFailure {
+                    cause: morphiecore::protocol::ConversionCause::Codec(
+                        morphiecore::protocol::CodecError::Unsupported(
+                            morphiecore::protocol::failure::CarrierReason::Reasoning
+                        )
+                    ),
+                    ..
+                })
+            ));
+        }
+        assert_eq!(phased, original);
+    }
+    let summary = json!({"type":"reasoning","id":"reason-kept",
+        "summary":[{"type":"summary_text","text":"kept summary"}]});
+    let mut mixed_body = body.clone();
+    mixed_body["input"]
+        .as_array_mut()
+        .unwrap()
+        .insert(2, summary.clone());
+    let mut supported = client()
+        .decode_request(mixed_body.to_string().as_bytes())
+        .unwrap();
+    open_from_client(&mut supported).unwrap();
+    let original = supported.clone();
+    let mut expected = wire["input"].as_array().unwrap().clone();
+    expected.insert(1, summary);
+    let (projected, rules) = summary_target
+        .encode_request_with_rules(&supported, "qwen3.8-flash", &assessed)
+        .unwrap();
+    assert_eq!(projected["input"], json!(expected));
+    assert_eq!(rules, ["responses.transfer-visible-history.v1"]);
+    assert_eq!(supported, original);
     let mut mixed = before.clone();
     let mut items = mixed.task.semantic.items().to_vec();
     let Item::Reasoning(mut compatible) = items[1].1.clone() else {

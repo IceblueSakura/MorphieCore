@@ -91,6 +91,17 @@ impl GenerationRequestEnvelope {
         &self,
         target: Option<&crate::semantic::value::ReplayOrigin>,
     ) -> Result<Option<GenerationRequestEnvelope>, CodecError> {
+        self.without_uncarried_reasoning(target, |_| Ok(false))
+    }
+    /// Extend visible-history transfer with the selected codec's carrier policy.
+    /// Dependency checks and alias pruning apply equally to same-issuer omissions.
+    pub(crate) fn without_uncarried_reasoning(
+        &self,
+        target: Option<&crate::semantic::value::ReplayOrigin>,
+        uncarried: impl Fn(
+            &crate::semantic::task::generation::ReasoningItem,
+        ) -> Result<bool, CodecError>,
+    ) -> Result<Option<GenerationRequestEnvelope>, CodecError> {
         use crate::semantic::task::generation::{Item, ItemLifecycle, MessageRole};
         let fidelity = &self.task.fidelity;
         fidelity.check_target_replay(&self.task.semantic, target)?;
@@ -102,17 +113,18 @@ impl GenerationRequestEnvelope {
                 return Err(CodecError::Unsupported(CarrierReason::Replay));
             }
         }
-        let foreign: Vec<_> = self
-            .task
-            .semantic
-            .items()
-            .iter()
-            .filter(|(id, item)| {
-                matches!(item, Item::Reasoning(r) if r.replay.is_some())
-                    && (target.is_none() || fidelity.replay_origin(*id) != target)
-            })
-            .map(|(id, _)| *id)
-            .collect();
+        let mut omitted = Vec::new();
+        for (id, item) in self.task.semantic.items() {
+            if let Item::Reasoning(reasoning) = item {
+                let no_carrier = uncarried(reasoning)?;
+                if no_carrier
+                    || reasoning.replay.is_some()
+                        && (target.is_none() || fidelity.replay_origin(*id) != target)
+                {
+                    omitted.push(*id);
+                }
+            }
+        }
         let mut foreign_parts = Vec::new();
         let mut foreign_calls = Vec::new();
         for (id, item) in self.task.semantic.items() {
@@ -150,11 +162,11 @@ impl GenerationRequestEnvelope {
                 _ => {}
             }
         }
-        if foreign.is_empty() && foreign_parts.is_empty() && foreign_calls.is_empty() {
+        if omitted.is_empty() && foreign_parts.is_empty() && foreign_calls.is_empty() {
             return Ok(None);
         }
         if self.task.semantic.items().iter().any(|(id, item)| {
-            foreign.contains(id)
+            omitted.contains(id)
                 && matches!(item, Item::Reasoning(r)
                     if r.replay.as_ref().is_some_and(|v| v.replay_token().is_none()))
         }) {
@@ -176,12 +188,12 @@ impl GenerationRequestEnvelope {
             .chunk_by(|a, b| assistant(&a.1) && assistant(&b.1))
         {
             if run.iter().any(|(id, _)| {
-                foreign.contains(id)
+                omitted.contains(id)
                     || foreign_calls.contains(id)
                     || foreign_parts.iter().any(|(owner, _)| owner == id)
             }) {
                 if run.iter().any(|(id, item)| {
-                    !foreign.contains(id)
+                    !omitted.contains(id)
                         && matches!(item, Item::Reasoning(reasoning) if reasoning.replay.is_some())
                 }) && run.iter().any(|(id, item)| {
                     matches!(item, Item::ToolCall(_) | Item::CustomCall(_))
@@ -196,11 +208,11 @@ impl GenerationRequestEnvelope {
                 }
             }
         }
-        if !foreign.is_empty() {
+        if !omitted.is_empty() {
             copy.task.semantic = copy
                 .task
                 .semantic
-                .retain_items(|id, _| !foreign.contains(&id))?;
+                .retain_items(|id, _| !omitted.contains(&id))?;
         }
         if !foreign_parts.is_empty() || !foreign_calls.is_empty() {
             let mut items = copy.task.semantic.items().to_vec();

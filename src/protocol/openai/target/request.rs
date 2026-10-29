@@ -215,13 +215,27 @@ impl GenerationCodec {
                 bound.adaptation.effort_mapping = Some(mapping);
                 return bound.encode_request_with_evidence(request, model, contract);
             }
-            // Compatibility and carrier support are separate: a same-issuer value
-            // without a target carrier must fail lowering, not disappear silently.
+            // History acceptance and its exact wire carrier are separate facts.
             let issuer = contract
                 .replay_origin
                 .as_ref()
                 .or(self.adaptation.scope.as_ref());
-            let stripped = request.without_foreign_reasoning(issuer)?;
+            let stripped = if self.protocol == GenerationApi::Responses
+                && self.adaptation.rules.bailian_requests
+                && contract.reasoning_history
+                    == Some(crate::protocol::reasoning::ReasoningHistory::Accepted)
+            {
+                request.without_uncarried_reasoning(issuer, |reasoning| {
+                    let omit = !openai::dialect::bailian::responses_reasoning_carrier(reasoning);
+                    if omit && request.task.semantic.reasoning().read_history.value() == Some(&true)
+                    {
+                        return Err(CodecError::Unsupported(CarrierReason::Reasoning));
+                    }
+                    Ok(omit)
+                })?
+            } else {
+                request.without_foreign_reasoning(issuer)?
+            };
 
             let mut controls = vec![];
             if stripped.is_some() {

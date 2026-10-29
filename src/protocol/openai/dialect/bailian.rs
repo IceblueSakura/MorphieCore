@@ -317,6 +317,14 @@ pub(in crate::protocol::openai) fn check_native_effort(
     }
     Ok(())
 }
+pub(in crate::protocol::openai) fn responses_reasoning_carrier(reasoning: &ReasoningItem) -> bool {
+    reasoning.replay.is_none()
+        && reasoning
+            .parts
+            .iter()
+            .all(|(_, part)| matches!(part, ReasoningContent::Summary(_)))
+}
+
 pub(in crate::protocol::openai) fn check(
     request: &Request,
     profile: GenerationApi,
@@ -493,12 +501,7 @@ pub(in crate::protocol::openai) fn check_semantic(
                 Item::Message(m) if m.phase.is_some() => {
                     return Err(CodecError::Unsupported(CarrierReason::Unavailable));
                 }
-                Item::Reasoning(r)
-                    if r.replay.is_some()
-                        || r.parts
-                            .iter()
-                            .any(|(_, p)| matches!(p, ReasoningContent::Text(_))) =>
-                {
+                Item::Reasoning(r) if !responses_reasoning_carrier(r) => {
                     return Err(CodecError::Unsupported(CarrierReason::UnknownField));
                 }
                 Item::CustomCall(_)

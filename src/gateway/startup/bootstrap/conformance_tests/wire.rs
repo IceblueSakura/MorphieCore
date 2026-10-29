@@ -222,6 +222,8 @@ pub(super) fn upstream(
         });
         if reasoning == Some(ReasoningShape::Summary) {
             item["summary"] = json!([{"type":"summary_text","text":"Plan 🧪"}]);
+            // The documented Bailian output omits this optional lifecycle field.
+            item.as_object_mut().unwrap().remove("status");
             // Isolate the documented summary-history carrier from phase support.
             for item in items.iter_mut() {
                 item.as_object_mut().unwrap().remove("phase");
@@ -1046,6 +1048,10 @@ fn assert_reasoning(api: Api, shape: ReasoningShape, value: &Value, history: boo
             assert_eq!(api, Api::Responses);
             let item = items.iter().find(|i| i["type"] == "reasoning").unwrap();
             if shape == ReasoningShape::Summary {
+                assert_eq!(item["id"], if first { "reason-0" } else { "reason-1" });
+                if !history {
+                    assert_eq!(item["status"], "completed");
+                }
                 assert_eq!(
                     item["summary"],
                     json!([{"type":"summary_text","text":"Plan 🧪"}])
