@@ -250,6 +250,10 @@ async fn observe(
                     assert_eq!(body["stream"], true, "SIWC always streams upstream");
                     assert_eq!(body["store"], false, "upstream stays stateless");
                 }
+                if control == Control::SummaryHistory {
+                    assert_eq!(body["reasoning"], json!({"effort":"low"}));
+                    assert!(body.get("include").is_none());
+                }
                 let turn = {
                     let mut calls = calls.lock().unwrap();
                     let turn = calls.len();
@@ -304,6 +308,10 @@ async fn observe(
     if control == Control::Uncapped {
         assert_eq!(client, Api::Responses);
         request.as_object_mut().unwrap().remove("max_output_tokens");
+    }
+    if control == Control::SummaryHistory {
+        request["reasoning"] = json!({"effort":"low","summary":"auto"});
+        request["include"] = json!(["reasoning.encrypted_content"]);
     }
     if control == Control::AdaptiveHistory {
         assert_eq!(client, Api::Messages);
@@ -879,7 +887,7 @@ fn expected(binding: &str, client: Api, profile: Profile) -> &'static [&'static 
             &["representation.replay_format@1"]
         }
         ("dashscope-flash-responses", Responses, Reasoning) => {
-            &["planning:[\"codec.unsupported.reasoning\"]@0"]
+            &["planning:[\"codec.unsupported.unavailable\"]@0"]
         }
         ("opencode-go-haiku-messages", Chat | Messages, Text | Tools)
         | ("opencode-go-haiku-messages", Responses, Text) => ACCEPT,

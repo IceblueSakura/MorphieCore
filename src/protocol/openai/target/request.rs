@@ -285,6 +285,53 @@ impl GenerationCodec {
                 controls.push(policy.receipt(&projected.task.semantic, &semantic)?);
                 projected.to_mut().task.semantic = semantic;
             }
+            if self.protocol == GenerationApi::Responses && self.adaptation.rules.bailian_requests {
+                use crate::{
+                    protocol::conversion::generation::{Change, ConversionBoundary, Field},
+                    semantic::task::generation::{
+                        ReasoningActivation, ReasoningDisplay, ReasoningSummary,
+                    },
+                };
+                let reasoning = projected.task.semantic.reasoning();
+                let summary =
+                    reasoning.presentation.visibility.value() == Some(&ReasoningDisplay::Summary);
+                if summary || reasoning.encrypted_output() {
+                    let mut settings = projected.task.semantic.settings().clone();
+                    if summary {
+                        // Auto resolves to the fixed native summarizer (or none).
+                        if matches!(
+                            reasoning.summary(),
+                            Some(ReasoningSummary::Concise | ReasoningSummary::Detailed)
+                        ) {
+                            controls.push(Effect::new(
+                                "responses.omit-reasoning-summary.v1",
+                                Field::ReasoningSummary,
+                                ConversionBoundary::RequestProject,
+                                Change::Omit,
+                            ));
+                        }
+                        settings.reasoning.presentation = Default::default();
+                    }
+                    if reasoning.encrypted_output() {
+                        if reasoning.activation.value() != Some(&ReasoningActivation::Disabled) {
+                            controls.push(Effect::new(
+                                "responses.omit-encrypted-reasoning-include.v1",
+                                Field::Replay,
+                                ConversionBoundary::RequestProject,
+                                Change::Omit,
+                            ));
+                        }
+                        settings.reasoning = settings.reasoning.with_encrypted_output(false);
+                    }
+                    let semantic = projected
+                        .task
+                        .semantic
+                        .clone()
+                        .with_settings(settings)
+                        .map_err(CodecError::from)?;
+                    projected.to_mut().task.semantic = semantic;
+                }
+            }
             let request = projected.as_ref();
             if self.adaptation.rules.reject_disabled_reasoning
             && (request.task.semantic.reasoning().activation.value()

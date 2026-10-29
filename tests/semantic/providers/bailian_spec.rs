@@ -540,14 +540,79 @@ fn responses_history_keeps_summary_and_transfers_uncarried_readable_reasoning() 
 }
 
 #[test]
+fn responses_presentation_projects_without_changing_computation_or_source() {
+    let target = endpoint("dashscope-flash", GenerationProtocol::OpenAiResponses);
+    let mut body = json!({"model":"qwen3.8-flash","input":"go","max_output_tokens":64,
+        "reasoning":{"effort":"low","summary":"auto"},
+        "include":["reasoning.encrypted_content"]});
+    let input = client(GenerationApi::Responses)
+        .decode_client_request(body.to_string().as_bytes())
+        .unwrap();
+    let original = input.clone();
+    let (wire, rules) = target.encode_request_with_rules(&input).unwrap();
+    assert_eq!(wire["reasoning"], json!({"effort":"low"}));
+    assert!(wire.get("enable_thinking").is_none());
+    assert!(wire.get("include").is_none());
+    assert_eq!(rules, ["responses.omit-encrypted-reasoning-include.v1"]);
+    assert_eq!(input, original);
+    let standard = GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None)
+        .encode_request(&input, "m", &TargetContract::full())
+        .unwrap();
+    assert_eq!(standard["reasoning"], body["reasoning"]);
+    assert_eq!(standard["include"], body["include"]);
+    let mut explicit = input.clone();
+    let mut settings = explicit.task.semantic.settings().clone();
+    settings.reasoning.read_history = Presence::Value(true);
+    explicit.task.semantic = explicit.task.semantic.with_settings(settings).unwrap();
+    assert!(matches!(
+        target.encode_request(&explicit),
+        Err(ConversionFailure {
+            cause: morphiecore::protocol::ConversionCause::Codec(CodecError::Unsupported(
+                morphiecore::protocol::failure::CarrierReason::Unavailable
+            )),
+            ..
+        })
+    ));
+
+    body["reasoning"]["summary"] = json!("concise");
+    let input = client(GenerationApi::Responses)
+        .decode_client_request(body.to_string().as_bytes())
+        .unwrap();
+    let original = input.clone();
+    let (wire, rules) = target.encode_request_with_rules(&input).unwrap();
+    assert_eq!(wire["reasoning"], json!({"effort":"low"}));
+    assert_eq!(
+        rules,
+        [
+            "responses.omit-encrypted-reasoning-include.v1",
+            "responses.omit-reasoning-summary.v1"
+        ]
+    );
+    assert_eq!(input, original);
+
+    body["reasoning"] = json!({"effort":"none"});
+    let input = client(GenerationApi::Responses)
+        .decode_client_request(body.to_string().as_bytes())
+        .unwrap();
+    let original = input.clone();
+    let (wire, rules) = target.encode_request_with_rules(&input).unwrap();
+    assert_eq!(wire["enable_thinking"], false);
+    assert!(wire.get("include").is_none());
+    assert!(
+        rules.is_empty(),
+        "thinking-off has no new reasoning to encrypt"
+    );
+    assert_eq!(input, original);
+}
+
+#[test]
 fn responses_unlisted_guarantees_and_non_adjacent_results_reject_without_reordering() {
     let target = endpoint("dashscope-flash", GenerationProtocol::OpenAiResponses);
     for patch in [
         json!({"text":{"format":{"type":"json_object"}}}),
-        json!({"reasoning":{"summary":"concise"}}),
+        json!({"reasoning":{"summary":null}}),
         json!({"parallel_tool_calls":false}),
         json!({"truncation":"auto"}),
-        json!({"include":["reasoning.encrypted_content"]}),
         json!({"max_output_tokens":15}),
     ] {
         let mut wire = response_request();
