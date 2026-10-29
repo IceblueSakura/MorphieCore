@@ -44,6 +44,28 @@ impl ClientAdapter {
             Self::Messages => Err(CodecError::ProfileMismatch),
         }
     }
+    fn omits_readable_reasoning(&self) -> bool {
+        matches!(self, Self::OpenAi { adapter, .. }
+            if crate::protocol::openai::lowering::readable_reasoning::selected(
+                adapter.protocol, &adapter.adaptation.rules))
+    }
+    fn project_readable_reasoning(
+        &self,
+        decoded: &mut DecodedResponse,
+    ) -> Result<Vec<Effect>, crate::protocol::ConversionFailure> {
+        if let Self::OpenAi { adapter, .. } = self
+            && let Some((semantic, effects)) =
+                crate::protocol::openai::lowering::readable_reasoning::project(
+                    &decoded.semantic,
+                    adapter.protocol,
+                    &adapter.adaptation.rules,
+                )?
+        {
+            decoded.semantic = semantic;
+            return Ok(effects);
+        }
+        Ok(vec![])
+    }
     /// Validate the same selected grouping as static delivery before publishing a
     /// terminal. Streaming cannot hide an unrepresentable source owner or report.
     pub(crate) fn check_chat_source(
@@ -61,6 +83,7 @@ impl ClientAdapter {
                 return Err(CodecError::Unsupported(CarrierReason::Replay).into());
             }
             let mut decoded = crate::protocol::replay_projection::strip(decoded, true)?;
+            let reasoning_losses = self.project_readable_reasoning(&mut decoded)?;
             let mut effects = crate::protocol::openai::lowering::native_response::group_chat(
                 &mut decoded,
                 contract.reported_facts,
@@ -84,6 +107,7 @@ impl ClientAdapter {
                 effect.semantic_field()
                     == crate::protocol::conversion::generation::Field::MessageStatus
             });
+            effects.extend(reasoning_losses);
             Ok(effects)
         })();
         result.map_err(|error: crate::protocol::ConversionFailure| {
@@ -112,13 +136,14 @@ impl ClientAdapter {
         crate::protocol::ConversionFailure,
     > {
         let result = (|| {
+            let mut effects = self.project_readable_reasoning(response)?;
             if let Self::OpenAi { adapter, .. } = self {
-                return Ok(crate::protocol::openai::lowering::native_response::project(
+                effects.extend(crate::protocol::openai::lowering::native_response::project(
                     response,
                     adapter.protocol,
                 )?);
             }
-            Ok(vec![])
+            Ok(effects)
         })();
         result.map_err(|error: crate::protocol::ConversionFailure| {
             error.at(crate::protocol::conversion::generation::ConversionBoundary::ResponseProject)
@@ -154,6 +179,7 @@ impl ClientAdapter {
         crate::protocol::ConversionFailure,
     > {
         let result = (|| {
+            let reasoning_losses = self.project_readable_reasoning(&mut decoded)?;
             let hidden = decoded
                 .semantic
                 .items()
@@ -173,6 +199,7 @@ impl ClientAdapter {
                     } else {
                         self.project_native(&mut wire)?
                     };
+                    losses.extend(reasoning_losses);
                     let (projected, value, extra) = self.encode_snapshot(wire)?;
                     losses.extend(extra);
                     losses.push(crate::protocol::phase::delivery_omission("response.encode"));
@@ -184,6 +211,7 @@ impl ClientAdapter {
                     &mut decoded,
                     self.as_openai()?.1.reported_facts,
                 )?;
+                losses.extend(reasoning_losses);
                 let (projected, value, extra) = self.encode_snapshot(decoded)?;
                 losses.extend(extra);
                 return Ok((projected, value, losses));
@@ -360,6 +388,7 @@ impl ClientAdapter {
                 let mut client = ClientEncoder {
                     encoder: Encoder::Messages(encoder),
                     native_projection: None,
+                    omit_readable_reasoning: false,
                     losses: vec![],
                 };
                 client.update_metadata(metadata)?;
@@ -384,6 +413,7 @@ impl ClientAdapter {
         Ok(ClientEncoder {
             encoder,
             native_projection: None,
+            omit_readable_reasoning: self.omits_readable_reasoning(),
             losses: vec![],
         })
     }
@@ -449,6 +479,7 @@ enum Encoder {
 pub(crate) struct ClientEncoder {
     losses: Vec<crate::protocol::conversion::generation::Effect>,
     encoder: Encoder,
+    omit_readable_reasoning: bool,
     native_projection: Option<crate::protocol::openai::lowering::native_response::EventProjection>,
 }
 impl ClientEncoder {
@@ -470,9 +501,11 @@ impl ClientEncoder {
             if !matches!(self.encoder, Encoder::Chat(_)) {
                 return Ok(None);
             }
-            let projection = self.native_projection.get_or_insert_with(
-                crate::protocol::openai::lowering::native_response::EventProjection::for_phase,
-            );
+            let projection = self.native_projection.get_or_insert_with(|| {
+                crate::protocol::openai::lowering::native_response::EventProjection::for_phase(
+                    self.omit_readable_reasoning,
+                )
+            });
             let projected = projection.project(events)?;
             for loss in projection.take_evidence() {
                 if !self.losses.contains(&loss) {
@@ -502,6 +535,7 @@ impl ClientEncoder {
             };
             let projection = self.native_projection.get_or_insert_with(|| {
                 crate::protocol::openai::lowering::native_response::EventProjection::new(profile)
+                    .with_readable_reasoning_omission(self.omit_readable_reasoning)
             });
             let result = projection.project(events)?;
             for loss in projection.take_evidence() {

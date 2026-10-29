@@ -77,8 +77,14 @@ pub fn lower_response<'a>(
             )
         })
         .collect();
+    if let Some((view, effects)) =
+        super::readable_reasoning::project(&semantic, profile, &c.adaptation.rules)?
+    {
+        semantic = std::borrow::Cow::Owned(view);
+        projection.extend(effects);
+    }
     if profile == GenerationApi::Chat
-        && let Some((view, effects)) = projection::chat_text_status(r, c.reported_facts)?
+        && let Some((view, effects)) = projection::chat_text_status(&semantic, c.reported_facts)?
     {
         semantic = std::borrow::Cow::Owned(view);
         projection.extend(effects);
@@ -139,7 +145,7 @@ pub fn lower_response<'a>(
         }
     }
     if let Some((groups, loss)) =
-        message_groups::project(r.items(), r.message_envelopes(), profile)?
+        message_groups::project(semantic.items(), semantic.message_envelopes(), profile)?
     {
         semantic = std::borrow::Cow::Owned(semantic.into_owned().with_message_envelopes(groups)?);
         projection.push(

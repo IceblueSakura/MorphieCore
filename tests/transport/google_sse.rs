@@ -49,7 +49,15 @@ fn deliver(
     );
     let mut delivery = ResponseDelivery::new(
         morphiecore::adapter::ClientAdapter::openai(
-            GenerationCodec::new(profile, Dialect::MorphieCore, None),
+            GenerationCodec::new(
+                profile,
+                if profile == GenerationApi::Chat {
+                    Dialect::Standard
+                } else {
+                    Dialect::MorphieCore
+                },
+                None,
+            ),
             TargetContract::full(),
         ),
         "public",
@@ -173,11 +181,20 @@ fn signed_text_and_partial_outputs_keep_replay_and_terminal_contracts() {
 }
 
 #[test]
-fn readable_reasoning_after_content_still_cannot_reach_chat() {
+fn native_thought_replay_remains_protected_without_a_signature() {
+    // The native codec retains thought provenance as replay even without a signature.
+    // Truly unsigned late reasoning is covered by the Responses projection control.
     let late_thought =
         incomplete_frames(json!([{"text":"Reading."},{"text":"Plan","thought":true}]));
     for stream in [false, true] {
-        assert!(deliver(&late_thought, GenerationApi::Chat, stream).is_err());
+        let error = deliver(&late_thought, GenerationApi::Chat, stream).unwrap_err();
+        assert!(
+            error.representation() == Some(&morphiecore::protocol::conversion::generation::RepresentationError::ReplayFormat)
+                || error.codec() == Some(&morphiecore::protocol::CodecError::Unsupported(
+                    morphiecore::protocol::failure::CarrierReason::Replay
+                )),
+            "{error:?}"
+        );
     }
     assert!(deliver(&late_thought, GenerationApi::Responses, false).is_ok());
 }

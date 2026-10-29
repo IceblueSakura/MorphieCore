@@ -50,6 +50,9 @@ pub fn check_event(
         ..
     } = event
     {
+        if super::readable_reasoning::selected(profile, &contract.adaptation.rules) {
+            return Err(RepresentationError::ReplayFormat);
+        }
         let format = replay.value.format();
         if !matches!(
             format,
@@ -64,6 +67,25 @@ pub fn check_event(
         {
             return Err(RepresentationError::ReplayPhase);
         }
+    }
+    if super::readable_reasoning::selected(profile, &contract.adaptation.rules)
+        && super::readable_reasoning::owner(event).is_some_and(|item| {
+            matches!(
+                event,
+                StreamEvent::ItemStarted {
+                    kind: ItemKind::Reasoning,
+                    ..
+                }
+            ) || state
+                .item(item)
+                .is_ok_and(|item| matches!(item.kind, ItemKind::Reasoning))
+        })
+    {
+        if super::readable_reasoning::carries_replay(event) {
+            return Err(RepresentationError::ReplayFormat);
+        }
+        // The encoder still reduces the source event before suppressing rendering.
+        return Ok(());
     }
     match event {
         StreamEvent::AnnotationAdded { annotation, .. } => {

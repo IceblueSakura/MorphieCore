@@ -5,6 +5,7 @@ pub mod events;
 mod message_groups;
 pub(crate) mod native_response;
 pub mod projection;
+pub(crate) mod readable_reasoning;
 mod request;
 mod response;
 

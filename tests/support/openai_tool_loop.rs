@@ -225,7 +225,7 @@ pub async fn start_readable() -> Fixture {
 }
 
 #[allow(dead_code)] // Only the Router target exercises pre-dispatch rejection.
-pub async fn start_standard_thinking() -> Fixture {
+pub async fn start_required_history() -> Fixture {
     start_with_recovery(
         GenerationApi::Chat,
         false,
@@ -241,7 +241,7 @@ async fn start_with_recovery(
     fallback: bool,
     recover: bool,
     chat_profile: ChatProfile,
-    declared_thinking: bool,
+    required_history: bool,
 ) -> Fixture {
     let seen = Arc::new(Mutex::new(Vec::new()));
     let control = Arc::new(Control::default());
@@ -276,11 +276,14 @@ async fn start_with_recovery(
     endpoint.target.origin = origin.clone();
     // The generic synthetic fixture can return either shape, independently of
     // the real binding's declared thinking-output contract.
-    endpoint
-        .representation
-        .openai_mut()
-        .unwrap()
-        .chat_thinking_output = declared_thinking;
+    if required_history {
+        endpoint
+            .representation
+            .openai_mut()
+            .unwrap()
+            .reasoning_history =
+            Some(morphiecore::protocol::reasoning::ReasoningHistory::RequiredWithTools);
+    }
     let public = catalog.model(label).unwrap().clone();
     let mut route = catalog.route(&public.route).unwrap().clone();
     route.endpoints = vec![endpoint.id.clone()];

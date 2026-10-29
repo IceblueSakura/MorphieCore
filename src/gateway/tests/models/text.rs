@@ -320,19 +320,18 @@ fn text_contract_uses_actual_dialect_checks_and_does_not_advertise_omitted_contr
         value["features"]["parallel_tool_calls"],
         json!({"state":"faithful"})
     );
-    // A plain request blocked by the client-reasoning boundary is not evidence
-    // that unrelated function declarations are unsupported.
+    // A declared continuity requirement is assessed at the tool probe itself.
     let mut candidate = entry.candidates[0].as_ref().clone();
     candidate
         .endpoint
         .representation
         .openai_mut()
         .unwrap()
-        .chat_thinking_output = true;
+        .reasoning_history = Some(crate::protocol::reasoning::ReasoningHistory::RequiredWithTools);
     entry.candidates = vec![Arc::new(candidate)];
     assert_eq!(
         descriptor(entry)["features"]["function_tools"],
-        json!({"state":"not_assessed"})
+        json!({"state":"unavailable"})
     );
 }
 

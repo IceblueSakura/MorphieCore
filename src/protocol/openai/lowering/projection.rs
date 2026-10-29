@@ -446,8 +446,6 @@ mod tests {
         let extras = [
             json!({"id":"f","type":"function_call","call_id":"c","name":"f",
                 "arguments":"{}","status":"completed"}),
-            json!({"id":"r2","type":"reasoning","summary":[{"type":"summary_text","text":"plan"}],
-                "status":"completed"}),
             json!({"id":"m2","type":"message","role":"assistant","status":"completed",
                 "content":[{"type":"refusal","refusal":"no"}]}),
             json!({"id":"m2","type":"message","role":"assistant","status":"completed",

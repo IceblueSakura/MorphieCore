@@ -171,9 +171,9 @@ impl ApiKeyBinding {
         }
         let contract = TargetContract {
             reasoning_history,
-            // Official thinking-mode contract: reasoning_content is separate
-            // from the answer. An off request must use the native boolean.
-            chat_thinking_output: family == crate::protocol::openai::GenerationApi::Chat
+            // Keep unassessed TokenPlan admission unchanged during phased migration.
+            chat_thinking_output: reasoning_history.is_none()
+                && family == crate::protocol::openai::GenerationApi::Chat
                 && self.dialect == Dialect::Bailian
                 && matches!(self.canonical_model, "qwen3.8-flash" | "qwen3.8-max"),
             semantics: self

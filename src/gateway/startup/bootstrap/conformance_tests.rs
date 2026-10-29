@@ -569,7 +569,7 @@ async fn catalog_subscription_production_lanes() {
                 } else if entry.profile == "openai" {
                     &["planning:[\"codec.unsupported.unavailable\"]@0"][..]
                 } else if profile == Profile::Reasoning && client == Api::Chat {
-                    &["representation.reasoning@1"][..]
+                    &["representation.replay_format@1"][..]
                 } else {
                     ACCEPT
                 };
@@ -801,15 +801,19 @@ const BASIC_EXPECTATIONS: &[(&[&str], [&[&str]; 4])] = &[
         ],
     ),
     (
-        &[
-            "dashscope-flash-chat",
-            "tokenplan-max-chat",
-            "aliyun-dashscope-cn-chat",
-            "aliyun-tokenplan-cn-chat",
-        ],
+        &["tokenplan-max-chat", "aliyun-tokenplan-cn-chat"],
         [
             &["planning:[\"admission.client_representation\"]@0"],
             &["planning:[\"admission.client_representation\"]@0"],
+            ACCEPT,
+            &["planning:[\"codec.unsupported.unavailable\"]@0"],
+        ],
+    ),
+    (
+        &["dashscope-flash-chat", "aliyun-dashscope-cn-chat"],
+        [
+            ACCEPT,
+            ACCEPT,
             ACCEPT,
             &["planning:[\"codec.unsupported.unavailable\"]@0"],
         ],
@@ -872,7 +876,7 @@ fn expected(binding: &str, client: Api, profile: Profile) -> &'static [&'static 
         ("deepseek-chat", Responses, Reasoning) => &["planning:[\"representation.reasoning\"]@0"],
         ("openrouter-responses", Responses, Reasoning) => ACCEPT,
         ("openrouter-responses" | "dashscope-flash-responses", Chat, Reasoning) => {
-            &["representation.reasoning@1"]
+            &["representation.replay_format@1"]
         }
         ("dashscope-flash-responses", Responses, Reasoning) => {
             &["planning:[\"codec.unsupported.reasoning\"]@0"]

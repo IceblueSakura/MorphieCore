@@ -132,10 +132,12 @@ pub(crate) fn representable_for_client(
         && adapter.protocol == crate::protocol::openai::GenerationApi::Chat
         && !adapter.adaptation.rules.readable_reasoning
         && endpoint.protocol == crate::topology::GenerationProtocol::OpenAiChat
-        && let crate::lowering::target::TargetContract::OpenAi(caps) = &endpoint.representation
     {
-        // The existing output-carrier guard remains independent of unassessed
-        // history. Required history is a separate, endpoint-qualified fact.
+        let unassessed_output = endpoint.representation.reasoning_history().is_none()
+            && endpoint
+                .representation
+                .openai()
+                .is_some_and(|caps| caps.chat_thinking_output);
         let thinking = value.get("enable_thinking") != Some(&serde_json::Value::Bool(false));
         let required = endpoint.representation.reasoning_history()
             == Some(crate::protocol::reasoning::ReasoningHistory::RequiredWithTools)
@@ -147,7 +149,7 @@ pub(crate) fn representable_for_client(
                 .get("reasoning_effort")
                 .and_then(serde_json::Value::as_str)
                 != Some("none");
-        if thinking && (caps.chat_thinking_output || required) {
+        if thinking && (unassessed_output || required) {
             return Err(RejectionReason::Representation);
         }
     }
@@ -277,7 +279,7 @@ mod tests {
         };
         let topology = default_topology().unwrap();
         let endpoint = topology
-            .endpoint(&EndpointId::new("dashscope-flash-chat").unwrap())
+            .endpoint(&EndpointId::new("deepseek-chat").unwrap())
             .unwrap();
         let standard = GenerationCodec::new(GenerationApi::Chat, Dialect::Standard, None);
         let plain = ClientAdapter::openai(standard.clone(), TargetContract::full());
@@ -286,19 +288,36 @@ mod tests {
             TargetContract::full(),
         );
         let mut unknown = endpoint.clone();
-        unknown.id = EndpointId::new("unspecified-output").unwrap();
+        unknown.id = EndpointId::new("unassessed-history").unwrap();
         unknown
             .representation
             .openai_mut()
             .unwrap()
-            .chat_thinking_output = false;
-        let request = standard
-            .decode_client_request(
-                br#"{"model":"qwen3.8-flash",
-            "messages":[{"role":"user","content":"go"}],"reasoning_effort":"low"}"#,
-            )
-            .unwrap();
+            .reasoning_history = None;
+        let tool_request = |effort| {
+            standard
+                .decode_client_request(
+                    serde_json::json!({"model":"deepseek-flash","reasoning_effort":effort,
+                    "messages":[{"role":"user","content":"go"}],
+                    "tools":[{"type":"function","function":{"name":"read",
+                        "parameters":{"type":"object","properties":{}}}}]})
+                    .to_string()
+                    .as_bytes(),
+                )
+                .unwrap()
+        };
+        let request = tool_request("low");
         let original = request.clone();
+        assert!(
+            !endpoint.encode_request(&request).unwrap()["tools"]
+                .as_array()
+                .unwrap()
+                .is_empty()
+        );
+        assert_eq!(
+            representable_for_client(endpoint, &request, Some(&plain)),
+            Err(RejectionReason::Representation)
+        );
         let selected = select_candidates_for_client(
             &request,
             CandidatePolicy::SkipUnrepresentable,
@@ -313,7 +332,7 @@ mod tests {
                 &request,
                 CandidatePolicy::RequireAll,
                 [endpoint, &unknown],
-                Some(&plain)
+                Some(&plain),
             )
             .is_err()
         );
@@ -322,7 +341,7 @@ mod tests {
                 &request,
                 CandidatePolicy::RequireAll,
                 [endpoint, &unknown],
-                Some(&readable)
+                Some(&readable),
             )
             .unwrap()
             .candidates
@@ -330,64 +349,29 @@ mod tests {
             2
         );
         assert_eq!(request, original);
-        let off = standard
-            .decode_client_request(
-                br#"{"model":"qwen3.8-flash",
-            "messages":[{"role":"user","content":"go"}],"reasoning_effort":"none"}"#,
-            )
-            .unwrap();
-        let wire = endpoint.encode_request(&off).unwrap();
-        assert_eq!(wire["enable_thinking"], false);
-        select_candidates_for_client(&off, CandidatePolicy::RequireAll, [endpoint], Some(&plain))
-            .unwrap();
-
-        let required = topology
-            .endpoint(&EndpointId::new("deepseek-chat").unwrap())
-            .unwrap();
-        let tool_request = |effort| {
-            standard
-                .decode_client_request(
-                    serde_json::json!({"model":"deepseek-flash","reasoning_effort":effort,
-                    "messages":[{"role":"user","content":"go"}],
-                    "tools":[{"type":"function","function":{"name":"read",
-                        "parameters":{"type":"object","properties":{}}}}]})
-                    .to_string()
-                    .as_bytes(),
-                )
-                .unwrap()
-        };
-        let tools = tool_request("low");
-        let original = tools.clone();
-        assert!(
-            !required.encode_request(&tools).unwrap()["tools"]
-                .as_array()
-                .unwrap()
-                .is_empty()
-        );
-        assert_eq!(
-            representable_for_client(required, &tools, Some(&plain)),
-            Err(RejectionReason::Representation)
-        );
-        representable_for_client(required, &tools, Some(&readable)).unwrap();
-        let mut unassessed = required.clone();
-        unassessed
-            .representation
-            .openai_mut()
-            .unwrap()
-            .reasoning_history = None;
-        representable_for_client(&unassessed, &tools, Some(&plain)).unwrap();
         let off = tool_request("none");
         assert_eq!(
-            required.encode_request(&off).unwrap()["reasoning_effort"],
+            endpoint.encode_request(&off).unwrap()["reasoning_effort"],
             "none"
         );
-        representable_for_client(required, &off, Some(&plain)).unwrap();
-        let mut settings = tools.task.semantic.settings().clone();
+        representable_for_client(endpoint, &off, Some(&plain)).unwrap();
+        let mut settings = request.task.semantic.settings().clone();
         settings.tools = None;
-        let mut text = tools.clone();
+        let mut text = request.clone();
         text.task.semantic = text.task.semantic.with_settings(settings).unwrap();
-        representable_for_client(required, &text, Some(&plain)).unwrap();
-        assert_eq!(tools, original);
+        representable_for_client(endpoint, &text, Some(&plain)).unwrap();
+        let assessed = topology
+            .endpoint(&EndpointId::new("dashscope-flash-chat").unwrap())
+            .unwrap();
+        representable_for_client(assessed, &text, Some(&plain)).unwrap();
+        let unassessed = topology
+            .endpoint(&EndpointId::new("aliyun-tokenplan-cn-chat").unwrap())
+            .unwrap();
+        assert!(unassessed.encode_request(&text).is_ok());
+        assert_eq!(
+            representable_for_client(unassessed, &text, Some(&plain)),
+            Err(RejectionReason::Representation)
+        );
     }
 
     #[test]

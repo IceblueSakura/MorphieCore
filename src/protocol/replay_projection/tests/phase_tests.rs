@@ -301,10 +301,50 @@ fn unphased_plain_text_uses_the_same_selected_chat_grouping() {
             message.status = ItemLifecycle::Completed;
             source.semantic = source.semantic.with_items(items).unwrap();
         }
+        let mut items = source.semantic.items().to_vec();
+        items.push((
+            ItemId::new(100),
+            Item::Reasoning(ReasoningItem {
+                status: ItemLifecycle::Incomplete,
+                replay: None,
+                parts: vec![
+                    (
+                        PartId::new(100),
+                        ReasoningContent::Summary(
+                            Text::new("Hidden summary", "fixture", 64).unwrap(),
+                        ),
+                    ),
+                    (
+                        PartId::new(101),
+                        ReasoningContent::Text(
+                            Text::new("Hidden reasoning", "fixture", 64).unwrap(),
+                        ),
+                    ),
+                ],
+            }),
+        ));
+        source.semantic = source.semantic.with_items(items).unwrap();
         let before = source.clone();
         let client = client(ClientProtocol::Chat);
         let (retained, snapshot, effects) = client.snapshot_with_evidence(source.clone()).unwrap();
         let status_rule = "chat.omit-text-item-status.v1";
+        let reasoning_rule = "chat.omit-readable-reasoning.v1";
+        let omitted = effects
+            .iter()
+            .find(|effect| effect.rule() == reasoning_rule)
+            .unwrap();
+        assert_eq!(
+            omitted.owner(),
+            crate::protocol::conversion::generation::Owner::item(ItemId::new(100))
+        );
+        assert!(
+            !retained
+                .semantic
+                .items()
+                .iter()
+                .any(|(_, item)| matches!(item, Item::Reasoning(_)))
+        );
+        assert_eq!(snapshot["usage"]["total_tokens"], 13);
         assert_eq!(
             effects.iter().filter(|e| e.rule() == status_rule).count(),
             usize::from(completed)
@@ -360,6 +400,35 @@ fn unphased_plain_text_uses_the_same_selected_chat_grouping() {
                 }
             }
         }
+        let mut terminal = events.pop().unwrap();
+        let output = terminal["response"]["output"].as_array_mut().unwrap();
+        let index = output.len();
+        let reasoning = json!({"id":"reason","type":"reasoning","status":"incomplete",
+            "summary":[{"type":"summary_text","text":"Hidden summary"}],
+            "content":[{"type":"reasoning_text","text":"Hidden reasoning"}]});
+        output.push(reasoning.clone());
+        events.extend([
+            json!({"type":"response.output_item.added","output_index":index,"item":{
+                "id":"reason","type":"reasoning","status":"in_progress","summary":[],"content":[]}}),
+            json!({"type":"response.reasoning_summary_part.added","output_index":index,"item_id":"reason",
+                "summary_index":0,"part":{"type":"summary_text","text":""}}),
+            json!({"type":"response.reasoning_summary_text.delta","output_index":index,"item_id":"reason",
+                "summary_index":0,"delta":"Hidden summary"}),
+            json!({"type":"response.reasoning_summary_text.done","output_index":index,"item_id":"reason",
+                "summary_index":0,"text":"Hidden summary"}),
+            json!({"type":"response.reasoning_summary_part.done","output_index":index,"item_id":"reason",
+                "summary_index":0,"part":reasoning["summary"][0]}),
+            json!({"type":"response.content_part.added","output_index":index,"item_id":"reason",
+                "content_index":0,"part":{"type":"reasoning_text","text":""}}),
+            json!({"type":"response.reasoning_text.delta","output_index":index,"item_id":"reason",
+                "content_index":0,"delta":"Hidden reasoning"}),
+            json!({"type":"response.reasoning_text.done","output_index":index,"item_id":"reason",
+                "content_index":0,"text":"Hidden reasoning"}),
+            json!({"type":"response.content_part.done","output_index":index,"item_id":"reason",
+                "content_index":0,"part":reasoning["content"][0]}),
+            json!({"type":"response.output_item.done","output_index":index,"item":reasoning}),
+        ]);
+        events.push(terminal);
         let mut attempt = Attempt::new(
             GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None),
             1 << 20,
@@ -394,6 +463,12 @@ fn unphased_plain_text_uses_the_same_selected_chat_grouping() {
         }
         attempt.finish().unwrap();
         let observation = attempt.response().unwrap().clone();
+        let reasoning_owner = observation
+            .semantic
+            .items()
+            .iter()
+            .find_map(|(id, item)| matches!(item, Item::Reasoning(_)).then_some(*id))
+            .unwrap();
         assert_eq!(
             observation.semantic.items()[0].1.lifecycle(),
             Some(if completed {
@@ -408,6 +483,24 @@ fn unphased_plain_text_uses_the_same_selected_chat_grouping() {
                 .any(|frame| String::from_utf8_lossy(frame).contains("[DONE]"))
         );
         output.extend(end.concat());
+        assert!(!String::from_utf8_lossy(&output).contains("Hidden"));
+        assert_eq!(
+            delivery
+                .effects()
+                .iter()
+                .filter(|effect| effect.rule() == reasoning_rule)
+                .count(),
+            1
+        );
+        assert_eq!(
+            delivery
+                .effects()
+                .iter()
+                .find(|effect| effect.rule() == reasoning_rule)
+                .unwrap()
+                .owner(),
+            crate::protocol::conversion::generation::Owner::item(reasoning_owner)
+        );
         assert_eq!(
             delivery
                 .effects()
@@ -431,6 +524,13 @@ fn unphased_plain_text_uses_the_same_selected_chat_grouping() {
             );
         }
         let (saved, body) = delivery.snapshot(&attempt).unwrap();
+        assert!(
+            !saved
+                .semantic
+                .items()
+                .iter()
+                .any(|(_, item)| matches!(item, Item::Reasoning(_)))
+        );
         let body: Value = serde_json::from_slice(&body).unwrap();
         assert_eq!(body["choices"], snapshot["choices"]);
         assert_eq!(

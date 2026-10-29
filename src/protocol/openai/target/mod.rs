@@ -8,8 +8,7 @@ use crate::{
 pub struct TargetContract {
     pub adaptation: crate::protocol::openai::dialect::adaptation::Adaptation,
     pub reasoning_history: Option<crate::protocol::reasoning::ReasoningHistory>,
-    /// Selected Bailian Chat bindings require a reasoning-capable client while
-    /// thinking is active or uses its enabled default. Not parser capability.
+    /// Existing output admission on unassessed bindings, not a history fact.
     pub chat_thinking_output: bool,
     /// Permit the named projection of foreign readable reasoning into assistant text.
     pub reasoning_as_text: bool,

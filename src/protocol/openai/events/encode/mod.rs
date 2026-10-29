@@ -218,6 +218,24 @@ impl EventEncoder {
             if matches!(event, StreamEvent::Terminal { .. }) {
                 self.fidelity.copy_response_records(source);
             }
+            if crate::protocol::openai::lowering::readable_reasoning::selected(
+                self.profile,
+                &self.contract.adaptation.rules,
+            ) && let Some(item) =
+                crate::protocol::openai::lowering::readable_reasoning::owner(event)
+                && matches!(self.state()?.item(item)?.kind, ItemKind::Reasoning)
+            {
+                if matches!(event, StreamEvent::ItemStarted { .. }) {
+                    record_stages(
+                        &mut self.projection,
+                        [crate::protocol::openai::lowering::readable_reasoning::loss(
+                            item,
+                            crate::protocol::conversion::generation::ConversionBoundary::EventProject,
+                        )],
+                    );
+                }
+                return Ok(vec![]);
+            }
             let mut values = if self.profile == GenerationApi::Responses {
                 self.responses(event)?
             } else {

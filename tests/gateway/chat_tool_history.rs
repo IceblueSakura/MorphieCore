@@ -17,6 +17,11 @@ async fn request(client: &reqwest::Client, base: &str, body: &Value, session: &s
         return response.json().await.unwrap();
     }
     let bytes = response.text().await.unwrap();
+    if body.get("preserve_thinking") != Some(&json!(true)) {
+        for hidden in ["reasoning_content", "reasoning_details", "Plan", "mc1."] {
+            assert!(!bytes.contains(hidden), "{hidden}");
+        }
+    }
     let mut message = json!({"role":"assistant","content":""});
     let mut calls = std::collections::BTreeMap::<u64, Value>::new();
     let mut terminal = None;
@@ -152,8 +157,8 @@ async fn readable_reasoning_survives_tool_feedback_and_next_turn() {
 }
 
 #[tokio::test]
-async fn standard_chat_rejects_declared_thinking_before_dispatch() {
-    let fixture = fixture::start_standard_thinking().await;
+async fn standard_chat_rejects_required_tool_history_before_dispatch() {
+    let fixture = fixture::start_required_history().await;
     let client = reqwest::Client::builder().no_proxy().build().unwrap();
     let response = client
         .post(format!("{}/chat/completions", fixture.base))
@@ -167,7 +172,7 @@ async fn standard_chat_rejects_declared_thinking_before_dispatch() {
 }
 
 #[tokio::test]
-async fn generated_reasoning_cannot_be_published_as_standard_chat() {
+async fn standard_chat_omits_generated_reasoning_and_preserves_tool_calls() {
     let client = reqwest::Client::builder()
         .no_proxy()
         .timeout(std::time::Duration::from_secs(5))
@@ -177,33 +182,22 @@ async fn generated_reasoning_cannot_be_published_as_standard_chat() {
         let fixture = fixture::start(GenerationApi::Chat, false).await;
         let mut body = input(stream);
         body["messages"][0]["content"] = json!("reasoning");
-        let mut response = client
-            .post(format!("{}/chat/completions", fixture.base))
-            .bearer_auth(fixture::CLIENT_KEY)
-            .json(&body)
-            .send()
-            .await
-            .unwrap();
-        if stream && response.status() == 200 {
-            let mut bytes = vec![];
-            let aborted = loop {
-                match response.chunk().await {
-                    Ok(Some(chunk)) => bytes.extend_from_slice(&chunk),
-                    Ok(None) => break false,
-                    Err(_) => break true,
-                }
-            };
-            let wire = String::from_utf8(bytes).unwrap();
-            assert!(aborted || wire.contains("\"error\""));
-            assert!(!wire.contains("[DONE]"));
-            assert!(!wire.contains("reasoning_content"));
-            assert!(!wire.contains("reasoning_details"));
-            assert!(!wire.contains("Plan"));
-        } else {
-            assert_eq!(response.status(), 502);
-            let error: Value = response.json().await.unwrap();
-            assert_eq!(error["error"]["code"], "upstream_error");
+        let result = request(&client, &fixture.base, &body, "standard").await;
+        assert_eq!(result["choices"][0]["finish_reason"], "tool_calls");
+        assert_eq!(result["usage"]["total_tokens"], 18);
+        let message = &result["choices"][0]["message"];
+        for hidden in ["reasoning_content", "reasoning_details", "Plan", "mc1."] {
+            assert!(!message.to_string().contains(hidden), "{hidden}");
         }
+        assert_eq!(
+            message["tool_calls"],
+            json!([
+                {"id":"call-lookup","type":"function",
+                    "function":{"name":"lookup","arguments":"{ \"key\": \"A\" }"}},
+                {"id":"call-second","type":"function",
+                    "function":{"name":"lookup","arguments":"{\"key\":\"B\"}"}}
+            ])
+        );
         assert_eq!(fixture.seen.lock().unwrap().len(), 1);
     }
 }

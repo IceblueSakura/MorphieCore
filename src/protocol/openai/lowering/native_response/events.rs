@@ -19,6 +19,7 @@ pub(crate) struct EventProjection {
     losses: Vec<crate::protocol::conversion::generation::Effect>,
     profile: GenerationApi,
     phase_only: bool,
+    omit_readable_reasoning: bool,
     message: Option<ItemId>,
     reasoning: Vec<ItemId>,
     text_owners: BTreeMap<ItemId, ItemId>,
@@ -49,6 +50,7 @@ impl EventProjection {
             losses: vec![],
             profile,
             phase_only: false,
+            omit_readable_reasoning: false,
             message: None,
             reasoning: vec![],
             text_owners: BTreeMap::new(),
@@ -70,9 +72,14 @@ impl EventProjection {
     pub(crate) fn effects(&self) -> &[crate::protocol::conversion::generation::Effect] {
         &self.losses
     }
-    pub(crate) fn for_phase() -> Self {
+    pub(crate) fn with_readable_reasoning_omission(mut self, omit: bool) -> Self {
+        self.omit_readable_reasoning = omit;
+        self
+    }
+    pub(crate) fn for_phase(omit: bool) -> Self {
         Self {
             phase_only: true,
+            omit_readable_reasoning: omit,
             ..Self::new(GenerationApi::Chat)
         }
     }
@@ -113,6 +120,41 @@ impl EventProjection {
         let result = (|| {
             let mut out = vec![];
             for event in events {
+                if self.omit_readable_reasoning {
+                    if let StreamEvent::ItemStarted {
+                        item,
+                        kind: ItemKind::Reasoning,
+                        ..
+                    } = event
+                    {
+                        if super::super::readable_reasoning::carries_replay(event) {
+                            return Err(CodecError::Representation {
+                                boundary: crate::protocol::conversion::generation::ConversionBoundary::EventProject,
+                                cause: super::super::RepresentationError::ReplayFormat,
+                            });
+                        }
+                        if self.reasoning.len() >= MAX_ITEMS {
+                            return Err(CodecError::Limit);
+                        }
+                        self.reasoning.push(*item);
+                        self.record(super::super::readable_reasoning::loss(
+                            *item,
+                            crate::protocol::conversion::generation::ConversionBoundary::EventProject,
+                        ));
+                        continue;
+                    }
+                    if super::super::readable_reasoning::owner(event)
+                        .is_some_and(|item| self.reasoning.contains(&item))
+                    {
+                        if super::super::readable_reasoning::carries_replay(event) {
+                            return Err(CodecError::Representation {
+                                boundary: crate::protocol::conversion::generation::ConversionBoundary::EventProject,
+                                cause: super::super::RepresentationError::ReplayFormat,
+                            });
+                        }
+                        continue;
+                    }
+                }
                 let mut event = event.clone();
                 let metadata = match &event {
                     StreamEvent::Delta { item, logprobs, .. } => {
