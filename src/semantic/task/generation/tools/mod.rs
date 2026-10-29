@@ -8,7 +8,8 @@ use crate::semantic::value::Text;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum StrictDefault {
     NonStrict,
-    NormalizeSchema,
+    /// Conditional strictness under the source's compatibility rule.
+    Conditional,
 }
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum FunctionStrictness {

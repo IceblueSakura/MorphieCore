@@ -37,7 +37,7 @@ pub struct GenerationRequirements {
     pub strict_function_tools: bool,
     pub tool_examples: bool,
     pub tool_changes: bool,
-    pub normalization_default_tools: bool,
+    pub conditional_tool_defaults: bool,
     /// Owner-supplied TTL support. Request-lifetime boundaries use codec admission.
     pub explicit_cache: bool,
     pub cached_context: bool,
@@ -117,8 +117,8 @@ impl GenerationRequirements {
             strict_function_tools: functions()
                 .any(|t| matches!(t.strict, FunctionStrictness::Explicit(true))),
             tool_examples: functions().any(|t| t.input_examples.is_some()),
-            normalization_default_tools: functions()
-                .any(|t| t.strict == FunctionStrictness::Omitted(StrictDefault::NormalizeSchema)),
+            conditional_tool_defaults: functions()
+                .any(|t| t.strict == FunctionStrictness::Omitted(StrictDefault::Conditional)),
             explicit_cache: functions().any(|t| t.cache.is_some())
                 || r.instructions().value().is_some_and(|root| {
                     root.parts
@@ -235,8 +235,8 @@ impl GenerationRequirements {
                         x.strict_function_tools |=
                             matches!(t.strict, FunctionStrictness::Explicit(true));
                         x.tool_examples |= t.input_examples.is_some();
-                        x.normalization_default_tools |=
-                            t.strict == FunctionStrictness::Omitted(StrictDefault::NormalizeSchema);
+                        x.conditional_tool_defaults |=
+                            t.strict == FunctionStrictness::Omitted(StrictDefault::Conditional);
                     }
                 }
             }

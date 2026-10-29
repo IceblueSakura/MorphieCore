@@ -261,7 +261,7 @@ fn declared_topology_compiles() {
         let semantics = &mut endpoint.representation.messages_mut().unwrap().semantics;
         match feature {
             0 => semantics.cached_context = true,
-            _ => semantics.normalization_default_tools = true,
+            _ => semantics.conditional_tool_defaults = true,
         }
         assert_eq!(
             compile(

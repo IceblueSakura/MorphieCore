@@ -692,7 +692,7 @@ mod tests {
             panic!("function")
         };
         tool.parameters = None;
-        tool.strict = FunctionStrictness::Omitted(StrictDefault::NormalizeSchema);
+        tool.strict = FunctionStrictness::Omitted(StrictDefault::Conditional);
         source.metadata.delivery = Some(std::sync::Arc::new(crate::protocol::GenerationDelivery {
             settings,
             usage: None,

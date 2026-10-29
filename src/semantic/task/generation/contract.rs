@@ -17,7 +17,7 @@ pub enum GenerationFeature {
     StrictTools,
     ToolExamples,
     ToolChanges,
-    ToolSchemaNormalization,
+    ConditionalToolStrictness,
     ExplicitCache,
     CachedContext,
     Safety,
@@ -79,8 +79,8 @@ pub struct GenerationFeatureSet {
     pub tool_examples: bool,
     /// Ordered tool availability changes after the initial declaration.
     pub tool_changes: bool,
-    /// Omitted strictness that requests schema normalization, not an explicit strict tool.
-    pub normalization_default_tools: bool,
+    /// Omitted conditional strictness, distinct from an explicit strict guarantee.
+    pub conditional_tool_defaults: bool,
     pub explicit_cache: bool,
     pub cached_context: bool,
     pub safety: bool,
@@ -126,7 +126,7 @@ impl GenerationFeatureSet {
             strict_tools: true,
             tool_examples: true,
             tool_changes: true,
-            normalization_default_tools: true,
+            conditional_tool_defaults: true,
             explicit_cache: true,
             cached_context: true,
             safety: true,
@@ -173,7 +173,7 @@ impl GenerationFeatureSet {
             tool_examples: false,
             tool_changes: false,
             // Preserve the admitted default separately from explicit strict-tool support.
-            normalization_default_tools: true,
+            conditional_tool_defaults: true,
             explicit_cache: false,
             cached_context: false,
             safety: false,
@@ -222,8 +222,8 @@ impl GenerationFeatureSet {
             (promise.tool_examples, self.tool_examples),
             (promise.tool_changes, self.tool_changes),
             (
-                promise.normalization_default_tools,
-                self.normalization_default_tools,
+                promise.conditional_tool_defaults,
+                self.conditional_tool_defaults,
             ),
             (promise.explicit_cache, self.explicit_cache),
             (promise.cached_context, self.cached_context),
@@ -361,9 +361,9 @@ impl GenerationFeatureSet {
             (q.document_context, self.document_context, DocumentContext),
             (q.tool_changes, self.tool_changes, ToolChanges),
             (
-                q.normalization_default_tools,
-                self.normalization_default_tools,
-                ToolSchemaNormalization,
+                q.conditional_tool_defaults,
+                self.conditional_tool_defaults,
+                ConditionalToolStrictness,
             ),
             (q.explicit_cache, self.explicit_cache, ExplicitCache),
             (q.cached_context, self.cached_context, CachedContext),

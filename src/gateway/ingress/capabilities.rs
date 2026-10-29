@@ -180,7 +180,7 @@ impl<'a> Entry<'a> {
                 "existing_reference",
             ),
             (
-                entry.public.contract.normalization_default_tools,
+                entry.public.contract.conditional_tool_defaults,
                 "generation.tools",
                 "normalization_default_strictness",
             ),

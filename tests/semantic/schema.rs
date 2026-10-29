@@ -3,7 +3,9 @@
 mod schema_admission {
     use morphiecore::{
         protocol::{
+            ConversionCause,
             anthropic::messages::client::decode_client_request as decode_messages,
+            conversion::generation::RepresentationError,
             openai::{
                 Dialect, GenerationApi, GenerationCodec, TargetContract, lowering::lower_request,
                 responses,
@@ -12,6 +14,112 @@ mod schema_admission {
         semantic::task::generation::*,
     };
     use serde_json::{Value, json};
+
+    #[test]
+    fn conditional_tools_resolve_without_rewriting_schemas_or_source() {
+        let source = GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None);
+        let target = GenerationCodec::new(GenerationApi::Chat, Dialect::Standard, None);
+        let loss = "openai.omit-conditional-tool-strictness.v1";
+        for (schema, strict, rules) in [
+            (
+                json!({"type":"object","properties":{"x":{"type":"string"}}}),
+                false,
+                vec![loss],
+            ),
+            (
+                json!({"type":"object","properties":{"x":{"type":"string"}},"required":["x"],"additionalProperties":false}),
+                true,
+                vec![],
+            ),
+            (
+                json!({"type":"object","properties":{"x":{"oneOf":[{"type":"string"},{"type":"integer"}]}}}),
+                false,
+                vec![],
+            ),
+            (
+                json!({"type":"object","properties":{"mode":{"type":"string","enum":["a","b"]}},"required":["mode"],"additionalProperties":false}),
+                true,
+                vec![],
+            ),
+            (
+                json!({"type":"object","properties":{"mode":{"type":"string","const":"a"}}}),
+                false,
+                vec![loss],
+            ),
+            (
+                json!({"type":"object","properties":{"xs":{"type":"array","items":{"type":"string"},"uniqueItems":true}}}),
+                false,
+                vec![],
+            ),
+        ] {
+            let body = json!({"model":"m","input":"go","tools":[
+                {"type":"function","name":"lookup","description":"lookup","parameters":schema}]});
+            let request = source
+                .decode_client_request(body.to_string().as_bytes())
+                .unwrap();
+            let original = request.clone();
+            let (wire, applied) = target
+                .encode_request_with_rules(&request, "m", &TargetContract::full())
+                .unwrap();
+            assert_eq!(wire["tools"][0]["function"]["strict"], strict);
+            assert_eq!(wire["tools"][0]["function"]["parameters"], schema);
+            assert_eq!(applied, rules);
+            let native = source
+                .encode_request(&request, "m", &TargetContract::full())
+                .unwrap();
+            assert!(native["tools"][0].get("strict").is_none());
+            assert_eq!(native["tools"][0]["parameters"], schema);
+            if strict {
+                let mut non_strict = TargetContract::full();
+                non_strict.semantics.strict_tools = false;
+                let (wire, applied) = target
+                    .encode_request_with_rules(&request, "m", &non_strict)
+                    .unwrap();
+                assert_eq!(wire["tools"][0]["function"]["strict"], false);
+                assert_eq!(applied, [loss]);
+            }
+            assert_eq!(request, original);
+        }
+        for schema in [
+            json!({"type":"object","x-unknown":true}),
+            json!({"type":"object","required":"x"}),
+            json!({"type":"object","properties":{"x":{"type":"string","minLength":"bad"}}}),
+            json!({"type":"object","properties":{"x":{"$ref":"#/$defs/X"}},"$defs":{"X":{"type":"string"}}}),
+            json!({"type":"object","properties":{"x":{"type":"string","enum":["a","a"]}}}),
+            json!({"type":"object","properties":{"x":{"type":["string","integer"]}}}),
+            json!({"type":"object","properties":{"x":{"type":"array","items":{"type":"string"},"uniqueItems":"yes"}}}),
+            json!({"type":"object","properties":{"x":{"type":"array","items":{"type":"string"},"uniqueItems":true,"x-unknown":true}}}),
+        ] {
+            let body = json!({"model":"m","input":"go","tools":[
+                {"type":"function","name":"lookup","parameters":schema}]});
+            let request = source
+                .decode_client_request(body.to_string().as_bytes())
+                .unwrap();
+            assert_eq!(
+                target
+                    .encode_request(&request, "m", &TargetContract::full())
+                    .unwrap_err()
+                    .cause,
+                ConversionCause::Representation(RepresentationError::StrictDefault)
+            );
+            assert!(
+                source
+                    .encode_request(&request, "m", &TargetContract::full())
+                    .is_ok()
+            );
+        }
+        let body = json!({"model":"m","input":"go","tools":[{"type":"function","name":"lookup"}]});
+        let request = source
+            .decode_client_request(body.to_string().as_bytes())
+            .unwrap();
+        assert_eq!(
+            target
+                .encode_request(&request, "m", &TargetContract::full())
+                .unwrap_err()
+                .cause,
+            ConversionCause::Representation(RepresentationError::StrictDefault)
+        );
+    }
 
     /// An MCP server schema in draft-07 form, as opencode forwards it unchanged.
     fn mcp_schema() -> Value {
@@ -160,16 +268,16 @@ mod schema_admission {
         native.strict_tools = true;
         assert_eq!(
             native.check(&normalized.semantic),
-            Err(GenerationFeature::ToolSchemaNormalization)
+            Err(GenerationFeature::ConditionalToolStrictness)
         );
         let requirements = GenerationRequirements::derive(&normalized.semantic);
-        assert!(requirements.normalization_default_tools);
+        assert!(requirements.conditional_tool_defaults);
         assert!(!requirements.strict_function_tools);
         let mut contract = GenerationFeatureSet::full();
         contract.strict_tools = false;
         assert!(contract.check(&normalized.semantic).is_ok());
         let mut without_normalization = contract.clone();
-        without_normalization.normalization_default_tools = false;
+        without_normalization.conditional_tool_defaults = false;
         assert!(!without_normalization.supports(&contract));
         assert!(contract.supports(&without_normalization));
         let mut settings = normalized.semantic.settings().clone();

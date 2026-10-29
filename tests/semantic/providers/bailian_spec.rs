@@ -435,11 +435,11 @@ fn response_request() -> Value {
 }
 #[test]
 fn responses_non_strict_defaults_and_single_function_selection_have_native_oracles() {
-    let native = native(GenerationApi::Responses)
+    let native_request = native(GenerationApi::Responses)
         .decode_request(response_request().to_string().as_bytes())
         .unwrap();
     assert!(
-        matches!(&native.task.semantic.tools()[0],ToolDefinition::Function(t)
+        matches!(&native_request.task.semantic.tools()[0],ToolDefinition::Function(t)
             if t.strict==FunctionStrictness::Omitted(StrictDefault::NonStrict))
     );
     let mut controls = GenerationControls::default();
@@ -480,6 +480,24 @@ fn responses_non_strict_defaults_and_single_function_selection_have_native_oracl
     assert_eq!(wire["enable_thinking"], true);
     assert!(wire.get("reasoning").is_none());
     assert!(wire["tools"][0].get("strict").is_none());
+    let source = client(GenerationApi::Responses)
+        .decode_client_request(response_request().to_string().as_bytes())
+        .unwrap();
+    let before = source.clone();
+    let (wire, rules) = target.encode_request_with_rules(&source).unwrap();
+    assert_eq!(wire["tools"][0]["parameters"], json!({"type":"object"}));
+    assert!(wire["tools"][0].get("strict").is_none());
+    assert_eq!(rules, ["openai.omit-conditional-tool-strictness.v1"]);
+    let lowered = morphiecore::protocol::openai::lowering::lower_request(
+        &source.task.semantic,
+        &source.task.fidelity,
+        GenerationApi::Responses,
+        native(GenerationApi::Responses).contract(&TargetContract::full()),
+    )
+    .unwrap();
+    let direct = morphiecore::protocol::openai::responses::encode_generation(&lowered).unwrap();
+    assert_eq!(direct["tools"], wire["tools"]);
+    assert_eq!(source, before);
 }
 #[test]
 fn responses_history_keeps_summary_and_transfers_uncarried_readable_reasoning() {
@@ -625,10 +643,25 @@ fn responses_unlisted_guarantees_and_non_adjacent_results_reject_without_reorder
             .unwrap();
         assert!(target.encode_request_with_rules(&input).is_err(), "{patch}");
     }
+    let mut wire = response_request();
+    wire["tools"][0]["strict"] = json!(true);
+    wire["tools"][0]["parameters"] =
+        json!({"type":"object","properties":{},"required":[],"additionalProperties":false});
     let strict = client(GenerationApi::Responses)
-        .decode_client_request(response_request().to_string().as_bytes())
+        .decode_client_request(wire.to_string().as_bytes())
         .unwrap();
-    assert!(target.encode_request_with_rules(&strict).is_err());
+    GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None)
+        .encode_request(&strict, "synthetic", &TargetContract::full())
+        .expect("valid strict schema has a standard carrier");
+    assert!(matches!(
+        target.encode_request_with_rules(&strict),
+        Err(ConversionFailure {
+            cause: morphiecore::protocol::ConversionCause::Codec(CodecError::Unsupported(
+                morphiecore::protocol::failure::CarrierReason::Unavailable
+            )),
+            ..
+        })
+    ));
     let make_call =
         |id: &str| json!({"type":"function_call","name":"lookup","call_id":id,"arguments":"{}"});
     let make_result =

@@ -541,7 +541,7 @@ fn local_directory_encodes_empty_and_alias_views_with_inclusive_resource_limits(
     let mut entry = (*gate.state.entries.values().next().unwrap().as_ref()).clone();
     entry.public.contract.safety = false;
     entry.public.contract.cached_context = false;
-    entry.public.contract.normalization_default_tools = false;
+    entry.public.contract.conditional_tool_defaults = false;
     let crate::adapter::ClientAdapter::OpenAi { contract, .. } = &mut entry.client else {
         panic!("OpenAI entry")
     };

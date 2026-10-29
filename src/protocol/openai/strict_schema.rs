@@ -32,6 +32,121 @@ const UNSUPPORTED: &[&str] = &[
     "maxProperties",
 ];
 
+/// Evidence for the conditional source default, not a general schema validator.
+/// Unknown vocabulary/constraints and references remain delegated on native
+/// Responses and cannot establish a cross-target fallback.
+pub(super) fn conditional(schema: &SchemaDocument) -> Option<bool> {
+    fn literal(value: &Value, names: &[&str]) -> bool {
+        match value {
+            Value::Null => names.contains(&"null"),
+            Value::Bool(_) => names.contains(&"boolean"),
+            Value::String(_) => names.contains(&"string"),
+            Value::Number(n) => {
+                names.contains(&"number")
+                    || names.contains(&"integer") && (n.is_i64() || n.is_u64())
+            }
+            _ => false,
+        }
+    }
+    fn inspect(value: &Value) -> Option<bool> {
+        let o = value.as_object()?;
+        let mut compatible = true;
+        let names = types(o.get("type"))?;
+        if names.is_empty()
+            && !["anyOf", "oneOf", "allOf", "not"]
+                .iter()
+                .any(|key| o.contains_key(*key))
+        {
+            return None;
+        }
+        if o.get("type").is_some_and(Value::is_array)
+            && (names.len() != 2 || !names.contains(&"null"))
+        {
+            return None;
+        }
+        let object = names.contains(&"object");
+        if !object
+            && ["properties", "required", "additionalProperties"]
+                .iter()
+                .any(|key| o.contains_key(*key))
+            || names.contains(&"array") != o.contains_key("items")
+        {
+            return None;
+        }
+        if let Some(required) = o.get("required") {
+            let required = required.as_array()?;
+            let mut seen = BTreeSet::new();
+            for name in required {
+                let name = name.as_str()?;
+                if !o
+                    .get("properties")
+                    .and_then(Value::as_object)
+                    .is_some_and(|properties| properties.contains_key(name))
+                    || !seen.insert(name)
+                {
+                    return None;
+                }
+            }
+        }
+        for (key, value) in o {
+            match key.as_str() {
+                "type" | "required" => {}
+                "title" | "description" => {
+                    value.as_str()?;
+                }
+                "properties" => {
+                    for child in value.as_object()?.values() {
+                        compatible &= inspect(child)?;
+                    }
+                }
+                "items" => compatible &= inspect(value)?,
+                "additionalProperties" => {
+                    value.as_bool()?;
+                }
+                "enum" => {
+                    // Larger enum properties have a separate string budget;
+                    // leave them unassessed rather than infer compatibility.
+                    let values = value
+                        .as_array()
+                        .filter(|v| !v.is_empty() && v.len() <= 250)?;
+                    let mut seen = BTreeSet::new();
+                    for value in values {
+                        if !literal(value, &names) || !seen.insert(value.to_string()) {
+                            return None;
+                        }
+                    }
+                }
+                "const" => {
+                    if !literal(value, &names) {
+                        return None;
+                    }
+                }
+                "uniqueItems" => {
+                    if !names.contains(&"array") || !value.as_bool()? {
+                        return None;
+                    }
+                    compatible = false;
+                }
+                "anyOf" | "oneOf" | "allOf" => {
+                    let children = value.as_array().filter(|a| !a.is_empty())?;
+                    for child in children {
+                        compatible &= inspect(child)?;
+                    }
+                    compatible &= key == "anyOf";
+                }
+                "not" => {
+                    inspect(value)?;
+                    compatible = false;
+                }
+                _ => return None,
+            }
+        }
+        Some(compatible)
+    }
+    let compatible = inspect(schema.root())?;
+    Some(compatible && admits(schema, false))
+}
+
 /// `closed` is explicit `strict: true`: every object also needs
 /// `additionalProperties: false` and all properties required. The open form checks
 /// normalization feasibility, not admission: omitted strictness permits service fallback.

@@ -518,7 +518,7 @@ mod native_catalog {
             admit(topology.model(binding.model).unwrap(), &request),
             Err(AttemptError::Conversion(ConversionFailure {
                 cause: morphiecore::protocol::ConversionCause::Representation(
-                    RepresentationError::Admission(GenerationFeature::ToolSchemaNormalization)
+                    RepresentationError::Admission(GenerationFeature::ConditionalToolStrictness)
                 ),
                 ..
             }))

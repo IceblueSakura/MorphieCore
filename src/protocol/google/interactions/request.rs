@@ -211,7 +211,7 @@ pub(super) fn project(
                 match t.strict {
                     FunctionStrictness::Omitted(StrictDefault::NonStrict)
                     | FunctionStrictness::Explicit(false) => {}
-                    FunctionStrictness::Omitted(StrictDefault::NormalizeSchema)
+                    FunctionStrictness::Omitted(StrictDefault::Conditional)
                     | FunctionStrictness::Explicit(true) => return Err(unsupported()),
                 }
                 // `parameters` is optional on the pinned Interactions Function type.

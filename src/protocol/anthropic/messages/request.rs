@@ -359,7 +359,7 @@ fn native_tool(t: &FunctionTool) -> Result<super::Tool, CodecError> {
             FunctionStrictness::Omitted(StrictDefault::NonStrict) => Presence::Absent,
             FunctionStrictness::Explicit(false) => Presence::Value(false),
             FunctionStrictness::Explicit(true) => Presence::Value(true),
-            FunctionStrictness::Omitted(StrictDefault::NormalizeSchema) => {
+            FunctionStrictness::Omitted(StrictDefault::Conditional) => {
                 return Err(unsupported());
             }
         },

@@ -37,7 +37,7 @@ fn request_wire(d: &DecodedRequest, profile: GenerationApi) -> Value {
     }
 }
 #[test]
-fn audit_non_strict_defaults_use_exact_explicit_false_on_responses() {
+fn tool_defaults_keep_non_strict_and_conditional_projection_distinct() {
     let source = json!({"messages":[{"role":"user","content":"go"}],
             "tools":[{"type":"function","function":{"name":"lookup","parameters":{
                 "type":"object","properties":{"key":{"type":"string"}}}}}]});
@@ -59,20 +59,23 @@ fn audit_non_strict_defaults_use_exact_explicit_false_on_responses() {
         request_wire(&decoded, GenerationApi::Chat)["tools"],
         source["tools"]
     );
-    let normalized = responses::decode_generation(&json!({"input":"go","tools":[{
+    let conditional = responses::decode_generation(&json!({"input":"go","tools":[{
         "type":"function","name":"lookup",
         "parameters":{"type":"object","properties":{"key":{"type":"string"}}}
     }]}))
     .unwrap();
-    assert!(matches!(
-        lower_request(
-            &normalized.semantic,
-            &normalized.fidelity,
-            GenerationApi::Chat,
-            Contract::full()
-        ),
-        Err(RepresentationError::StrictDefault)
-    ));
+    let lowered = lower_request(
+        &conditional.semantic,
+        &conditional.fidelity,
+        GenerationApi::Chat,
+        Contract::full(),
+    )
+    .unwrap();
+    assert_eq!(lowered.projection().len(), 1);
+    assert_eq!(
+        chat::encode_generation(&lowered).unwrap()["tools"][0]["function"]["strict"],
+        false
+    );
 }
 fn expected_responses_history() -> Value {
     json!({"input":[

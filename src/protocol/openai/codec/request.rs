@@ -209,7 +209,7 @@ impl GenerationCodec {
                     if let crate::semantic::task::generation::ToolDefinition::Function(tool) = tool
                         && tool.strict
                             == crate::semantic::task::generation::FunctionStrictness::Omitted(
-                                crate::semantic::task::generation::StrictDefault::NormalizeSchema,
+                                crate::semantic::task::generation::StrictDefault::Conditional,
                             )
                     {
                         tool.strict =

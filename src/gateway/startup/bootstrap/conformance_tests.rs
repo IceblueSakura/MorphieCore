@@ -225,12 +225,31 @@ async fn observe(
         .iter()
         .find(|entry| entry.endpoint_id().as_str() == binding);
     let oauth = subscription.map(|entry| entry.profile);
+    let bailian = crate::topology::catalog::API_KEY_BINDINGS
+        .iter()
+        .any(|entry| {
+            entry.model == model
+                && entry.dialect == crate::protocol::openai::Dialect::Bailian
+                && (entry.provider)().id.as_str() == provider
+        });
+    let parameters = (client == Api::Responses
+        && profile != Profile::Text
+        && upstream != Api::Messages)
+        .then(|| {
+            wire::request(client, profile, model, stream)["tools"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|tool| tool["parameters"].clone())
+                .collect::<Vec<_>>()
+        });
     let calls = Arc::new(Mutex::new(Vec::<Value>::new()));
     let captured = calls.clone();
     let router = Router::new().route(
         upstream.path(),
         post(move |headers: HeaderMap, Json(body): Json<Value>| {
             let calls = captured.clone();
+            let parameters = parameters.clone();
             async move {
                 assert_eq!(
                     headers[if upstream == Api::Messages {
@@ -253,6 +272,23 @@ async fn observe(
                 if control == Control::SummaryHistory {
                     assert_eq!(body["reasoning"], json!({"effort":"low"}));
                     assert!(body.get("include").is_none());
+                }
+                if let Some(parameters) = parameters {
+                    let tools = body["tools"].as_array().unwrap();
+                    assert_eq!(tools.len(), parameters.len());
+                    for (tool, parameters) in tools.iter().zip(parameters) {
+                        let tool = if upstream == Api::Chat {
+                            &tool["function"]
+                        } else {
+                            tool
+                        };
+                        assert_eq!(tool["parameters"], parameters);
+                        if upstream == Api::Chat && !bailian {
+                            assert_eq!(tool["strict"], false);
+                        } else {
+                            assert!(tool.get("strict").is_none());
+                        }
+                    }
                 }
                 let turn = {
                     let mut calls = calls.lock().unwrap();
@@ -772,12 +808,7 @@ const BASIC_EXPECTATIONS: &[(&[&str], [&[&str]; 4])] = &[
             "opencode-go-chat",
             "openrouter-glm-5.3-flash-chat",
         ],
-        [
-            ACCEPT,
-            ACCEPT,
-            ACCEPT,
-            &["planning:[\"representation.strict_default\"]@0"],
-        ],
+        [ACCEPT, ACCEPT, ACCEPT, ACCEPT],
     ),
     (
         &["deepseek-chat", "zhipu-chat", "zhipu-flash-chat"],
@@ -785,7 +816,7 @@ const BASIC_EXPECTATIONS: &[(&[&str], [&[&str]; 4])] = &[
             ACCEPT,
             &["planning:[\"admission.client_representation\"]@0"],
             ACCEPT,
-            &["planning:[\"representation.strict_default\"]@0"],
+            ACCEPT,
         ],
     ),
     (
@@ -805,7 +836,10 @@ const BASIC_EXPECTATIONS: &[(&[&str], [&[&str]; 4])] = &[
                 "accepted@1",
                 "planning:[\"codec.unsupported.unavailable\"]@0",
             ],
-            &["planning:[\"codec.unsupported.unavailable\"]@0"],
+            &[
+                "accepted@1",
+                "planning:[\"codec.unsupported.unavailable\"]@0",
+            ],
         ],
     ),
     (
@@ -814,17 +848,12 @@ const BASIC_EXPECTATIONS: &[(&[&str], [&[&str]; 4])] = &[
             &["planning:[\"admission.client_representation\"]@0"],
             &["planning:[\"admission.client_representation\"]@0"],
             ACCEPT,
-            &["planning:[\"codec.unsupported.unavailable\"]@0"],
+            ACCEPT,
         ],
     ),
     (
         &["dashscope-flash-chat", "aliyun-dashscope-cn-chat"],
-        [
-            ACCEPT,
-            ACCEPT,
-            ACCEPT,
-            &["planning:[\"codec.unsupported.unavailable\"]@0"],
-        ],
+        [ACCEPT, ACCEPT, ACCEPT, ACCEPT],
     ),
     (
         &[
@@ -833,12 +862,7 @@ const BASIC_EXPECTATIONS: &[(&[&str], [&[&str]; 4])] = &[
             "dashscope-glm-prime-chat",
             "tokenplan-glm-chat",
         ],
-        [
-            ACCEPT,
-            ACCEPT,
-            ACCEPT,
-            &["planning:[\"codec.unsupported.unavailable\"]@0"],
-        ],
+        [ACCEPT, ACCEPT, ACCEPT, ACCEPT],
     ),
     (
         &["openrouter-haiku-chat"],
@@ -846,7 +870,7 @@ const BASIC_EXPECTATIONS: &[(&[&str], [&[&str]; 4])] = &[
             ACCEPT,
             ACCEPT,
             ACCEPT,
-            &["admission.tool_schema_normalization@0"],
+            &["admission.conditional_tool_strictness@0"],
         ],
     ),
 ];
@@ -886,16 +910,17 @@ fn expected(binding: &str, client: Api, profile: Profile) -> &'static [&'static 
         ("openrouter-responses" | "dashscope-flash-responses", Chat, Reasoning) => {
             &["representation.replay_format@1"]
         }
-        ("dashscope-flash-responses", Responses, Reasoning) => {
-            &["planning:[\"codec.unsupported.unavailable\"]@0"]
-        }
+        ("dashscope-flash-responses", Responses, Reasoning) => &[
+            "accepted@1",
+            "planning:[\"codec.unsupported.unavailable\"]@0",
+        ],
         ("opencode-go-haiku-messages", Chat | Messages, Text | Tools)
         | ("opencode-go-haiku-messages", Responses, Text) => ACCEPT,
         ("opencode-go-haiku-messages", Chat, Reasoning) => {
             &["planning:[\"codec.unsupported.unavailable\"]@0"]
         }
         ("opencode-go-haiku-messages", Responses, Tools | Reasoning) => {
-            &["admission.tool_schema_normalization@0"]
+            &["admission.conditional_tool_strictness@0"]
         }
         ("opencode-go-haiku-messages", Messages, Reasoning) => {
             &["planning:[\"codec.unsupported.reasoning\"]@0"]

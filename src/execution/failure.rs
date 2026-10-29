@@ -261,7 +261,7 @@ pub(crate) fn feature_code(e: &GenerationFeature) -> &'static str {
         GenerationFeature::StrictTools => "admission.strict_tools",
         GenerationFeature::ToolExamples => "admission.tool_examples",
         GenerationFeature::ToolChanges => "admission.tool_changes",
-        GenerationFeature::ToolSchemaNormalization => "admission.tool_schema_normalization",
+        GenerationFeature::ConditionalToolStrictness => "admission.conditional_tool_strictness",
         GenerationFeature::ExplicitCache => "admission.explicit_cache",
         GenerationFeature::CachedContext => "admission.cached_context",
         GenerationFeature::Safety => "admission.safety",

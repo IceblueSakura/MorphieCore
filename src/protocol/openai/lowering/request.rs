@@ -34,8 +34,17 @@ pub fn lower_request<'a>(
     }
     let mut semantic = std::borrow::Cow::Borrowed(r);
     let mut projection = Vec::new();
+    if (profile == GenerationApi::Chat || c.adaptation.rules.bailian_requests)
+        && let Some((projected, effects)) = super::strictness::project(
+            r,
+            c.semantics.strict_tools && !c.adaptation.rules.bailian_requests,
+        )?
+    {
+        semantic = std::borrow::Cow::Owned(projected);
+        projection.extend(effects);
+    }
     if profile == GenerationApi::Chat
-        && let Some(projected) = crate::protocol::phase::omit_request(r)?
+        && let Some(projected) = crate::protocol::phase::omit_request(semantic.as_ref())?
     {
         semantic = std::borrow::Cow::Owned(projected);
         projection.push(
@@ -240,13 +249,6 @@ pub fn lower_request<'a>(
             }
             if t.cache.is_some() {
                 return Err(RepresentationError::Controls);
-            }
-            // Non-strict source defaults have an exact explicit-false carrier in
-            // Responses. The inverse requires schema normalization, not omission.
-            if profile == GenerationApi::Chat
-                && t.strict == FunctionStrictness::Omitted(StrictDefault::NormalizeSchema)
-            {
-                return Err(RepresentationError::StrictDefault);
             }
             if profile == GenerationApi::Chat && t.output_schema.is_some() {
                 return Err(RepresentationError::Tools);

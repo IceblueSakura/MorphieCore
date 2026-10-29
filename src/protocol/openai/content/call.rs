@@ -11,7 +11,7 @@ use serde_json::{Map, Value};
 pub(in crate::protocol::openai) fn strict_default(profile: GenerationApi) -> StrictDefault {
     match profile {
         GenerationApi::Chat => StrictDefault::NonStrict,
-        GenerationApi::Responses => StrictDefault::NormalizeSchema,
+        GenerationApi::Responses => StrictDefault::Conditional,
     }
 }
 pub(in crate::protocol::openai) fn reject_chat_orchestration(
