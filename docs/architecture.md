@@ -419,13 +419,25 @@ Accepted on 2026-10-28 for Client/IR stabilization. Apply [semantic-equivalence 
 
 Accepted applications:
 
-- **Omitted Responses strictness (P5):** the [Responses reference](https://developers.openai.com/api/reference/resources/responses/methods/create) (read 2026-10-28) defines omission as strict validation when the schema is compatible and non-strict otherwise. Each tool is evaluated against the documented strict-schema subset: incompatible → explicit non-strict (exact); compatible with an equivalent strict carrier → strict (exact); compatible without one → non-strict under a named loss. The IR default is named for this conditional rule, not for schema normalization.
+- **Omitted Responses strictness (P5):** the [Responses reference](https://developers.openai.com/api/reference/resources/responses/methods/create) and [function-calling guide](https://developers.openai.com/api/docs/guides/function-calling#strict-mode) (rechecked 2026-10-29) define attempted strict normalization when compatible and non-strict fallback otherwise. Each tool is evaluated against the applicable documented subset: incompatible → explicit non-strict (exact); compatible with an equivalent strict carrier → strict (exact); compatible without one → non-strict under a named loss. Compatibility is not limited to already-closed schemas, and normalization feasibility alone does not prove an equivalent rewritten strict carrier. Unknown compatibility retains the existing cross-target rejection rather than being classified as incompatible. Explicit true never takes the omitted-default loss. The IR default names this conditional rule, not a promise to perform local schema normalization.
 - **Reasoning presentation and continuity requests (P2):** `summary:"auto"` selects the most detailed available summarizer; resolving to the fixed native summarizer or no available summary is exact. Explicit `concise`/`detailed` take a named omission without a selectable carrier. Encrypted-reasoning `include` is exact when the target emits no reasoning items and takes a named continuity omission when reasoning has no opaque carrier.
 - **Carrier-less reports (P2):** served service classes and refusal categories without an OpenAI carrier are omitted on delivery copies, extending [explanatory terminal reports](#explanatory-terminal-reports). Anthropic standard capacity and OpenAI default processing remain distinct classes; no approximate tier is reported. Empty probability reports instead follow [semantic-equivalence compatibility](#semantic-equivalence-compatibility).
 - **Messages terminal derivation (P1):** see [Messages terminal projection](#messages-terminal-projection).
 - **Messages baseline:** the `2026-10-21` version and beta-header rejection remain; a legacy version would be a separate client grammar. Agents avoid unsupported beta features through [discovery](#generation-text-model-discovery).
 
 The first presentation/continuity consumer (2026-10-29) projects Bailian Responses request copies before target validation. Auto resolves to the native default without a loss receipt; explicit granularity uses `responses.omit-reasoning-summary.v1`. Encrypted include uses `responses.omit-encrypted-reasoning-include.v1`, except that an admitted explicit thinking-off request has no new reasoning to encrypt and needs no loss receipt. These rules do not change activation, effort, budgets, context, read-history intent, history owners or source observations. Null/omitted visibility guards and S3 strictness remain unchanged. This request-control policy is independent of S11 history qualification; other target families still need their selected consumers.
+
+#### Generated tool arguments and execution input
+
+Selected on 2026-10-29; cross-view implementation pending. An unfinished generated argument prefix may project exactly to an OpenAI argument string without parsing, repairing or completing its bytes. Preserve incomplete call lifecycle where carried, the incomplete overall outcome and token-limit termination. Format conversion alone needs no loss receipt; unrelated lifecycle, grouping and protected-replay restrictions remain authoritative. A generated string is not a complete validated invocation. Native Messages complete JSON/history still requires an input object; its partial SSE carrier does not supply that object.
+
+Client acceptance must distinguish error-result events from actual execution. Current pi fails all calls on a length-stopped message even when salvaged arguments parse, then supplies error feedback. That observed consumer behavior supports this narrow contract, not every consumer or a signature/dependency rewrite.
+
+#### Tool-result association
+
+Selected on 2026-10-29; remaining target consumers need migration. Call IDs own result association, not vector adjacency. Preserve grouped calls followed by their corresponding results without reordering, flattening or dropping fields. Existing identity, causal-order, duplicate, bounds and replay checks remain. Exact association needs no new loss.
+
+[Native qualification](refs/2026-10-27-client-ir-boundaries.md#pre-stage-4-contract-qualification-2026-10-29) covers direct Qwen Flash/Max, TokenPlan Qwen Flash, native MiMo and OpenRouter GPT grouped histories. This is not a Qwen-only semantic rule. It does not attest every model, result ordering, arbitrary interleaving, media-array carrier or billing endpoint; stricter target restrictions require endpoint evidence rather than literal-position inference from one guide. Phase remains a separate semantic/carrier question.
 
 #### Downstream schema completion
 
@@ -572,6 +584,8 @@ Transformations return `Result<Conversion<T>, ConversionFailure>`. Evidence is c
 
 Accepted extension (2026-10-28; implementation pending): the gateway publishes, in client-agnostic vocabulary, each model's preferred client interface and each interface's adaptation rules. Preference follows the primary candidate, with a `basis` field and a uniformity flag; no candidate count, order or identity is disclosed. One compiled owner derives these facts from the agent-default conformance corpus; the models endpoint owns Generation while `/capabilities` keeps other tasks. A body-hash `ETag` is allowed; no maintained revision is introduced.
 
+Simple feature support, default-request disposition and full delivery/history support are separate claims. Explicit-strict synthetic tools do not stand in for omitted-strict Agent declarations. Keep unassessed/nonuniform facts and partial/composition coverage explicit. Publishing a preference does not establish that a client consumes it: integration must state whether application is automatic, explicit configuration or advisory. This neither permits capability-based candidate skipping nor changes routing priority.
+
 ## History and replay
 
 ### Reasoning replay
@@ -592,6 +606,18 @@ Accepted on 2026-10-28 (P3, P4), with phased migration and explicit unassessed d
 The first migration declares endpoint-qualified facts for native Xiaomi, direct DashScope Qwen, DeepSeek, native Zhipu and the SIWC/Grok subscriptions. Other bindings remain unassessed. Planning reads `required_with_tools` for Standard Chat clients on Chat candidates: nonempty projected tools with thinking not off reject before dispatch unless the client selects readable reasoning. Tool-free requests and admitted off controls add no history requirement. The old Qwen output guard is retired for assessed bindings whose unsigned output now projects to Standard Chat; unassessed TokenPlan Qwen admission stays unchanged. Discovery reads the same declarations and publishes a common fact, `non_uniform` for differing assessed facts, or `not_assessed` if any candidate is unassessed.
 
 Request/history migration starts with the assessed Bailian Responses rule above; remaining history/delivery consumers still need migration. Neither a declaration nor successful encoding establishes full-loop carriage. Standard Chat's selected delivery omission below is independent of guessing a Provider history fact. DeepSeek's [thinking contract](https://api-docs.deepseek.com/guides/thinking_mode/) (read 2026-10-28) requires **all previous turns' reasoning** when a thinking request carries tools; Zhipu's documented requirement concerns the current tool cycle. The shared fact does not collapse those scopes or authorize dropping explicit read-history intent.
+
+Consumer responsibilities remain bounded:
+
+| Consumer | Contract |
+|---|---|
+| Binding/target declaration | Own endpoint-qualified history semantics; do not inherit native, billing-plan or model defaults from a shared dialect |
+| Planning | Check encoded request reachability and whether the client can carry required reasoning; do not claim a stateless caller supplied complete history |
+| Request/history projection | Preserve available required history and explicit read intent; apply only selected carrier/scope projections, never reinterpret all-prior as current-cycle-only |
+| Delivery | Keep output visibility/carriage separate from history requirements and source observations; protect replay independently |
+| Discovery | Publish assessed coarse/common facts without claiming uniform retention scope or full-loop certification |
+
+Every candidate starts with immutable admitted input; an omission for one candidate cannot remove an owner needed by a later candidate. Managed Responses continuation preserves admitted input and delivered history, while equivalent stateless history is checked through client carriage and replay opening. Neither path adds a new completeness ledger or upstream conversation persistence.
 
 ### Chat reasoning extensions
 
@@ -851,6 +877,9 @@ Authoritative log of accepted architectural decisions and their systemic consequ
 | Phased binding-history qualification | 2026-10-29 | Explicit unassessed declarations preserve current behavior; established facts migrate without inferring Provider history semantics from replay switches or output |
 | Standard Chat reasoning omission | 2026-10-28 | Standard omits unsigned readable reasoning on delivery copies; replay stays protected; declared required-history Chat tools reject at planning without the readable profile |
 | Owner-local cache omission | 2026-10-28 | Revises owner-local cache admission: all routes admit breakpoints; non-native candidates omit them by named rule |
+| Incomplete generated tool arguments | 2026-10-29 | Select byte-preserving OpenAI prefix-string projection with incomplete lifecycle/termination; no JSON repair or executable-input claim; native Messages object restrictions remain |
+| Grouped tool-result association | 2026-10-29 | Associate results by call ID without reordering; remove unsupported adjacency assumptions on qualified consumers, retaining identities, causal order and replay guards |
+| Three-protocol default-loop closure | 2026-10-29 | Stage 4 requires current-client default reasoning/tool/history success on all three client protocols; retained rejections and nondefault profiles do not substitute; preserve actual built-in model metadata |
 | Messages baseline retained | 2026-10-28 | Legacy `anthropic-version` and nonempty beta headers keep rejecting; discovery lets agents avoid beta-only behavior |
 | Agent-facing discovery | 2026-10-28 | Gateway-published preferred interface and adaptation rules from one compiled owner over the conformance corpus |
 | Scoped source accounting | 2026-10-20 | Retains raw usage scopes independently without premature summation |

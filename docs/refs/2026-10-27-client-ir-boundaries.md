@@ -351,6 +351,85 @@ The [OpenAI reasoning guide](https://developers.openai.com/api/docs/guides/reaso
 
 Absence of a native signature is not proof of an unsigned IR owner. The existing [Google thought decoder](../../src/protocol/google/generate_content/sse.rs) finalizes a `GoogleGenerateContentPart` replay value even when its [thought-provenance payload](../../src/protocol/google/generate_content/replay.rs) has no signature. That current carrier remains protected; this slice does not reinterpret or remove it. The Responses control supplies truly unsigned late summary/text independently. The pre-existing TokenPlan Qwen admission guard is retained while those bindings are unassessed; direct assessed DashScope Qwen can use the Standard omission.
 
+### Pre-stage-4 contract qualification (2026-10-29)
+
+Reviewed `450f5bc`, current official references and the current unwrapped installed pi. This section separates source contracts, client observations, native observations and unresolved mappings. No production code, source pins, private configuration or host Agent state was changed. Disposable probes were not imported as protocol fixtures.
+
+#### Conditional strictness
+
+The [Responses create reference](https://developers.openai.com/api/reference/resources/responses/methods/create) defines omitted strictness as attempted strict validation when compatible, with non-strict fallback otherwise. The [function-calling guide](https://developers.openai.com/api/docs/guides/function-calling#strict-mode) additionally says Responses normalizes a schema into strict mode when possible; Chat omission remains non-strict. Compatibility therefore cannot mean only an already-closed strict schema. Explicit `strict:true` instead requires a conforming schema and rejects invalid declarations.
+
+The service's complete normalization algorithm is not documented. The [Structured Outputs subset](https://developers.openai.com/api/docs/guides/structured-outputs#supported-schemas) also has model-specific exclusions. An open object with an optional property is the minimal distinction between service-normalizability and already-closed strictness. The current `strict_schema::admits(schema, false)` checks normalization feasibility; the closed form adds closure/required checks. Its permissive keywords and lack of model context make neither result a complete source-default or cross-target equivalence oracle.
+
+The pinned Python [`_pydantic.py`](https://github.com/openai/openai-python/blob/e8a0fd28bbdc1699c97ff0f602b1af3dd378382d/src/openai/lib/_pydantic.py) normalization helper is used by explicit-strict SDK helpers; it does not specify the server's omitted-default algorithm. Retain native conditional omission where established. Resolve cross-target branches only with compatibility and carrier evidence; unknown compatibility is not evidence for exact non-strict fallback. Explicit true never takes the omitted-default loss rule. Source pins remain independent regression references, not automatically promoted by this review.
+
+The OpenAI wording was checked through official search results/guides; complete direct-reference extraction was unavailable. Public Bailian and DeepSeek pages were directly fetched. The uncertainty about the normalization algorithm remains explicit.
+
+#### Actual installed pi Responses behavior
+
+An isolated pi 1.4.0 RPC process used `openai-responses`, one read-tool declaration, no body compat overrides and its observed medium thinking default. Test-owned HOME/XDG/model/settings state, an unwrapped launcher and resource-disable flags excluded personal state. A direct loopback scripted authority supplied the successful streams; this bypassed the gateway and every real Provider.
+
+Five cases used three HTTP requests each: tool response, tool feedback/final answer, then an independent user continuation. The test model declared a 2048-token cap; each prompt had a 30-second bound, each request was capped at 256 KiB and each scripted response below 32 KiB. Retries, warming and automatic compaction were off for bounded observation. Only structural facts were reported.
+
+| Supplied stream | Actual client observation |
+|---|---|
+| Summary-only reasoning plus one call | Reasoning summary is retained through both subsequent requests; call ID/result association survives; function-call status is omitted |
+| Summary plus synthetic opaque reasoning | The opaque value is also returned unchanged; this says nothing about gateway sealing or Provider acceptance |
+| Two calls in one assistant turn | Both scratch reads succeed; requests contain both calls before both results, in call order, not interleaved adjacent call/result pairs |
+| A completed message with `phase:final_answer` | Phase is retained on the next user request; ordinary text reconstruction does not erase it |
+| Incomplete call, unfinished JSON and `max_output_tokens` | Assistant stop is `length`; pi creates an error result without executing the read and continues |
+| Incomplete call with valid arguments and the same token-limit outcome | The same no-execution error occurs; this distinguishes truncation protection from a mere JSON/schema validation failure |
+
+Initial requests carry summary auto, encrypted include, `store:false` and omitted tool strictness. These observations validate actual client reconstruction, not gateway default-profile acceptance or a native source's complete event sequence. The two incomplete cases differ only to identify the execution guard; they are not new wire conformance fixtures.
+
+The installed `pi-agent-core` loop explicitly fails all calls on a length-stopped message instead of executing salvaged arguments. Its error-result events must not be counted as successful tool execution. The installed Responses serializer preserves phase in text signatures and serializes retained reasoning items. Public installed-file SHA-256 provenance:
+
+- `pi-ai/dist/api/openai-responses-shared.js`: `00796997da00cd4cb77ae8c1c4bb92a3d4a4a4dd5bea18524de7173e4f877e4c`.
+- `pi-agent-core/dist/agent-loop.js`: `22ee81f9977e211044c1ad41a763876c793ca7fc1c5b39b9fa7f76f3cb281129`.
+
+**Resolved-model correction:** the initial nine-body corpus constructs a bare synthetic model; that is API-form characterization, not a copy of every built-in model's metadata. Current public `opencode-go.json` gives `claude-haiku-5-5` `forceAdaptiveThinking:true` and `supportsTemperature:false`. The serializer consults that metadata, not the ID alone. A second isolated current-pi RPC observation overrode only the built-in provider's loopback origin, synthetic key and documented headers, with no custom model or compat declaration. Its observed medium default sent adaptive thinking/medium effort, executed one scratch read and returned the signed history on two subsequent requests; three requests completed with toolUse/stop, then stop. Retry/warming/compaction remained bounded/off and prompts had 30-second deadlines. This direct-authority loop bypassed the gateway and real Providers.
+
+The earlier bare-model manual rejection remains a valid limitation/control, but is not evidence that actual Go/Haiku default reasoning is impossible. Conversely, an arbitrarily added `forceAdaptiveThinking` flag is not automatically a default-profile acceptance result. Preserve and inspect the model actually resolved by the client.
+
+#### Native observations and documentary conflicts
+
+Each native request selected the first direct `aliyun-dashscope-cn` pool member through the project loader, used `qwen3.8-flash` with low effort, a 60-second total deadline, no retry and a 1 MiB response bound. Payloads, IDs and nonce values stayed in memory; only statuses/shape/comparison flags were reported.
+
+| Observation | Result and qualification |
+|---|---|
+| Chat SSE with `include_usage` and total `max_completion_tokens:512` | HTTP 200; one finish frame, one nonnull usage report on an empty-choice tail, `[DONE]`; reported completion count within the total cap. The double-report U sequence was not reproduced |
+| Responses, calls A/B followed by results A/B, no phase, explicit non-strict declarations, `max_output_tokens:512` | HTTP 200/completed. This first request establishes acceptance, not that both values were consumed |
+| The same grouped association with two distinct synthetic nonce results | A separate one-request observation returned exactly both values in the requested order. This establishes consumption for this direct endpoint/model and input, not reverse-order, arbitrary interleaving or TokenPlan behavior |
+
+User-requested diversity checks then sent the same grouped layout and independent nonce comparison through four additional catalog bindings:
+
+| Provider / upstream model | HTTP / terminal | Both values consumed |
+|---|---|---|
+| Direct DashScope / `qwen3.8-max` | 200 / completed | Yes |
+| TokenPlan / `qwen3.8-flash` | 200 / completed | Yes |
+| Native Xiaomi / `mimo-v2.6-pro-ultraspeed` | 200 / completed | Yes |
+| OpenRouter / `openai/gpt-6-luna` | 200 / completed | Yes |
+
+Each was a separate serial request with `max_output_tokens:512`, low effort, a 60-second total deadline, no retry, loader-selected first pool member and a 1 MiB response bound. The observations cover five provider/model pairs including direct Qwen Flash; no credentials, IDs, answer text or nonce values became fixtures. They establish grouped association beyond Qwen, not every reverse-order or interleaved layout.
+
+An earlier Chat observation used legacy `max_tokens:512`, which bounds the reply rather than total reasoning-plus-reply on this model. It also observed tail-only usage, but is not total-ceiling evidence; the corrected independent request above is the total-ceiling qualification. There were eight native requests in total, serially, one per run; no hidden retry supplied a passing result.
+
+The current [Bailian Responses reference](https://help.aliyun.com/zh/model-studio/qwen-api-via-openai-responses) still says a result must immediately follow its corresponding call or error. The grouped observations conflict with that literal adjacency claim; do not describe the gateway's current adjacency rejection as verified runtime behavior. The user selected grouped call-ID association without reordering on 2026-10-29 and requested the diversity checks above. [Architecture](../architecture.md#tool-result-association) owns the selected contract; consumer migration remains pending. The same source documents string **or array** outputs, while the implementation and the older [subset note](2026-10-19-bailian-compatible-requests.md) are string-only.
+
+Phase is absent from the documented input union, whose compatibility rule says unlisted OpenAI parameters are ignored. This establishes no meaningful phase carrier, not a Provider phase-rejection guarantee. The gateway's known-semantic rejection remains distinct from upstream ignored-field handling; no new phase omission is selected by this observation.
+
+The source also states an approximately 80%-of-window input allowance with automatic truncation beyond it. Current catalog context limits are planning metadata, not input-token admission (`ModelLimits::check_request` checks output and effort). Compare this native default with the public source default and reachable request bounds before claiming long-context fidelity. No large-input run, private deployment inspection, derived 80% token ceiling, tokenizer or budget formula was selected here.
+
+#### Partial output, usage and history scope
+
+The [Responses event reference](https://developers.openai.com/api/reference/resources/responses/streaming-events) separates argument deltas, finalized argument text, item lifecycle and incomplete response termination. Its item schema carries arguments as a string and status independently. The [Anthropic stop-reason guide](https://platform.claude.com/docs/en/build-with-claude/handling-stop-reasons) and [fine-grained tool guide](https://platform.claude.com/docs/en/agents-and-tools/tool-use/fine-grained-tool-streaming) explicitly describe token-limit truncation inside tool input and the inability to execute incomplete JSON.
+
+The user selected D's byte-preserving generated argument text with incomplete call/outcome on 2026-10-29; it is not JSON repair or a complete invocation. [Architecture](../architecture.md#generated-tool-arguments-and-execution-input) owns that contract. Native Messages complete JSON/history still requires an object; its intentional restriction must not be generalized into an all-protocol equality rule. The installed-pi observations establish one real consumer's no-execution behavior for length termination; protected replay, stored/static delivery and other consumers still need their own checks.
+
+The current [Chat create reference](https://developers.openai.com/api/reference/resources/chat/subresources/completions/methods/create) places whole-request usage on an extra empty-choice chunk before `[DONE]`, with null usage on other chunks. The reviewed official options do not establish continuous checkpoints. The native observation agrees for this one binding. Preserve duplicate-final rejection; any future dialect checkpoint classification needs evidence from the actual emitting endpoint. Canonical usage-event cleanup is a separate checkpoint/final ownership decision, including published versus unpublished accounting.
+
+A direct [DeepSeek source recheck](https://api-docs.deepseek.com/guides/thinking_mode/) confirms all-prior-turn reasoning with tools and ignored reasoning without tools. The refreshed [Zhipu guide](https://docs.bigmodel.cn/cn/guide/capabilities/thinking-mode) distinguishes preserved-thinking defaults on Coding Plan and standard endpoints. Its current page alone did not re-establish the earlier current-tool-cycle requirement; retain the dated qualification rather than broadening it. Never inherit those defaults through a shared dialect or another billing endpoint. S11 planning checks available client carriage, not proof that a stateless caller supplied every required historical value; request projection preserves available required data and upstream validation retains its authority.
+
 ### Semantic-equivalence review (2026-10-28)
 
 Reviewed existing Generation Text request, response, stream and history named-loss paths and empty/default guards at `5611943`. This inventory classifies concrete entry points; it does not activate unsupported standard fields.

@@ -1,6 +1,6 @@
 # Bailian compatible-request subset
 
-Checked **2026-10-19**. These are mutable official definitions, not live Provider acceptance or a complete DashScope API implementation. Accepted decisions belong to [Architecture](../architecture.md#shared-aliyun-billing-dialect); independent-ceiling proposals belong to [API expansion design](../api-expansion-design.md#independent-output-ceilings-unselected).
+Baseline checked **2026-10-19**, with source corrections on **2026-10-29** below. These are mutable official definitions, not a complete DashScope API implementation. Accepted decisions belong to [Architecture](../architecture.md#shared-aliyun-billing-dialect); independent-ceiling proposals belong to [API expansion design](../api-expansion-design.md#independent-output-ceilings-unselected).
 
 ## Primary sources
 
@@ -15,6 +15,8 @@ Checked **2026-10-19**. These are mutable official definitions, not live Provide
 TokenPlan's shared dialect and separate authority follow the [accepted billing-domain boundary](../architecture.md#shared-aliyun-billing-dialect). No credential, origin, billing or replay-issuer equivalence is inferred.
 
 ## Observed definitions and selected treatment
+
+This is the 2026-10-19 inventory and selected implementation subset. The dated source refresh below supersedes its string-only source claim, and qualifies its adjacency claim; it does not silently widen the implementation.
 
 | Domain | Official distinction | Existing-IR treatment |
 |---|---|---|
@@ -35,5 +37,7 @@ TokenPlan's shared dialect and separate authority follow the [accepted billing-d
 The public gateway owns typed activation/allocation/top-k spellings, not an arbitrary Provider bag. Its generic total-cap convention remains unchanged. The Bailian guard is a documented subset, not a universal model validator: physical/model capability does not make every protocol carrier available, and a client schema does not activate a binding feature.
 
 ## Evidence boundary
+
+**Source refresh, 2026-10-29:** the current Responses result table permits string or array, including text/image parts. The current string-only encoder remains an implementation restriction, not evidence that array output is invalid source syntax. The reference still explicitly requires immediate call/result adjacency, but two bounded direct Qwen grouped-history observations accepted that layout and one independently checked consumption of both results. Phase is undocumented under an ignored-unlisted-fields rule, not documented as an upstream error. The compatibility section also describes an approximately 80% input allowance and automatic truncation; catalog context metadata does not enforce it. [Current qualification](2026-10-27-client-ir-boundaries.md#pre-stage-4-contract-qualification-2026-10-29) owns the source/runtime distinction, limits and open selections. No TokenPlan equivalence, array activation, phase omission, reordering or budget policy follows automatically.
 
 The [Bailian dialect](../../src/protocol/openai/dialect/bailian.rs) owns native checks and writers; current binding admission belongs to the catalog and Architecture. Directional offline tests do not establish effective temperature, hard token enforcement, replay validity or live plan acceptance. This source subset does not claim every cache/`x_details` report, hosted/citation/OCR output, standalone modality or native RPC stream. [Development](../development.md#verification-gates) owns verification, not a second field-support inventory.
