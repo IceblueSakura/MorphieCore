@@ -97,7 +97,7 @@ morphiecore-auth pool list
 
 Members are ordered. Set `fallback: true` and configure `max_attempts` to enable fallback across pool members on retryable upstream failures (transport errors, timeouts, 5xx). Authentication errors (401) and unknown rate limits do not rotate keys. See [Failover](architecture.md#failover).
 
-OAuth pools (e.g., ChatGPT SIWC) require a single member with `fallback: false` and `max_attempts: 1`. Cross-Provider fallback remains supported at the model route level.
+OpenAI SIWC pools require a single member with `fallback: false` and `max_attempts: 1`; other OAuth profiles have no such restriction. Cross-Provider fallback remains supported at the model route level.
 
 ### OAuth
 
