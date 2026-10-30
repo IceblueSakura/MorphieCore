@@ -5,7 +5,6 @@ mod schema_admission {
         protocol::{
             ConversionCause,
             anthropic::messages::client::decode_client_request as decode_messages,
-            conversion::generation::RepresentationError,
             openai::{
                 Dialect, GenerationApi, GenerationCodec, TargetContract, lowering::lower_request,
                 responses,
@@ -42,7 +41,7 @@ mod schema_admission {
                 json!({"oneOf":[{"type":"string"},{"type":"integer"}]}),
                 true,
                 false,
-                vec![],
+                vec![loss],
             ),
         ] {
             let mut schema = json!({"type":"object","properties":{"x":property}});
@@ -107,15 +106,50 @@ mod schema_admission {
             }
         }
         let schema = json!({"type":"object","properties":{},"additionalProperties":false});
-        for n in [20, 21] {
+        for strict in [None, Some(false), Some(true)] {
+            let mut tool = json!({"type":"function","name":"parameterless","description":""});
+            if let Some(strict) = strict {
+                tool["strict"] = json!(strict);
+            }
+            let request = source
+                .decode_client_request(
+                    json!({"model":"m","max_output_tokens":64,"input":"go","tools":[tool]})
+                        .to_string()
+                        .as_bytes(),
+                )
+                .unwrap();
+            let original = request.clone();
+            let projection = target.encode_request(&request, &replay).unwrap();
+            assert_eq!(projection.value["tools"][0]["input_schema"], schema);
+            assert_eq!(
+                projection.value["tools"][0]["strict"],
+                strict != Some(false)
+            );
+            assert_eq!(projection.value["tools"][0]["description"], "");
+            assert!(projection.evidence.is_empty());
+            assert_eq!(request, original);
+        }
+        for (explicit, conditional, inline) in [
+            (0, 20, false),
+            (0, 21, false),
+            (19, 2, false),
+            (19, 2, true),
+            (21, 0, false),
+            (21, 1, true),
+        ] {
+            let n = explicit + conditional;
             let tools: Vec<_> = (0..n)
                 .map(|i| {
-                    json!({
+                    let mut tool = json!({
                         "type":"function","name":format!("t{i}"),"parameters":schema
-                    })
+                    });
+                    if i < explicit {
+                        tool["strict"] = json!(true);
+                    }
+                    tool
                 })
                 .collect();
-            let request = source
+            let mut request = source
                 .decode_client_request(
                     json!({
                         "model":"m","max_output_tokens":64,"input":"go","tools":tools
@@ -124,27 +158,89 @@ mod schema_admission {
                     .as_bytes(),
                 )
                 .unwrap();
+            if inline {
+                let mut settings = request.task.semantic.settings().clone();
+                let ToolDefinition::Function(tool) =
+                    settings.tools.as_mut().unwrap().pop().unwrap()
+                else {
+                    panic!("function")
+                };
+                let mut items = request.task.semantic.items().to_vec();
+                items.push((
+                    ItemId::new(2),
+                    Item::ToolChange(ToolChange {
+                        action: ToolChangeAction::AddDefinition(Box::new(tool)),
+                        cache: None,
+                    }),
+                ));
+                request.task.semantic = request
+                    .task
+                    .semantic
+                    .with_settings(settings)
+                    .unwrap()
+                    .with_items(items)
+                    .unwrap();
+            }
             let original = request.clone();
             let result = target.encode_request(&request, &replay);
-            if n == 20 {
-                let projection = result.unwrap();
-                assert!(
-                    projection.value["tools"]
-                        .as_array()
-                        .unwrap()
-                        .iter()
-                        .all(|t| t["strict"] == true)
-                );
-                assert!(projection.evidence.is_empty());
-            } else {
+            assert_eq!(request, original);
+            if explicit > 20 {
                 assert!(matches!(
                     result.unwrap_err().cause,
                     ConversionCause::Codec(morphiecore::protocol::CodecError::Unsupported(
                         morphiecore::protocol::failure::CarrierReason::Schema
                     ))
                 ));
+                continue;
             }
-            assert_eq!(request, original);
+            let projection = result.unwrap();
+            let mut tools = projection.value["tools"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .collect::<Vec<_>>();
+            if inline {
+                tools.push(&projection.value["messages"][1]["content"][0]["tool"]["definition"]);
+            }
+            assert_eq!(tools.len(), n);
+            for (i, tool) in tools.into_iter().enumerate() {
+                assert_eq!(tool["name"], format!("t{i}"));
+                assert_eq!(tool["strict"], i < explicit || n <= 20);
+                assert_eq!(tool["input_schema"], schema);
+            }
+            if n <= 20 {
+                assert!(projection.evidence.is_empty());
+            } else {
+                assert_eq!(projection.evidence.rule_names(), [loss]);
+            }
+            if inline && explicit == 19 {
+                let mut items = request.task.semantic.items().to_vec();
+                items.push((
+                    ItemId::new(3),
+                    Item::ToolChange(ToolChange {
+                        action: ToolChangeAction::Remove(
+                            request.task.semantic.tools()[0].name().clone(),
+                        ),
+                        cache: None,
+                    }),
+                ));
+                let mut removable = request.clone();
+                removable.task.semantic = removable.task.semantic.with_items(items).unwrap();
+                let original = removable.clone();
+                let mut collapsed = target.clone();
+                collapsed.carriers.tool_changes = false;
+                let projection = collapsed.encode_request(&removable, &replay).unwrap();
+                let tools = projection.value["tools"].as_array().unwrap();
+                assert_eq!(tools.len(), 20);
+                assert!(tools.iter().all(|tool| tool["strict"] == true));
+                assert!(
+                    projection
+                        .evidence
+                        .contains_rule("messages.collapse-tool-changes.v1")
+                );
+                assert!(!projection.evidence.contains_rule(loss));
+                assert_eq!(removable, original);
+            }
         }
         // The output schema reserves the same native union budget as tools.
         let names: Vec<_> = (0..16).map(|n| format!("u{n}")).collect();
@@ -167,8 +263,39 @@ mod schema_admission {
                 .as_bytes(),
             )
             .unwrap();
+        let projection = target.encode_request(&request, &replay).unwrap();
+        assert_eq!(projection.value["tools"][0]["strict"], false);
+        assert!(projection.evidence.contains_rule(loss));
+        assert_eq!(
+            projection.value["output_config"]["format"]["schema"],
+            match request.task.semantic.output() {
+                OutputConstraint::JsonSchema { schema, .. } => schema.root().clone(),
+                _ => panic!("schema output"),
+            }
+        );
+        let mut settings = request.task.semantic.settings().clone();
+        let morphiecore::semantic::value::Presence::Value(OutputConstraint::JsonSchema {
+            schema,
+            ..
+        }) = &mut settings.text.format
+        else {
+            panic!("schema output")
+        };
+        schema.root_mut()["properties"]["overflow"] = json!({"type":["string","null"]});
+        schema.root_mut()["required"]
+            .as_array_mut()
+            .unwrap()
+            .push(json!("overflow"));
+        let too_many_unions = request
+            .task
+            .semantic
+            .clone()
+            .with_settings(settings)
+            .unwrap();
+        let mut invalid = request.clone();
+        invalid.task.semantic = too_many_unions;
         assert!(matches!(
-            target.encode_request(&request, &replay).unwrap_err().cause,
+            target.encode_request(&invalid, &replay).unwrap_err().cause,
             ConversionCause::Codec(morphiecore::protocol::CodecError::Unsupported(
                 morphiecore::protocol::failure::CarrierReason::Schema
             ))
@@ -176,17 +303,15 @@ mod schema_admission {
         for (schema, explicit) in [
             (json!({"type":"object","x-unknown":true}), false),
             (
+                json!({"type":"object","properties":{"x":{"$ref":"#/$defs/X"}},
+                    "required":["x"],"additionalProperties":false,"$defs":{"X":{"type":"string"}}}),
+                false,
+            ),
+            (
                 json!({"type":"object","properties":{"x":{"type":"string","enum":["A"]}},"required":["x"],"additionalProperties":false}),
                 true,
             ),
         ] {
-            let expected = if explicit {
-                ConversionCause::Codec(morphiecore::protocol::CodecError::Unsupported(
-                    morphiecore::protocol::failure::CarrierReason::Schema,
-                ))
-            } else {
-                ConversionCause::Representation(RepresentationError::StrictDefault)
-            };
             let mut body = json!({"model":"m","max_output_tokens":64,"input":"go","tools":[
                 {"type":"function","name":"lookup","parameters":schema}]});
             if explicit {
@@ -195,10 +320,20 @@ mod schema_admission {
             let request = source
                 .decode_client_request(body.to_string().as_bytes())
                 .unwrap();
-            assert_eq!(
-                target.encode_request(&request, &replay).unwrap_err().cause,
-                expected
-            );
+            let result = target.encode_request(&request, &replay);
+            if explicit {
+                assert!(matches!(
+                    result.unwrap_err().cause,
+                    ConversionCause::Codec(morphiecore::protocol::CodecError::Unsupported(
+                        morphiecore::protocol::failure::CarrierReason::Schema
+                    ))
+                ));
+            } else {
+                let projection = result.unwrap();
+                assert_eq!(projection.value["tools"][0]["strict"], false);
+                assert_eq!(projection.value["tools"][0]["input_schema"], schema);
+                assert_eq!(projection.evidence.rule_names(), [loss]);
+            }
         }
     }
 
@@ -221,10 +356,16 @@ mod schema_admission {
             (
                 json!({"type":"object","properties":{"x":{"oneOf":[{"type":"string"},{"type":"integer"}]}}}),
                 false,
-                vec![],
+                vec![loss],
             ),
             (
                 json!({"type":"object","properties":{"mode":{"type":"string","enum":["a","b"]}},"required":["mode"],"additionalProperties":false}),
+                true,
+                vec![],
+            ),
+            (
+                json!({"type":"object","properties":{"x":{"$ref":"#/$defs/X"}},
+                    "required":["x"],"additionalProperties":false,"$defs":{"X":{"type":"string"}}}),
                 true,
                 vec![],
             ),
@@ -236,7 +377,7 @@ mod schema_admission {
             (
                 json!({"type":"object","properties":{"xs":{"type":"array","items":{"type":"string"},"uniqueItems":true}}}),
                 false,
-                vec![],
+                vec![loss],
             ),
         ] {
             let body = json!({"model":"m","input":"go","tools":[
@@ -282,13 +423,14 @@ mod schema_admission {
             let request = source
                 .decode_client_request(body.to_string().as_bytes())
                 .unwrap();
-            assert_eq!(
-                target
-                    .encode_request(&request, "m", &TargetContract::full())
-                    .unwrap_err()
-                    .cause,
-                ConversionCause::Representation(RepresentationError::StrictDefault)
-            );
+            let original = request.clone();
+            let (wire, rules) = target
+                .encode_request_with_rules(&request, "m", &TargetContract::full())
+                .unwrap();
+            assert_eq!(wire["tools"][0]["function"]["strict"], false);
+            assert_eq!(wire["tools"][0]["function"]["parameters"], schema);
+            assert_eq!(rules, [loss]);
+            assert_eq!(request, original);
             assert!(
                 source
                     .encode_request(&request, "m", &TargetContract::full())
@@ -299,13 +441,22 @@ mod schema_admission {
         let request = source
             .decode_client_request(body.to_string().as_bytes())
             .unwrap();
+        let original = request.clone();
+        let (wire, rules) = target
+            .encode_request_with_rules(&request, "m", &TargetContract::full())
+            .unwrap();
+        assert_eq!(wire["tools"][0]["function"]["strict"], true);
         assert_eq!(
-            target
-                .encode_request(&request, "m", &TargetContract::full())
-                .unwrap_err()
-                .cause,
-            ConversionCause::Representation(RepresentationError::StrictDefault)
+            wire["tools"][0]["function"]["parameters"],
+            json!({"type":"object","properties":{},"additionalProperties":false})
         );
+        assert!(rules.is_empty(), "the parameterless carrier is equivalent");
+        assert_eq!(request, original);
+        let native = source
+            .encode_request(&request, "m", &TargetContract::full())
+            .unwrap();
+        assert!(native["tools"][0].get("parameters").is_none());
+        assert!(native["tools"][0].get("strict").is_none());
     }
 
     /// An MCP server schema in draft-07 form, as opencode forwards it unchanged.

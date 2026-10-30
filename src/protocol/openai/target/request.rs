@@ -253,10 +253,11 @@ impl GenerationCodec {
             }
             let mut projected = stripped.map_or(Cow::Borrowed(request), Cow::Owned);
             if (self.protocol == GenerationApi::Chat || self.adaptation.rules.bailian_requests)
-                && let Some((semantic, effects)) =
-                    openai::lowering::strictness::project(&projected.task.semantic, |_| {
-                        contract.semantics.strict_tools && !self.adaptation.rules.bailian_requests
-                    })?
+                && let Some((semantic, effects)) = openai::lowering::strictness::project(
+                    &projected.task.semantic,
+                    |_| contract.semantics.strict_tools && !self.adaptation.rules.bailian_requests,
+                    |_| true,
+                )?
             {
                 projected.to_mut().task.semantic = semantic;
                 controls.extend(effects);

@@ -401,7 +401,6 @@ fn representation_code(e: &RepresentationError) -> &'static str {
         RepresentationError::Tools => "representation.tools",
         RepresentationError::ParallelTools => "representation.parallel_tools",
         RepresentationError::StrictTools => "representation.strict_tools",
-        RepresentationError::StrictDefault => "representation.strict_default",
         RepresentationError::StructuredOutput => "representation.structured_output",
         RepresentationError::Reasoning => "representation.reasoning",
         RepresentationError::ReplayPhase => "representation.replay_phase",

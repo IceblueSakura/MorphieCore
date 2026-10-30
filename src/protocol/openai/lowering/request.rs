@@ -35,9 +35,11 @@ pub fn lower_request<'a>(
     let mut semantic = std::borrow::Cow::Borrowed(r);
     let mut projection = Vec::new();
     if (profile == GenerationApi::Chat || c.adaptation.rules.bailian_requests)
-        && let Some((projected, effects)) = super::strictness::project(r, |_| {
-            c.semantics.strict_tools && !c.adaptation.rules.bailian_requests
-        })?
+        && let Some((projected, effects)) = super::strictness::project(
+            r,
+            |_| c.semantics.strict_tools && !c.adaptation.rules.bailian_requests,
+            |_| true,
+        )?
     {
         semantic = std::borrow::Cow::Owned(projected);
         projection.extend(effects);
@@ -290,7 +292,7 @@ fn check_strict_schemas(settings: &GenerationSettings) -> Result<(), Representat
         strict: Some(true),
         ..
     } = settings.output()
-        && !admits(schema, true)
+        && !admits(schema)
     {
         return Err(RepresentationError::StructuredOutput);
     }
@@ -305,7 +307,7 @@ fn check_strict_schemas(settings: &GenerationSettings) -> Result<(), Representat
             continue;
         };
         if tool.strict == FunctionStrictness::Explicit(true)
-            && tool.parameters.as_ref().is_some_and(|p| !admits(p, true))
+            && tool.parameters.as_ref().is_some_and(|p| !admits(p))
         {
             return Err(RepresentationError::Tools);
         }

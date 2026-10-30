@@ -9,7 +9,7 @@ pub(super) fn admits_request(request: &super::Request) -> bool {
         super::MessageContent::Blocks(blocks) => blocks.as_slice(),
         super::MessageContent::Text(_) => &[],
     });
-    let tools: Vec<_> = request
+    let tools = request
         .tools
         .value()
         .into_iter()
@@ -19,23 +19,53 @@ pub(super) fn admits_request(request: &super::Request) -> bool {
             _ => None,
         }))
         .filter(|tool| tool.strict == Presence::Value(true))
-        .collect();
-    // These native grammar limits are request-wide, including JSON output.
-    if tools.len() > 20 {
-        return false;
-    }
-    let mut budget = Budget::default();
-    for tool in tools {
-        if !admits(tool.input_schema.root()) || !budget.charge(tool.input_schema.root()) {
-            return false;
-        }
-    }
-    // JSON outputs share the native subset/casing limits, not only its grammar budget.
-    request
+        .map(|tool| tool.input_schema.root());
+    let output = request
         .output_config
         .value()
         .and_then(|config| config.format.value())
-        .is_none_or(|schema| admits(schema.root()) && budget.charge(schema.root()))
+        .map(|schema| schema.root());
+    admits_schemas(tools, output)
+}
+
+pub(super) fn admits_generation(
+    request: &crate::semantic::task::generation::GenerationRequest,
+) -> bool {
+    use crate::semantic::task::generation::*;
+    let empty = crate::protocol::openai::lowering::strictness::empty_parameters();
+    let tools = request
+        .tools()
+        .iter()
+        .flat_map(ToolDefinition::leaves)
+        .filter_map(|tool| match tool {
+            ToolDefinition::Function(tool) => Some(tool),
+            _ => None,
+        })
+        .chain(request.items().iter().filter_map(|(_, item)| match item {
+            Item::ToolChange(ToolChange {
+                action: ToolChangeAction::AddDefinition(tool),
+                ..
+            }) => Some(tool.as_ref()),
+            _ => None,
+        }))
+        .filter(|tool| tool.strict == FunctionStrictness::Explicit(true))
+        .map(|tool| tool.parameters.as_ref().unwrap_or(&empty).root());
+    let output = match request.output() {
+        OutputConstraint::JsonSchema { schema, .. } => Some(schema.root()),
+        _ => None,
+    };
+    admits_schemas(tools, output)
+}
+
+fn admits_schemas<'a>(tools: impl Iterator<Item = &'a Value>, output: Option<&Value>) -> bool {
+    // Strict tools and JSON output share one native subset and grammar budget.
+    let mut budget = Budget::default();
+    for (index, schema) in tools.enumerate() {
+        if index >= 20 || !admits(schema) || !budget.charge(schema) {
+            return false;
+        }
+    }
+    output.is_none_or(|schema| admits(schema) && budget.charge(schema))
 }
 
 #[derive(Default)]

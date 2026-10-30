@@ -28,6 +28,7 @@ impl Profile {
             target,
             &Presence::Absent,
             &Default::default(),
+            true,
         )
     }
     pub(super) fn encode_request_envelope(
@@ -37,6 +38,7 @@ impl Profile {
         target: &ReplayTarget,
         policy: &Presence<crate::semantic::context::ServicePolicy>,
         limits: &crate::protocol::model_limits::ModelLimits,
+        strict_tools: bool,
     ) -> Result<crate::protocol::conversion::generation::Conversion<Value>, CodecError> {
         let (request, fidelity, transferred) = crate::protocol::native::native_reasoning_history(
             request,
@@ -59,7 +61,8 @@ impl Profile {
         }
         let conditional = crate::protocol::openai::lowering::strictness::project(
             phase.as_ref().unwrap_or(&request),
-            |schema| super::strict_schema::admits(schema.root()),
+            |schema| strict_tools && super::strict_schema::admits(schema.root()),
+            super::strict_schema::admits_generation,
         )
         .map_err(|cause| CodecError::Representation {
             boundary: crate::protocol::conversion::generation::ConversionBoundary::RequestProject,
@@ -367,7 +370,10 @@ fn native_tool(t: &FunctionTool) -> Result<super::Tool, CodecError> {
             .description
             .clone()
             .map_or(Presence::Absent, Presence::Value),
-        input_schema: t.parameters.clone().ok_or_else(unsupported)?,
+        input_schema: t
+            .parameters
+            .clone()
+            .unwrap_or_else(crate::protocol::openai::lowering::strictness::empty_parameters),
         input_examples: t
             .input_examples
             .clone()

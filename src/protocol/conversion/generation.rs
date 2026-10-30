@@ -46,8 +46,6 @@ pub enum RepresentationError {
     ParallelTools,
     #[error("target cannot represent strict tools")]
     StrictTools,
-    #[error("omitted strict has a different default in the target profile")]
-    StrictDefault,
     #[error("target cannot represent structured output")]
     StructuredOutput,
     #[error("target cannot represent reasoning")]

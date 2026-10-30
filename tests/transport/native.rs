@@ -532,6 +532,40 @@ mod native_catalog {
         );
         assert!(rules.contains(&"openai.omit-conditional-tool-strictness.v1"));
         assert_eq!(request, original);
+        for parameters in [
+            Some(serde_json::json!({"type":"object","x-unknown":true})),
+            None,
+        ] {
+            let mut projected = request.clone();
+            let mut settings = projected.task.semantic.settings().clone();
+            let morphiecore::semantic::task::generation::ToolDefinition::Function(tool) =
+                &mut settings.tools.as_mut().unwrap()[0]
+            else {
+                panic!("function")
+            };
+            tool.parameters = parameters.clone().map(Into::into);
+            projected.task.semantic = projected.task.semantic.with_settings(settings).unwrap();
+            let before = projected.clone();
+            admit(topology.model(binding.model).unwrap(), &projected).unwrap();
+            representable(&binding.endpoint(), &projected).unwrap();
+            let (prepared, rules) = morphiecore::execution::prepare_with_rules(
+                &binding.endpoint(),
+                &binding.provider(),
+                &SecretMaterial::new("synthetic-key").unwrap(),
+                &projected,
+            )
+            .unwrap();
+            let wire: serde_json::Value = serde_json::from_slice(&prepared.body).unwrap();
+            assert_eq!(wire["tools"][0]["strict"], parameters.is_none());
+            assert_eq!(
+                rules.contains(&"openai.omit-conditional-tool-strictness.v1"),
+                parameters.is_some()
+            );
+            assert_eq!(wire["tools"][0]["input_schema"], parameters.unwrap_or_else(||
+                serde_json::json!({"type":"object","properties":{},"additionalProperties":false})
+            ));
+            assert_eq!(projected, before);
+        }
         let mut settings = request.task.semantic.settings().clone();
         let morphiecore::semantic::task::generation::ToolDefinition::Function(tool) =
             &mut settings.tools.as_mut().unwrap()[0]
