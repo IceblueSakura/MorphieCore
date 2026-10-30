@@ -12,7 +12,7 @@ MorphieCore is a local gateway that hides LLM Provider differences behind a sing
 | Accepted design | [Architecture](docs/architecture.md) | Shared principles, domain contracts, IR semantics, and settled decisions |
 | Planned work | [Roadmap](docs/roadmap.md) | Current scope, work packages, dependencies, and exit gates |
 | Proposed designs | [API expansion design](docs/api-expansion-design.md) | Operation proposals and future candidates |
-| Requirements proposal | [Provider account redesign plan](docs/provider-account-redesign-plan.md) | Multi-account requirements, user decisions, proposed recovery policy and open decisions; no implementation approval |
+| Redesign draft | [Provider account redesign plan](docs/provider-account-redesign-plan.md) | Accepted multi-account draft direction, configurable recovery policy and open design decisions; no implementation planning or approval |
 | Develop and verify | [Development](docs/development.md) | Tooling, offline checks, SDK gates, and acceptance procedures |
 | Sources and evidence | [References](docs/references.md) | Pinned sources, licenses, and dated research notes |
 | Implemented HTTP surface | [OpenAPI](docs/openapi.json) | OpenAPI specification of supported HTTP endpoints |
