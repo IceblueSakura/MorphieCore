@@ -47,6 +47,35 @@ fn chat_storage_and_audio_history_keep_request_meaning() {
 }
 
 #[test]
+fn chat_null_logit_bias_is_the_documented_default_not_active_bias() {
+    let chat = adapter(GenerationApi::Chat);
+    let body = json!({"model":"m","messages":[{"role":"user","content":"x"}]});
+    let expected = chat
+        .decode_client_request(body.to_string().as_bytes())
+        .unwrap();
+    let mut nullable = body.clone();
+    nullable["logit_bias"] = Value::Null;
+    let actual = chat
+        .decode_client_request(nullable.to_string().as_bytes())
+        .unwrap();
+    assert_eq!(actual.task, expected.task);
+    let (wire, rules) = chat
+        .encode_request_with_rules(&actual, "m", &TargetContract::full())
+        .unwrap();
+    assert_eq!(wire, body);
+    assert!(rules.is_empty());
+    for value in [json!({"1":1}), json!({}), json!([]), json!(false), json!(0)] {
+        let mut active = body.clone();
+        active["logit_bias"] = value.clone();
+        assert!(
+            chat.decode_client_request(active.to_string().as_bytes())
+                .is_err(),
+            "{value}"
+        );
+    }
+}
+
+#[test]
 fn standard_known_fields_are_strict_and_sdk_views_are_not_authority() {
     let chat = adapter(GenerationApi::Chat);
     for message in [

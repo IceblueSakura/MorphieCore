@@ -405,6 +405,8 @@ This decision removes `chat.omit-null-stream-metadata.v1` and `messages.omit-nul
 
 Further selected applications: null-only system fingerprints on Responses/Messages and terminal explanations on Messages carry no report value; explicit `logprobs:false` needs no Messages probability carrier. Document citations default off: an omitted/false `citations.enabled` normalizes to an uncited document without a loss receipt; enabled citations remain unselected and malformed known flags reject. Empty cache options normalize without a dedicated rule. On trusted always-parallel targets, explicit parallel permission is exact; explicit serial intent still rejects. The obsolete `cache.omit-inactive-options.v1` and `deepseek.omit-parallel-tool-permission.v1` rules are removed. Meaningful fingerprints/explanations, active cache controls and requests for probabilities retain their loss/rejection contracts.
 
+Chat request `logit_bias:null` is its documented default, equivalent to omission with no active token bias or loss receipt. Non-null values retain rejection; tokenizer-bound active bias remains unselected. This field-specific rule does not equate arbitrary empty objects with null.
+
 #### Client/IR projection principles
 
 Accepted on 2026-10-28 for Client/IR stabilization. Apply [semantic-equivalence compatibility](#semantic-equivalence-compatibility) first; classify remaining projection rules under the principles below. Sections marked *implementation pending* state the target design; current behavior is unchanged until the corresponding [repair-order](roadmap.md#repair-order-and-exit-gates) slice lands.

@@ -58,7 +58,8 @@ pub(crate) fn decode_generation_with(
     bounded(v)?;
     let o = object(v)?;
     direction.fields(o, FIELDS)?;
-    if let Some(_key) = ["logit_bias"].into_iter().find(|key| o.contains_key(*key)) {
+    // The official null default has no token-bias operation to carry.
+    if o.get("logit_bias").is_some_and(|value| !value.is_null()) {
         return Err(CodecError::Unsupported(CarrierReason::UnknownField));
     }
     for key in UNSUPPORTED {
