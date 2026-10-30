@@ -76,7 +76,7 @@ impl Profile {
             strict_tools: false,
             tool_examples: false,
             tool_changes: false,
-            conditional_tool_defaults: false,
+            conditional_tool_defaults: true,
             explicit_cache: false,
             cached_context: false,
             safety: false,

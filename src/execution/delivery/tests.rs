@@ -25,6 +25,96 @@ fn coalesce_events(
 }
 
 #[test]
+fn native_tool_argument_strings_match_stream_terminal_and_retained_history() {
+    use crate::semantic::task::generation::{Item, ToolArguments};
+    let endpoint = crate::topology::catalog::MESSAGES_BINDINGS[0].endpoint();
+    let arguments = " \n\t{\"serial\":9007199254740993, \"n\":1e0}\n";
+    let frames = [
+        json!({"type":"message_start","message":{"id":"r","type":"message","role":"assistant",
+            "model":endpoint.upstream_model,"content":[],"stop_reason":null,"stop_sequence":null,
+            "usage":{"input_tokens":1,"output_tokens":0}}}),
+        json!({"type":"content_block_start","index":0,
+            "content_block":{"type":"tool_use","id":"c","name":"lookup","input":{}}}),
+        json!({"type":"content_block_delta","index":0,
+            "delta":{"type":"input_json_delta","partial_json":arguments}}),
+        json!({"type":"content_block_stop","index":0}),
+        json!({"type":"message_delta","delta":{"stop_reason":"tool_use","stop_sequence":null},
+            "usage":{"output_tokens":2}}),
+        json!({"type":"message_stop"}),
+    ];
+    for stream in [false, true] {
+        let mut attempt = Attempt::new(endpoint.adapter().unwrap(), 65536, Default::default());
+        attempt.begin(200, "text/event-stream").unwrap();
+        let mut delivery = ResponseDelivery::new(
+            ClientAdapter::openai(
+                GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None),
+                TargetContract::full(),
+            ),
+            "public",
+            Default::default(),
+            Default::default(),
+            Obfuscation::Disabled,
+        );
+        let mut output = vec![];
+        for frame in &frames {
+            let (_, events) = attempt
+                .push(
+                    format!(
+                        "event: {}\ndata: {frame}\n\n",
+                        frame["type"].as_str().unwrap()
+                    )
+                    .as_bytes(),
+                )
+                .unwrap();
+            if stream {
+                output.extend(
+                    delivery
+                        .encode_events(&attempt, &events)
+                        .unwrap()
+                        .into_bytes()
+                        .concat(),
+                );
+            }
+        }
+        attempt.finish().unwrap();
+        let source = attempt.response().unwrap().clone();
+        assert!(matches!(&source.semantic.items()[0].1,
+            Item::ToolCall(call) if matches!(call.arguments, ToolArguments::Structured(_))));
+        let delivered: Value = if stream {
+            output.extend(
+                delivery
+                    .finish_stream(&attempt)
+                    .unwrap()
+                    .into_bytes()
+                    .concat(),
+            );
+            let text = String::from_utf8(output).unwrap();
+            let terminal: Value = text
+                .lines()
+                .filter_map(|line| line.strip_prefix("data: "))
+                .map(|line| serde_json::from_str::<Value>(line).unwrap())
+                .next_back()
+                .unwrap();
+            assert_eq!(terminal["response"]["output"][0]["arguments"], arguments);
+            terminal["response"].clone()
+        } else {
+            serde_json::from_slice(&delivery.encode_json(&attempt).unwrap()).unwrap()
+        };
+        let (retained, bytes) = delivery.snapshot(&attempt).unwrap();
+        let saved: Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(saved["output"], delivered["output"]);
+        let Item::ToolCall(call) = &retained.semantic.items()[0].1 else {
+            panic!("tool call")
+        };
+        assert_eq!(
+            call.arguments.as_raw().unwrap(),
+            saved["output"][0]["arguments"].as_str().unwrap()
+        );
+        assert_eq!(attempt.response().unwrap(), &source);
+    }
+}
+
+#[test]
 fn finalized_json_still_needs_handoff_and_cannot_resume_after_rejection() {
     let adapter = GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None);
     let mut attempt = Attempt::new(adapter.clone(), 4096, Default::default());

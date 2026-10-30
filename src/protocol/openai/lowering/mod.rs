@@ -8,7 +8,7 @@ pub mod projection;
 pub(crate) mod readable_reasoning;
 mod request;
 mod response;
-pub(super) mod strictness;
+pub(crate) mod strictness;
 
 pub use crate::protocol::conversion::generation::{ReportedFactPolicy, RepresentationError};
 pub use crate::protocol::openai::TargetContract;

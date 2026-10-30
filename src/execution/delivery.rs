@@ -573,7 +573,12 @@ impl ResponseDelivery {
         view: View,
     ) -> Result<(crate::protocol::DecodedResponse, Vec<u8>, EvidenceDelta), AttemptError> {
         let mut evidence = self.complete_presentation(attempt, view)?;
-        let (response, effects) = self.client_view(attempt)?;
+        let (mut response, effects) = self.client_view(attempt)?;
+        if attempt.is_native()
+            && let Some(encoder) = &self.encoder
+        {
+            encoder.retain_native_arguments(&mut response)?;
+        }
         for effect in effects {
             evidence.push(effect);
         }

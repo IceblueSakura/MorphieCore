@@ -341,7 +341,7 @@ impl EventEncoder {
             )],
         );
     }
-    pub(super) fn state(&self) -> Result<&StreamState, CodecError> {
+    pub(crate) fn state(&self) -> Result<&StreamState, CodecError> {
         self.state.as_ref().ok_or(CodecError::invalid())
     }
 }

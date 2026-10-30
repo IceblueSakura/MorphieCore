@@ -256,24 +256,23 @@ fn declared_topology_compiles() {
     // Reviewed native inputs and pi's Haiku profile do not open other codec features.
     let semantics = &binding.endpoint().representation.semantics().clone();
     assert!(semantics.strict_tools && semantics.ordered_instructions && semantics.tool_changes);
-    for feature in 0..2 {
-        let mut endpoint = binding.endpoint();
-        let semantics = &mut endpoint.representation.messages_mut().unwrap().semantics;
-        match feature {
-            0 => semantics.cached_context = true,
-            _ => semantics.conditional_tool_defaults = true,
-        }
-        assert_eq!(
-            compile(
-                vec![binding.provider()],
-                vec![endpoint],
-                vec![binding.route()],
-                vec![binding.public_model()],
-                vec![binding.canonical_model()]
-            ),
-            Err(TopologyError::ContractUnsatisfiable)
-        );
-    }
+    let mut endpoint = binding.endpoint();
+    endpoint
+        .representation
+        .messages_mut()
+        .unwrap()
+        .semantics
+        .cached_context = true;
+    assert_eq!(
+        compile(
+            vec![binding.provider()],
+            vec![endpoint],
+            vec![binding.route()],
+            vec![binding.public_model()],
+            vec![binding.canonical_model()]
+        ),
+        Err(TopologyError::ContractUnsatisfiable)
+    );
     let muse = topology.model("muse-spark-1.3-contributor").unwrap();
     let muse_endpoints = topology.route_endpoints(&muse.route);
     assert_eq!(muse_endpoints.len(), 1);

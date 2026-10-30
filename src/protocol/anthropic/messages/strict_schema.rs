@@ -83,7 +83,7 @@ impl Budget {
     }
 }
 
-fn admits(schema: &Value) -> bool {
+pub(super) fn admits(schema: &Value) -> bool {
     let Some(object) = schema.as_object() else {
         return false;
     };

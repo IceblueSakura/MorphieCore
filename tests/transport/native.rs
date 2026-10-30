@@ -488,7 +488,7 @@ mod native_catalog {
         topology::catalog,
     };
     #[test]
-    fn native_binding_rejects_unselected_default_strictness_but_preserves_plain_tools() {
+    fn native_binding_resolves_conditional_strictness_before_preflight_and_preparation() {
         use morphiecore::{
             execution::AttemptError,
             protocol::{
@@ -514,16 +514,24 @@ mod native_catalog {
         request.conversation = Some(
             morphiecore::semantic::context::ConversationContext::conversation("synthetic").unwrap(),
         );
-        assert!(matches!(
-            admit(topology.model(binding.model).unwrap(), &request),
-            Err(AttemptError::Conversion(ConversionFailure {
-                cause: morphiecore::protocol::ConversionCause::Representation(
-                    RepresentationError::Admission(GenerationFeature::ConditionalToolStrictness)
-                ),
-                ..
-            }))
-        ));
-        assert!(representable(&binding.endpoint(), &request).is_err());
+        admit(topology.model(binding.model).unwrap(), &request).unwrap();
+        representable(&binding.endpoint(), &request).unwrap();
+        let original = request.clone();
+        let (prepared, rules) = morphiecore::execution::prepare_with_rules(
+            &binding.endpoint(),
+            &binding.provider(),
+            &SecretMaterial::new("synthetic-key").unwrap(),
+            &request,
+        )
+        .unwrap();
+        let wire: serde_json::Value = serde_json::from_slice(&prepared.body).unwrap();
+        assert_eq!(wire["tools"][0]["strict"], false);
+        assert_eq!(
+            wire["tools"][0]["input_schema"],
+            serde_json::json!({"type":"object","properties":{"path":{"type":"string"}}})
+        );
+        assert!(rules.contains(&"openai.omit-conditional-tool-strictness.v1"));
+        assert_eq!(request, original);
         let mut settings = request.task.semantic.settings().clone();
         let morphiecore::semantic::task::generation::ToolDefinition::Function(tool) =
             &mut settings.tools.as_mut().unwrap()[0]

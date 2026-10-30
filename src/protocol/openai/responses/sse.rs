@@ -188,6 +188,15 @@ pub struct ResponsesSseEncoder {
     rejected: bool,
 }
 impl ResponsesSseEncoder {
+    pub(crate) fn state(
+        &self,
+    ) -> Result<&crate::semantic::task::generation::StreamState, SseError> {
+        if self.rejected {
+            return Err(SseError::Closed);
+        }
+        Ok(self.codec.state()?)
+    }
+
     pub(crate) fn set_notice(&mut self, notice: crate::protocol::diagnostics::AdaptationNotice) {
         self.notice = Some(notice);
     }

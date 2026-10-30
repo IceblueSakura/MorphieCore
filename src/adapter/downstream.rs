@@ -483,6 +483,67 @@ pub(crate) struct ClientEncoder {
     native_projection: Option<crate::protocol::openai::lowering::native_response::EventProjection>,
 }
 impl ClientEncoder {
+    /// Responses retrieval retains the argument string actually published by its
+    /// stream, not a second serialization of the native structured observation.
+    pub(crate) fn retain_native_arguments(
+        &self,
+        response: &mut DecodedResponse,
+    ) -> Result<(), SseError> {
+        use crate::semantic::task::generation::{Item, StructuredValue, ToolArguments};
+        let Encoder::Responses(encoder) = &self.encoder else {
+            return Ok(());
+        };
+        let state = encoder.state()?;
+        let mut items = response.semantic.items().to_vec();
+        let mut changed = false;
+        for (owner, item) in &mut items {
+            let Item::ToolCall(call) = item else {
+                continue;
+            };
+            let delivered = state.item(*owner).map_err(CodecError::from)?;
+            let crate::semantic::task::generation::ItemKind::ToolCall { call_id, name, .. } =
+                &delivered.kind
+            else {
+                return Err(CodecError::invalid().into());
+            };
+            let arguments = delivered
+                .parts
+                .first()
+                .and_then(|part| part.text())
+                .ok_or(CodecError::invalid())?;
+            let original = call.arguments.as_raw().ok_or(CodecError::invalid())?;
+            if call_id != &call.call_id
+                || name != &call.name
+                || delivered.status != Some(call.status)
+                || StructuredValue::from_bytes(arguments.as_bytes()).map_err(CodecError::from)?
+                    != StructuredValue::from_bytes(original.as_bytes()).map_err(CodecError::from)?
+            {
+                return Err(CodecError::invalid().into());
+            }
+            if arguments != original {
+                call.arguments = ToolArguments::Raw(arguments.into());
+                changed = true;
+            }
+        }
+        if changed {
+            // This is a checked carrier change, not an edit to invocation input.
+            let source = &response.semantic;
+            response.semantic =
+                crate::semantic::task::generation::GenerationResponse::from_resources(
+                    items,
+                    source.outcome(),
+                    source.resources().clone(),
+                )
+                .and_then(|view| view.with_message_envelopes(source.message_envelopes().to_vec()))
+                .and_then(|view| view.with_progress(source.progress()))
+                .and_then(|view| view.with_details(source.details().clone()))
+                .and_then(|view| view.with_usage_reports(source.usage_reports().clone()))
+                .and_then(|view| view.with_safety_reports(source.safety_reports().to_vec()))
+                .map_err(CodecError::from)?;
+        }
+        Ok(())
+    }
+
     pub(crate) fn set_notice(&mut self, notice: crate::protocol::diagnostics::AdaptationNotice) {
         match &mut self.encoder {
             Encoder::Chat(e) => e.set_notice(notice),

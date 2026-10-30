@@ -16,6 +16,193 @@ mod schema_admission {
     use serde_json::{Value, json};
 
     #[test]
+    fn messages_conditional_tools_preserve_source_and_native_strict_guarantees() {
+        use morphiecore::protocol::{
+            anthropic::messages::{self, Carriers, Profile},
+            native::ReplayTarget,
+        };
+        let source = GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None);
+        let profile = Profile::AdaptiveTextTools;
+        let mut target = messages::TargetContract::new(profile, messages::Dialect::Standard);
+        target.semantics = profile.representation_contract();
+        target.carriers = Carriers::all();
+        let replay = ReplayTarget::new("synthetic", "m").unwrap();
+        let loss = "openai.omit-conditional-tool-strictness.v1";
+        for (property, closed, strict, rules) in [
+            (json!({"type":"string"}), true, true, vec![]),
+            (json!({"type":"string"}), false, false, vec![loss]),
+            (
+                json!({"type":"string","enum":["A","B"]}),
+                true,
+                false,
+                vec![loss],
+            ),
+            (json!({"type":"integer","enum":[1,2]}), true, true, vec![]),
+            (
+                json!({"oneOf":[{"type":"string"},{"type":"integer"}]}),
+                true,
+                false,
+                vec![],
+            ),
+        ] {
+            let mut schema = json!({"type":"object","properties":{"x":property}});
+            if closed {
+                schema["required"] = json!(["x"]);
+                schema["additionalProperties"] = json!(false);
+            }
+            let body = json!({"model":"m","max_output_tokens":64,"input":"go","tools":[
+                {"type":"function","name":"lookup","parameters":schema}]});
+            let request = source
+                .decode_client_request(body.to_string().as_bytes())
+                .unwrap();
+            for inline in [false, true] {
+                let mut request = request.clone();
+                if inline {
+                    let ToolDefinition::Function(tool) = request.task.semantic.tools()[0].clone()
+                    else {
+                        panic!("function")
+                    };
+                    let mut settings = request.task.semantic.settings().clone();
+                    settings.tools = None;
+                    let mut items = request.task.semantic.items().to_vec();
+                    items.push((
+                        ItemId::new(2),
+                        Item::ToolChange(ToolChange {
+                            action: ToolChangeAction::AddDefinition(Box::new(tool)),
+                            cache: None,
+                        }),
+                    ));
+                    request.task.semantic = request
+                        .task
+                        .semantic
+                        .with_settings(settings)
+                        .unwrap()
+                        .with_items(items)
+                        .unwrap();
+                }
+                let original = request.clone();
+                let projection = target.encode_request(&request, &replay).unwrap();
+                let tool = if inline {
+                    &projection.value["messages"][1]["content"][0]["tool"]["definition"]
+                } else {
+                    &projection.value["tools"][0]
+                };
+                assert_eq!(tool["strict"], strict, "{schema}, inline={inline}");
+                assert_eq!(tool["input_schema"], schema);
+                assert_eq!(projection.evidence.rule_names(), rules);
+                assert_eq!(request, original);
+                if strict {
+                    let mut without_strict = target.clone();
+                    without_strict.semantics.strict_tools = false;
+                    let projection = without_strict.encode_request(&request, &replay).unwrap();
+                    let tool = if inline {
+                        &projection.value["messages"][1]["content"][0]["tool"]["definition"]
+                    } else {
+                        &projection.value["tools"][0]
+                    };
+                    assert_eq!(tool["strict"], false);
+                    assert_eq!(tool["input_schema"], schema);
+                    assert_eq!(projection.evidence.rule_names(), [loss]);
+                }
+            }
+        }
+        let schema = json!({"type":"object","properties":{},"additionalProperties":false});
+        for n in [20, 21] {
+            let tools: Vec<_> = (0..n)
+                .map(|i| {
+                    json!({
+                        "type":"function","name":format!("t{i}"),"parameters":schema
+                    })
+                })
+                .collect();
+            let request = source
+                .decode_client_request(
+                    json!({
+                        "model":"m","max_output_tokens":64,"input":"go","tools":tools
+                    })
+                    .to_string()
+                    .as_bytes(),
+                )
+                .unwrap();
+            let original = request.clone();
+            let result = target.encode_request(&request, &replay);
+            if n == 20 {
+                let projection = result.unwrap();
+                assert!(
+                    projection.value["tools"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .all(|t| t["strict"] == true)
+                );
+                assert!(projection.evidence.is_empty());
+            } else {
+                assert!(matches!(
+                    result.unwrap_err().cause,
+                    ConversionCause::Codec(morphiecore::protocol::CodecError::Unsupported(
+                        morphiecore::protocol::failure::CarrierReason::Schema
+                    ))
+                ));
+            }
+            assert_eq!(request, original);
+        }
+        // The output schema reserves the same native union budget as tools.
+        let names: Vec<_> = (0..16).map(|n| format!("u{n}")).collect();
+        let properties: serde_json::Map<_, _> = names
+            .iter()
+            .map(|name| (name.clone(), json!({"type":["string","null"]})))
+            .collect();
+        let request = source
+            .decode_client_request(
+                json!({
+                    "model":"m","max_output_tokens":64,"input":"go",
+                    "text":{"format":{"type":"json_schema","name":"answer","strict":true,
+                        "schema":{"type":"object","properties":properties,
+                            "required":names,"additionalProperties":false}}},
+                    "tools":[{"type":"function","name":"lookup","parameters":{
+                        "type":"object","properties":{"x":{"type":["string","null"]}},
+                        "required":["x"],"additionalProperties":false}}]
+                })
+                .to_string()
+                .as_bytes(),
+            )
+            .unwrap();
+        assert!(matches!(
+            target.encode_request(&request, &replay).unwrap_err().cause,
+            ConversionCause::Codec(morphiecore::protocol::CodecError::Unsupported(
+                morphiecore::protocol::failure::CarrierReason::Schema
+            ))
+        ));
+        for (schema, explicit) in [
+            (json!({"type":"object","x-unknown":true}), false),
+            (
+                json!({"type":"object","properties":{"x":{"type":"string","enum":["A"]}},"required":["x"],"additionalProperties":false}),
+                true,
+            ),
+        ] {
+            let expected = if explicit {
+                ConversionCause::Codec(morphiecore::protocol::CodecError::Unsupported(
+                    morphiecore::protocol::failure::CarrierReason::Schema,
+                ))
+            } else {
+                ConversionCause::Representation(RepresentationError::StrictDefault)
+            };
+            let mut body = json!({"model":"m","max_output_tokens":64,"input":"go","tools":[
+                {"type":"function","name":"lookup","parameters":schema}]});
+            if explicit {
+                body["tools"][0]["strict"] = json!(true);
+            }
+            let request = source
+                .decode_client_request(body.to_string().as_bytes())
+                .unwrap();
+            assert_eq!(
+                target.encode_request(&request, &replay).unwrap_err().cause,
+                expected
+            );
+        }
+    }
+
+    #[test]
     fn conditional_tools_resolve_without_rewriting_schemas_or_source() {
         let source = GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None);
         let target = GenerationCodec::new(GenerationApi::Chat, Dialect::Standard, None);

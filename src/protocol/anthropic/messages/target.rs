@@ -248,6 +248,17 @@ impl TargetContract {
             let request = stripped.as_ref().unwrap_or(request);
             self.check_context(request)?;
             request.check_semantic(&self.semantics)?;
+            let conditional = crate::protocol::openai::lowering::strictness::project(
+                &request.task.semantic,
+                |schema| self.semantics.strict_tools && super::strict_schema::admits(schema.root()),
+            )?
+            .map(|(semantic, effects)| {
+                controls.extend(effects);
+                let mut copy = request.clone();
+                copy.task.semantic = semantic;
+                copy
+            });
+            let request = conditional.as_ref().unwrap_or(request);
             let mut carrier_rules = std::collections::BTreeSet::new();
             let carried = super::carriers::project(
                 &request.task.semantic,

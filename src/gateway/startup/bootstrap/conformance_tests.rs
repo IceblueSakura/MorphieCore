@@ -232,17 +232,14 @@ async fn observe(
                 && entry.dialect == crate::protocol::openai::Dialect::Bailian
                 && (entry.provider)().id.as_str() == provider
         });
-    let parameters = (client == Api::Responses
-        && profile != Profile::Text
-        && upstream != Api::Messages)
-        .then(|| {
-            wire::request(client, profile, model, stream)["tools"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .map(|tool| tool["parameters"].clone())
-                .collect::<Vec<_>>()
-        });
+    let parameters = (client == Api::Responses && profile != Profile::Text).then(|| {
+        wire::request(client, profile, model, stream)["tools"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|tool| tool["parameters"].clone())
+            .collect::<Vec<_>>()
+    });
     let calls = Arc::new(Mutex::new(Vec::<Value>::new()));
     let captured = calls.clone();
     let router = Router::new().route(
@@ -282,8 +279,15 @@ async fn observe(
                         } else {
                             tool
                         };
-                        assert_eq!(tool["parameters"], parameters);
-                        if upstream == Api::Chat && !bailian {
+                        assert_eq!(
+                            tool[if upstream == Api::Messages {
+                                "input_schema"
+                            } else {
+                                "parameters"
+                            }],
+                            parameters
+                        );
+                        if upstream == Api::Messages || upstream == Api::Chat && !bailian {
                             assert_eq!(tool["strict"], false);
                         } else {
                             assert!(tool.get("strict").is_none());
@@ -864,15 +868,7 @@ const BASIC_EXPECTATIONS: &[(&[&str], [&[&str]; 4])] = &[
         ],
         [ACCEPT, ACCEPT, ACCEPT, ACCEPT],
     ),
-    (
-        &["openrouter-haiku-chat"],
-        [
-            ACCEPT,
-            ACCEPT,
-            ACCEPT,
-            &["admission.conditional_tool_strictness@0"],
-        ],
-    ),
+    (&["openrouter-haiku-chat"], [ACCEPT, ACCEPT, ACCEPT, ACCEPT]),
 ];
 
 fn basic_expected(binding: &str, client: Api, profile: Profile) -> &'static [&'static str] {
@@ -915,12 +911,9 @@ fn expected(binding: &str, client: Api, profile: Profile) -> &'static [&'static 
             "planning:[\"codec.unsupported.unavailable\"]@0",
         ],
         ("opencode-go-haiku-messages", Chat | Messages, Text | Tools)
-        | ("opencode-go-haiku-messages", Responses, Text) => ACCEPT,
-        ("opencode-go-haiku-messages", Chat, Reasoning) => {
+        | ("opencode-go-haiku-messages", Responses, Text | Tools) => ACCEPT,
+        ("opencode-go-haiku-messages", Chat | Responses, Reasoning) => {
             &["planning:[\"codec.unsupported.unavailable\"]@0"]
-        }
-        ("opencode-go-haiku-messages", Responses, Tools | Reasoning) => {
-            &["admission.conditional_tool_strictness@0"]
         }
         ("opencode-go-haiku-messages", Messages, Reasoning) => {
             &["planning:[\"codec.unsupported.reasoning\"]@0"]

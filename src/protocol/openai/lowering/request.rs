@@ -35,10 +35,9 @@ pub fn lower_request<'a>(
     let mut semantic = std::borrow::Cow::Borrowed(r);
     let mut projection = Vec::new();
     if (profile == GenerationApi::Chat || c.adaptation.rules.bailian_requests)
-        && let Some((projected, effects)) = super::strictness::project(
-            r,
-            c.semantics.strict_tools && !c.adaptation.rules.bailian_requests,
-        )?
+        && let Some((projected, effects)) = super::strictness::project(r, |_| {
+            c.semantics.strict_tools && !c.adaptation.rules.bailian_requests
+        })?
     {
         semantic = std::borrow::Cow::Owned(projected);
         projection.extend(effects);

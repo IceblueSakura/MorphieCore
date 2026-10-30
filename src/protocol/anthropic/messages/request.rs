@@ -57,8 +57,20 @@ impl Profile {
         if phase.is_some() {
             rules.insert(RequestRule::OmitMessagePhase);
         }
-        let mut wire = project(
+        let conditional = crate::protocol::openai::lowering::strictness::project(
             phase.as_ref().unwrap_or(&request),
+            |schema| super::strict_schema::admits(schema.root()),
+        )
+        .map_err(|cause| CodecError::Representation {
+            boundary: crate::protocol::conversion::generation::ConversionBoundary::RequestProject,
+            cause,
+        })?;
+        let mut wire = project(
+            conditional
+                .as_ref()
+                .map(|(semantic, _)| semantic)
+                .or(phase.as_ref())
+                .unwrap_or(&request),
             &fidelity,
             target,
             &mut normalized,
@@ -79,6 +91,11 @@ impl Profile {
         let value = self.encode_request(&wire)?;
         let mut evidence: crate::protocol::conversion::generation::EvidenceDelta =
             rules.into_iter().map(|r| r.effect(&request)).collect();
+        if let Some((_, effects)) = conditional {
+            for effect in effects {
+                evidence.push(effect);
+            }
+        }
         for owner in normalized {
             evidence.push(
                 crate::protocol::conversion::generation::Effect::new(
