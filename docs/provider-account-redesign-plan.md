@@ -31,6 +31,7 @@ This document records the user's requirements, the user's decisions and the reco
 7. **Maintainability and simplicity.** Prefer one authoritative owner per fact, deterministic behavior and a small configuration surface. Reference projects supply mechanisms and counterexamples, not a feature checklist.
 8. **No implicit switches beyond API keys.** By default, automatic switching between OAuth registrations of any profile (SIWC, Grok and others), fallback between OAuth and API-key accounts, and fallback across Providers are disabled; the operator can enable each explicitly. Only switching between API-key accounts of one Provider follows recovery policy without an opt-in. MorphieCore does not manage billing, and its usage accounting counts tokens only (user decisions, 2026-10-30).
 9. **Requirements before rewrite.** The current implementation deviates substantially from these requirements. Complete the requirements first, then rewrite account binding and execution policy instead of incrementally reshaping the current path (user decision, 2026-10-30).
+10. **Operator-readable CLI.** Provisioning, validation and explanation commands print human-readable output by default and offer structured JSON as an option (user decision, 2026-10-30).
 
 An account name identifies a configured execution identity. Two keys are not necessarily independent billing accounts or rate-limit domains. Equal model capabilities also do not establish shared caches, interchangeable OAuth grants or portable private replay state.
 
@@ -89,7 +90,8 @@ This is a conceptual model, not a configuration schema or an implemented CLI.
 
 ### Ownership and defaults
 
-- Keep secrets in the existing managed credential store. Account configuration references them; it does not duplicate tokens, expiry or verified principal metadata.
+- Keep secrets in the existing managed credential store under `$HOME/.local/share/morphiecore/credentials`. Account configuration references them by alias; it does not duplicate tokens, expiry or verified principal metadata.
+- Keep account lists and Provider/route policy with the other private configuration under `$HOME/.local/share/morphiecore`, outside the credential store. Each Provider lists its ordered named accounts; explicit pools are removed.
 - Use stable configured account names, not file ordering, startup vector indexes or token values, as operator identities. Credential provenance still owns the security identity.
 - Let declaration order select among new, unbound conversations. Do not add separate priority, weight and ordering fields.
 - By default, the eligible set is the Provider's enabled accounts, narrowed by the [switching boundaries](#switching-boundaries). Defer named sub-pools and account subsets until a concrete isolation requirement exists.
@@ -111,9 +113,15 @@ Validate each account's credential kind against the kinds its Provider declares.
 
 ### OAuth registration identity
 
-Several OAuth registrations of one profile may belong to the same upstream user; SIWC documents that email may be identical across registrations and that usage limits are per ChatGPT user across apps. Provenance currently includes the issued client, so two registrations of one user look like independent accounts. Once OAuth switching is enabled, switching between them cannot escape a shared limit. Recommended: reject two registrations with the same verified subject under one Provider.
+Several OAuth registrations of one profile may belong to the same upstream user; SIWC documents that email may be identical across registrations and that usage limits are per ChatGPT user across apps. Provenance currently includes the issued client, so two registrations of one user look like independent accounts. Once OAuth switching is enabled, switching between them cannot escape a shared limit. Configuration validation therefore rejects two registrations with the same verified subject under one Provider.
 
-Exact field names, file ownership and provisioning commands remain open. Replacing the pool schema follows the project's current-schema-only rule: no silent migration, historical aliases or parallel legacy execution path. Reuse existing credential records where compatible; an incompatible storage change needs an explicit operator procedure.
+Exact file and field names are chosen with the rewrite. Replacing the pool schema follows the project's current-schema-only rule: no silent migration, historical aliases or parallel legacy execution path. Reuse existing credential records where compatible.
+
+### Configuration transition and CLI output
+
+The rewrite is a breaking configuration change. Operators re-provision accounts through the CLI following a documented procedure; startup rejects the old pool schema with an error that names the procedure.
+
+Provisioning, validation and explanation commands print concise human-readable output by default: what was checked or changed, each problem with its account or Provider name, and the next step. An explicit JSON option prints one structured document with stable field names and the same redaction. Neither form prints secret values or credential locators, and errors keep a non-zero exit status in both. The current `morphiecore-auth` prints JSON by default; commands the rewrite touches follow the new rule.
 
 ## Proposed execution policy
 
@@ -275,6 +283,10 @@ Prefer current project helpers, Tokio timers and the existing OAuth/HTTP depende
 | Sequencing | 2026-10-30 | Complete requirements first; rewrite account binding and execution policy afterwards |
 | Switching defaults | 2026-10-30 | OAuth registration switching for every profile, OAuth/API-key fallback and cross-Provider fallback are disabled by default and enabled explicitly; API-key switching within a Provider follows recovery policy; MorphieCore manages no billing and counts tokens only |
 | Endpoint override | 2026-10-30 | API-key accounts may override `base_url`; OAuth accounts may not |
+| Account configuration | 2026-10-30 | Ordered named accounts per Provider reference the credential store by alias; explicit pools are removed; credentials stay under `$HOME/.local/share/morphiecore/credentials` and account/policy configuration stays outside the store |
+| Opt-in granularity | 2026-10-30 | Two Provider flags (OAuth registration switching, OAuth/API-key fallback) and one route flag (cross-Provider fallback) |
+| OAuth subject uniqueness | 2026-10-30 | Reject duplicate verified subjects under one Provider |
+| Configuration transition | 2026-10-30 | Breaking change with documented CLI re-provisioning and no automatic migration; CLI output is human-readable by default with an optional JSON form |
 
 ### Open
 
@@ -282,10 +294,7 @@ A recommendation below is not a default configuration or an accepted architectur
 
 | Decision | Recommendation or alternatives to resolve |
 |---|---|
-| Account/configuration ownership | Unified ordered named accounts with managed credential references; confirm file/schema ownership, stable naming and replacement of explicit pools |
-| Opt-in granularity | Recommended: two Provider flags (OAuth switching, cross-kind fallback) and one route flag (cross-Provider fallback) |
 | Unrepresentable candidates | Whether pre-dispatch skipping of candidates that cannot represent a request still selects a later Provider while cross-Provider fallback is off. Recommended: keep it, since nothing was dispatched, and report the selection |
-| OAuth subject uniqueness | Recommended: reject duplicate verified subjects under one Provider; alternative is a shared quota domain |
 | Activation scope | Generation first; separately decide changes to diagnostics and frozen standalone tasks, and qualify each newly activated authentication channel |
 | Recovery table | Confirm status/error classification, counts, delays, exhausted-policy action and failure scope, especially 401, 403, 419, ambiguous 429 and post-dispatch timeout |
 | Accounting | Confirm additional-retry terminology, cumulative per-class counting, local resolution/refresh budget accounting, total attempt limit and maximum wait |
@@ -295,7 +304,7 @@ A recommendation below is not a default configuration or an accepted architectur
 | Affinity | Confirm the success rule for failed, incomplete and tool turns, and carrier-less behavior |
 | Renewal schedule | Recommended: validated pure polling; choose global defaults and failure-backoff bounds |
 | Persistence and operations | Select whether/when to persist affinity, its failure policy, and the minimum CLI/diagnostic surfaces |
-| Rollout | Select slices, breaking configuration changes and operator provisioning steps; runtime mutation remains optional |
+| Rollout | Select slices; runtime mutation remains optional |
 
 After approval, record accepted contracts in Architecture and scheduled slices/gates in Roadmap, linking rather than duplicating them here. Update Usage only when behavior is implemented.
 
@@ -309,7 +318,8 @@ Extend existing credential, gateway-routing, bootstrap and transport tests; no n
 - **Publication and outcomes:** failures before/after publication, native failed Responses never committing health or affinity, incomplete terminals, strict EOF and distinction between delivery completion and health success.
 - **Affinity and health:** stable account selection, successful replacement without forced failback, concurrent stale completions, scoped cooldown and exclusive recovery probes.
 - **OAuth lifecycle:** startup/due scheduling, rejected polling configurations, unknown expiry, serialized renewal, replaced tokens, failed/cancelled rotation, identity changes and explicit reauthorization.
-- **Configuration/storage:** early incompatibility errors, duplicate/unknown fields, unsafe files, capacity-boundary publication, atomicity and any explicit configuration transition.
+- **Configuration/storage:** early incompatibility errors, rejected old pool schema, duplicate/unknown fields, duplicate OAuth subjects, unsafe files, capacity-boundary publication and atomicity.
+- **CLI output:** human-readable default and JSON option report the same facts, redact equally and share exit status.
 - **Operations:** status queries make no network requests or state changes; diagnostics are bounded/redacted; persisted affinity, if selected, rejects stale identities and respects privacy/resource limits.
 
 Use the [full offline baseline](development.md#offline-baseline) and applicable gates before publishing implementation slices. Official contracts and selected source assets remain the protocol oracle. Run SDK and current installed-Agent acceptance separately for changed paths.
