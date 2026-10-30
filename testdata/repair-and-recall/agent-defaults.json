@@ -657,5 +657,324 @@
   "raw_messages_headers": {
     "anthropic-version": "2023-06-01",
     "anthropic-beta": "interleaved-thinking-2025-05-14"
+  },
+  "resolved_models": {
+    "opencode_go_haiku": {
+      "resolver": "getBuiltinModel",
+      "source_files": {
+        "dist/providers/data/opencode-go.json": "e3cb85944bdbc7fb369204dac3001c683e422ca44f305112e77fb1c5dbfbb79e",
+        "dist/api/anthropic-messages.js": "992daf485e2d479ac1df3886019946d0bf512ef6517ec730ce4c7315f9472ecc"
+      },
+      "model": {
+        "id": "claude-haiku-5-5",
+        "name": "Claude Haiku 5.5",
+        "api": "anthropic-messages",
+        "provider": "opencode-go",
+        "baseUrl": "https://opencode.ai/inference/go",
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ],
+        "cost": {
+          "input": 0.1,
+          "output": 0.5,
+          "cacheRead": 0.01,
+          "cacheWrite": 0.125,
+          "tiers": [
+            {
+              "inputTokensAbove": 100000,
+              "input": 0.5,
+              "output": 2.5,
+              "cacheRead": 0.05,
+              "cacheWrite": 0.625
+            }
+          ]
+        },
+        "contextWindow": 1000000,
+        "maxTokens": 128000,
+        "thinkingLevelMap": {
+          "xhigh": "xhigh",
+          "max": "max"
+        },
+        "compat": {
+          "forceAdaptiveThinking": true,
+          "supportsTemperature": false
+        },
+        "inputLimits": {
+          "images": {
+            "resize": {
+              "maxWidth": 2000,
+              "maxHeight": 2000,
+              "maxBytes": 4718592,
+              "jpegQuality": 80
+            }
+          }
+        },
+        "type": "chat"
+      },
+      "overrides": {
+        "baseUrl": "http://127.0.0.1:1/v1"
+      },
+      "requests": {
+        "text": {
+          "model": "claude-haiku-5-5",
+          "messages": [
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Repair configuration; preserve naïve 🧪 and exact IDs.",
+                  "cache_control": {
+                    "type": "ephemeral"
+                  }
+                }
+              ]
+            }
+          ],
+          "max_tokens": 128000,
+          "stream": true,
+          "system": [
+            {
+              "type": "text",
+              "text": "Repair the synthetic configuration.",
+              "cache_control": {
+                "type": "ephemeral"
+              }
+            }
+          ],
+          "thinking": {
+            "type": "disabled"
+          }
+        },
+        "tools": {
+          "model": "claude-haiku-5-5",
+          "messages": [
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Repair configuration; preserve naïve 🧪 and exact IDs.",
+                  "cache_control": {
+                    "type": "ephemeral"
+                  }
+                }
+              ]
+            }
+          ],
+          "max_tokens": 128000,
+          "stream": true,
+          "system": [
+            {
+              "type": "text",
+              "text": "Repair the synthetic configuration.",
+              "cache_control": {
+                "type": "ephemeral"
+              }
+            }
+          ],
+          "tools": [
+            {
+              "name": "read",
+              "description": "Inspect or repair a synthetic configuration.",
+              "eager_input_streaming": true,
+              "input_schema": {
+                "type": "object",
+                "properties": {
+                  "path": {
+                    "type": "string"
+                  },
+                  "serial": {
+                    "type": "integer"
+                  },
+                  "label": {
+                    "type": "string"
+                  }
+                },
+                "required": []
+              }
+            },
+            {
+              "name": "locate",
+              "description": "Inspect or repair a synthetic configuration.",
+              "eager_input_streaming": true,
+              "input_schema": {
+                "type": "object",
+                "properties": {
+                  "glob": {
+                    "type": "string"
+                  }
+                },
+                "required": []
+              }
+            },
+            {
+              "name": "patch",
+              "description": "Inspect or repair a synthetic configuration.",
+              "eager_input_streaming": true,
+              "input_schema": {
+                "type": "object",
+                "properties": {
+                  "path": {
+                    "type": "string"
+                  },
+                  "value": {
+                    "type": "string"
+                  },
+                  "revision": {
+                    "type": "integer"
+                  }
+                },
+                "required": []
+              }
+            },
+            {
+              "name": "verify",
+              "description": "Inspect or repair a synthetic configuration.",
+              "eager_input_streaming": true,
+              "input_schema": {
+                "type": "object",
+                "properties": {
+                  "suite": {
+                    "type": "string"
+                  }
+                },
+                "required": []
+              },
+              "cache_control": {
+                "type": "ephemeral"
+              }
+            }
+          ],
+          "thinking": {
+            "type": "disabled"
+          }
+        },
+        "reasoning": {
+          "model": "claude-haiku-5-5",
+          "messages": [
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Repair configuration; preserve naïve 🧪 and exact IDs.",
+                  "cache_control": {
+                    "type": "ephemeral"
+                  }
+                }
+              ]
+            }
+          ],
+          "max_tokens": 128000,
+          "stream": true,
+          "system": [
+            {
+              "type": "text",
+              "text": "Repair the synthetic configuration.",
+              "cache_control": {
+                "type": "ephemeral"
+              }
+            }
+          ],
+          "tools": [
+            {
+              "name": "read",
+              "description": "Inspect or repair a synthetic configuration.",
+              "eager_input_streaming": true,
+              "input_schema": {
+                "type": "object",
+                "properties": {
+                  "path": {
+                    "type": "string"
+                  },
+                  "serial": {
+                    "type": "integer"
+                  },
+                  "label": {
+                    "type": "string"
+                  }
+                },
+                "required": []
+              }
+            },
+            {
+              "name": "locate",
+              "description": "Inspect or repair a synthetic configuration.",
+              "eager_input_streaming": true,
+              "input_schema": {
+                "type": "object",
+                "properties": {
+                  "glob": {
+                    "type": "string"
+                  }
+                },
+                "required": []
+              }
+            },
+            {
+              "name": "patch",
+              "description": "Inspect or repair a synthetic configuration.",
+              "eager_input_streaming": true,
+              "input_schema": {
+                "type": "object",
+                "properties": {
+                  "path": {
+                    "type": "string"
+                  },
+                  "value": {
+                    "type": "string"
+                  },
+                  "revision": {
+                    "type": "integer"
+                  }
+                },
+                "required": []
+              }
+            },
+            {
+              "name": "verify",
+              "description": "Inspect or repair a synthetic configuration.",
+              "eager_input_streaming": true,
+              "input_schema": {
+                "type": "object",
+                "properties": {
+                  "suite": {
+                    "type": "string"
+                  }
+                },
+                "required": []
+              },
+              "cache_control": {
+                "type": "ephemeral"
+              }
+            }
+          ],
+          "thinking": {
+            "type": "adaptive",
+            "display": "summarized"
+          },
+          "output_config": {
+            "effort": "medium"
+          }
+        }
+      },
+      "headers": {
+        "text": {
+          "anthropic-version": "2023-06-01",
+          "anthropic-beta": null
+        },
+        "tools": {
+          "anthropic-version": "2023-06-01",
+          "anthropic-beta": null
+        },
+        "reasoning": {
+          "anthropic-version": "2023-06-01",
+          "anthropic-beta": null
+        }
+      }
+    }
   }
 }

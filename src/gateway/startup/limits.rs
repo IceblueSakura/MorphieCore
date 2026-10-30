@@ -2,6 +2,9 @@
 use std::time::Duration;
 #[derive(Clone, Debug)]
 pub struct Limits {
+    /// Synthetic intake experiment only; never exposed through configuration.
+    #[cfg(test)]
+    pub(crate) force_upstream_stream: bool,
     /// Bounded text delivery batching; None explicitly selects immediate encoding.
     pub delta_coalescing: Option<crate::execution::delivery::DeltaCoalescing>,
     /// Disposable implicit affinity only; explicit grouping remains available when disabled.
@@ -29,6 +32,8 @@ pub struct Limits {
 impl Default for Limits {
     fn default() -> Self {
         Self {
+            #[cfg(test)]
+            force_upstream_stream: false,
             delta_coalescing: Self::default_delta_coalescing(),
             implicit_cache_affinity: true,
             request_bytes: 32 << 20,

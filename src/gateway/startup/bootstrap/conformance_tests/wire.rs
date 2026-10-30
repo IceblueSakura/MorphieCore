@@ -1,7 +1,6 @@
 //! Source-derived pi 1.4.0 shapes; native outputs reuse the repair-and-recall corpus.
-//! pi-ai dist/api/{openai-completions,openai-responses-shared,anthropic-messages}.js
-//! supplies defaults/replay, independently of MorphieCore codecs. Synthetic provider,
-//! no compat overrides; nonreasoning controls differ explicitly from medium reasoning.
+//! pi-ai serializers supply defaults/replay independently of MorphieCore codecs.
+//! Bare API forms remain controls beside the resolved Go/Haiku built-in record.
 use serde_json::{Value, json};
 #[path = "../../../../../tests/support/messages_stream.rs"]
 mod messages_stream;
@@ -71,6 +70,19 @@ pub(super) fn raw_messages_headers() -> (String, String) {
     )
 }
 
+pub(super) fn resolved_messages_headers(profile: Profile) -> Value {
+    let corpus: Value = serde_json::from_str(include_str!(
+        "../../../../../testdata/repair-and-recall/agent-defaults.json"
+    ))
+    .unwrap();
+    let profile = match profile {
+        Profile::Text => "text",
+        Profile::Tools => "tools",
+        Profile::Reasoning => "reasoning",
+    };
+    corpus["resolved_models"]["opencode_go_haiku"]["headers"][profile].clone()
+}
+
 pub(super) fn request(api: Api, profile: Profile, model: &str, stream: bool) -> Value {
     let corpus: Value = serde_json::from_str(include_str!(
         "../../../../../testdata/repair-and-recall/agent-defaults.json"
@@ -81,7 +93,12 @@ pub(super) fn request(api: Api, profile: Profile, model: &str, stream: bool) -> 
         Profile::Tools => "tools",
         Profile::Reasoning => "reasoning",
     };
-    let mut body = corpus["requests"][api.name()][profile].clone();
+    let source = if api == Api::Messages && model == "claude-haiku-5-5" {
+        &corpus["resolved_models"]["opencode_go_haiku"]["requests"]
+    } else {
+        &corpus["requests"][api.name()]
+    };
+    let mut body = source[profile].clone();
     assert!(body.is_object());
     body["model"] = json!(model);
     body["stream"] = json!(stream);
@@ -148,21 +165,20 @@ fn snapshot(api: Api, profile: Profile, turn: usize) -> Value {
     match api {
         Api::Chat => {
             value["choices"][0]["logprobs"] = Value::Null;
+            value["service_tier"] = json!("default");
             if profile == Profile::Reasoning {
                 value["choices"][0]["message"]["reasoning_content"] = json!("Plan 🧪");
             }
         }
         Api::Responses => {
             // Required-nullable envelope members are present even without observations.
-            for key in [
-                "access_programs",
-                "instructions",
-                "metadata",
-                "temperature",
-                "top_p",
-            ] {
+            for key in ["access_programs", "instructions", "temperature", "top_p"] {
                 value[key] = Value::Null;
             }
+            value["service_tier"] = json!("default");
+            value["metadata"] = json!({"synthetic":"echo"});
+            value["background"] = json!(false);
+            value["store"] = json!(false);
             value["parallel_tool_calls"] = json!(true);
             value["tool_choice"] = json!("auto");
             value["tools"] = if profile == Profile::Text {
@@ -210,6 +226,17 @@ pub(super) fn upstream(
     let incomplete = matches!(control, super::Control::Incomplete { .. }) && turn == 0;
     let reasoning = control.reasoning();
     let mut value = snapshot(api, profile, turn);
+    if control == super::Control::JsonOnlyReports {
+        assert_eq!(api, Api::Chat);
+        // Pinned OpenAI full responses have these fields; Chat chunks do not.
+        value["metadata"] = json!({"synthetic":"json-only"});
+        value["choices"][0]["message"]["annotations"] = json!([{
+            "type":"url_citation","url_citation":{
+                "start_index":0,"end_index":1,"title":"Synthetic source",
+                "url":"https://example.invalid/source"
+            }
+        }]);
+    }
     if matches!(
         reasoning,
         Some(ReasoningShape::Summary | ReasoningShape::Opaque)
@@ -300,15 +327,16 @@ pub(super) fn upstream(
         Api::Chat => {
             let message = &value["choices"][0]["message"];
             let mut delta = message.clone();
+            delta.as_object_mut().unwrap().remove("annotations");
             if let Some(calls) = delta.get_mut("tool_calls").and_then(Value::as_array_mut) {
                 for (i, call) in calls.iter_mut().enumerate() {
                     call["index"] = json!(i);
                 }
             }
-            let chunk = |delta: Value, finish: Value| json!({"id":value["id"],"object":"chat.completion.chunk","created":1,"model":value["model"],"choices":[{"index":0,"delta":delta,"finish_reason":finish,"logprobs":null}],"usage":null});
+            let chunk = |delta: Value, finish: Value| json!({"id":value["id"],"object":"chat.completion.chunk","created":1,"model":value["model"],"service_tier":value["service_tier"],"choices":[{"index":0,"delta":delta,"finish_reason":finish,"logprobs":null}],"usage":null});
             let terminal = chunk(json!({}), value["choices"][0]["finish_reason"].clone());
             // Standard include_usage supplies one nonnull report, after the finish chunk.
-            let usage = json!({"id":value["id"],"object":"chat.completion.chunk","created":1,"model":value["model"],"choices":[],"usage":value["usage"]});
+            let usage = json!({"id":value["id"],"object":"chat.completion.chunk","created":1,"model":value["model"],"service_tier":value["service_tier"],"choices":[],"usage":value["usage"]});
             format!(
                 "data: {}\n\ndata: {terminal}\n\ndata: {usage}\n\ndata: [DONE]\n\n",
                 chunk(delta, Value::Null)
@@ -529,11 +557,19 @@ pub(super) fn delivered(api: Api, bytes: &[u8], stream: bool) -> Value {
             assert_eq!(data.iter().filter(|s| **s == "[DONE]").count(), 1);
             assert_eq!(data.last(), Some(&"[DONE]"));
             let mut message = json!({"role":"assistant","content":""});
+            let mut reports = serde_json::Map::new();
             let mut calls = std::collections::BTreeMap::<u64, Value>::new();
             let mut terminal = None;
             let mut usage = Value::Null;
             for data in data.into_iter().filter(|s| *s != "[DONE]") {
                 let event: Value = serde_json::from_str(data).unwrap();
+                for key in ["service_tier", "system_fingerprint", "metadata"] {
+                    if let Some(value) = event.get(key)
+                        && let Some(previous) = reports.insert(key.into(), value.clone())
+                    {
+                        assert_eq!(previous, *value, "consistent Chat report");
+                    }
+                }
                 if !event["usage"].is_null() {
                     assert!(usage.is_null(), "one final Chat usage observation");
                     usage = event["usage"].clone();
@@ -572,7 +608,9 @@ pub(super) fn delivered(api: Api, bytes: &[u8], stream: bool) -> Value {
             if !calls.is_empty() {
                 message["tool_calls"] = json!(calls.into_values().collect::<Vec<_>>());
             }
-            json!({"choices":[{"message":message,"finish_reason":terminal.unwrap()}],"usage":usage})
+            let mut value = json!({"choices":[{"message":message,"finish_reason":terminal.unwrap()}],"usage":usage});
+            value.as_object_mut().unwrap().extend(reports);
+            value
         }
     }
 }
@@ -595,6 +633,19 @@ pub(super) fn delivery_view(api: Api, value: &Value) -> Value {
             "usage":value["usage"]
         }),
     };
+    // Keep absence, null and concrete report values distinct in the comparison.
+    view["reports"] = Value::Object(
+        [
+            "service_tier",
+            "system_fingerprint",
+            "metadata",
+            "background",
+            "store",
+        ]
+        .into_iter()
+        .filter_map(|key| value.get(key).map(|value| (key.into(), value.clone())))
+        .collect(),
+    );
     match api {
         Api::Chat => {
             let message = view["message"].as_object_mut().unwrap();
@@ -635,6 +686,25 @@ pub(super) fn delivery_view(api: Api, value: &Value) -> Value {
         }
     }
     view
+}
+
+/// Compare the entire JSON-client envelope, including all settings and reports.
+/// Reuse only the documented identity/seal and Chat-shell normalizations above.
+pub(super) fn intake_view(api: Api, value: &Value) -> Value {
+    let semantic = delivery_view(api, value);
+    let mut full = value.clone();
+    match api {
+        Api::Chat => full["choices"][0]["message"] = semantic["message"].clone(),
+        Api::Responses => full["output"] = semantic["output"].clone(),
+        Api::Messages => full["content"] = semantic["content"].clone(),
+    }
+    for key in ["id", "created", "created_at", "completed_at", "morphiecore"] {
+        full.as_object_mut().unwrap().remove(key);
+    }
+    if full["previous_response_id"].is_string() {
+        full["previous_response_id"] = json!("<previous-response>");
+    }
+    full
 }
 
 pub(super) fn assert_delivery(

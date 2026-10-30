@@ -74,6 +74,13 @@ impl std::ops::Deref for Fixture {
     }
 }
 impl Fixture {
+    pub(super) fn force_upstream_stream(&mut self) {
+        std::sync::Arc::get_mut(&mut self.boot.gateway.state)
+            .expect("unshared fixture runtime")
+            .limits
+            .force_upstream_stream = true;
+    }
+
     pub(super) fn directory(&self) -> &Path {
         self._directory.path()
     }

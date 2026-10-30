@@ -23,6 +23,7 @@ Reviewed on **2026-10-27** at **`1b4f828`**, after the five-slice request repair
 - [Follow-up source and feasibility review (2026-10-28)](#follow-up-source-and-feasibility-review-2026-10-28)
 - [Agent-default production probe (2026-10-28)](#agent-default-production-probe-2026-10-28)
 - [Conversion-ladder inventory (2026-10-30)](#conversion-ladder-inventory-2026-10-30)
+- [Production corpus and intake experiment (2026-10-30)](#production-corpus-and-intake-experiment-2026-10-30)
 
 ## Scope and evidence
 
@@ -503,3 +504,28 @@ Code-traced at **`61d478d`** by three read-only sweeps (client intake, planning/
 | R4 | [Replay opening](../../src/execution/replay.rs); Chat reasoning details intake | Unsealed or foreign reasoning is invalid | L3 visible-history transfer |
 
 Invariant sites confirmed outside the ladder: replay origin/format checks, body and total-size bounds, streaming capability, call-ID and contiguous-owner validation, incomplete-input execution guards, explicit `read_history`, published-usage retraction, trust headers and client file IDs.
+
+## Production corpus and intake experiment (2026-10-30)
+
+R0 extends the [production-construction gate](../../src/gateway/startup/bootstrap/conformance_tests.rs) without changing production conversion or transport selection. The [capture script](../../tests/clients/pi_default_shapes.mjs) still reproduces the original nine bare API-form bodies, and adds three bodies from installed pi-ai **1.4.0**'s `getBuiltinModel("opencode-go", "claude-haiku-5-5")`. The complete public model record, source-file digests and raw version/beta headers live beside those bodies in the [corpus](../../testdata/repair-and-recall/agent-defaults.json). Only the built-in origin is replaced; fetch is intercepted, synthetic authentication/session values and bounded options are supplied, and no personal state or network is used.
+
+The resolved record enables adaptive thinking, disables temperature and retains its 128,000-token maximum. Medium reasoning serializes as `thinking:{type:"adaptive",display:"summarized"}` plus `output_config:{effort:"medium"}`. With the documented header opt-ins, both native gateway turns now pass in JSON and SSE, including actual signed/redacted-history replay. The bare manual-budget body still rejects before dispatch. The raw resolved `2023-06-01` header still rejects before dispatch; R3 owns that blocker. This corrects the earlier bare-model characterization, not the all-protocol default-Agent closure claim.
+
+Independent fixture envelopes now carry OpenAI `service_tier:"default"` and Responses `metadata:{"synthetic":"echo"}`, `background:false`, and `store:false`. These are official non-null observations, not client request overrides. They expose existing delivery guards: Responses → Chat SSE fails on metadata even where Chat JSON succeeds; cache-free Messages controls reach service/hint rejection after dispatch. Their exact current codes remain asserted, with acceptance as the target and R2 as owner.
+
+### Intake experiment and source limits
+
+Every JSON-client observation in the gate runs twice: current upstream selection, then a per-fixture `cfg(test)` streaming override. The clone passed to upstream preparation changes transport and requests Chat usage; the downstream request, JSON renderer, production loader, planning, credential binding, transport and decoder remain real. One candidate/attempt, at most two upstream calls per observation, 1 MiB collected output and five-second waits bound the experiment. It does not qualify changed streaming-only planning or any live Provider.
+
+The comparison retains the entire JSON-client envelope, including settings/reports and absence/null distinctions, plus source usage, reasoning reports, task outcome, EOF, delivery completion and failures. It normalizes request-owned IDs/timestamps, issuer-bound seals, the existing empty/null Chat shell and optional `morphiecore` diagnostics. The current JSON/SSE delivery comparison remains separate and explicitly asserts the newly exposed Chat SSE metadata divergence.
+
+| Binding membership | Observed result | Consequence |
+|---|---|---|
+| All 40 reviewed OpenAI API-key endpoints, four subscriptions and native Go/Haiku Messages (45 endpoints; exact catalog coverage enforced by the gate) | Current versus streaming upstream observations agree for the existing default/control corpus. Output distinguishes accepted turns, pre-dispatch blockers, continuation pre-dispatch blockers and post-dispatch blockers per binding/client/profile | Reachable corpus agreement supports R2 investigation; rejected lanes are not successful decoder qualification |
+| 24 admitted Chat → Chat text bindings, enumerated by the gate's reviewed Chat membership | An additional independent control preserves concrete JSON metadata and URL annotations on current intake and loses exactly those two facts on standard chunk intake; all other full-envelope/accounting/terminal facts agree | Named Chat JSON exception; unconditional decoder deletion is blocked |
+| `tokenplan-max-chat`, `aliyun-tokenplan-cn-chat` | The same Chat-client fact control is blocked before dispatch by unassessed history; current and forced intake have the same rejection | Keep the Chat JSON exception; requalify after R4 rather than count this as field parity |
+| `google-gemini-3.8-flash-generate-content`, `google-gemini-3.8-flash-interactions` | Catalog contracts already force streaming and their adapters do not accept upstream JSON; checked separately in the coverage guard | No JSON decoder to compare or delete; existing Google SDK/session checks retain their own evidence |
+
+The Chat limitation is independently defined by the pinned OpenAI Python **3.37.0** [full response](https://github.com/openai/openai-python/blob/e8a0fd28bbdc1699c97ff0f602b1af3dd378382d/src/openai/types/chat/chat_completion.py), [message](https://github.com/openai/openai-python/blob/e8a0fd28bbdc1699c97ff0f602b1af3dd378382d/src/openai/types/chat/chat_completion_message.py) and [chunk](https://github.com/openai/openai-python/blob/e8a0fd28bbdc1699c97ff0f602b1af3dd378382d/src/openai/types/chat/chat_completion_chunk.py) schemas, rechecked against the installed locked SDK. Metadata and URL annotations have full-response carriers but no standard chunk carriers. Service tier and system fingerprint do have chunk carriers; the corrected synthetic wire retains service tier instead of manufacturing another gap. Chat custom-tool SSE remains its separately retained carrier restriction.
+
+Responses lifecycle events contain complete [Response objects](https://github.com/openai/openai-python/blob/e8a0fd28bbdc1699c97ff0f602b1af3dd378382d/src/openai/types/responses/response_completed_event.py); the pinned Vercel JSON/event pair independently carries settings, metadata, storage and usage. Messages start events contain a [Message](https://github.com/anthropics/anthropic-sdk-python/blob/9313f13a5a643ceed10fafba6785eab8e04b6e6e/src/anthropic/types/raw_message_start_event.py), with terminal reports carried by deltas. No analogous JSON-only blocker was found in this bounded corpus. R2 must retain the named Chat exception and the current decoders until its selected delivery/intake migration lands.

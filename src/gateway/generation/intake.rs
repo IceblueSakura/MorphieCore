@@ -481,6 +481,8 @@ pub(in crate::gateway) async fn produce_candidate(
     let is_json = media.type_() == mime::APPLICATION
         && (media.subtype() == mime::JSON || media.suffix() == Some(mime::JSON));
     let upstream_stream = stream || candidate.endpoint.representation.forced_stream();
+    #[cfg(test)]
+    let upstream_stream = upstream_stream || limits.force_upstream_stream;
     if (upstream_stream && !is_stream) || (!upstream_stream && !is_json) {
         return Err(not_api());
     }

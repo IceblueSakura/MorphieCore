@@ -104,11 +104,30 @@ async fn send_attempt<'r>(
             }
         }
     }
+    // Select upstream transport only; Sent retains the original client delivery intent.
+    #[cfg(test)]
+    let intake_request = {
+        let mut intake = local.clone();
+        if runtime.limits.force_upstream_stream {
+            use crate::semantic::{context::StreamOptions, value::Presence};
+            let delivery = &mut intake.to_mut().delivery;
+            delivery.stream = Presence::Value(true);
+            delivery.options = Presence::Value(StreamOptions {
+                include_usage: Presence::Value(true),
+                ..Default::default()
+            });
+        }
+        intake
+    };
+    #[cfg(test)]
+    let upstream_request = &intake_request;
+    #[cfg(not(test))]
+    let upstream_request = &local;
     let conversion = crate::execution::attempt::prepare_with_evidence(
         &candidate.endpoint,
         &candidate.provider,
         &secret,
-        &local,
+        upstream_request,
     )
     .map_err(|error| {
         trace.report.failure(
