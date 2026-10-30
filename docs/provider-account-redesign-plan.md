@@ -117,6 +117,8 @@ Validate each account's credential kind against the kinds its Provider declares.
 
 Several OAuth registrations of one profile may belong to the same upstream user; SIWC documents that email may be identical across registrations and that usage limits are per ChatGPT user across apps. Provenance currently includes the issued client, so two registrations of one user look like independent accounts. Once OAuth switching is enabled, switching between them cannot escape a shared limit. Configuration validation therefore rejects two registrations with the same verified subject under one Provider.
 
+Each configured OAuth account has one managed login session. Do not support duplicate or concurrent logins for an already active account, multiple token sets under one account, or another alias for the same verified subject within the Provider. Normal refresh updates that session. Explicit reauthorization after invalidation or login after logout remains supported; it replaces the unusable or ended session rather than adding another one. These are MorphieCore-managed account rules, not a restriction on the user's sessions in unrelated applications.
+
 Exact file and field names are chosen with the rewrite. Replacing the pool schema follows the project's current-schema-only rule: no silent migration, historical aliases or parallel legacy execution path. Reuse existing credential records where compatible.
 
 ### Configuration transition and CLI output
@@ -303,7 +305,7 @@ Persistence is not selected for the first rewrite. Corrupt-file handling, stale 
 
 Keep one global maintenance policy and the existing account locks and lifecycle owner. Each rotation uses its own registered client and latest refresh material; expiry and principal facts come from the credential driver's verified contract.
 
-Recommended: keep pure polling. The due check is local (account lock and store read, no network), so frequent scans are cheap. The selected defaults are a 15 s scan, 90 s timeout and 120 s refresh-ahead window. As operator guidance, allow at least the scan interval plus renewal timeout in the refresh-ahead window, and additional room for queueing or failed-renewal backoff; this is not a startup validation rule or a guarantee of timely renewal. A five-minute scan with a three-minute window can miss expiry: a scan seeing four minutes left skips renewal, and the next scan occurs one minute after expiry. A deadline-aware timer remains an alternative if polling delay becomes a concrete problem.
+Selected baseline: keep pure polling. The due check is local (account lock and store read, no network), so frequent scans are cheap. The selected defaults are a 15 s scan, 90 s timeout and 120 s refresh-ahead window. As operator guidance, allow at least the scan interval plus renewal timeout in the refresh-ahead window, and additional room for queueing or failed-renewal backoff; this is not a startup validation rule or a guarantee of timely renewal. A five-minute scan with a three-minute window can miss expiry: a scan seeing four minutes left skips renewal, and the next scan occurs one minute after expiry. A deadline-aware timer remains an alternative if polling delay becomes a concrete problem.
 
 The maintenance loop must:
 
@@ -316,11 +318,11 @@ The maintenance loop must:
 
 Stated numeric defaults are selected; timing and failed-renewal backoff are configurable. The draft did not specify a failed-renewal backoff curve. Request-triggered renewal follows the accepted execution draft's bounded OAuth recovery. Global timing does not remove Provider-specific token verification or rotation requirements.
 
-### Lifecycle questions for design review
+### Accepted lifecycle baseline
 
-The following recommendations explain the remaining OAuth decisions; they do not select new implementation work.
+The user accepted this OAuth baseline on 2026-10-30. It records design decisions, not implementation authorization.
 
-| Concern | Required distinction and recommended behavior |
+| Concern | Selected behavior |
 |---|---|
 | Registration and identity | Keep the issued client, verified subject/workspace, granted permissions and token set together. An alias is an operator label, not proof of identity. Ordinary token rotation preserves affinity; a changed principal or registration must not inherit private replay state |
 | Concurrent renewal | Background maintenance, request-triggered recovery and CLI maintenance share session-level coordination, including across processes using the same store. Re-read the latest state after acquiring ownership; a late 401 for an old access token should not force another refresh if a replacement already exists |
@@ -328,10 +330,10 @@ The following recommendations explain the remaining OAuth decisions; they do not
 | Uncertain refresh outcome | A timeout after dispatch can mean the server rotated the token but its response was lost. Preserve explicit recovery/quarantine state; do not blindly resend potentially consumed material. Retrying refresh requires evidence that reuse is safe under the profile's contract |
 | Durable replacement | New material must be verified and safely persisted before ordinary borrowing uses it. A crash or storage failure must not silently restore stale tokens or expose unverified replacements |
 | Expiry and scheduling | Unknown expiry stays unknown. Account queueing and failed-renewal delays can exceed the nominal polling interval; frequent scans alone do not guarantee renewal before expiry. Existing code serializes account scans, so this matters as account count grows |
-| Request-time recovery | Use fresh material from the shared owner, then resend only within the configured auth allowance, send ceiling and request deadline, before publication. Decide whether a waiting request may stop waiting while a shared refresh finishes safely; cancellation must not restore possibly consumed material |
+| Request-time recovery | Use fresh material from the shared owner, then resend only within the configured auth allowance, send ceiling and request deadline, before publication. Request cancellation ends its wait and prevents its resend; an already-started shared refresh remains owned by the credential lifecycle and finishes safely within its own timeout. Cancellation must not restore possibly consumed material |
 | Lifecycle versus routing health | Temporary cooldown, expired access, reauthorization-required and persistence-recovery states are different facts. A routing cooldown expiring cannot make invalid credentials usable |
 | Account switching | Refreshing one registration is not switching accounts. OAuth-to-OAuth, OAuth-to-key and cross-Provider moves retain their separate opt-ins; refreshing does not restore exhausted subscription quota |
-| Logout and inspection | Local removal and remote revocation have different outcomes. Surface incomplete revocation honestly; status/explanation remains read-only and redacted, without exposing token values or credential locations |
+| Logout and inspection | Local removal and remote revocation have different outcomes. Surface incomplete revocation honestly; coordinate logout with renewal so a late refresh cannot reactivate a signed-out account. Status/explanation remains read-only and redacted, without exposing token values or credential locations |
 
 The OpenAI [session contract](https://developers.openai.com/siwc/token-sharing-open-source/profiles-and-sessions) and [error guidance](https://developers.openai.com/siwc/token-sharing-open-source/errors-and-recovery), rechecked on 2026-10-30, require session-specific issued clients, serialized rotation with the latest material, and differentiated temporary, unusable-token and invalid-client handling. These are SIWC facts, not a universal refresh contract for every OAuth profile.
 
@@ -390,6 +392,8 @@ Deferred items do not need placeholder interfaces or configuration fields.
 | Defaults and validation | 2026-10-30 | Adopt the draft's stated defaults; defer policy-value range and cross-parameter relationship checks to operator judgment, preserving schema/type and security checks |
 | Pre-dispatch Provider boundary | 2026-10-30 | Cross-Provider fallback off also forbids moving to another Provider when the selected candidate cannot represent the request before dispatch |
 | Replacement scope | 2026-10-30 | Ultimately replace credential/account routing throughout the system; initially integrate Generation only, with other paths deferred rather than permanently separate |
+| OAuth lifecycle baseline | 2026-10-30 | Accept polling, coordinated renewal, differentiated temporary/terminal/uncertain failures, verified durable replacement, lifecycle/health separation and read-only inspection; request cancellation stops waiting and resending without abandoning an already-started shared refresh |
+| Single OAuth login | 2026-10-30 | One managed session per account; no duplicate/concurrent login or duplicate subject aliases within a Provider. Refresh updates the session; explicit reauthorization or login after logout remains supported |
 
 ### Open
 
@@ -399,7 +403,6 @@ A recommendation below is not a default configuration or an accepted architectur
 |---|---|
 | Final design confirmation | Review the complete draft with configurable policy parameters before planning the rewrite |
 | Unspecified parameter values | Only settings for which the draft supplied no numeric value remain unspecified; existing stated defaults are selected |
-| OAuth lifecycle policy | Recommended: pure polling with the selected defaults; refine failed-renewal backoff, shared-refresh waiting/cancellation and profile-specific recovery as described above |
 | Persistence and operations | Select whether/when to persist affinity, its failure policy, and the minimum CLI/diagnostic surfaces |
 | Later rewrite scope | Deferred until design confirmation; runtime mutation remains optional. No slices or rollout schedule are planned now |
 
