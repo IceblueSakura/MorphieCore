@@ -120,6 +120,7 @@ pub(in crate::gateway) fn choose(
     index: &Index,
     candidate: &crate::gateway::BoundCandidate,
     request: &crate::protocol::GenerationRequestEnvelope,
+    prefixes: Option<&[[u8; 32]]>,
     trace: &mut crate::gateway::diagnostics::Trace,
 ) -> Option<Selection> {
     use sha2::{Digest as _, Sha256};
@@ -157,11 +158,11 @@ pub(in crate::gateway) fn choose(
         hash.update(value.as_bytes());
     }
     let scope: Digest = hash.finalize().into();
-    let Some(prefixes) = target_prefixes(candidate, request) else {
+    let Some(prefixes) = prefixes else {
         trace.affinity("unsupported", false, false);
         return None;
     };
-    let (lookup, existing) = index.lookup(scope, &prefixes, Instant::now());
+    let (lookup, existing) = index.lookup(scope, prefixes, Instant::now());
     let mut fresh = Sha256::new();
     fresh.update(b"MorphieCore.cache-group.v1\0");
     fresh.update(scope);
@@ -189,11 +190,20 @@ impl Selection {
         &self,
         candidate: &crate::gateway::BoundCandidate,
         source: &crate::protocol::GenerationRequestEnvelope,
-    ) -> Option<crate::protocol::GenerationRequestEnvelope> {
+    ) -> Option<(
+        crate::protocol::GenerationRequestEnvelope,
+        crate::protocol::conversion::generation::Conversion<
+            crate::execution::attempt::EncodedRequest,
+        >,
+    )> {
         let mut local = source.clone();
         local.inferred_affinity = Some(self.hint);
-        crate::execution::plan::representable(&candidate.endpoint, &local).ok()?;
-        Some(local)
+        let projection =
+            crate::execution::plan::project_candidate(&candidate.endpoint, &local, None).ok()?;
+        let projection =
+            crate::execution::attempt::encode_projection(&candidate.endpoint, &local, projection)
+                .ok()?;
+        Some((local, projection))
     }
     pub(in crate::gateway) fn publish(
         &self,
@@ -229,6 +239,52 @@ mod tests {
     }
     fn trace() -> crate::gateway::diagnostics::Trace {
         crate::gateway::diagnostics::Trace::new(None)
+    }
+
+    fn choose(
+        index: &Index,
+        candidate: &crate::gateway::BoundCandidate,
+        request: &crate::protocol::GenerationRequestEnvelope,
+        trace: &mut crate::gateway::diagnostics::Trace,
+    ) -> Option<Selection> {
+        let projection = crate::execution::attempt::encode_projection(
+            &candidate.endpoint,
+            request,
+            candidate
+                .endpoint
+                .encode_request_with_evidence(request)
+                .unwrap(),
+        )
+        .unwrap();
+        super::choose(
+            index,
+            candidate,
+            request,
+            projection.value.prefixes.as_deref(),
+            trace,
+        )
+    }
+
+    #[test]
+    fn reserved_key_objects_and_numeric_annotations_have_distinct_prefixes() {
+        let gate = crate::gateway::tests::support::gateway(crate::gateway::Limits::default());
+        let entry = &gate.state.entries[&(
+            crate::protocol::ClientProtocol::Chat,
+            "fixture-model".into(),
+        )];
+        let candidate = &entry.candidates[0];
+        let prefixes: Vec<_> = [serde_json::json!({"$serde_json::private::Number":"1"}), serde_json::json!(1)]
+            .into_iter().map(|annotation| {
+                let mut request = entry.client.decode_client_request(
+                    serde_json::json!({"model":"fixture-model","messages":[{"role":"user","content":"hello"}],
+                        "tools":[{"type":"function","function":{"name":"lookup","strict":false,
+                            "parameters":{"type":"object","properties":{},"default":annotation}}}]})
+                        .to_string().as_bytes(),
+                ).unwrap();
+                request.conversation = Some(ConversationContext::independent_request("one").unwrap());
+                choose(&gate.state.affinity, candidate, &request, &mut trace()).unwrap().prefix
+            }).collect();
+        assert_ne!(prefixes[0], prefixes[1]);
     }
 
     #[test]

@@ -233,7 +233,7 @@ async fn activated_members_keep_route_order_with_a_shared_client_carrier() {
             .eligible(&request)
             .unwrap()
             .iter()
-            .map(|c| c.endpoint.id.as_str())
+            .map(|c| c.candidate.endpoint.id.as_str())
             .collect::<Vec<_>>(),
         vec!["fixture-responses", "fixture-chat"]
     );
@@ -311,7 +311,7 @@ fn ingress_unwraps_only_the_candidate_compatible_opaque_and_never_selects_a_targ
         let before = request.clone();
         let candidates = entry.eligible(&request).unwrap();
         assert_eq!(candidates.len(), 1);
-        let candidate = &candidates[0];
+        let candidate = &candidates[0].candidate;
         let secret = candidate.secret.resolve().unwrap().0;
         let prepared =
             crate::execution::prepare(&candidate.endpoint, &candidate.provider, &secret, &request)

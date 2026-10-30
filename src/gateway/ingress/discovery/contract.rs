@@ -374,39 +374,31 @@ pub(super) fn assess(entry: &BoundEntry, modes: &[&str], case: Case) -> Capabili
                 return Capability::new(State::NotAssessed);
             };
             // A blocked plain request must not make every unrelated feature look unavailable.
-            if execution::admit(&entry.public, base).is_err()
-                || execution::plan::representable_for_client(
-                    &candidate.endpoint,
-                    base,
-                    Some(&entry.client),
-                )
-                .is_err()
-            {
+            if execution::admit(&entry.public, base).is_err() {
                 return Capability::new(State::NotAssessed);
             }
+            let Ok(baseline) =
+                execution::plan::project_candidate(&candidate.endpoint, base, Some(&entry.client))
+            else {
+                return Capability::new(State::NotAssessed);
+            };
             let Some(request) = &request else {
                 return Capability::new(State::Unavailable);
             };
-            if execution::admit(&entry.public, request).is_err()
-                || execution::plan::representable_for_client(
-                    &candidate.endpoint,
-                    request,
-                    Some(&entry.client),
-                )
-                .is_err()
-            {
+            if execution::admit(&entry.public, request).is_err() {
                 return Capability::new(State::Unavailable);
             }
-            let Ok(projection) = candidate.endpoint.encode_request_with_evidence(request) else {
-                return Capability::new(State::NotAssessed);
+            let Ok(projection) = execution::plan::project_candidate(
+                &candidate.endpoint,
+                request,
+                Some(&entry.client),
+            ) else {
+                return Capability::new(State::Unavailable);
             };
-            if matches!(case, Case::Activation(_) | Case::Effort(_)) {
-                let Ok(baseline) = candidate.endpoint.encode_request(base) else {
-                    return Capability::new(State::NotAssessed);
-                };
-                if baseline == projection.value {
-                    return Capability::new(State::Unavailable);
-                }
+            if matches!(case, Case::Activation(_) | Case::Effort(_))
+                && baseline.value == projection.value
+            {
+                return Capability::new(State::Unavailable);
             }
             let mut rules = BTreeSet::new();
             for effect in projection.evidence.iter().filter(|e| e.change().is_loss()) {

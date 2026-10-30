@@ -1,7 +1,7 @@
 //! Fixed attempt-chain coordination. HTTP body publication and handoff stay in body.
 use crate::{
     gateway::{
-        ApiError, BoundCandidate, BoundEntry, Limits, Runtime,
+        ApiError, BoundEntry, Limits, Runtime,
         body::{self, Lane, Message, Status},
         diagnostics::{Stage, Trace},
         generation::intake,
@@ -61,12 +61,12 @@ impl Drop for HealthAttempt<'_> {
 pub(in crate::gateway) enum Upstreams {
     Http {
         runtime: Arc<Runtime>,
-        candidates: Vec<Arc<BoundCandidate>>,
+        candidates: Vec<crate::gateway::runtime::PlannedCandidate>,
         history: Option<Box<super::history::Pending>>,
     },
     #[cfg(test)]
     Observed {
-        candidate: Arc<BoundCandidate>,
+        candidate: Arc<crate::gateway::BoundCandidate>,
         response: reqwest::Response,
     },
 }
@@ -81,7 +81,7 @@ struct Sent<'r> {
 /// immutable input; affinity never chooses or advances the credential.
 async fn send_attempt<'r>(
     runtime: &Runtime,
-    candidate: &BoundCandidate,
+    planned: crate::gateway::runtime::PlannedCandidate,
     request: &'r Request,
     ordinal: usize,
     deadline: Instant,
@@ -89,22 +89,39 @@ async fn send_attempt<'r>(
     trace: &mut Trace,
 ) -> Result<Sent<'r>, ApiError> {
     trace.stage(Stage::Prepare);
+    let candidate = planned.candidate.clone();
     let (secret, grant) = candidate.secret.resolve_for_request().await?;
+    let report = trace.report.clone();
+    let failed = |error: crate::execution::AttemptError| {
+        report.failure(
+            Some(crate::protocol::conversion::generation::ConversionBoundary::RequestEncode),
+            &error,
+        );
+        ApiError::invalid()
+    };
+    let mut projection = planned.into_projection(request).map_err(failed)?;
     let mut local = Cow::Borrowed(request);
-    let mut affinity =
-        crate::gateway::routing::prefix_cache::choose(&runtime.affinity, candidate, request, trace);
+    let mut affinity = crate::gateway::routing::prefix_cache::choose(
+        &runtime.affinity,
+        &candidate,
+        request,
+        projection.value.prefixes.as_deref(),
+        trace,
+    );
     if let Some(selection) = &affinity {
-        match selection.project(candidate, request) {
-            Some(projected) => local = Cow::Owned(projected),
+        match selection.project(&candidate, request) {
+            Some((request, converted)) => {
+                local = Cow::Owned(request);
+                projection = converted;
+            }
             None => {
-                // A hint must not turn an otherwise valid request into a
-                // body-budget/admission error. Reuse the original projection.
+                // A hint cannot invalidate the already accepted original body.
                 affinity = None;
                 trace.affinity("unavailable", false, false);
             }
         }
     }
-    // Select upstream transport only; Sent retains the original client delivery intent.
+    // Test-only intake changes invalidate the body, not downstream delivery intent.
     #[cfg(test)]
     let intake_request = {
         let mut intake = local.clone();
@@ -116,6 +133,17 @@ async fn send_attempt<'r>(
                 include_usage: Presence::Value(true),
                 ..Default::default()
             });
+            let converted = candidate
+                .endpoint
+                .encode_request_with_evidence(&intake)
+                .map_err(crate::execution::AttemptError::from)
+                .map_err(failed)?;
+            projection = crate::execution::attempt::encode_projection(
+                &candidate.endpoint,
+                &intake,
+                converted,
+            )
+            .map_err(failed)?;
         }
         intake
     };
@@ -123,19 +151,15 @@ async fn send_attempt<'r>(
     let upstream_request = &intake_request;
     #[cfg(not(test))]
     let upstream_request = &local;
-    let conversion = crate::execution::attempt::prepare_with_evidence(
+    let key_sent = projection.value.cache_key_sent;
+    let conversion = crate::execution::attempt::prepare_retained(
         &candidate.endpoint,
         &candidate.provider,
         &secret,
         upstream_request,
+        projection,
     )
-    .map_err(|error| {
-        trace.report.failure(
-            Some(crate::protocol::conversion::generation::ConversionBoundary::RequestEncode),
-            &error,
-        );
-        ApiError::invalid()
-    })?;
+    .map_err(failed)?;
     let mut prepared = conversion.value;
     if let Some(grant) = grant {
         prepared.safe_headers.extend(
@@ -148,12 +172,6 @@ async fn send_attempt<'r>(
         conversion.evidence,
     );
     trace.report.update(|a| a.prepared = true);
-    let key_sent = serde_json::from_slice::<serde_json::Value>(&prepared.body)
-        .ok()
-        .is_some_and(|v| {
-            v.get("prompt_cache_key")
-                .is_some_and(serde_json::Value::is_string)
-        });
     let session_sent = prepared
         .safe_headers
         .iter()
@@ -216,13 +234,28 @@ pub(in crate::gateway) async fn produce_chain(
         Upstreams::Observed {
             candidate,
             response,
-        } => (None, vec![candidate], Some(response), None),
+        } => (
+            None,
+            vec![crate::gateway::runtime::PlannedCandidate {
+                candidate,
+                projection: None,
+            }],
+            Some(response),
+            None,
+        ),
     };
-    let mut chain = Chain::new(&candidates, &entry.policy);
+    // Routing sees the same bound identities; bodies remain attached to the
+    // records that were ordered above and are consumed once by the attempt.
+    let bound: Vec<_> = candidates
+        .iter()
+        .map(|planned| planned.candidate.clone())
+        .collect();
+    let mut chain = Chain::new(&bound, &entry.policy);
     let mut blocked_delay: Option<u64> = None;
     let mut blocked_health = None;
     let mut pending_error = None;
-    for (index, candidate) in candidates.iter().enumerate() {
+    for (index, planned) in candidates.into_iter().enumerate() {
+        let candidate = &bound[index];
         if let Some(reason) = chain.skip(index) {
             trace.selection_skip(reason);
             continue;
@@ -277,7 +310,7 @@ pub(in crate::gateway) async fn produce_chain(
                 let runtime = runtime.as_ref().ok_or(ApiError::upstream())?;
                 let sent = send_attempt(
                     runtime,
-                    candidate,
+                    planned,
                     request,
                     chain.attempts,
                     attempt_deadline,
@@ -290,12 +323,12 @@ pub(in crate::gateway) async fn produce_chain(
                 sent.response
             };
             // Hold only while another candidate could still answer.
-            let hold = (index + 1..candidates.len()).any(|next| {
+            let hold = (index + 1..bound.len()).any(|next| {
                 chain.could_follow(index, next)
                     && runtime.as_ref().is_none_or(|runtime| {
                         runtime
                             .executors
-                            .unavailable(&candidates[next].health, Instant::now())
+                            .unavailable(&bound[next].health, Instant::now())
                             .is_none()
                     })
             });
@@ -355,7 +388,7 @@ pub(in crate::gateway) async fn produce_chain(
                 let advance = !state.published.load(Ordering::Acquire)
                     && error.recovery.class.is_some()
                     && Instant::now() < deadline
-                    && (index + 1..candidates.len()).any(|next| chain.skip(next).is_none());
+                    && (index + 1..bound.len()).any(|next| chain.skip(next).is_none());
                 if !advance {
                     trace.selection_stop(if state.published.load(Ordering::Acquire) {
                         "published"

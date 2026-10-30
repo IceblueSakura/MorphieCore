@@ -84,6 +84,7 @@ This page defines accepted principles, domain contracts, and architectural decis
 - [Runtime and trust](#runtime-and-trust)
   - [Failover](#failover)
     - [Legal candidates](#legal-candidates)
+    - [Request conversion reuse](#request-conversion-reuse)
     - [Advancement](#advancement)
     - [Health and recovery](#health-and-recovery)
     - [Routing unit](#routing-unit)
@@ -744,6 +745,14 @@ Failover operates on precompiled candidate lists under a cache-affine routing po
 
 Routes compile at startup (up to 64 candidates per model). Ingress requests cannot specify arbitrary candidate targets.
 
+#### Request conversion reuse
+
+Gateway preflight retains credential-free final bytes, protocol-header projections, bounded prefix digests and adaptation evidence together with the actual bound candidate. Executor ordering moves the whole record; preparation consumes it without reconstructing JSON or repeating semantic conversion. Public planning results remain metadata-only, and discovery uses the checked projection directly.
+
+The request-local retention budget is 1 MiB, charging body/header/digest allocation capacity and evidence including spare vector slots. Overflow leaves candidate admission and ordering unchanged: an attempted cache miss recomputes the existing pure conversion. Remaining records belong to the exchange future and are released on completion or cancellation, not retained in shared gateway state.
+
+Preparation still validates the trusted binding, streaming and final body bounds before attaching credentials and account headers. Header-projection errors retain their preparation ordering. An affinity hint changes a typed candidate-local request and carries its new checked conversion; a hint that cannot fit leaves the original accepted body intact. The test-only forced-stream override likewise invalidates its body. No path patches encoded JSON or reparses it through generic `Value` deserialization, which could reinterpret ordinary reserved-key schema objects.
+
 #### Advancement
 
 Advancement to alternative candidates is governed by [`Transition::may_advance`](file:///home/sakura/development/MorphieCore/src/execution/fallback.rs#L40):
@@ -913,6 +922,7 @@ Authoritative log of accepted architectural decisions and their systemic consequ
 | Entry path safety | 2026-10-20 | Concrete unescaped ASCII paths; rejects dot segments and encoded separators |
 | Automatic OAuth renewal | 2026-10-26 | Background renewal under account locks for tokens expiring within 120s |
 | Stable failover routing | 2026-10-20 | Bounded candidate pools, generation-fenced cooling, and single-attempt defaults |
+| Request conversion reuse | 2026-10-30 | [Bounded request-local retention](#request-conversion-reuse) preserves each body's bound identity and evidence; cache misses do not alter admission, and credential attachment stays attempt-local |
 | Ingress Agent authentication | 2026-10-25 | Authenticates Agent keys at ingress, binding stable `agent_id` to context |
 | Reverse-proxy delivery | 2026-10-26 | Proxy terminates TLS and compression; gateway enforces auth and unbuffered SSE |
 

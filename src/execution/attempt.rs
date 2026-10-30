@@ -252,11 +252,107 @@ pub fn prepare_with_rules(
         (projection.value, rules)
     })
 }
+/// Credential-free final wire data. No generic JSON reconstruction is needed
+/// after encoding; reserved schema keys retain their ordinary object semantics.
+pub(crate) struct EncodedRequest {
+    body: Vec<u8>,
+    headers: Result<Vec<(String, String)>, crate::protocol::CodecError>,
+    pub(crate) prefixes: Option<Vec<[u8; 32]>>,
+    pub(crate) cache_key_sent: bool,
+}
+impl EncodedRequest {
+    pub(crate) fn retained_bytes(&self) -> usize {
+        std::mem::size_of_val(self)
+            + self.body.capacity()
+            + self.headers.as_ref().map_or(0, |headers| {
+                headers.capacity() * std::mem::size_of::<(String, String)>()
+                    + headers
+                        .iter()
+                        .map(|(name, value)| name.capacity() + value.capacity())
+                        .sum::<usize>()
+            })
+            + self.prefixes.as_ref().map_or(0, |prefixes| {
+                prefixes.capacity() * std::mem::size_of::<[u8; 32]>()
+            })
+    }
+}
+
 pub(crate) fn prepare_with_evidence(
     endpoint: &Endpoint,
     provider: &ProviderDefinition,
     secret: &SecretMaterial,
     request: &Request,
+) -> Result<crate::protocol::conversion::generation::Conversion<UpstreamRequest>, AttemptError> {
+    prepare_from(endpoint, provider, secret, request, || {
+        encode_projection(
+            endpoint,
+            request,
+            endpoint.encode_request_with_evidence(request)?,
+        )
+    })
+}
+
+/// Consume a request-local, credential-free conversion accepted by preflight.
+pub(crate) fn prepare_retained(
+    endpoint: &Endpoint,
+    provider: &ProviderDefinition,
+    secret: &SecretMaterial,
+    request: &Request,
+    projection: crate::protocol::conversion::generation::Conversion<EncodedRequest>,
+) -> Result<crate::protocol::conversion::generation::Conversion<UpstreamRequest>, AttemptError> {
+    prepare_from(endpoint, provider, secret, request, || Ok(projection))
+}
+
+pub(crate) fn encode_projection(
+    endpoint: &Endpoint,
+    request: &Request,
+    projection: crate::protocol::conversion::generation::Conversion<serde_json::Value>,
+) -> Result<crate::protocol::conversion::generation::Conversion<EncodedRequest>, AttemptError> {
+    use crate::protocol::openai::{GenerationApi, cache_affinity};
+    let value = projection.value;
+    let size = crate::semantic::value::json_size(&value, endpoint.execution.request_body_limit)
+        .map_err(|_| AttemptError::Limit)?;
+    let mut body = Vec::with_capacity(size);
+    serde_json::to_writer(&mut body, &value)
+        .map_err(|_| AttemptError::Protocol(ProtocolReason::BodySerialization))?;
+    let profile = match endpoint.protocol {
+        crate::topology::GenerationProtocol::OpenAiChat => Some(GenerationApi::Chat),
+        crate::topology::GenerationProtocol::OpenAiResponses => Some(GenerationApi::Responses),
+        _ => None,
+    };
+    let prefixes = profile
+        .filter(|_| {
+            request
+                .conversation
+                .as_ref()
+                .is_some_and(|context| !context.is_conversation_scoped())
+                && request.cache_session.is_none()
+        })
+        .and_then(|profile| cache_affinity::prefixes(&value, profile));
+    Ok(crate::protocol::conversion::generation::Conversion {
+        value: EncodedRequest {
+            body,
+            // Preserve preparation's error ordering: endpoint/auth and body
+            // bounds are checked before a deferred header-projection error.
+            headers: endpoint.request_headers(request, &value),
+            prefixes,
+            cache_key_sent: value
+                .get("prompt_cache_key")
+                .is_some_and(serde_json::Value::is_string),
+        },
+        evidence: projection.evidence,
+    })
+}
+
+fn prepare_from(
+    endpoint: &Endpoint,
+    provider: &ProviderDefinition,
+    secret: &SecretMaterial,
+    request: &Request,
+    project: impl FnOnce() -> Result<
+        crate::protocol::conversion::generation::Conversion<EncodedRequest>,
+        AttemptError,
+    >,
 ) -> Result<crate::protocol::conversion::generation::Conversion<UpstreamRequest>, AttemptError> {
     let auth = operation_auth(endpoint, provider)?;
     let streaming = request.delivery.streaming() || endpoint.representation.forced_stream();
@@ -265,11 +361,8 @@ pub(crate) fn prepare_with_evidence(
             crate::execution::attempt::DeliveryReason::EndpointCannotStream,
         ));
     }
-    let projection = endpoint.encode_request_with_evidence(request)?;
-    let value = projection.value;
-    let body = serde_json::to_vec(&value).map_err(|_| {
-        AttemptError::Protocol(crate::execution::attempt::ProtocolReason::BodySerialization)
-    })?;
+    let projection = project()?;
+    let EncodedRequest { body, headers, .. } = projection.value;
     if body.len() > endpoint.execution.request_body_limit {
         return Err(AttemptError::Limit);
     }
@@ -285,7 +378,7 @@ pub(crate) fn prepare_with_evidence(
             .into(),
         ),
     ];
-    safe_headers.extend(endpoint.request_headers(request, &value)?);
+    safe_headers.extend(headers?);
     Ok(crate::protocol::conversion::generation::Conversion {
         value: UpstreamRequest {
             origin: endpoint.target.origin.as_str().into(),
@@ -298,7 +391,6 @@ pub(crate) fn prepare_with_evidence(
         evidence: projection.evidence,
     })
 }
-
 enum Intake {
     Pending,
     Static(Vec<u8>),

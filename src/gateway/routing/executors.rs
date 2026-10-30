@@ -5,11 +5,7 @@ use crate::{
     provider::RecoveryClass,
 };
 use sha2::{Digest, Sha256};
-use std::{
-    collections::HashMap,
-    sync::{Arc, Mutex},
-    time::Duration,
-};
+use std::{collections::HashMap, sync::Mutex, time::Duration};
 use tokio::time::Instant;
 
 const MAX_CONVERSATIONS: usize = 4096;
@@ -118,11 +114,11 @@ fn blocked(state: &State, scopes: &Scopes, now: Instant) -> Option<Observation> 
         .max_by_key(|observation| observation.retry_after_seconds)
 }
 impl Executors {
-    pub(in crate::gateway) fn order(
+    pub(in crate::gateway) fn order<T: AsRef<BoundCandidate>>(
         &self,
         model: &str,
         conversation: Option<&str>,
-        candidates: &mut [Arc<BoundCandidate>],
+        candidates: &mut [T],
     ) -> &'static str {
         let now = Instant::now();
         let state = self.state.lock().expect("executor state");
@@ -130,12 +126,17 @@ impl Executors {
             .and_then(|c| state.affinity.get(&(model.to_owned(), c.to_owned())))
             .filter(|(_, at)| now.duration_since(*at) < AFFINITY_TTL)
             .map(|(id, _)| id.as_str());
-        let cooling = |c: &BoundCandidate| blocked(&state, &c.health, now).is_some();
+        let cooling = |c: &T| blocked(&state, &c.as_ref().health, now).is_some();
         let affine = candidates
             .iter()
-            .any(|c| !cooling(c) && Some(c.cache_scope.as_str()) == preferred);
-        let cooled = candidates.iter().any(|c| cooling(c));
-        candidates.sort_by_key(|c| (cooling(c), Some(c.cache_scope.as_str()) != preferred));
+            .any(|c| !cooling(c) && Some(c.as_ref().cache_scope.as_str()) == preferred);
+        let cooled = candidates.iter().any(&cooling);
+        candidates.sort_by_key(|c| {
+            (
+                cooling(c),
+                Some(c.as_ref().cache_scope.as_str()) != preferred,
+            )
+        });
         match (affine, cooled) {
             (true, true) => "affinity_cooling",
             (true, false) => "affinity",

@@ -725,7 +725,7 @@ pub enum Coverage {
 /// Maximum number of effects recorded per delta before saturation truncation.
 pub const MAX_EFFECTS: usize = 64;
 
-/// Maximum retained memory footprint (16 KiB) for evidence effects per delta.
+/// Maximum live effect storage charge (16 KiB), excluding spare vector capacity.
 pub const MAX_EVIDENCE_BYTES: usize = 16 * 1024;
 
 /// Bounded, body-free evidence recording adaptation effects applied during conversion.
@@ -815,7 +815,9 @@ impl EvidenceDelta {
         self.effects.is_empty() && self.omitted_entries == 0
     }
     pub fn retained_bytes(&self) -> usize {
-        std::mem::size_of_val(self) + self.bytes
+        std::mem::size_of_val(self)
+            + self.bytes
+            + (self.effects.capacity() - self.effects.len()) * std::mem::size_of::<Effect>()
     }
     pub fn into_effects(self) -> impl Iterator<Item = Effect> {
         self.effects.into_iter()

@@ -1,5 +1,6 @@
 use super::*;
 use crate::gateway::Limits;
+use std::sync::Arc;
 
 fn candidates() -> (BoundCandidate, BoundCandidate) {
     let gate = crate::gateway::tests::support::gateway(Limits::default());

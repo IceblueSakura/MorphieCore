@@ -95,13 +95,24 @@ pub(crate) fn representable_for_client(
     request: &crate::protocol::GenerationRequestEnvelope,
     client: Option<&crate::adapter::ClientAdapter>,
 ) -> Result<(), RejectionReason> {
+    project_candidate(endpoint, request, client).map(drop)
+}
+
+/// One preflight conversion, including its body-free adaptation evidence.
+pub(crate) fn project_candidate(
+    endpoint: &Endpoint,
+    request: &crate::protocol::GenerationRequestEnvelope,
+    client: Option<&crate::adapter::ClientAdapter>,
+) -> Result<crate::protocol::conversion::generation::Conversion<serde_json::Value>, RejectionReason>
+{
     if (request.delivery.streaming() || endpoint.representation.forced_stream())
         && !endpoint.execution.streaming
     {
         return Err(RejectionReason::Streaming);
     }
-    let value =
-        endpoint.encode_request(request).map_err(|error| {
+    let projection = endpoint
+        .encode_request_with_evidence(request)
+        .map_err(|error| {
             use crate::protocol::{ConversionFailure, conversion::generation::RepresentationError};
             match error {
                 ConversionFailure {
@@ -128,6 +139,7 @@ pub(crate) fn representable_for_client(
                 error => RejectionReason::Conversion(Box::new(error)),
             }
         })?;
+    let value = &projection.value;
     if let Some(crate::adapter::ClientAdapter::OpenAi { adapter, .. }) = client
         && adapter.protocol == crate::protocol::openai::GenerationApi::Chat
         && !adapter.adaptation.rules.readable_reasoning
@@ -153,9 +165,9 @@ pub(crate) fn representable_for_client(
             return Err(RejectionReason::Representation);
         }
     }
-    crate::semantic::value::json_size(&value, endpoint.execution.request_body_limit)
+    crate::semantic::value::json_size(value, endpoint.execution.request_body_limit)
         .map_err(|_| RejectionReason::BodyLimit)?;
-    Ok(())
+    Ok(projection)
 }
 /// Sole ordered selection mechanism for library plans and activated Gateway members.
 pub fn select_candidates<'a>(
@@ -171,36 +183,57 @@ pub(crate) fn select_candidates_for_client<'a>(
     endpoints: impl IntoIterator<Item = &'a Endpoint>,
     client: Option<&crate::adapter::ClientAdapter>,
 ) -> Result<CandidateSelection, PlanError> {
-    let mut selected = CandidateSelection {
-        candidates: vec![],
-        rejections: vec![],
-    };
+    let (candidates, rejections) = select_candidates_with(
+        request,
+        policy,
+        endpoints,
+        client,
+        |ordinal, endpoint, _| CandidatePlan {
+            ordinal,
+            endpoint_id: endpoint.id.clone(),
+        },
+    )?;
+    Ok(CandidateSelection {
+        candidates,
+        rejections,
+    })
+}
+
+/// Retention is a caller-local optimization; selection and rejection stay shared.
+pub(crate) fn select_candidates_with<'a, T>(
+    request: &crate::protocol::GenerationRequestEnvelope,
+    policy: CandidatePolicy,
+    endpoints: impl IntoIterator<Item = &'a Endpoint>,
+    client: Option<&crate::adapter::ClientAdapter>,
+    mut retain: impl FnMut(
+        usize,
+        &Endpoint,
+        crate::protocol::conversion::generation::Conversion<serde_json::Value>,
+    ) -> T,
+) -> Result<(Vec<T>, Vec<CandidateRejection>), PlanError> {
+    let mut candidates = vec![];
+    let mut rejections = vec![];
     for (index, endpoint) in endpoints.into_iter().enumerate() {
         if index >= MAX_CANDIDATES {
             return Err(PlanError::CandidateLimit);
         }
-        match representable_for_client(endpoint, request, client) {
-            Ok(()) => selected.candidates.push(CandidatePlan {
-                ordinal: index,
-                endpoint_id: endpoint.id.clone(),
-            }),
+        match project_candidate(endpoint, request, client) {
+            Ok(projection) => candidates.push(retain(index, endpoint, projection)),
             Err(reason) => {
                 if policy == CandidatePolicy::RequireAll {
                     return Err(PlanError::CandidateRejected(reason));
                 }
-                selected.rejections.push(CandidateRejection {
+                rejections.push(CandidateRejection {
                     endpoint_id: endpoint.id.clone(),
                     reason,
                 });
             }
         }
     }
-    if selected.candidates.is_empty() {
-        return Err(PlanError::NoCandidate {
-            rejections: selected.rejections,
-        });
+    if candidates.is_empty() {
+        return Err(PlanError::NoCandidate { rejections });
     }
-    Ok(selected)
+    Ok((candidates, rejections))
 }
 impl ExecutionPlan {
     pub fn for_request(

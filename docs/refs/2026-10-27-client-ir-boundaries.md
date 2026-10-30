@@ -495,6 +495,16 @@ Code-traced at **`61d478d`** by three read-only sweeps (client intake, planning/
 - **Dispersed delivery owners.** OpenAI lowering/projection/events/native response, Messages client projection/response/SSE, the downstream adapter, Messages terminal policy in delivery and capability publication decide the same facts independently; D, annotations, usage details and item-lifecycle checks diverge across JSON, SSE and retained views.
 - **Dead or unreachable paths.** `ReportedFactPolicy::StrictComplete` is set only in tests; `mca1.` markers have no remaining producer; several delivery guards follow earlier stripping and cannot fire.
 
+### Request conversion reuse (2026-10-30)
+
+At `e92aae9`, [preflight](../../src/execution/plan.rs) discarded its encoded body and evidence; credential preparation encoded again. Prefix lookup independently encoded the original, hinted preflight discarded another conversion, and [discovery](../../src/gateway/ingress/discovery/contract.rs) repeated encoding after a successful check. These repetitions are structural execution work, separate from the remaining feature gates and disposition decisions.
+
+The [bounded execution reuse](../architecture.md#request-conversion-reuse) now carries final bytes, deferred protocol-header projection, prefix digests and evidence with each bound candidate. Preparation consumes that materialization; hinted requests carry their own checked result. A retention miss recomputes without changing selection. Discovery consumes its checked value/evidence directly. Credential attachment, route policy and existing migration dispositions stay unchanged.
+
+An interim byte-cache implementation exposed two regressions with the locked `serde_json` 1.0.154 features: generic `Value` reconstruction rejected a schema annotation `{"$serde_json::private::Number":"not-a-number"}`, and reconstructed `{"$serde_json::private::Number":"1"}` as numeric `1`, colliding with a genuinely numeric annotation in prefix hashing. The [existing exact-number parser check](../../src/protocol/json.rs) already preserves such ordinary object keys. New preparation and affinity regressions reproduced both failures before reconstruction was removed; final bytes, header projections and digests are derived while the original encoded `Value` still exists, without adding another parser or narrower intake limits.
+
+The retention audit also reproduced an undercharge after filtering effects left spare vector slots. [Evidence accounting](../../src/protocol/conversion/generation/evidence.rs) now includes that capacity. Focused checks cover the exact spare-capacity miss, retention exhaustion across 64 admitted candidates, cached/recomputed preparation agreement, candidate/credential/evidence pairing after reordering and unchanged source requests. The [verification record](../development.md#sdk-loopback-gate) includes the full offline, SDK and installed-client gates. This completes execution reuse only; the [R1 owner and field migration](../roadmap.md#conversion-ladder-migration) remain open.
+
 ### Reachable sites by slice
 
 | Slice | Site | Current behavior | Ladder level |
