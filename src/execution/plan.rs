@@ -103,8 +103,7 @@ pub(crate) fn project_candidate(
     endpoint: &Endpoint,
     request: &crate::protocol::GenerationRequestEnvelope,
     client: Option<&crate::adapter::ClientAdapter>,
-) -> Result<crate::protocol::conversion::generation::Conversion<serde_json::Value>, RejectionReason>
-{
+) -> Result<crate::execution::attempt::RequestProjection, RejectionReason> {
     if (request.delivery.streaming() || endpoint.representation.forced_stream())
         && !endpoint.execution.streaming
     {
@@ -165,9 +164,11 @@ pub(crate) fn project_candidate(
             return Err(RejectionReason::Representation);
         }
     }
-    crate::semantic::value::json_size(value, endpoint.execution.request_body_limit)
-        .map_err(|_| RejectionReason::BodyLimit)?;
-    Ok(projection)
+    crate::execution::attempt::RequestProjection::new(
+        projection,
+        endpoint.execution.request_body_limit,
+    )
+    .map_err(|_| RejectionReason::BodyLimit)
 }
 /// Sole ordered selection mechanism for library plans and activated Gateway members.
 pub fn select_candidates<'a>(
@@ -205,11 +206,7 @@ pub(crate) fn select_candidates_with<'a, T>(
     policy: CandidatePolicy,
     endpoints: impl IntoIterator<Item = &'a Endpoint>,
     client: Option<&crate::adapter::ClientAdapter>,
-    mut retain: impl FnMut(
-        usize,
-        &Endpoint,
-        crate::protocol::conversion::generation::Conversion<serde_json::Value>,
-    ) -> T,
+    mut retain: impl FnMut(usize, &Endpoint, crate::execution::attempt::RequestProjection) -> T,
 ) -> Result<(Vec<T>, Vec<CandidateRejection>), PlanError> {
     let mut candidates = vec![];
     let mut rejections = vec![];

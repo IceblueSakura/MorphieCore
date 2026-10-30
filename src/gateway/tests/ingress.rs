@@ -230,7 +230,7 @@ async fn activated_members_keep_route_order_with_a_shared_client_carrier() {
         .unwrap();
     assert_eq!(
         entry
-            .eligible(&request)
+            .eligible(&request, &gate.state.affinity)
             .unwrap()
             .iter()
             .map(|c| c.candidate.endpoint.id.as_str())
@@ -247,7 +247,7 @@ async fn activated_members_keep_route_order_with_a_shared_client_carrier() {
         )
         .unwrap();
     // RequireAll still rejects controls unsupported by the Chat candidate.
-    assert!(entry.eligible(&opaque).is_err());
+    assert!(entry.eligible(&opaque, &gate.state.affinity).is_err());
 }
 
 #[test]
@@ -309,7 +309,7 @@ fn ingress_unwraps_only_the_candidate_compatible_opaque_and_never_selects_a_targ
         )
         .unwrap();
         let before = request.clone();
-        let candidates = entry.eligible(&request).unwrap();
+        let candidates = entry.eligible(&request, &gate.state.affinity).unwrap();
         assert_eq!(candidates.len(), 1);
         let candidate = &candidates[0].candidate;
         let secret = candidate.secret.resolve().unwrap().0;

@@ -39,6 +39,7 @@ impl PlannedCandidate {
     pub(super) fn into_projection(
         self,
         request: &crate::protocol::GenerationRequestEnvelope,
+        affinity: &affinity::Index,
     ) -> Result<
         crate::protocol::conversion::generation::Conversion<
             crate::execution::attempt::EncodedRequest,
@@ -47,12 +48,13 @@ impl PlannedCandidate {
     > {
         match self.projection {
             Some(projection) => Ok(projection),
-            None => crate::execution::attempt::encode_projection(
+            None => affinity.materialize(
                 &self.candidate.endpoint,
                 request,
-                self.candidate
-                    .endpoint
-                    .encode_request_with_evidence(request)?,
+                crate::execution::attempt::RequestProjection::encode(
+                    &self.candidate.endpoint,
+                    request,
+                )?,
             ),
         }
     }
@@ -69,15 +71,19 @@ const MAX_RETAINED_REQUEST_BYTES: usize = 1 << 20;
 fn retain(
     endpoint: &Endpoint,
     request: &crate::protocol::GenerationRequestEnvelope,
-    projection: crate::protocol::conversion::generation::Conversion<serde_json::Value>,
+    projection: crate::execution::attempt::RequestProjection,
     remaining: &mut usize,
+    affinity: &affinity::Index,
 ) -> Option<
     crate::protocol::conversion::generation::Conversion<crate::execution::attempt::EncodedRequest>,
 > {
-    let evidence_bytes = projection.evidence.retained_bytes();
+    let evidence_bytes = projection.evidence().retained_bytes();
     let limit = remaining.checked_sub(evidence_bytes)?;
-    crate::semantic::value::json_size(&projection.value, limit).ok()?;
-    let projection = crate::execution::attempt::encode_projection(endpoint, request, projection)
+    if projection.encoded_len() > limit {
+        return None;
+    }
+    let projection = affinity
+        .materialize(endpoint, request, projection)
         .expect("bounded codec-produced JSON serializes");
     let charged = projection
         .value
@@ -98,6 +104,7 @@ impl BoundEntry {
     pub(super) fn eligible(
         &self,
         request: &crate::protocol::GenerationRequestEnvelope,
+        affinity: &affinity::Index,
     ) -> Result<Vec<PlannedCandidate>, crate::execution::plan::PlanError> {
         let mut remaining = MAX_RETAINED_REQUEST_BYTES;
         let (candidates, _) = crate::execution::plan::select_candidates_with(
@@ -107,7 +114,7 @@ impl BoundEntry {
             Some(&self.client),
             |ordinal, endpoint, projection| PlannedCandidate {
                 candidate: self.candidates[ordinal].clone(),
-                projection: retain(endpoint, request, projection, &mut remaining),
+                projection: retain(endpoint, request, projection, &mut remaining, affinity),
             },
         )?;
         Ok(candidates)
@@ -163,21 +170,18 @@ mod tests {
                 )
                 .unwrap();
             for hit in [true, false] {
-                let planned = entry.eligible(&request).unwrap().remove(0);
-                let candidate = &planned.candidate;
-                let conversion = if hit {
-                    planned.projection.unwrap()
-                } else {
-                    crate::execution::attempt::encode_projection(
-                        &candidate.endpoint,
-                        &request,
-                        candidate
-                            .endpoint
-                            .encode_request_with_evidence(&request)
-                            .unwrap(),
-                    )
+                let mut planned = entry
+                    .eligible(&request, &gate.state.affinity)
                     .unwrap()
-                };
+                    .remove(0);
+                assert!(planned.projection.is_some());
+                if !hit {
+                    planned.projection = None;
+                }
+                let candidate = planned.candidate.clone();
+                let conversion = planned
+                    .into_projection(&request, &gate.state.affinity)
+                    .unwrap();
                 let secret = candidate.secret.resolve().unwrap().0;
                 let prepared = crate::execution::attempt::prepare_retained(
                     &candidate.endpoint,
@@ -211,10 +215,14 @@ mod tests {
         let encoded = crate::execution::attempt::encode_projection(
             &candidate.endpoint,
             &request,
-            Conversion {
-                value: value.clone(),
-                evidence: EvidenceDelta::default(),
-            },
+            crate::execution::attempt::RequestProjection::new(
+                Conversion {
+                    value: value.clone(),
+                    evidence: EvidenceDelta::default(),
+                },
+                candidate.endpoint.execution.request_body_limit,
+            )
+            .unwrap(),
         )
         .unwrap();
         let mut evidence = EvidenceDelta::default();
@@ -231,8 +239,13 @@ mod tests {
             retain(
                 &candidate.endpoint,
                 &request,
-                Conversion { value, evidence },
-                &mut remaining
+                crate::execution::attempt::RequestProjection::new(
+                    Conversion { value, evidence },
+                    candidate.endpoint.execution.request_body_limit,
+                )
+                .unwrap(),
+                &mut remaining,
+                &gate.state.affinity,
             )
             .is_none()
         );
@@ -252,7 +265,7 @@ mod tests {
                 .to_string().as_bytes(),
         ).unwrap();
         let original = request.clone();
-        let mut selected = entry.eligible(&request).unwrap();
+        let mut selected = entry.eligible(&request, &gate.state.affinity).unwrap();
         assert_eq!(selected.len(), entry.candidates.len());
         let hits = selected
             .iter()
@@ -278,7 +291,9 @@ mod tests {
                 &candidate.provider,
                 &secret,
                 &request,
-                planned.into_projection(&request).unwrap(),
+                planned
+                    .into_projection(&request, &gate.state.affinity)
+                    .unwrap(),
             )
             .unwrap()
         };
@@ -320,7 +335,7 @@ mod tests {
             br#"{"model":"fixture-model","messages":[{"role":"user","content":"hello"}],"prediction":{"type":"content","content":"hint"}}"#,
         ).unwrap();
         let original = request.clone();
-        let mut selected = entry.eligible(&request).unwrap();
+        let mut selected = entry.eligible(&request, &gate.state.affinity).unwrap();
         assert!(selected.iter().all(|planned| planned.projection.is_some()));
         let now = tokio::time::Instant::now();
         let lease = gate
@@ -345,7 +360,9 @@ mod tests {
                 &candidate.provider,
                 &secret,
                 &request,
-                planned.into_projection(&request).unwrap(),
+                planned
+                    .into_projection(&request, &gate.state.affinity)
+                    .unwrap(),
             )
             .unwrap();
             let direct = crate::execution::attempt::prepare_with_evidence(

@@ -99,7 +99,9 @@ async fn send_attempt<'r>(
         );
         ApiError::invalid()
     };
-    let mut projection = planned.into_projection(request).map_err(failed)?;
+    let mut projection = planned
+        .into_projection(request, &runtime.affinity)
+        .map_err(failed)?;
     let mut local = Cow::Borrowed(request);
     let mut affinity = crate::gateway::routing::prefix_cache::choose(
         &runtime.affinity,
@@ -133,11 +135,9 @@ async fn send_attempt<'r>(
                 include_usage: Presence::Value(true),
                 ..Default::default()
             });
-            let converted = candidate
-                .endpoint
-                .encode_request_with_evidence(&intake)
-                .map_err(crate::execution::AttemptError::from)
-                .map_err(failed)?;
+            let converted =
+                crate::execution::attempt::RequestProjection::encode(&candidate.endpoint, &intake)
+                    .map_err(failed)?;
             projection = crate::execution::attempt::encode_projection(
                 &candidate.endpoint,
                 &intake,
@@ -490,15 +490,17 @@ pub(in crate::gateway) async fn run(
     permit: OwnedSemaphorePermit,
     mut trace: Trace,
 ) -> Result<Response, ApiError> {
-    let candidates = entry.eligible(&request).map_err(|cause| {
-        let error = ApiError::invalid();
-        trace.report.planning_failure(cause);
-        trace
-            .report
-            .request_failure(error.diagnostic_code(), error.status.as_u16());
-        trace.outcome(crate::gateway::diagnostics::Outcome::Error);
-        error
-    })?;
+    let candidates = entry
+        .eligible(&request, &runtime.affinity)
+        .map_err(|cause| {
+            let error = ApiError::invalid();
+            trace.report.planning_failure(cause);
+            trace
+                .report
+                .request_failure(error.diagnostic_code(), error.status.as_u16());
+            trace.outcome(crate::gateway::diagnostics::Outcome::Error);
+            error
+        })?;
     let limits = runtime.limits.clone();
     let shutdown = runtime.shutdown.clone();
     respond_source(

@@ -8,7 +8,19 @@ pub(crate) const MAX_PROMPT_BYTES: usize = 256 << 10;
 
 /// Only call after final target encoding/validation. This does not grant admission.
 pub(crate) fn prefixes(wire: &Value, profile: GenerationApi) -> Option<Vec<[u8; 32]>> {
-    crate::semantic::value::json_size(wire, MAX_PROMPT_BYTES).ok()?;
+    let bytes = crate::semantic::value::json_size(wire, MAX_PROMPT_BYTES).ok()?;
+    measured_prefixes(wire, profile, bytes)
+}
+
+/// The caller owns an unchanged wire value and its checked serialized size.
+pub(crate) fn measured_prefixes(
+    wire: &Value,
+    profile: GenerationApi,
+    bytes: usize,
+) -> Option<Vec<[u8; 32]>> {
+    if bytes > MAX_PROMPT_BYTES {
+        return None;
+    }
     let field = match profile {
         GenerationApi::Chat => "messages",
         GenerationApi::Responses => "input",

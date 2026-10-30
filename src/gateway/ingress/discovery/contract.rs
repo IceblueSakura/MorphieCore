@@ -396,12 +396,16 @@ pub(super) fn assess(entry: &BoundEntry, modes: &[&str], case: Case) -> Capabili
                 return Capability::new(State::Unavailable);
             };
             if matches!(case, Case::Activation(_) | Case::Effort(_))
-                && baseline.value == projection.value
+                && baseline.value() == projection.value()
             {
                 return Capability::new(State::Unavailable);
             }
             let mut rules = BTreeSet::new();
-            for effect in projection.evidence.iter().filter(|e| e.change().is_loss()) {
+            for effect in projection
+                .evidence()
+                .iter()
+                .filter(|e| e.change().is_loss())
+            {
                 // Dropped control intent is not effective control support. Parallel permission
                 // is different: the existing named omission preserves always-enabled permission.
                 if effect.change() == Change::Omit

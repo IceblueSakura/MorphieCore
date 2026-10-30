@@ -112,7 +112,13 @@ fn native_response_binding_activates_only_when_listed() {
             assert!(rules.contains(&"openai.wrap-tool-result-errors.v1"));
         }
     }
-    assert_eq!(entry.eligible(&request).unwrap().len(), 2);
+    assert_eq!(
+        entry
+            .eligible(&request, &mixed.gateway.state.affinity)
+            .unwrap()
+            .len(),
+        2
+    );
     assert_eq!(request, original);
 }
 
@@ -166,7 +172,13 @@ fn configured_messages_adaptive_forced_tools_keep_strictness_and_effort() {
         .unwrap();
         let wire: Value = serde_json::from_slice(&prepared.body).unwrap();
         assert_eq!(wire["tool_choice"], choice);
-        assert_eq!(entry.eligible(&request).unwrap().len(), 1);
+        assert_eq!(
+            entry
+                .eligible(&request, &boot.gateway.state.affinity)
+                .unwrap()
+                .len(),
+            1
+        );
         assert_eq!(wire["thinking"], body["thinking"]);
         assert_eq!(wire["output_config"], json!({"effort":"high"}));
         assert_eq!(wire["tools"], json!(tools));

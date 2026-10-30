@@ -28,6 +28,37 @@ pub(in crate::gateway) enum Lookup {
     Unavailable,
 }
 impl Index {
+    /// Capture lookup metadata while the checked wire value is still available.
+    pub(in crate::gateway) fn materialize(
+        &self,
+        endpoint: &crate::topology::Endpoint,
+        request: &crate::protocol::GenerationRequestEnvelope,
+        projection: crate::execution::attempt::RequestProjection,
+    ) -> Result<
+        crate::protocol::conversion::generation::Conversion<
+            crate::execution::attempt::EncodedRequest,
+        >,
+        crate::execution::AttemptError,
+    > {
+        let prefixes = if request.inferred_affinity.is_none() {
+            lookup_profile(self, endpoint, request)
+                .ok()
+                .and_then(|(profile, _)| {
+                    crate::protocol::openai::cache_affinity::measured_prefixes(
+                        projection.value(),
+                        profile,
+                        projection.encoded_len(),
+                    )
+                })
+        } else {
+            None
+        };
+        let mut encoded =
+            crate::execution::attempt::encode_projection(endpoint, request, projection)?;
+        encoded.value.prefixes = prefixes;
+        Ok(encoded)
+    }
+
     pub(in crate::gateway) fn new(enabled: bool) -> Self {
         let mut records = VecDeque::new();
         let capacity = MAX_RECORDS.min(MAX_BYTES / std::mem::size_of::<Record>());
@@ -116,6 +147,34 @@ fn target_prefixes(
     let wire = candidate.endpoint.encode_request(request).ok()?;
     crate::protocol::openai::cache_affinity::prefixes(&wire, profile)
 }
+// Missing identity and non-OpenAI bindings are silent skips; other skips retain
+// their existing diagnostic reason. Materialization and lookup share this policy.
+fn lookup_profile(
+    index: &Index,
+    endpoint: &crate::topology::Endpoint,
+    request: &crate::protocol::GenerationRequestEnvelope,
+) -> Result<(crate::protocol::openai::GenerationApi, &'static str), Option<&'static str>> {
+    let context = request.conversation.as_ref().ok_or(None)?;
+    if context.is_conversation_scoped() || request.cache_session.is_some() {
+        return Err(Some("explicit"));
+    }
+    if index.records.is_none() {
+        return Err(Some("disabled"));
+    }
+    let adapter = endpoint.adapter().map_err(|_| None)?;
+    let adapter = adapter.openai().map_err(|_| None)?;
+    let mut cache = endpoint.representation.cache();
+    cache.intersect(adapter.adaptation.cache);
+    if !cache.key && !adapter.adaptation.rules.opencode_go_headers
+        || cache.key
+            && !adapter.adaptation.rules.opencode_go_headers
+            && !request.context.cache.prompt_cache_key.is_absent()
+    {
+        return Err(Some("explicit_or_unmapped"));
+    }
+    Ok((adapter.protocol, adapter.adaptation.profile_id))
+}
+
 pub(in crate::gateway) fn choose(
     index: &Index,
     candidate: &crate::gateway::BoundCandidate,
@@ -124,36 +183,21 @@ pub(in crate::gateway) fn choose(
     trace: &mut crate::gateway::diagnostics::Trace,
 ) -> Option<Selection> {
     use sha2::{Digest as _, Sha256};
-    let context = request.conversation.as_ref()?;
-    if context.is_conversation_scoped() || request.cache_session.is_some() {
-        trace.affinity("explicit", false, false);
-        return None;
-    }
-    if index.records.is_none() {
-        trace.affinity("disabled", false, false);
-        return None;
-    }
     let endpoint = &candidate.endpoint;
-    let adapter = endpoint.adapter().ok()?;
-    let adapter = adapter.openai().ok()?;
-    let mut cache = endpoint.representation.cache();
-    cache.intersect(adapter.adaptation.cache);
-    if !cache.key && !adapter.adaptation.rules.opencode_go_headers
-        || cache.key
-            && !adapter.adaptation.rules.opencode_go_headers
-            && !request.context.cache.prompt_cache_key.is_absent()
-    {
-        trace.affinity("explicit_or_unmapped", false, false);
-        return None;
-    }
+    let (_, profile_id) = match lookup_profile(index, endpoint, request) {
+        Ok(profile) => profile,
+        Err(reason) => {
+            if let Some(reason) = reason {
+                trace.affinity(reason, false, false);
+            }
+            return None;
+        }
+    };
+    let context = request.conversation.as_ref()?;
     let scope = &candidate.cache_scope;
     let mut hash = Sha256::new();
     hash.update(b"MorphieCore.cache-scope.v1\0");
-    for value in [
-        scope.as_str(),
-        endpoint.id.as_str(),
-        adapter.adaptation.profile_id,
-    ] {
+    for value in [scope.as_str(), endpoint.id.as_str(), profile_id] {
         hash.update((value.len() as u64).to_be_bytes());
         hash.update(value.as_bytes());
     }
@@ -247,15 +291,14 @@ mod tests {
         request: &crate::protocol::GenerationRequestEnvelope,
         trace: &mut crate::gateway::diagnostics::Trace,
     ) -> Option<Selection> {
-        let projection = crate::execution::attempt::encode_projection(
-            &candidate.endpoint,
-            request,
-            candidate
-                .endpoint
-                .encode_request_with_evidence(request)
-                .unwrap(),
-        )
-        .unwrap();
+        let projection = index
+            .materialize(
+                &candidate.endpoint,
+                request,
+                crate::execution::plan::project_candidate(&candidate.endpoint, request, None)
+                    .unwrap(),
+            )
+            .unwrap();
         super::choose(
             index,
             candidate,
@@ -263,6 +306,75 @@ mod tests {
             projection.value.prefixes.as_deref(),
             trace,
         )
+    }
+
+    #[test]
+    fn materialization_only_hashes_requests_that_need_a_lookup() {
+        let gate = crate::gateway::tests::support::gateway(crate::gateway::Limits::default());
+        let entry = &gate.state.entries[&(
+            crate::protocol::ClientProtocol::Chat,
+            "fixture-model".into(),
+        )];
+        let candidate = &entry.candidates[0];
+        let source = request(entry, "one");
+        let materialize = |index: &Index, request: &crate::protocol::GenerationRequestEnvelope| {
+            index
+                .materialize(
+                    &candidate.endpoint,
+                    request,
+                    crate::execution::plan::project_candidate(&candidate.endpoint, request, None)
+                        .unwrap(),
+                )
+                .unwrap()
+        };
+        let direct = crate::execution::attempt::encode_projection(
+            &candidate.endpoint,
+            &source,
+            crate::execution::plan::project_candidate(&candidate.endpoint, &source, None).unwrap(),
+        )
+        .unwrap();
+        assert!(direct.value.prefixes.is_none());
+        assert!(
+            materialize(&Index::new(false), &source)
+                .value
+                .prefixes
+                .is_none()
+        );
+        let original = materialize(&gate.state.affinity, &source);
+        assert!(original.value.prefixes.is_some());
+        let selection = super::choose(
+            &gate.state.affinity,
+            candidate,
+            &source,
+            original.value.prefixes.as_deref(),
+            &mut trace(),
+        )
+        .unwrap();
+        let (hinted, projected) = selection.project(candidate, &source).unwrap();
+        assert!(projected.value.prefixes.is_none());
+        assert!(
+            materialize(&gate.state.affinity, &hinted)
+                .value
+                .prefixes
+                .is_none()
+        );
+        let mut explicit = source.clone();
+        explicit.context.cache.prompt_cache_key =
+            crate::semantic::value::Presence::Value("explicit".into());
+        assert!(
+            materialize(&gate.state.affinity, &explicit)
+                .value
+                .prefixes
+                .is_none()
+        );
+        explicit = source.clone();
+        explicit.conversation = Some(ConversationContext::conversation("explicit").unwrap());
+        assert!(
+            materialize(&gate.state.affinity, &explicit)
+                .value
+                .prefixes
+                .is_none()
+        );
     }
 
     #[test]
