@@ -332,6 +332,8 @@ The standards-reset architecture baseline was accepted on 2026-10-23. Implemente
 
 ### Temporary routing freeze
 
+The separately requested [Provider account redesign plan](provider-account-redesign-plan.md) is **frozen for human review as of 2026-10-30**. It records multi-account requirements and unselected recommendations; it grants no implementation authorization and adds no active work package. Reopen that design and select its scope explicitly before changing this baseline.
+
 The [stable routing baseline](architecture.md#failover) is frozen. Codec and protocol work must not alter:
 - Pool membership, health probes, or target ordering.
 - Conversation cache affinity or cooldown thresholds.
