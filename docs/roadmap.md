@@ -7,11 +7,11 @@ This page owns current scope, priorities, dependencies, and exit gates. [Archite
 - [Current status](#current-status)
 - [Standard request boundary repair](#standard-request-boundary-repair)
 - [Three-protocol fidelity repair](#three-protocol-fidelity-repair)
-  - [Client/IR audit follow-up](#clientir-audit-follow-up)
   - [Agent-default production findings](#agent-default-production-findings)
-  - [Repair order and exit gates](#repair-order-and-exit-gates)
-  - [Current Client/IR blocking semantics](#current-clientir-blocking-semantics)
+  - [Conversion-ladder migration](#conversion-ladder-migration)
+  - [Retained rejections](#retained-rejections)
   - [Remaining issue dispositions](#remaining-issue-dispositions)
+  - [Closure boundary](#closure-boundary)
 - [Standards reset and redesign](#standards-reset-and-redesign)
 - [Planned order](#planned-order)
   - [Execution sequence and work-package rules](#execution-sequence-and-work-package-rules)
@@ -58,15 +58,15 @@ This page owns current scope, priorities, dependencies, and exit gates. [Archite
 
 ## Current status
 
-**Current focus (2026-10-30):** The [three-protocol fidelity repair](#three-protocol-fidelity-repair) remains Client/IR stabilization. Order 0, phased S11 ownership/planning/discovery, S6, the first Bailian Responses S5/S4 consumers, OpenAI/Messages S3 consumers (including inline definitions) and Bailian grouped call-ID association are implemented. [Follow-up qualification](refs/2026-10-27-client-ir-boundaries.md#pre-stage-4-contract-qualification-2026-10-29) observes actual pi Responses replay, native grouped-result acceptance/consumption and tail-only Qwen Chat usage. These are separate client/endpoint observations, not gateway default acceptance. Q1 now dispatches its first tools/reasoning request; phase/carrier guards and long-context defaults still need disposition. Continue remaining S3/S5/S11 consumers and S2 equivalence/default work. The next stage starts after the [closure boundary](#closure-boundary). Budget formulas stay deferred; no new binding activation, Google expansion or Stage-5 scheduling follows.
+**Current focus (2026-10-30):** Client/IR stabilization now follows the [conversion ladder](architecture.md#conversion-ladder) accepted on 2026-10-30: same-name, same-semantic, partial lossy, omit, and reject only when omission would misrepresent the response. The [conversion-ladder migration](#conversion-ladder-migration) replaces the former repair orders 1, 2b, 3, 5, 6 and 7 and is driven by the agent-default production gate. Under the former fail-closed rules most default reasoning lanes still reject; see [agent-default production findings](#agent-default-production-findings). Stage 4 resumes after the [closure boundary](#closure-boundary). Budget formulas stay deferred; no new binding activation, Google expansion or Stage-5 scheduling follows.
 
-**Completed baseline:** Generation Text correctness/lifecycle reviews, domain evidence, telemetry and standard request boundary repairs preceded the 2026-10-27 parsing/stream corrections. Single Messages signature validation, narrow Chat text/token-cap status projection and original-request Responses metadata echo are implemented. Their offline, SDK and installed-client evidence is separate from live acceptance; see [verification gates](development.md#verification-gates). Stage 4 retains equal priority across its API families.
+**Completed baseline:** Generation Text correctness/lifecycle reviews, domain evidence, telemetry and standard request boundary repairs preceded the 2026-10-27 parsing/stream corrections. Implemented stabilization slices include the order-0 production-construction gate, phased binding-history ownership and discovery, Standard Chat readable-reasoning omission, Bailian Responses presentation/continuity and summary-only history, conditional strictness for OpenAI and Messages targets, grouped call-ID association and the first semantic-equivalence applications. Their offline, SDK and installed-client evidence is separate from live acceptance; see [verification gates](development.md#verification-gates). Stage 4 retains equal priority across its API families.
 
 | Area | State | Next step |
 |---|---|---|
 | Routing | Stable routing baseline frozen; controlled synthetic recovery verified across Router, SDK, and installed clients | Real-failover production evidence required for multi-credential routes; no routing feature additions |
-| Generation IR / Codec | Production-construction gate, first equivalence/foreign-history repairs and phased binding-history owner implemented | Remaining history/delivery consumers and orders 1/2b, then ordered default/discovery repairs; no broad IR redesign |
-| Client compatibility | Gateway installed-client gates remain curated and exclude pi Responses; direct current-pi Responses characterization now observes actual replay/tool handling | Selected-domain gateway default-profile acceptance, separate from producer characterization and retained rejections |
+| Generation IR / Codec | Conversion ladder accepted; rejection sites inventoried; dispositions still spread across admission, lowering, dialect and client encoders | Migration R0–R5: one request-side and one delivery-side disposition owner |
+| Client compatibility | Gateway installed-client gates remain curated; current-pi Responses replay and Go/Haiku adaptive defaults characterized directly | Default reasoning/tool/history loops on all three client protocols after R0–R5 |
 | Integration | R1a/R1b/R2 loops, controlled recovery and bounded production-profile closure passed | Revalidate changed paths; retain real-failover exclusions without reopening a blanket model/client matrix |
 | Cross-protocol conversion | Stage 3 closed for selected projections; `count_tokens` deferred | Preserve verified evidence; Google API remains paused except text-report and Stage-4 Embedding paths |
 | Decision APIs | Dual standard-SDK direction selected; initial TypeSafe/OpenAI protocol research complete | Contract selection and Stage-4 implementation at equal priority with other modalities |
@@ -76,19 +76,19 @@ This page owns current scope, priorities, dependencies, and exit gates. [Archite
 
 ## Standard request boundary repair
 
-The five-slice request correction was completed on 2026-10-26. [Architecture](architecture.md#standard-request-boundary) defines the standard-priority contracts, and [dated findings](refs/2026-10-26-standard-request-boundaries.md#repair-disposition) detail specific resolutions and exclusions. Any further protocol-boundary refinements proceed through the [three-protocol fidelity repair](#three-protocol-fidelity-repair).
+The five-slice request correction was completed on 2026-10-26. [Architecture](architecture.md#standard-request-boundary) defines the standard-priority contracts, and [dated findings](refs/2026-10-26-standard-request-boundaries.md#repair-disposition) detail specific resolutions and exclusions. Further protocol-boundary work proceeds through the [conversion-ladder migration](#conversion-ladder-migration).
 
 ## Three-protocol fidelity repair
 
-Selected on 2026-10-27, this workstream repairs semantic fidelity across standard Chat Completions, Responses, and Messages. The 2026-10-28 audit at `5b04a03` reopens the scoped closure for the concrete follow-up below. Authoritative contracts: [semantic fidelity](architecture.md#accurate-ir-and-declared-loss), [field handling](architecture.md#field-handling), and [stream normalization](architecture.md#semantic-stream-normalization). Supporting protocol research lives in the [Client/IR notes](refs/2026-10-27-client-ir-boundaries.md); [Development](development.md#sdk-loopback-gate) separates offline/consumer verification from live acceptance.
+Selected on 2026-10-27, this workstream repairs semantic fidelity across standard Chat Completions, Responses, and Messages. Since 2026-10-30 it executes as the [conversion-ladder migration](#conversion-ladder-migration). Authoritative contracts: [conversion ladder](architecture.md#conversion-ladder), [field handling](architecture.md#field-handling), [projection principles](architecture.md#clientir-projection-principles) and [stream normalization](architecture.md#semantic-stream-normalization). Supporting research and the [rejection-site inventory](refs/2026-10-27-client-ir-boundaries.md#conversion-ladder-inventory-2026-10-30) live in the Client/IR notes; [Development](development.md#sdk-loopback-gate) separates offline/consumer verification from live acceptance.
 
 ### Scope and boundaries
 
-- **Protocols:** Covers all three same-protocol paths and assesses six cross-protocol directions across request decoding, IR ownership, target request encoding, upstream decoding, and history replay.
+- **Protocols:** Covers all three same-protocol paths and the six cross-protocol directions across request decoding, IR ownership, target request encoding, upstream decoding, delivery and history replay.
 - **Domain:** Generation Text (instructions/roles, text/refusal, function tools/results, structured output, reasoning/replay, presence/settings, usage, errors, and terminal events).
-- **Extension properties:** Unknown protocol extension fields are accepted and discarded at legal object positions, never forwarded or given semantic execution meaning. Known unsupported controls reject.
+- **Extension properties:** Unknown protocol extension fields are accepted and discarded at legal object positions, never forwarded or given semantic execution meaning. Known fields follow the conversion ladder; unscheduled capabilities keep their [retained rejections](#retained-rejections).
 - **Precedence:** Plain-text token-cap output may omit item status under named rules; Responses metadata echoes the admitted request only when upstream metadata is omitted.
-- **Budget direction:** Bounded relaxation may preserve functionality when gateway-derived budgets conflict. The [accepted boundary](architecture.md#bounded-token-budget-adaptation) does not select a formula, relax source grammar, or raise model limits.
+- **Budget direction:** Bounded relaxation may preserve functionality when gateway-derived budgets conflict. The [accepted boundary](architecture.md#bounded-token-budget-adaptation) selects only the model-maximum clamp; no formula, source-grammar relaxation or raised model limit is selected.
 
 ### Reference strategy
 
@@ -100,107 +100,78 @@ Selected on 2026-10-27, this workstream repairs semantic fidelity across standar
 | Vercel AI SDK & OpenAI Agents SDK | Typed stream consumers, incremental tool assembly, and history materialization |
 | Installed pi and OpenCode | Real-world CLI/TUI serialization, SDK event consumption, and signature replay |
 
-### Client/IR audit follow-up
-
-The audit covers Generation IR, its stream state and associated codec/delivery envelopes, not every standalone modality IR. Its remaining structural findings support local cleanup, not deletion of large parts of the semantic union:
-
-| Candidate | Finding | Disposition |
-|---|---|---|
-| `StreamEvent::Usage` / `UsageReport` | Two event representations feed the same report owner. [Reduction](../src/semantic/task/generation/stream/reduce.rs) rejects checkpoint → flat final `Usage`, but accepts checkpoint → final operation `UsageReport` | Prefer a canonical report event after resolving the transition contract; preserve protocol-specific rejection and resource accounting |
-| Stream result-header `ToolResult.status` / `StreamItem.status` | The [snapshot](../src/semantic/task/generation/stream/snapshot.rs) replaces the embedded initial status with the outer lifecycle | Low-priority stream-header cleanup only if it removes complexity; preserve opening validation and materialized/history result status |
-| `GenerationDelivery.settings` | An entire `GenerationSettings` is retained, but [construction](../src/execution/delivery/completion.rs) and [Responses completion](../src/protocol/openai/responses/envelope.rs) consume only tools, tool choice and parallel permission. A manually supplied valid `top_k` causes an irrelevant rendering rejection; production construction avoids it | Narrow the delivery container; this is envelope overbreadth, not duplicate core IR payload |
-| Unit/null `ExecutionHints` placeholders | `previous_response_id`, `conversation`, `prompt`, `moderation` and `context_management` currently retain bounded presence/inactive values rather than full active operations | Ownership review only, not dead-field deletion. Any relocation must preserve absent/null/empty distinctions and known-active-field rejection |
-
-Retain independently meaningful owners: root versus ordered instructions; requested, reported and delivery-completed values; response outcome, item lifecycle and interaction progress; value versus part completion; readable reasoning, opaque replay and dependency provenance; sparse usage totals and components. Public Responses storage facts also remain distinct from upstream execution intent. Unsupported client carriage alone is not evidence that an official-union field is redundant.
-
 ### Agent-default production findings
 
-The [2026-10-28 probe](refs/2026-10-27-client-ir-boundaries.md#agent-default-production-probe-2026-10-28) drove installed pi 1.4.0 default request shapes and official-shape upstream streams through production startup construction over catalog bindings. Ids refer to its findings table.
+The permanent [production-construction gate](development.md#sdk-loopback-gate) drives captured pi 1.4.0 default shapes through production startup over catalog bindings. Finding ids refer to the [2026-10-28 probe](refs/2026-10-27-client-ir-boundaries.md#agent-default-production-probe-2026-10-28). Dispositions below are read from the gate's current expectation tables, not fresh runs.
 
-| Lane class | Confirmed gaps | Disposition |
+| Lane | Current gate disposition | Ladder resolution | Slice |
+|---|---|---|---|
+| Messages client → every non-Messages route | `admission.explicit_cache` before dispatch for text, tools and reasoning (M1) | Owner-local cache omission at public admission, lowering and Messages items (L4); then Messages delivery omissions, otherwise failures move after dispatch | R1, R2 |
+| Messages client → Go/Haiku reasoning | Corpus uses bare-model manual thinking, unlike pi's resolved adaptive default; raw version/beta headers reject (M2) | Corrected corpus; manual budget → adaptive plus effort (L3); revised version policy | R0, R1, R3 |
+| Chat/Responses client → GLM/Kimi Bailian Chat reasoning | `codec.unsupported.reasoning`: Medium is missing from the Chat effort table | Nearest supported level (L3) | R1 |
+| Chat client → DeepSeek/Zhipu Chat tools and reasoning | `admission.client_representation` from `required_with_tools` | Deployer `readable_reasoning`; otherwise thinking-off fallback (L3) | R4 |
+| Chat client → TokenPlan Chat, all profiles | `admission.client_representation` from unassessed history | Delegation | R4 |
+| Chat client ← Responses upstream reasoning (OpenRouter, Bailian Responses, subscriptions) | `representation.replay_format` after dispatch | Omit uncarried opaque reasoning (L3) | R2 |
+| Responses client → Bailian Responses, turn 2 | First turn dispatches; continuation rejects at phase/carrier guards | Phase omission (L4), uncarried reasoning transfer (L3) | R1, R4 |
+| Responses client → Chat, Messages and Bailian | G/H: unknown strictness, `summary`/encrypted `include` presentation | Non-strict (L3); presentation omission (L4) | R1 |
+| Responses client → OpenAI subscriptions | `admission.max_output_tokens`; flat tools need endpoint evidence | Ceiling omission (L4); tool shape after evidence | R1 |
+| Messages upstream → OpenAI clients | D: truncated tool input succeeds in SSE, fails JSON/retained | Selected prefix-string projection, one view owner | R2 |
+| Chat upstream usage | U: duplicate nonnull final reports | Qualify at the actual emitter; no generic relaxation | Outside slices |
+
+### Conversion-ladder migration
+
+Each slice moves existing rejection sites onto the ladder through existing owners where possible; the only new structure is the two disposition owners in [Architecture](architecture.md#conversion-ladder). Mapping correctness keeps independent wire→IR and IR→wire expectations; the production gate classifies reachability only. Every slice runs the [offline baseline](development.md#offline-baseline), affected [SDK consumers](development.md#sdk-loopback-gate) and applicable installed-agent checks, and updates the gate's expected dispositions toward acceptance. Every remaining non-accepted lane must cite an L5 reason or an invariant.
+
+| Slice | Work | Exit gate |
 |---|---|---|
-| Same-protocol Responses | Q1's first tools/reasoning request now dispatches through conditional strictness and summary/include projection; grouped call-ID association is implemented, while default continuation still hits phase/carrier guards. Native array output is documented but not implemented. Q2's native summary carrier remains distinct from generic encrypted/full-readable history | Order 1: qualify remaining history consumers and dispose of phase/carrier guards; first-request admission is not loop closure |
-| Same-protocol Chat | R is repaired for unsigned readable reasoning through Standard Chat omission; declared required-history tool lanes reject before dispatch, while `readable_reasoning` passes. Protected replay and unassessed admission retain their guards. Two nonnull usage reports on finish and trailing chunks reduce as a duplicate final (U); this sequence needs Provider qualification | Remaining history consumers under S11 and endpoint qualification; qualify U before an order-1 change |
-| Same-protocol Messages | Raw SDK version/beta headers reject (M2). Bare-model manual thinking is unavailable on Haiku, but current pi's built-in Go/Haiku metadata selects adaptive by default and passes a direct-authority signed loop | Retain S8/manual negatives; preserve resolved built-in metadata and verify the actual default loop through the gateway, not a hand-built compat replacement |
-| Messages upstream into OpenAI clients | D succeeds in SSE but fails JSON/retained | Order 3 |
-| Responses/Chat clients into other protocols | G (omitted strictness), H (reasoning summary/encrypted include), effort scope without configured conversion, explicit image detail | Order 5 under S3/S4 |
-| Messages clients into other protocols | M1: pi's default owner-local `cache_control` rejects on every non-Messages route | Order 5 under S7 |
+| **R0 Gate and corpus** | Add pi's resolved built-in model metadata (Go/Haiku adaptive, no temperature) beside the bare-model corpus; use official non-null upstream echoes (`service_tier`, `metadata`, `background`, `store`) so delivery-side failures are visible; turn expectation tables into a burn-down toward acceptance | Gate reports current dispositions on the corrected corpus with no behavior change |
+| **R1 Request-side owner** | Target disposition tables and one per-candidate projection in planning; source-level admission keeps grammar and L5 only. Migrate cache omission at all three owners, strictness (unknown compatibility, missing parameters, conditional overflow), effort (nearest level, scope conversion, budget → adaptive, effort omission where no control exists), model-maximum clamp and ceiling omission, Chat presentation/include and Bailian phase omission, and advisory controls (sampling, verbosity, seed, penalties, `top_k`, metadata and service hints, image `detail`, empty tool descriptions, documented null defaults, default parallel permission) | Messages-client requests, GLM/Kimi reasoning and Responses-client tool lanes dispatch on every reviewed route; explicit strict, media and output-constraint L5 negatives still reach their intended failure |
+| **R2 Delivery-side owner** | `ClientAdapter` table, one snapshot projection for JSON/retained and one per-event SSE projection; encoders only render. Migrate uncarried reasoning omission on Standard Chat and Messages, Messages report/hint omission, `stop` with calls → `tool_use`, stop-sequence `end_turn`, empty-string arguments → `{}`, per-dialect finish-reason maps and Responses `incomplete_details:{}`, D, and JSON/SSE divergences for annotations and usage details | JSON, SSE and retained views agree for every fact; no report or metadata fact fails after dispatch |
+| **R3 Messages intake** | `2023-06-01` over current grammar, removed sampling omission, ignored beta header, `block_binding` levels, tool additions/removals where the route admits tool changes; align [usage](usage.md#messages) with code | Installed pi and OpenCode default Messages requests pass intake without header opt-outs |
+| **R4 Unknown facts and history** | Delegation for unassessed binding facts; `required_with_tools` fallback; visible-history transfer for every request consumer, including unsealed or foreign reasoning, foreign citations and obsolete markers | TokenPlan Chat, DeepSeek/Zhipu Chat tools and two-turn Bailian Responses lanes accept; replay trust checks unchanged |
+| **R5 Cleanup and discovery** | Remove the test-only strict-complete reporting policy, obsolete `mca1.` marker handling and unreachable delivery guards; derive `/capabilities` and discovery, including the preferred interface (S10), from the disposition tables; narrow delivery settings to tools/choice/parallel permission and settle checkpoint/final usage ownership; report unsupported `conversation`/`prompt` as unsupported rather than invalid | Discovery publishes the same facts the gate observes |
+| **Exit** | Current-client characterization, then default reasoning/tool/history gateway loops with installed pi on all three client protocols and selected cross-protocol lanes; OpenCode afterwards | Actual execution and replay pass. Preserve resolved built-in model metadata; only test origin/key, operational bounds and documented header opt-ins may differ |
 
-Root cause: consumers default-reject IR states from producers they are never tested with, and current gates exercise neither agent default shapes nor production client construction off the diagonal. Response-side impossibilities also surface only after dispatch, so one reachable upstream state fails a whole lane.
+Dependencies: R0 comes first. R1 and R2 are otherwise independent, but the Messages delivery items in R2 must land no later than R1's cache omission, so Messages clients do not move from pre-dispatch rejection to failures after billing. R3 is independent. R4 needs R1's planning owner. R5 follows R1 and R2. U stays an endpoint qualification and does not justify a generic duplicate-final relaxation.
 
-### Repair order and exit gates
+Stream-header status cleanup and `ExecutionHints` placeholder relocation remain optional ownership reviews: preserve absent/null/empty distinctions and opening validation. Bailian long-context defaults remain a qualification question: catalog context windows are planning metadata, not input-token admission, and no truncation ceiling or budget formula is selected.
 
-Use existing startup fixtures, session corpora, delivery and diagnostics helpers; no new framework or broad compatibility layer. Mapping correctness keeps independent wire→IR and IR→wire expectations; the conformance gate classifies reachability and dispositions only. Each slice implements only its accepted [decision](#clientir-stabilization-decisions); deferred capabilities stay unselected.
+### Retained rejections
 
-**Order 0 is the completed classification baseline.** The permanent [production-construction gate](development.md#sdk-loopback-gate) covers catalog-wide API-key text/tool lanes, all four OAuth subscription endpoints, native Messages, captured pi 1.4.0 defaults, raw Messages headers, actual second-upstream history and Responses retrieval/incomplete-reasoning controls. Distinct controls cover Bailian summary-only history, readable DeepSeek Chat, adaptive signed/redacted Messages and Grok opaque-only continuation. Incremental Responses content is checked independently of done/terminal snapshots; catalog and distinct controls compare content, usage and terminal meaning across JSON/SSE. [Reviewed source distinctions](refs/2026-10-27-client-ir-boundaries.md#binding-history-source-review-2026-10-28) keep unestablished binding facts open under S11. Common protocol controls are not claims about every Provider's emitted reasoning. Documented rejections classify current limitations, not compatibility acceptance.
+These L5 boundaries and invariant guards remain after the migration. Current additional blockers are tracked in the [findings table](#agent-default-production-findings) with their slice.
 
-| Order | Work | Exit gate |
-|---|---|---|
-| 1 | S3 conditional-default resolution; qualified S11/S5 consumers; isolate later-turn phase/carrier guards; qualify U at its actual emitter | Check ingress/model requirements, planning, target validation and final writers. Preserve order/identity, completed/finalized-incomplete replay and candidate-local input; compare managed and stateless continuation |
-| 2b | Existing-field semantic-equivalence review (S2): review current Generation Text Chat, Responses and Messages request, response, stream and history fields, using named-loss rules and empty/default guards as entry points | Classify each candidate as semantic equivalence, actual loss or insufficient evidence. Remove redundant named-loss paths, receipts and tests that only assert obsolete loss classification for confirmed equivalents; preserve necessary encoding conversions and valuable behavioral assertions |
-| 3 | Implement D's selected exact OpenAI prefix-string projection and details-only U error classification | Harmonize representable JSON/SSE/retained views without JSON repair. Preserve incomplete call/outcome, no-execution and replay guards; distinguish native Messages' intentional object restriction and published versus unpublished accounting |
-| 5 | G/H (S3/S4), M1 (S7); publish image-detail and effort-scope facts | Name remaining active target consumers. S7 spans public admission and every breakpoint owner before candidate-local omission; preserve mixed-route membership and native carriers. Recheck branches previously masked by an earlier rejection |
-| 6 | Compile default-profile dispositions, preferred interface and per-interface adaptations from the order-0 owner | Separate simple features from request and full-loop support; match actual bound/mixed routes and state the client-consumption boundary; see [Models discovery interfaces](#models-discovery-interfaces) |
-| 7 | Narrow delivery settings to tools/choice/parallel permission; establish checkpoint/final ownership before event unification; qualify `between_tools` and nullable output members | Preserve reported empty/false values and source precedence. Resolve dialect usage stages before canonicalization; retain duplicate-final and post-publication guards. Unsupported nullable/mode semantics may close only with explicit retained dispositions |
-| 8 | Early current-client characterization, then default reasoning/tool/history gateway loops on all three client protocols and selected cross-protocol lanes; OpenCode afterwards | Actual execution and replay must pass. Preserve resolved built-in model metadata; only test origin/key, operational bounds and documented header opt-ins may differ. Retained rejections and nondefault controls do not replace any of the three required default loops |
-
-Orders 1 and 2b have priority using the order-0 gate. The [first equivalence review](refs/2026-10-27-client-ir-boundaries.md#semantic-equivalence-review-2026-10-28) removes redundant cache/parallel-permission rules and null-only report losses, and admits explicit disabled logprobs on Messages targets. Retain unresolved field-specific defaults and meaningful losses. Independent delivery repairs may proceed; affected mappings and discovery must use the reviewed loss classification rather than defer it to order 7.
-
-Order 2b applies [semantic-equivalence compatibility](architecture.md#semantic-equivalence-compatibility), not generic empty-field stripping or blanket standard-field activation. Disabled document citations now normalize exactly to uncited documents under the official false default. Null output configuration, default-only report containers and nullable reasoning controls retain their current dispositions for insufficient field-specific evidence. Retain selected named losses for meaningful information removal. New capabilities and inactive APIs keep their existing scheduling; Stage-4 families apply the principle during S4-0 rather than expanding this Generation Text review.
-
-The 2026-10-30 follow-up admits Chat `logit_bias:null` as its documented default without a loss receipt; non-null bias remains unselected. This closes one intake guard, not the full existing-field review.
-
-Remaining S11/S5 consumers migrate from the [target-owned history contract](architecture.md#binding-reasoning-history-contract), preserving unassessed history behavior, explicit read intent and replay guards. The [source review](refs/2026-10-27-client-ir-boundaries.md#binding-history-source-review-2026-10-28) distinguishes DeepSeek's all-prior-turn requirement from Zhipu's current tool cycle; qualification does not block phased work on established facts. Implemented request/delivery rules live in [Architecture](architecture.md#clientir-projection-principles). Q1 still requires S3; successful no-tool summary controls do not establish unchanged pi-default acceptance.
-
-Execution dependencies are narrower than the order numbers: characterize real Responses replay before final acceptance; resolve S3 compatibility/carrier evidence before migrating its requirements/validators/writers; qualify U's source stages before usage canonicalization. D and delivery-container narrowing may proceed independently. S2 remains concurrent and must finish before Stage 4. Unknown compatibility, nullable members and unassessed history stay explicit rather than receiving speculative defaults.
-
-S3 now shares one bounded source resolver across OpenAI and Messages consumers, including inline-added function definitions. Messages public/canonical admission and its exact carrier are implemented; final encoding preserves its request-wide strict grammar budget. Overflow retains pre-dispatch rejection: selecting which conditional tools to downgrade, or downgrading all of them, remains unselected. References, omitted parameters, larger enum properties and model-dependent source constraints retain explicit cross-target rejection for insufficient compatibility evidence. Source schemas, explicit strict guarantees and frozen Google behavior are unchanged. The newly reachable Responses-to-Messages tool lane also checks streamed versus retained argument strings; reasoning still reaches an independent planning guard.
-
-The [Bailian source refresh](refs/2026-10-19-bailian-compatible-requests.md#evidence-boundary) adds a long-context default qualification: compare documented automatic truncation with public source defaults, actual request bounds and target declarations. Current context-window metadata is not input-token admission. No large-input behavior or concrete budget conflict is established, and no approximate 80% ceiling or budget formula is selected.
-
-Stream-header status and placeholder relocation remain optional reviews. Each implementation slice needs the [offline baseline](development.md#offline-baseline), affected [SDK consumers](development.md#sdk-loopback-gate) and applicable installed-agent checks. Native Qwen Chat produced only final-tail usage; this does not qualify U's double-report sequence or authorize a generic finality relaxation.
-
-### Current Client/IR blocking semantics
-
-These are Client intake/history or downstream delivery restrictions, not a catalog of Provider capability failures. Unknown extension fields are discarded; malformed known values remain grammar errors. The principal active boundaries are:
-
-| Boundary | Remaining blocking semantics |
+| Boundary | Retained |
 |---|---|
-| Chat → IR | Multi-result `n > 1`, tokenizer-unbound `logit_bias`, `web_search_options`, nonempty legacy `functions`, `function_call` and `role:function`; custom tools are not blanket-rejected |
-| Responses → IR | Unselected hosted tools/items and `include` families, background execution, active conversation/prompt/moderation and context-management operations. Public local `store`/`previous_response_id` are supported through [managed ingress](../src/gateway/ingress/admission.rs), not blanket blockers |
-| Messages → IR | `between_tools` lacks an exact admitted mode; nullable output effort/format, task budgets, per-message configuration, block binding/tool changes and enabled citation controls reject. Direct ordinary tools remain distinct from hosted/programmatic callers. Execution extensions and zero-token prewarming are unselected; removed sampling controls still reject |
-| Resources and protected history → IR | File-ID carriers need trusted resource resolution; supported URL/data media remain available. Raw external reasoning signatures/tokens may pass syntax but fail [replay opening](../src/execution/replay.rs); gateway-sealed history is the supported continuation path |
-| IR → Chat | Protected reasoning/replay needs an explicitly selected carrier; Standard omits unsigned readable reasoning. Custom calls and some annotations reject in SSE; metadata maps lack a chunk carrier. Independent lifecycle and rich grouping have limits |
-| IR → Responses | Incompatible replay formats/bindings, unrepresentable reported settings and some annotation SSE carriers reject. JSON cancellation does not imply an available cancellation SSE event |
-| IR → Messages | Unsigned/multi-summary or incompatible redacted reasoning; custom string-input calls, non-object tool input, unrepresentable call context, annotations/nonempty or null logprobs/generated media, metadata maps and other unsupported execution hints. Normal terminal meaning, continuation, service-class and already-published usage constraints remain; partial structured tool input has only the selected max-token SSE path |
+| Chat → IR | `n > 1`, `web_search_options`, nonempty `logit_bias`, `store:true`, `moderation`, legacy `functions`/`function_call`/`role:function` |
+| Responses → IR | Hosted tools and items, unselected `include` families, background execution, active conversation/prompt/moderation and context-management operations, item references outside the managed store. Local `store`/`previous_response_id` stay supported through [managed ingress](../src/gateway/ingress/admission.rs) |
+| Messages → IR | `between_tools`, per-message configuration, `clear_at`, task budgets pending selection, `container`, `mcp_servers`, context management and compaction, server tools and non-direct callers, block-binding `"error"`, `inference_geo`, enabled citations, null output effort/format pending field evidence |
+| Request → target | Media, tools or explicit output constraints without a carrier; explicit strict guarantees without a carrier; `stop` without a carrier; compaction without a carrier; explicit history-read intent that cannot be carried |
+| IR → client | Chat custom-call SSE; Responses SSE cancellation; unknown Chat/Messages stop causes without an evidence-backed map; non-object Messages tool input other than an empty string; call ID or name lengths beyond the client limit; blocking safety reports; retraction of published accounting |
+| Invariants | Credential/origin/trust selection, replay origin and format trust, client file IDs, resource bounds, malformed known values, terminal honesty, incomplete tool input never executable |
 
-The [pinned Anthropic SDK](../tests/upstream/sources.lock.json) types already include `between_tools`, optional-nullable output configuration and zero-token cache prewarming; these rejections are capability/semantic-selection gaps, not all invalid source syntax. Disabled document citations are admitted as semantic equivalence; null output members remain rejected without a documented omission/default contract. Full citation delivery and prewarming remain unselected.
-
-Do not re-list repaired owner ordering, incomplete text closure or null-only metadata omission as blockers. Nonempty Messages tool openers followed by nonempty fragments concern native upstream SSE intake, not Client request intake. Missing scalar usage alone is not a general runtime blocker where selected delivery completion applies.
+The [pinned Anthropic SDK](../tests/upstream/sources.lock.json) types already include `between_tools`, optional-nullable output configuration and zero-token cache prewarming; their rejections are capability-selection gaps, not invalid syntax. Nonempty Messages tool openers followed by nonempty fragments concern native upstream SSE intake, not Client request intake.
 
 ### Remaining issue dispositions
 
-The [2026-10-28 source and feasibility recheck](refs/2026-10-27-client-ir-boundaries.md#follow-up-source-and-feasibility-review-2026-10-28) supports these retained dispositions. Active delivery repairs and structural follow-up are owned by the [repair order](#repair-order-and-exit-gates), not deferred by this table.
+The [2026-10-28 source and feasibility recheck](refs/2026-10-27-client-ir-boundaries.md#follow-up-source-and-feasibility-review-2026-10-28) supports these dispositions; the ladder migration owns the active work.
 
 | Issue | Current disposition | Reopen or complete when |
 |---|---|---|
 | Chat custom-tool SSE | Retain standard rejection; investigate upstream intake and downstream delivery separately | Official event contract resolves the disagreement, or a separately selected dialect/client contract supplies independent wire/consumer evidence |
 | Nonempty Messages tool opener plus nonempty fragments | Retain rejection, including a complete-fragment negative regression; complete opener plus zero-byte deltas remains supported | Authoritative replacement/merge semantics exist |
-| Responses execution metadata to Messages | Null has a selected omission; empty/nonempty maps and other unsupported execution hints still reject | An exact standard carrier or separately selected field-specific loss exists |
-| Bounded token-budget adjustment | Deferred: catalog/example review identified no qualified active conflict; preserve native effort and existing validation | An authorized target plus failing request, limit provenance, useful reserve, finite maximum and infeasible behavior qualify a target-local rule; private deployment activation was not inspected |
-| `user:null`, Chat refusal requiredness, Responses image-detail default | Preserve current intake; optional egress canonicalization is not an established defect | Service contract clarifies the discrepancy or a selected strict consumer exposes a concrete failure |
-| Legacy function carriers | Defer; preserve explicit rejection | A real client needs a constrained association/default/conflict/history contract |
-| Broader settings echo and richer output grouping | Case-specific design only | A concrete failure has an exact mapping or a separately selected named loss; preserve report authority and content-coordinate ownership |
+| Responses execution metadata to Messages | Null has a selected omission; maps and other echoed hints take L4 omission in R2 | R2 lands |
+| Bounded token-budget adjustment | Model-maximum clamp selected; broader formulas deferred; native effort and existing validation preserved | An authorized target plus failing request, limit provenance, useful reserve, finite maximum and infeasible behavior qualify a target-local rule |
+| `user:null`, Chat refusal requiredness, Responses image-detail default | Preserve current intake; image `detail:"auto"` takes L2 in R1 | Service contract clarifies the discrepancy or a selected strict consumer exposes a concrete failure |
+| Legacy function carriers | Retained rejection | A real client needs a constrained association/default/conflict/history contract |
+| Broader settings echo and richer output grouping | Case-specific ladder application | A concrete failure has an exact mapping or a bounded approximation; preserve report authority and content-coordinate ownership |
 | Messages custom-input wrapping | Defer as an end-to-end tool-interface adaptation | Declaration, arguments, return/history mapping and client execution expectations are selected together |
 | Token scope and SDK drift | Investigate only the selected target/field; no automatic source-pin promotion | A bounded budget rule or reviewed version change has independent expectations and a reachable target path |
 
 ### Closure boundary
 
-Reclose Client/IR stabilization when order 0 is permanent and passes with no unexpected disposition on every same-protocol lane and each selected cross-protocol lane; orders 1, 2b, 3, 5 and 7 each have verified completion or an explicit reasoned retained disposition; discovery publishes the same facts; and order 8 passes the required default loops on all three client protocols. Selected rules cannot be replaced by merely keeping their old expected rejection. Selected paths need directional regressions and applicable consumer gates. Remaining capability gaps and unknown endpoint facts stay explicit with reopening conditions; none imply full standard-field or new live Provider support.
+Reclose Client/IR stabilization when the corrected R0 gate is permanent; every same-protocol lane and each selected cross-protocol lane accepts or cites a [retained rejection](#retained-rejections) or invariant; R1–R5 each have verified completion; discovery publishes the same facts; and the exit loops pass. A lane cannot close by keeping an old expected rejection that the ladder resolves.
 
-On 2026-10-29 the user retained the requirement for default reasoning/tool/history gateway success on **all three client protocols**. Retained-rejection controls and explicitly nondefault profiles remain separate evidence, not closure substitutes. Keep S8 and subscription restrictions; if no compatible default path exists, resolve that integration contract before Stage 4 rather than weakening the exit gate. The current built-in Go/Haiku model selects adaptive without a user compat override; a bare synthetic-model manual request is not evidence that this default path is impossible. Actual resolved model metadata, not version or model ID alone, defines the client default. Resource APIs, persistent sessions, real multi-account failover and budget formulas retain their separate boundaries.
-
-Before resuming Stage 4, complete the order-2b review of existing Generation Text fields and remove all named-loss rules and receipts confirmed redundant by semantic equivalence. Unresolved cases need explicit dispositions, not speculative normalization. Closure does not require eliminating genuine named losses or implementing every unsupported field.
+On 2026-10-29 the user retained the requirement for default reasoning/tool/history gateway success on **all three client protocols**. Retained-rejection controls and explicitly nondefault profiles remain separate evidence, not closure substitutes. Actual resolved model metadata, not version or model ID alone, defines the client default. Deployer-selected public model profiles such as `readable_reasoning` are configuration, not client overrides. Resource APIs, persistent sessions, real multi-account failover and budget formulas retain their separate boundaries. The former field-by-field equivalence review is not a separate Stage-4 gate; L2 applications are found during R1 and R2.
 
 ## Standards reset and redesign
 
@@ -227,7 +198,7 @@ Every work package follows this lifecycle:
 1. **Entry:** Pin source revisions, dialect rules, target profiles, and unresolved decisions. Document protocol findings in `docs/refs/`.
 2. **Delivery:** Implement one coherent request/result/stream/history slice. Resolve unselected structures with a minimal counterexample and options before proceeding.
 3. **Invariants:** Maintain immutable source IR, fresh per-attempt decoder state, and history-prefix stability during turn appending.
-4. **Evidence:** Provide independent directional tests and focused failure assertions at the responsible layer. Separate exact carriage, approved loss, and rejection.
+4. **Evidence:** Provide independent directional tests and focused failure assertions at the responsible layer. Classify each field's ladder level and give rejections their L5 reason.
 5. **Exit:** Run the offline baseline and relevant SDK gates before commit and push. Remove completed roadmap packages and record decisions in [Architecture](architecture.md).
 
 ### Stage 1 work plan
@@ -267,7 +238,7 @@ Stage 4 API families have equal priority and advance as their contracts are sele
 
 | Package | Scope | Exit criteria |
 |---|---|---|
-| **S4-0 Per-operation design** | Pin official contracts, select targets, define resource lifecycles, and apply semantic-equivalence compatibility to each family's fields | Explicit contract decisions distinguishing equivalent forms from genuine losses, without speculative shared abstractions |
+| **S4-0 Per-operation design** | Pin official contracts, select targets, define resource lifecycles, and apply the conversion ladder to each family's fields | Explicit contract decisions classifying fields by ladder level, without speculative shared abstractions |
 | **S4-6 Decision closure** | Complete dual-SDK design, typed answers, and synchronous execution | Verified independent oracles, both SDK loops (TypeSafe and OpenAI), and bounded Provider evidence |
 | **S4-2a Speech** | Text-to-speech with static binary and optional streaming delivery | Bounded buffering, cancellation safety, and verified audio format carriage |
 | **S4-2b Transcription** | Audio-to-text recognition with multipart upstream preparation | Accurate text/timing carriage, format rejection, and bounded resource handling |
@@ -343,7 +314,7 @@ The test strategy uses pinned upstream assets and standard SDK consumers rather 
 The standards-reset architecture baseline was accepted on 2026-10-23. Implemented invariants:
 - **Semantic ownership:** Ordered content, controls, and reported facts maintain separate typed owners in IR.
 - **Source parsing & projection:** Source input is immutable; target projection operates on private copies.
-- **Tools & schemas:** Tool identity, schema constraints, and strictness flags are preserved without silent relaxation.
+- **Tools & schemas:** Tool identity, schema constraints, and explicit strictness are preserved; conditional defaults relax only through named ladder rules.
 - **Delivery & terminals:** Output streaming preserves phase ordering; terminals require validated upstream EOF.
 - **History & replay:** Resumed history reflects actual delivered output, preserving reasoning signatures and cache markers.
 
@@ -388,7 +359,7 @@ Carrier availability in codecs does not imply public route admission. Route admi
 ### P7 boundary review
 
 Prerequisites for activating newly implemented codec carriers on public routes:
-1. Distinguish exact support, declared lossy conversion, and explicit rejection.
+1. Classify each field on the conversion ladder: exact, equivalent, approximate, omitted or rejected.
 2. Verify preflight/preparation agreement on candidate bindings.
 3. Validate routing stability under failure and reconnection.
 4. Complete offline baseline and connected SDK acceptance before client validation.
@@ -409,19 +380,20 @@ Real cross-account failover requires distinct, advanceable production credential
 
 ### Client/IR stabilization decisions
 
-The user accepted principles P1–P5 and selections S1–S11 on 2026-10-28, then generalized S2 to semantic-equivalence compatibility without named omissions or loss receipts. [Architecture](architecture.md#clientir-projection-principles) owns their content; this table maps scheduling ids to owners and orders.
+The user accepted principles P1–P5 and selections S1–S11 on 2026-10-28, generalized S2 to semantic-equivalence compatibility, and on 2026-10-30 accepted the conversion ladder with its selected applications. [Architecture](architecture.md#conversion-ladder) owns their content; this table maps scheduling ids to owners and migration slices.
 
-| Id | Accepted rule | Owner | Order |
+| Id | Accepted rule | Owner | Slice |
 |---|---|---|---|
-| S2 | Semantic-equivalence compatibility | [Semantic-equivalence compatibility](architecture.md#semantic-equivalence-compatibility) | 2b |
-| S3 | Responses strictness resolution | [Projection principles](architecture.md#clientir-projection-principles) | 1, 5 |
-| S4 | Reasoning presentation and continuity | [Projection principles](architecture.md#clientir-projection-principles) | 1, 5 |
-| S5 | Generalized visible-history transfer | [Reasoning replay](architecture.md#reasoning-replay) | 1 |
-| S6 | Standard Chat reasoning omission | [Chat reasoning extensions](architecture.md#chat-reasoning-extensions) | 1, 5 |
-| S7 | Owner-local cache omission | [Owner-local cache admission](architecture.md#owner-local-cache-admission) | 5 |
-| S8 | Messages baseline retained | [Projection principles](architecture.md#clientir-projection-principles) | — |
-| S10 | Agent-facing discovery | [Generation Text model discovery](architecture.md#generation-text-model-discovery) | 6 |
-| S11 | Binding reasoning-history contract | [Binding reasoning-history contract](architecture.md#binding-reasoning-history-contract) | 1 |
+| L | Conversion ladder and its 2026-10-30 applications | [Conversion ladder](architecture.md#conversion-ladder) | R0–R5 |
+| S2 | Semantic-equivalence compatibility (ladder L2) | [Semantic-equivalence compatibility](architecture.md#semantic-equivalence-compatibility) | R1, R2 |
+| S3 | Responses strictness resolution, revised for unknown compatibility | [Projection principles](architecture.md#clientir-projection-principles) | R1 |
+| S4 | Reasoning presentation and continuity | [Projection principles](architecture.md#clientir-projection-principles) | R1 |
+| S5 | Generalized visible-history transfer | [Reasoning replay](architecture.md#reasoning-replay) | R4 |
+| S6 | Standard Chat reasoning omission, extended to opaque reasoning | [Chat reasoning extensions](architecture.md#chat-reasoning-extensions) | R2 |
+| S7 | Owner-local cache omission | [Owner-local cache admission](architecture.md#owner-local-cache-admission) | R1 |
+| S8 | Messages baseline, superseded by the revised version policy | [Protocols](architecture.md#protocols) | R3 |
+| S10 | Agent-facing discovery | [Generation Text model discovery](architecture.md#generation-text-model-discovery) | R5 |
+| S11 | Binding reasoning-history contract, with delegation for unassessed facts | [Binding reasoning-history contract](architecture.md#binding-reasoning-history-contract) | R4 |
 
 ### Ownership and projection decisions
 
@@ -462,7 +434,7 @@ Dynamic tool discovery and native Provider web search remain unscheduled Stage 5
 `POST /v1/messages/count_tokens` is deferred. The gateway returns 404 rather than generating synthetic or estimated counts. Reopening requires defining upstream reliability criteria and coarse estimation provenance.
 
 ### Models discovery interfaces
-Generation Text model discovery is operational, including route-common binding-history declarations from the first S11 migration. Its broader agent-facing extension (preferred interface, adaptation rules, agent-default probe forms) is order 6 of the [repair order](#repair-order-and-exit-gates), with S10 pending. Discovery for other task families (Embeddings, Media, Decision) remains schema-only until those operations are publicly activated.
+Generation Text model discovery is operational, including route-common binding-history declarations from the first S11 migration. Its broader agent-facing extension (preferred interface, adaptation rules, agent-default probe forms) is slice R5 of the [conversion-ladder migration](#conversion-ladder-migration), with S10 pending. Discovery for other task families (Embeddings, Media, Decision) remains schema-only until those operations are publicly activated.
 
 ### Messages citations
 Unified citation delivery ([1C proposal](api-expansion-design.md#1c-design-messages-citations)) remains unscheduled. Requests requiring citation output are rejected.

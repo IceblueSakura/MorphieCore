@@ -41,7 +41,7 @@ This page defines accepted principles, domain contracts, and architectural decis
     - [Candidate-local projection](#candidate-local-projection)
     - [Model-effective values](#model-effective-values)
   - [Request and reported meaning](#request-and-reported-meaning)
-    - [Accurate IR and declared loss](#accurate-ir-and-declared-loss)
+    - [Conversion ladder](#conversion-ladder)
     - [Semantic-equivalence compatibility](#semantic-equivalence-compatibility)
     - [Client/IR projection principles](#clientir-projection-principles)
     - [Downstream schema completion](#downstream-schema-completion)
@@ -121,7 +121,7 @@ All three Generation client protocols dispatch through the public model's config
 
 - **Official Protocol Baselines:** Public Chat, Responses, and Messages adhere to current official versioned specifications. Provider-specific syntax and deviations belong strictly to trusted upstream adapters.
 - **Diagnostic Extensions:** Optional namespaced response fields (`morphiecore`) provide safe-to-ignore telemetry and loss reporting. Standard SDK agent loops operate without parsing or returning these extensions.
-- **Messages Version Policy:** Downstream Messages requires the pinned HTTP baseline `2026-10-21`. Requests must include exactly one matching `anthropic-version` header (including `?beta=true`). Removed or obsolete fields are rejected at intake.
+- **Messages Version Policy:** Downstream Messages decodes the current `2026-10-21` body grammar and requires exactly one `anthropic-version` header (including `?beta=true`). Accepted revision (2026-10-30, implementation pending): the dated `2023-06-01` version is also admitted over the same current grammar, its removed sampling fields (`temperature`, `top_p`, `top_k`) take a named omission, and `anthropic-beta` is ignored as a header while beta body fields stay governed by body rules. Until implemented, other versions and nonempty beta lists reject before body collection.
 
 Provider metadata resides in [providers.json](../src/provider/providers.json). Public models and bindings are defined in [topology/catalog.rs](../src/topology/catalog.rs) and assembled at [gateway startup](../src/gateway/startup/bootstrap.rs).
 
@@ -349,13 +349,17 @@ SIWC (Sign-in with ChatGPT) and Grok use Responses endpoints with stateless upst
 
 #### Field handling
 
+Known fields follow the [conversion ladder](#conversion-ladder); this table states how intake classes enter it.
+
 | Classification | Gateway Action |
 |---|---|
-| **Must preserve** | Exact semantic preservation (instructions, tools, arguments, links, stops). Reject if unrepresentable |
-| **Degradable** | Apply approved advisory omission or behavioral approximation on target copy; emit typed receipt |
-| **Known unsupported** | Reject recognized standard semantics that have no target carrier (fail-closed) |
+| **Content and explicit guarantees** | Instructions, messages, media, tools, arguments, call links, output constraints and explicit strictness: same-name or same-semantic carriers, or a user-selected approximation such as tool-error wrapping or visible-history transfer; otherwise reject |
+| **Controls and hints** | Sampling, effort, presentation, cache and service hints: walk the ladder through bounded approximation and named omission on candidate copies |
+| **Reports and metadata** | Delivered report facts without a client carrier take named omission; they never fail delivery |
+| **Unscheduled capabilities** | Stateful, hosted-execution and other unscheduled capabilities keep their [retained rejections](roadmap.md#retained-rejections) until scheduled |
 | **Legacy standard carrier** | Convert known historical fields when semantics are unambiguous |
 | **Unknown extension field** | Accept and discard at valid object positions; do not forward or store |
+| **Malformed known value** | Grammar error; outside the ladder |
 
 #### Client Responses history shorthand
 
@@ -370,13 +374,50 @@ Transformations are candidate-private:
 
 #### Model-effective values
 
-Target capabilities enforce bounded ceilings via `ModelLimits` (maximum output tokens, allowed reasoning efforts). Preflight validation checks projected requests against model limits, rejecting invalid combinations without silent clipping.
+Target capabilities enforce bounded ceilings via `ModelLimits` (maximum output tokens, allowed reasoning efforts). Preflight validation checks projected requests against model limits. Accepted revision (2026-10-30, implementation pending): an output ceiling above a known model maximum clamps to that maximum under a named rule, keeping an honest length terminal when reached; an unsupported effort level resolves to the nearest [supported level](#reasoning-level-calibration). Combinations without such a bounded resolution still reject.
 
 ### Request and reported meaning
 
-#### Accurate IR and declared loss
+#### Conversion ladder
 
-Order of precedence: **Lossless mapping → Bounded approximation → Meaningful simple estimate → Rejection**.
+Accepted on 2026-10-30; it replaces the earlier exact-first fallback and the fail-closed "known unsupported" class. Every known field, control, report and history owner crossing a protocol or target boundary takes the first applicable level:
+
+| Level | Name | Rule | Examples |
+|---|---|---|---|
+| L1 | Same-name | The target carries the same field with the same meaning | Chat `stop` to Chat; Responses `reasoning.effort` to Responses |
+| L2 | Same-semantic | A different carrier or shape with identical meaning; no loss receipt ([semantic equivalence](#semantic-equivalence-compatibility)) | Documented null/empty defaults; disabled flags; a parameterless function as an empty object schema; `stop` beside calls as `tool_use` |
+| L3 | Partial lossy | A bounded approximation preserving the main intent, under a named rule with evidence | Nearest supported effort; conditional strictness as non-strict; uncarried reasoning omitted while visible history stays |
+| L4 | Omit | No expressible meaning on the target, and dropping it cannot make the response appear to satisfy something it did not; named omission | Sampling and verbosity controls, cache hints, metadata and service hints, carrier-less reports |
+| L5 | Reject | Inexpressible, and omission would let the client mistake the response for satisfying its request | Media the model must see, `n > 1`, tools or explicit output constraints with no carrier, explicit strict guarantees |
+
+**Burden of proof.** Rejection requires the L5 reason; admission requires no prior equivalence evidence. Field-specific evidence selects among L1–L4 and names the rule.
+
+**Unknown facts.** When a target fact is unknown, such as an unassessed binding history contract or unknown schema compatibility, the gateway sends the carriable form and lets upstream validation decide (delegation). Delegation never applies to trust, replay origin or credentials.
+
+**Timing.** Request-side levels are resolved per candidate during planning, on candidate-local copies, so request-determined impossibility fails before dispatch (P4). After dispatch the upstream has already generated output; report and metadata facts bottom out at L4, and only content or outcome that would be misrepresented may fail delivery.
+
+**Invariants outside the ladder:** credentials, auth, origin and trusted target selection; replay signature, origin and format trust; resource and time bounds; malformed known values and strict JSON; terminal honesty and validated EOF; call identity; no executable claim for incomplete tool input; explicit history-read intent; already-published accounting; candidate-local projection over immutable source IR; the routing freeze. No level invents content, forges signatures or fabricates success.
+
+**Ownership.** The request side has one owner: each target declares a disposition per feature (native, equivalent, approximate, omit, delegate or reject), and one pure projection applies it per candidate during planning; encoders consume only projected copies, and source-level admission keeps only grammar checks and L5. The delivery side has one owner in [`ClientAdapter`](../src/adapter/downstream.rs): a (fact, client protocol) table drives one snapshot projection for JSON and retained views and one per-event projection for SSE, so encoders only render. Discovery and `/capabilities` read the same tables. Migration order is owned by the [roadmap](roadmap.md#conversion-ladder-migration).
+
+Applications selected on 2026-10-30 (implementation pending unless stated):
+
+| Area | Level and rule |
+|---|---|
+| Explicit `strict:true` without an equivalent carrier | L5. Conditional (omitted) strictness is always resolvable: L1/L2 where a strict carrier and known compatibility exist, otherwise L3 non-strict; a request-wide strict grammar overflow resolves all conditional definitions non-strict, and rejects only when explicit strict tools alone overflow |
+| Effort | Nearest supported level, ties upward, across Reasoning/Response scopes at the same level (L3); manual budgets on adaptive-only bindings convert to adaptive plus effort |
+| Output ceilings | Clamp to a known model maximum (L3); targets without a ceiling carrier omit it (L4) |
+| `required_with_tools` history with a Standard Chat client | Deployers select `readable_reasoning` on such public models; otherwise a candidate with a thinking-off carrier disables thinking under a named loss (L3), and one without rejects at planning. Not delegated, because the next turn is known to fail upstream |
+| Uncarried reasoning in delivery or history | Omit the owner, keep visible content and tool links (L3); applies to opaque reasoning on Standard Chat and unsigned reasoning on Messages; never forged |
+| Unsealed or foreign client reasoning in history | Omit under visible-history transfer (L3); never forwarded |
+| `stop` without a target carrier | L5 for now; gateway-side truncation may later provide L2 |
+| Messages `stop_sequences` on a non-Messages target with an ambiguous natural/stop-sequence cause | `end_turn` under a named approximation (L3) |
+| Unknown finish or incomplete reasons | Evidence-backed per-dialect maps; Responses carries an unspecified reason as `incomplete_details:{}`; otherwise L5 on Chat and Messages, so no outcome is misreported as a token limit |
+| Messages `thinking.block_binding` | `null`/`{}` L2; `drop_block` L3 under existing replay checks; `"error"` L5 |
+| Messages version and beta headers | See the [version policy](#protocols) |
+| Unscheduled capabilities | Moderation, background, context management and compaction requests, hosted tools and items, `between_tools`, per-message configuration, `clear_at`, nonempty `logit_bias`, legacy function carriers, `inference_geo` and upstream-reported storage keep their current rejection until scheduled |
+
+Existing rule families remain valid ladder applications:
 
 | Rule Family | Policy |
 |---|---|
@@ -385,7 +426,7 @@ Order of precedence: **Lossless mapping → Bounded approximation → Meaningful
 | Tool-result errors | Preserve native error flag; wrap in `[tool result is_error=...]` if target lacks boolean carrier |
 | Chat JSON grouping | Concatenate contiguous plain assistant text before function/custom calls, preserving call identity, order and raw arguments/input. Do not flatten rich/replay-bearing parts or reorder text across calls; custom SSE remains unsupported |
 | Instruction roles | Canonical Developer mapping; preserve root vs. ordered lifetimes |
-| Output ceilings | Preserve explicit ceilings; insert target default only when client ceiling is absent |
+| Output ceilings | Preserve explicit ceilings up to the model maximum; insert target default only when client ceiling is absent |
 | Terminal stops | Coarsen natural/stop-sequence causes to `stop` or `end_turn` under named rules |
 
 - `chat.omit-text-item-status.v1`: Plain-text incomplete message items omit individual item status when overall finish reason is `length`.
@@ -393,7 +434,7 @@ Order of precedence: **Lossless mapping → Bounded approximation → Meaningful
 
 #### Semantic-equivalence compatibility
 
-Accepted on 2026-10-28. The selected null-metadata, empty-logprobs and [reviewed equivalent forms](refs/2026-10-27-client-ir-boundaries.md#semantic-equivalence-review-2026-10-28) are implemented. Broader field review continues in [repair order 2b](roadmap.md#repair-order-and-exit-gates). Protocol-defined equivalent empty values, empty collections, defaults and structural placeholders belong to lossless mapping. Accept, normalize, omit or supply them as the target grammar requires, without a separate named-omission path or loss receipt.
+Accepted on 2026-10-28; this is ladder level L2 of the [conversion ladder](#conversion-ladder). The selected null-metadata, empty-logprobs and [reviewed equivalent forms](refs/2026-10-27-client-ir-boundaries.md#semantic-equivalence-review-2026-10-28) are implemented. Further L2 applications are found through the [ladder migration](roadmap.md#conversion-ladder-migration) rather than a separate field-by-field review. Protocol-defined equivalent empty values, empty collections, defaults and structural placeholders belong to lossless mapping. Accept, normalize, omit or supply them as the target grammar requires, without a separate named-omission path or loss receipt.
 
 Equivalence depends on the field, direction and lifecycle contract, not emptiness alone. It must preserve content, control intent, explicit constraints, identity, report facts and subsequent behavior. Preserve source observations; apply target representation changes in the existing codec/projection owners. Do not introduce recursive empty-field stripping or globally equate absent, null, empty, false and zero. Unknown fields and malformed known values retain their existing admission rules.
 
@@ -409,7 +450,7 @@ Chat request `logit_bias:null` is its documented default, equivalent to omission
 
 #### Client/IR projection principles
 
-Accepted on 2026-10-28 for Client/IR stabilization. Apply [semantic-equivalence compatibility](#semantic-equivalence-compatibility) first; classify remaining projection rules under the principles below. Sections marked *implementation pending* state the target design; current behavior is unchanged until the corresponding [repair-order](roadmap.md#repair-order-and-exit-gates) slice lands.
+Accepted on 2026-10-28 for Client/IR stabilization. Apply [semantic-equivalence compatibility](#semantic-equivalence-compatibility) first; classify remaining projection rules under the principles below. They are applications of the [conversion ladder](#conversion-ladder). Sections marked *implementation pending* state the target design; current behavior is unchanged until the corresponding [migration](roadmap.md#conversion-ladder-migration) slice lands.
 
 | Principle | Rule |
 |---|---|
@@ -421,17 +462,17 @@ Accepted on 2026-10-28 for Client/IR stabilization. Apply [semantic-equivalence 
 
 Accepted applications:
 
-- **Omitted Responses strictness (P5):** the [Responses reference](https://developers.openai.com/api/reference/resources/responses/methods/create) and [function-calling guide](https://developers.openai.com/api/docs/guides/function-calling#strict-mode) (rechecked 2026-10-29) define attempted strict normalization when compatible and non-strict fallback otherwise. Each tool is evaluated against the applicable documented subset: incompatible → explicit non-strict (exact); compatible with an equivalent strict carrier → strict (exact); compatible without one → non-strict under a named loss. Compatibility is not limited to already-closed schemas, and normalization feasibility alone does not prove an equivalent rewritten strict carrier. Unknown compatibility retains the existing cross-target rejection rather than being classified as incompatible. Explicit true never takes the omitted-default loss. The IR default names this conditional rule, not a promise to perform local schema normalization.
+- **Omitted Responses strictness (P5):** the [Responses reference](https://developers.openai.com/api/reference/resources/responses/methods/create) and [function-calling guide](https://developers.openai.com/api/docs/guides/function-calling#strict-mode) (rechecked 2026-10-29) define attempted strict normalization when compatible and non-strict fallback otherwise. Each tool is evaluated against the applicable documented subset: incompatible → explicit non-strict (exact); compatible with an equivalent strict carrier → strict (exact); compatible without one → non-strict under a named loss. Compatibility is not limited to already-closed schemas, and normalization feasibility alone does not prove an equivalent rewritten strict carrier. Revised 2026-10-30 (implementation pending): unknown compatibility and omitted parameter schemas no longer reject; an omitted parameter schema is an empty object schema (L2), and unknown compatibility resolves non-strict under the same named loss (L3) because the documented fallback is non-strict. Explicit true never takes the omitted-default loss. The IR default names this conditional rule, not a promise to perform local schema normalization.
 - **Reasoning presentation and continuity requests (P2):** `summary:"auto"` selects the most detailed available summarizer; resolving to the fixed native summarizer or no available summary is exact. Explicit `concise`/`detailed` take a named omission without a selectable carrier. Encrypted-reasoning `include` is exact when the target emits no reasoning items and takes a named continuity omission when reasoning has no opaque carrier.
-- **Carrier-less reports (P2):** served service classes and refusal categories without an OpenAI carrier are omitted on delivery copies, extending [explanatory terminal reports](#explanatory-terminal-reports). Anthropic standard capacity and OpenAI default processing remain distinct classes; no approximate tier is reported. Empty probability reports instead follow [semantic-equivalence compatibility](#semantic-equivalence-compatibility).
+- **Carrier-less reports (P2):** served service classes and refusal categories without an OpenAI carrier are omitted on delivery copies, extending [explanatory terminal reports](#explanatory-terminal-reports). Anthropic standard capacity and OpenAI default processing remain distinct classes; no approximate tier is reported. Empty probability reports instead follow [semantic-equivalence compatibility](#semantic-equivalence-compatibility). Selected on 2026-10-30 (implementation pending): Messages delivery applies the same omission to served OpenAI processing classes and echoed execution hints (`metadata`, `background`, `prompt_cache_key`, `store`).
 - **Messages terminal derivation (P1):** see [Messages terminal projection](#messages-terminal-projection).
-- **Messages baseline:** the `2026-10-21` version and beta-header rejection remain; a legacy version would be a separate client grammar. Agents avoid unsupported beta features through [discovery](#generation-text-model-discovery).
+- **Messages baseline:** revised on 2026-10-30 by the [version policy](#protocols): `2023-06-01` is admitted over the current body grammar and beta headers are ignored, while beta body semantics follow body rules. Agents still learn unsupported features through [discovery](#generation-text-model-discovery).
 
 The first presentation/continuity consumer (2026-10-29) projects Bailian Responses request copies before target validation. Auto resolves to the native default without a loss receipt; explicit granularity uses `responses.omit-reasoning-summary.v1`. Encrypted include uses `responses.omit-encrypted-reasoning-include.v1`, except that an admitted explicit thinking-off request has no new reasoning to encrypt and needs no loss receipt. These rules do not change activation, effort, budgets, context, read-history intent, history owners or source observations. Null/omitted visibility guards remain. This request-control policy is independent of S11 history qualification; other target families still need their selected consumers.
 
-The first conditional-default consumers (2026-10-29) resolve root function definitions on candidate-local copies before Chat/Bailian validation and share the same resolver with direct lowering. `StrictDefault::Conditional` and the separate `conditional_tool_defaults` requirement preserve source intent without claiming explicit strict support. Standard Responses retains native omission. An unchanged, already-closed schema uses an available strict carrier exactly; an assessed compatible schema without an equivalent carrier takes `openai.omit-conditional-tool-strictness.v1`. Assessed incompatibility resolves to non-strict without that loss. Bailian's final writers omit the unsupported flag under their native non-strict default. The bounded evidence class covers core objects, arrays, primitives and small scalar enums/constants, with shape-checked exclusions. References, omitted parameter schemas, larger enum properties and unassessed/model-dependent constraints retain cross-target rejection. A known exclusion never masks unknown or malformed vocabulary elsewhere. No local schema normalizer is introduced, schemas/source observations are unchanged, and explicit true never enters this fallback. Remaining consumers and qualification work belong to the [repair order](roadmap.md#repair-order-and-exit-gates).
+The first conditional-default consumers (2026-10-29) resolve root function definitions on candidate-local copies before Chat/Bailian validation and share the same resolver with direct lowering. `StrictDefault::Conditional` and the separate `conditional_tool_defaults` requirement preserve source intent without claiming explicit strict support. Standard Responses retains native omission. An unchanged, already-closed schema uses an available strict carrier exactly; an assessed compatible schema without an equivalent carrier takes `openai.omit-conditional-tool-strictness.v1`. Assessed incompatibility resolves to non-strict without that loss. Bailian's final writers omit the unsupported flag under their native non-strict default. The bounded evidence class covers core objects, arrays, primitives and small scalar enums/constants, with shape-checked exclusions. References, omitted parameter schemas, larger enum properties and unassessed/model-dependent constraints currently retain cross-target rejection, pending the 2026-10-30 revision above. A known exclusion never masks unknown or malformed vocabulary elsewhere. No local schema normalizer is introduced, schemas/source observations are unchanged, and explicit true never enters this fallback. Remaining consumers belong to the [ladder migration](roadmap.md#conversion-ladder-migration).
 
-The Messages consumer (2026-10-30) admits conditional defaults independently of explicit strict tools and shares the source resolver for root and inline-added definitions. An unchanged closed schema additionally needs the binding's strict opt-in and the native exact subset; string enum/const casing is not guaranteed by Messages and therefore has no equivalent strict carrier. Compatible schemas without that carrier take the same selected conditional-default loss; source-incompatible schemas resolve exactly to false. Final encoding retains the combined native limits for strict root/inline tools and JSON output. Budget overflow rejects before dispatch; selective or whole-request automatic downgrade is not selected. Unknown source compatibility and explicit strict guarantees retain their guards.
+The Messages consumer (2026-10-30) admits conditional defaults independently of explicit strict tools and shares the source resolver for root and inline-added definitions. An unchanged closed schema additionally needs the binding's strict opt-in and the native exact subset; string enum/const casing is not guaranteed by Messages and therefore has no equivalent strict carrier. Compatible schemas without that carrier take the same selected conditional-default loss; source-incompatible schemas resolve exactly to false. Final encoding retains the combined native limits for strict root/inline tools and JSON output. Budget overflow currently rejects before dispatch. Selected on 2026-10-30 (implementation pending): overflow resolves every conditional definition in the request non-strict under the conditional-default loss, rejecting only when explicit strict tools and JSON output alone overflow; unknown source compatibility follows the revision above, and explicit strict guarantees keep their guards.
 
 Responses retrieval of native structured tool output retains the argument string actually published by its SSE encoder. The existing bounded stream state owns those bytes; a private retained copy checks call identity, lifecycle and parsed-value agreement before replacing its reserialized string. Native structured observations remain unchanged, and the representation change needs no loss receipt.
 
@@ -475,7 +516,7 @@ Responses preserves `commentary` and `final_answer` labels. Targets without phas
 #### Service policies and reports
 
 - Requested service policies and served classes have separate owners. Anthropic `standard`/`priority` capacity and OpenAI `default`/`flex`/`priority` processing classes remain distinct; explicit policy constraints require a supported target meaning.
-- `openai.omit-unrepresentable-service-class.v1` omits served classes without an OpenAI carrier on delivery copies. It never substitutes an approximate tier; strict-complete reporting rejects this omission.
+- `openai.omit-unrepresentable-service-class.v1` omits served classes without an OpenAI carrier on delivery copies. It never substitutes an approximate tier. The test-only strict-complete reporting policy is scheduled for removal; production bindings use faithful reporting.
 - Stream encoders validate original service observations before projecting rendering copies. Conflicting single-report or lifecycle updates still reject even when both classes would be omitted.
 
 #### Lifecycle settings and service reports
@@ -501,6 +542,8 @@ A completed, call-free outcome maps to `end_turn` for any source when both the a
 
 Explicit stop causes are preserved. Unbound requests, declared stop sequences, continuation, incomplete/failed/cancelled outcomes and calls do not gain a generic end-turn derivation. SSE still requires validated upstream EOF and final metadata before publishing its terminal.
 
+Selected on 2026-10-30 (implementation pending): a completed outcome whose only ambiguity is a declared stop sequence on a non-Messages target maps to `end_turn` under a named approximation (L3), because the source cannot say which cause applied. A Chat `stop` finish accompanied by function calls maps to `tool_use` (L2), as forced tool choice reports `stop` with calls. Incomplete, failed and cancelled outcomes remain unchanged.
+
 Existing Gemini 3.8 Flash bindings retain their narrower rules:
 - `messages.google-stop-without-sequences.v1` and `messages.interactions-completed-as-end-turn.v1` use the same request-grounded inference classification for their call-free completions.
 - `messages.google-tool-stop.v1` remains a separately selected tool-stop projection. Disabling that Google-specific policy does not disable generic call-free inference and does not permit the ambiguous tool-stop case.
@@ -520,7 +563,7 @@ The IR decouples reasoning activation from effort level and scope:
 
 #### Reasoning level calibration
 
-Explicit hand-authored mappings define canonical model bindings. Fixed or ignored sampling controls (temperature, top-p, top-k) are omitted for models that do not support them via target-specific rules (`gemini.omit-sampling.v1`).
+Explicit hand-authored mappings define canonical model bindings. Under the [conversion ladder](#conversion-ladder), unsupported levels resolve to the nearest supported level (ties upward) and Reasoning/Response effort scopes convert at the same level. Fixed or ignored sampling controls (temperature, top-p, top-k) are omitted for models that do not support them via target-specific rules (`gemini.omit-sampling.v1`).
 
 ##### Thinking-budget quantization
 
@@ -533,12 +576,12 @@ When targets require discrete qualitative levels, numeric token budgets are quan
 
 Selected on **2026-10-28**: functionality may take precedence over conservative gateway-derived token defaults or presets through bounded, target-qualified adaptation. Prefer exact native controls; distinguish original client intent, derived allocation and actual model limits.
 
-This direction does not select an adjustment formula or change current validation. A concrete rule must name the changed guarantee, target, finite bound, useful answer reserve and evidence. Explicit client ceilings or numeric thinking intent are not silently overridden; any relaxation of them needs its own selected rule. Source protocol validity, model maxima, memory/wire limits, timeouts and terminal honesty remain enforced. Unknown capacity is not unlimited capacity. The [budget proposal](api-expansion-design.md#independent-output-ceilings-unselected) owns unresolved alternatives.
+This direction does not select an adjustment formula or change current validation. A concrete rule must name the changed guarantee, target, finite bound, useful answer reserve and evidence. Explicit client ceilings or numeric thinking intent are not silently overridden; any relaxation of them needs its own selected rule. The 2026-10-30 [model-maximum clamp](#model-effective-values) is such a rule: it only lowers a ceiling the model cannot exceed. Source protocol validity, model maxima, memory/wire limits, timeouts and terminal honesty remain enforced. Unknown capacity is not unlimited capacity. The [budget proposal](api-expansion-design.md#independent-output-ceilings-unselected) owns unresolved alternatives.
 
 ##### Initial mapping plan
 
 Bindings declare model-specific qualitative level translation via [`ReasoningEffortMapping`](file:///home/sakura/development/MorphieCore/src/protocol/reasoning.rs#L358) and [`ReasoningRequestPolicy`](file:///home/sakura/development/MorphieCore/src/protocol/reasoning.rs#L155):
-- Conversions are strictly directional; missing or unsupported levels reject at intake and validation rather than defaulting.
+- Conversions are strictly directional. Selected on 2026-10-30 (implementation pending): a level missing from a binding's table resolves to the nearest supported level, ties upward, under the binding's named effort rule. Bindings that expose no effort control omit it under a named rule (L4); explicit history-read intent keeps its own guard.
 - Upstream thinking budgets translate to qualitative effort via [`ReasoningConversion::BudgetToEffort`](file:///home/sakura/development/MorphieCore/src/protocol/reasoning.rs#L137), and qualitative effort expands to discrete token budgets via [`ReasoningConversion::EffortToBudget`](file:///home/sakura/development/MorphieCore/src/protocol/reasoning.rs#L142).
 
 ##### Implementation owners
@@ -592,7 +635,7 @@ Transformations return `Result<Conversion<T>, ConversionFailure>`. Evidence is c
 - **Descriptors:** Supported protocols, delivery modes (JSON/SSE), token limits (context window, max output), and evaluated feature states (`faithful`, `approved_adaptation`, `unavailable`, `not_assessed`).
 - **Pi Integration:** Context windows and image capabilities project directly to Pi client configurations.
 
-Accepted extension (2026-10-28; implementation pending): the gateway publishes, in client-agnostic vocabulary, each model's preferred client interface and each interface's adaptation rules. Preference follows the primary candidate, with a `basis` field and a uniformity flag; no candidate count, order or identity is disclosed. One compiled owner derives these facts from the agent-default conformance corpus; the models endpoint owns Generation while `/capabilities` keeps other tasks. A body-hash `ETag` is allowed; no maintained revision is introduced.
+Accepted extension (2026-10-28; implementation pending): the gateway publishes, in client-agnostic vocabulary, each model's preferred client interface and each interface's adaptation rules. Preference follows the primary candidate, with a `basis` field and a uniformity flag; no candidate count, order or identity is disclosed. One compiled owner derives these facts from the agent-default conformance corpus and the [conversion-ladder](#conversion-ladder) disposition tables; the models endpoint owns Generation while `/capabilities` keeps other tasks. A body-hash `ETag` is allowed; no maintained revision is introduced.
 
 Simple feature support, default-request disposition and full delivery/history support are separate claims. Explicit-strict synthetic tools do not stand in for omitted-strict Agent declarations. Keep unassessed/nonuniform facts and partial/composition coverage explicit. Publishing a preference does not establish that a client consumes it: integration must state whether application is automatic, explicit configuration or advisory. This neither permits capability-based candidate skipping nor changes routing priority.
 
@@ -607,13 +650,13 @@ Upstream opaque tokens and signatures are delivered in tagged [`mc1.`](file:///h
 
 Accepted revision (2026-10-28, P3): same-issuer `incomplete` reasoning with a finalized replay token is forwarded exactly to Responses, whose input union admits that status; implemented with preserved item identity/status and issuer checks. Finalized foreign reasoning and finalized native reasoning with an incompatible carrier format are omitted independently of item lifecycle, preserving visible history and tool links. Client `in_progress` partial tokens remain invalid at replay opening; partial native values and required compaction/attachments retain their guards.
 
-The first assessed request-history migration (2026-10-29) applies to Bailian Responses bindings declaring `accepted`: summary-only owners retain their exact carrier; owners containing full-readable text or opaque replay have no carrier and take `responses.transfer-visible-history.v1`, including same-issuer and unattributed owners. The whole uncarried owner is omitted rather than moving reasoning into visible text or stripping only its signature. Explicit `read_history:true` cannot be satisfied by omission. The wire predicate is shared with ordinary Bailian validation; dependency/finality checks, affected call-alias pruning and fidelity cleanup share the existing transfer implementation. Retained summaries, visible item IDs and semantic call/result links remain intact. Unassessed bindings and other request consumers retain their prior behavior.
+The first assessed request-history migration (2026-10-29) applies to Bailian Responses bindings declaring `accepted`: summary-only owners retain their exact carrier; owners containing full-readable text or opaque replay have no carrier and take `responses.transfer-visible-history.v1`, including same-issuer and unattributed owners. The whole uncarried owner is omitted rather than moving reasoning into visible text or stripping only its signature. Explicit `read_history:true` cannot be satisfied by omission. The wire predicate is shared with ordinary Bailian validation; dependency/finality checks, affected call-alias pruning and fidelity cleanup share the existing transfer implementation. Retained summaries, visible item IDs and semantic call/result links remain intact. Selected on 2026-10-30 (implementation pending): every request consumer applies the same transfer to reasoning its target cannot carry, including unsealed or foreign client reasoning, foreign citations and obsolete markers; unassessed bindings follow the delegation rule below.
 
 #### Binding reasoning-history contract
 
-Accepted on 2026-10-28 (P3, P4), with phased migration and explicit unassessed declarations accepted on 2026-10-29. An assessed Generation binding declares one reasoning-history fact: `unsupported`, `ignored`, `accepted` or `required_with_tools`. `None` means unassessed and preserves existing behavior, not inferred acceptance, ignoring or rejection. The selected protocol target owns the declaration; a common accessor supplies consumers without dialect inference. Wire carriers, replay isolation and thinking controls remain separate.
+Accepted on 2026-10-28 (P3, P4), with phased migration and explicit unassessed declarations accepted on 2026-10-29. An assessed Generation binding declares one reasoning-history fact: `unsupported`, `ignored`, `accepted` or `required_with_tools`. `None` means unassessed: no acceptance, ignoring or rejection is inferred. Revised 2026-10-30 (implementation pending): planning does not reject on an unassessed fact; the candidate sends carriable history and upstream validation decides, while discovery still publishes `not_assessed`. The selected protocol target owns the declaration; a common accessor supplies consumers without dialect inference. Wire carriers, replay isolation and thinking controls remain separate.
 
-The first migration declares endpoint-qualified facts for native Xiaomi, direct DashScope Qwen, DeepSeek, native Zhipu and the SIWC/Grok subscriptions. Other bindings remain unassessed. Planning reads `required_with_tools` for Standard Chat clients on Chat candidates: nonempty projected tools with thinking not off reject before dispatch unless the client selects readable reasoning. Tool-free requests and admitted off controls add no history requirement. The old Qwen output guard is retired for assessed bindings whose unsigned output now projects to Standard Chat; unassessed TokenPlan Qwen admission stays unchanged. Discovery reads the same declarations and publishes a common fact, `non_uniform` for differing assessed facts, or `not_assessed` if any candidate is unassessed.
+The first migration declares endpoint-qualified facts for native Xiaomi, direct DashScope Qwen, DeepSeek, native Zhipu and the SIWC/Grok subscriptions. Other bindings remain unassessed. Planning reads `required_with_tools` for Standard Chat clients on Chat candidates: nonempty projected tools with thinking not off reject before dispatch unless the client selects readable reasoning. Selected on 2026-10-30 (implementation pending): deployers select `readable_reasoning` on such public models; otherwise a candidate with a thinking-off carrier disables thinking under a named loss, and only a candidate without one rejects. Tool-free requests and admitted off controls add no history requirement. The old Qwen output guard is retired for assessed bindings whose unsigned output now projects to Standard Chat; unassessed TokenPlan Qwen admission stays unchanged until the delegation revision lands. Discovery reads the same declarations and publishes a common fact, `non_uniform` for differing assessed facts, or `not_assessed` if any candidate is unassessed.
 
 Request/history migration starts with the assessed Bailian Responses rule above; remaining history/delivery consumers still need migration. Neither a declaration nor successful encoding establishes full-loop carriage. Standard Chat's selected delivery omission below is independent of guessing a Provider history fact. DeepSeek's [thinking contract](https://api-docs.deepseek.com/guides/thinking_mode/) (read 2026-10-28) requires **all previous turns' reasoning** when a thinking request carries tools; Zhipu's documented requirement concerns the current tool cycle. The shared fact does not collapse those scopes or authorize dropping explicit read-history intent.
 
@@ -638,7 +681,7 @@ Public Chat defaults to the official Standard dialect. The trusted model profile
 
 Accepted revision (2026-10-28, P2, P4; implemented 2026-10-29): Standard Chat omits unsigned readable reasoning under `chat.omit-readable-reasoning.v1`, matching official Chat, which exposes reasoning only through usage. The codec-local policy removes reasoning owners from static and retained copies and suppresses their complete event lifecycle before grouping/rendering. Source parsing/reduction, accounting, visible content, tool links and terminal authority remain intact. Omission evidence identifies the original owner; reasoning is never moved into visible assistant text.
 
-Replay-bearing reasoning remains protected even when its readable parts are empty or the native carrier contains no cryptographic signature; it cannot be silently discarded by this rule. Explicit readable/structured profiles keep their existing carriers. When a declared Chat binding's [history contract](#binding-reasoning-history-contract) is `required_with_tools`, a Standard tool request with thinking not off rejects at planning unless the public model selects `readable_reasoning`.
+Replay-bearing reasoning currently remains protected even when its readable parts are empty or the native carrier contains no cryptographic signature. Selected on 2026-10-30 (implementation pending): Standard Chat has no carrier for it, so delivery omits the whole owner under a named loss instead of failing after dispatch; continuity is lost, visible content and tool links stay, and no signature is forged or moved into text. Explicit readable/structured profiles keep their existing carriers. When a declared Chat binding's [history contract](#binding-reasoning-history-contract) is `required_with_tools`, a Standard tool request with thinking not off rejects at planning unless the public model selects `readable_reasoning`; the 2026-10-30 thinking-off fallback in that section applies once implemented.
 
 ### Compacted history
 
@@ -684,7 +727,8 @@ Request-wide automatic caching is enabled on native Messages targets with verifi
 
 ### Response rules
 
-- Messages delivery requires valid signatures on thinking blocks; unsigned reasoning rejects.
+- Messages delivery requires valid signatures on thinking blocks; unsigned reasoning currently rejects. Selected on 2026-10-30 (implementation pending): unsigned or multi-summary reasoning without a signed carrier is omitted under a named loss; signatures are never synthesized and signed reasoning keeps its exact carrier.
+- A zero-argument call whose arguments are an empty string delivers `{}` input (L2); other non-object tool input remains rejected.
 - Block start order preserves source item ordering.
 - Streaming argument fragments are buffered during whitespace prefixes to maintain valid JSON grammar for accumulators.
 
@@ -800,15 +844,15 @@ Authoritative log of accepted architectural decisions and their systemic consequ
 |---|---|---|
 | Model capability discovery | 2026-10-26 | Unified discovery contracts for Generation Text and Pi; other modalities schema-only |
 | DeepSeek parallel-tool admission | 2026-10-25 | Rejects serial tool intent; omits parallel permission with evidence on DeepSeek targets |
-| Messages signed delivery | 2026-10-27 | Enforces native thinking signatures; unsigned thinking rejects |
+| Messages signed delivery | 2026-10-27 | Enforces native thinking signatures; revised 2026-10-30: unsigned thinking is omitted, never signed |
 | Local telemetry wiring | 2026-10-25 | Native structured logs via tracing/OTel without global runtime locks |
 | Minimal diagnostic attribution | 2026-10-25 | Admission-owned Agent and request nonces tag traces and capture logs |
 | Unified Generation evidence | 2026-10-24 | Replaces separate audit logs with `EvidenceDelta` and `Conversion<T>` |
-| Standards reset & redesign | 2026-10-23 | Pinned official standards, exact-first fallback, and upstream test suites |
+| Standards reset & redesign | 2026-10-23 | Pinned official standards and upstream test suites; its exact-first fallback is superseded by the conversion ladder |
 | Standard stream errors | 2026-10-24 | Standard Responses `error` events for classified stream failures |
 | Native-only continuation | 2026-10-24 | Replaces synthetic manifest reasoning with genuine native replay carriers |
 | Readable Chat reasoning | 2026-10-24 | Explicit `readable_reasoning` profile for `reasoning_content` |
-| Latest Messages baseline | 2026-10-24 | Enforces HTTP baseline `2026-10-21`; removes obsolete sampling fields |
+| Latest Messages baseline | 2026-10-24 | Current `2026-10-21` body grammar; revised 2026-10-30: `2023-06-01` admitted over it, removed sampling fields omitted, beta headers ignored |
 | Canonical accounting | 2026-10-23 | Scoped modality breakdowns; single reasoning presentation owner |
 | Five-stage order | 2026-10-20 | Stage 1 (Lossless Codecs), 2 (Agent Tools), 3 (Stability/Counting), 4 (Modalities/Decision/Files), 5 (Backlog) |
 | Shared Aliyun dialect | 2026-10-19 | Shared `Bailian` dialect for DashScope and TokenPlan |
@@ -822,7 +866,8 @@ Authoritative log of accepted architectural decisions and their systemic consequ
 | Decision | Date | Accepted Architectural Consequence |
 |---|---|---|
 | Standard request boundary | 2026-10-26 | Client intake enforces official protocol grammar; Provider dialects isolated to egress |
-| Client semantic boundary | 2026-10-27 | Unknown extension fields discarded; known unsupported semantics reject |
+| Conversion ladder | 2026-10-30 | Same-name → same-semantic → partial lossy → omit → reject only when omission would misrepresent the response; unknown target facts delegate to upstream validation; one request-side and one delivery-side disposition owner |
+| Client semantic boundary | 2026-10-27 | Unknown extension fields discarded; revised 2026-10-30: known fields enter the conversion ladder instead of fail-closed rejection |
 | Three-protocol fidelity | 2026-10-27 | Semantic fidelity across Chat, Responses, and Messages with stream normalization |
 | Text item status omission | 2026-10-27 | Plain text incomplete items omit item status when overall finish is length |
 | Responses metadata echo | 2026-10-27 | Echoes admitted request metadata when upstream omits metadata entirely |
@@ -878,19 +923,20 @@ Authoritative log of accepted architectural decisions and their systemic consequ
 | Messages ordered block delivery | 2026-10-28 | Codec-local bounded serialization preserves owner/part order, incremental head output and signed history; incomplete text-owner wire closure preserves source lifecycle, native intake and EOF authority |
 | Semantic-equivalence compatibility | 2026-10-28 | Protocol-equivalent empty/default forms use ordinary lossless mapping without named omissions or loss receipts; covers null-only reports, empty logprobs/cache options and already-enabled permissions; source observations and meaningful constraints remain protected |
 | Client/IR projection principles | 2026-10-28 | After semantic-equivalence handling, P1–P5 classify remaining projections: request-context deduction, carrier-less non-content omission, delivery closure, planning-time impossibility and conditional source defaults |
-| Responses strictness resolution | 2026-10-28 | Omitted `strict` resolves per tool and target by the documented compatibility rule; non-strict loss only where a compatible schema lacks an equivalent carrier |
+| Responses strictness resolution | 2026-10-28 | Omitted `strict` resolves per tool and target by the documented compatibility rule; revised 2026-10-30: unknown compatibility and grammar overflow resolve non-strict, explicit strict stays guarded |
+| Ladder applications | 2026-10-30 | Nearest effort (ties upward), model-maximum clamp, thinking-off fallback for required Chat history, uncarried reasoning omission, Messages `end_turn`/`tool_use` derivations, `block_binding` levels; `stop` without carrier and unknown Chat/Messages stop causes remain rejections |
 | Reasoning presentation and continuity | 2026-10-28 | `summary:"auto"` and encrypted `include` resolve against target availability; explicit summarizers and missing opaque carriers take named omissions |
 | Carrier-less report omission | 2026-10-28 | Served service classes and refusal categories without carriers are omitted on delivery copies; no approximate service tier; empty logprobs use semantic-equivalence compatibility instead |
 | Messages terminal derivation | 2026-10-28 | Completed call-free outcomes without admitted stop sequences derive `end_turn` from any source |
 | Generalized visible-history transfer | 2026-10-28 | Revises scoped opaque replay: uncarried reasoning of any issuer or lifecycle is omitted; same-issuer incomplete reasoning forwards exactly to Responses |
 | Binding reasoning-history contract | 2026-10-28 | One assessed binding fact (`unsupported`/`ignored`/`accepted`/`required_with_tools`) is the shared owner for projection, delivery, planning and discovery |
-| Phased binding-history qualification | 2026-10-29 | Explicit unassessed declarations preserve current behavior; established facts migrate without inferring Provider history semantics from replay switches or output |
-| Standard Chat reasoning omission | 2026-10-28 | Standard omits unsigned readable reasoning on delivery copies; replay stays protected; declared required-history Chat tools reject at planning without the readable profile |
+| Phased binding-history qualification | 2026-10-29 | Explicit unassessed declarations (revised 2026-10-30: delegate instead of pre-rejecting); established facts migrate without inferring Provider history semantics from replay switches or output |
+| Standard Chat reasoning omission | 2026-10-28 | Standard omits unsigned readable reasoning on delivery copies; revised 2026-10-30: uncarried opaque reasoning is omitted too, never forged; declared required-history Chat tools reject at planning without the readable profile |
 | Owner-local cache omission | 2026-10-28 | Revises owner-local cache admission: all routes admit breakpoints; non-native candidates omit them by named rule |
 | Incomplete generated tool arguments | 2026-10-29 | Select byte-preserving OpenAI prefix-string projection with incomplete lifecycle/termination; no JSON repair or executable-input claim; native Messages object restrictions remain |
 | Grouped tool-result association | 2026-10-29 | Associate results by call ID without reordering; remove unsupported adjacency assumptions on qualified consumers, retaining identities, causal order and replay guards |
 | Three-protocol default-loop closure | 2026-10-29 | Stage 4 requires current-client default reasoning/tool/history success on all three client protocols; retained rejections and nondefault profiles do not substitute; preserve actual built-in model metadata |
-| Messages baseline retained | 2026-10-28 | Legacy `anthropic-version` and nonempty beta headers keep rejecting; discovery lets agents avoid beta-only behavior |
+| Messages baseline retained | 2026-10-28 | Superseded 2026-10-30 by the revised Messages version policy; discovery still publishes unsupported behavior |
 | Agent-facing discovery | 2026-10-28 | Gateway-published preferred interface and adaptation rules from one compiled owner over the conformance corpus |
 | Scoped source accounting | 2026-10-20 | Retains raw usage scopes independently without premature summation |
 | Honest delivery | 2026-10-20 | Publication freezes failover; completion requires validated upstream EOF |

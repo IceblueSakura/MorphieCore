@@ -526,7 +526,7 @@ When an admitted request includes `metadata`, Responses delivery can echo it if 
 
 ### Messages
 
-Send exactly one `anthropic-version: 2026-10-21` header. Missing, duplicate, combined and unsupported versions return 400 before body collection; there is no legacy-version negotiation. The pinned Anthropic SDK sends the selected version by default. Nonempty `anthropic-beta` feature lists also reject before body collection; an explicitly empty list selects no beta features. Trusted upstream beta selection remains separate. `temperature`, `top_p` and `top_k` are removed and reject even when null or set to former defaults.
+Send exactly one `anthropic-version: 2026-10-21` header. Missing, duplicate, combined and unsupported versions return 400 before body collection; there is no legacy-version negotiation. The pinned Anthropic SDK sends the selected version by default. Nonempty `anthropic-beta` feature lists also reject before body collection; an explicitly empty list selects no beta features. A [revised version policy](architecture.md#protocols) admitting `2023-06-01` and ignoring beta headers is accepted but not yet implemented ([roadmap R3](roadmap.md#conversion-ladder-migration)). Trusted upstream beta selection remains separate. `temperature`, `top_p` and `top_k` are removed and reject even when null or set to former defaults.
 
 Completed thinking history must retain its nonempty native signature, and redacted thinking must retain its opaque data. Bare or damaged continuation cannot be authorized by deleting it; the gateway requires its existing issuer-bound envelope. A completed empty signature rejects. The historical cross-protocol unsigned [delivery projection](architecture.md#response-rules) is not a supported standard Messages continuation path; do not submit it as signed history, invent a signature or replace it with answer text.
 
@@ -540,7 +540,7 @@ pi 1.4.0 automatically requests beta features in its Messages integration. Its m
 
 Use `"stream": true` for SSE. Send the full history each turn, or use [stored Responses](#stored-responses). Chat Completions and Messages remain full-history APIs.
 
-Instruction content is plain text only: request-wide instructions, Messages `system`, instruction text in mid-conversation Messages system messages, and Chat/Responses system or developer messages cannot contain images, audio, video or files. Messages system messages may additionally carry the supported tool-change blocks and per-message effort described below. Media-bearing instructions reject at decoding rather than being dropped or moved to a user message. The same restriction applies to reported instruction echoes from an upstream.
+Instruction content is plain text only: request-wide instructions, Messages `system`, instruction text in mid-conversation Messages system messages, and Chat/Responses system or developer messages cannot contain images, audio, video or files. Media-bearing instructions reject at decoding rather than being dropped or moved to a user message. The same restriction applies to reported instruction echoes from an upstream.
 
 Later system or developer instructions keep their position. Chat and Responses targets carry them natively; Messages uses mid-conversation system messages subject to native placement rules; Google targets reject them.
 
@@ -574,7 +574,7 @@ In root and by-value ordinary tool definitions, `eager_input_streaming: null` or
 
 On an admitted native Messages configuration, tool definitions, system blocks and supported conversation blocks retain their own cache markers, including a `tool_result` wrapper. `{"type":"ephemeral"}` and explicit `ttl:"5m"` mean five minutes; `ttl:"1h"` means one hour. At most four explicit breakpoints are allowed, ordered with longer TTLs before shorter ones. The gateway does not move or drop markers, shorten TTLs or add an unrequested automatic policy beside them. Marker-free requests retain the existing automatic five-minute default. Caller-supplied automatic policy follows the separately selected [all-native admission](architecture.md#caller-selected-automatic-cache-admission), not marker support alone. Cache hits and deployed proxy TTL behavior are not certified by admission.
 
-The generic Messages profile keeps ordered-instruction and tool-change admission closed, while the [all-native configured Go/Haiku route](#model-configuration) enables the reviewed profile. Messages system messages can contain text and `tool_addition`/`tool_removal` blocks and carry per-message `output_config.effort`; a non-null effort on another role rejects. An effort-only system message may have empty content. Adaptive thinking can carry `thinking.block_binding`. Missing target carriers use the selected [named projections](architecture.md#request-rules); explicit block-binding `"error"` has no fallback.
+Public Messages intake currently rejects `tool_addition`/`tool_removal` system blocks, per-message `output_config` and any `thinking.block_binding`, including on the [all-native configured Go/Haiku route](#model-configuration); the native target profile has carriers for them, but the public client does not activate them. The accepted [conversion ladder](architecture.md#conversion-ladder) admits `block_binding` (`null`/`{}` exactly, `drop_block` approximately, `"error"` still rejected) and tool changes where the route admits them in [roadmap R3](roadmap.md#conversion-ladder-migration); per-message configuration stays rejected.
 
 ### Chat custom tools
 
@@ -590,7 +590,7 @@ Following the [Client semantic boundary](architecture.md#field-handling):
   - Chat: `store: true`, `moderation`, `function_call`, `web_search_options`.
   - Messages: `clear_at`, `container`, `mcp_servers`, `context_management`, `compaction`, non-null `anthropic-beta` without explicit opt-out.
 - **Malformed fields** (e.g. invalid types or null values where non-null is required) reject immediately.
-- **Tool ordering:** Tool results must immediately follow their corresponding tool calls. In manual thinking mode, forced tool choice is rejected.
+- **Tool results:** Results associate with their calls by call ID; grouped calls followed by their results are accepted without reordering ([association contract](architecture.md#tool-result-association)). Messages keeps its official rule that results appear in the user message immediately after the calls. In manual thinking mode, forced tool choice is rejected.
 
 ### Image input
 

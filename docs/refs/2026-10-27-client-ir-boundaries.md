@@ -22,6 +22,7 @@ Reviewed on **2026-10-27** at **`1b4f828`**, after the five-slice request repair
 - [Diagnostics and approval boundaries](#diagnostics-and-approval-boundaries)
 - [Follow-up source and feasibility review (2026-10-28)](#follow-up-source-and-feasibility-review-2026-10-28)
 - [Agent-default production probe (2026-10-28)](#agent-default-production-probe-2026-10-28)
+- [Conversion-ladder inventory (2026-10-30)](#conversion-ladder-inventory-2026-10-30)
 
 ## Scope and evidence
 
@@ -42,7 +43,7 @@ The inventory compares all create-request root fields and the relevant nested co
 
 ## Resolved boundary counterexamples
 
-The original review used synthetic public codec/delivery probes at `1b4f828`; the following are source distinctions, not an open defect list. The subsequent repair is owned by [Architecture](../architecture.md#accurate-ir-and-declared-loss).
+The original review used synthetic public codec/delivery probes at `1b4f828`; the following are source distinctions, not an open defect list. The subsequent repair is owned by [Architecture](../architecture.md#conversion-ladder).
 
 | Minimal counterexample | Durable distinction |
 |---|---|
@@ -217,7 +218,7 @@ Function argument fragments may be streamed as strings in all three systems, but
 
 Synthetic probes at `c8d0c96` confirmed independent item/response status, Chat metadata JSON/SSE asymmetry and the complete-object versus string-argument boundary. These were not live Provider observations.
 
-On **2026-10-27**, the user selected narrow plain-text/token-cap item-status omission and original-request Responses metadata echo with whole-field report precedence and strict-complete rejection. [Architecture](../architecture.md#accurate-ir-and-declared-loss) owns the lifecycle policy; [schema completion](../architecture.md#downstream-schema-completion) owns metadata provenance. Messages accepts one opaque native signature delta; repeated deltas reject rather than concatenate.
+On **2026-10-27**, the user selected narrow plain-text/token-cap item-status omission and original-request Responses metadata echo with whole-field report precedence and strict-complete rejection. [Architecture](../architecture.md#conversion-ladder) owns the lifecycle policy; [schema completion](../architecture.md#downstream-schema-completion) owns metadata provenance. Messages accepts one opaque native signature delta; repeated deltas reject rather than concatenate.
 
 The selection preserves source item statuses and reported metadata, does not make incomplete tools executable, and does not infer Provider-effective settings. Custom Chat SSE, Messages custom-input wrapping and broader settings echo remain unselected. [Development](../development.md#verification-gates) records verification separately.
 
@@ -254,7 +255,7 @@ For the next implementation, the existing [OpenAI event projection](../../src/pr
 
 The review recommended codec-local owner/part serialization with incremental head delivery and bounded successor storage. The implemented follow-up is owned by [semantic stream normalization](../architecture.md#semantic-stream-normalization); [Development](../development.md#sdk-loopback-gate) records the actual Python/TypeScript callback and history checks. Delayed successors remain necessary when earlier content or signatures have not finished.
 
-The scheduling review exposed two pre-existing boundaries. The subsequent 2026-10-28 lifecycle repair closes remaining wire text blocks on an observed `ItemFinished(Incomplete)`, matching existing static and terminal-only delivery without completing source parts. Required Responses `metadata:null` also caused setup rejection through actual Attempt/ResponseDelivery. The user separately selected Messages JSON/SSE null-only omission on 2026-10-28; [Architecture](../architecture.md#accurate-ir-and-declared-loss) owns that rule, not an implicit extension of Chat's omission. [Development](../development.md#sdk-loopback-gate) owns lifecycle, metadata and SDK/history evidence. Maps and other unsupported execution hints remain in [Roadmap](../roadmap.md#remaining-issue-dispositions).
+The scheduling review exposed two pre-existing boundaries. The subsequent 2026-10-28 lifecycle repair closes remaining wire text blocks on an observed `ItemFinished(Incomplete)`, matching existing static and terminal-only delivery without completing source parts. Required Responses `metadata:null` also caused setup rejection through actual Attempt/ResponseDelivery. The user separately selected Messages JSON/SSE null-only omission on 2026-10-28; [Architecture](../architecture.md#conversion-ladder) owns that rule, not an implicit extension of Chat's omission. [Development](../development.md#sdk-loopback-gate) owns lifecycle, metadata and SDK/history evidence. Maps and other unsupported execution hints remain in [Roadmap](../roadmap.md#remaining-issue-dispositions).
 
 ### Budget feasibility evidence
 
@@ -469,3 +470,36 @@ The structural causes are test-side:
 - Delivery unit fixtures hand-build IR without required standard members such as `logprobs:[]`.
 - [Installed-client scenarios](../../tests/clients/drivers.py) override pi compat and Messages headers, and never drive pi over Responses. Agent default shapes and cross-protocol lanes are unexercised.
 - Most rejections that depend on the response shape surface only after dispatch, so a single reachable upstream state fails a whole lane.
+
+## Conversion-ladder inventory (2026-10-30)
+
+Code-traced at **`61d478d`** by three read-only sweeps (client intake, planning/target encoding, delivery/history), with key sites spot-checked. No probes, tests or Provider calls were run; tiers are classifications for the [migration](../roadmap.md#conversion-ladder-migration), not verified behavior. [Architecture](../architecture.md#conversion-ladder) owns the ladder; opencode observations come from a 2026-10-11 source clone, not the installed 2.0.32 binary.
+
+### Structural causes
+
+- **Source-level binary gate.** [`admit`](../../src/execution/attempt.rs) calls [`GenerationFeatureSet::check`](../../src/semantic/task/generation/contract.rs) on the source request before any candidate projection; any `required && !supported` rejects. Candidate-local omissions such as owner-local cache breakpoints cannot be reached; the same breakpoint is also rejected in OpenAI lowering and Messages item encoding.
+- **Unknown treated as rejection.** [Strictness resolution](../../src/protocol/openai/lowering/strictness.rs) rejects unknown compatibility before consulting the strict carrier, although targets without one (all Bailian writers) resolve both branches to non-strict. [Planning](../../src/execution/plan.rs) rejects unassessed history facts.
+- **Dispersed delivery owners.** OpenAI lowering/projection/events/native response, Messages client projection/response/SSE, the downstream adapter, Messages terminal policy in delivery and capability publication decide the same facts independently; D, annotations, usage details and item-lifecycle checks diverge across JSON, SSE and retained views.
+- **Dead or unreachable paths.** `ReportedFactPolicy::StrictComplete` is set only in tests; `mca1.` markers have no remaining producer; several delivery guards follow earlier stripping and cannot fire.
+
+### Reachable sites by slice
+
+| Slice | Site | Current behavior | Ladder level |
+|---|---|---|---|
+| R0 | [`agent-defaults.json`](../../testdata/repair-and-recall/agent-defaults.json); [conformance wire fixtures](../../src/gateway/startup/bootstrap/conformance_tests/wire.rs) | Bare-model manual thinking for Haiku; null upstream echoes hide Messages delivery failures | Corpus and fixture correction |
+| R1 | [`contract.rs`](../../src/semantic/task/generation/contract.rs) explicit cache, advisory controls | Public rejection before projection (M1, sampling, metadata, service hints) | L4 |
+| R1 | [Bailian dialect](../../src/protocol/openai/dialect/bailian.rs) `GLM_CHAT`/`KIMI_CHAT` | No Minimal/Medium/XHigh encodings; `GLM_RESPONSES` already maps Medium → High | L3 nearest |
+| R1 | [Messages target](../../src/protocol/anthropic/messages/target.rs); [Messages request](../../src/protocol/anthropic/messages/request.rs) | Manual budget on adaptive-only binding and effort-scope mismatch reject | L3 |
+| R1 | [`checks.rs`](../../src/protocol/openai/lowering/checks.rs) presentation/include; Bailian `phase` | `representation.reasoning` (H); turn-2 unavailable | L4 |
+| R1 | [`subscriptions.rs`](../../src/topology/catalog/subscriptions.rs), SIWC dialect | Output ceiling and sampling reject on subscription lanes | L4; flat-tool shape needs evidence |
+| R1 | [`model_limits.rs`](../../src/protocol/model_limits.rs) | Output above maximum and unsupported effort reject | L3 clamp / nearest |
+| R2 | [`readable_reasoning.rs`](../../src/protocol/openai/lowering/readable_reasoning.rs) | Opaque reasoning → Standard Chat rejects after dispatch on every Responses-upstream reasoning lane | L3 omission |
+| R2 | [Messages client projection](../../src/protocol/anthropic/messages/client/projection.rs) and SSE | Unsigned reasoning, OpenAI service classes and echoed hints reject after dispatch | L3 / L4 |
+| R2 | [Messages terminal](../../src/protocol/anthropic/messages/terminal.rs) | Chat `stop` with calls and stop-sequence ambiguity reject at the terminal | L2 `tool_use` / L3 `end_turn` |
+| R2 | [OpenAI terminal](../../src/protocol/openai/terminal.rs); [Chat decode](../../src/protocol/openai/events/decode/chat.rs) | Unspecified or vendor finish reasons reject | Per-dialect map; Responses `{}`; otherwise L5 |
+| R3 | [Admission](../../src/gateway/ingress/admission.rs) | Version other than `2026-10-21` and nonempty beta lists return 400 before body collection; both installed Agents' Messages defaults hit it | Revised version policy |
+| R3 | [Messages client request](../../src/protocol/anthropic/messages/client/request.rs) | Any `thinking.block_binding`, per-message `output_config` and tool additions/removals reject at public intake, contrary to the previous usage text | L2/L3/L5 by value; tool changes L1 where admitted |
+| R4 | [Planning](../../src/execution/plan.rs) | Unassessed TokenPlan Chat rejects even text; `required_with_tools` rejects Standard Chat tools | Delegation; thinking-off fallback |
+| R4 | [Replay opening](../../src/execution/replay.rs); Chat reasoning details intake | Unsealed or foreign reasoning is invalid | L3 visible-history transfer |
+
+Invariant sites confirmed outside the ladder: replay origin/format checks, body and total-size bounds, streaming capability, call-ID and contiguous-owner validation, incomplete-input execution guards, explicit `read_history`, published-usage retraction, trust headers and client file IDs.
