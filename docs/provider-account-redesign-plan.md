@@ -29,7 +29,7 @@ This document records the user's requirements, the user's decisions and the reco
 5. **Cache-first execution.** Keep the serving account through recoverable failures where bounded retries can help. Switch promptly for failures that cannot recover within the request, such as confirmed exhausted credit. Repeated temporary errors may eventually justify switching.
 6. **Incremental delivery.** Runtime key addition is optional; restart-based activation is acceptable. Assume accounts of a Provider have the same model capabilities; do not add capability-based routing.
 7. **Maintainability and simplicity.** Prefer one authoritative owner per fact, deterministic behavior and a small configuration surface. Reference projects supply mechanisms and counterexamples, not a feature checklist.
-8. **No implicit billing-path switches.** By default, automatic switching between OpenAI SIWC registrations and fallback between OAuth and API-key accounts are disabled; the operator can enable each explicitly. MorphieCore does not manage billing, and its usage accounting counts tokens only (user decision, 2026-10-30).
+8. **No implicit switches beyond API keys.** By default, automatic switching between OAuth registrations of any profile (SIWC, Grok and others), fallback between OAuth and API-key accounts, and fallback across Providers are disabled; the operator can enable each explicitly. Only switching between API-key accounts of one Provider follows recovery policy without an opt-in. MorphieCore does not manage billing, and its usage accounting counts tokens only (user decisions, 2026-10-30).
 9. **Requirements before rewrite.** The current implementation deviates substantially from these requirements. Complete the requirements first, then rewrite account binding and execution policy instead of incrementally reshaping the current path (user decision, 2026-10-30).
 
 An account name identifies a configured execution identity. Two keys are not necessarily independent billing accounts or rate-limit domains. Equal model capabilities also do not establish shared caches, interchangeable OAuth grants or portable private replay state.
@@ -41,8 +41,9 @@ The current code is evidence of existing mechanisms and protections, not the tar
 | Owner | Current behavior | Rewrite boundary |
 |---|---|---|
 | [Provider catalog](../src/provider/catalog.rs) and [metadata](../src/provider/providers.json) | Compile-time trusted origin, operation paths, one credential kind/profile per Provider with per-endpoint header placement, and default pool | Keep compile-time default origins and paths; declare header placement per credential kind; admit API-key and OAuth accounts under one Provider |
-| [Credential pools](../src/credential/pool.rs) | Ordered references plus fallback/attempt policy; separate pool provisioning; SIWC pools limited to one member | Replace with the Provider's ordered accounts; express the SIWC restriction as the default switching policy |
+| [Credential pools](../src/credential/pool.rs) | Ordered references plus fallback/attempt policy; separate pool provisioning; SIWC pools limited to one member | Replace with the Provider's ordered accounts; generalize the SIWC restriction into the default OAuth switching policy |
 | [Startup model assembly](../src/gateway/startup/models.rs) and [binding](../src/gateway/startup/bind.rs) | Expands endpoint/pool combinations into bounded candidates; replay/cache scopes hash provenance, origin, path and model | Bind explicit account identities and effective targets without copying secret state; keep the scope inputs |
+| [Route policy](../src/topology/route.rs) and [model routes](../src/gateway/startup/models.rs) | Declaring more than one route candidate implicitly enables before-commit fallback; a single-account OAuth binding disables it | Cross-Provider fallback only through an explicit route opt-in |
 | [Executor health and affinity](../src/gateway/routing/executors.rs) | Conversation affinity, three-scope cooling, generation fencing, single foreground probe, `Retry-After` cooling | Retain these contracts; see [Cache affinity](#cache-affinity) |
 | [Execution chain](../src/gateway/routing/chain.rs) and [fallback](../src/execution/fallback.rs) | One send per candidate, forward-only advancement; pool attempts counted per endpoint | Replace with one owner for same-account retries, account switches and Provider switches |
 | [Failure classification](../src/protocol/failure.rs) | One status table plus global quota substrings shared by all Providers | Classify per Provider contract into a finite fact vocabulary |
@@ -80,6 +81,7 @@ Provider
 
 Model route
   ordered Provider / existing model-binding candidates
+  cross-Provider fallback opt-in (default off)
   request-wide execution bounds
 ```
 
@@ -91,7 +93,7 @@ This is a conceptual model, not a configuration schema or an implemented CLI.
 - Use stable configured account names, not file ordering, startup vector indexes or token values, as operator identities. Credential provenance still owns the security identity.
 - Let declaration order select among new, unbound conversations. Do not add separate priority, weight and ordering fields.
 - By default, the eligible set is the Provider's enabled accounts, narrowed by the [switching boundaries](#switching-boundaries). Defer named sub-pools and account subsets until a concrete isolation requirement exists.
-- Introduce no new configuration-precedence stack. Recovery and switching opt-ins belong to Provider policy, endpoint override and enablement to accounts, route order and total bounds to the route, and renewal timing to global service settings.
+- Introduce no new configuration-precedence stack. Recovery and account-switching opt-ins belong to Provider policy, endpoint override and enablement to accounts, route order, total bounds and the cross-Provider opt-in to the route, and renewal timing to global service settings.
 
 ### Credential kind and header placement
 
@@ -109,7 +111,7 @@ Validate each account's credential kind against the kinds its Provider declares.
 
 ### OAuth registration identity
 
-Several OAuth registrations of one profile may belong to the same upstream user; SIWC documents that email may be identical across registrations and that usage limits are per ChatGPT user across apps. Provenance currently includes the issued client, so two registrations of one user look like independent accounts. Recommended: reject two registrations with the same verified subject under one Provider, since switching between them cannot escape a shared limit.
+Several OAuth registrations of one profile may belong to the same upstream user; SIWC documents that email may be identical across registrations and that usage limits are per ChatGPT user across apps. Provenance currently includes the issued client, so two registrations of one user look like independent accounts. Once OAuth switching is enabled, switching between them cannot escape a shared limit. Recommended: reject two registrations with the same verified subject under one Provider.
 
 Exact field names, file ownership and provisioning commands remain open. Replacing the pool schema follows the project's current-schema-only rule: no silent migration, historical aliases or parallel legacy execution path. Reuse existing credential records where compatible; an incompatible storage change needs an explicit operator procedure.
 
@@ -122,7 +124,7 @@ Select the conversation's healthy bound account, otherwise the first eligible ac
   -> dispatch
   -> complete, wait and retry, refresh and retry, advance, or stop
   -> try another account only within the switching boundaries and recovery policy
-  -> try another route candidate only within the route policy
+  -> try another route candidate only when the route enables cross-Provider fallback
 ```
 
 ### Switching boundaries
@@ -132,11 +134,11 @@ These defaults follow [requirement 8](#user-requirements):
 | Switch | Default | Explicit opt-in |
 |---|---|---|
 | Between API-key accounts of one Provider | Allowed by recovery policy | None needed |
-| Between SIWC registrations of the OpenAI Provider | Disabled | Provider policy flag |
+| Between OAuth registrations of one Provider, for every profile | Disabled | Provider policy flag |
 | Between OAuth and API-key accounts of one Provider, in either direction | Disabled | Provider policy flag |
-| Between route candidates of different Providers | Unchanged route policy | The route's candidate list itself |
+| Between route candidates of different Providers | Disabled | Route policy flag |
 
-With switching disabled, the account selected for a new conversation is the only account that can serve it; failures follow same-account recovery and then route policy. Route candidates are explicit operator declarations, so listing a Provider candidate is already the opt-in for crossing it. Switching between registrations of other OAuth profiles, such as Grok, follows the API-key row unless a [review decision](#review-decisions) or the profile's official contract says otherwise.
+With switching disabled, the account selected for a new conversation is the only account that can serve it, and failures end after same-account recovery. Declaring several route candidates no longer enables fallback by itself. An opt-in enables only its own row.
 
 ### Error facts and policy
 
@@ -147,7 +149,7 @@ Use a finite error vocabulary rather than a user-programmable rule language. Pro
 | Connection establishment failure or temporary server error | Retry the same account with bounded backoff; advance after exhaustion |
 | Short-lived rate limit | Respect applicable `Retry-After`; retain the account within a finite wait budget |
 | Confirmed exhausted credit or quota unavailable for this request | Skip ineffective same-account retries; isolate at the known scope and consider fallback within the switching boundaries |
-| SIWC `subscription_sharing_usage_limit_exceeded` (429) | Pause plan-based requests on that registration; infer no reset time and no plan-wide exhaustion. Another registration only when SIWC switching is enabled |
+| SIWC `subscription_sharing_usage_limit_exceeded` (429) | Pause plan-based requests on that registration; infer no reset time and no plan-wide exhaustion. Another registration only when OAuth switching is enabled |
 | Expired OAuth access | Per profile contract: at most one coordinated renewal recovery before resending on the same verified identity |
 | SIWC `subscription_sharing_invalid_user` (401) or a terminal refresh error | Require reauthorization; no refresh loop |
 | Invalid/revoked API key | Mark unavailable and expose the recovery reason; retry/fallback semantics need selection |
@@ -257,7 +259,7 @@ These are an illustrative sequence for the later rewrite, not scheduled work. Be
 | Slice | Proposed content | Check that would close it |
 |---|---|---|
 | A: thin execution path | One Provider, two named API-key accounts, one temporary failure category, explicit same-account retries and deterministic fallback; reuse storage/adapters | A synthetic request retries account A exactly as selected, switches to B only when permitted, and subsequent conversation turns remain on successful B |
-| B: required account variants | API Key/OAuth coexistence with default-disabled cross-kind and SIWC switching, API-key target overrides, global renewal settings, the selected error table and the downstream retry contract | Synthetic authorities and upstreams verify identity/target isolation, switching boundaries, rotation, timing, bounded recovery and errors; no hidden extra sends |
+| B: required account variants | API Key/OAuth coexistence with default-disabled OAuth, cross-kind and cross-Provider switching, API-key target overrides, global renewal settings, the selected error table and the downstream retry contract | Synthetic authorities and upstreams verify identity/target isolation, switching boundaries, rotation, timing, bounded recovery and errors; no hidden extra sends |
 | C: operation and continuity | Finish configuration checks and read-only explanations; select explicit account diagnostics and optional affinity persistence | Invalid configuration fails before activation; inspection is side-effect-free; restart restores only compatible, unexpired affinity |
 
 Minimum startup validation and useful errors belong in every slice, not only C. Retire the old runtime path as its replacement lands rather than maintaining two long-lived engines.
@@ -271,7 +273,7 @@ Prefer current project helpers, Tokio timers and the existing OAuth/HTTP depende
 | Decision | Date | Outcome |
 |---|---|---|
 | Sequencing | 2026-10-30 | Complete requirements first; rewrite account binding and execution policy afterwards |
-| Billing-path switching | 2026-10-30 | SIWC registration switching and OAuth/API-key fallback are disabled by default and enabled explicitly; MorphieCore manages no billing and counts tokens only |
+| Switching defaults | 2026-10-30 | OAuth registration switching for every profile, OAuth/API-key fallback and cross-Provider fallback are disabled by default and enabled explicitly; API-key switching within a Provider follows recovery policy; MorphieCore manages no billing and counts tokens only |
 | Endpoint override | 2026-10-30 | API-key accounts may override `base_url`; OAuth accounts may not |
 
 ### Open
@@ -281,7 +283,8 @@ A recommendation below is not a default configuration or an accepted architectur
 | Decision | Recommendation or alternatives to resolve |
 |---|---|
 | Account/configuration ownership | Unified ordered named accounts with managed credential references; confirm file/schema ownership, stable naming and replacement of explicit pools |
-| Opt-in granularity | Recommended: two Provider policy flags (SIWC switching, cross-kind fallback); confirm that route candidates count as explicit and that other OAuth profiles switch like API keys |
+| Opt-in granularity | Recommended: two Provider flags (OAuth switching, cross-kind fallback) and one route flag (cross-Provider fallback) |
+| Unrepresentable candidates | Whether pre-dispatch skipping of candidates that cannot represent a request still selects a later Provider while cross-Provider fallback is off. Recommended: keep it, since nothing was dispatched, and report the selection |
 | OAuth subject uniqueness | Recommended: reject duplicate verified subjects under one Provider; alternative is a shared quota domain |
 | Activation scope | Generation first; separately decide changes to diagnostics and frozen standalone tasks, and qualify each newly activated authentication channel |
 | Recovery table | Confirm status/error classification, counts, delays, exhausted-policy action and failure scope, especially 401, 403, 419, ambiguous 429 and post-dispatch timeout |
@@ -301,7 +304,7 @@ After approval, record accepted contracts in Architecture and scheduled slices/g
 Extend existing credential, gateway-routing, bootstrap and transport tests; no new framework is proposed. Test externally meaningful behavior, not a target test count or configuration snapshots.
 
 - **Identity and targets:** mixed credential kinds, header placement per kind, named-account references, API-key base URL inheritance/prefix handling, rejected OAuth overrides, duplicate OAuth subjects, origin restrictions and replay/cache isolation.
-- **Switching boundaries:** no SIWC or cross-kind switch by default, each opt-in enabling only its own switch, and route-level Provider fallback unchanged.
+- **Switching boundaries:** no OAuth, cross-kind or cross-Provider switch by default, several route candidates not enabling fallback by themselves, and each opt-in enabling only its own switch.
 - **Retry accounting:** selected same-account counts, cumulative mixed error sequences, account/Provider transitions, exhausted global budgets, applicable `Retry-After`, downstream retry headers, cancellation during waits and no retry amplification.
 - **Publication and outcomes:** failures before/after publication, native failed Responses never committing health or affinity, incomplete terminals, strict EOF and distinction between delivery completion and health success.
 - **Affinity and health:** stable account selection, successful replacement without forced failback, concurrent stale completions, scoped cooldown and exclusive recovery probes.
