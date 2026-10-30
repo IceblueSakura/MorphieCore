@@ -443,7 +443,9 @@ Client acceptance must distinguish error-result events from actual execution. Cu
 
 #### Tool-result association
 
-Selected on 2026-10-29; remaining target consumers need migration. Call IDs own result association, not vector adjacency. Preserve grouped calls followed by their corresponding results without reordering, flattening or dropping fields. Existing identity, causal-order, duplicate, bounds and replay checks remain. Exact association needs no new loss.
+Selected on 2026-10-29. Call IDs own result association, not vector adjacency. Preserve grouped calls followed by their corresponding results without reordering, flattening or dropping fields. Existing identity, causal-order, duplicate, bounds and replay checks remain. Exact association needs no new loss.
+
+The Bailian Responses consumer (2026-10-30) removes its predecessor-position check at the shared native intake/target/writer boundary. Association stays with IR validation; no reordering pass or duplicate association owner is introduced. Independent grouped/adjacent input and output expectations preserve IDs, arguments and results, while invalid links still fail semantic validation. A phase-free production-construction control compares actual managed `previous_response_id` continuation with stateless history in JSON/SSE, including the complete ordered upstream request. String-only result implementation, phase, history-carrier and replay restrictions remain separate.
 
 [Native qualification](refs/2026-10-27-client-ir-boundaries.md#pre-stage-4-contract-qualification-2026-10-29) covers direct Qwen Flash/Max, TokenPlan Qwen Flash, native MiMo and OpenRouter GPT grouped histories. This is not a Qwen-only semantic rule. It does not attest every model, result ordering, arbitrary interleaving, media-array carrier or billing endpoint; stricter target restrictions require endpoint evidence rather than literal-position inference from one guide. Phase remains a separate semantic/carrier question.
 

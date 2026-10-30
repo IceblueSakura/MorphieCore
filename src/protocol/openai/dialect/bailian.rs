@@ -484,17 +484,13 @@ pub(in crate::protocol::openai) fn check_semantic(
         if required && tools.len() != 1 {
             return Err(CodecError::Unsupported(CarrierReason::Unavailable));
         }
-        for (index, (_, item)) in semantic.items().iter().enumerate() {
+        for (_, item) in semantic.items() {
             match item {
                 Item::ToolCall(c) if !c.context.is_direct() => {
                     return Err(CodecError::Unsupported(CarrierReason::Unavailable));
                 }
                 Item::ToolResult(result) => {
                     if !matches!(result.output, ToolOutput::Text(_)) {
-                        return Err(CodecError::Unsupported(CarrierReason::Unavailable));
-                    }
-                    if !matches!(index.checked_sub(1).and_then(|n|semantic.items().get(n)),Some((_,Item::ToolCall(c))) if result.required_call_id().ok()==Some(c.call_id.as_str()))
-                    {
                         return Err(CodecError::Unsupported(CarrierReason::Unavailable));
                     }
                 }

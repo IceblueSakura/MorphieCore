@@ -515,6 +515,131 @@ async fn observe(
 }
 
 #[tokio::test]
+async fn grouped_responses_history_agrees_between_managed_and_stateless_continuation() {
+    let model = "qwen3.8-flash";
+    let output = json!([
+        {"type":"function_call","id":"fc_a","call_id":"a","name":"lookup","arguments":"{\"key\":\"A\"}","status":"completed"},
+        {"type":"function_call","id":"fc_b","call_id":"b","name":"lookup","arguments":"{\"key\":\"B\"}","status":"completed"}
+    ]);
+    let results = json!([
+        {"type":"function_call_output","call_id":"a","output":"value-A"},
+        {"type":"function_call_output","call_id":"b","output":"value-B"}
+    ]);
+    for stream in [false, true] {
+        let calls = Arc::new(Mutex::new(Vec::<Value>::new()));
+        let observed = calls.clone();
+        let source = output.clone();
+        let router = Router::new().route("/v1/responses", post(move |Json(body): Json<Value>| {
+            let observed = observed.clone();
+            let source = source.clone();
+            async move {
+                assert_eq!(body["model"], model);
+                assert_eq!(body["store"], false);
+                assert!(body.get("previous_response_id").is_none());
+                let turn = {
+                    let mut calls = observed.lock().unwrap();
+                    let turn = calls.len();
+                    assert!(turn < 3, "no hidden retries");
+                    calls.push(body.clone());
+                    turn
+                };
+                let response = json!({"id":format!("source-{turn}"),"object":"response",
+                    "model":model,"created_at":1,"status":"completed",
+                    "output":if turn == 0 { source } else { json!([]) }});
+                if body["stream"] != true {
+                    return Json(response).into_response();
+                }
+                // Independent event oracle, with real argument deltas rather
+                // than a terminal snapshot supplying missing stream content.
+                let mut opening = response.clone();
+                opening["status"] = json!("in_progress");
+                opening["output"] = json!([]);
+                let mut frames = vec![json!({"type":"response.created","response":opening})];
+                for (index, item) in response["output"].as_array().unwrap().iter().enumerate() {
+                    let mut added = item.clone();
+                    added["status"] = json!("in_progress");
+                    added["arguments"] = json!("");
+                    frames.extend([
+                        json!({"type":"response.output_item.added","output_index":index,"item":added}),
+                        json!({"type":"response.function_call_arguments.delta","output_index":index,
+                            "item_id":item["id"],"delta":item["arguments"]}),
+                        json!({"type":"response.function_call_arguments.done","output_index":index,
+                            "item_id":item["id"],"arguments":item["arguments"]}),
+                        json!({"type":"response.output_item.done","output_index":index,"item":item}),
+                    ]);
+                }
+                frames.push(json!({"type":"response.completed","response":response}));
+                let bytes = frames.into_iter().enumerate().map(|(sequence, mut frame)| {
+                    frame["sequence_number"] = json!(sequence);
+                    format!("event: {}\ndata: {frame}\n\n",frame["type"].as_str().unwrap())
+                }).collect::<String>();
+                ([("content-type","text/event-stream")],bytes).into_response()
+            }
+        }));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let origin = format!("http://{}/v1", listener.local_addr().unwrap());
+        let _server = Server(tokio::spawn(async move {
+            axum::serve(listener, router).await.unwrap();
+        }));
+        let boot = Fixture::new(service(), json!({"models":{model:{"max_attempts":1,
+            "candidates":[{"binding":"dashscope-flash-responses","base_url":origin,"attempt_timeout_ms":2000}]}}}),
+            &[("aliyun-dashscope-cn","aliyun-dashscope-cn-api-key","synthetic-upstream-key")]).unwrap();
+        let mut request =
+            json!({"model":model,"input":"go","max_output_tokens":64,"stream":stream,"store":true});
+        request["tools"] = json!([{"type":"function","name":"lookup","description":"Look up a key.",
+            "parameters":{"type":"object","properties":{"key":{"type":"string"}}},"strict":false}]);
+        if stream {
+            request["stream_options"] = json!({"include_obfuscation":false});
+        }
+        let (status, bytes, failed) = send(&boot, Api::Responses, request.clone(), &[]).await;
+        assert_eq!(status, 200);
+        assert!(!failed);
+        let first = wire::delivered(Api::Responses, &bytes, stream);
+        assert_eq!(first["output"], output);
+        let expected = json!([
+            {"type":"message","role":"user","content":[{"type":"input_text","text":"go"}]},
+            {"type":"function_call","id":"fc_a","call_id":"a","name":"lookup","arguments":"{\"key\":\"A\"}"},
+            {"type":"function_call","id":"fc_b","call_id":"b","name":"lookup","arguments":"{\"key\":\"B\"}"},
+            results[0],results[1]
+        ]);
+        request["store"] = json!(false);
+        request["previous_response_id"] = first["id"].clone();
+        request["input"] = results.clone();
+        let (status, bytes, failed) = send(&boot, Api::Responses, request.clone(), &[]).await;
+        assert_eq!(status, 200);
+        assert!(!failed);
+        assert_eq!(
+            wire::delivered(Api::Responses, &bytes, stream)["status"],
+            "completed"
+        );
+        request
+            .as_object_mut()
+            .unwrap()
+            .remove("previous_response_id");
+        request["input"] = expected.clone();
+        let (status, bytes, failed) = send(&boot, Api::Responses, request, &[]).await;
+        assert_eq!(status, 200);
+        assert!(!failed);
+        assert_eq!(
+            wire::delivered(Api::Responses, &bytes, stream)["status"],
+            "completed"
+        );
+        let captured = calls.lock().unwrap();
+        assert_eq!(captured.len(), 3);
+        assert_eq!(
+            captured[1]["input"], expected,
+            "managed grouped call-ID history"
+        );
+        assert_eq!(
+            captured[2], captured[1],
+            "stateless and managed upstream requests"
+        );
+        drop(captured);
+        boot.gateway.shutdown();
+    }
+}
+
+#[tokio::test]
 async fn native_reports_project_without_changing_content_or_terminal_outcome() {
     let binding = BINDINGS
         .iter()
@@ -832,10 +957,7 @@ const BASIC_EXPECTATIONS: &[(&[&str], [&[&str]; 4])] = &[
         ],
         [
             ACCEPT,
-            &[
-                "accepted@1",
-                "planning:[\"codec.unsupported.unavailable\"]@0",
-            ],
+            ACCEPT,
             &[
                 "accepted@1",
                 "planning:[\"codec.unsupported.unavailable\"]@0",

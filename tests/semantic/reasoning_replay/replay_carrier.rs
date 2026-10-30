@@ -161,7 +161,9 @@ fn tool_turn_transfer_keeps_real_results_and_forgets_paired_wire_ids_only() {
     body["input"].as_array_mut().unwrap().extend([
             json!({"type":"message","id":"msg_check","status":"completed","role":"assistant","content":[{"type":"output_text","text":"Checking.","annotations":[]}]}),
             json!({"type":"function_call","id":"fc_paired","call_id":"c","name":"read","arguments":"{}"}),
+            json!({"type":"function_call","id":"fc_second","call_id":"d","name":"read","arguments":"{\"key\":\"second\"}"}),
             json!({"type":"function_call_output","call_id":"c","output":"42"}),
+            json!({"type":"function_call_output","call_id":"d","output":"84"}),
         ]);
     let mut request = client()
         .decode_request(body.to_string().as_bytes())
@@ -177,7 +179,9 @@ fn tool_turn_transfer_keeps_real_results_and_forgets_paired_wire_ids_only() {
             {"type":"message","role":"user","content":[{"type":"input_text","text":"first"}]},
             {"id":"msg_check","type":"message","role":"assistant","status":"completed","content":[{"type":"output_text","text":"Checking.","annotations":[]}]},
             {"type":"function_call","call_id":"c","name":"read","arguments":"{}"},
+            {"type":"function_call","call_id":"d","name":"read","arguments":"{\"key\":\"second\"}"},
             {"type":"function_call_output","call_id":"c","output":"42"},
+            {"type":"function_call_output","call_id":"d","output":"84"},
         ])
     );
     assert_eq!(rules, ["responses.transfer-visible-history.v1"]);

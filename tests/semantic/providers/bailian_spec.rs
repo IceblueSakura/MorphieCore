@@ -624,7 +624,7 @@ fn responses_presentation_projects_without_changing_computation_or_source() {
 }
 
 #[test]
-fn responses_unlisted_guarantees_and_non_adjacent_results_reject_without_reordering() {
+fn responses_unlisted_guarantees_reject_without_weakening_constraints() {
     let target = endpoint("dashscope-flash", GenerationProtocol::OpenAiResponses);
     for patch in [
         json!({"text":{"format":{"type":"json_object"}}}),
@@ -662,30 +662,58 @@ fn responses_unlisted_guarantees_and_non_adjacent_results_reject_without_reorder
             ..
         })
     ));
-    let make_call =
-        |id: &str| json!({"type":"function_call","name":"lookup","call_id":id,"arguments":"{}"});
-    let make_result =
-        |id: &str| json!({"type":"function_call_output","call_id":id,"output":"done"});
-    let mut wire = json!({"model":"qwen3.8-flash","input":[make_call("a"),make_call("b"),make_result("a"),make_result("b")]});
-    let input = client(GenerationApi::Responses)
-        .decode_client_request(wire.to_string().as_bytes())
-        .unwrap();
-    let before = input.clone();
-    assert!(
-        matches!(target.encode_request_with_rules(&input),Err(ConversionFailure { cause: morphiecore::protocol::ConversionCause::Codec(CodecError::Unsupported(field)), .. }) if field == morphiecore::protocol::failure::CarrierReason::Unavailable)
-    );
-    assert_eq!(input, before);
-    wire["input"] = json!([
-        make_call("a"),
-        make_result("a"),
-        make_call("b"),
-        make_result("b")
-    ]);
-    let input = client(GenerationApi::Responses)
-        .decode_client_request(wire.to_string().as_bytes())
-        .unwrap();
-    assert_eq!(
-        target.encode_request_with_rules(&input).unwrap().0["input"],
-        wire["input"]
-    );
+}
+
+#[test]
+fn responses_associate_grouped_results_by_call_id_without_reordering() {
+    let target = endpoint("dashscope-flash", GenerationProtocol::OpenAiResponses);
+    let calls = [
+        json!({"id":"fc_a","type":"function_call","name":"lookup","call_id":"a","arguments":"{\"key\":\"A\"}"}),
+        json!({"id":"fc_b","type":"function_call","name":"lookup","call_id":"b","arguments":"{\"key\":\"B\"}"}),
+    ];
+    let results = [
+        json!({"type":"function_call_output","call_id":"a","output":"value-A"}),
+        json!({"type":"function_call_output","call_id":"b","output":"value-B"}),
+    ];
+    for history in [
+        json!([calls[0], calls[1], results[0], results[1]]),
+        json!([calls[0], results[0], calls[1], results[1]]),
+    ] {
+        let wire = json!({"model":"qwen3.8-flash","input":history});
+        for codec in [
+            client(GenerationApi::Responses),
+            native(GenerationApi::Responses),
+        ] {
+            let input = codec.decode_request(wire.to_string().as_bytes()).unwrap();
+            let before = input.clone();
+            let (encoded, rules) = target.encode_request_with_rules(&input).unwrap();
+            assert_eq!(encoded["input"], history);
+            assert!(rules.is_empty());
+            let lowered = morphiecore::protocol::openai::lowering::lower_request(
+                &input.task.semantic,
+                &input.task.fidelity,
+                GenerationApi::Responses,
+                native(GenerationApi::Responses).contract(&TargetContract::full()),
+            )
+            .unwrap();
+            let direct =
+                morphiecore::protocol::openai::responses::encode_generation(&lowered).unwrap();
+            assert_eq!(direct["input"], history);
+            assert_eq!(input, before);
+        }
+    }
+    for history in [
+        json!([results[0], calls[0]]),
+        json!([calls[0], {"id":"fc_duplicate","type":"function_call","name":"lookup","call_id":"a","arguments":"{}"}, results[0]]),
+        json!([calls[0], results[0], results[0]]),
+        json!([calls[0], results[1]]),
+    ] {
+        let wire = json!({"model":"qwen3.8-flash","input":history});
+        let rejected =
+            client(GenerationApi::Responses).decode_client_request(wire.to_string().as_bytes());
+        assert!(
+            matches!(rejected, Err(CodecError::Semantic(_))),
+            "{history}: {rejected:?}"
+        );
+    }
 }

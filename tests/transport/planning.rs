@@ -282,7 +282,7 @@ mod candidates {
             [false, false]
         );
         // Model image support does not create a Bailian function-output media carrier.
-        // Its documented output is a string; the standard codec's broader array is not enough.
+        // Its current implementation is string-only; documented arrays need separate integration.
         // Standard Chat has no tool-result media carrier, so Chat targets reject it.
         assert_eq!(
             representable(GenerationProtocol::OpenAiChat),
