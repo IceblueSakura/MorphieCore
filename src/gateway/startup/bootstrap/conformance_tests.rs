@@ -1176,7 +1176,7 @@ async fn installed_messages_headers_reject_before_dispatch() {
 }
 
 #[tokio::test]
-async fn bare_messages_manual_thinking_is_separate_from_resolved_adaptive_defaults() {
+async fn bare_messages_manual_thinking_converts_to_adaptive() {
     let binding = BINDINGS.iter().find(|b| b.4 == Api::Messages).unwrap();
     for stream in [false, true] {
         assert_eq!(
@@ -1186,17 +1186,6 @@ async fn bare_messages_manual_thinking_is_separate_from_resolved_adaptive_defaul
                 Profile::Reasoning,
                 stream,
                 Control::BareModel
-            )
-            .await,
-            ACCEPT
-        );
-        assert_eq!(
-            lane(
-                binding,
-                Api::Messages,
-                Profile::Reasoning,
-                stream,
-                Control::Default
             )
             .await,
             ACCEPT

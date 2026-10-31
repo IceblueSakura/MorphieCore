@@ -84,7 +84,7 @@ impl GenerationCodec {
                 None,
             )?;
             let request = request_projection.value.as_ref();
-            let mut controls: Vec<_> = request_projection.evidence.into_effects().collect();
+            let mut evidence = request_projection.evidence;
             if self.adaptation.rules.responses_siwc && self.protocol != GenerationApi::Responses {
                 return Err(CodecError::ProfileMismatch.into());
             }
@@ -101,8 +101,8 @@ impl GenerationCodec {
                 crate::protocol::ConversionFailure::from(error)
                     .at(crate::protocol::conversion::generation::ConversionBoundary::RequestProject)
             })?;
-            for evidence in target.projection().iter().cloned() {
-                controls.push(evidence);
+            for effect in target.projection().iter().cloned() {
+                evidence.push(effect);
             }
             let mut value = match self.protocol {
                 GenerationApi::Chat => {
@@ -188,10 +188,7 @@ impl GenerationCodec {
                 crate::semantic::task::generation::MAX_TOTAL_BYTES,
             )
             .map_err(|_| CodecError::Limit)?;
-            Ok(crate::protocol::conversion::generation::Conversion {
-                value,
-                evidence: controls.into_iter().collect(),
-            })
+            Ok(crate::protocol::conversion::generation::Conversion { value, evidence })
         })();
         result.map_err(|error: crate::protocol::ConversionFailure| {
             error.at(crate::protocol::conversion::generation::ConversionBoundary::RequestEncode)

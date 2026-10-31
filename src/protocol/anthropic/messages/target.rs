@@ -136,7 +136,7 @@ impl TargetContract {
                 Some(target),
             )?;
             let request = request_projection.value.as_ref();
-            let controls: Vec<_> = request_projection.evidence.into_effects().collect();
+            let evidence = request_projection.evidence;
             self.check_context(request)?;
             let semantic = &request.task.semantic;
             let mut projection = self.profile.encode_request_envelope(
@@ -155,9 +155,7 @@ impl TargetContract {
             if let Some(stream) = request.delivery.stream.value() {
                 projection.value["stream"] = serde_json::json!(stream);
             }
-            for effect in controls {
-                projection.evidence.prefer_summary(effect);
-            }
+            projection.evidence.extend_prefer_summary(evidence);
 
             super::shape::bounded(&projection.value)?;
             Ok(projection)

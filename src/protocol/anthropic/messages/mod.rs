@@ -37,154 +37,30 @@ impl Profile {
     /// Default binding admission, kept separate from codec carrier availability.
     pub fn semantic_contract(self) -> crate::lowering::disposition::Dispositions {
         use crate::lowering::disposition::Dispositions;
-        (Dispositions::empty())
-            .with_native(
-                crate::semantic::task::generation::Feature::Compaction,
-                false,
-            )
-            .with_native(
-                crate::semantic::task::generation::Feature::Instructions,
-                true,
-            )
-            // Mid-conversation system messages need model-level binding evidence.
-            .with_native(
-                crate::semantic::task::generation::Feature::OrderedInstructions,
-                false,
-            )
-            .with_native(
-                crate::semantic::task::generation::Feature::Temperature,
-                false,
-            )
-            .with_native(
-                crate::semantic::task::generation::Feature::MaxOutputTokens,
-                true,
-            )
-            .with_native(crate::semantic::task::generation::Feature::Tools, true)
-            .with_native(
-                crate::semantic::task::generation::Feature::CustomTools,
-                false,
-            )
-            .with_native(
-                crate::semantic::task::generation::Feature::StructuredArguments,
-                true,
-            )
-            .with_native(
-                crate::semantic::task::generation::Feature::StructuredToolResult,
-                false,
-            )
-            .with_native(
-                crate::semantic::task::generation::Feature::ToolExecutionReport,
-                true,
-            )
-            .with_native(
-                crate::semantic::task::generation::Feature::ToolResultError,
-                true,
-            )
-            .with_native(
-                crate::semantic::task::generation::Feature::ToolResultMedia,
-                true,
-            )
-            .with_native(
-                crate::semantic::task::generation::Feature::TextMetadata,
-                false,
-            )
-            .with_native(crate::semantic::task::generation::Feature::TopP, false)
-            .with_native(crate::semantic::task::generation::Feature::TopK, false)
-            .with_native(
-                crate::semantic::task::generation::Feature::StopSequences,
-                false,
-            )
-            .with_native(
-                crate::semantic::task::generation::Feature::PresencePenalty,
-                false,
-            )
-            .with_native(
-                crate::semantic::task::generation::Feature::FrequencyPenalty,
-                false,
-            )
-            .with_native(crate::semantic::task::generation::Feature::Seed, false)
-            .with_native(crate::semantic::task::generation::Feature::Logprobs, false)
-            .with_native(crate::semantic::task::generation::Feature::Verbosity, false)
-            .with_native(
-                crate::semantic::task::generation::Feature::Truncation,
-                false,
-            )
-            .with_native(
-                crate::semantic::task::generation::Feature::StructuredOutput,
-                true,
-            )
-            .with_native(crate::semantic::task::generation::Feature::Reasoning, true)
-            .with_native(
-                crate::semantic::task::generation::Feature::ResponseEffort,
-                true,
-            )
-            .with_native(
-                crate::semantic::task::generation::Feature::ReasoningBudget,
-                true,
-            )
-            .with_native(crate::semantic::task::generation::Feature::ImageInput, true)
-            .with_native(
-                crate::semantic::task::generation::Feature::AudioInput,
-                false,
-            )
-            .with_native(
-                crate::semantic::task::generation::Feature::VideoInput,
-                false,
-            )
-            .with_native(
-                crate::semantic::task::generation::Feature::AudioOutput,
-                false,
-            )
-            .with_native(
-                crate::semantic::task::generation::Feature::AudioHistory,
-                false,
-            )
-            .with_native(crate::semantic::task::generation::Feature::FileInput, true)
-            .with_native(
-                crate::semantic::task::generation::Feature::DocumentContext,
-                false,
-            )
-            .with_native(
-                crate::semantic::task::generation::Feature::ParallelTools,
-                true,
-            )
-            .with_native(
-                crate::semantic::task::generation::Feature::StrictTools,
-                false,
-            )
-            .with_native(
-                crate::semantic::task::generation::Feature::ToolExamples,
-                false,
-            )
-            .with_native(
-                crate::semantic::task::generation::Feature::ToolChanges,
-                false,
-            )
-            .with_native(
-                crate::semantic::task::generation::Feature::ConditionalToolStrictness,
-                true,
-            )
-            .with_native(
-                crate::semantic::task::generation::Feature::ExplicitCache,
-                false,
-            )
-            .with_native(
-                crate::semantic::task::generation::Feature::CachedContext,
-                false,
-            )
-            .with_native(crate::semantic::task::generation::Feature::Safety, false)
-            .with_native(
-                crate::semantic::task::generation::Feature::AutomaticPrefixCache,
-                false,
-            )
-            .with_native(
-                crate::semantic::task::generation::Feature::EagerToolInput,
-                true,
-            )
-            .with_native(
-                crate::semantic::task::generation::Feature::ReplayMismatch,
-                false,
-            )
+        use crate::semantic::task::generation::Feature::*;
+        // Mid-conversation system messages need model-level binding evidence.
+        let mut contract = Dispositions::empty();
+        for feature in [
+            Instructions,
+            MaxOutputTokens,
+            Tools,
+            StructuredArguments,
+            ToolExecutionReport,
+            ToolResultError,
+            ToolResultMedia,
+            StructuredOutput,
+            Reasoning,
+            ResponseEffort,
+            ReasoningBudget,
+            ImageInput,
+            FileInput,
+            ParallelTools,
+            ConditionalToolStrictness,
+            EagerToolInput,
+        ] {
+            contract.set_native(feature, true);
+        }
+        contract
     }
     /// Codec support does not activate strict tools on an existing binding.
     pub fn representation_contract(self) -> crate::lowering::disposition::Dispositions {

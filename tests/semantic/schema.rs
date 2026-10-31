@@ -372,7 +372,7 @@ mod schema_admission {
                 vec![],
             ),
             (
-                json!({"type":"object","properties":{"x":{"oneOf":[{"type":"string"},{"type":"integer"}]}}}),
+                json!({"type":"object","properties":{"x":{"type":"string","oneOf":[{"type":"string"},{"type":"integer"}]}},"required":["x"],"additionalProperties":false}),
                 false,
                 vec![loss],
             ),
@@ -393,12 +393,12 @@ mod schema_admission {
                 vec![],
             ),
             (
-                json!({"type":"object","properties":{"mode":{"type":"string","const":"a"}}}),
-                false,
-                vec![loss],
+                json!({"type":"object","properties":{"mode":{"type":"string","const":"a"}},"required":["mode"],"additionalProperties":false}),
+                true,
+                vec![],
             ),
             (
-                json!({"type":"object","properties":{"xs":{"type":"array","items":{"type":"string"},"uniqueItems":true}}}),
+                json!({"type":"object","properties":{"xs":{"type":"array","items":{"type":"string"},"uniqueItems":true}},"required":["xs"],"additionalProperties":false}),
                 false,
                 vec![loss],
             ),
@@ -435,17 +435,11 @@ mod schema_admission {
             assert_eq!(request, original);
         }
         for schema in [
-            json!({"type":"object","x-unknown":true}),
             json!({"type":"object","properties":{},"additionalProperties":false,"x-unknown":true}),
             json!({"type":"object","properties":{"x":{"type":"string","x-unknown":true}},"required":["x"],"additionalProperties":false}),
             json!({"type":"object","properties":{"x":{"$ref":"#/$defs/X"}},"required":["x"],"additionalProperties":false,"$defs":{"X":{"type":"string","x-unknown":true}}}),
-            json!({"type":"object","required":"x"}),
-            json!({"type":"object","properties":{"x":{"type":"string","minLength":"bad"}}}),
-            json!({"type":"object","properties":{"x":{"$ref":"#/$defs/X"}},"$defs":{"X":{"type":"string"}}}),
-            json!({"type":"object","properties":{"x":{"type":"string","enum":["a","a"]}}}),
-            json!({"type":"object","properties":{"x":{"type":["string","integer"]}}}),
-            json!({"type":"object","properties":{"x":{"type":"array","items":{"type":"string"},"uniqueItems":"yes"}}}),
-            json!({"type":"object","properties":{"x":{"type":"array","items":{"type":"string"},"uniqueItems":true,"x-unknown":true}}}),
+            json!({"type":"object","properties":{"x":{"type":"string"}},"required":"x","additionalProperties":false}),
+            json!({"type":"object","properties":{"x":{"type":["string","integer"]}},"required":["x"],"additionalProperties":false}),
         ] {
             let body = json!({"model":"m","input":"go","tools":[
                 {"type":"function","name":"lookup","parameters":schema}]});

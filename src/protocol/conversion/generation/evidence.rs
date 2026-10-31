@@ -809,6 +809,15 @@ impl EvidenceDelta {
         }
         self.push(effect);
     }
+    pub(crate) fn extend_prefer_summary(&mut self, other: Self) {
+        self.omitted_entries = self.omitted_entries.saturating_add(other.omitted_entries);
+        if other.coverage != Coverage::Assessed {
+            self.coverage = other.coverage;
+        }
+        for effect in other.effects {
+            self.prefer_summary(effect);
+        }
+    }
     pub(crate) fn retain(&mut self, keep: impl Fn(&Effect) -> bool) {
         self.effects.retain(keep);
         self.bytes = self.effects.iter().map(Effect::retained_bytes).sum();
