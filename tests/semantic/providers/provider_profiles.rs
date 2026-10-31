@@ -119,6 +119,75 @@ fn application_instruction_carriers_are_dialect_local_and_never_become_user() {
 }
 
 #[test]
+fn binding_parallel_omission_preserves_serial_guarantees_and_source() {
+    use morphiecore::{
+        semantic::task::generation::Feature,
+        topology::{GenerationProtocol, catalog::API_KEY_BINDINGS},
+    };
+    let client = GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None);
+    for prefix in [
+        "openrouter",
+        "opencode-go",
+        "opencode-go-muse",
+        "openrouter-audio",
+    ] {
+        let binding = API_KEY_BINDINGS
+            .iter()
+            .find(|b| b.endpoint_prefix == prefix)
+            .unwrap();
+        for &protocol in binding.protocols {
+            if !matches!(
+                protocol,
+                GenerationProtocol::OpenAiChat | GenerationProtocol::OpenAiResponses
+            ) {
+                continue;
+            }
+            let endpoint = binding.endpoint(protocol).unwrap();
+            assert!(
+                !endpoint
+                    .representation
+                    .dispositions()
+                    .native(Feature::ParallelTools)
+            );
+            for parallel in [true, false] {
+                let mut request = client
+                    .decode_client_request(
+                        json!({"model":binding.model,"input":"go","parallel_tool_calls":parallel})
+                            .to_string()
+                            .as_bytes(),
+                    )
+                    .unwrap();
+                request.conversation = Some(
+                    morphiecore::semantic::context::ConversationContext::conversation(
+                        "synthetic-parallel-conversation",
+                    )
+                    .unwrap(),
+                );
+                let original = request.clone();
+                let (wire, rules) = endpoint
+                    .encode_request_with_rules(&request)
+                    .unwrap_or_else(|error| panic!("{prefix} {protocol:?} {parallel}: {error:?}"));
+                if parallel {
+                    assert!(
+                        wire.get("parallel_tool_calls").is_none(),
+                        "{prefix} {protocol:?}"
+                    );
+                    assert_eq!(rules, ["generation.omit-parallel-tools.v1"]);
+                } else {
+                    assert_eq!(wire["parallel_tool_calls"], false);
+                    assert!(rules.is_empty());
+                }
+                assert_eq!(request, original);
+                let native = client
+                    .encode_request(&request, "m", &Contract::full())
+                    .unwrap();
+                assert_eq!(native["parallel_tool_calls"], parallel);
+            }
+        }
+    }
+}
+
+#[test]
 fn deepseek_never_forwards_parallel_control_or_weakens_serial_intent() {
     use morphiecore::{
         execution::attempt::prepare_with_rules,

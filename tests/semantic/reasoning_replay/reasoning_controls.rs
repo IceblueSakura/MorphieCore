@@ -236,7 +236,7 @@ fn requests_reject_unselected_controls_while_incidental_reports_project() {
             } else if dimension == 1 {
                 assert_eq!(
                     lower_request(&request, &fidelity, profile, TargetContract::full()).err(),
-                    Some(RepresentationError::Reasoning.into())
+                    Some(RepresentationError::Admission(Feature::ReasoningDisplay).into())
                 );
             } else {
                 let target =

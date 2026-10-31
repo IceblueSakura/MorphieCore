@@ -34,8 +34,19 @@ const UNSUPPORTED: &[&str] = &[
 
 /// Explicit strict carriage requires closed objects with every property required.
 pub(super) fn admits(schema: &SchemaDocument) -> bool {
+    check(schema, false)
+}
+
+/// Inferring strictness needs a known equivalent vocabulary; explicit strict
+/// requests instead leave unknown keywords to upstream validation.
+pub(super) fn admits_conditional(schema: &SchemaDocument) -> bool {
+    check(schema, true)
+}
+
+fn check(schema: &SchemaDocument, known_keywords: bool) -> bool {
     let root = schema.root();
     let mut check = Check {
+        known_keywords,
         visited: BTreeSet::new(),
         refs: vec![],
         properties: 0,
@@ -75,6 +86,7 @@ pub(super) fn admits(schema: &SchemaDocument) -> bool {
 }
 
 struct Check<'a> {
+    known_keywords: bool,
     visited: BTreeSet<*const Value>,
     refs: Vec<&'a str>,
     properties: usize,
@@ -123,6 +135,26 @@ impl<'a> Check<'a> {
                     }
                 }
                 "const" => Self::charge(&mut self.chars, string_chars(value), MAX_CHARS)?,
+                "type"
+                | "required"
+                | "additionalProperties"
+                | "title"
+                | "description"
+                | "default"
+                | "examples"
+                | "$schema"
+                | "pattern"
+                | "format"
+                | "minLength"
+                | "maxLength"
+                | "minimum"
+                | "maximum"
+                | "exclusiveMinimum"
+                | "exclusiveMaximum"
+                | "multipleOf"
+                | "minItems"
+                | "maxItems" => {}
+                _ if self.known_keywords => return None,
                 _ => {}
             }
         }

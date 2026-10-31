@@ -339,9 +339,6 @@ impl<'a> Target<'a> {
                             "serial tool execution cannot be guaranteed by this target",
                         ),
                     );
-                } else {
-                    table.set_native(ParallelTools, true);
-                    table.set_native(SerialTools, true);
                 }
                 table.set_native(
                     Prediction,
@@ -481,6 +478,7 @@ impl<'a> Target<'a> {
                 );
             }
         }
+        self.presentation_rows(source.settings(), &mut table);
         table.set(
             Effort,
             if self.has_effort() {
@@ -774,6 +772,78 @@ impl<'a> Target<'a> {
                 }
             }
         }
+    }
+    fn presentation_rows(self, settings: &GenerationSettings, table: &mut Dispositions) {
+        let presentation = &settings.reasoning.presentation;
+        let auto = presentation.summary.value() == Some(&ReasoningSummary::Auto);
+        let summary_carrier = matches!(self, Self::OpenAi(GenerationApi::Responses, c)
+            if !c.adaptation.rules.bailian_requests);
+        let native_summary = match self {
+            Self::Messages(_) => Some(super::disposition::MESSAGES_SUMMARY),
+            Self::GenerateContent(_) => Some(super::disposition::GENERATE_CONTENT_SUMMARY),
+            Self::Interactions(_) => Some(super::disposition::INTERACTIONS_SUMMARY),
+            Self::OpenAi(_, _) => None,
+        };
+        let omission = Disposition::Omit(super::disposition::OMIT_REASONING_SUMMARY);
+        let display = if matches!(self, Self::OpenAi(_, _))
+            && presentation.visibility.value() == Some(&ReasoningDisplay::Omitted)
+        {
+            Disposition::Reject("the selected carrier cannot guarantee hidden reasoning display")
+        } else if summary_carrier || native_summary.is_some() {
+            Disposition::Native
+        } else if auto {
+            Disposition::Equivalent
+        } else {
+            omission
+        };
+        table.set(Feature::ReasoningDisplay, display);
+        let summary = if let Some(rule) = native_summary {
+            match &presentation.summary {
+                Presence::Null => Disposition::Reject(
+                    "the selected native summary carrier has no explicit null value",
+                ),
+                Presence::Value(ReasoningSummary::Auto) => {
+                    if matches!(self, Self::Messages(_))
+                        && presentation.visibility.value() == Some(&ReasoningDisplay::Summary)
+                    {
+                        table.set(Feature::ReasoningDisplay, Disposition::Equivalent);
+                    }
+                    Disposition::Equivalent
+                }
+                Presence::Value(ReasoningSummary::Concise | ReasoningSummary::Detailed) => {
+                    let no_thinking = matches!(self, Self::Messages(_))
+                        && settings.reasoning.activation.value()
+                            != Some(&ReasoningActivation::Enabled)
+                        && settings.reasoning.mode.value() != Some(&ReasoningMode::Adaptive)
+                        && settings.reasoning.budget_tokens.is_none();
+                    if no_thinking {
+                        table.set(Feature::ReasoningDisplay, omission);
+                        omission
+                    } else {
+                        Disposition::Approximate(rule)
+                    }
+                }
+                Presence::Absent => Disposition::Native,
+            }
+        } else if summary_carrier {
+            Disposition::Native
+        } else if auto {
+            Disposition::Equivalent
+        } else {
+            omission
+        };
+        table.set(Feature::ReasoningSummary, summary);
+        table.set(
+            Feature::EncryptedReasoning,
+            if summary_carrier {
+                Disposition::Native
+            } else if settings.reasoning.activation.value() == Some(&ReasoningActivation::Disabled)
+            {
+                Disposition::Equivalent
+            } else {
+                Disposition::Omit(super::disposition::OMIT_REASONING_INCLUDE)
+            },
+        );
     }
     fn context_rows(self, source: &Request, table: &mut Dispositions) -> Result<(), CodecError> {
         use crate::semantic::context::{CacheOptions, CacheRetention};
@@ -1107,54 +1177,18 @@ fn project_semantic_with_table<'a>(
         table,
         &mut evidence,
     );
-    if settings.parallel_tool_calls == Some(true)
-        && table.get(Feature::ParallelTools) == Disposition::Equivalent
-    {
-        settings.parallel_tool_calls = None;
+    if settings.parallel_tool_calls == Some(true) {
+        match table.get(Feature::ParallelTools) {
+            Disposition::Equivalent => settings.parallel_tool_calls = None,
+            Disposition::Omit(rule) => {
+                settings.parallel_tool_calls = None;
+                evidence.push(rule.effect(ConversionBoundary::RequestProject));
+            }
+            _ => {}
+        }
     }
     if settings.parallel_tool_calls == Some(false) && !table.accepts(Feature::SerialTools) {
         return Err(crate::protocol::conversion::generation::RepresentationError::Tools.into());
-    }
-    let summary_carrier = matches!(target, Target::OpenAi(GenerationApi::Responses, contract)
-        if !contract.adaptation.rules.bailian_requests);
-    let presentation_carrier = summary_carrier
-        || matches!(
-            target,
-            Target::Messages(_) | Target::GenerateContent(_) | Target::Interactions(_)
-        );
-    if matches!(target, Target::Messages(_))
-        && settings.reasoning.presentation.summary.value() == Some(&ReasoningSummary::Auto)
-    {
-        settings.reasoning.presentation = Default::default();
-    }
-    if !presentation_carrier && !settings.reasoning.presentation.is_absent() {
-        if settings.reasoning.presentation.visibility.value() == Some(&ReasoningDisplay::Omitted) {
-            return Err(
-                crate::protocol::conversion::generation::RepresentationError::Reasoning.into(),
-            );
-        }
-        let native_default = matches!(target, Target::OpenAi(GenerationApi::Responses, contract)
-            if contract.adaptation.rules.bailian_requests)
-            && settings.reasoning.presentation.summary.value() == Some(&ReasoningSummary::Auto);
-        if !native_default
-            && (settings.reasoning.presentation.summary.value().is_some()
-                || settings.reasoning.presentation.visibility.value().is_some())
-        {
-            evidence.push(
-                super::disposition::OMIT_REASONING_SUMMARY
-                    .effect(ConversionBoundary::RequestProject),
-            );
-        }
-        settings.reasoning.presentation = Default::default();
-    }
-    if !summary_carrier && settings.reasoning.encrypted_output() {
-        settings.reasoning = settings.reasoning.with_encrypted_output(false);
-        if settings.reasoning.activation.value() != Some(&ReasoningActivation::Disabled) {
-            evidence.push(
-                super::disposition::OMIT_REASONING_INCLUDE
-                    .effect(ConversionBoundary::RequestProject),
-            );
-        }
     }
     if settings.reasoning.presence == ReasoningPresence::Null {
         settings.reasoning.presence = ReasoningPresence::Absent;
@@ -1232,45 +1266,35 @@ fn project_semantic_with_table<'a>(
         table,
         &mut evidence,
     )?;
-    let native_summary = match target {
-        Target::Messages(_) => Some(super::disposition::MESSAGES_SUMMARY),
-        Target::GenerateContent(_) => Some(super::disposition::GENERATE_CONTENT_SUMMARY),
-        Target::Interactions(_) => Some(super::disposition::INTERACTIONS_SUMMARY),
-        Target::OpenAi(_, _) => None,
-    };
-    if let Some(rule) = native_summary {
-        table.set(Feature::ReasoningDisplay, Disposition::Native);
-        table.set(Feature::ReasoningSummary, Disposition::Approximate(rule));
-        if settings.reasoning.presentation.summary == Presence::Null {
-            table.set(
-                Feature::ReasoningSummary,
-                Disposition::Reject(
-                    "the selected native summary carrier has no explicit null value",
-                ),
-            );
-        }
-        if matches!(
-            settings.reasoning.presentation.summary.value(),
-            Some(ReasoningSummary::Concise | ReasoningSummary::Detailed)
-        ) {
-            let no_thinking = matches!(target, Target::Messages(_))
-                && settings.reasoning.activation.value() != Some(&ReasoningActivation::Enabled)
-                && settings.reasoning.mode.value() != Some(&ReasoningMode::Adaptive)
-                && settings.reasoning.budget_tokens.is_none();
-            if no_thinking {
-                settings.reasoning.presentation = Default::default();
-                table.set(
-                    Feature::ReasoningSummary,
-                    Disposition::Omit(super::disposition::OMIT_REASONING_SUMMARY),
-                );
-                evidence.push(
-                    super::disposition::OMIT_REASONING_SUMMARY
-                        .effect(ConversionBoundary::RequestProject),
-                );
-            } else {
-                settings.reasoning.presentation.summary = Presence::Absent;
+    // Allocation conversion may change whether a native summarizer is active.
+    target.presentation_rows(&settings, table);
+    apply_presence(
+        &mut settings.reasoning.presentation.visibility,
+        Feature::ReasoningDisplay,
+        table,
+        &mut evidence,
+    )?;
+    if let Disposition::Approximate(rule) = table.get(Feature::ReasoningSummary) {
+        settings.reasoning.presentation.summary = Presence::Absent;
+        evidence.push(rule.effect(ConversionBoundary::RequestProject));
+    } else {
+        apply_presence(
+            &mut settings.reasoning.presentation.summary,
+            Feature::ReasoningSummary,
+            table,
+            &mut evidence,
+        )?;
+    }
+    if settings.reasoning.encrypted_output() {
+        match table.get(Feature::EncryptedReasoning) {
+            Disposition::Equivalent => {
+                settings.reasoning = settings.reasoning.with_encrypted_output(false);
+            }
+            Disposition::Omit(rule) => {
+                settings.reasoning = settings.reasoning.with_encrypted_output(false);
                 evidence.push(rule.effect(ConversionBoundary::RequestProject));
             }
+            _ => {}
         }
     }
     if let Target::Messages(contract) = target {
@@ -2076,6 +2100,63 @@ mod tests {
         crate::adapter::ClientAdapter::Messages
             .decode_client_request(body.to_string().as_bytes())
             .unwrap()
+    }
+
+    #[test]
+    fn reasoning_presentation_admission_and_losses_follow_candidate_rows() {
+        use crate::protocol::openai::{Dialect, GenerationCodec};
+        for api in [GenerationApi::Chat, GenerationApi::Responses] {
+            let codec = GenerationCodec::new(api, Dialect::Standard, None);
+            let source = GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None)
+                .decode_request(br#"{"model":"m","input":"hello","reasoning":{"summary":"auto"}}"#)
+                .unwrap();
+            let original = source.clone();
+            let result = codec
+                .encode_request_with_evidence(&source, "m", &OpenAiContract::full())
+                .unwrap();
+            assert!(
+                !result
+                    .evidence
+                    .contains_rule(super::super::disposition::OMIT_REASONING_SUMMARY.id)
+            );
+            assert_eq!(source, original);
+            for display in ["summarized", "omitted"] {
+                let source = messages(json!({"model":"m","max_tokens":64,
+                    "thinking":{"type":"adaptive","display":display},
+                    "messages":[{"role":"user","content":"hello"}]}));
+                let original = source.clone();
+                let contract = OpenAiContract::full();
+                let table = Target::OpenAi(api, &contract).table(&source.task.semantic, "m");
+                let result = codec.encode_request_with_evidence(&source, "m", &contract);
+                if display == "omitted" {
+                    assert!(matches!(
+                        table.get(Feature::ReasoningDisplay),
+                        Disposition::Reject(_)
+                    ));
+                    assert!(matches!(
+                        result.unwrap_err().cause,
+                        crate::protocol::ConversionCause::Representation(
+                            crate::protocol::conversion::generation::RepresentationError::Admission(
+                                Feature::ReasoningDisplay
+                            )
+                        )
+                    ));
+                } else {
+                    let result = result.unwrap();
+                    if api == GenerationApi::Chat {
+                        let Disposition::Omit(rule) = table.get(Feature::ReasoningDisplay) else {
+                            panic!("Chat must omit uncarried presentation");
+                        };
+                        assert!(result.evidence.contains_rule(rule.id));
+                        assert!(result.value.get("reasoning").is_none());
+                    } else {
+                        assert_eq!(table.get(Feature::ReasoningDisplay), Disposition::Native);
+                        assert_eq!(result.value["reasoning"]["summary"], "auto");
+                    }
+                }
+                assert_eq!(source, original);
+            }
+        }
     }
 
     #[test]

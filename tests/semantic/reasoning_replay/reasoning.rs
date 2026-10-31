@@ -39,8 +39,10 @@ fn typed_disabled_summary_is_valid_semantics_without_a_responses_carrier() {
         assert_eq!(
             lower_request(&request, &fidelity, profile, Contract::full()).err(),
             Some(
-                morphiecore::protocol::conversion::generation::RepresentationError::Reasoning
-                    .into()
+                morphiecore::protocol::conversion::generation::RepresentationError::Admission(
+                    Feature::ReasoningDisplay,
+                )
+                .into()
             )
         );
     }

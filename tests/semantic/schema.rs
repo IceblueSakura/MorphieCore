@@ -382,6 +382,11 @@ mod schema_admission {
                 vec![],
             ),
             (
+                json!({"type":"object","properties":{"x-unknown":{"type":"string","description":"known annotation"}},"required":["x-unknown"],"additionalProperties":false}),
+                true,
+                vec![],
+            ),
+            (
                 json!({"type":"object","properties":{"x":{"$ref":"#/$defs/X"}},
                     "required":["x"],"additionalProperties":false,"$defs":{"X":{"type":"string"}}}),
                 true,
@@ -431,6 +436,9 @@ mod schema_admission {
         }
         for schema in [
             json!({"type":"object","x-unknown":true}),
+            json!({"type":"object","properties":{},"additionalProperties":false,"x-unknown":true}),
+            json!({"type":"object","properties":{"x":{"type":"string","x-unknown":true}},"required":["x"],"additionalProperties":false}),
+            json!({"type":"object","properties":{"x":{"$ref":"#/$defs/X"}},"required":["x"],"additionalProperties":false,"$defs":{"X":{"type":"string","x-unknown":true}}}),
             json!({"type":"object","required":"x"}),
             json!({"type":"object","properties":{"x":{"type":"string","minLength":"bad"}}}),
             json!({"type":"object","properties":{"x":{"$ref":"#/$defs/X"}},"$defs":{"X":{"type":"string"}}}),
@@ -458,6 +466,22 @@ mod schema_admission {
                     .is_ok()
             );
         }
+        let schema =
+            json!({"type":"object","properties":{},"additionalProperties":false,"x-unknown":true});
+        let explicit = source
+            .decode_client_request(
+                json!({"model":"m","input":"go","tools":[{"type":"function","name":"lookup",
+                "parameters":schema,"strict":true}]})
+                .to_string()
+                .as_bytes(),
+            )
+            .unwrap();
+        let (wire, rules) = target
+            .encode_request_with_rules(&explicit, "m", &TargetContract::full())
+            .unwrap();
+        assert_eq!(wire["tools"][0]["function"]["strict"], true);
+        assert_eq!(wire["tools"][0]["function"]["parameters"], schema);
+        assert!(rules.is_empty());
         let body = json!({"model":"m","input":"go","tools":[{"type":"function","name":"lookup"}]});
         let request = source
             .decode_client_request(body.to_string().as_bytes())

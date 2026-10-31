@@ -45,8 +45,9 @@ pub(crate) fn project(
             return;
         }
         let schema = tool.parameters.get_or_insert_with(empty_parameters);
-        let exact_strict =
-            !force_non_strict && strict_schema::admits(schema) && strict_carrier(schema);
+        let exact_strict = !force_non_strict
+            && strict_schema::admits_conditional(schema)
+            && strict_carrier(schema);
         tool.strict = FunctionStrictness::Explicit(exact_strict);
         *loss |= !exact_strict;
     }
