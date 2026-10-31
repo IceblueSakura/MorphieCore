@@ -1,4 +1,5 @@
 //! One Router gate for credential attempts, local availability and publication boundaries.
+use crate::lowering::disposition::Dispositions;
 use crate::{
     credential::{CredentialManager, CredentialPool, CredentialRef, Secret},
     gateway::*,
@@ -140,7 +141,7 @@ async fn same_provider_fallback_is_ordered_bounded_and_never_crosses_publication
             ModelId::new("canonical").unwrap(),
             TaskKind::Generation,
             route.id.clone(),
-            GenerationFeatureSet::full(),
+            Dispositions::full(),
         );
         let topology = compile(
             vec![provider],
@@ -150,7 +151,7 @@ async fn same_provider_fallback_is_ordered_bounded_and_never_crosses_publication
             vec![CanonicalModel {
                 id: ModelId::new("canonical").unwrap(),
                 task: TaskKind::Generation,
-                contract: GenerationFeatureSet::full(),
+                contract: Dispositions::full(),
             }],
         )
         .unwrap()

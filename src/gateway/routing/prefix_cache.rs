@@ -168,7 +168,7 @@ fn lookup_profile(
     if !cache.key && !adapter.adaptation.rules.opencode_go_headers
         || cache.key
             && !adapter.adaptation.rules.opencode_go_headers
-            && !request.context.cache.prompt_cache_key.is_absent()
+            && !request.context.cache.prompt_cache_key.is_none()
     {
         return Err(Some("explicit_or_unmapped"));
     }
@@ -359,8 +359,7 @@ mod tests {
                 .is_none()
         );
         let mut explicit = source.clone();
-        explicit.context.cache.prompt_cache_key =
-            crate::semantic::value::Presence::Value("explicit".into());
+        explicit.context.cache.prompt_cache_key = Some("explicit".into());
         assert!(
             materialize(&gate.state.affinity, &explicit)
                 .value

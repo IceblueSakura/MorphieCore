@@ -1,18 +1,16 @@
 //! Target-only assembly, never inferred native ownership.
+use crate::lowering::disposition::Rule;
 use crate::{
-    protocol::openai::{
-        GenerationApi,
-        lowering::{RepresentationError, projection::ProjectionRule},
-    },
+    protocol::openai::{GenerationApi, lowering::RepresentationError},
     semantic::task::generation::*,
 };
 use std::collections::BTreeMap;
 
-pub(super) fn project(
+pub(crate) fn project(
     items: &[(ItemId, Item)],
     groups: &[MessageEnvelope],
     profile: GenerationApi,
-) -> Result<Option<(Vec<MessageEnvelope>, ProjectionRule)>, RepresentationError> {
+) -> Result<Option<(Vec<MessageEnvelope>, Rule)>, RepresentationError> {
     if profile == GenerationApi::Responses {
         if groups.is_empty() {
             return Ok(None);
@@ -40,10 +38,7 @@ pub(super) fn project(
         }) {
             return Err(RepresentationError::ReplayOrigin);
         }
-        return Ok(Some((
-            vec![],
-            ProjectionRule::OmitResponsesMessageEnvelopes,
-        )));
+        return Ok(Some((vec![], Rule::OMIT_RESPONSES_MESSAGE_ENVELOPES)));
     }
     // Non-Chat native envelopes need their own target contract, not flattening.
     for group in groups {
@@ -107,5 +102,5 @@ pub(super) fn project(
             members,
         )?);
     }
-    Ok(Some((projected, ProjectionRule::RegroupChatMessageItems)))
+    Ok(Some((projected, Rule::REGROUP_CHAT_MESSAGE_ITEMS)))
 }

@@ -46,7 +46,7 @@ impl ResponseMetadata {
     pub fn validate(&self) -> Result<(), CodecError> {
         if let Some(delivery) = &self.delivery {
             delivery.settings.validate()?;
-            crate::semantic::context::validate_metadata(&delivery.request_metadata)?;
+            crate::semantic::context::validate_metadata(delivery.request_metadata.as_ref())?;
             if let Some(usage) = delivery.usage {
                 usage.validate()?;
             }
@@ -80,26 +80,24 @@ pub struct GenerationDelivery {
     pub settings: crate::semantic::task::generation::GenerationSettings,
     pub usage: Option<crate::semantic::task::generation::Usage>,
     /// Original admitted request association, not candidate-prepared metadata.
-    pub request_metadata:
-        crate::semantic::value::Presence<std::collections::BTreeMap<String, String>>,
+    pub request_metadata: Option<std::collections::BTreeMap<String, String>>,
 }
 impl ResponseMetadata {
     /// Whole-field report precedence includes explicit null and empty objects.
     /// Only Responses rendering consumes this fallback.
     pub(crate) fn request_metadata_echo(
         &self,
-    ) -> Option<&crate::semantic::value::Presence<std::collections::BTreeMap<String, String>>> {
+    ) -> Option<&std::collections::BTreeMap<String, String>> {
         if !self.context.execution.metadata.is_absent() {
             return None;
         }
-        let value = &self.delivery.as_ref()?.request_metadata;
-        (!value.is_absent()).then_some(value)
+        self.delivery.as_ref()?.request_metadata.as_ref()
     }
 }
 impl GenerationDelivery {
     pub(crate) fn request_metadata_bytes(&self) -> usize {
         std::mem::size_of_val(&self.request_metadata).saturating_add(
-            crate::semantic::context::metadata_retained_bytes(&self.request_metadata),
+            crate::semantic::context::metadata_retained_bytes(self.request_metadata.as_ref()),
         )
     }
 }

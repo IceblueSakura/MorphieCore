@@ -2,7 +2,7 @@
 use super::{
     Block, InputMessage, MessageContent, Profile, Role, Selection, TextContent as WireText,
     items::{Intake, bind, item_blocks, text},
-    settings::{display, effort_level, output_settings, replay_mismatch},
+    settings::{display, output_settings, replay_mismatch},
 };
 use crate::{
     protocol::{
@@ -21,24 +21,27 @@ impl Profile {
         request: &GenerationRequest,
         fidelity: &FidelityRecords,
         target: &ReplayTarget,
-    ) -> Result<crate::protocol::conversion::generation::Conversion<Value>, CodecError> {
-        self.encode_request_envelope(
+    ) -> Result<
+        crate::protocol::conversion::generation::Conversion<Value>,
+        crate::protocol::ConversionFailure,
+    > {
+        let mut contract = super::TargetContract::new(self, super::Dialect::Standard);
+        contract.dispositions = self.representation_contract();
+        let projected = crate::lowering::request::project_semantic(
             request,
-            fidelity,
-            target,
-            &Presence::Absent,
-            &Default::default(),
-            true,
-        )
+            crate::lowering::request::Target::Messages(&contract),
+            target.model(),
+        )?;
+        let mut wire = self.encode_request_envelope(&projected.value, fidelity, target, &None)?;
+        wire.evidence.extend(projected.evidence);
+        Ok(wire)
     }
     pub(super) fn encode_request_envelope(
         self,
         request: &GenerationRequest,
         fidelity: &FidelityRecords,
         target: &ReplayTarget,
-        policy: &Presence<crate::semantic::context::ServicePolicy>,
-        limits: &crate::protocol::model_limits::ModelLimits,
-        strict_tools: bool,
+        policy: &Option<crate::semantic::context::ServicePolicy>,
     ) -> Result<crate::protocol::conversion::generation::Conversion<Value>, CodecError> {
         let (request, fidelity, transferred) = crate::protocol::native::native_reasoning_history(
             request,
@@ -55,50 +58,18 @@ impl Profile {
         if transferred {
             rules.insert(RequestRule::TransferVisibleHistory);
         }
-        let phase = crate::protocol::phase::omit_request(&request)?;
-        if phase.is_some() {
-            rules.insert(RequestRule::OmitMessagePhase);
-        }
-        let conditional = crate::protocol::openai::lowering::strictness::project(
-            phase.as_ref().unwrap_or(&request),
-            |schema| strict_tools && super::strict_schema::admits(schema.root()),
-            super::strict_schema::admits_generation,
-        )
-        .map_err(|cause| CodecError::Representation {
-            boundary: crate::protocol::conversion::generation::ConversionBoundary::RequestProject,
-            cause,
-        })?;
         let mut wire = project(
-            conditional
-                .as_ref()
-                .map(|(semantic, _)| semantic)
-                .or(phase.as_ref())
-                .unwrap_or(&request),
+            &request,
             &fidelity,
             target,
             &mut normalized,
             &mut omitted,
             &mut rules,
         )?;
-        wire.service_policy = policy.clone();
-        limits.check_values(
-            Some(wire.max_tokens),
-            wire.output_config
-                .value()
-                .and_then(|config| config.effort.value())
-                .copied()
-                .into_iter()
-                .chain(wire.messages.iter().filter_map(|message| message.effort))
-                .map(effort_level),
-        )?;
+        wire.service_policy = *policy;
         let value = self.encode_request(&wire)?;
         let mut evidence: crate::protocol::conversion::generation::EvidenceDelta =
             rules.into_iter().map(|r| r.effect(&request)).collect();
-        if let Some((_, effects)) = conditional {
-            for effect in effects {
-                evidence.push(effect);
-            }
-        }
         for owner in normalized {
             evidence.push(
                 crate::protocol::conversion::generation::Effect::new(
@@ -130,7 +101,7 @@ impl Profile {
         target: &ReplayTarget,
     ) -> Result<DecodedRequest, CodecError> {
         let wire = self.decode_request(bytes)?;
-        if !wire.service_policy.is_absent() || !wire.user_id.is_absent() {
+        if wire.service_policy.is_some() || wire.user_id.is_some() {
             return Err(CodecError::Unsupported(CarrierReason::Unavailable));
         }
         if wire.model != target.model() {
@@ -239,8 +210,6 @@ use super::items::{cache_ttl, unsupported};
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
 pub enum RequestRule {
     OmitPrediction,
-    ReasoningPolicy(&'static str),
-    Hint(crate::protocol::cache::HintRule),
     OmitVerbosity,
     OmitMessagePhase,
     /// Messages has one summarized display, without concise or detailed variants.
@@ -254,16 +223,6 @@ pub enum RequestRule {
     ReasoningAsText,
     /// A Messages output format has no name; OpenAI requires one as a label.
     OmitSchemaName,
-    /// A trusted target inserts its configured ceiling on the candidate copy.
-    DefaultMaxTokens,
-    /// A trusted target explicitly selects automatic caching for marker-free input.
-    DefaultAutomaticCache,
-    /// Tolerant `drop_block` replay handling without a target carrier.
-    OmitBlockBinding,
-    /// Per-message effort becomes the level in effect for the requested reply.
-    FlattenMessageEffort,
-    /// Ordered tool changes become the final available tool set.
-    CollapseToolChanges,
 }
 impl RequestRule {
     pub(crate) fn effect(
@@ -274,22 +233,6 @@ impl RequestRule {
             Change, ConversionBoundary as B, Effect, Field, Owner,
         };
         let (field, change) = match self {
-            Self::CollapseToolChanges => (Field::Tools, Change::Omit),
-            Self::DefaultAutomaticCache => (
-                Field::Cache,
-                Change::Default(
-                    crate::protocol::conversion::generation::DefaultBasis::SelectedPolicy,
-                ),
-            ),
-            Self::DefaultMaxTokens => (
-                Field::MaximumOutput,
-                Change::Default(
-                    crate::protocol::conversion::generation::DefaultBasis::SelectedPolicy,
-                ),
-            ),
-            Self::FlattenMessageEffort => (Field::Effort, Change::Omit),
-            Self::Hint(hint) => return hint.effect(),
-            Self::OmitBlockBinding => (Field::Replay, Change::Omit),
             Self::OmitMessagePhase => (Field::MessagePhase, Change::Omit),
             Self::OmitPrediction => (Field::Prediction, Change::Omit),
             Self::OmitSampling => (Field::Sampling, Change::Omit),
@@ -297,14 +240,6 @@ impl RequestRule {
             Self::OmitVerbosity => (Field::Verbosity, Change::Omit),
             Self::ProjectCallIds => (Field::ToolCallIdentity, Change::Normalize),
             Self::ReasoningAsText => (Field::ReportedReasoning, Change::Approximate),
-            Self::ReasoningPolicy(rule) => {
-                return Effect::new(
-                    rule,
-                    Field::ReasoningAllocation,
-                    B::RequestProject,
-                    Change::Approximate,
-                );
-            }
             Self::SummarizeReasoning => (Field::ReasoningSummary, Change::Approximate),
             Self::TransferVisibleHistory => (Field::Replay, Change::Omit),
         };
@@ -322,21 +257,16 @@ impl RequestRule {
     pub const fn name(self) -> &'static str {
         match self {
             Self::OmitPrediction => "generation.omit-prediction.v1",
-            Self::ReasoningPolicy(rule) => rule,
-            Self::Hint(rule) => rule.name(),
             Self::OmitVerbosity => "messages.omit-verbosity.v1",
             Self::OmitMessagePhase => "messages.omit-message-phase.v1",
-            Self::SummarizeReasoning => "messages.summarize-reasoning.v1",
+            Self::SummarizeReasoning => crate::lowering::disposition::MESSAGES_SUMMARY.id,
             Self::OmitSampling => "messages.omit-sampling.v1",
             Self::ProjectCallIds => "messages.project-call-ids.v1",
-            Self::TransferVisibleHistory => "messages.transfer-visible-history.v1",
-            Self::ReasoningAsText => "messages.reasoning-as-text.v1",
-            Self::OmitSchemaName => "messages.omit-schema-name.v1",
-            Self::DefaultMaxTokens => "messages.default-max-tokens.v1",
-            Self::DefaultAutomaticCache => "messages.default-automatic-cache.v1",
-            Self::OmitBlockBinding => "messages.omit-block-binding.v1",
-            Self::FlattenMessageEffort => "messages.flatten-message-effort.v1",
-            Self::CollapseToolChanges => "messages.collapse-tool-changes.v1",
+            Self::TransferVisibleHistory => {
+                crate::lowering::disposition::TRANSFER_MESSAGES_HISTORY.id
+            }
+            Self::ReasoningAsText => crate::lowering::disposition::MESSAGES_REASONING_AS_TEXT.id,
+            Self::OmitSchemaName => crate::lowering::disposition::MESSAGES_SCHEMA_NAME.id,
         }
     }
 }
@@ -495,12 +425,9 @@ pub(in crate::protocol::anthropic::messages) fn project(
         return Err(unsupported());
     }
     if s.controls.top_logprobs.is_some()
-        || !matches!(
-            s.controls.logprobs,
-            Presence::Absent | Presence::Value(false)
-        )
+        || !matches!(s.controls.logprobs, None | Some(false))
         || s.controls.truncation.is_some()
-        || !s.text.verbosity.is_absent()
+        || !s.text.verbosity.is_none()
         || !s.output_modalities.is_absent()
         || !s.audio.is_absent()
     {
@@ -669,12 +596,11 @@ pub(in crate::protocol::anthropic::messages) fn project(
         return Err(unsupported());
     }
     let effort = match &s.effort {
-        Presence::Absent => Presence::Absent,
-        Presence::Value(control) if control.scope == EffortScope::Response => {
+        None => Presence::Absent,
+        Some(control) if control.scope == EffortScope::Response => {
             Presence::Value(native_effort(control.level)?)
         }
-        Presence::Value(_) => return Err(unsupported()),
-        Presence::Null => return Err(unsupported()),
+        Some(_) => return Err(unsupported()),
     };
     if reasoning.presence == ReasoningPresence::Present
         && thinking.is_absent()
@@ -849,8 +775,8 @@ pub(in crate::protocol::anthropic::messages) fn project(
     }
     Ok(super::Request {
         model: target.model().into(),
-        user_id: Presence::Absent,
-        service_policy: Presence::Absent,
+        user_id: None,
+        service_policy: None,
         max_tokens: s
             .controls
             .max_output_tokens

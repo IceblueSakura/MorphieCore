@@ -18,13 +18,18 @@ pub struct GenerationControls {
     /// Best-effort sampling reproducibility, not a determinism guarantee.
     pub seed: Option<i64>,
     pub top_logprobs: Option<u8>,
-    pub logprobs: Presence<bool>,
+    pub logprobs: Option<bool>,
     pub truncation: Option<Truncation>,
 }
 impl GenerationControls {
     pub fn without_sampling(mut self) -> Self {
         self.temperature_bits = None;
         self.top_p_bits = None;
+        self
+    }
+    pub(crate) fn without_penalties(mut self) -> Self {
+        self.presence_penalty_bits = None;
+        self.frequency_penalty_bits = None;
         self
     }
     pub fn with_temperature(mut self, v: f64) -> Result<Self, GenerationError> {
@@ -138,7 +143,7 @@ pub struct GenerationSettings {
     pub parallel_tool_calls: Option<bool>,
     pub text: TextOptions,
     pub reasoning: ReasoningRequest,
-    pub effort: Presence<EffortControl>,
+    pub effort: Option<EffortControl>,
     pub output_modalities: Presence<Vec<crate::semantic::task::generation::OutputModality>>,
     pub audio: Presence<crate::semantic::task::generation::AudioOutputOptions>,
     pub safety: Vec<SafetySetting>,
@@ -183,7 +188,7 @@ impl GenerationSettings {
         }
         // Absent/null containers cannot hide explicit values or null children.
         if self.text.presence.value().is_none()
-            && (!self.text.format.is_absent() || !self.text.verbosity.is_absent())
+            && (!self.text.format.is_absent() || !self.text.verbosity.is_none())
         {
             return Err(GenerationError::InvalidControl);
         }
@@ -192,7 +197,7 @@ impl GenerationSettings {
             || self.reasoning.presence == ReasoningPresence::Null)
             && self
                 .effort
-                .value()
+                .as_ref()
                 .is_some_and(|e| e.scope == EffortScope::Reasoning)
         {
             return Err(GenerationError::InvalidControl);

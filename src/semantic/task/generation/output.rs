@@ -24,5 +24,5 @@ pub struct TextOptions {
     /// Container state; null is a reported observation, not request intent.
     pub presence: Presence<()>,
     pub format: Presence<OutputConstraint>,
-    pub verbosity: Presence<Verbosity>,
+    pub verbosity: Option<Verbosity>,
 }

@@ -278,7 +278,6 @@ mod tests {
             matches!(&request.task.semantic.items()[2].1, Item::ToolResult(r) if r.call_id.as_ref().unwrap().as_str() == "c")
         );
         assert_eq!(request.context.store, Presence::Value(false));
-        assert!(request.context.previous_response_id.is_absent());
         assert_eq!(
             adapter
                 .encode_request(&request, "selected", &TargetContract::full())

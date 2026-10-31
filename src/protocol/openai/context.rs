@@ -69,14 +69,14 @@ pub(super) fn metadata(
             .reports
             .latest_mut()
             .and_then(|r| r.settings.as_mut())
-            && let Some(control) = settings.effort.value().copied()
+            && let Some(control) = settings.effort.as_ref().copied()
         {
             if control.scope != mapping.scope {
                 return Err(CodecError::Unsupported(CarrierReason::Reasoning));
             }
             let mapped = mapping.decode(control.level)?;
             if mapped != control.level {
-                settings.effort = crate::semantic::value::Presence::Value(EffortControl {
+                settings.effort = Some(EffortControl {
                     scope: control.scope,
                     level: mapped,
                 });
@@ -162,6 +162,27 @@ impl ExecutionHints {
         direction: DecodeDirection<'_>,
     ) -> Result<Self, CodecError> {
         if profile == GenerationApi::Responses {
+            for field in [
+                "previous_response_id",
+                "conversation",
+                "prompt",
+                "moderation",
+            ] {
+                if o.get(field).is_some_and(|value| !value.is_null()) {
+                    return Err(CodecError::invalid());
+                }
+            }
+            if let Some(value) = o.get("context_management").filter(|value| !value.is_null()) {
+                let values = value.as_array().ok_or(CodecError::invalid())?;
+                if values.iter().any(|value| !value.is_null()) {
+                    return Err(CodecError::invalid());
+                }
+                if !values.is_empty() {
+                    return Err(crate::semantic::context::ContextError::Stateful.into());
+                }
+            }
+        }
+        if profile == GenerationApi::Responses {
             if matches!(
                 direction,
                 DecodeDirection::Request | DecodeDirection::Client(_)
@@ -175,6 +196,14 @@ impl ExecutionHints {
             .iter()
             .filter(|(k, _)| {
                 k.as_str() != "service_tier"
+                    && ![
+                        "previous_response_id",
+                        "conversation",
+                        "prompt",
+                        "moderation",
+                        "context_management",
+                    ]
+                    .contains(&k.as_str())
                     && (CACHE_FIELDS.contains(&k.as_str())
                         // Chat `store` persists completions; only false/null is admitted.
                         || if profile == GenerationApi::Chat {
@@ -200,6 +229,15 @@ impl ExecutionHints {
             .filter(|v| !v.is_null())
         {
             let options = options.as_object_mut().ok_or(CodecError::invalid())?;
+            if ["mode", "ttl", "prewarm"]
+                .iter()
+                .any(|key| options.get(*key).is_some_and(Value::is_null))
+            {
+                return Err(crate::semantic::context::ContextError::Invalid(
+                    crate::semantic::context::ContextReason::CacheOptions,
+                )
+                .into());
+            }
             let allowed: &[&str] = if profile == GenerationApi::Chat {
                 &["mode", "ttl"]
             } else {
@@ -245,7 +283,7 @@ pub(crate) fn validate_identity(
     identity.validate()?;
     for (value, maximum) in [(&identity.user, 256), (&identity.safety_identifier, 128)] {
         if value
-            .value()
+            .as_ref()
             .is_some_and(|value| value.chars().count() > maximum || value.len() > maximum * 4)
         {
             return Err(CodecError::Limit);
@@ -274,17 +312,17 @@ mod tests {
             DecodeDirection::Request,
         )
         .unwrap();
-        assert_eq!(hints.cache.prompt_cache_key, Presence::Value(String::new()));
+        assert_eq!(hints.cache.prompt_cache_key, Some(String::new()));
         assert_eq!(
             hints.cache.prompt_cache_retention,
-            Presence::Value(CacheRetention::Day)
+            Some(CacheRetention::Day)
         );
         let options = hints.cache.prompt_cache_options.value().unwrap();
-        assert_eq!(options.mode, Presence::Value(CacheMode::Explicit));
-        assert_eq!(options.ttl, Presence::Value(CacheTtl::ThirtyMinutes));
-        assert_eq!(options.prewarm, Presence::Value(false));
-        assert_eq!(options.comparison_response_id, Presence::Null);
-        assert_eq!(hints.identity.safety_identifier, Presence::Null);
+        assert_eq!(options.mode, Some(CacheMode::Explicit));
+        assert_eq!(options.ttl, Some(CacheTtl::ThirtyMinutes));
+        assert_eq!(options.prewarm, Some(false));
+        assert_eq!(options.comparison_response_id, None);
+        assert_eq!(hints.identity.safety_identifier, None);
         assert!(hints.background.is_absent());
         for invalid in [
             json!({"prompt_cache_options":null}),
@@ -306,16 +344,16 @@ mod tests {
     fn context_wire_output_is_explicit_and_not_semantic_serde() {
         let hints = ExecutionHints {
             cache: CacheHints {
-                prompt_cache_retention: Presence::Value(CacheRetention::InMemory),
+                prompt_cache_retention: Some(CacheRetention::InMemory),
                 prompt_cache_options: Presence::Value(CacheOptions {
-                    mode: Presence::Value(CacheMode::Implicit),
-                    ttl: Presence::Value(CacheTtl::ThirtyMinutes),
+                    mode: Some(CacheMode::Implicit),
+                    ttl: Some(CacheTtl::ThirtyMinutes),
                     ..Default::default()
                 }),
                 ..Default::default()
             },
             identity: ClientIdentityHints {
-                user: Presence::Null,
+                user: None,
                 ..Default::default()
             },
             background: Presence::Value(false),
@@ -328,7 +366,7 @@ mod tests {
             json!({
                 "prompt_cache_retention":"in_memory",
                 "prompt_cache_options":{"mode":"implicit","ttl":"30m"},
-                "user":null,"background":false
+                "background":false
             })
         );
         let report = CacheDiagnostics::CacheMiss {

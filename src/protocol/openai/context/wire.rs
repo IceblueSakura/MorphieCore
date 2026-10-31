@@ -35,23 +35,23 @@ pub enum CacheTtl {
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CacheOptions {
-    #[serde(default, skip_serializing_if = "Presence::is_absent")]
-    pub mode: Presence<CacheMode>,
-    #[serde(default, skip_serializing_if = "Presence::is_absent")]
-    pub ttl: Presence<CacheTtl>,
-    #[serde(default, skip_serializing_if = "Presence::is_absent")]
-    pub comparison_response_id: Presence<String>,
-    #[serde(default, skip_serializing_if = "Presence::is_absent")]
-    pub prewarm: Presence<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mode: Option<CacheMode>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ttl: Option<CacheTtl>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub comparison_response_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prewarm: Option<bool>,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CacheHints {
-    #[serde(default, skip_serializing_if = "Presence::is_absent")]
-    pub prompt_cache_key: Presence<String>,
-    #[serde(default, skip_serializing_if = "Presence::is_absent")]
-    pub prompt_cache_retention: Presence<CacheRetention>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prompt_cache_key: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prompt_cache_retention: Option<CacheRetention>,
     #[serde(default, skip_serializing_if = "Presence::is_absent")]
     pub prompt_cache_options: Presence<CacheOptions>,
 }
@@ -59,10 +59,10 @@ pub struct CacheHints {
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ClientIdentityHints {
-    #[serde(default, skip_serializing_if = "Presence::is_absent")]
-    pub safety_identifier: Presence<String>,
-    #[serde(default, skip_serializing_if = "Presence::is_absent")]
-    pub user: Presence<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub safety_identifier: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub user: Option<String>,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
@@ -79,16 +79,6 @@ pub struct ExecutionHints {
     pub store: Presence<bool>,
     #[serde(default, skip_serializing_if = "Presence::is_absent")]
     pub background: Presence<bool>,
-    #[serde(default, skip_serializing_if = "Presence::is_absent")]
-    pub previous_response_id: Presence<()>,
-    #[serde(default, skip_serializing_if = "Presence::is_absent")]
-    pub conversation: Presence<()>,
-    #[serde(default, skip_serializing_if = "Presence::is_absent")]
-    pub prompt: Presence<()>,
-    #[serde(default, skip_serializing_if = "Presence::is_absent")]
-    pub moderation: Presence<()>,
-    #[serde(default, skip_serializing_if = "Presence::is_absent")]
-    pub context_management: Presence<Vec<()>>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -164,10 +154,10 @@ impl From<&semantic::CacheMissReason> for CacheMissReason {
 impl From<&semantic::CacheOptions> for CacheOptions {
     fn from(value: &semantic::CacheOptions) -> Self {
         Self {
-            mode: map_presence(&value.mode, Into::into),
-            ttl: map_presence(&value.ttl, Into::into),
+            mode: value.mode.as_ref().map(Into::into),
+            ttl: value.ttl.as_ref().map(Into::into),
             comparison_response_id: value.comparison_response_id.clone(),
-            prewarm: value.prewarm.clone(),
+            prewarm: value.prewarm,
         }
     }
 }
@@ -176,7 +166,7 @@ impl From<&semantic::CacheHints> for CacheHints {
     fn from(value: &semantic::CacheHints) -> Self {
         Self {
             prompt_cache_key: value.prompt_cache_key.clone(),
-            prompt_cache_retention: map_presence(&value.prompt_cache_retention, Into::into),
+            prompt_cache_retention: value.prompt_cache_retention.as_ref().map(Into::into),
             prompt_cache_options: map_presence(&value.prompt_cache_options, Into::into),
         }
     }
@@ -200,11 +190,6 @@ impl From<&semantic::ExecutionHints> for ExecutionHints {
             max_tool_calls: value.max_tool_calls.clone(),
             store: value.store.clone(),
             background: value.background.clone(),
-            previous_response_id: value.previous_response_id.clone(),
-            conversation: value.conversation.clone(),
-            prompt: value.prompt.clone(),
-            moderation: value.moderation.clone(),
-            context_management: value.context_management.clone(),
         }
     }
 }
@@ -275,10 +260,10 @@ impl From<&CacheMissReason> for semantic::CacheMissReason {
 impl From<&CacheOptions> for semantic::CacheOptions {
     fn from(value: &CacheOptions) -> Self {
         Self {
-            mode: map_presence(&value.mode, Into::into),
-            ttl: map_presence(&value.ttl, Into::into),
+            mode: value.mode.as_ref().map(Into::into),
+            ttl: value.ttl.as_ref().map(Into::into),
             comparison_response_id: value.comparison_response_id.clone(),
-            prewarm: value.prewarm.clone(),
+            prewarm: value.prewarm,
         }
     }
 }
@@ -287,7 +272,7 @@ impl From<&CacheHints> for semantic::CacheHints {
     fn from(value: &CacheHints) -> Self {
         Self {
             prompt_cache_key: value.prompt_cache_key.clone(),
-            prompt_cache_retention: map_presence(&value.prompt_cache_retention, Into::into),
+            prompt_cache_retention: value.prompt_cache_retention.as_ref().map(Into::into),
             prompt_cache_options: map_presence(&value.prompt_cache_options, Into::into),
         }
     }
@@ -311,11 +296,6 @@ impl From<&ExecutionHints> for semantic::ExecutionHints {
             max_tool_calls: value.max_tool_calls.clone(),
             store: value.store.clone(),
             background: value.background.clone(),
-            previous_response_id: value.previous_response_id.clone(),
-            conversation: value.conversation.clone(),
-            prompt: value.prompt.clone(),
-            moderation: value.moderation.clone(),
-            context_management: value.context_management.clone(),
         }
     }
 }

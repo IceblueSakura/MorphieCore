@@ -182,7 +182,7 @@ impl ResponseDelivery {
             },
             usage: None,
             request_metadata: if self.client.protocol() == ClientProtocol::Responses {
-                original.context.metadata.clone()
+                original.context.metadata.value().cloned()
             } else {
                 Default::default()
             },

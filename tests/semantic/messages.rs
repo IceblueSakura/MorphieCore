@@ -791,7 +791,7 @@ mod phase {
         assert_eq!(
             rules
                 .iter()
-                .filter(|r| **r == "chat.omit-message-phase.v1")
+                .filter(|r| **r == "generation.omit-message-phase.v1")
                 .count(),
             1
         );
@@ -805,7 +805,7 @@ mod phase {
         assert!(
             messages
                 .evidence
-                .contains_rule(anthropic::messages::RequestRule::OmitMessagePhase.name())
+                .contains_rule("generation.omit-message-phase.v1")
         );
         assert_eq!(
             messages.value["messages"][1]["content"],

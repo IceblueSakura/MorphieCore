@@ -213,11 +213,6 @@ impl Models {
             table.validate().map_err(|_| invalid())?;
             let single = config.candidates.len() == 1;
             let mut deployments = BTreeSet::new();
-            let mut native_owner_cache = true;
-            let mut native_agent_profile = true;
-            let mut native_tool_examples = true;
-            let mut native_document_context = true;
-            let mut native_automatic_cache = true;
             for (candidate_index, candidate) in config.candidates.into_iter().enumerate() {
                 let binding = EndpointId::new(&candidate.binding).map_err(|_| invalid())?;
                 if !template_route.endpoints.contains(&binding) {
@@ -334,16 +329,6 @@ impl Models {
                     (_, crate::semantic::value::Presence::Absent) => {}
                     _ => return Err(invalid()),
                 }
-                let native = endpoint.protocol == GenerationProtocol::AnthropicMessages;
-                let semantics = endpoint.representation.semantics();
-                native_owner_cache &= native && semantics.explicit_cache;
-                native_tool_examples &= native && semantics.tool_examples;
-                native_document_context &= native && semantics.document_context;
-                native_automatic_cache &= native && semantics.automatic_prefix_cache;
-                native_agent_profile &= native
-                    && semantics.strict_tools
-                    && semantics.ordered_instructions
-                    && semantics.tool_changes;
                 route.endpoints.push(endpoint.id.clone());
                 // Every public client protocol exposes the same explicit route.
                 entries
@@ -361,21 +346,7 @@ impl Models {
                 endpoints.push((endpoint, provider));
             }
             routes.push(route);
-            let mut public = public.clone();
-            // Publish only the selected all-native contract, never a union that
-            // admits cache-bearing requests by skipping incompatible candidates.
-            public.contract.explicit_cache |= native_owner_cache;
-            public.contract.tool_examples |= native_tool_examples;
-            public.contract.document_context |= native_document_context;
-            public.contract.automatic_prefix_cache |= native_automatic_cache;
-            // pi's built-in Messages profile: strict tools, mid-conversation system
-            // messages and tool changes, under the same all-native rule.
-            if native_agent_profile {
-                public.contract.strict_tools = true;
-                public.contract.ordered_instructions = true;
-                public.contract.tool_changes = true;
-            }
-            public_models.push(public);
+            public_models.push(public.clone());
         }
         let topology = catalog
             .with_generation(endpoints, routes, public_models)

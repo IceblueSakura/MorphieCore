@@ -101,24 +101,34 @@ with httpx.Client(trust_env=False, timeout=10) as http:
                     "type": "object", "properties": {"n": {"type": "integer"}}}}],
             )
             messages = [{"role": "user", "content": "go"}]
-            try:
-                if streamed:
-                    with client.messages.stream(**shared_cross, messages=messages) as stream:
-                        stream.get_final_message()
-                else:
-                    client.messages.create(**shared_cross, messages=messages)
-            except anthropic.InternalServerError as error:
-                assert error.status_code == 500
+            if streamed:
+                with client.messages.stream(**shared_cross, messages=messages) as stream:
+                    completed = stream.get_final_message()
             else:
-                raise AssertionError("unsigned reasoning has no standard delivery carrier")
-            messages += [
+                completed = client.messages.create(**shared_cross, messages=messages)
+            assert completed.stop_reason == "tool_use"
+            assert len(completed.content) == 1 and completed.content[0].type == "tool_use"
+            call = completed.content[0]
+            assert call.id == "call_cross" and call.name == "lookup" and call.input == {"n": 7}
+            continued = messages + [
                 {"role": "assistant", "content": [
-                    {"type": "thinking", "thinking": "Plan", "signature": ""}]},
+                    block.model_dump(exclude_none=True) for block in completed.content]},
+                {"role": "user", "content": [
+                    {"type": "tool_result", "tool_use_id": call.id, "content": "found"}]},
+            ]
+            replayed = client.messages.create(**shared_cross, messages=continued)
+            assert replayed.stop_reason == "tool_use"
+            assert len(replayed.content) == 1 and replayed.content[0].type == "tool_use"
+            assert replayed.content[0].id == "call_after" and replayed.content[0].input == {"n": 7}
+            malformed = messages + [
+                {"role": "assistant", "content": [
+                    {"type": "thinking", "thinking": "Plan", "signature": ""},
+                    call.model_dump(exclude_none=True)]},
                 {"role": "user", "content": [
                     {"type": "tool_result", "tool_use_id": "call_cross", "content": "found"}]},
             ]
             try:
-                client.messages.create(**shared_cross, messages=messages)
+                client.messages.create(**shared_cross, messages=malformed)
             except anthropic.BadRequestError as error:
                 assert error.status_code == 400
             else:
@@ -193,4 +203,4 @@ with httpx.Client(trust_env=False, timeout=10) as http:
                 {"role": "user", "content": "continue"},
             ])
             assert replayed.content[0].text == "replayed"
-print(json.dumps({"requests": 15, "partial": True, "refusal_details": True, "unsigned_replay_rejected": True, "scheduled_history": True, "incomplete_history": True, "null_metadata_history": True}))
+print(json.dumps({"requests": 17, "partial": True, "refusal_details": True, "unsigned_reasoning_omitted": True, "unsigned_replay_rejected": True, "scheduled_history": True, "incomplete_history": True, "null_metadata_history": True}))

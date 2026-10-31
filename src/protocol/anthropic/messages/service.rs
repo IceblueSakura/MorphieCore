@@ -9,7 +9,7 @@ use crate::{
 };
 use serde_json::{Map, Value, json};
 
-pub(super) fn read_policy(o: &Map<String, Value>) -> Result<Presence<ServicePolicy>, CodecError> {
+pub(super) fn read_policy(o: &Map<String, Value>) -> Result<Option<ServicePolicy>, CodecError> {
     let policy = presence(o, "service_tier", |v| {
         Ok(match v.as_str() {
             Some("auto") => ServicePolicy::PreferCommittedCapacity,
@@ -20,9 +20,9 @@ pub(super) fn read_policy(o: &Map<String, Value>) -> Result<Presence<ServicePoli
         })
     })?;
     nonnull(&policy)?;
-    Ok(policy)
+    Ok(policy.value().copied())
 }
-pub(super) fn policy_wire(policy: ServicePolicy) -> Result<&'static str, CodecError> {
+pub(crate) fn policy_wire(policy: ServicePolicy) -> Result<&'static str, CodecError> {
     match policy {
         ServicePolicy::PreferCommittedCapacity => Ok("auto"),
         ServicePolicy::StandardCapacityOnly => Ok("standard_only"),

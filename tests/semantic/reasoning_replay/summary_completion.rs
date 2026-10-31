@@ -26,23 +26,25 @@ fn prefix() -> Vec<Value> {
 #[test]
 fn interrupted_summary_close_preserves_event_fact_without_inventing_static_status() {
     let mut decoder = EventDecoder::new(GenerationApi::Responses);
-    for frame in prefix() {
-        decoder.push(&frame).unwrap();
+    let mut frames = prefix();
+    for frame in &frames {
+        decoder.push(frame).unwrap();
     }
     let done = json!({"type":"response.reasoning_summary_part.done","output_index":0,"item_id":"reason",
             "summary_index":0,"part":{"type":"summary_text","text":"S"},"status":"incomplete"});
     let event = decoder.push(&done).unwrap();
+    frames.push(done.clone());
     assert!(matches!(
         event.as_slice(),
         [StreamEvent::PartInterrupted { .. }]
     ));
     let item = json!({"id":"reason","type":"reasoning","status":"completed","summary":[{"type":"summary_text","text":"S"}]});
-    decoder
-        .push(&json!({"type":"response.output_item.done","output_index":0,"item":item}))
-        .unwrap();
-    decoder
-        .push(&json!({"type":"response.completed","response":envelope("completed",json!([item]))}))
-        .unwrap();
+    frames.push(json!({"type":"response.output_item.done","output_index":0,"item":item}));
+    frames
+        .push(json!({"type":"response.completed","response":envelope("completed",json!([item]))}));
+    for frame in &frames[frames.len() - 2..] {
+        decoder.push(frame).unwrap();
+    }
     decoder.finish().unwrap();
     let response = decoder.materialize().unwrap();
     assert_eq!(response.semantic.outcome(), Outcome::Completed);

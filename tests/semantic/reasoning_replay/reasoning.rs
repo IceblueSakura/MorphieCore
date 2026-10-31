@@ -36,10 +36,13 @@ fn typed_disabled_summary_is_valid_semantics_without_a_responses_carrier() {
     );
     let fidelity = FidelityRecords::default();
     for profile in [GenerationApi::Responses, GenerationApi::Chat] {
-        assert!(matches!(
-            lower_request(&request, &fidelity, profile, Contract::full()),
-            Err(morphiecore::protocol::conversion::generation::RepresentationError::Reasoning)
-        ));
+        assert_eq!(
+            lower_request(&request, &fidelity, profile, Contract::full()).err(),
+            Some(
+                morphiecore::protocol::conversion::generation::RepresentationError::Reasoning
+                    .into()
+            )
+        );
     }
     let mut reported = metadata();
     reported
@@ -125,7 +128,7 @@ fn standard_summary_presence_and_deprecated_alias_have_independent_wire_expectat
         .unwrap();
         assert_eq!(
             responses::encode_generation(&target).unwrap()["reasoning"],
-            wire
+            if wire == json!({}) { Value::Null } else { wire }
         );
     }
     for value in [
@@ -188,7 +191,7 @@ fn configuration_update_is_an_ordered_effort_item_not_a_settings_patch() {
         {"role":"user","content":"next"}
     ]});
     let decoded = responses::decode_generation(&source).unwrap();
-    assert!(decoded.semantic.settings().effort.is_absent());
+    assert!(decoded.semantic.settings().effort.is_none());
     let encoded = responses::encode_generation(
         &lower_request(
             &decoded.semantic,
@@ -320,15 +323,10 @@ fn configuration_update_is_an_ordered_effort_item_not_a_settings_patch() {
     assert_eq!(rules, ["synthetic.configuration-effort.v1"]);
     let mut limited = Contract::full();
     limited.model_limits.allowed_effort = Some(vec![EffortLevel::Low].into());
-    assert!(matches!(
-        adapter.encode_request(&request, "m", &limited),
-        Err(morphiecore::protocol::ConversionFailure {
-            cause: morphiecore::protocol::ConversionCause::Representation(
-                morphiecore::protocol::conversion::generation::RepresentationError::Controls
-            ),
-            ..
-        })
-    ));
+    assert_eq!(
+        adapter.encode_request(&request, "m", &limited).unwrap()["input"][0]["reasoning"]["effort"],
+        "low"
+    );
     limited.model_limits.allowed_effort = Some(vec![EffortLevel::High].into());
     assert_eq!(
         adapter.encode_request(&request, "m", &limited).unwrap()["input"][0]["reasoning"]["effort"],

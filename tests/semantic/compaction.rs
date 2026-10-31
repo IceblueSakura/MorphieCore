@@ -1,5 +1,6 @@
 //! Compacted context is ordered history, not readable reasoning or disposable replay.
 use crate::events_support::*;
+use morphiecore::lowering::disposition::Dispositions;
 use morphiecore::{
     execution::replay::{open_from_client, seal_event, seal_for_client},
     protocol::{
@@ -29,9 +30,13 @@ fn compaction_history_keeps_identity_payload_and_order() {
     ]}))
     .unwrap();
     assert_eq!(decoded.semantic.items()[1].1, Item::Compaction(content()));
-    let requirements = GenerationRequirements::derive(&decoded.semantic);
-    assert!(requirements.compaction);
-    assert!(!requirements.reasoning);
+    let requirements = (decoded.semantic).features();
+    assert!(
+        requirements.contains_key(&morphiecore::semantic::task::generation::Feature::Compaction)
+    );
+    assert!(
+        !requirements.contains_key(&morphiecore::semantic::task::generation::Feature::Reasoning)
+    );
     let mut fidelity = decoded.fidelity.clone();
     fidelity.bind_replay_origin(&origin()).unwrap();
     let target = lower_request(
@@ -114,7 +119,7 @@ fn compaction_history_keeps_identity_payload_and_order() {
     let idless = json!({"type":"compaction","encrypted_content":"synthetic-context"});
     assert!(responses::decode_generation(&json!({"input":[idless]})).is_ok());
     assert!(responses::decode_response(&envelope("completed", json!([idless]))).is_err());
-    assert!(GenerationFeatureSet::text_images().check(&history).is_err());
+    assert!(Dispositions::text_images().check(&history).is_err());
 }
 
 #[test]
@@ -289,7 +294,7 @@ fn compaction_replay_rejects_incompatible_or_unbound_context_without_stripping()
     ] {
         assert_eq!(
             caps.check(&request.task.semantic).unwrap_err(),
-            GenerationFeature::Compaction
+            Feature::Compaction
         );
     }
     let mut changed = request.task.semantic.items().to_vec();

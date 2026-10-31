@@ -584,7 +584,10 @@ fn unified_request_projection_keeps_targets_trusted_and_debug_redacted() {
         .model("deepseek-flash")
         .unwrap()
         .clone();
-    no_temperature.contract.temperature = false;
+    no_temperature.contract.set_native(
+        morphiecore::semantic::task::generation::Feature::Temperature,
+        false,
+    );
     let request = client
         .decode_request(
             json!({"model":"deepseek-flash","input":"hello","temperature":0.5})
@@ -592,21 +595,32 @@ fn unified_request_projection_keeps_targets_trusted_and_debug_redacted() {
                 .as_bytes(),
         )
         .unwrap();
-    assert!(admit(&no_temperature, &request).is_err());
+    admit(&no_temperature, &request).unwrap();
+    let prepared = prepare(endpoint, &providers::deepseek(), &secret, &request).unwrap();
+    assert_eq!(
+        serde_json::from_slice::<Value>(&prepared.body).unwrap()["temperature"],
+        0.5
+    );
     let request = client
         .decode_request(br#"{"model":"deepseek-flash","input":"hello","service_tier":"auto"}"#)
         .unwrap();
+    admit(
+        catalog::default_topology()
+            .unwrap()
+            .model("deepseek-flash")
+            .unwrap(),
+        &request,
+    )
+    .unwrap();
+    let prepared = prepare(endpoint, &providers::deepseek(), &secret, &request).unwrap();
     assert!(
-        admit(
-            catalog::default_topology()
-                .unwrap()
-                .model("deepseek-flash")
-                .unwrap(),
-            &request
-        )
-        .is_err()
+        serde_json::from_slice::<Value>(&prepared.body)
+            .unwrap()
+            .get("service_tier")
+            .is_none()
     );
-    assert!(prepare(endpoint, &providers::deepseek(), &secret, &request).is_err());
+    let (_, rules) = endpoint.encode_request_with_rules(&request).unwrap();
+    assert_eq!(rules, ["generation.omit-service-policy.v1"]);
 }
 #[test]
 fn grok_public_binding_uses_the_responses_cache_carrier() {
@@ -736,7 +750,13 @@ fn opencode_go_projects_neutral_conversations_independently_of_cache_groups() {
     let mut unsupported = client.decode_request(br#"{"model":"hy4-preview","messages":[{"role":"user","content":"keep"}],"response_format":{"type":"json_object"}}"#).unwrap();
     unsupported.conversation =
         Some(ConversationContext::conversation("synthetic-conversation").unwrap());
-    assert!(admit(topology.model("hy4-preview").unwrap(), &unsupported).is_err());
+    admit(topology.model("hy4-preview").unwrap(), &unsupported).unwrap();
+    assert_eq!(
+        morphiecore::execution::plan::representable(endpoint, &unsupported)
+            .unwrap_err()
+            .code(),
+        "admission.structured_output"
+    );
     assert!(prepare(endpoint, &provider, &secret, &unsupported).is_err());
 }
 
@@ -803,17 +823,23 @@ fn router_request_policy_is_fixed_and_luna_controls_are_not_silently_ignored() {
         }
         body["temperature"] = json!(0.5);
         let unsupported = client.decode_request(body.to_string().as_bytes()).unwrap();
+        admit(
+            catalog::default_topology()
+                .unwrap()
+                .model("gpt-6-luna")
+                .unwrap(),
+            &unsupported,
+        )
+        .unwrap();
+        let prepared = prepare(endpoint, &providers::openrouter(), &secret, &unsupported).unwrap();
         assert!(
-            admit(
-                catalog::default_topology()
-                    .unwrap()
-                    .model("gpt-6-luna")
-                    .unwrap(),
-                &unsupported
-            )
-            .is_err()
+            serde_json::from_slice::<Value>(&prepared.body)
+                .unwrap()
+                .get("temperature")
+                .is_none()
         );
-        assert!(prepare(endpoint, &providers::openrouter(), &secret, &unsupported).is_err());
+        let (_, rules) = endpoint.encode_request_with_rules(&unsupported).unwrap();
+        assert!(rules.contains(&"generation.omit-temperature.v1"));
         body.as_object_mut().unwrap().remove("temperature");
         body["provider"] = json!({"require_parameters":false,"order":["untrusted"]});
         assert!(client.decode_request(body.to_string().as_bytes()).is_err());
@@ -849,10 +875,18 @@ fn router_request_policy_is_fixed_and_luna_controls_are_not_silently_ignored() {
         .unwrap();
     let original = capped.clone();
     admit(public, &capped).unwrap();
-    assert!(prepare(endpoint, &providers::openai(), &secret, &capped).is_err());
+    let prepared = prepare(endpoint, &providers::openai(), &secret, &capped).unwrap();
+    assert!(
+        serde_json::from_slice::<Value>(&prepared.body)
+            .unwrap()
+            .get("max_output_tokens")
+            .is_none()
+    );
+    let (_, rules) = endpoint.encode_request_with_rules(&capped).unwrap();
+    assert_eq!(rules, ["generation.omit-max-output-tokens.v1"]);
     let plan = morphiecore::execution::ExecutionPlan::for_request(&topology, &capped).unwrap();
-    assert!(plan.candidates.iter().all(|c| c.endpoint_id != endpoint.id));
-    assert!(plan.rejections.iter().any(|r| r.endpoint_id == endpoint.id));
-    assert_eq!(plan.candidates.len(), 2);
+    assert!(plan.candidates.iter().any(|c| c.endpoint_id == endpoint.id));
+    assert!(plan.rejections.iter().all(|r| r.endpoint_id != endpoint.id));
+    assert_eq!(plan.candidates.len(), 3);
     assert_eq!(capped, original);
 }

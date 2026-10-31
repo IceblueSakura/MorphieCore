@@ -150,7 +150,7 @@ pub(in crate::protocol::openai) fn read_controls(
             .as_u64()
             .filter(|v| *v > 0)
             .ok_or(CodecError::invalid())?;
-        if !settings.effort.is_absent() {
+        if !settings.effort.is_none() {
             return Err(CodecError::Unsupported(CarrierReason::Unavailable));
         }
         if settings
@@ -210,7 +210,7 @@ pub(in crate::protocol::openai) fn write_reasoning(
     o: &mut Map<String, Value>,
     profile: GenerationApi,
 ) -> Result<(), CodecError> {
-    if settings.reasoning.activation == Presence::Null || settings.effort == Presence::Null {
+    if settings.reasoning.activation == Presence::Null {
         return Err(CodecError::Unsupported(CarrierReason::Reasoning));
     }
     if let Some(activation) = settings.reasoning.activation.value() {
@@ -310,14 +310,14 @@ pub(in crate::protocol::openai) fn check_native_effort(
     profile: GenerationApi,
 ) -> Result<(), CodecError> {
     if let (Some(mapping), Some(control)) =
-        (effort_mapping(model, profile), settings.effort.value())
+        (effort_mapping(model, profile), settings.effort.as_ref())
         && (!mapping.native_levels.contains(&control.level) || control.scope != mapping.scope)
     {
         return Err(CodecError::Unsupported(CarrierReason::Unavailable));
     }
     Ok(())
 }
-pub(in crate::protocol::openai) fn responses_reasoning_carrier(reasoning: &ReasoningItem) -> bool {
+pub(crate) fn responses_reasoning_carrier(reasoning: &ReasoningItem) -> bool {
     reasoning.replay.is_none()
         && reasoning
             .parts
@@ -335,19 +335,13 @@ pub(in crate::protocol::openai) fn check(
 }
 pub(in crate::protocol::openai) fn check_context(
     ctx: &crate::semantic::context::ExecutionHints,
-    service: &Presence<crate::semantic::context::ServicePolicy>,
+    service: &Option<crate::semantic::context::ServicePolicy>,
     profile: GenerationApi,
 ) -> Result<(), CodecError> {
     if !ctx.metadata.is_absent()
         || !ctx.max_tool_calls.is_absent()
-        || !service.is_absent()
-        || profile == GenerationApi::Responses
-            && (!ctx.background.is_absent()
-                || !ctx.previous_response_id.is_absent()
-                || !ctx.conversation.is_absent()
-                || !ctx.prompt.is_absent()
-                || !ctx.moderation.is_absent()
-                || !ctx.context_management.is_absent())
+        || service.is_some()
+        || profile == GenerationApi::Responses && !ctx.background.is_absent()
     {
         return Err(CodecError::Unsupported(CarrierReason::Unavailable));
     }
@@ -375,7 +369,7 @@ pub(in crate::protocol::openai) fn check_semantic(
     if glm && disabled {
         return Err(CodecError::Unsupported(CarrierReason::Unavailable));
     }
-    if r.budget_tokens.is_some() && (glm || model == "kimi-k3" || !s.effort.is_absent()) {
+    if r.budget_tokens.is_some() && (glm || model == "kimi-k3" || !s.effort.is_none()) {
         return Err(CodecError::Unsupported(CarrierReason::Reasoning));
     }
     if c.top_k.is_some_and(|n| n > 100) || c.top_k.is_some() && model == "kimi-k3" {
@@ -386,14 +380,10 @@ pub(in crate::protocol::openai) fn check_semantic(
     {
         return Err(CodecError::Unsupported(CarrierReason::Unavailable));
     }
-    if (qwen || glm || model == "kimi-k3") && c.logprobs == Presence::Value(true) {
+    if (qwen || glm || model == "kimi-k3") && c.logprobs == Some(true) {
         return Err(CodecError::Unsupported(CarrierReason::Unavailable));
     }
-    if s.effort == Presence::Null
-        || r.activation == Presence::Null
-        || r.presence == ReasoningPresence::Null
-        || c.logprobs == Presence::Null
-    {
+    if r.activation == Presence::Null || r.presence == ReasoningPresence::Null {
         return Err(CodecError::Unsupported(CarrierReason::Reasoning));
     }
     if r.replay_mismatch.is_some()
@@ -431,7 +421,7 @@ pub(in crate::protocol::openai) fn check_semantic(
         ) {
             return Err(CodecError::Unsupported(CarrierReason::Tools));
         }
-        if c.frequency_penalty().is_some() || !s.text.verbosity.is_absent() {
+        if c.frequency_penalty().is_some() || !s.text.verbosity.is_none() {
             return Err(CodecError::Unsupported(CarrierReason::Unavailable));
         }
         if qwen && matches!(s.tool_choice, Some(ToolChoice::Required)) {

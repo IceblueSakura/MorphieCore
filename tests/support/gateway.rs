@@ -9,9 +9,8 @@ use morphiecore::{
     },
     semantic::value::ReplayOrigin,
     topology::{
-        CanonicalModel, Endpoint, EndpointId, EndpointTarget, ExecutionContract,
-        GenerationFeatureSet, GenerationProtocol, ModelId, PublicModel, Route, RouteId, TaskKind,
-        compile,
+        CanonicalModel, Dispositions, Endpoint, EndpointId, EndpointTarget, ExecutionContract,
+        GenerationProtocol, ModelId, PublicModel, Route, RouteId, TaskKind, compile,
     },
 };
 use std::{collections::BTreeMap, sync::Arc};
@@ -129,11 +128,10 @@ fn bound_gateway(origin: &str, limits: Limits, embeddings: bool, messages: bool)
             canonical_model: ModelId::new("canonical-fixture").unwrap(),
             task: TaskKind::Generation,
             route: route.id.clone(),
-            contract: GenerationFeatureSet {
-                file_input: label != "no-files-model",
-                ..GenerationFeatureSet::full()
-            },
-            standard_context: true,
+            contract: (Dispositions::full()).with_native(
+                morphiecore::semantic::task::generation::Feature::FileInput,
+                label != "no-files-model",
+            ),
             reported_facts:
                 morphiecore::protocol::conversion::generation::ReportedFactPolicy::Faithful,
         })
@@ -141,7 +139,7 @@ fn bound_gateway(origin: &str, limits: Limits, embeddings: bool, messages: bool)
     let canonical = CanonicalModel {
         id: ModelId::new("canonical-fixture").unwrap(),
         task: TaskKind::Generation,
-        contract: GenerationFeatureSet::full(),
+        contract: Dispositions::full(),
     };
     let (image_provider, image_route) = image_support::binding(origin);
     let (router_provider, router_image_operation, router_route) = media::router_images(origin);

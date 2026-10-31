@@ -10,8 +10,8 @@ use super::openai::CodecError;
 use crate::{
     protocol::failure::CarrierReason,
     semantic::{
-        context::{CacheRetention, ConversationContext, ExecutionHints},
-        value::{Presence, Text},
+        context::{ConversationContext, ExecutionHints},
+        value::Text,
     },
 };
 use sha2::{Digest, Sha256};
@@ -51,74 +51,17 @@ pub struct CacheTargetPolicy {
     pub key: bool,
     /// Target supports cache retention settings.
     pub retention: bool,
-    /// Trusted opt-in after reviewing this target's default storage policy.
-    /// Only the extended-cache preference may be omitted; this is not a carrier.
-    pub omit_day_retention: bool,
     /// Target supports cache options.
     pub options: bool,
     /// Target supports explicit session IDs.
     pub session_id: bool,
 }
 
-/// Omitted advisory execution hints. Fixed field labels only; cache values and
-/// caller identifiers stay private.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
-pub enum HintRule {
-    OmitKey,
-    OmitIdentityHints,
-    OmitDayRetention,
-    OmitLegacyUserBucketing,
-}
-impl HintRule {
-    pub const fn name(self) -> &'static str {
-        match self {
-            Self::OmitKey => "cache.omit-key.v1",
-            Self::OmitIdentityHints => "generation.omit-identity-hints.v1",
-            Self::OmitDayRetention => "cache.omit-day-retention.v1",
-            Self::OmitLegacyUserBucketing => "cache.omit-legacy-user-bucketing.v1",
-        }
-    }
-    pub(crate) fn effect(self) -> crate::protocol::conversion::generation::Effect {
-        use crate::protocol::conversion::generation::{Change, ConversionBoundary, Effect, Field};
-        let (field, change) = match self {
-            Self::OmitIdentityHints => (Field::Identity, Change::Omit),
-            Self::OmitLegacyUserBucketing => (Field::IdentityBucket, Change::Omit),
-            Self::OmitKey => (Field::CacheKey, Change::Omit),
-            Self::OmitDayRetention => (Field::CacheRetention, Change::Omit),
-        };
-        Effect::new(
-            self.name(),
-            field,
-            ConversionBoundary::RequestProject,
-            change,
-        )
-    }
-    pub(crate) fn evidence(self) -> Option<crate::protocol::conversion::generation::Effect> {
-        Some(self.effect())
-    }
-}
 impl CacheTargetPolicy {
-    /// Call only after successful projection; active options still reject.
-    pub fn applied_rules(self, context: &ExecutionHints) -> Vec<HintRule> {
-        [
-            (
-                self.omits_day_retention(context),
-                HintRule::OmitDayRetention,
-            ),
-            (
-                !self.key && !context.cache.prompt_cache_key.is_absent(),
-                HintRule::OmitKey,
-            ),
-        ]
-        .into_iter()
-        .filter_map(|(lost, rule)| lost.then_some(rule))
-        .collect()
-    }
     pub const fn all() -> Self {
         Self {
             key: true,
             retention: true,
-            omit_day_retention: false,
             options: true,
             session_id: true,
         }
@@ -126,75 +69,25 @@ impl CacheTargetPolicy {
     pub fn intersect(&mut self, other: Self) {
         self.key &= other.key;
         self.retention &= other.retention;
-        // Either trusted declaration may select the loss. False is absence of
-        // approval, not a veto; repeated carrier intersections are idempotent.
-        self.omit_day_retention |= other.omit_day_retention;
         self.options &= other.options;
         self.session_id &= other.session_id;
     }
-    pub fn project(self, context: &mut ExecutionHints) -> Result<(), CodecError> {
-        let mut projected = context.clone();
-        self.project_inner(&mut projected)?;
-        *context = projected;
-        Ok(())
-    }
-    pub(crate) fn omits_day_retention(self, context: &ExecutionHints) -> bool {
-        !self.retention
-            && self.omit_day_retention
-            && context.cache.prompt_cache_retention == Presence::Value(CacheRetention::Day)
-    }
-    fn project_inner(self, context: &mut ExecutionHints) -> Result<(), CodecError> {
-        context.cache.validate()?;
-        // Shared hints also hold nullable reports; target projection admits requests only.
-        if context.cache.prompt_cache_options == Presence::Null {
-            return Err(CodecError::invalid());
-        }
-        // Never erase in_memory or infer a default storage policy from automatic caching.
-        if !self.retention && !context.cache.prompt_cache_retention.is_absent() {
-            if !self.omits_day_retention(context) {
-                return Err(CodecError::Unsupported(CarrierReason::Unavailable));
-            }
-            context.cache.prompt_cache_retention = Presence::Absent;
-        }
-        // The grouping key alone is advisory.
-        if !self.key {
-            context.cache.prompt_cache_key = Presence::Absent;
-        }
-        // Explicit cache modes/prewarm are behavioral controls, not inactive hints.
-        if !self.options
-            && context
-                .cache
-                .prompt_cache_options
-                .value()
-                .is_some_and(|options| {
-                    options != &crate::semantic::context::CacheOptions::default()
-                })
-        {
-            return Err(CodecError::Unsupported(CarrierReason::Unavailable));
-        }
-        if !self.options {
-            context.cache.prompt_cache_options = Presence::Absent;
-        }
-        Ok(())
-    }
-    pub(crate) fn project_request(
+    pub(crate) fn infer_key(
         self,
         context: &mut ExecutionHints,
         conversation: Option<&ConversationContext>,
         inferred: Option<InferredAffinity>,
-    ) -> Result<(), CodecError> {
-        self.project(context)?;
-        if self.key && context.cache.prompt_cache_key.is_absent() {
+    ) {
+        if self.key && context.cache.prompt_cache_key.is_none() {
             let key = if let Some(group) = conversation.filter(|c| c.is_conversation_scoped()) {
                 Some(affinity_key(group, b"MorphieCore.prompt-cache.v1\0"))
             } else {
                 inferred.map(|group| grouping_key(&group.0, 2, b"MorphieCore.prompt-cache.v1\0"))
             };
             if let Some(key) = key {
-                context.cache.prompt_cache_key = Presence::Value(key);
+                context.cache.prompt_cache_key = Some(key);
             }
         }
-        Ok(())
     }
     /// Internal target projection. Cache keys never identify a conversation.
     pub(crate) fn opencode_session(

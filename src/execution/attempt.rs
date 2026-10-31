@@ -11,7 +11,7 @@ use crate::{
         stream::{SseError, SseLimits},
     },
     provider::{ProviderDefinition, RecoveryClass, SecretMaterial, StatusClass, classify_status},
-    semantic::task::generation::{GenerationRequirements, StreamEvent},
+    semantic::task::generation::StreamEvent,
     topology::{Endpoint, PublicModel},
 };
 
@@ -187,23 +187,14 @@ impl std::fmt::Debug for UpstreamRequest {
     }
 }
 
-pub fn admit(
-    public: &PublicModel,
-    request: &Request,
-) -> Result<GenerationRequirements, AttemptError> {
+pub fn admit(public: &PublicModel, request: &Request) -> Result<(), AttemptError> {
     if public.id.as_str() != request.model {
         return Err(AttemptError::Protocol(
             crate::execution::attempt::ProtocolReason::PublicModelMismatch,
         ));
     }
-    request.check_context(public.standard_context)?;
-    let mut contract = public.contract.clone();
-    // Messages tool errors have an explicit candidate-local projection on
-    // non-native targets; admission must not erase them for native candidates.
-    if request.source == Some(crate::protocol::ClientProtocol::Messages) {
-        contract.tool_result_errors = true;
-    }
-    Ok(request.check_semantic(&contract)?)
+    crate::lowering::request::admit_source(request)?;
+    Ok(())
 }
 
 pub(crate) fn operation_auth(

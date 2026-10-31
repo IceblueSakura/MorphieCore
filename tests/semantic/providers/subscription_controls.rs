@@ -86,7 +86,7 @@ fn request(grouped: bool, stream: bool) -> Request {
     )
     .unwrap();
     request.delivery.stream = Presence::Value(stream);
-    request.context.cache.prompt_cache_key = Presence::Value("affinity".into());
+    request.context.cache.prompt_cache_key = Some("affinity".into());
     request
 }
 fn request_wire(grouped: bool, stream: bool) -> Value {
@@ -112,7 +112,7 @@ fn native_request_directions_use_actual_subscription_bindings() {
             assert_eq!(source.task.semantic, independent.task.semantic);
             assert_eq!(
                 source.context.cache.prompt_cache_key,
-                Presence::Value("affinity".into())
+                Some("affinity".into())
             );
             assert_eq!(source.delivery.stream, Presence::Value(stream));
             for input in [source, independent] {
@@ -315,10 +315,10 @@ fn independent_semantic_events_encode_native_subscription_sse() {
     }
 }
 #[test]
-fn subscription_identity_omission_is_named_and_retention_stays_closed() {
+fn subscription_identity_and_extended_retention_omissions_are_named() {
     for binding in SUBSCRIPTION_BINDINGS {
         let mut input = request(binding.profile == "openai", false);
-        input.context.identity.user = Presence::Value("opaque-user".into());
+        input.context.identity.user = Some("opaque-user".into());
         let before = input.clone();
         let (wire, rules) = binding
             .endpoint()
@@ -328,13 +328,13 @@ fn subscription_identity_omission_is_named_and_retention_stays_closed() {
         assert_eq!(rules, ["generation.omit-identity-hints.v1"]);
         assert_eq!(input, before);
         input.context.cache.prompt_cache_retention =
-            Presence::Value(morphiecore::semantic::context::CacheRetention::Day);
-        assert!(
-            binding
-                .endpoint()
-                .encode_request_with_rules(&input)
-                .is_err()
-        );
+            Some(morphiecore::semantic::context::CacheRetention::Day);
+        let (wire, rules) = binding
+            .endpoint()
+            .encode_request_with_rules(&input)
+            .unwrap();
+        assert!(wire.get("prompt_cache_retention").is_none());
+        assert!(rules.contains(&"generation.omit-cache-retention.v1"));
     }
 }
 #[test]

@@ -235,13 +235,47 @@ fn zhipu_effort_lands_on_its_three_levels_by_a_named_rule() {
         assert_eq!(wire["reasoning_effort"], sent, "{effort}");
         assert_eq!(rules.contains(&"zhipu.glm-5.3.effort.v1"), effort != "high");
     }
+    use morphiecore::semantic::task::generation::{
+        ConfigurationUpdate, Item, ItemId, ReasoningActivation,
+    };
+    for update in [false, true] {
+        let client = GenerationCodec::new(GenerationApi::Chat, Dialect::Standard, None);
+        let mut body = json!({"model":"m","messages":[{"role":"user","content":"q"}]});
+        if !update {
+            body["reasoning_effort"] = json!("none");
+        }
+        let mut request = client.decode_request(body.to_string().as_bytes()).unwrap();
+        if update {
+            let mut items = request.task.semantic.items().to_vec();
+            items.insert(
+                0,
+                (
+                    ItemId::new(99),
+                    Item::ConfigurationUpdate(ConfigurationUpdate {
+                        activation: Some(ReasoningActivation::Disabled),
+                        effort: None,
+                    }),
+                ),
+            );
+            request.task.semantic = request.task.semantic.with_items(items).unwrap();
+        }
+        let error = endpoint.encode_request_with_rules(&request).unwrap_err();
+        assert!(matches!(
+            error.cause,
+            morphiecore::protocol::ConversionCause::Representation(
+                morphiecore::protocol::conversion::generation::RepresentationError::Admission(
+                    morphiecore::semantic::task::generation::Feature::ReasoningActivation
+                )
+            )
+        ));
+    }
 }
 /// Messages-only tool and replay controls on a Chat target: eager input is omitted
 /// under a named rule; explicit block-binding enforcement rejects.
 #[test]
 fn messages_only_controls_leave_chat_targets_by_named_rules() {
     use morphiecore::{
-        protocol::{CodecError, anthropic::messages::client::decode_client_request},
+        protocol::anthropic::messages::client::decode_client_request,
         topology::{GenerationProtocol, catalog::API_KEY_BINDINGS},
     };
     let endpoint = API_KEY_BINDINGS
@@ -258,8 +292,7 @@ fn messages_only_controls_leave_chat_targets_by_named_rules() {
     assert_eq!(rules, ["generation.omit-eager-tool-input.v1"]);
     assert_eq!(wire["tools"][0]["function"]["name"], "read");
     assert!(!wire.to_string().contains("eager"));
-    // Adaptive Messages thinking has no OpenAI carrier yet, so only enforcement is
-    // observable: it rejects before reasoning projection.
+    // Explicit replay enforcement has no Chat carrier.
     body["thinking"] = json!({"type":"adaptive",
             "block_binding":{"prefix_mismatch_behavior":"error"}});
     assert!(decode_client_request(body.to_string().as_bytes()).is_err());
@@ -272,9 +305,33 @@ fn messages_only_controls_leave_chat_targets_by_named_rules() {
         .unwrap();
     let request =
         morphiecore::protocol::GenerationRequestEnvelope::from_generation(native, "m").unwrap();
-    assert!(matches!(endpoint.encode_request_with_rules(&request),
-            Err(morphiecore::protocol::ConversionFailure { cause: morphiecore::protocol::ConversionCause::Codec(CodecError::Unsupported(field)), .. })
-                if matches!(field,morphiecore::protocol::failure::CarrierReason::Reasoning)));
+    assert!(matches!(
+        endpoint.encode_request_with_rules(&request),
+        Err(morphiecore::protocol::ConversionFailure {
+            cause: morphiecore::protocol::ConversionCause::Representation(
+                morphiecore::protocol::conversion::generation::RepresentationError::Admission(
+                    morphiecore::semantic::task::generation::Feature::ReplayMismatch
+                )
+            ),
+            ..
+        })
+    ));
+    let mut tolerant = request.clone();
+    let mut settings = tolerant.task.semantic.settings().clone();
+    settings.reasoning.replay_mismatch =
+        Some(morphiecore::semantic::task::generation::ReplayMismatch::Drop);
+    tolerant.task.semantic = tolerant
+        .task
+        .semantic
+        .with_settings(settings)
+        .unwrap()
+        .with_message_envelopes(vec![])
+        .unwrap();
+    let before = tolerant.clone();
+    let (wire, rules) = endpoint.encode_request_with_rules(&tolerant).unwrap();
+    assert!(!wire.to_string().contains("block_binding"));
+    assert!(rules.contains(&"messages.omit-block-binding.v1"));
+    assert_eq!(tolerant, before);
 }
 #[test]
 fn unversioned_readable_views_are_closed_and_never_restore_deleted_reasoning() {

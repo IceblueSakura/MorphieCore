@@ -6,6 +6,7 @@ use super::{
     },
     message_groups, projection,
 };
+use crate::lowering::disposition::Rule;
 use crate::{
     protocol::{
         ResponseMetadata,
@@ -128,7 +129,7 @@ pub fn lower_response<'a>(
             return Err(RepresentationError::ReportedFacts);
         }
         projection.push(
-            (projection::ProjectionRule::OmitOpeningReport).effect(
+            (Rule::OMIT_OPENING_REPORT).effect(
                 crate::protocol::conversion::generation::ConversionBoundary::ResponseProject,
             ),
         );
@@ -137,11 +138,9 @@ pub fn lower_response<'a>(
         let observed = metadata.context.system_fingerprint.value().is_some();
         metadata.to_mut().context.system_fingerprint = crate::semantic::value::Presence::Absent;
         if observed {
-            projection.push(
-                (projection::ProjectionRule::OmitResponsesSystemFingerprint).effect(
-                    crate::protocol::conversion::generation::ConversionBoundary::ResponseProject,
-                ),
-            );
+            projection.push((Rule::OMIT_RESPONSES_SYSTEM_FINGERPRINT).effect(
+                crate::protocol::conversion::generation::ConversionBoundary::ResponseProject,
+            ));
         }
     }
     if let Some((groups, loss)) =
@@ -160,7 +159,7 @@ pub fn lower_response<'a>(
         }
         semantic = std::borrow::Cow::Owned(semantic.into_owned().with_usage(r.usage())?);
         projection.push(
-            (projection::ProjectionRule::UsageReportView).effect(
+            (Rule::USAGE_REPORT_VIEW).effect(
                 crate::protocol::conversion::generation::ConversionBoundary::ResponseProject,
             ),
         );
@@ -255,7 +254,7 @@ fn validate_response(
     {
         return Err(RepresentationError::UnmigratedSemantic);
     }
-    c.semantics.check_response(r)?;
+    c.dispositions.check_response(r)?;
     represent_reasoning(
         &GenerationSettings::default(),
         r.items(),

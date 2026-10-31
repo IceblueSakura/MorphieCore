@@ -1,5 +1,6 @@
 //! Explicit subscription bindings. Account aliases remain deployment inputs.
 use super::{models, *};
+use crate::lowering::disposition::Dispositions;
 use crate::protocol::openai::Dialect;
 pub struct SubscriptionBinding {
     pub profile: &'static str,
@@ -49,14 +50,23 @@ pub const SUBSCRIPTION_BINDINGS: &[SubscriptionBinding] = &[
     },
 ];
 impl SubscriptionBinding {
-    fn contract(&self) -> GenerationFeatureSet {
+    fn contract(&self) -> Dispositions {
         let mut contract = models::contract(self.model);
         if self.profile == "openai" {
-            contract.max_output_tokens = false;
-            contract.temperature = false;
-            contract.top_p = false;
-            contract.logprobs = false;
-            contract.truncation = false;
+            contract.set_native(
+                crate::semantic::task::generation::Feature::MaxOutputTokens,
+                false,
+            );
+            contract.set_native(
+                crate::semantic::task::generation::Feature::Temperature,
+                false,
+            );
+            contract.set_native(crate::semantic::task::generation::Feature::TopP, false);
+            contract.set_native(crate::semantic::task::generation::Feature::Logprobs, false);
+            contract.set_native(
+                crate::semantic::task::generation::Feature::Truncation,
+                false,
+            );
         }
         contract
     }
@@ -81,7 +91,6 @@ impl SubscriptionBinding {
                 .find(|binding| binding.model == self.model)
                 .map(|binding| binding.public_model().contract)
                 .unwrap_or_else(|| self.contract()),
-            standard_context: false,
             reported_facts: ReportedFactPolicy::Faithful,
         }
     }
@@ -95,12 +104,24 @@ impl SubscriptionBinding {
         );
         let contract = TargetContract {
             reasoning_history: self.reasoning_history,
-            semantics: self.contract(),
+            dispositions: self
+                .contract()
+                .with_native(crate::semantic::task::generation::Feature::Identity, false)
+                .with_native(crate::semantic::task::generation::Feature::Metadata, false)
+                .with_native(
+                    crate::semantic::task::generation::Feature::ServicePolicy,
+                    false,
+                )
+                .with_native(
+                    crate::semantic::task::generation::Feature::ToolBudget,
+                    false,
+                )
+                .with_native(
+                    crate::semantic::task::generation::Feature::Prediction,
+                    false,
+                ),
             replay_origin: Some(scope),
             cache: adapter.adaptation.cache,
-            identity_hints: false,
-            standard_context: false,
-            prediction: false,
             ..TargetContract::full()
         };
         let path = provider

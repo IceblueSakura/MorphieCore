@@ -127,6 +127,8 @@ fn pending_resolution(code: &str, dispatched: bool) -> &'static str {
         "R1 L4 unsupported ceiling omission"
     } else if code.contains("admission.client_representation") {
         "R4 delegation or L3 required-history fallback"
+    } else if code.contains("codec.unsupported.tools") || code.contains("admission.tools") {
+        "R4 endpoint-qualified namespace tool contract"
     } else if code.contains("representation.replay_format") {
         "R2 L3 uncarried opaque reasoning omission"
     } else if code.contains("codec.unsupported.metadata") || code == "codec.unsupported.field" {
@@ -535,6 +537,11 @@ async fn observe_intake(
         let after = calls.lock().unwrap().len();
         assert!(after == before || after == before + 1);
         outcomes.push(format!("{outcome}@{}", after - before));
+        if outcome == "codec.invalid.invalid_value" {
+            panic!(
+                "synthetic fault {binding}/{client:?}/{profile:?}/stream={stream}/turn={turn}: {record}\nsynthetic request: {request}"
+            );
+        }
         if outcome != "accepted" {
             eprintln!(
                 "pending {binding}/{client:?}/{profile:?}/stream={stream}: {outcome}@{} -> accepted; {}",
@@ -563,7 +570,14 @@ async fn observe_intake(
         );
         assert!(!failed, "successful diagnostic with aborted client body");
         if turn == 1 {
-            wire::assert_history(upstream, profile, &calls.lock().unwrap()[1], reasoning);
+            wire::assert_history(
+                upstream,
+                client,
+                profile,
+                &calls.lock().unwrap()[1],
+                reasoning,
+                bailian,
+            );
             if matches!(control, Control::Incomplete { .. }) {
                 let calls = calls.lock().unwrap();
                 let item = calls[1]["input"]
@@ -577,7 +591,7 @@ async fn observe_intake(
         }
         let value = wire::delivered(client, &bytes, stream);
         reports.last_mut().unwrap()["delivery"] = wire::intake_view(client, &value);
-        wire::assert_delivery(client, profile, turn, &value, reasoning);
+        wire::assert_delivery(client, upstream, profile, turn, &value, reasoning);
         views.push(wire::delivery_view(client, &value));
         if let Control::ReportedFacts { refusal, .. } = control {
             if client == Api::Messages {
@@ -1018,12 +1032,8 @@ async fn catalog_subscription_production_lanes() {
             for profile in [Profile::Text, Profile::Tools, Profile::Reasoning] {
                 // Common protocol controls, not each subscription's emitted reasoning shape.
                 let actual = transports(&binding, client, profile, Control::Default).await;
-                let expected = if entry.profile == "openai" && entry.model != "gpt-6-luna" {
-                    &["admission.max_output_tokens@0"][..]
-                } else if client == Api::Messages {
-                    &["admission.explicit_cache@0"][..]
-                } else if entry.profile == "openai" {
-                    &["planning:[\"codec.unsupported.unavailable\"]@0"][..]
+                let expected = if entry.profile == "openai" && profile != Profile::Text {
+                    &["planning:[\"admission.tools\"]@0"][..]
                 } else if profile == Profile::Reasoning && client == Api::Chat {
                     &["representation.replay_format@1"][..]
                 } else {
@@ -1133,9 +1143,8 @@ async fn stored_production_responses_agree_with_delivered_history() {
 }
 
 #[tokio::test]
-async fn messages_delivery_controls_reach_post_dispatch_boundaries() {
-    // Explicitly not agent-default requests: isolate delivery from the known
-    // owner-local-cache admission blocker, without changing target contracts.
+async fn messages_delivery_controls_complete_without_cache_markers() {
+    // Isolate report projection from owner-local cache projection.
     for binding in BINDINGS.iter().filter(|binding| binding.4 != Api::Messages) {
         for stream in [false, true] {
             let actual = lane(
@@ -1146,12 +1155,7 @@ async fn messages_delivery_controls_reach_post_dispatch_boundaries() {
                 Control::WithoutCache,
             )
             .await;
-            let expected = if binding.4 == Api::Responses && stream {
-                &["codec.unsupported.unavailable@1"][..]
-            } else {
-                &["codec.unsupported.field@1"][..]
-            };
-            assert_eq!(actual, expected, "delivery {}/{stream}", binding.1);
+            assert_eq!(actual, ACCEPT, "delivery {}/{stream}", binding.1);
         }
     }
 }
@@ -1184,7 +1188,7 @@ async fn bare_messages_manual_thinking_is_separate_from_resolved_adaptive_defaul
                 Control::BareModel
             )
             .await,
-            ["planning:[\"codec.unsupported.reasoning\"]@0"]
+            ACCEPT
         );
         assert_eq!(
             lane(
@@ -1276,18 +1280,7 @@ const BASIC_EXPECTATIONS: &[(&[&str], [&[&str]; 4])] = &[
             "aliyun-dashscope-cn-responses",
             "aliyun-tokenplan-cn-responses",
         ],
-        [
-            ACCEPT,
-            ACCEPT,
-            &[
-                "accepted@1",
-                "planning:[\"codec.unsupported.unavailable\"]@0",
-            ],
-            &[
-                "accepted@1",
-                "planning:[\"codec.unsupported.unavailable\"]@0",
-            ],
-        ],
+        [ACCEPT, ACCEPT, ACCEPT, ACCEPT],
     ),
     (
         &["tokenplan-max-chat", "aliyun-tokenplan-cn-chat"],
@@ -1324,7 +1317,8 @@ fn basic_expected(binding: &str, client: Api, profile: Profile) -> &'static [&'s
         (Api::Chat, Profile::Tools) => 1,
         (Api::Responses, Profile::Text) => 2,
         (Api::Responses, Profile::Tools) => 3,
-        (Api::Messages, Profile::Text | Profile::Tools) => return &["admission.explicit_cache@0"],
+        (Api::Messages, Profile::Text) => 2,
+        (Api::Messages, Profile::Tools) => 3,
         _ => panic!("basic gate cannot assert a reasoning contract"),
     };
     columns[index]
@@ -1337,14 +1331,12 @@ fn expected(binding: &str, client: Api, profile: Profile, stream: bool) -> &'sta
         return basic_expected(binding, client, profile);
     }
     match (binding, client, profile) {
-        (_, Messages, _) if binding != "opencode-go-haiku-messages" => {
-            &["admission.explicit_cache@0"]
-        }
-        ("dashscope-glm-chat", Chat | Responses, Reasoning) => {
-            &["planning:[\"codec.unsupported.reasoning\"]@0"]
-        }
+        ("dashscope-glm-chat", Chat | Responses, Reasoning) => ACCEPT,
+        ("dashscope-glm-chat" | "deepseek-chat", Messages, Reasoning) => ACCEPT,
+        ("openrouter-responses", Messages, Reasoning) => ACCEPT,
+        ("dashscope-flash-responses", Messages, Reasoning) => ACCEPT,
         ("deepseek-chat", Chat, Reasoning) => &["planning:[\"admission.client_representation\"]@0"],
-        ("deepseek-chat", Responses, Reasoning) => &["planning:[\"representation.reasoning\"]@0"],
+        ("deepseek-chat", Responses, Reasoning) => ACCEPT,
         ("openrouter-responses", Responses, Reasoning) => ACCEPT,
         ("openrouter-responses" | "dashscope-flash-responses", Chat, Reasoning) if stream => {
             &["codec.unsupported.metadata@1"]
@@ -1352,15 +1344,11 @@ fn expected(binding: &str, client: Api, profile: Profile, stream: bool) -> &'sta
         ("openrouter-responses" | "dashscope-flash-responses", Chat, Reasoning) => {
             &["representation.replay_format@1"]
         }
-        ("dashscope-flash-responses", Responses, Reasoning) => &[
-            "accepted@1",
-            "planning:[\"codec.unsupported.unavailable\"]@0",
-        ],
+        ("dashscope-flash-responses", Responses, Reasoning) => ACCEPT,
         ("opencode-go-haiku-messages", Chat | Messages, Text | Tools)
         | ("opencode-go-haiku-messages", Responses, Text | Tools) => ACCEPT,
-        ("opencode-go-haiku-messages", Chat | Responses, Reasoning) => {
-            &["planning:[\"codec.unsupported.unavailable\"]@0"]
-        }
+        ("opencode-go-haiku-messages", Chat, Reasoning) => &["representation.replay_format@1"],
+        ("opencode-go-haiku-messages", Responses, Reasoning) => ACCEPT,
         ("opencode-go-haiku-messages", Messages, Reasoning) => ACCEPT,
         _ => panic!("unreviewed lane: {binding}/{client:?}/{profile:?}"),
     }

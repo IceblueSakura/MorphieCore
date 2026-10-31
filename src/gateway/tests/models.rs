@@ -382,9 +382,8 @@ fn aliases(count: usize, metadata: bool) -> crate::topology::CompiledTopology {
             ProviderId, TrustedOrigin,
         },
         topology::{
-            CanonicalModel, Endpoint, EndpointId, EndpointTarget, ExecutionContract,
-            GenerationFeatureSet, GenerationProtocol, ModelId, PublicModel, Route, RouteId,
-            TaskKind, compile,
+            CanonicalModel, Dispositions, Endpoint, EndpointId, EndpointTarget, ExecutionContract,
+            GenerationProtocol, ModelId, PublicModel, Route, RouteId, TaskKind, compile,
         },
     };
     let canonical = ModelId::new("synthetic-canonical").unwrap();
@@ -441,7 +440,7 @@ fn aliases(count: usize, metadata: bool) -> crate::topology::CompiledTopology {
                 canonical.clone(),
                 TaskKind::Generation,
                 route.id.clone(),
-                GenerationFeatureSet::full(),
+                Dispositions::full(),
             )
         })
         .collect();
@@ -453,7 +452,7 @@ fn aliases(count: usize, metadata: bool) -> crate::topology::CompiledTopology {
         vec![CanonicalModel {
             id: canonical.clone(),
             task: TaskKind::Generation,
-            contract: GenerationFeatureSet::full(),
+            contract: Dispositions::full(),
         }],
     )
     .unwrap();
@@ -539,9 +538,18 @@ fn local_directory_encodes_empty_and_alias_views_with_inclusive_resource_limits(
         Err(StartupError::Limits)
     ));
     let mut entry = (*gate.state.entries.values().next().unwrap().as_ref()).clone();
-    entry.public.contract.safety = false;
-    entry.public.contract.cached_context = false;
-    entry.public.contract.conditional_tool_defaults = false;
+    entry
+        .public
+        .contract
+        .set_native(crate::semantic::task::generation::Feature::Safety, false);
+    entry.public.contract.set_native(
+        crate::semantic::task::generation::Feature::CachedContext,
+        false,
+    );
+    entry.public.contract.set_native(
+        crate::semantic::task::generation::Feature::ConditionalToolStrictness,
+        false,
+    );
     let crate::adapter::ClientAdapter::OpenAi { contract, .. } = &mut entry.client else {
         panic!("OpenAI entry")
     };
@@ -556,14 +564,7 @@ fn local_directory_encodes_empty_and_alias_views_with_inclusive_resource_limits(
     )]);
     let view = CapabilityView::bind(&entries, &BTreeMap::new(), 256 << 10).unwrap();
     let snapshot: Value = serde_json::from_slice(&view.0).unwrap();
-    assert_eq!(
-        snapshot["data"][0]["request"],
-        json!([
-            {"feature":"generation.safety","domain":"explicit_policy","treatment":"rejected"},
-            {"feature":"generation.cached_context","domain":"existing_reference","treatment":"rejected"},
-            {"feature":"generation.tools","domain":"normalization_default_strictness","treatment":"rejected"}
-        ])
-    );
+    assert_eq!(snapshot["data"][0]["request"], json!([]));
     assert_eq!(
         snapshot["data"][0]["delivery"][0],
         json!({

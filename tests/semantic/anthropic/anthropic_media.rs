@@ -251,10 +251,14 @@ fn document_context_preserves_per_use_presence_in_messages_and_tool_history() {
             wire.to_string().as_bytes(),
         )
         .unwrap();
-        assert!(GenerationRequirements::derive(&input.task.semantic).document_context);
+        assert!(
+            (input.task.semantic)
+                .features()
+                .contains_key(&morphiecore::semantic::task::generation::Feature::DocumentContext)
+        );
         assert_eq!(
             p.semantic_contract().check(&input.task.semantic),
-            Err(GenerationFeature::DocumentContext)
+            Err(Feature::DocumentContext)
         );
         p.representation_contract()
             .check(&input.task.semantic)
@@ -317,12 +321,21 @@ fn images_and_documents_map_to_inert_resources_and_back() {
         )
         .unwrap();
     let semantic = &decoded.semantic;
-    let needs = GenerationRequirements::derive(semantic);
+    let needs = (semantic).features();
     assert_eq!(
         (
-            needs.image_inputs,
-            needs.file_inputs,
-            needs.tool_result_media
+            needs
+                .get(&morphiecore::semantic::task::generation::Feature::ImageInput)
+                .copied()
+                .unwrap_or(0),
+            needs
+                .get(&morphiecore::semantic::task::generation::Feature::FileInput)
+                .copied()
+                .unwrap_or(0),
+            needs
+                .get(&morphiecore::semantic::task::generation::Feature::ToolResultMedia)
+                .copied()
+                .unwrap_or(0)
         ),
         (3, 2, 1)
     );
@@ -611,7 +624,7 @@ fn image_size_policy_belongs_to_each_use_not_the_resource_or_fidelity() {
                     TargetContract::full()
                 )
                 .err(),
-                Some(lowering::RepresentationError::ImageInput),
+                Some(lowering::RepresentationError::ImageInput.into()),
                 "{profile:?}"
             );
         }
@@ -743,7 +756,15 @@ fn unrepresentable_sources_and_uncalibrated_options_fail_without_losing_filename
     };
     let request = decode(json!([
             {"type":"image_url","image_url":{"url":"https://example.invalid/a.png","detail":"low"}}]));
-    assert!(endpoint.encode_request_with_rules(&request).is_err());
+    let before = request.clone();
+    let (wire, rules) = endpoint.encode_request_with_rules(&request).unwrap();
+    assert_eq!(
+        wire["messages"][0]["content"],
+        json!([{"type":"image",
+        "source":{"type":"url","url":"https://example.invalid/a.png"}}])
+    );
+    assert!(rules.contains(&"generation.omit-image-detail.v1"));
+    assert_eq!(request, before);
     let mut context = decode(json!("hello"));
     let mut settings = context.task.semantic.settings().clone();
     settings.reasoning = morphiecore::semantic::task::generation::ReasoningRequest::present(None);
@@ -759,15 +780,9 @@ fn unrepresentable_sources_and_uncalibrated_options_fail_without_losing_filename
         wire["messages"][0]["content"],
         json!([{"type":"document","source":{"type":"base64","media_type":"application/pdf","data":"AQID"},"title":"report.pdf"}])
     );
-    // The Chat source has no cap; Messages requires one and records the default.
+    // The mandatory default is equivalent and does not create a loss receipt.
     assert_eq!(wire["max_tokens"], 32_000);
-    assert_eq!(
-        rules,
-        [
-            "messages.default-automatic-cache.v1",
-            "messages.default-max-tokens.v1"
-        ]
-    );
+    assert!(rules.is_empty());
     // A later developer message becomes a mid-conversation system message on the
     // reviewed Haiku binding; the profile default keeps admission closed.
     let ordered = |messages: Value| {

@@ -157,7 +157,10 @@ pub fn check_event(
             ..
         }
         | StreamEvent::AudioDelta { .. }
-            if profile != GenerationApi::Chat || !contract.semantics.audio_output =>
+            if profile != GenerationApi::Chat
+                || !contract
+                    .dispositions
+                    .native(crate::semantic::task::generation::Feature::AudioOutput) =>
         {
             return Err(RepresentationError::UnmigratedSemantic);
         }
@@ -171,7 +174,10 @@ pub fn check_event(
         StreamEvent::ItemStarted { kind, replay, .. } => {
             match kind {
                 ItemKind::Compaction
-                    if profile != GenerationApi::Responses || !contract.semantics.compaction =>
+                    if profile != GenerationApi::Responses
+                        || !contract
+                            .dispositions
+                            .native(crate::semantic::task::generation::Feature::Compaction) =>
                 {
                     return Err(RepresentationError::UnmigratedSemantic);
                 }
@@ -212,7 +218,9 @@ pub fn check_event(
                 // Chat reasoning is provisional at event time: its carrier
                 // message and single text part are validated at the terminal.
                 ItemKind::Reasoning
-                    if !contract.semantics.reasoning
+                    if !contract
+                        .dispositions
+                        .native(crate::semantic::task::generation::Feature::Reasoning)
                         || (profile == GenerationApi::Chat
                             && !contract.adaptation.rules.readable_reasoning) =>
                 {
@@ -220,17 +228,28 @@ pub fn check_event(
                 }
                 ItemKind::CustomCall { .. }
                     if profile != GenerationApi::Responses
-                        || !contract.semantics.tools
-                        || !contract.semantics.custom_tools =>
+                        || !contract
+                            .dispositions
+                            .native(crate::semantic::task::generation::Feature::Tools)
+                        || !contract
+                            .dispositions
+                            .native(crate::semantic::task::generation::Feature::CustomTools) =>
                 {
                     return Err(RepresentationError::Tools);
                 }
                 ItemKind::Program { .. } | ItemKind::ProgramOutput { .. }
-                    if profile != GenerationApi::Responses || !contract.semantics.tools =>
+                    if profile != GenerationApi::Responses
+                        || !contract
+                            .dispositions
+                            .native(crate::semantic::task::generation::Feature::Tools) =>
                 {
                     return Err(RepresentationError::Tools);
                 }
-                ItemKind::ToolCall { .. } if !contract.semantics.tools => {
+                ItemKind::ToolCall { .. }
+                    if !contract
+                        .dispositions
+                        .native(crate::semantic::task::generation::Feature::Tools) =>
+                {
                     return Err(RepresentationError::Tools);
                 }
                 ItemKind::Message { .. }
@@ -266,7 +285,10 @@ pub fn check_event(
             return Err(RepresentationError::Terminal);
         }
         StreamEvent::AnnotationAdded { .. }
-            if profile == GenerationApi::Chat || !contract.semantics.text_metadata =>
+            if profile == GenerationApi::Chat
+                || !contract
+                    .dispositions
+                    .native(crate::semantic::task::generation::Feature::TextMetadata) =>
         {
             return Err(RepresentationError::TextMetadata);
         }
@@ -303,7 +325,10 @@ pub fn check_event(
             logprobs,
         } => {
             if !annotations.is_empty()
-                && (profile == GenerationApi::Chat || !contract.semantics.text_metadata)
+                && (profile == GenerationApi::Chat
+                    || !contract
+                        .dispositions
+                        .native(crate::semantic::task::generation::Feature::TextMetadata))
             {
                 return Err(RepresentationError::TextMetadata);
             }
@@ -371,7 +396,7 @@ fn check_result(
     let response =
         GenerationResponse::from_resources(items, Outcome::Incomplete, state.resources().clone())
             .map_err(|_| RepresentationError::Tools)?;
-    contract.semantics.check_response(&response)?;
+    contract.dispositions.check_response(&response)?;
     Ok(())
 }
 
@@ -383,8 +408,12 @@ fn probability_target(
     profile: GenerationApi,
     contract: &TargetContract,
 ) -> Result<(), RepresentationError> {
-    if !contract.semantics.logprobs
-        || !contract.semantics.text_metadata
+    if !contract
+        .dispositions
+        .native(crate::semantic::task::generation::Feature::Logprobs)
+        || !contract
+            .dispositions
+            .native(crate::semantic::task::generation::Feature::TextMetadata)
         || profile == GenerationApi::Responses && state.part(item, part)?.kind == PartKind::Refusal
     {
         return Err(RepresentationError::TextMetadata);

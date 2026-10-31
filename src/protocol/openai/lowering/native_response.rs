@@ -583,7 +583,7 @@ mod tests {
                     .any(|loss| loss.field() == "generation.message_envelopes")
             );
             assert!(
-                delivery
+                !delivery
                     .effects()
                     .iter()
                     .any(|effect| effect.semantic_field()

@@ -28,8 +28,7 @@ pub fn encode_request(request: &Request, model: &str) -> Result<Value, CodecErro
             .any(|c| c.is_control() || c.is_whitespace())
         || request.delivery.streaming()
         || !request.delivery.options.is_absent()
-        || !request.identity.safety_identifier.is_absent()
-        || matches!(request.identity.user, Presence::Null)
+        || !request.identity.safety_identifier.is_none()
         || request.task.format.value().is_some()
         || request.task.size.value().is_some()
         || request.task.background.value().is_some()
@@ -52,7 +51,7 @@ pub fn encode_request(request: &Request, model: &str) -> Result<Value, CodecErro
             _ => return Err(CodecError::invalid()),
         };
     }
-    if let Some(user) = request.identity.user.value() {
+    if let Some(user) = request.identity.user.as_ref() {
         wire["user"] = json!(user);
     }
     Ok(wire)

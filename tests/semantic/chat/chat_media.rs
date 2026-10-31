@@ -56,7 +56,11 @@ fn input_audio_is_an_ordered_inline_resource_not_a_transcript_or_assistant_artif
             .decode_request(&serde_json::to_vec(&wire).unwrap())
             .unwrap();
         assert_eq!(
-            GenerationRequirements::derive(&decoded.task.semantic).audio_inputs,
+            (decoded.task.semantic)
+                .features()
+                .get(&morphiecore::semantic::task::generation::Feature::AudioInput)
+                .copied()
+                .unwrap_or(0),
             1
         );
         let Item::Message(message) = &decoded.task.semantic.items()[0].1 else {
@@ -115,7 +119,11 @@ fn input_audio_is_an_ordered_inline_resource_not_a_transcript_or_assistant_artif
             {"type":"text","text":"Answer with text."},{"type":"text","text":"Listen."}])
         );
         assert_eq!(
-            GenerationRequirements::derive(&edited.task.semantic).audio_inputs,
+            (edited.task.semantic)
+                .features()
+                .get(&morphiecore::semantic::task::generation::Feature::AudioInput)
+                .copied()
+                .unwrap_or(0),
             0
         );
         assert!(
@@ -124,7 +132,10 @@ fn input_audio_is_an_ordered_inline_resource_not_a_transcript_or_assistant_artif
                 .is_err()
         );
         let mut unsupported = Contract::full();
-        unsupported.semantics.audio_input = false;
+        unsupported.dispositions.set_native(
+            morphiecore::semantic::task::generation::Feature::AudioInput,
+            false,
+        );
         assert!(
             adapter
                 .encode_request(&decoded, "synthetic-model", &unsupported)
@@ -304,7 +315,10 @@ fn audio_shapes_budgets_and_controls_fail_without_repair() {
             .is_ok()
     );
     let mut restricted = Contract::full();
-    restricted.semantics.audio_output = false;
+    restricted.dispositions.set_native(
+        morphiecore::semantic::task::generation::Feature::AudioOutput,
+        false,
+    );
     assert!(
         standard(GenerationApi::Chat)
             .encode_request(&decoded, "synthetic-model", &restricted)
@@ -533,7 +547,14 @@ fn video_url_is_a_video_resource_only_for_declaring_chat_dialects() {
         .decode_request(&serde_json::to_vec(&wire).unwrap())
         .unwrap();
     let semantic = &decoded.task.semantic;
-    assert_eq!(GenerationRequirements::derive(semantic).video_inputs, 2);
+    assert_eq!(
+        (semantic)
+            .features()
+            .get(&morphiecore::semantic::task::generation::Feature::VideoInput)
+            .copied()
+            .unwrap_or(0),
+        2
+    );
     let Item::Message(message) = &semantic.items()[0].1 else {
         panic!("message")
     };
@@ -594,7 +615,14 @@ fn input_video_reaches_only_declaring_responses_dialects() {
         .decode_request(&serde_json::to_vec(&wire).unwrap())
         .unwrap();
     let semantic = &decoded.task.semantic;
-    assert_eq!(GenerationRequirements::derive(semantic).video_inputs, 1);
+    assert_eq!(
+        (semantic)
+            .features()
+            .get(&morphiecore::semantic::task::generation::Feature::VideoInput)
+            .copied()
+            .unwrap_or(0),
+        1
+    );
     let Item::Message(message) = &semantic.items()[0].1 else {
         panic!("message")
     };

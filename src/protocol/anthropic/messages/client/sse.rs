@@ -1,6 +1,7 @@
 //! Native SSE for Messages clients from the shared stream events of any upstream.
-//! Readable deltas stream; an opaque value (already sealed for the client) arrives
-//! as one `signature_delta` when its thinking block closes. A reasoning block opens on
+//! Reasoning owners wait in the bounded schedule until their carrier is known.
+//! An opaque value (already sealed for the client) arrives as one `signature_delta`.
+//! A reasoning block opens on
 //! its first delta or at its end, so a redacted value can still open `redacted_thinking`.
 use crate::{
     protocol::{
@@ -297,6 +298,12 @@ impl ClientEventEncoder {
             while let Some(ready) = self.schedule.pop(terminal) {
                 match ready {
                     schedule::Ready::Event(event) => self.encode_open(&event, &mut out)?,
+                    schedule::Ready::OmitReasoning(item) => {
+                        self.losses.push(super::projection::reasoning_omission(
+                            item,
+                            ("event.project").into(),
+                        ));
+                    }
                     schedule::Ready::ClosePart(item, part) => {
                         let index = self
                             .text_parts
@@ -331,10 +338,7 @@ impl ClientEventEncoder {
         result
     }
     fn encode_open(&mut self, event: &StreamEvent, out: &mut Frames) -> Result<(), CodecError> {
-        if matches!(
-            event,
-            StreamEvent::PartInterrupted { .. } | StreamEvent::CompactionProgress { .. }
-        ) {
+        if matches!(event, StreamEvent::CompactionProgress { .. }) {
             return Err(CodecError::Unsupported(CarrierReason::Unavailable));
         }
         match event {
@@ -410,6 +414,7 @@ impl ClientEventEncoder {
                 *active_part = Some(*part);
             }
             StreamEvent::PartFinished { item, part }
+            | StreamEvent::PartInterrupted { item, part }
                 if matches!(self.open.get(item), Some(OpenItem::Thinking { .. })) =>
             {
                 let Some(OpenItem::Thinking { active_part, .. }) = self.open.get_mut(item) else {
@@ -418,6 +423,9 @@ impl ClientEventEncoder {
                 if active_part.take() != Some(*part) {
                     return Err(CodecError::invalid());
                 }
+            }
+            StreamEvent::PartInterrupted { .. } => {
+                return Err(CodecError::Unsupported(CarrierReason::Unavailable));
             }
             StreamEvent::PartStarted {
                 item,
@@ -751,7 +759,7 @@ mod tests {
     };
 
     #[test]
-    fn thinking_requires_observed_signature_before_closure() {
+    fn thinking_waits_for_an_observed_signature_or_is_omitted() {
         use crate::semantic::task::generation::{
             ItemLifecycle, ItemReplay, ReplayFormat, ReplayValue,
         };
@@ -779,11 +787,7 @@ mod tests {
                 StreamEvent::PartFinished { item, part },
             ] {
                 let frames = encoder.encode(&event).unwrap();
-                assert!(frames.iter().all(|frame| {
-                    !std::str::from_utf8(frame)
-                        .unwrap()
-                        .contains("content_block_stop")
-                }));
+                assert!(frames.is_empty(), "an undecided owner cannot publish");
             }
             let event = StreamEvent::ItemFinished {
                 item,
@@ -807,12 +811,11 @@ mod tests {
                         < wire.find("content_block_stop").unwrap()
                 );
             } else {
-                assert_eq!(
-                    encoder.encode(&event).unwrap_err(),
-                    CodecError::Unsupported(CarrierReason::Replay)
-                );
+                assert!(encoder.encode(&event).unwrap().is_empty());
                 assert!(encoder.finish().is_err());
-                assert!(encoder.take_evidence().is_empty());
+                let losses = encoder.take_evidence();
+                assert_eq!(losses.len(), 1);
+                assert_eq!(losses[0].rule(), "messages.omit-uncarried-reasoning.v1");
             }
         }
         let mut encoder = ClientEventEncoder::new("r", "m");
@@ -828,7 +831,7 @@ mod tests {
                 .encode(&StreamEvent::PartStarted {
                     item,
                     part,
-                    kind: PartKind::ReasoningText
+                    kind: PartKind::Text
                 })
                 .is_err()
         );
@@ -1014,60 +1017,99 @@ mod tests {
     }
 
     #[test]
-    fn blocked_unsupported_reasoning_rejects_before_the_head_can_publish_more() {
+    fn uncarriable_reasoning_is_omitted_without_blocking_visible_content() {
+        use crate::semantic::task::generation::{
+            ItemLifecycle, ItemReplay, ReplayFormat, ReplayValue,
+        };
         let mut encoder = blocked(ItemKind::Reasoning, Default::default());
-        for part in [2, 3] {
-            let result = encoder.encode(&StreamEvent::PartStarted {
-                item: ItemId::new(2),
-                part: PartId::new(part),
-                kind: PartKind::Summary,
-            });
-            if part == 2 {
-                assert!(result.unwrap().is_empty());
-                encoder.encode(&blocked_delta("plan")).unwrap();
-                encoder
-                    .encode(&StreamEvent::ValueFinished {
-                        item: ItemId::new(2),
-                        part: PartId::new(2),
-                    })
-                    .unwrap();
-                encoder
-                    .encode(&StreamEvent::PartFinished {
-                        item: ItemId::new(2),
-                        part: PartId::new(2),
-                    })
-                    .unwrap();
-            } else {
-                assert_eq!(
-                    result,
-                    Err(CodecError::Unsupported(CarrierReason::Reasoning))
-                );
+        for number in [2, 3] {
+            let part = PartId::new(number);
+            for event in [
+                StreamEvent::PartStarted {
+                    item: ItemId::new(2),
+                    part,
+                    kind: PartKind::Summary,
+                },
+                StreamEvent::Delta {
+                    item: ItemId::new(2),
+                    part,
+                    fragment: "plan".into(),
+                    logprobs: vec![],
+                },
+                StreamEvent::ValueFinished {
+                    item: ItemId::new(2),
+                    part,
+                },
+                StreamEvent::PartFinished {
+                    item: ItemId::new(2),
+                    part,
+                },
+            ] {
+                assert!(encoder.encode(&event).unwrap().is_empty());
             }
         }
         assert!(
             encoder
-                .encode(&StreamEvent::Delta {
-                    item: ItemId::new(1),
-                    part: PartId::new(1),
-                    fragment: "must not escape".into(),
-                    logprobs: vec![],
+                .encode(&StreamEvent::ItemFinished {
+                    item: ItemId::new(2),
+                    status: ItemLifecycle::Completed,
+                    replay: Some(ItemReplay {
+                        value: ReplayValue::final_value(
+                            ReplayFormat::AnthropicMessagesThinking,
+                            Text::new("signature", "test", 64).unwrap()
+                        ),
+                        origin: None
+                    }),
                 })
-                .is_err()
+                .unwrap()
+                .is_empty()
+        );
+        let visible = encoder
+            .encode(&StreamEvent::Delta {
+                item: ItemId::new(1),
+                part: PartId::new(1),
+                fragment: "retained".into(),
+                logprobs: vec![],
+            })
+            .unwrap();
+        assert!(
+            visible
+                .iter()
+                .any(|frame| std::str::from_utf8(frame).unwrap().contains("retained"))
+        );
+        encoder
+            .encode(&StreamEvent::PartFinished {
+                item: ItemId::new(1),
+                part: PartId::new(1),
+            })
+            .unwrap();
+        assert!(
+            encoder
+                .encode(&StreamEvent::ItemFinished {
+                    item: ItemId::new(1),
+                    status: ItemLifecycle::Completed,
+                    replay: None,
+                })
+                .unwrap()
+                .is_empty()
+        );
+        let losses = encoder.take_evidence();
+        assert_eq!(
+            losses
+                .iter()
+                .filter(|e| e.rule() == "messages.omit-uncarried-reasoning.v1")
+                .count(),
+            1
         );
         assert!(encoder.schedule.pop(true).is_none());
+        assert!(
+            encoder.finish().is_err(),
+            "omission cannot manufacture a terminal"
+        );
     }
 
     #[test]
     fn queued_redacted_thinking_opens_only_after_its_predecessor_closes() {
-        let mut unsigned = blocked(ItemKind::Reasoning, Default::default());
-        assert_eq!(
-            unsigned.encode(&StreamEvent::ItemFinished {
-                item: ItemId::new(2),
-                status: crate::semantic::task::generation::ItemLifecycle::Completed,
-                replay: None,
-            }),
-            Err(CodecError::Unsupported(CarrierReason::Replay))
-        );
         use crate::semantic::task::generation::{
             ItemLifecycle, ItemReplay, ReplayFormat, ReplayValue,
         };

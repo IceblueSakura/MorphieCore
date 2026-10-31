@@ -1,10 +1,7 @@
 //! Frozen media tasks: one wire, binding and accounting contract each.
 mod embeddings {
     //! Independent text embedding oracles; no catalog, credentials or live model.
-    use morphiecore::{
-        protocol::openai::embeddings,
-        semantic::{task::embedding::*, value::Presence},
-    };
+    use morphiecore::{protocol::openai::embeddings, semantic::task::embedding::*};
     use serde_json::json;
 
     fn policy(
@@ -31,7 +28,7 @@ mod embeddings {
             &EmbeddingInput::TextParts(vec!["第二条".into()])
         );
         assert_eq!(decoded.task.samples()[0].dimensions(), Some(2));
-        assert_eq!(decoded.identity.user, Presence::Value("synthetic".into()));
+        assert_eq!(decoded.identity.user, Some("synthetic".into()));
         let single =
             embeddings::decode_request(br#"{"model":"synthetic-vector","input":"first"}"#).unwrap();
         assert_eq!(
@@ -472,7 +469,7 @@ mod image_binding {
             vec![topology::CanonicalModel {
                 id: route.canonical_model.clone(),
                 task: topology::TaskKind::Generation,
-                contract: topology::GenerationFeatureSet::full(),
+                contract: topology::Dispositions::full(),
             }],
         )
         .unwrap();
@@ -544,10 +541,7 @@ mod image_controls {
             request.task.moderation,
             Presence::Value(ImageModeration::Low)
         );
-        assert_eq!(
-            request.identity.user,
-            Presence::Value("synthetic-private-user".into())
-        );
+        assert_eq!(request.identity.user, Some("synthetic-private-user".into()));
         assert!(!format!("{request:?}").contains("synthetic-private-user"));
     }
 

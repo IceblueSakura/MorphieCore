@@ -6,11 +6,8 @@ use super::{
 use crate::{
     adapter::ClientAdapter,
     execution::{AttemptError, admit, plan::representable, prepare},
-    protocol::{
-        ClientProtocol, ConversionFailure, conversion::generation::RepresentationError,
-        failure::CarrierReason,
-    },
-    semantic::task::generation::{GenerationFeature, Item, PrefixCacheBoundary, PrefixCacheTtl},
+    protocol::{ClientProtocol, ConversionFailure, failure::CarrierReason},
+    semantic::task::generation::{Feature, Item, PrefixCacheBoundary, PrefixCacheTtl},
 };
 use serde_json::{Value, json};
 use tower::ServiceExt;
@@ -307,7 +304,7 @@ fn messages_output_defaults_inherit_override_or_clear_without_widening_maxima() 
                     .iter()
                     .filter(|rule| **rule == "messages.default-max-tokens.v1")
                     .count(),
-                1
+                0
             );
         } else {
             assert!(representable(&candidate.endpoint, &request).is_err());
@@ -382,12 +379,12 @@ fn cached_tool_result_input() -> Value {
 }
 
 #[tokio::test]
-async fn configured_messages_cache_admission_requires_all_native_candidates() {
+async fn configured_messages_cache_projects_each_candidate_without_mutating_owners() {
     let input = cached_tool_result_input();
-    for (providers, admitted) in [
-        (&["opencode-go"][..], true),
-        (&["openrouter"][..], false),
-        (&["openrouter", "opencode-go"][..], false),
+    for providers in [
+        &["opencode-go"][..],
+        &["openrouter"][..],
+        &["openrouter", "opencode-go"][..],
     ] {
         let boot = configured_messages(providers);
         let state = &boot.gateway.state;
@@ -403,18 +400,16 @@ async fn configured_messages_cache_admission_requires_all_native_candidates() {
                 .collect::<Vec<_>>(),
             providers
         );
-        assert!(
-            state
-                .entries
-                .values()
-                .all(|entry| entry.public.contract.explicit_cache == admitted)
-        );
-        assert_eq!(entry.public.contract.automatic_prefix_cache, admitted);
-        assert_eq!(entry.public.contract.strict_tools, admitted);
-        assert_eq!(entry.public.contract.ordered_instructions, admitted);
-        assert_eq!(entry.public.contract.tool_changes, admitted);
-        assert!(!entry.public.contract.cached_context);
-
+        for candidate in &entry.candidates {
+            assert_eq!(
+                candidate
+                    .endpoint
+                    .representation
+                    .dispositions()
+                    .native(Feature::ExplicitCache),
+                candidate.provider.id.as_str() == "opencode-go"
+            );
+        }
         let response = boot
             .gateway
             .router()
@@ -448,15 +443,7 @@ async fn configured_messages_cache_admission_requires_all_native_candidates() {
             .filter(|case| case["feature"] == "generation.cache")
             .cloned()
             .collect();
-        assert_eq!(
-            cache,
-            vec![
-                json!({"feature":"generation.cache","domain":"valid_owner_local_breakpoints_5m_or_1h",
-                "treatment":if admitted {"faithful"} else {"rejected"}}),
-                json!({"feature":"generation.cache","domain":"request_wide_automatic_policy",
-                    "treatment":if admitted {"faithful"} else {"rejected"}}),
-            ]
-        );
+        assert!(cache.is_empty());
         assert_eq!(capabilities["provider_effectiveness"], "not_asserted");
         assert_eq!(capabilities["full_loop"], "not_asserted");
         assert!(!capabilities.to_string().contains("opencode-go"));
@@ -464,43 +451,21 @@ async fn configured_messages_cache_admission_requires_all_native_candidates() {
         let request = ClientAdapter::Messages
             .decode_client_request(&serde_json::to_vec(&input).unwrap())
             .unwrap();
-        if !admitted {
-            assert!(matches!(
-                admit(&entry.public, &request),
-                Err(AttemptError::Conversion(ConversionFailure {
-                    cause: crate::protocol::ConversionCause::Representation(
-                        RepresentationError::Admission(GenerationFeature::ExplicitCache)
-                    ),
-                    ..
-                }))
-            ));
-            // pi's agent profile follows the same all-native rule.
-            let strict = json!({"model":"claude-haiku-5-5","max_tokens":64,
-                "tools":[{"name":"lookup","strict":true,
-                    "input_schema":{"type":"object","additionalProperties":false}}],
-                "messages":[{"role":"user","content":"lookup"}]});
-            let strict = ClientAdapter::Messages
-                .decode_client_request(&serde_json::to_vec(&strict).unwrap())
-                .unwrap();
-            assert!(matches!(
-                admit(&entry.public, &strict),
-                Err(AttemptError::Conversion(ConversionFailure {
-                    cause: crate::protocol::ConversionCause::Representation(
-                        RepresentationError::Admission(GenerationFeature::StrictTools)
-                    ),
-                    ..
-                }))
-            ));
-            assert!(
-                crate::gateway::ingress::admission::prepare(
-                    state,
-                    ClientProtocol::Messages,
-                    &serde_json::to_vec(&input).unwrap(),
-                    &crate::execution::report::Report::default()
-                )
-                .is_err()
+        admit(&entry.public, &request).unwrap();
+        let strict = json!({"model":"claude-haiku-5-5","max_tokens":64,
+            "tools":[{"name":"lookup","strict":true,"input_schema":{"type":"object","additionalProperties":false}}],
+            "messages":[{"role":"user","content":"lookup"}]});
+        let mut strict = ClientAdapter::Messages
+            .decode_client_request(&serde_json::to_vec(&strict).unwrap())
+            .unwrap();
+        admit(&entry.public, &strict).unwrap();
+        strict.conversation =
+            Some(crate::semantic::context::ConversationContext::conversation("synthetic").unwrap());
+        for candidate in &entry.candidates {
+            assert_eq!(
+                representable(&candidate.endpoint, &strict).is_ok(),
+                candidate.provider.id.as_str() == "opencode-go"
             );
-            continue;
         }
         for stream in [false, true] {
             let mut body = input.clone();
@@ -532,41 +497,52 @@ async fn configured_messages_cache_admission_requires_all_native_candidates() {
                 crate::semantic::context::ConversationContext::conversation("synthetic").unwrap(),
             );
             let original = request.clone();
-            let candidate = &entry.candidates[0];
-            representable(&candidate.endpoint, &request).unwrap();
-            let prepared = prepare(
-                &candidate.endpoint,
-                &candidate.provider,
-                &candidate.secret.resolve().unwrap().0,
-                &request,
-            )
-            .unwrap();
-            let wire: Value = serde_json::from_slice(&prepared.body).unwrap();
-            assert!(wire.get("cache_control").is_none());
-            assert_eq!(
-                wire["tools"],
-                json!([{"name":"lookup","strict":false,
+            for candidate in &entry.candidates {
+                representable(&candidate.endpoint, &request).unwrap();
+                let prepared = prepare(
+                    &candidate.endpoint,
+                    &candidate.provider,
+                    &candidate.secret.resolve().unwrap().0,
+                    &request,
+                )
+                .unwrap();
+                let wire: Value = serde_json::from_slice(&prepared.body).unwrap();
+                if candidate.provider.id.as_str() != "opencode-go" {
+                    assert!(!wire.to_string().contains("cache_control"));
+                    let (_, rules) = candidate
+                        .endpoint
+                        .encode_request_with_rules(&request)
+                        .unwrap();
+                    assert!(rules.contains(&"generation.omit-explicit-cache.v1"));
+                    assert_eq!(request, original);
+                    continue;
+                }
+                assert!(wire.get("cache_control").is_none());
+                assert_eq!(
+                    wire["tools"],
+                    json!([{"name":"lookup","strict":false,
                 "input_schema":{"type":"object"},"cache_control":{"type":"ephemeral","ttl":"1h"}}])
-            );
-            assert_eq!(
-                wire["system"],
-                json!([
-                    {"type":"text","text":"stable","cache_control":{"type":"ephemeral","ttl":"1h"}},
-                    {"type":"text","text":"changing","cache_control":{"type":"ephemeral"}}
-                ])
-            );
-            assert_eq!(
-                wire["messages"],
-                json!([
-                    {"role":"user","content":[{"type":"text","text":"lookup"}]},
-                    {"role":"assistant","content":[{"type":"tool_use","id":"call","name":"lookup","input":{}}]},
-                    {"role":"user","content":[{"type":"tool_result","tool_use_id":"call","content":"found",
-                        "cache_control":{"type":"ephemeral"}}]}
-                ])
-            );
-            assert_eq!(wire["stream"], stream);
-            assert_eq!(wire["max_tokens"], 64);
-            assert_eq!(request, original);
+                );
+                assert_eq!(
+                    wire["system"],
+                    json!([
+                        {"type":"text","text":"stable","cache_control":{"type":"ephemeral","ttl":"1h"}},
+                        {"type":"text","text":"changing","cache_control":{"type":"ephemeral"}}
+                    ])
+                );
+                assert_eq!(
+                    wire["messages"],
+                    json!([
+                        {"role":"user","content":[{"type":"text","text":"lookup"}]},
+                        {"role":"assistant","content":[{"type":"tool_use","id":"call","name":"lookup","input":{}}]},
+                        {"role":"user","content":[{"type":"tool_result","tool_use_id":"call","content":"found",
+                            "cache_control":{"type":"ephemeral"}}]}
+                    ])
+                );
+                assert_eq!(wire["stream"], stream);
+                assert_eq!(wire["max_tokens"], 64);
+                assert_eq!(request, original);
+            }
         }
         // Caller-selected automatic policy preserves the existing same-TTL tail.
         {
@@ -580,17 +556,28 @@ async fn configured_messages_cache_admission_requires_all_native_candidates() {
             request.conversation = Some(
                 crate::semantic::context::ConversationContext::conversation("synthetic").unwrap(),
             );
-            let candidate = &entry.candidates[0];
-            representable(&candidate.endpoint, &request).unwrap();
-            let prepared = prepare(
-                &candidate.endpoint,
-                &candidate.provider,
-                &candidate.secret.resolve().unwrap().0,
-                &request,
-            )
-            .unwrap();
-            let wire: Value = serde_json::from_slice(&prepared.body).unwrap();
-            assert_eq!(wire["cache_control"], json!({"type":"ephemeral"}));
+            for candidate in &entry.candidates {
+                representable(&candidate.endpoint, &request).unwrap();
+                let prepared = prepare(
+                    &candidate.endpoint,
+                    &candidate.provider,
+                    &candidate.secret.resolve().unwrap().0,
+                    &request,
+                )
+                .unwrap();
+                let wire: Value = serde_json::from_slice(&prepared.body).unwrap();
+                if candidate.provider.id.as_str() == "opencode-go" {
+                    assert_eq!(wire["cache_control"], json!({"type":"ephemeral"}));
+                } else {
+                    assert!(!wire.to_string().contains("cache_control"));
+                    let (_, rules) = candidate
+                        .endpoint
+                        .encode_request_with_rules(&request)
+                        .unwrap();
+                    assert!(rules.contains(&"generation.omit-explicit-cache.v1"));
+                    assert!(rules.contains(&"generation.omit-automatic-prefix-cache.v1"));
+                }
+            }
         }
     }
 }
@@ -678,8 +665,8 @@ fn native_binding_keeps_beta_carriers_without_public_activation() {
     );
 }
 
-#[tokio::test]
-async fn configured_messages_input_features_require_every_native_candidate() {
+#[test]
+fn configured_messages_input_features_keep_output_guarantees_candidate_local() {
     let schema = json!({"type":"object","properties":{"key":{"type":"string"}},"required":["key"]});
     let root = json!({"name":"lookup","strict":false,"input_schema":schema,
         "input_examples":[{"key":"cedar"},{"key":"birch"}]});
@@ -696,96 +683,19 @@ async fn configured_messages_input_features_require_every_native_candidate() {
         "cache_control":{"type":"ephemeral","ttl":"1h"},
         "messages":[{"role":"user","content":[{"type":"text","text":"lookup"}]}]});
     let cases = [
-        (
-            GenerationFeature::ToolExamples,
-            "bounded_ordered_input_examples",
-            examples,
-        ),
-        (
-            GenerationFeature::DocumentContext,
-            "per_use_presence_in_documents_and_tool_results",
-            context,
-        ),
-        (
-            GenerationFeature::AutomaticPrefixCache,
-            "request_wide_automatic_policy",
-            automatic,
-        ),
+        (Feature::ToolExamples, examples),
+        (Feature::DocumentContext, context),
+        (Feature::AutomaticPrefixCache, automatic),
     ];
-    for (providers, admitted) in [
-        (&["opencode-go"][..], true),
-        (&["openrouter"][..], false),
-        (&["openrouter", "opencode-go"][..], false),
+    for providers in [
+        &["opencode-go"][..],
+        &["openrouter"][..],
+        &["openrouter", "opencode-go"][..],
     ] {
         let boot = configured_messages(providers);
         let state = &boot.gateway.state;
-        assert!(
-            state
-                .entries
-                .values()
-                .all(|entry| entry.public.contract.tool_examples == admitted
-                    && entry.public.contract.document_context == admitted
-                    && entry.public.contract.automatic_prefix_cache == admitted)
-        );
-        let response = boot
-            .gateway
-            .router()
-            .oneshot(
-                axum::http::Request::builder()
-                    .uri("/v1/morphiecore/capabilities")
-                    .header(
-                        "authorization",
-                        "Bearer synthetic-gateway-client-token-0001",
-                    )
-                    .body(axum::body::Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(response.status(), 200);
-        let bytes = axum::body::to_bytes(response.into_body(), 32 << 10)
-            .await
-            .unwrap();
-        let view: Value = serde_json::from_slice(&bytes).unwrap();
-        let messages = view["data"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .find(|entry| entry["protocol"] == "messages")
-            .unwrap();
-        let entry = &state.entries[&(
-            crate::protocol::ClientProtocol::Messages,
-            "claude-haiku-5-5".into(),
-        )];
-        for (feature, domain, input) in &cases {
-            let case = messages["request"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .find(|case| case["domain"] == *domain)
-                .unwrap();
-            assert_eq!(
-                case["treatment"],
-                if admitted { "faithful" } else { "rejected" }
-            );
-            let decoded = ClientAdapter::Messages
-                .decode_client_request(&serde_json::to_vec(input).unwrap())
-                .unwrap();
-            if !admitted {
-                assert!(matches!(admit(&entry.public, &decoded),
-                    Err(AttemptError::Conversion(ConversionFailure { cause: crate::protocol::ConversionCause::Representation(
-                        RepresentationError::Admission(found)), .. })) if found == *feature));
-                assert!(
-                    crate::gateway::ingress::admission::prepare(
-                        state,
-                        ClientProtocol::Messages,
-                        &serde_json::to_vec(input).unwrap(),
-                        &crate::execution::report::Report::default()
-                    )
-                    .is_err()
-                );
-                continue;
-            }
+        let entry = &state.entries[&(ClientProtocol::Messages, "claude-haiku-5-5".into())];
+        for (feature, input) in &cases {
             let (_, mut request) = crate::gateway::ingress::admission::prepare(
                 state,
                 ClientProtocol::Messages,
@@ -793,26 +703,75 @@ async fn configured_messages_input_features_require_every_native_candidate() {
                 &crate::execution::report::Report::default(),
             )
             .unwrap();
+            admit(&entry.public, &request).unwrap();
             request.conversation = Some(
                 crate::semantic::context::ConversationContext::conversation("synthetic").unwrap(),
             );
             let original = request.clone();
-            let candidate = &entry.candidates[0];
-            representable(&candidate.endpoint, &request).unwrap();
-            let prepared = prepare(
-                &candidate.endpoint,
-                &candidate.provider,
-                &candidate.secret.resolve().unwrap().0,
-                &request,
-            )
-            .unwrap();
-            let wire: Value = serde_json::from_slice(&prepared.body).unwrap();
-            assert_eq!(wire["tools"], input["tools"]);
-            assert_eq!(wire["messages"], input["messages"]);
-            if let Some(control) = input.get("cache_control") {
-                assert_eq!(&wire["cache_control"], control);
+            let mut expected = vec![];
+            for candidate in &entry.candidates {
+                let native = candidate.provider.id.as_str() == "opencode-go";
+                if !native && *feature != Feature::AutomaticPrefixCache {
+                    assert_eq!(
+                        representable(&candidate.endpoint, &request)
+                            .unwrap_err()
+                            .code(),
+                        if *feature == Feature::ToolExamples {
+                            "admission.tool_examples"
+                        } else {
+                            "admission.document_context"
+                        }
+                    );
+                    assert!(
+                        prepare(
+                            &candidate.endpoint,
+                            &candidate.provider,
+                            &candidate.secret.resolve().unwrap().0,
+                            &request
+                        )
+                        .is_err()
+                    );
+                    continue;
+                }
+                expected.push(candidate.provider.id.as_str());
+                representable(&candidate.endpoint, &request).unwrap();
+                let prepared = prepare(
+                    &candidate.endpoint,
+                    &candidate.provider,
+                    &candidate.secret.resolve().unwrap().0,
+                    &request,
+                )
+                .unwrap();
+                let wire: Value = serde_json::from_slice(&prepared.body).unwrap();
+                if native {
+                    assert_eq!(wire["tools"], input["tools"]);
+                    assert_eq!(wire["messages"], input["messages"]);
+                    if let Some(control) = input.get("cache_control") {
+                        assert_eq!(&wire["cache_control"], control);
+                    }
+                } else {
+                    assert!(!wire.to_string().contains("cache_control"));
+                    let (_, rules) = candidate
+                        .endpoint
+                        .encode_request_with_rules(&request)
+                        .unwrap();
+                    assert_eq!(rules, ["generation.omit-automatic-prefix-cache.v1"]);
+                }
+                assert_eq!(request, original);
             }
-            assert_eq!(request, original);
+            let selected = entry.eligible(&request, &state.affinity);
+            if expected.is_empty() {
+                assert!(selected.is_err());
+            } else {
+                assert_eq!(
+                    selected
+                        .unwrap()
+                        .iter()
+                        .map(|c| c.candidate.provider.id.as_str())
+                        .collect::<Vec<_>>(),
+                    expected
+                );
+            }
         }
     }
 }

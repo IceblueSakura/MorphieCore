@@ -61,7 +61,11 @@ fn embeddings_need_explicit_selection_and_a_single_nonfallback_key() {
             assert!(!public.contains("gemini-embedding-2"));
         }
         if let Some(text) = catalog::API_KEY_BINDINGS.iter().find(|b| {
-            b.credential() == binding.credential() && !b.public_model().contract.audio_input
+            b.credential() == binding.credential()
+                && !b
+                    .public_model()
+                    .contract
+                    .native(crate::semantic::task::generation::Feature::AudioInput)
         }) {
             write_configuration(
                 dir.path(),

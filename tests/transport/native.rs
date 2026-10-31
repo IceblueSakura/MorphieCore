@@ -17,11 +17,7 @@ mod native_bindings {
             AuthScheme, CredentialBindingId, CredentialKind, EndpointPath, ProviderDefinition,
             ProviderId, SecretMaterial, TrustedOrigin,
         },
-        semantic::{
-            context::ConversationContext,
-            task::generation::{GenerationFeatureSet, LocalScope},
-            value::Presence,
-        },
+        semantic::{context::ConversationContext, task::generation::LocalScope, value::Presence},
         topology::*,
     };
     use serde_json::{Value, json};
@@ -110,7 +106,7 @@ mod native_bindings {
             vec![CanonicalModel {
                 id: ModelId::new("synthetic-model").unwrap(),
                 task: TaskKind::Generation,
-                contract: GenerationFeatureSet::full(),
+                contract: Dispositions::full(),
             }],
         )
     }
@@ -166,24 +162,32 @@ mod native_bindings {
                 vec![CanonicalModel {
                     id: native.canonical_model.clone(),
                     task: TaskKind::Generation,
-                    contract: GenerationFeatureSet::full(),
+                    contract: Dispositions::full(),
                 }],
             )
         };
         assert_eq!(
-            compile_with(public(GenerationFeatureSet::text_images())).unwrap_err(),
+            compile_with(public(Dispositions::text_images())).unwrap_err(),
             TopologyError::ContractUnsatisfiable
         );
-        // Native targets do not carry standard OpenAI execution context.
-        assert_eq!(
-            compile_with(public(NativeProfile::AdaptiveTextTools.semantic_contract())).unwrap_err(),
-            TopologyError::ContractUnsatisfiable
-        );
-        let mut model = public(NativeProfile::AdaptiveTextTools.semantic_contract());
-        model.standard_context = false;
+        let model = public(NativeProfile::AdaptiveTextTools.semantic_contract());
         compile_with(model).unwrap();
 
         let p = provider();
+        let mut invented_native = native.clone();
+        invented_native
+            .representation
+            .messages_mut()
+            .unwrap()
+            .dispositions
+            .set_native(
+                morphiecore::semantic::task::generation::Feature::Temperature,
+                true,
+            );
+        assert_eq!(
+            compile_endpoints(p.clone(), vec![invented_native]).unwrap_err(),
+            TopologyError::ContractUnsatisfiable
+        );
         for (default, maximum, valid) in [
             (Some(0), None, false),
             (Some(32_000), Some(8192), false),
@@ -242,10 +246,8 @@ mod native_bindings {
     fn output_defaults_are_candidate_local_and_preflight_matches_preparation() {
         use morphiecore::{
             execution::{AttemptError, prepare_with_rules},
-            protocol::{CodecError, ConversionFailure},
-            semantic::task::generation::{
-                GenerationError, ReasoningActivation, ReasoningMode, ReasoningRequest,
-            },
+            protocol::ConversionFailure,
+            semantic::task::generation::{ReasoningActivation, ReasoningMode, ReasoningRequest},
         };
         let mut request = native_request();
         let mut settings = request.task.semantic.settings().clone();
@@ -258,7 +260,7 @@ mod native_bindings {
         let before = request.clone();
         let mut first = standard_native();
         let caps = first.representation.messages_mut().unwrap();
-        caps.semantics = NativeProfile::AdaptiveTextTools.representation_contract();
+        caps.dispositions = NativeProfile::AdaptiveTextTools.representation_contract();
         caps.default_output_tokens = Some(1024);
         let mut second = first.clone();
         second
@@ -268,14 +270,16 @@ mod native_bindings {
             .default_output_tokens = Some(4096);
         assert_eq!(
             representable(&first, &request).unwrap_err().code(),
-            "semantic.invalid_control"
+            "admission.reasoning_budget"
         );
         assert!(matches!(
             prepare(&first, &provider(), &secret(), &request),
             Err(AttemptError::Conversion(ConversionFailure {
-                cause: morphiecore::protocol::ConversionCause::Codec(CodecError::Semantic(
-                    GenerationError::InvalidControl
-                )),
+                cause: morphiecore::protocol::ConversionCause::Representation(
+                    morphiecore::protocol::conversion::generation::RepresentationError::Admission(
+                        morphiecore::semantic::task::generation::Feature::ReasoningBudget
+                    )
+                ),
                 ..
             }))
         ));
@@ -285,13 +289,7 @@ mod native_bindings {
             prepare_with_rules(&second, &provider(), &secret(), &request).unwrap();
         assert_eq!(body(&prepared)["max_tokens"], 4096);
         assert_eq!(body(&prepared)["thinking"]["budget_tokens"], 2048);
-        assert_eq!(
-            rules
-                .iter()
-                .filter(|rule| **rule == "messages.default-max-tokens.v1")
-                .count(),
-            1
-        );
+        assert!(rules.is_empty());
         assert_eq!(request, before);
         assert_eq!(
             first
@@ -310,10 +308,6 @@ mod native_bindings {
         let mut request = native_request();
         request.context.store = Presence::Value(false);
         request.context.background = Presence::Value(false);
-        request.context.previous_response_id = Presence::Null;
-        request.context.conversation = Presence::Null;
-        request.context.prompt = Presence::Null;
-        request.context.moderation = Presence::Null;
         let original = request.clone();
         representable(&native, &request).unwrap();
         let prepared = prepare(&native, &p, &secret(), &request).unwrap();
@@ -331,25 +325,16 @@ mod native_bindings {
 
         let mut extended = request.clone();
         extended.context.cache.prompt_cache_retention =
-            Presence::Value(morphiecore::semantic::context::CacheRetention::Day);
-        assert!(representable(&native, &extended).is_err());
-        assert!(prepare(&native, &p, &secret(), &extended).is_err());
-        let mut approved = native.clone();
-        approved
-            .representation
-            .messages_mut()
-            .unwrap()
-            .cache
-            .omit_day_retention = true;
-        representable(&approved, &extended).unwrap();
+            Some(morphiecore::semantic::context::CacheRetention::Day);
+        representable(&native, &extended).unwrap();
         assert_eq!(
-            body(&prepare(&approved, &p, &secret(), &extended).unwrap()),
+            body(&prepare(&native, &p, &secret(), &extended).unwrap()),
             hello_wire()
         );
         extended.context.cache.prompt_cache_retention =
-            Presence::Value(morphiecore::semantic::context::CacheRetention::InMemory);
-        assert!(representable(&approved, &extended).is_err());
-        assert!(prepare(&approved, &p, &secret(), &extended).is_err());
+            Some(morphiecore::semantic::context::CacheRetention::InMemory);
+        assert!(representable(&native, &extended).is_err());
+        assert!(prepare(&native, &p, &secret(), &extended).is_err());
 
         // Count escaped UTF-8 wire bytes, not characters or the unescaped source.
         let text = "中文 \"quoted\"\\path";
@@ -403,8 +388,11 @@ mod native_bindings {
             .representation
             .messages_mut()
             .unwrap()
-            .semantics
-            .max_output_tokens = false;
+            .dispositions
+            .set_native(
+                morphiecore::semantic::task::generation::Feature::MaxOutputTokens,
+                false,
+            );
         let request = native_request();
         assert!(representable(&restricted, &request).is_err());
         assert!(prepare(&restricted, &p, &secret(), &request).is_err());
@@ -489,15 +477,7 @@ mod native_catalog {
     };
     #[test]
     fn native_binding_resolves_conditional_strictness_before_preflight_and_preparation() {
-        use morphiecore::{
-            execution::AttemptError,
-            protocol::{
-                ConversionFailure,
-                conversion::generation::RepresentationError,
-                openai::{Dialect, GenerationApi as Client, GenerationCodec},
-            },
-            semantic::task::generation::GenerationFeature,
-        };
+        use morphiecore::protocol::openai::{Dialect, GenerationApi as Client, GenerationCodec};
         let binding = &catalog::MESSAGES_BINDINGS[0];
         let topology = catalog::default_topology().unwrap();
         // pi's shape: a developer prompt and a tool whose `strict` is omitted.
@@ -598,10 +578,7 @@ mod native_catalog {
         );
         assert_eq!(
             rules,
-            [
-                "messages.default-automatic-cache.v1",
-                "messages.omit-sampling.v1"
-            ]
+            ["generation.omit-temperature.v1", "generation.omit-top-p.v1"]
         );
         assert_eq!(request, original);
         let mut settings = request.task.semantic.settings().clone();
@@ -612,16 +589,8 @@ mod native_catalog {
         };
         tool.cache = Some(morphiecore::semantic::task::generation::PrefixCacheTtl::OneHour);
         request.task.semantic = request.task.semantic.with_settings(settings).unwrap();
-        assert!(matches!(
-            admit(topology.model(binding.model).unwrap(), &request),
-            Err(AttemptError::Conversion(ConversionFailure {
-                cause: morphiecore::protocol::ConversionCause::Representation(
-                    RepresentationError::Admission(GenerationFeature::ExplicitCache)
-                ),
-                ..
-            }))
-        ));
-        // The native endpoint is opted in, but the mixed catalog public route is not.
+        admit(topology.model(binding.model).unwrap(), &request).unwrap();
+        // This native candidate retains each owner's cache marker.
         representable(&binding.endpoint(), &request).unwrap();
         let prepared = prepare(
             &binding.endpoint(),
@@ -708,17 +677,28 @@ mod native_catalog {
         );
         settings.controls.max_output_tokens = Some(2048);
         controlled.task.semantic = controlled.task.semantic.with_settings(settings).unwrap();
-        // This native profile has no numeric carrier; do not substitute an effort.
-        assert!(representable(&endpoint, &controlled).is_err());
-        assert!(
-            prepare(
-                &endpoint,
-                &provider,
-                &SecretMaterial::new("synthetic-key").unwrap(),
-                &controlled,
-            )
-            .is_err()
+        let before = controlled.clone();
+        representable(&endpoint, &controlled).unwrap();
+        let prepared = prepare(
+            &endpoint,
+            &provider,
+            &SecretMaterial::new("synthetic-key").unwrap(),
+            &controlled,
+        )
+        .unwrap();
+        let wire: serde_json::Value = serde_json::from_slice(&prepared.body).unwrap();
+        assert_eq!(wire["max_tokens"], 2048);
+        assert_eq!(wire["thinking"], serde_json::json!({"type":"adaptive"}));
+        assert_eq!(wire["output_config"]["effort"], "low");
+        let (_, rules) = endpoint.encode_request_with_rules(&controlled).unwrap();
+        assert_eq!(
+            rules,
+            [
+                "generation.budget-to-effort.v1",
+                "generation.project-effort.v1"
+            ]
         );
+        assert_eq!(controlled, before);
     }
     #[test]
     fn native_unknown_response_fields_are_ignored_and_request_errors_do_not_leak_keys() {
@@ -790,10 +770,20 @@ mod native_catalog {
             .unwrap();
         let mut caps = morphiecore::protocol::google::generate_content::TargetContract::default();
         google.representation = caps.clone().into();
-        assert!(google.encode_request(&request).is_err());
+        let (wire, rules) = google.encode_request_with_rules(&request).unwrap();
+        assert_eq!(
+            wire["generationConfig"]["thinkingConfig"],
+            serde_json::json!({"thinkingLevel":"MINIMAL"})
+        );
+        assert_eq!(rules, ["generation.budget-to-effort.v1"]);
         caps.reasoning_policy = Some(OFF.clone());
         google.representation = caps.clone().into();
-        assert!(google.encode_request(&request).is_err());
+        let (wire, rules) = google.encode_request_with_rules(&request).unwrap();
+        assert_eq!(
+            wire["generationConfig"]["thinkingConfig"],
+            serde_json::json!({"thinkingLevel":"MINIMAL"})
+        );
+        assert_eq!(rules, ["generation.budget-to-effort.v1"]);
         caps.reasoning_policy = Some(ALLOCATE.clone());
         google.representation = caps.into();
         assert_eq!(

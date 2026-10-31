@@ -410,7 +410,7 @@ fn independent_calls_do_not_acquire_the_previous_named_participant() {
     let mut settings = request.task.semantic.settings().clone();
     settings.reasoning = ReasoningRequest::present(None);
     settings.reasoning.replay_mismatch = Some(ReplayMismatch::Reject);
-    settings.effort = Presence::Value(EffortControl {
+    settings.effort = Some(EffortControl {
         scope: EffortScope::Reasoning,
         level: EffortLevel::Low,
     });
@@ -423,7 +423,7 @@ fn independent_calls_do_not_acquire_the_previous_named_participant() {
 }
 
 #[test]
-fn messages_native_grammar_and_manual_thinking_are_source_and_target_rules() {
+fn messages_keep_common_turn_identities_and_target_local_manual_thinking_history() {
     let call =
         json!({"role":"assistant","content":[{"type":"tool_use","id":"c","name":"f","input":{}}]});
     let result = json!({"type":"tool_result","tool_use_id":"c","content":"ok"});
@@ -451,7 +451,12 @@ fn messages_native_grammar_and_manual_thinking_are_source_and_target_rules() {
             .is_err()
     );
     body["thinking"] = json!({"type":"enabled","budget_tokens":1024});
-    assert!(decode_client_request(body.to_string().as_bytes()).is_err());
+    let continued = decode_client_request(body.to_string().as_bytes()).unwrap();
+    assert!(
+        target
+            .encode_request(&continued, &ReplayTarget::new("synthetic", "m").unwrap())
+            .is_err()
+    );
     body["messages"][1]["content"]
         .as_array_mut()
         .unwrap()
@@ -491,7 +496,8 @@ fn messages_native_grammar_and_manual_thinking_are_source_and_target_rules() {
     let archived = decode_client_request(archive.to_string().as_bytes()).unwrap();
     assert!(target.encode_request(&archived, &replay_target).is_ok());
     archive["messages"].as_array_mut().unwrap().truncate(3);
-    assert!(decode_client_request(archive.to_string().as_bytes()).is_err());
+    let continued = decode_client_request(archive.to_string().as_bytes()).unwrap();
+    assert!(target.encode_request(&continued, &replay_target).is_err());
     for choice in [
         ToolChoice::Required,
         ToolChoice::Specific(Text::new("f", "test", 32).unwrap()),

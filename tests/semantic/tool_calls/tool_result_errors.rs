@@ -80,14 +80,25 @@ fn standard_codecs_cannot_silently_omit_an_error_report() {
             .unwrap();
         result.is_error = Some(false);
         decoded.semantic = decoded.semantic.with_items(items).unwrap();
+        let projected = morphiecore::protocol::openai::lowering::lower_request(
+            &decoded.semantic,
+            &decoded.fidelity,
+            profile,
+            morphiecore::protocol::openai::TargetContract::full(),
+        )
+        .unwrap();
+        let result = projected
+            .semantic()
+            .items()
+            .iter()
+            .find_map(|(_, item)| match item {
+                Item::ToolResult(result) => Some(result),
+                _ => None,
+            })
+            .unwrap();
+        assert_eq!(result.is_error, None);
         assert!(
-            morphiecore::protocol::openai::lowering::lower_request(
-                &decoded.semantic,
-                &decoded.fidelity,
-                profile,
-                morphiecore::protocol::openai::TargetContract::full(),
-            )
-            .is_err()
+            matches!(&result.output, ToolOutput::Text(text) if text == "[tool result is_error=false]\nfeedback")
         );
     }
 }

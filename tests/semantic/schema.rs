@@ -1,6 +1,7 @@
 //! Schema admission: the IR keeps any bounded JSON-object schema; target subsets are
 //! checked at their protocol boundary.
 mod schema_admission {
+    use morphiecore::lowering::disposition::Dispositions;
     use morphiecore::{
         protocol::{
             ConversionCause,
@@ -17,14 +18,25 @@ mod schema_admission {
     #[test]
     fn messages_conditional_tools_preserve_source_and_native_strict_guarantees() {
         use morphiecore::protocol::{
-            anthropic::messages::{self, Carriers, Profile},
+            anthropic::messages::{self, Profile},
             native::ReplayTarget,
         };
         let source = GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None);
         let profile = Profile::AdaptiveTextTools;
         let mut target = messages::TargetContract::new(profile, messages::Dialect::Standard);
-        target.semantics = profile.representation_contract();
-        target.carriers = Carriers::all();
+        target.dispositions = profile.representation_contract();
+        target.dispositions.set_native(
+            morphiecore::semantic::task::generation::Feature::ReplayMismatch,
+            true,
+        );
+        target.dispositions.set_native(
+            morphiecore::semantic::task::generation::Feature::MessageEffort,
+            true,
+        );
+        target.dispositions.set_native(
+            morphiecore::semantic::task::generation::Feature::ToolChanges,
+            true,
+        );
         let replay = ReplayTarget::new("synthetic", "m").unwrap();
         let loss = "openai.omit-conditional-tool-strictness.v1";
         for (property, closed, strict, rules) in [
@@ -92,7 +104,10 @@ mod schema_admission {
                 assert_eq!(request, original);
                 if strict {
                     let mut without_strict = target.clone();
-                    without_strict.semantics.strict_tools = false;
+                    without_strict.dispositions.set_native(
+                        morphiecore::semantic::task::generation::Feature::StrictTools,
+                        false,
+                    );
                     let projection = without_strict.encode_request(&request, &replay).unwrap();
                     let tool = if inline {
                         &projection.value["messages"][1]["content"][0]["tool"]["definition"]
@@ -228,7 +243,10 @@ mod schema_admission {
                 removable.task.semantic = removable.task.semantic.with_items(items).unwrap();
                 let original = removable.clone();
                 let mut collapsed = target.clone();
-                collapsed.carriers.tool_changes = false;
+                collapsed.dispositions.set_native(
+                    morphiecore::semantic::task::generation::Feature::ToolChanges,
+                    false,
+                );
                 let projection = collapsed.encode_request(&removable, &replay).unwrap();
                 let tools = projection.value["tools"].as_array().unwrap();
                 assert_eq!(tools.len(), 20);
@@ -399,7 +417,10 @@ mod schema_admission {
             assert_eq!(native["tools"][0]["parameters"], schema);
             if strict {
                 let mut non_strict = TargetContract::full();
-                non_strict.semantics.strict_tools = false;
+                non_strict.dispositions.set_native(
+                    morphiecore::semantic::task::generation::Feature::StrictTools,
+                    false,
+                );
                 let (wire, applied) = target
                     .encode_request_with_rules(&request, "m", &non_strict)
                     .unwrap();
@@ -603,20 +624,28 @@ mod schema_admission {
         )
         .unwrap();
         let mut native = morphiecore::protocol::google::generate_content::semantic_contract();
-        native.strict_tools = true;
-        assert_eq!(
-            native.check(&normalized.semantic),
-            Err(GenerationFeature::ConditionalToolStrictness)
+        native.set_native(
+            morphiecore::semantic::task::generation::Feature::StrictTools,
+            true,
         );
-        let requirements = GenerationRequirements::derive(&normalized.semantic);
-        assert!(requirements.conditional_tool_defaults);
-        assert!(!requirements.strict_function_tools);
-        let mut contract = GenerationFeatureSet::full();
-        contract.strict_tools = false;
+        assert!(native.check(&normalized.semantic).is_ok());
+        let requirements = (normalized.semantic).features();
+        assert!(requirements.contains_key(
+            &morphiecore::semantic::task::generation::Feature::ConditionalToolStrictness
+        ));
+        assert!(
+            !requirements
+                .contains_key(&morphiecore::semantic::task::generation::Feature::StrictTools)
+        );
+        let mut contract = Dispositions::full();
+        contract.set_native(
+            morphiecore::semantic::task::generation::Feature::StrictTools,
+            false,
+        );
         assert!(contract.check(&normalized.semantic).is_ok());
         let mut without_normalization = contract.clone();
-        without_normalization.conditional_tool_defaults = false;
-        assert!(!without_normalization.supports(&contract));
+        without_normalization.set_native(Feature::ConditionalToolStrictness, false);
+        assert!(without_normalization.supports(&contract));
         assert!(contract.supports(&without_normalization));
         let mut settings = normalized.semantic.settings().clone();
         let ToolDefinition::Function(tool) = &mut settings.tools.as_mut().unwrap()[0] else {

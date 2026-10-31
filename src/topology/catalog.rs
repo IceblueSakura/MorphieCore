@@ -107,7 +107,6 @@ pub fn default_topology() -> Result<CompiledTopology, TopologyError> {
         if let Some(existing) = merged.iter().find(|p| p.id == public.id) {
             if existing.canonical_model != public.canonical_model
                 || existing.contract != public.contract
-                || existing.standard_context != public.standard_context
                 || existing.reported_facts != public.reported_facts
             {
                 return Err(TopologyError::SemanticUnsatisfiable);
@@ -205,17 +204,24 @@ pub fn default_topology() -> Result<CompiledTopology, TopologyError> {
 fn declared_topology_compiles() {
     let topology = default_topology().unwrap();
     let haiku = topology.model("claude-haiku-5-5").unwrap();
-    assert!(!haiku.contract.explicit_cache);
+    assert!(
+        !haiku
+            .contract
+            .native(crate::semantic::task::generation::Feature::ExplicitCache)
+    );
     assert!(
         topology
             .canonical_model(&haiku.canonical_model)
             .unwrap()
             .contract
-            .explicit_cache
+            .native(crate::semantic::task::generation::Feature::ExplicitCache)
     );
     for endpoint in topology.route_endpoints(&haiku.route) {
         assert_eq!(
-            endpoint.representation.semantics().explicit_cache,
+            endpoint
+                .representation
+                .dispositions()
+                .native(crate::semantic::task::generation::Feature::ExplicitCache),
             endpoint.id.as_str() == "opencode-go-haiku-messages"
         );
     }
@@ -250,19 +256,26 @@ fn declared_topology_compiles() {
             crate::protocol::anthropic::messages::Profile::AdaptiveTextTools,
             crate::protocol::anthropic::messages::Dialect::OpenCodeGo
         )
-        .semantics
-        .explicit_cache
+        .dispositions
+        .native(crate::semantic::task::generation::Feature::ExplicitCache)
     );
     // Reviewed native inputs and pi's Haiku profile do not open other codec features.
-    let semantics = &binding.endpoint().representation.semantics().clone();
-    assert!(semantics.strict_tools && semantics.ordered_instructions && semantics.tool_changes);
+    let semantics = &binding.endpoint().representation.dispositions().clone();
+    assert!(
+        semantics.native(crate::semantic::task::generation::Feature::StrictTools)
+            && semantics.native(crate::semantic::task::generation::Feature::OrderedInstructions)
+            && semantics.native(crate::semantic::task::generation::Feature::ToolChanges)
+    );
     let mut endpoint = binding.endpoint();
     endpoint
         .representation
         .messages_mut()
         .unwrap()
-        .semantics
-        .cached_context = true;
+        .dispositions
+        .set_native(
+            crate::semantic::task::generation::Feature::CachedContext,
+            true,
+        );
     assert_eq!(
         compile(
             vec![binding.provider()],
@@ -367,7 +380,14 @@ fn modelbest_vision_versions_use_upstream_ids_and_multimodal_chat_contracts() {
         assert_eq!(binding.canonical_model, id);
         assert_eq!(binding.protocols, &[GenerationProtocol::OpenAiChat]);
         let public = topology.model(id).unwrap();
-        assert!(public.contract.image_input && public.contract.video_input);
+        assert!(
+            public
+                .contract
+                .native(crate::semantic::task::generation::Feature::ImageInput)
+                && public
+                    .contract
+                    .native(crate::semantic::task::generation::Feature::VideoInput)
+        );
         let endpoint = binding.endpoint(GenerationProtocol::OpenAiChat).unwrap();
         assert_eq!(endpoint.provider.as_str(), "modelbest");
         assert_eq!(endpoint.upstream_model, id);

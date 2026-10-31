@@ -375,7 +375,7 @@ Transformations are candidate-private:
 
 #### Model-effective values
 
-Target capabilities enforce bounded ceilings via `ModelLimits` (maximum output tokens, allowed reasoning efforts). Preflight validation checks projected requests against model limits. Accepted revision (2026-10-30, implementation pending): an output ceiling above a known model maximum clamps to that maximum under a named rule, keeping an honest length terminal when reached; an unsupported effort level resolves to the nearest [supported level](#reasoning-level-calibration). Combinations without such a bounded resolution still reject.
+Target capabilities enforce bounded ceilings via `ModelLimits` (maximum output tokens, allowed reasoning efforts). Candidate projection clamps an output ceiling above a known model maximum under a named rule, keeping an honest length terminal when reached; an unsupported effort level resolves to the nearest [supported level](#reasoning-level-calibration). Final validation checks the projected request. Combinations without such a bounded resolution still reject.
 
 ### Request and reported meaning
 
@@ -401,17 +401,20 @@ Accepted on 2026-10-30; it replaces the earlier exact-first fallback and the fai
 
 **Ownership.** The request side has one owner: one feature vocabulary, with each target declaring a disposition per feature (native, equivalent, approximate, omit, delegate or reject), and one pure projection applying it per candidate during planning. This vocabulary replaces the separate requirement, feature-set, feature-enum, target-contract and published-rejection representations; encoders consume only projected copies, and source-level admission keeps only grammar checks and L5. The delivery side has one owner in [`ClientAdapter`](../src/adapter/downstream.rs): a (fact, client protocol) table drives one projection over the IR event stream; JSON and retained views reduce the projected events to a snapshot and render it, so JSON/SSE agreement holds by construction and encoders only render. Discovery and `/capabilities` read the same tables.
 
+The request implementation lives in [`lowering/request.rs`](../src/lowering/request.rs) and [`lowering/disposition.rs`](../src/lowering/disposition.rs). Source trust validation and visible-history transfer precede candidate feature admission; the final check sees projected semantic fields and envelope controls. Native grammar and replay-identity assertions remain codec responsibilities. Ordered Messages effort/tool rewrites consume the same table rather than a second carrier-policy object. Request-envelope session affinity remains outside semantic IR, with its target disposition resolved by this owner. The single delivery projection and complete discovery derivation remain scheduled work.
+
 **Evidence.** Receipts record only L3 approximations, L4 omissions and schema-completion estimates; L2 normalizations, derivations, defaults and request inferences produce none. Rule IDs live in the disposition tables rather than a separate projection-rule enum and scattered string literals. Migration order is owned by the [roadmap](roadmap.md#conversion-ladder-migration).
 
-Applications selected on 2026-10-30 (implementation pending unless stated):
+Applications selected on 2026-10-30: request strictness, effort, ceilings and Messages omission are implemented; the remaining delivery, intake and history migrations follow the [roadmap](roadmap.md#conversion-ladder-migration).
 
 | Area | Level and rule |
 |---|---|
 | Explicit `strict:true` without an equivalent carrier | L5. Conditional (omitted) strictness is always resolvable without a compatibility classifier: an already-closed schema on a target with an equivalent strict carrier stays strict, every other case resolves non-strict under the conditional-default loss (L3); a request-wide strict grammar overflow resolves all conditional definitions non-strict, and rejects only when explicit strict tools alone overflow |
-| Effort | Nearest supported level, ties upward, across Reasoning/Response scopes at the same level (L3); manual budgets on adaptive-only bindings convert to adaptive plus effort |
+| Effort | Nearest supported level, ties upward, across Reasoning/Response scopes at the same level (L3); manual budgets on adaptive-only bindings convert to adaptive plus effort. When an explicit effort already exists, preserve it rather than replacing it with a budget-derived level; omit the uncarriable numeric budget under a named loss |
 | Output ceilings | Clamp to a known model maximum (L3); targets without a ceiling carrier omit it (L4) |
 | `required_with_tools` history with a Standard Chat client | Deployers select `readable_reasoning` on such public models; otherwise a candidate with a thinking-off carrier disables thinking under a named loss (L3), and one without rejects at planning. Not delegated, because the next turn is known to fail upstream |
 | Uncarried reasoning in delivery or history | Omit the owner, keep visible content and tool links (L3); applies to opaque reasoning on Standard Chat and unsigned reasoning on Messages; never forged |
+| Messages reasoning publication | An undecided summary waits for its actual signature in the bounded schedule. An irreversibly uncarriable shape discards its payload immediately and retains only bounded lifecycle tracking; invisible owners do not block visible successors. Summary interruption stays an interruption and cannot supply item or response completion |
 | Unsealed or foreign client reasoning in history | Omit under visible-history transfer (L3); never forwarded |
 | `stop` without a target carrier | L5 for now; gateway-side truncation may later provide L2 |
 | Messages `stop_sequences` on a non-Messages target with an ambiguous natural/stop-sequence cause | `end_turn` under a named approximation (L3) |
@@ -433,7 +436,7 @@ Existing rule families remain valid ladder applications:
 | Terminal stops | Coarsen natural/stop-sequence causes to `stop` or `end_turn` under named rules |
 
 - `chat.omit-text-item-status.v1`: Plain-text incomplete message items omit individual item status when overall finish reason is `length`.
-(See [`ProjectionRule`](file:///home/sakura/development/MorphieCore/src/protocol/openai/lowering/projection.rs#L10) for the complete lowering inventory).
+(See [`Rule`](../src/lowering/disposition.rs) for shared rule definitions; the remaining delivery consumers live in [`openai/lowering/projection.rs`](../src/protocol/openai/lowering/projection.rs)).
 
 #### Semantic-equivalence compatibility
 
@@ -467,13 +470,13 @@ Accepted applications:
 
 - **Omitted Responses strictness (P5):** the [Responses reference](https://developers.openai.com/api/reference/resources/responses/methods/create) and [function-calling guide](https://developers.openai.com/api/docs/guides/function-calling#strict-mode) define attempted strict normalization with non-strict fallback; Chat omission is non-strict. The revised rule is implemented on the OpenAI Chat/Bailian and Messages paths as of 2026-10-30: an already-closed schema with an equivalent strict carrier stays strict; every other omitted-strict definition resolves non-strict under `openai.omit-conditional-tool-strictness.v1` (L3). No compatibility or normalization-feasibility classifier remains. An omitted parameter list is parameterless; required schema carriers use a closed empty object (L2), without changing source absence. Standard Responses retains its native omission. Explicit true never takes the omitted-default loss. The IR default names this conditional rule, not a promise to normalize supplied schemas.
 - **Reasoning presentation and continuity requests (P2):** `summary:"auto"` selects the most detailed available summarizer; resolving to the fixed native summarizer or no available summary is exact. Explicit `concise`/`detailed` take a named omission without a selectable carrier. Encrypted-reasoning `include` is exact when the target emits no reasoning items and takes a named continuity omission when reasoning has no opaque carrier.
-- **Carrier-less reports (P2):** served service classes and refusal categories without an OpenAI carrier are omitted on delivery copies, extending [explanatory terminal reports](#explanatory-terminal-reports). Anthropic standard capacity and OpenAI default processing remain distinct classes; no approximate tier is reported. Empty probability reports instead follow [semantic-equivalence compatibility](#semantic-equivalence-compatibility). Selected on 2026-10-30 (implementation pending): Messages delivery applies the same omission to served OpenAI processing classes and echoed execution hints (`metadata`, `background`, `prompt_cache_key`, `store`).
+- **Carrier-less reports (P2):** served service classes and refusal categories without an OpenAI carrier are omitted on delivery copies, extending [explanatory terminal reports](#explanatory-terminal-reports). Anthropic standard capacity and OpenAI default processing remain distinct classes; no approximate tier is reported. Empty probability reports instead follow [semantic-equivalence compatibility](#semantic-equivalence-compatibility). Messages delivery applies the same omission to served OpenAI processing classes and echoed execution hints (`metadata`, `background`, `prompt_cache_key`, `store`).
 - **Messages terminal derivation (P1):** see [Messages terminal projection](#messages-terminal-projection).
 - **Messages baseline:** revised on 2026-10-30 by the [version policy](#protocols): `2023-06-01` is admitted over the current body grammar and beta headers are ignored, while beta body semantics follow body rules. Agents still learn unsupported features through [discovery](#generation-text-model-discovery).
 
 The first presentation/continuity consumer (2026-10-29) projects Bailian Responses request copies before target validation. Auto resolves to the native default without a loss receipt; explicit granularity uses `responses.omit-reasoning-summary.v1`. Encrypted include uses `responses.omit-encrypted-reasoning-include.v1`, except that an admitted explicit thinking-off request has no new reasoning to encrypt and needs no loss receipt. These rules do not change activation, effort, budgets, context, read-history intent, history owners or source observations. Null/omitted visibility guards remain. This request-control policy is independent of S11 history qualification; other target families still need their selected consumers.
 
-The conditional-default consumers share one resolver for root definitions, namespace leaves where carried, and inline-added definitions. Projection mutates private settings/items only; supplied schemas and source observations are unchanged. Unknown vocabularies, references and constraints that do not have an already-closed equivalent strict carrier take the same named non-strict fallback rather than local compatibility classification. Native Responses keeps omitted parameters and strictness; Chat's existing omitted non-strict default also keeps optional spelling. Bailian final writers omit the unsupported strict flag under their native non-strict default. Consolidating these rules into the request disposition tables remains R1 work.
+The conditional-default consumers share one resolver for root definitions, namespace leaves where carried, and inline-added definitions. Projection mutates private settings/items only; supplied schemas and source observations are unchanged. Unknown vocabularies, references and constraints that do not have an already-closed equivalent strict carrier take the same named non-strict fallback rather than local compatibility classification. Native Responses keeps omitted parameters and strictness; Chat's existing omitted non-strict default also keeps optional spelling. Bailian final writers omit the unsupported strict flag under their native non-strict default. The request disposition owner selects these rules before final encoding.
 
 The Messages consumer resolves conditional defaults once, after selected tool-change carrier projection, using the binding's strict opt-in and native exact subset. String enum/const casing and unsupported reference carriers cannot provide an equivalent strict guarantee. Root and inline strict tools share one native grammar budget with JSON output. If tentative conditional strictness exceeds that budget, every conditional definition becomes non-strict; explicit strict definitions and the output schema remain unchanged, and final validation rejects if those alone overflow. Projection and final wire validation reuse the same subset/budget checker. Parameterless definitions receive the required empty-object input schema without a loss receipt; equivalent empty schemas may still use an available strict carrier.
 
@@ -497,7 +500,7 @@ The Bailian Responses consumer (2026-10-30) removes its predecessor-position che
 
 Generation Text returns complete downstream schemas: **Upstream facts → Justified inference → Simple estimates**.
 - `responses.infer-required-settings.v1`: Fills missing `tools`, `tool_choice`, and `parallel_tool_calls` from admitted request settings.
-- `responses.echo-request-metadata.v1`: Echoes original admitted request metadata only when upstream omits metadata entirely ([`ProjectionRule::EchoRequestMetadata`](file:///home/sakura/development/MorphieCore/src/protocol/openai/lowering/projection.rs#L18)).
+- `responses.echo-request-metadata.v1`: Echoes original admitted request metadata only when upstream omits metadata entirely ([`Rule::ECHO_REQUEST_METADATA`](../src/lowering/disposition.rs)); this exact inference produces no loss receipt.
 - `generation.complete-delivery-usage.v1`: Completes missing usage fields using text payload byte estimates (`ceil(bytes / 4)`).
 
 #### Reported text configuration
@@ -532,7 +535,7 @@ Opaque user attribution projects across protocols via [`protocol::attribution`](
 - Projects between OpenAI `safety_identifier`, Anthropic `metadata.user_id`, and Google `labels.safety_identifier`.
 - Explicit safety identifiers take precedence over legacy `user` fields.
 - Non-authoritative metadata: never utilized for authentication or cache identity.
-- Strict fail-closed validation: values violating target length or character constraints reject without truncation or hashing.
+- Source identity bounds remain strict; unsupported Google label values take named omission without fallback, truncation or hashing. Native OpenAI/Messages identity bounds remain validated before encoding.
 
 #### Selected request approximations
 
@@ -566,7 +569,7 @@ The IR decouples reasoning activation from effort level and scope:
 
 #### Reasoning level calibration
 
-Explicit hand-authored mappings define canonical model bindings. Under the [conversion ladder](#conversion-ladder), unsupported levels resolve to the nearest supported level (ties upward) and Reasoning/Response effort scopes convert at the same level. Fixed or ignored sampling controls (temperature, top-p, top-k) are omitted for models that do not support them via target-specific rules (`gemini.omit-sampling.v1`).
+Explicit hand-authored mappings define canonical model bindings. Under the [conversion ladder](#conversion-ladder), unsupported levels resolve to the nearest supported level (ties upward) and Reasoning/Response effort scopes convert at the same level. Fixed or ignored sampling controls (temperature, top-p, top-k) are omitted for models that do not support them through their feature disposition rows.
 
 ##### Thinking-budget quantization
 
@@ -584,7 +587,7 @@ This direction does not select an adjustment formula or change current validatio
 ##### Initial mapping plan
 
 Bindings declare model-specific qualitative level translation via [`ReasoningEffortMapping`](file:///home/sakura/development/MorphieCore/src/protocol/reasoning.rs#L358) and [`ReasoningRequestPolicy`](file:///home/sakura/development/MorphieCore/src/protocol/reasoning.rs#L155):
-- Conversions are strictly directional. Selected on 2026-10-30 (implementation pending): a level missing from a binding's table resolves to the nearest supported level, ties upward, under the binding's named effort rule. Bindings that expose no effort control omit it under a named rule (L4); explicit history-read intent keeps its own guard.
+- Conversions are strictly directional. A level missing from a binding's table resolves to the nearest supported level, ties upward, under the binding's named effort rule. Bindings that expose no effort control omit it under a named rule (L4); explicit history-read intent keeps its own guard.
 - Upstream thinking budgets translate to qualitative effort via [`ReasoningConversion::BudgetToEffort`](file:///home/sakura/development/MorphieCore/src/protocol/reasoning.rs#L137), and qualitative effort expands to discrete token budgets via [`ReasoningConversion::EffortToBudget`](file:///home/sakura/development/MorphieCore/src/protocol/reasoning.rs#L142).
 
 ##### Implementation owners
@@ -712,6 +715,8 @@ Selected architectural direction for downstream session persistence:
 - **Output configuration:** JSON schema output maps to `output_config.format`.
 - **Cache markers:** Preserves owner-local 5m/1h breakpoints.
 
+Selected on 2026-10-31: the historical thinking-prefix requirement for manual thinking belongs to an actual native Messages candidate after projection, not public Client admission. A cross-protocol response may legitimately omit an uncarriable reasoning owner; its tool-result continuation must remain decodable. Common field, turn-order, tool-reference, signature and origin validation stays strict. Candidates that still use native manual thinking retain the prefix check before dispatch.
+
 ### Missing output ceilings
 
 [`TargetContract.default_output_tokens`](file:///home/sakura/development/MorphieCore/src/protocol/anthropic/messages/target.rs#L70) defines optional ceiling insertion:
@@ -720,9 +725,7 @@ Selected architectural direction for downstream session persistence:
 
 ### Owner-local cache admission
 
-Explicit cache breakpoints are admitted when all candidates on a route support native Messages caching (Go/Haiku binding). Mixed routes remain cache-closed.
-
-Accepted revision (2026-10-28, P2; implementation pending): owner-local breakpoints are admitted on every route. Native Messages candidates preserve them; other candidates omit them under a named rule, so no candidate is skipped and route membership is unchanged.
+Owner-local breakpoints are admitted on every route. Candidates with native carriers preserve the supported controls; other candidates omit them under named rules at each owner, so no candidate is skipped and route membership is unchanged. Request-wide, tool-definition and content-part cache controls share the request disposition owner.
 
 ### Caller-selected automatic cache admission
 
@@ -730,7 +733,7 @@ Request-wide automatic caching is enabled on native Messages targets with verifi
 
 ### Response rules
 
-- Messages delivery requires valid signatures on thinking blocks; unsigned reasoning currently rejects. Selected on 2026-10-30 (implementation pending): unsigned or multi-summary reasoning without a signed carrier is omitted under a named loss; signatures are never synthesized and signed reasoning keeps its exact carrier.
+- Messages delivery requires valid signatures on carried thinking blocks. Unsigned or multi-summary reasoning without a signed carrier is omitted under `messages.omit-uncarried-reasoning.v1`; malformed signatures still reject. Signatures are never synthesized and signed reasoning keeps its exact carrier.
 - A zero-argument call whose arguments are an empty string delivers `{}` input (L2); other non-object tool input remains rejected.
 - Block start order preserves source item ordering.
 - Streaming argument fragments are buffered during whitespace prefixes to maintain valid JSON grammar for accumulators.
@@ -880,6 +883,7 @@ Authoritative log of accepted architectural decisions and their systemic consequ
 |---|---|---|
 | Standard request boundary | 2026-10-26 | Client intake enforces official protocol grammar; Provider dialects isolated to egress |
 | Conversion ladder | 2026-10-30 | Same-name → same-semantic → partial lossy → omit → reject only when omission would misrepresent the response; unknown target facts delegate to upstream validation; one request-side and one delivery-side disposition owner |
+| Candidate request dispositions | 2026-10-31 | One `Feature` vocabulary and target disposition owner replace separate admission/target feature gates; trust-qualified transfer precedes projected-field admission, and native wire assertions keep grammar and replay identity |
 | Client semantic boundary | 2026-10-27 | Unknown extension fields discarded; revised 2026-10-30: known fields enter the conversion ladder instead of fail-closed rejection |
 | Three-protocol fidelity | 2026-10-27 | Semantic fidelity across Chat, Responses, and Messages with stream normalization |
 | Text item status omission | 2026-10-27 | Plain text incomplete items omit item status when overall finish is length |
@@ -900,6 +904,7 @@ Authoritative log of accepted architectural decisions and their systemic consequ
 | User attribution mapping | 2026-10-19 | Unifies `safety_identifier`, `metadata.user_id`, and `labels.safety_identifier` |
 | Phase transfer | 2026-10-18 | Responses phase labels omitted on Chat/Messages delivery copies |
 | Preset thinking quantization | 2026-10-20 | 6-level discrete token budget quantization with upward tie-breaking |
+| Explicit effort precedence | 2026-10-31 | Preserve explicit effort over a conflicting numeric budget; omit an uncarriable budget with its named receipt, and quantize only when effort is absent |
 | Thinking budget ceiling guard | 2026-10-20 | P3b rejects requests where thinking budget exceeds client output ceiling |
 | Bounded token-budget adaptation | 2026-10-28 | Allows target-qualified review of gateway-derived defaults/presets to preserve functionality; concrete adjustment rules remain unselected |
 | Messages missing ceiling default | 2026-10-20 | Go/Haiku injects `32000` default output tokens when client ceiling is omitted |
@@ -912,6 +917,7 @@ Authoritative log of accepted architectural decisions and their systemic consequ
 |---|---|---|
 | Append-only history projection | 2026-10-20 | Earlier conversation turns project immutably as new turns are appended |
 | Scoped opaque replay | 2026-10-20 | Envelopes opaque tokens (`mc1.`); strips incompatible foreign reasoning on transfer |
+| Manual-thinking history boundary | 2026-10-31 | Public Messages intake retains common trust/order checks; actual native manual-thinking candidates enforce the historical thinking prefix after projection |
 | Prefix-cache ownership | 2026-10-24 | `Part.cache` owns request-lifetime vs explicit TTL breakpoints |
 | Compacted context | 2026-10-20 | Opaque compaction items preserved in history; reject if target lacks carrier |
 | In-memory stateful history | 2026-10-20 | Responses managed continuation via process-local TTL history |

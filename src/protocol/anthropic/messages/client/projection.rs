@@ -141,41 +141,90 @@ pub(super) fn project_reasoning(reasoning: &ReasoningItem) -> Result<&ReasoningI
         .replay
         .as_ref()
         .filter(|r| !r.as_str().is_empty())
-        .ok_or(CodecError::Unsupported(CarrierReason::Replay))?;
-    if reasoning.parts.is_empty()
-        || !redacted(signature.as_str())
-            && matches!(reasoning.parts.as_slice(), [(_, ReasoningContent::Summary(t))] if !t.as_str().is_empty())
-    {
+        .map(|r| redacted(r.as_str()));
+    let summary = matches!(
+        reasoning.parts.as_slice(),
+        [(_, ReasoningContent::Summary(_))]
+    );
+    let nonempty = matches!(reasoning.parts.as_slice(), [(_, ReasoningContent::Summary(t))] if !t.as_str().is_empty());
+    if reasoning_carried(signature, reasoning.parts.len(), summary, nonempty) {
         Ok(reasoning)
     } else {
         Err(CodecError::Unsupported(CarrierReason::Replay))
     }
 }
 
-/// Reported null metadata is equivalent to absence on the Messages target.
-pub(crate) fn validate_execution(
-    execution: &crate::semantic::context::ExecutionHints,
+/// One carrier predicate for a completed owner in JSON and the bounded event queue.
+pub(super) fn reasoning_carried(
+    signature_redacted: Option<bool>,
+    parts: usize,
+    summary: bool,
+    nonempty: bool,
+) -> bool {
+    signature_redacted.is_some()
+        && (parts == 0 || parts == 1 && summary && nonempty && signature_redacted == Some(false))
+}
+pub(super) fn reasoning_omission(
+    item: ItemId,
+    boundary: crate::protocol::conversion::generation::ConversionBoundary,
+) -> crate::protocol::conversion::generation::Effect {
+    crate::lowering::disposition::OMIT_MESSAGES_REASONING
+        .effect(boundary)
+        .at(crate::protocol::conversion::generation::Owner::item(item))
+}
+
+pub(crate) fn project_metadata(
+    metadata: &mut crate::protocol::ResponseMetadata,
 ) -> Result<(), CodecError> {
-    let allowed = crate::semantic::context::ExecutionHints {
-        metadata: if matches!(execution.metadata, Presence::Null) {
-            Presence::Null
-        } else {
-            Presence::Absent
-        },
-        ..Default::default()
-    };
-    if execution != &allowed {
-        return Err(CodecError::Unsupported(CarrierReason::Unavailable));
+    metadata.context.validate()?;
+    if metadata
+        .context
+        .reports
+        .iter()
+        .any(|r| r.settings.as_ref().is_some_and(|s| !s.safety.is_empty()))
+    {
+        return Err(CodecError::Unsupported(CarrierReason::Safety));
     }
+    for report in metadata.context.reports.iter_mut() {
+        if report
+            .service_class
+            .value()
+            .is_some_and(|class| wire::service::class_wire(*class).is_err())
+        {
+            report.service_class = Presence::Absent;
+        }
+        report.settings = None;
+    }
+    crate::protocol::reports::single_view(&mut metadata.context.reports)?;
+    metadata.context.execution = Default::default();
+    metadata.context.instruction_messages = None;
+    metadata.instruction_fidelity = Default::default();
+    metadata.context.system_fingerprint = Presence::Absent;
     Ok(())
 }
 
 /// Retained content, metadata and accounting reflect the actual Messages carrier.
-pub(crate) fn project_snapshot(response: &mut DecodedResponse) -> Result<(), CodecError> {
-    for (_, item) in response.semantic.items() {
-        if let Item::Reasoning(reasoning) = item {
-            project_reasoning(reasoning)?;
-        }
+pub(crate) fn project_snapshot(
+    response: &mut DecodedResponse,
+) -> Result<Vec<crate::protocol::conversion::generation::Effect>, CodecError> {
+    let mut losses = vec![];
+    let items = response
+        .semantic
+        .items()
+        .iter()
+        .filter_map(|(id, item)| {
+            if let Item::Reasoning(reasoning) = item
+                && project_reasoning(reasoning).is_err()
+            {
+                losses.push(reasoning_omission(*id, ("response.project").into()));
+                None
+            } else {
+                Some((*id, item.clone()))
+            }
+        })
+        .collect();
+    if !losses.is_empty() {
+        response.semantic = response.semantic.clone().with_items(items)?;
     }
     response.fidelity.retain_owners(response.semantic.items());
     response.metadata.context.validate()?;
@@ -189,18 +238,7 @@ pub(crate) fn project_snapshot(response: &mut DecodedResponse) -> Result<(), Cod
     {
         return Err(CodecError::Unsupported(CarrierReason::Safety));
     }
-    crate::protocol::reports::single_view(&mut response.metadata.context.reports)?;
-    if let Some(class) = response.metadata.context.service_class().value() {
-        wire::service::class_wire(*class)?;
-    }
-    validate_execution(&response.metadata.context.execution)?;
-    response.metadata.context.execution.metadata = Presence::Absent;
-    for report in response.metadata.context.reports.iter_mut() {
-        report.settings = None;
-    }
-    response.metadata.context.instruction_messages = None;
-    response.metadata.instruction_fidelity = Default::default();
-    response.metadata.context.system_fingerprint = Presence::Absent;
+    project_metadata(&mut response.metadata)?;
     let selected = match wire::accounting::project_reports(response.semantic.usage_reports()) {
         Ok(selected) => selected,
         Err(CodecError::Unsupported(_))
@@ -228,12 +266,42 @@ pub(crate) fn project_snapshot(response: &mut DecodedResponse) -> Result<(), Cod
     details.validate(response.semantic.outcome())?;
     details.explanation = Presence::Absent;
     response.semantic = response.semantic.clone().with_details(details)?;
-    Ok(())
+    Ok(losses)
 }
 pub(crate) fn metadata_losses(
     metadata: &crate::protocol::ResponseMetadata,
 ) -> Vec<crate::protocol::conversion::generation::Effect> {
     let mut losses = vec![];
+    let mut execution = metadata.context.execution.clone();
+    if execution.metadata == Presence::Null {
+        execution.metadata = Presence::Absent;
+    }
+    if execution != Default::default() {
+        losses.push(crate::protocol::conversion::generation::Effect::Field {
+            rule: crate::protocol::conversion::generation::RuleId::new(
+                "messages.omit-reported-execution-hints.v1",
+            ),
+            field: crate::protocol::conversion::generation::Field::Representation,
+            boundary: ("response.project").into(),
+            change: ("omit").into(),
+            owner: crate::protocol::conversion::generation::Owner::Root,
+        });
+    }
+    if metadata.context.reports.iter().any(|r| {
+        r.service_class
+            .value()
+            .is_some_and(|class| wire::service::class_wire(*class).is_err())
+    }) {
+        losses.push(crate::protocol::conversion::generation::Effect::Field {
+            rule: crate::protocol::conversion::generation::RuleId::new(
+                "messages.omit-reported-service-class.v1",
+            ),
+            field: crate::protocol::conversion::generation::Field::ServiceClass,
+            boundary: ("response.project").into(),
+            change: ("omit").into(),
+            owner: crate::protocol::conversion::generation::Owner::Root,
+        });
+    }
     if metadata
         .context
         .reports

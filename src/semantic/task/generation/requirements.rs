@@ -1,247 +1,315 @@
 use crate::semantic::task::generation::{
-    ContentPart, EffortScope, FunctionStrictness, GenerationRequest, GenerationResponse, Item,
-    OutputConstraint, PrefixCacheBoundary, ReasoningPresence, ResourceKind, ResourceLocation,
-    ResourceUse, StrictDefault, ToolDefinition,
+    ContentPart, EffortScope, Feature, FunctionStrictness, GenerationRequest, GenerationResponse,
+    Item, OutputConstraint, PrefixCacheBoundary, ResourceKind, ResourceLocation, ResourceUse,
+    StrictDefault, ToolDefinition,
 };
 use crate::semantic::value::Presence;
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct GenerationRequirements {
-    pub instruction_count: usize,
-    /// An instruction item follows conversation content, as a mid-conversation system message.
-    pub ordered_instructions: bool,
-    pub message_count: usize,
-    pub text_part_count: usize,
-    pub resource_count: usize,
-    pub image_inputs: usize,
-    pub audio_inputs: usize,
-    pub video_inputs: usize,
-    pub audio_output: bool,
-    pub audio_history: bool,
-    pub file_inputs: usize,
-    pub document_context: bool,
-    pub tool_count: usize,
-    pub custom_tools: bool,
-    pub text_metadata: bool,
-    pub top_p: bool,
-    pub top_k: bool,
-    pub stop_sequences: bool,
-    pub presence_penalty: bool,
-    pub frequency_penalty: bool,
-    pub seed: bool,
-    pub verbosity: bool,
-    /// Requested output probabilities; reported history slots belong to text_metadata.
-    pub logprobs: bool,
-    pub truncation: bool,
-    pub tool_choice: Option<crate::semantic::task::generation::ToolChoice>,
-    pub parallel_tool_calls: Option<bool>,
-    pub strict_function_tools: bool,
-    pub tool_examples: bool,
-    pub tool_changes: bool,
-    pub conditional_tool_defaults: bool,
-    /// Owner-supplied TTL support. Request-lifetime boundaries use codec admission.
-    pub explicit_cache: bool,
-    pub cached_context: bool,
-    pub safety_settings: bool,
-    pub automatic_prefix_cache: bool,
-    pub tool_history: bool,
-    pub provider_observations: bool,
-    pub structured_arguments: bool,
-    pub structured_tool_results: bool,
-    pub tool_execution_reports: bool,
-    pub tool_result_errors: bool,
-    pub tool_result_media: usize,
-    pub structured_output: bool,
-    pub reasoning: bool,
-    pub response_effort: bool,
-    pub reasoning_items: usize,
-    pub compaction: bool,
-    pub max_output_tokens: Option<u64>,
-    pub temperature: bool,
+use std::collections::BTreeMap;
+
+fn mark(facts: &mut BTreeMap<Feature, usize>, feature: Feature, present: bool) {
+    if present {
+        facts.entry(feature).or_insert(1);
+    }
 }
-impl GenerationRequirements {
-    fn input(&mut self, resource: &ResourceUse, r: &GenerationRequest) {
-        let resource = resource.media(r.resources()).expect("validated resource");
+fn count(facts: &mut BTreeMap<Feature, usize>, feature: Feature, amount: usize) {
+    if amount != 0 {
+        *facts.entry(feature).or_default() += amount;
+    }
+}
+fn cache(facts: &mut BTreeMap<Feature, usize>, boundary: PrefixCacheBoundary) {
+    mark(
+        facts,
+        match boundary {
+            PrefixCacheBoundary::RequestLifetime => Feature::RequestLifetimeCache,
+            PrefixCacheBoundary::Ttl(_) => Feature::ExplicitCache,
+        },
+        true,
+    );
+}
+fn input(facts: &mut BTreeMap<Feature, usize>, resource: &ResourceUse, r: &GenerationRequest) {
+    let resource = resource.media(r.resources()).expect("validated resource");
+    count(
+        facts,
         match resource.kind() {
-            ResourceKind::Image => self.image_inputs += 1,
-            ResourceKind::Audio => self.audio_inputs += 1,
-            ResourceKind::Video => self.video_inputs += 1,
-            ResourceKind::File => {
-                self.file_inputs += 1;
-                if let crate::semantic::task::generation::ResourceDescription::File(file) =
-                    resource.description
-                {
-                    self.document_context |= !file.context.is_absent();
-                }
-                // A file the model must see or hear also needs that modality, e.g. an
-                // audio data URL sent as a Responses `input_file`. Remote MIME is unknown.
-                if let ResourceLocation::Inline { media_type, .. } = resource.location {
-                    let family = media_type.as_str().split('/').next().unwrap_or_default();
-                    match family.to_ascii_lowercase().as_str() {
-                        "image" => self.image_inputs += 1,
-                        "audio" => self.audio_inputs += 1,
-                        "video" => self.video_inputs += 1,
-                        _ => {}
-                    }
-                }
+            ResourceKind::Image => Feature::ImageInput,
+            ResourceKind::Audio => Feature::AudioInput,
+            ResourceKind::Video => Feature::VideoInput,
+            ResourceKind::File => Feature::FileInput,
+        },
+        1,
+    );
+    if resource.kind() == ResourceKind::File {
+        if let crate::semantic::task::generation::ResourceDescription::File(file) =
+            resource.description
+        {
+            mark(facts, Feature::DocumentContext, !file.context.is_absent());
+        }
+        if let ResourceLocation::Inline { media_type, .. } = resource.location {
+            let kind = match media_type
+                .as_str()
+                .split('/')
+                .next()
+                .unwrap_or_default()
+                .to_ascii_lowercase()
+                .as_str()
+            {
+                "image" => Some(Feature::ImageInput),
+                "audio" => Some(Feature::AudioInput),
+                "video" => Some(Feature::VideoInput),
+                _ => None,
+            };
+            if let Some(kind) = kind {
+                count(facts, kind, 1);
             }
         }
     }
-    pub fn derive(r: &GenerationRequest) -> Self {
-        let leaves = || r.tools().iter().flat_map(ToolDefinition::leaves);
-        let functions = || {
-            leaves().filter_map(|t| match t {
-                ToolDefinition::Function(t) => Some(t),
-                _ => None,
-            })
-        };
-        let effort_scope = r.settings().effort.value().map(|e| e.scope);
-        let mut x = Self {
-            cached_context: r.cached_context().is_some(),
-            safety_settings: !r.settings().safety.is_empty(),
-            top_k: r.controls().top_k.is_some(),
-            stop_sequences: !r.controls().stop_sequences.is_empty(),
-            presence_penalty: r.controls().presence_penalty().is_some(),
-            frequency_penalty: r.controls().frequency_penalty().is_some(),
-            seed: r.controls().seed.is_some(),
-            automatic_prefix_cache: r.settings().automatic_prefix_cache.is_some(),
-            audio_output: r.settings().audio.value().is_some(),
-            tool_choice: r.tool_choice().cloned(),
-            parallel_tool_calls: r.parallel_tool_calls(),
-            instruction_count: usize::from(r.instructions().value().is_some()),
-            custom_tools: leaves().any(|t| matches!(t, ToolDefinition::Custom(_))),
-            top_p: r.controls().top_p().is_some(),
-            verbosity: !r.text_options().verbosity.is_absent(),
-            logprobs: r.controls().logprobs == Presence::Value(true)
-                || r.controls().top_logprobs.is_some(),
-            truncation: r.controls().truncation.is_some(),
-            strict_function_tools: functions()
-                .any(|t| matches!(t.strict, FunctionStrictness::Explicit(true))),
-            tool_examples: functions().any(|t| t.input_examples.is_some()),
-            conditional_tool_defaults: functions()
-                .any(|t| t.strict == FunctionStrictness::Omitted(StrictDefault::Conditional)),
-            explicit_cache: functions().any(|t| t.cache.is_some())
-                || r.instructions().value().is_some_and(|root| {
-                    root.parts
-                        .iter()
-                        .any(|p| matches!(p.cache, Some(PrefixCacheBoundary::Ttl(_))))
-                }),
-            max_output_tokens: r.controls().max_output_tokens,
-            temperature: r.controls().temperature().is_some(),
-            tool_count: r.tools().iter().map(|t| t.leaves().len()).sum(),
-            structured_output: !matches!(r.output(), OutputConstraint::Text),
-            reasoning: r.reasoning().presence() == ReasoningPresence::Present
-                || r.reasoning().encrypted_output()
-                || effort_scope == Some(EffortScope::Reasoning),
-            response_effort: effort_scope == Some(EffortScope::Response),
-            ..Self::default()
-        };
-        let mut conversation = false;
-        for (_, i) in r.items() {
-            x.explicit_cache |= i
-                .cache_boundaries()
-                .any(|c| matches!(c, PrefixCacheBoundary::Ttl(_)));
-            x.ordered_instructions |= conversation && matches!(i, Item::Instruction(_));
-            conversation |= !matches!(i, Item::Instruction(_));
-            match i {
-                Item::Instruction(_) => {
-                    x.instruction_count += 1;
+}
+impl GenerationRequest {
+    /// Requested facts in the shared vocabulary, including owner multiplicity.
+    /// Their target disposition is deliberately not a semantic-IR decision.
+    pub fn features(&self) -> BTreeMap<Feature, usize> {
+        use Feature::*;
+        let r = self;
+        let mut facts = BTreeMap::new();
+        for (feature, present) in [
+            (CachedContext, r.cached_context().is_some()),
+            (Safety, !r.settings().safety.is_empty()),
+            (Temperature, r.controls().temperature().is_some()),
+            (TopP, r.controls().top_p().is_some()),
+            (TopK, r.controls().top_k.is_some()),
+            (StopSequences, !r.controls().stop_sequences.is_empty()),
+            (PresencePenalty, r.controls().presence_penalty().is_some()),
+            (FrequencyPenalty, r.controls().frequency_penalty().is_some()),
+            (Seed, r.controls().seed.is_some()),
+            (MaxOutputTokens, r.controls().max_output_tokens.is_some()),
+            (
+                AutomaticPrefixCache,
+                r.settings().automatic_prefix_cache.is_some(),
+            ),
+            (AudioOutput, r.settings().audio.value().is_some()),
+            (ToolChoice, r.tool_choice().is_some()),
+            (ParallelTools, r.parallel_tool_calls() == Some(true)),
+            (SerialTools, r.parallel_tool_calls() == Some(false)),
+            (Verbosity, !r.text_options().verbosity.is_none()),
+            (
+                Logprobs,
+                r.controls().logprobs == Some(true) || r.controls().top_logprobs.is_some(),
+            ),
+            (Truncation, r.controls().truncation.is_some()),
+            (
+                StructuredOutput,
+                !matches!(r.output(), OutputConstraint::Text),
+            ),
+            (
+                SchemaName,
+                matches!(
+                    r.output(),
+                    OutputConstraint::JsonSchema { name: Some(_), .. }
+                ),
+            ),
+            (ReasoningActivation, !r.reasoning().activation.is_absent()),
+            (ReasoningContext, !r.reasoning().context.is_absent()),
+            (
+                ReasoningHistoryRead,
+                !r.reasoning().read_history.is_absent(),
+            ),
+            (ReasoningMode, !r.reasoning().mode.is_absent()),
+            (ReasoningBudget, r.reasoning().budget_tokens.is_some()),
+            (ReplayMismatch, r.reasoning().replay_mismatch.is_some()),
+            (
+                ReasoningDisplay,
+                !r.reasoning().presentation.visibility.is_absent(),
+            ),
+            (
+                ReasoningSummary,
+                !r.reasoning().presentation.summary.is_absent(),
+            ),
+            (EncryptedReasoning, r.reasoning().encrypted_output()),
+            (Effort, !r.settings().effort.is_none()),
+            (
+                ResponseEffort,
+                r.settings()
+                    .effort
+                    .as_ref()
+                    .is_some_and(|e| e.scope == EffortScope::Response),
+            ),
+            (Prediction, r.settings().prediction.is_some()),
+        ] {
+            mark(&mut facts, feature, present);
+        }
+        if let Some(instructions) = r.instructions().value() {
+            count(&mut facts, Instructions, 1);
+            for part in &instructions.parts {
+                if let Some(boundary) = part.cache {
+                    cache(&mut facts, boundary);
                 }
-                Item::Message(m) => {
-                    // An empty assistant message only groups calls; it adds no content.
-                    x.message_count += usize::from(!m.parts.is_empty());
-                    for p in &m.parts {
-                        match &p.content {
-                            ContentPart::Text(t) => {
-                                x.text_part_count += 1;
-                                x.text_metadata |= !t.annotations().is_empty()
-                                    || !t.logprobs().is_absent()
-                                        && !matches!(t.logprobs(), Presence::Value(probs) if probs.is_empty());
+            }
+        }
+        for tool in r.tools().iter().flat_map(ToolDefinition::leaves) {
+            count(&mut facts, Tools, 1);
+            mark(
+                &mut facts,
+                CustomTools,
+                matches!(tool, ToolDefinition::Custom(_)),
+            );
+            if let ToolDefinition::Function(tool) = tool {
+                mark(
+                    &mut facts,
+                    StrictTools,
+                    tool.strict == FunctionStrictness::Explicit(true),
+                );
+                mark(
+                    &mut facts,
+                    ConditionalToolStrictness,
+                    tool.strict == FunctionStrictness::Omitted(StrictDefault::Conditional),
+                );
+                mark(&mut facts, ToolExamples, tool.input_examples.is_some());
+                mark(&mut facts, EagerToolInput, tool.eager_input.is_some());
+                mark(&mut facts, ExplicitCache, tool.cache.is_some());
+            }
+        }
+        mark(
+            &mut facts,
+            Tools,
+            r.tool_choice().is_some() || r.parallel_tool_calls().is_some(),
+        );
+        let mut conversation = false;
+        for (_, item) in r.items() {
+            for boundary in item.cache_boundaries() {
+                cache(&mut facts, boundary);
+            }
+            mark(
+                &mut facts,
+                OrderedInstructions,
+                conversation && matches!(item, Item::Instruction(_)),
+            );
+            conversation |= !matches!(item, Item::Instruction(_));
+            match item {
+                Item::Instruction(_) => count(&mut facts, Instructions, 1),
+                Item::Message(message) => {
+                    count(
+                        &mut facts,
+                        MessageCount,
+                        usize::from(!message.parts.is_empty()),
+                    );
+                    mark(&mut facts, MessagePhase, message.phase.is_some());
+                    for part in &message.parts {
+                        match &part.content {
+                            ContentPart::Text(text) => {
+                                count(&mut facts, TextPartCount, 1);
+                                mark(
+                                    &mut facts,
+                                    TextMetadata,
+                                    !text.annotations().is_empty()
+                                        || !text.logprobs().is_absent()
+                                            && !matches!(text.logprobs(), Presence::Value(p) if p.is_empty()),
+                                );
                             }
-                            ContentPart::Refusal(t) => {
-                                x.text_metadata |= !t.logprobs().is_absent()
-                                    && !matches!(t.logprobs(), Presence::Value(probs) if probs.is_empty());
-                            }
+                            ContentPart::Refusal(text) => mark(
+                                &mut facts,
+                                TextMetadata,
+                                !text.logprobs().is_absent()
+                                    && !matches!(text.logprobs(), Presence::Value(p) if p.is_empty()),
+                            ),
                             ContentPart::Audio(_) | ContentPart::AudioReference(_) => {
-                                x.audio_history = true
+                                mark(&mut facts, AudioHistory, true)
                             }
                             ContentPart::Resource(resource) => {
-                                x.resource_count += 1;
-                                if m.role == crate::semantic::task::generation::MessageRole::User {
-                                    x.input(resource, r);
+                                count(&mut facts, ResourceCount, 1);
+                                if message.role
+                                    == crate::semantic::task::generation::MessageRole::User
+                                {
+                                    input(&mut facts, resource, r);
                                 }
                             }
                         }
                     }
                 }
                 Item::ToolCall(call) => {
-                    x.tool_history = true;
-                    x.structured_arguments |= !matches!(
-                        call.arguments,
-                        crate::semantic::task::generation::ToolArguments::Raw(_)
+                    mark(&mut facts, Tools, true);
+                    mark(
+                        &mut facts,
+                        StructuredArguments,
+                        !matches!(
+                            call.arguments,
+                            crate::semantic::task::generation::ToolArguments::Raw(_)
+                        ),
                     );
                 }
                 Item::ToolResult(result) | Item::CustomResult(result) => {
-                    x.tool_history = true;
-                    x.custom_tools |= matches!(i, Item::CustomResult(_));
-                    x.tool_execution_reports |= result.execution.is_some();
-                    x.tool_result_errors |= result.is_error.is_some();
+                    mark(&mut facts, Tools, true);
+                    mark(
+                        &mut facts,
+                        CustomTools,
+                        matches!(item, Item::CustomResult(_)),
+                    );
+                    mark(&mut facts, ToolExecutionReport, result.execution.is_some());
+                    mark(&mut facts, ToolResultError, result.is_error.is_some());
                     match &result.output {
                         crate::semantic::task::generation::ToolOutput::Structured(_) => {
-                            x.structured_tool_results = true
+                            mark(&mut facts, StructuredToolResult, true)
                         }
                         crate::semantic::task::generation::ToolOutput::Parts(parts) => {
                             for part in parts {
-                                let crate::semantic::task::generation::InputPart::Resource(
+                                if let crate::semantic::task::generation::InputPart::Resource(
                                     resource,
                                 ) = &part.content
-                                else {
-                                    continue;
-                                };
-                                x.tool_result_media += 1;
-                                x.resource_count += 1;
-                                // Tool media also needs the model's input modality.
-                                x.input(resource, r);
+                                {
+                                    count(&mut facts, ToolResultMedia, 1);
+                                    count(&mut facts, ResourceCount, 1);
+                                    input(&mut facts, resource, r);
+                                }
                             }
                         }
                         _ => {}
                     }
                 }
-                Item::Program(_) | Item::ProgramOutput(_) => x.tool_history = true,
+                Item::Program(_) | Item::ProgramOutput(_) => mark(&mut facts, Tools, true),
                 Item::CustomCall(_) => {
-                    x.tool_history = true;
-                    x.custom_tools = true;
+                    mark(&mut facts, Tools, true);
+                    mark(&mut facts, CustomTools, true);
                 }
                 Item::Reasoning(_) => {
-                    x.reasoning_items += 1;
-                    x.reasoning = true;
+                    mark(&mut facts, Reasoning, true);
+                    count(&mut facts, ReasoningHistory, 1);
                 }
                 Item::ConfigurationUpdate(update) => {
-                    x.reasoning |= update.activation.is_some()
-                        || update.effort.is_none()
-                        || update.effort.is_some_and(|e| {
-                            e.scope == crate::semantic::task::generation::EffortScope::Reasoning
-                        });
-                    x.response_effort |= update.effort.is_some_and(|e| {
-                        e.scope == crate::semantic::task::generation::EffortScope::Response
-                    });
+                    mark(&mut facts, ReasoningActivation, update.activation.is_some());
+                    mark(&mut facts, MessageEffort, update.effort.is_some());
+                    mark(&mut facts, Effort, update.effort.is_some());
+                    mark(
+                        &mut facts,
+                        ResponseEffort,
+                        update
+                            .effort
+                            .is_some_and(|e| e.scope == EffortScope::Response),
+                    );
                 }
-                Item::Compaction(_) => x.compaction = true,
-                Item::ProviderTool(_) => x.provider_observations = true,
+                Item::Compaction(_) => mark(&mut facts, Compaction, true),
+                Item::ProviderTool(_) => mark(&mut facts, ProviderObservation, true),
                 Item::ToolChange(change) => {
-                    x.tool_changes = true;
-                    if let crate::semantic::task::generation::ToolChangeAction::AddDefinition(t) =
-                        &change.action
+                    mark(&mut facts, ToolChanges, true);
+                    if let crate::semantic::task::generation::ToolChangeAction::AddDefinition(
+                        tool,
+                    ) = &change.action
                     {
-                        x.strict_function_tools |=
-                            matches!(t.strict, FunctionStrictness::Explicit(true));
-                        x.tool_examples |= t.input_examples.is_some();
-                        x.conditional_tool_defaults |=
-                            t.strict == FunctionStrictness::Omitted(StrictDefault::Conditional);
+                        mark(
+                            &mut facts,
+                            StrictTools,
+                            tool.strict == FunctionStrictness::Explicit(true),
+                        );
+                        mark(&mut facts, ToolExamples, tool.input_examples.is_some());
+                        mark(&mut facts, EagerToolInput, tool.eager_input.is_some());
+                        mark(
+                            &mut facts,
+                            ConditionalToolStrictness,
+                            tool.strict == FunctionStrictness::Omitted(StrictDefault::Conditional),
+                        );
                     }
                 }
             }
         }
-        x
+        facts
     }
 }
 

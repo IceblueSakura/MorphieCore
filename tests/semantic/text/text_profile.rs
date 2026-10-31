@@ -166,7 +166,7 @@ fn response_format_shells_map_to_one_owner_with_independent_shapes() {
                 Presence::Absent
             },
             format: format.unwrap_or(Presence::Absent),
-            verbosity: Presence::Absent,
+            verbosity: None,
         };
         let mut source = json!({"messages":[{"role":"user","content":"hello"}]});
         if let Some(value) = &chat_format {
@@ -183,11 +183,16 @@ fn response_format_shells_map_to_one_owner_with_independent_shapes() {
         assert_eq!(r.semantic.text_options(), &options);
         assert_eq!(request_wire(&r).get("text"), responses_text.as_ref());
         assert_eq!(
-            GenerationRequirements::derive(&d.semantic).structured_output,
+            (d.semantic)
+                .features()
+                .contains_key(&morphiecore::semantic::task::generation::Feature::StructuredOutput),
             structured
         );
         let mut limited = contract();
-        limited.semantics.structured_output = false;
+        limited.dispositions.set_native(
+            morphiecore::semantic::task::generation::Feature::StructuredOutput,
+            false,
+        );
         for profile in [GenerationApi::Chat, GenerationApi::Responses] {
             assert_eq!(
                 lower_request(&d.semantic, &d.fidelity, profile, limited.clone()).is_err(),
@@ -203,14 +208,18 @@ fn response_format_shells_map_to_one_owner_with_independent_shapes() {
         &TextOptions {
             presence: Presence::Value(()),
             format: Presence::Absent,
-            verbosity: Presence::Value(Verbosity::Low),
+            verbosity: Some(Verbosity::Low),
         }
     );
     assert_eq!(request_wire(&d)["text"], json!({"verbosity":"low"}));
     assert_eq!(chat_wire(&d)["verbosity"], "low");
     let mut limited = contract();
-    limited.semantics.verbosity = false;
-    assert!(lower_request(&d.semantic, &d.fidelity, GenerationApi::Chat, limited).is_err());
+    limited.dispositions.set_native(
+        morphiecore::semantic::task::generation::Feature::Verbosity,
+        false,
+    );
+    let projected = lower_request(&d.semantic, &d.fidelity, GenerationApi::Chat, limited).unwrap();
+    assert!(projected.semantic().settings().text.verbosity.is_none());
     let mut invalid = source;
     invalid["verbosity"] = json!("loud");
     assert!(chat::decode_generation(&invalid).is_err());
@@ -286,7 +295,7 @@ fn request_formats_reject_known_nulls_without_rejecting_nullable_reports() {
         text: TextOptions {
             presence: Presence::Value(()),
             format: Presence::Null,
-            verbosity: Presence::Absent,
+            verbosity: None,
         },
         ..GenerationSettings::default()
     };
@@ -383,7 +392,11 @@ fn instruction_status_is_checked_in_history_and_reported_echoes() {
 fn custom_tools_and_text_array_results_are_not_function_arguments() {
     let mut d=responses::decode_generation(&json!({"input":[{"type":"custom_tool_call","call_id":"c","name":"sql","input":"SELECT 1"},{"type":"custom_tool_call_output","call_id":"c","output":[{"type":"input_text","text":"1"},{"type":"input_text","text":""}]}],"tools":[{"type":"custom","name":"sql","format":{"type":"grammar","syntax":"regex","definition":"SELECT [0-9]+"}}],"tool_choice":{"type":"custom","name":"sql"}})).unwrap();
     assert!(matches!(&d.semantic.items()[0].1,Item::CustomCall(c) if c.input=="SELECT 1"));
-    assert!(GenerationRequirements::derive(&d.semantic).custom_tools);
+    assert!(
+        (d.semantic)
+            .features()
+            .contains_key(&morphiecore::semantic::task::generation::Feature::CustomTools)
+    );
     let mut items = d.semantic.items().to_vec();
     items[0].0 = ItemId::new(99);
     items[1].0 = ItemId::new(100);
@@ -458,7 +471,10 @@ fn custom_tools_and_text_array_results_are_not_function_arguments() {
         chat_wire
     );
     let mut denied = contract();
-    denied.semantics.custom_tools = false;
+    denied.dispositions.set_native(
+        morphiecore::semantic::task::generation::Feature::CustomTools,
+        false,
+    );
     assert!(
         lower_request(
             &decoded.semantic,
@@ -560,9 +576,9 @@ fn custom_tools_and_text_array_results_are_not_function_arguments() {
             boundary: Some(
                 morphiecore::protocol::conversion::generation::ConversionBoundary::RequestEncode
             ),
-            cause: morphiecore::protocol::ConversionCause::Codec(
-                morphiecore::protocol::CodecError::Unsupported(
-                    morphiecore::protocol::failure::CarrierReason::Tools
+            cause: morphiecore::protocol::ConversionCause::Representation(
+                morphiecore::protocol::conversion::generation::RepresentationError::Admission(
+                    morphiecore::semantic::task::generation::Feature::CustomTools
                 )
             ),
             ..
@@ -622,7 +638,7 @@ fn reported_text_container_presence_is_not_request_intent() {
             TextOptions {
                 presence: Presence::Value(()),
                 format: Presence::Null,
-                verbosity: Presence::Absent,
+                verbosity: None,
             },
         ),
         (
@@ -630,7 +646,7 @@ fn reported_text_container_presence_is_not_request_intent() {
             TextOptions {
                 presence: Presence::Value(()),
                 format: Presence::Value(OutputConstraint::Text),
-                verbosity: Presence::Value(Verbosity::Medium),
+                verbosity: Some(Verbosity::Medium),
             },
         ),
     ] {
@@ -733,7 +749,7 @@ fn reported_text_container_presence_is_not_request_intent() {
             Err(GenerationError::InvalidControl)
         ));
         settings.text.format = Presence::Absent;
-        settings.text.verbosity = Presence::Value(Verbosity::Low);
+        settings.text.verbosity = Some(Verbosity::Low);
         assert!(matches!(
             settings.validate(),
             Err(GenerationError::InvalidControl)
@@ -788,7 +804,7 @@ fn null_empty_false_and_default_controls_are_deliberate_not_unknown_passthrough(
     let d=responses::decode_generation(&json!({"input":"","instructions":null,"reasoning":{"effort":null,"summary":null},"tools":[],"tool_choice":"none","parallel_tool_calls":false,"text":{"format":{"type":"text"},"verbosity":null}})).unwrap();
     let out = request_wire(&d);
     assert_eq!(out["instructions"], Value::Null);
-    assert_eq!(out["reasoning"], json!({"effort":null,"summary":null}));
+    assert_eq!(out["reasoning"], json!({"summary":null}));
     assert_eq!(out["parallel_tool_calls"], false);
     assert_eq!(out["tools"], json!([]));
     for bad in [
@@ -883,7 +899,7 @@ fn reported_cache_context_is_an_independent_response_fact() {
             .cache
             .prompt_cache_options,
         Presence::Value(morphiecore::semantic::context::CacheOptions {
-            ttl: Presence::Value(morphiecore::semantic::context::CacheTtl::ThirtyMinutes),
+            ttl: Some(morphiecore::semantic::context::CacheTtl::ThirtyMinutes),
             ..Default::default()
         })
     );
@@ -930,13 +946,13 @@ fn reported_cache_context_is_an_independent_response_fact() {
     let mut requested = envelope::decode_request(&wire::request(false)).unwrap();
     assert_eq!(
         requested.context.service_policy,
-        Presence::Value(ServicePolicy::ProjectConfigured)
+        Some(ServicePolicy::ProjectConfigured)
     );
     assert_eq!(
         decoded.metadata.context.service_class().clone(),
         Presence::Value(ServiceClass::StandardProcessing)
     );
-    requested.context.service_policy = Presence::Value(ServicePolicy::PriorityProcessing);
+    requested.context.service_policy = Some(ServicePolicy::PriorityProcessing);
     let target = lower_request(
         &requested.task.semantic,
         &requested.task.fidelity,
@@ -948,7 +964,7 @@ fn reported_cache_context_is_an_independent_response_fact() {
         envelope::encode_request(&target, &requested.context).unwrap()["service_tier"],
         "priority"
     );
-    requested.context.service_policy = Presence::Value(ServicePolicy::PreferCommittedCapacity);
+    requested.context.service_policy = Some(ServicePolicy::PreferCommittedCapacity);
     assert!(envelope::encode_request(&target, &requested.context).is_err());
     let mut invalid = wire::response(2);
     invalid["service_tier"] = json!("standard");

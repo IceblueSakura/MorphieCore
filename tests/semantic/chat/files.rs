@@ -1,5 +1,6 @@
 //! Independent inline-file wire oracles; no file parser, credentials or network.
 use crate::resources_support as resources;
+use morphiecore::lowering::disposition::Dispositions;
 use morphiecore::{
     protocol::openai::{Dialect, GenerationApi, GenerationCodec, TargetContract as Contract},
     semantic::task::generation::*,
@@ -76,7 +77,7 @@ fn typed_request(values: Vec<Resource>) -> Result<GenerationRequest, GenerationE
 fn encode_typed(
     request: &GenerationRequest,
     contract: Contract,
-) -> Result<Value, morphiecore::protocol::conversion::generation::RepresentationError> {
+) -> Result<Value, morphiecore::protocol::ConversionFailure> {
     let fidelity = morphiecore::protocol::fidelity::FidelityRecords::default();
     let target = morphiecore::protocol::openai::lowering::lower_request(
         request,
@@ -97,7 +98,14 @@ fn chat_file_part_is_an_inline_pdf_without_detail_or_provider_id() {
         .decode_request(&serde_json::to_vec(&chat_wire).unwrap())
         .unwrap();
     let semantic = &decoded.task.semantic;
-    assert_eq!(GenerationRequirements::derive(semantic).file_inputs, 1);
+    assert_eq!(
+        (semantic)
+            .features()
+            .get(&morphiecore::semantic::task::generation::Feature::FileInput)
+            .copied()
+            .unwrap_or(0),
+        1
+    );
     let Item::Message(message) = &semantic.items()[0].1 else {
         panic!("message")
     };
@@ -141,10 +149,22 @@ fn responses_tool_output_carries_files_and_needs_file_admission() {
         .decode_request(&serde_json::to_vec(&request).unwrap())
         .unwrap();
     let semantic = &decoded.task.semantic;
-    let needs = GenerationRequirements::derive(semantic);
-    assert_eq!((needs.tool_result_media, needs.file_inputs), (1, 1));
+    let needs = (semantic).features();
+    assert_eq!(
+        (
+            needs
+                .get(&morphiecore::semantic::task::generation::Feature::ToolResultMedia)
+                .copied()
+                .unwrap_or(0),
+            needs
+                .get(&morphiecore::semantic::task::generation::Feature::FileInput)
+                .copied()
+                .unwrap_or(0)
+        ),
+        (1, 1)
+    );
     assert!(
-        !needs.explicit_cache,
+        !needs.contains_key(&morphiecore::semantic::task::generation::Feature::ExplicitCache),
         "inherited lifetime is not native TTL admission"
     );
     assert_eq!(
@@ -217,7 +237,10 @@ fn responses_tool_output_carries_files_and_needs_file_admission() {
         )
     );
     let mut no_files = Contract::full();
-    no_files.semantics.file_input = false;
+    no_files.dispositions.set_native(
+        morphiecore::semantic::task::generation::Feature::FileInput,
+        false,
+    );
     assert!(
         adapter()
             .encode_request(&decoded, "synthetic", &no_files)
@@ -239,7 +262,7 @@ fn request_lifetime_boundaries_have_independent_ir_and_reject_unrelated_ttls() {
         anthropic::messages::Profile as Messages,
         google::{generate_content, interactions},
         native::ReplayTarget,
-        openai::lowering::{RepresentationError, lower_request},
+        openai::lowering::lower_request,
     };
     let mut controls = GenerationControls::default();
     controls.max_output_tokens = Some(32);
@@ -297,26 +320,28 @@ fn request_lifetime_boundaries_have_independent_ir_and_reject_unrelated_ttls() {
             {"type":"input_text","text":"stable","prompt_cache_breakpoint":{"mode":"explicit"}}
         ]})
     );
-    assert!(!GenerationRequirements::derive(&request).explicit_cache);
-    // Keep the native envelope contract from masking the cache-carrier rejection.
+    assert!(
+        !(request)
+            .features()
+            .contains_key(&morphiecore::semantic::task::generation::Feature::ExplicitCache)
+    );
+    // Chat omits a request-lifetime marker without changing its instruction.
     let ungrouped = request.clone().with_message_envelopes(vec![]).unwrap();
-    assert_eq!(
-        lower_request(
-            &ungrouped,
-            &Default::default(),
-            GenerationApi::Chat,
-            Contract::full()
-        )
-        .err(),
-        Some(RepresentationError::Controls)
-    );
+    let projected = lower_request(
+        &ungrouped,
+        &Default::default(),
+        GenerationApi::Chat,
+        Contract::full(),
+    )
+    .unwrap()
+    .semantic()
+    .clone();
+    assert!(matches!(&projected.items()[0].1, Item::Instruction(i) if i.parts[0].cache.is_none()));
     let native = ReplayTarget::new("synthetic", "model").unwrap();
-    assert_eq!(
-        Messages::AdaptiveTextTools
-            .encode_generation_request(&request, &Default::default(), &native)
-            .unwrap_err(),
-        CodecError::Unsupported(morphiecore::protocol::failure::CarrierReason::Unavailable)
-    );
+    let messages = Messages::AdaptiveTextTools
+        .encode_generation_request(&request, &Default::default(), &native)
+        .unwrap();
+    assert!(messages.value["system"][0].get("cache_control").is_none());
     assert_eq!(
         generate_content::encode_generation_request(&request, &Default::default(), &native, None)
             .unwrap_err(),
@@ -334,17 +359,21 @@ fn request_lifetime_boundaries_have_independent_ir_and_reject_unrelated_ttls() {
     };
     instruction.parts[0].cache = Some(PrefixCacheBoundary::Ttl(PrefixCacheTtl::FiveMinutes));
     let native_ttl = request.clone().with_items(items).unwrap();
-    assert!(GenerationRequirements::derive(&native_ttl).explicit_cache);
-    assert_eq!(
-        lower_request(
-            &native_ttl,
-            &Default::default(),
-            GenerationApi::Responses,
-            Contract::full()
-        )
-        .err(),
-        Some(RepresentationError::Controls)
+    assert!(
+        (native_ttl)
+            .features()
+            .contains_key(&morphiecore::semantic::task::generation::Feature::ExplicitCache)
     );
+    let projected = lower_request(
+        &native_ttl,
+        &Default::default(),
+        GenerationApi::Responses,
+        Contract::full(),
+    )
+    .unwrap()
+    .semantic()
+    .clone();
+    assert!(matches!(&projected.items()[0].1, Item::Instruction(i) if i.parts[0].cache.is_none()));
     let native_wire = Messages::AdaptiveTextTools
         .encode_generation_request(&native_ttl, &Default::default(), &native)
         .unwrap();
@@ -379,20 +408,42 @@ fn inline_file_media_need_their_input_modality() {
             {"type":"input_file","file_data":"data:audio/wav;base64,AQID","filename":"clip.wav"}]))
     .unwrap();
     let semantic = &decoded.task.semantic;
-    let needs = GenerationRequirements::derive(semantic);
-    assert_eq!((needs.file_inputs, needs.audio_inputs), (1, 1));
-    let mut files_only = GenerationFeatureSet::full();
-    files_only.audio_input = false;
+    let needs = (semantic).features();
     assert_eq!(
-        files_only.check(semantic),
-        Err(GenerationFeature::AudioInput)
+        (
+            needs
+                .get(&morphiecore::semantic::task::generation::Feature::FileInput)
+                .copied()
+                .unwrap_or(0),
+            needs
+                .get(&morphiecore::semantic::task::generation::Feature::AudioInput)
+                .copied()
+                .unwrap_or(0)
+        ),
+        (1, 1)
     );
-    assert!(GenerationFeatureSet::full().check(semantic).is_ok());
+    let mut files_only = Dispositions::full();
+    files_only.set_native(Feature::AudioInput, false);
+    assert_eq!(files_only.check(semantic), Err(Feature::AudioInput));
+    assert!(Dispositions::full().check(semantic).is_ok());
     // A PDF needs only file input.
     let pdf = decode(json!([file()])).unwrap();
-    let needs = GenerationRequirements::derive(&pdf.task.semantic);
+    let needs = (pdf.task.semantic).features();
     assert_eq!(
-        (needs.file_inputs, needs.audio_inputs, needs.image_inputs),
+        (
+            needs
+                .get(&morphiecore::semantic::task::generation::Feature::FileInput)
+                .copied()
+                .unwrap_or(0),
+            needs
+                .get(&morphiecore::semantic::task::generation::Feature::AudioInput)
+                .copied()
+                .unwrap_or(0),
+            needs
+                .get(&morphiecore::semantic::task::generation::Feature::ImageInput)
+                .copied()
+                .unwrap_or(0)
+        ),
         (1, 0, 0)
     );
 }
@@ -435,7 +486,14 @@ fn responses_instructions_reject_media_and_preserve_text() {
     };
     assert_eq!(instruction.parts[0].content.as_str(), "Follow the guide.");
     assert!(semantic.resources().is_empty());
-    assert_eq!(GenerationRequirements::derive(semantic).file_inputs, 0);
+    assert_eq!(
+        (semantic)
+            .features()
+            .get(&morphiecore::semantic::task::generation::Feature::FileInput)
+            .copied()
+            .unwrap_or(0),
+        0
+    );
     let output = adapter()
         .encode_request(&decoded, "synthetic", &Contract::full())
         .unwrap();

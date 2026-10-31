@@ -1,10 +1,6 @@
 //! Generation input, protocol provenance, context validation and replay isolation.
-use super::conversion::ConversionFailure;
 use crate::{
-    protocol::{
-        CodecError, DecodedRequest, conversion::generation::RepresentationError,
-        failure::CarrierReason,
-    },
+    protocol::{CodecError, DecodedRequest, failure::CarrierReason},
     semantic::{
         context::{ConversationContext, DeliveryIntent, ExecutionHints, ServicePolicy},
         value::Presence,
@@ -15,7 +11,7 @@ pub struct GenerationRequestEnvelope {
     pub task: DecodedRequest,
     pub model: String,
     pub context: ExecutionHints,
-    pub service_policy: Presence<ServicePolicy>,
+    pub service_policy: Option<ServicePolicy>,
     pub delivery: DeliveryIntent,
     pub conversation: Option<ConversationContext>,
     pub(crate) inferred_affinity: Option<crate::protocol::cache::InferredAffinity>,
@@ -42,7 +38,7 @@ impl GenerationRequestEnvelope {
             task,
             model: model.into(),
             context: Default::default(),
-            service_policy: Presence::Absent,
+            service_policy: None,
             delivery: Default::default(),
             conversation: None,
             cache_session: None,
@@ -51,29 +47,6 @@ impl GenerationRequestEnvelope {
             source: None,
             n: Presence::Absent,
         })
-    }
-    pub fn check_semantic(
-        &self,
-        contract: &crate::semantic::task::generation::GenerationFeatureSet,
-    ) -> Result<crate::semantic::task::generation::GenerationRequirements, ConversionFailure> {
-        self.task.semantic.validate().map_err(CodecError::from)?;
-        contract.check(&self.task.semantic).map_err(|e| {
-            ConversionFailure::from(RepresentationError::Admission(e))
-                .at(crate::protocol::conversion::generation::ConversionBoundary::RequestProject)
-        })
-    }
-    pub fn check_context(&self, standard_context: bool) -> Result<(), ConversionFailure> {
-        self.check_grouping()?;
-        self.context.validate().map_err(CodecError::from)?;
-        self.delivery.validate().map_err(CodecError::from)?;
-        if !standard_context
-            && (!self.context.metadata.is_absent()
-                || !self.service_policy.is_absent()
-                || !self.context.max_tool_calls.is_absent())
-        {
-            return Err(RepresentationError::UnmigratedSemantic.into());
-        }
-        Ok(())
     }
     pub(crate) fn check_grouping(&self) -> Result<(), CodecError> {
         if self.conversation.is_some() && self.cache_session.is_some() {

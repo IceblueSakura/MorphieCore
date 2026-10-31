@@ -151,16 +151,6 @@ pub(crate) fn normalize_stateless_defaults(context: &mut ExecutionHints) {
     if context.background == Presence::Value(false) {
         context.background = Presence::Absent;
     }
-    for value in [
-        &mut context.previous_response_id,
-        &mut context.conversation,
-        &mut context.prompt,
-        &mut context.moderation,
-    ] {
-        if *value == Presence::Null {
-            *value = Presence::Absent;
-        }
-    }
 }
 
 /// Assemble target messages from ordered items, without claiming source ownership:

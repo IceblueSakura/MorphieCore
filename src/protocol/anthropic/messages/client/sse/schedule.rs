@@ -1,6 +1,6 @@
 //! Reorder already validated content events, not source grammar or semantic facts.
-//! An owner stays ahead of its successors until its actual finish; text parts have
-//! the same barrier independently. Only blocked events are retained between calls.
+//! Visible owners stay ahead of successors until their actual finish; text parts
+//! have the same barrier. Decided omissions retain only bounded lifecycle IDs.
 use super::*;
 use crate::semantic::task::generation::{ItemLifecycle, MAX_ITEMS, MAX_TOTAL_BYTES};
 use std::collections::VecDeque;
@@ -17,7 +17,9 @@ struct Part {
 }
 struct Owner {
     kind: Kind,
-    summary_started: bool,
+    omitted: bool,
+    summary_parts: usize,
+    summary_only: bool,
     summary_nonempty: bool,
     signature_redacted: Option<bool>,
     start: Option<Box<StreamEvent>>,
@@ -31,6 +33,7 @@ struct Owner {
 const OWNER_BYTES: usize = size_of::<Owner>() + 512;
 const PART_BYTES: usize = size_of::<Part>() + 512;
 const EVENT_BYTES: usize = 2 * size_of::<StreamEvent>() + 64;
+const OMITTED_BYTES: usize = size_of::<ItemId>() + 64;
 
 fn pop<T>(queue: &mut VecDeque<T>) -> Option<T> {
     let value = queue.pop_front();
@@ -65,6 +68,7 @@ fn bytes(event: &StreamEvent) -> usize {
 
 pub(super) enum Ready {
     Event(Box<StreamEvent>),
+    OmitReasoning(ItemId),
     // Observed incomplete-owner or EOF wire closure, never semantic completion.
     ClosePart(ItemId, PartId),
     CloseOwner(ItemId),
@@ -72,6 +76,7 @@ pub(super) enum Ready {
 #[derive(Default)]
 pub(super) struct Schedule {
     owners: BTreeMap<ItemId, Box<Owner>>,
+    omitted: BTreeSet<ItemId>,
     order: VecDeque<ItemId>,
     bytes: usize,
     events: usize,
@@ -123,10 +128,10 @@ impl Schedule {
                 }
                 _ => return Err(CodecError::Unsupported(CarrierReason::Unavailable)),
             };
-            if self.owners.contains_key(item) {
+            if self.owners.contains_key(item) || self.omitted.contains(item) {
                 return Err(CodecError::invalid());
             }
-            if self.owners.len() >= MAX_ITEMS {
+            if self.owners.len() + self.omitted.len() >= MAX_ITEMS {
                 return Err(CodecError::Limit);
             }
             self.charge(OWNER_BYTES)?;
@@ -136,7 +141,9 @@ impl Schedule {
                 *item,
                 Box::new(Owner {
                     kind,
-                    summary_started: false,
+                    omitted: false,
+                    summary_parts: 0,
+                    summary_only: true,
                     summary_nonempty: false,
                     signature_redacted: replay
                         .as_ref()
@@ -154,10 +161,18 @@ impl Schedule {
         let (item, part) = match event {
             StreamEvent::PartStarted { item, part, .. }
             | StreamEvent::PartFinished { item, part }
+            | StreamEvent::PartInterrupted { item, part }
             | StreamEvent::Delta { item, part, .. } => (*item, Some(*part)),
             StreamEvent::ItemFinished { item, .. } => (*item, None),
             _ => return Ok(false),
         };
+        if self.omitted.contains(&item) {
+            if matches!(event, StreamEvent::ItemFinished { .. }) {
+                self.omitted.remove(&item);
+                self.bytes -= OMITTED_BYTES;
+            }
+            return Ok(true);
+        }
         let owner = self.owners.get(&item).ok_or(CodecError::invalid())?;
         if owner.finish.is_some() {
             return Err(CodecError::invalid());
@@ -175,7 +190,7 @@ impl Schedule {
         }
         if let StreamEvent::PartStarted { kind, .. } = event {
             match owner.kind {
-                Kind::Thinking if *kind != PartKind::Summary || owner.summary_started => {
+                Kind::Thinking if !matches!(kind, PartKind::Summary | PartKind::ReasoningText) => {
                     return Err(CodecError::Unsupported(CarrierReason::Reasoning));
                 }
                 Kind::Text if !matches!(kind, PartKind::Text | PartKind::Refusal) => {
@@ -190,20 +205,6 @@ impl Schedule {
             }
         }
         let text = matches!(owner.kind, Kind::Text);
-        if let StreamEvent::ItemFinished { replay, .. } = event
-            && matches!(owner.kind, Kind::Thinking)
-        {
-            let signature = match replay {
-                Some(replay) => (!replay.value.as_str().is_empty())
-                    .then(|| super::super::projection::redacted(replay.value.as_str())),
-                None => owner.signature_redacted,
-            };
-            if signature.is_none()
-                || owner.summary_started && (!owner.summary_nonempty || signature == Some(true))
-            {
-                return Err(CodecError::Unsupported(CarrierReason::Replay));
-            }
-        }
         if matches!(owner.kind, Kind::Tool)
             && matches!(
                 event,
@@ -228,18 +229,57 @@ impl Schedule {
         {
             return Err(CodecError::invalid());
         }
+        let owner = self.owners.get_mut(&item).expect("checked owner");
+        if matches!(owner.kind, Kind::Thinking) {
+            match event {
+                StreamEvent::PartStarted { kind, .. } => {
+                    owner.summary_parts += 1;
+                    owner.summary_only &= *kind == PartKind::Summary;
+                }
+                StreamEvent::Delta { .. } => owner.summary_nonempty = true,
+                StreamEvent::ItemFinished { replay, .. } => {
+                    owner.signature_redacted = replay
+                        .as_ref()
+                        .filter(|replay| !replay.value.as_str().is_empty())
+                        .map(|replay| super::super::projection::redacted(replay.value.as_str()));
+                }
+                _ => {}
+            }
+            let closed_empty = matches!(
+                event,
+                StreamEvent::PartFinished { .. } | StreamEvent::PartInterrupted { .. }
+            ) && !owner.summary_nonempty;
+            let finished_uncarried = matches!(event, StreamEvent::ItemFinished { .. })
+                && !super::super::projection::reasoning_carried(
+                    owner.signature_redacted,
+                    owner.summary_parts,
+                    owner.summary_only,
+                    owner.summary_nonempty,
+                );
+            if !owner.omitted
+                && (!owner.summary_only
+                    || owner.summary_parts > 1
+                    || owner.signature_redacted == Some(true) && owner.summary_parts != 0
+                    || closed_empty
+                    || finished_uncarried)
+            {
+                owner.omitted = true;
+                for retained in owner.start.iter().chain(owner.events.iter()) {
+                    self.bytes -= bytes(retained);
+                    self.events -= 1;
+                }
+                owner.start = None;
+                owner.events = VecDeque::new();
+            }
+            if owner.omitted && !matches!(event, StreamEvent::ItemFinished { .. }) {
+                return Ok(true);
+            }
+        }
         self.charge_event(event, limits)?;
         if text && matches!(event, StreamEvent::PartStarted { .. }) {
             self.charge(PART_BYTES)?;
         }
         let owner = self.owners.get_mut(&item).expect("checked owner");
-        if matches!(owner.kind, Kind::Thinking) && matches!(event, StreamEvent::Delta { .. }) {
-            owner.summary_nonempty = true;
-        }
-        if matches!(owner.kind, Kind::Thinking) && matches!(event, StreamEvent::PartStarted { .. })
-        {
-            owner.summary_started = true;
-        }
         if let Some(part) = part {
             if text {
                 if matches!(event, StreamEvent::PartStarted { .. }) {
@@ -273,8 +313,52 @@ impl Schedule {
         Ok(true)
     }
     pub(super) fn pop(&mut self, terminal: bool) -> Option<Ready> {
+        if terminal {
+            self.bytes -= self.omitted.len() * OMITTED_BYTES;
+            self.omitted.clear();
+        }
         let item = *self.order.front()?;
         let owner = self.owners.get_mut(&item).expect("ordered owner");
+        if owner.omitted {
+            let owner = self.owners.remove(&item).expect("ordered owner");
+            if let Some(finish) = owner.finish {
+                self.bytes -= bytes(&finish);
+                self.events -= 1;
+            } else if !terminal {
+                self.omitted.insert(item);
+                self.bytes += OMITTED_BYTES;
+            }
+            self.bytes -= OWNER_BYTES;
+            pop(&mut self.order);
+            return Some(Ready::OmitReasoning(item));
+        }
+        if matches!(owner.kind, Kind::Thinking) {
+            // A later signature cannot retract a published block. Keep the
+            // existing bounded owner queue until its carrier shape is known.
+            if owner.finish.is_none() && !terminal {
+                return None;
+            }
+            if !super::super::projection::reasoning_carried(
+                owner.signature_redacted,
+                owner.summary_parts,
+                owner.summary_only,
+                owner.summary_nonempty,
+            ) {
+                let owner = self.owners.remove(&item).expect("ordered owner");
+                for event in owner
+                    .start
+                    .iter()
+                    .chain(owner.events.iter())
+                    .chain(owner.finish.iter())
+                {
+                    self.bytes -= bytes(event);
+                    self.events -= 1;
+                }
+                self.bytes -= OWNER_BYTES;
+                pop(&mut self.order);
+                return Some(Ready::OmitReasoning(item));
+            }
+        }
         let close_parts = terminal
             || matches!(
                 owner.finish.as_deref(),
@@ -327,6 +411,68 @@ impl Schedule {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn known_uncarried_reasoning_keeps_only_bounded_lifecycle_state() {
+        let mut schedule = Schedule::default();
+        let limits = crate::protocol::stream::SseLimits::default();
+        let item = ItemId::new(1);
+        let part = PartId::new(1);
+        for event in [
+            StreamEvent::ItemStarted {
+                item,
+                kind: ItemKind::Reasoning,
+                replay: None,
+            },
+            StreamEvent::PartStarted {
+                item,
+                part,
+                kind: PartKind::ReasoningText,
+            },
+        ] {
+            schedule.push(&event, limits).unwrap();
+        }
+        assert!(matches!(schedule.pop(false), Some(Ready::OmitReasoning(id)) if id == item));
+        let retained = schedule.bytes;
+        let delta = StreamEvent::Delta {
+            item,
+            part,
+            fragment: "x".into(),
+            logprobs: vec![],
+        };
+        for _ in 0..200_000 {
+            schedule.push(&delta, limits).unwrap();
+        }
+        assert_eq!(schedule.bytes, retained);
+        assert_eq!(schedule.events, 0);
+        assert!(schedule.pop(false).is_none());
+        // The invisible owner does not hold back a visible successor.
+        let next = ItemId::new(2);
+        schedule
+            .push(
+                &StreamEvent::ItemStarted {
+                    item: next,
+                    kind: ItemKind::Message { phase: None },
+                    replay: None,
+                },
+                limits,
+            )
+            .unwrap();
+        assert!(matches!(schedule.pop(false), Some(Ready::Event(event))
+            if matches!(*event, StreamEvent::ItemStarted { item, .. } if item == next)));
+        schedule
+            .push(
+                &StreamEvent::ItemFinished {
+                    item,
+                    status: ItemLifecycle::Completed,
+                    replay: None,
+                },
+                limits,
+            )
+            .unwrap();
+        assert!(schedule.omitted.is_empty());
+        assert!(schedule.bytes < retained + OWNER_BYTES);
+    }
 
     #[test]
     fn small_blocked_queues_charge_their_allocated_slots() {

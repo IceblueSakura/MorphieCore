@@ -119,6 +119,10 @@ pub enum Field {
     Explanation,
     #[serde(rename = "generation.content.refusal")]
     ContentRefusal,
+    #[serde(rename = "generation.content.reasoning")]
+    ReasoningContent,
+    #[serde(rename = "generation.tools.eager_input")]
+    EagerToolInput,
     #[serde(rename = "response.safety_reports")]
     SafetyReports,
     #[serde(rename = "response.input_transformations")]
@@ -204,6 +208,8 @@ impl Field {
             Self::Refusal => "response.terminal.refusal",
             Self::Explanation => "response.terminal.explanation",
             Self::ContentRefusal => "generation.content.refusal",
+            Self::ReasoningContent => "generation.content.reasoning",
+            Self::EagerToolInput => "generation.tools.eager_input",
             Self::SafetyReports => "response.safety_reports",
             Self::InputTransformations => "response.input_transformations",
             Self::HistoryAnnotations => "generation.content.annotations",
@@ -275,6 +281,8 @@ impl From<&'static str> for Field {
             "response.terminal.refusal" => Self::Refusal,
             "response.terminal.explanation" => Self::Explanation,
             "generation.content.refusal" => Self::ContentRefusal,
+            "generation.content.reasoning" => Self::ReasoningContent,
+            "generation.tools.eager_input" => Self::EagerToolInput,
             "response.safety_reports" => Self::SafetyReports,
             "response.input_transformations" => Self::InputTransformations,
             "generation.content.annotations" => Self::HistoryAnnotations,
@@ -441,7 +449,7 @@ impl Owner {
 pub struct ReasoningControls {
     pub configuration_efforts: Vec<EffortControl>,
     pub activation: Presence<ReasoningActivation>,
-    pub effort: Presence<EffortControl>,
+    pub effort: Option<EffortControl>,
     pub budget_tokens: Option<u64>,
     pub max_output_tokens: Option<u64>,
     pub mode: Presence<ReasoningMode>,
@@ -452,7 +460,7 @@ impl From<&GenerationSettings> for ReasoningControls {
         Self {
             configuration_efforts: vec![],
             activation: settings.reasoning.activation.clone(),
-            effort: settings.effort.clone(),
+            effort: settings.effort,
             budget_tokens: settings.reasoning.budget_tokens,
             max_output_tokens: settings.controls.max_output_tokens,
             mode: settings.reasoning.mode.clone(),
@@ -493,8 +501,8 @@ pub enum Effect {
     Verbosity {
         owner: Owner,
         rule: RuleId,
-        input: Presence<Verbosity>,
-        output: Presence<Verbosity>,
+        input: Option<Verbosity>,
+        output: Option<Verbosity>,
     },
     Reasoning {
         owner: Owner,
@@ -518,8 +526,8 @@ pub enum Effect {
     },
     MessagesVerbosity {
         owner: Owner,
-        input: Presence<Verbosity>,
-        output: Presence<Verbosity>,
+        input: Option<Verbosity>,
+        output: Option<Verbosity>,
     },
 }
 
@@ -596,8 +604,8 @@ impl Effect {
                 Change::Normalize
             }
             Self::Reasoning { input, output, .. }
-                if !input.effort.is_absent()
-                    && output.effort.is_absent()
+                if !input.effort.is_none()
+                    && output.effort.is_none()
                     && input.budget_tokens == output.budget_tokens =>
             {
                 Change::Omit
@@ -745,7 +753,7 @@ pub struct EvidenceDelta {
 }
 impl EvidenceDelta {
     pub fn push(&mut self, effect: Effect) {
-        if self.effects.contains(&effect) {
+        if !effect.change().is_loss() || self.effects.contains(&effect) {
             return;
         }
         let bytes = effect.retained_bytes();
@@ -860,7 +868,8 @@ impl EvidenceDelta {
             "openai.provider-cache-write-default.v1",
             Field::CacheWriteTokens,
             boundary,
-            Change::Default(crate::protocol::conversion::generation::DefaultBasis::SelectedPolicy),
+            // The source did not report this counter; policy-selected zero is an estimate.
+            Change::Estimate,
         ));
     }
     pub(crate) fn record_effort_mapping(

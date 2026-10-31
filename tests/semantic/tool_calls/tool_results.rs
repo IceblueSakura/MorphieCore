@@ -1,5 +1,6 @@
 //! Tool result kind, artifact lifecycle and wire representability are independent.
 use crate::{events_support::text, resources_support as resources};
+use morphiecore::lowering::disposition::Dispositions;
 use morphiecore::semantic::task::generation::*;
 use serde_json::json;
 fn call() -> (ItemId, Item) {
@@ -118,7 +119,11 @@ fn execution_error_is_a_terminal_result_not_a_generation_failure() {
         ResultReadiness::ResultsComplete
     );
     assert_eq!(response.outcome(), Outcome::Completed);
-    assert!(GenerationRequirements::derive(&history).tool_execution_reports);
+    assert!(
+        (history)
+            .features()
+            .contains_key(&morphiecore::semantic::task::generation::Feature::ToolExecutionReport)
+    );
 }
 #[test]
 fn ordered_media_has_unique_parts_and_distinct_requirements() {
@@ -167,15 +172,24 @@ fn ordered_media_has_unique_parts_and_distinct_requirements() {
         Some(ItemLifecycle::Incomplete),
     )
     .unwrap();
-    let requirements = GenerationRequirements::derive(&history);
-    assert_eq!(requirements.tool_result_media, 1);
-    assert_eq!(requirements.image_inputs, 1);
-    let mut text_only = GenerationFeatureSet::full();
-    text_only.image_input = false;
+    let requirements = (history).features();
     assert_eq!(
-        text_only.check(&history),
-        Err(GenerationFeature::ImageInput)
+        requirements
+            .get(&morphiecore::semantic::task::generation::Feature::ToolResultMedia)
+            .copied()
+            .unwrap_or(0),
+        1
     );
+    assert_eq!(
+        requirements
+            .get(&morphiecore::semantic::task::generation::Feature::ImageInput)
+            .copied()
+            .unwrap_or(0),
+        1
+    );
+    let mut text_only = Dispositions::full();
+    text_only.set_native(Feature::ImageInput, false);
+    assert_eq!(text_only.check(&history), Err(Feature::ImageInput));
     assert!(
         request(
             ToolOutput::Parts(vec![

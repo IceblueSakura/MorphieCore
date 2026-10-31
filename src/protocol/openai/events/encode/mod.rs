@@ -1,4 +1,5 @@
 //! Outgoing event driver: contract locking, projection and semantic reduction.
+use crate::lowering::disposition::Rule;
 use crate::protocol::failure::{CarrierReason, ShapeReason};
 mod chat;
 mod responses;
@@ -148,7 +149,7 @@ impl EventEncoder {
                 {
                     return Err(CodecError::Unsupported(CarrierReason::Unavailable));
                 }
-                self.record_loss(projection::ProjectionRule::OmitChatReportedSettings);
+                self.record_loss(Rule::OMIT_CHAT_REPORTED_SETTINGS);
             }
             crate::protocol::openai::lowering::events::check_event(
                 self.state()?,
@@ -248,7 +249,7 @@ impl EventEncoder {
                     self.profile,
                 ) != *self.metadata.context.service_class()
             {
-                self.record_loss(projection::ProjectionRule::OmitUnrepresentableServiceClass);
+                self.record_loss(Rule::OMIT_UNREPRESENTABLE_SERVICE_CLASS);
             }
             for v in &mut values {
                 if self.profile == GenerationApi::Responses {
@@ -271,7 +272,7 @@ impl EventEncoder {
                 && !values.is_empty()
                 && self.metadata.context.system_fingerprint.value().is_some()
             {
-                self.record_loss(projection::ProjectionRule::OmitResponsesSystemFingerprint);
+                self.record_loss(Rule::OMIT_RESPONSES_SYSTEM_FINGERPRINT);
             }
             if !self.pending_program_outputs.is_empty() || !self.held_frames.is_empty() {
                 if matches!(event, StreamEvent::Terminal { .. })
@@ -333,7 +334,7 @@ impl EventEncoder {
     pub fn projection(&self) -> &[crate::protocol::conversion::generation::Effect] {
         &self.projection
     }
-    fn record_loss(&mut self, loss: projection::ProjectionRule) {
+    fn record_loss(&mut self, loss: Rule) {
         record_stages(
             &mut self.projection,
             [(loss).effect(

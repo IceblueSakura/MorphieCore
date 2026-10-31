@@ -175,17 +175,20 @@ fn messages_root_forms_share_request_scope_without_becoming_history() {
     );
     source["system"][0]["cache_control"] = json!({"type":"ephemeral","ttl":"1h"});
     let cached = decode_client_request(source.to_string().as_bytes()).unwrap();
-    assert!(GenerationRequirements::derive(&cached.task.semantic).explicit_cache);
     assert!(
-        adapter(GenerationApi::Chat)
-            .encode_request(&cached, "m", &TargetContract::full())
-            .is_err()
+        (cached.task.semantic)
+            .features()
+            .contains_key(&morphiecore::semantic::task::generation::Feature::ExplicitCache)
     );
-    assert!(
-        adapter(GenerationApi::Responses)
-            .encode_request(&cached, "m", &TargetContract::full())
-            .is_err()
-    );
+    let before = cached.clone();
+    for api in [GenerationApi::Chat, GenerationApi::Responses] {
+        let (wire, rules) = adapter(api)
+            .encode_request_with_rules(&cached, "m", &TargetContract::full())
+            .unwrap();
+        assert!(!wire.to_string().contains("cache_control"));
+        assert!(rules.contains(&"generation.omit-explicit-cache.v1"));
+        assert_eq!(cached, before);
+    }
     let mut boundary = block.clone();
     let mut settings = boundary.task.semantic.settings().clone();
     let Presence::Value(root) = &mut settings.instructions else {
@@ -482,7 +485,10 @@ fn prediction_survives_same_protocol_projection() {
         .unwrap();
     assert_eq!(output["prediction"], wire["prediction"]);
     let mut restricted = TargetContract::full();
-    restricted.prediction = false;
+    restricted.dispositions.set_native(
+        morphiecore::semantic::task::generation::Feature::Prediction,
+        false,
+    );
     let (omitted, rules) = adapter
         .encode_request_with_rules(&request, "public", &restricted)
         .unwrap();

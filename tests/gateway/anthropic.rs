@@ -318,14 +318,13 @@ async fn native_fixture() -> NativeFixture {
         },
     };
     let contract = binding.canonical_model().contract;
-    let mut public = topology::PublicModel::new(
+    let public = topology::PublicModel::new(
         model.clone(),
         model.clone(),
         topology::TaskKind::Generation,
         route.id.clone(),
         contract.clone(),
     );
-    public.standard_context = false;
     let replay_origin = endpoint.replay_origin();
     let topology = topology::compile(
         vec![provider],
@@ -435,10 +434,11 @@ async fn json_and_stream_clients_replay_native_thinking_and_tools() {
                 "tools":[{"type":"function","function":function}]})
             };
             input["stream"] = json!(stream);
-            // Cache grouping is advisory; native targets cannot erase retention intent.
+            // Cache grouping and extended retention are advisory; explicit
+            // in-memory-only retention cannot be replaced by an unknown policy.
             input["prompt_cache_key"] = json!("pi-session");
             if responses && !stream {
-                input["prompt_cache_retention"] = json!("24h");
+                input["prompt_cache_retention"] = json!("in-memory");
                 let count = seen.lock().unwrap().len();
                 let rejected = client
                     .post(format!("{base}{path}"))
@@ -451,10 +451,7 @@ async fn json_and_stream_clients_replay_native_thinking_and_tools() {
                 let error: Value = rejected.json().await.unwrap();
                 assert_eq!(error["error"]["code"], "invalid_request");
                 assert_eq!(seen.lock().unwrap().len(), count);
-                input
-                    .as_object_mut()
-                    .unwrap()
-                    .remove("prompt_cache_retention");
+                input["prompt_cache_retention"] = json!("24h");
             }
             // Codex always sends `client_metadata`, which no target takes.
             input["client_metadata"] = json!({"session_id":"synthetic-session"});
@@ -925,9 +922,8 @@ async fn json_and_stream_clients_replay_native_thinking_and_tools() {
                         .as_array()
                         .is_some_and(|entries| {
                             [
-                                "cache.omit-key.v1",
-                                "messages.omit-sampling.v1",
-                                "messages.default-automatic-cache.v1",
+                                "generation.omit-cache-key.v1",
+                                "generation.omit-temperature.v1",
                             ]
                             .iter()
                             .all(|rule| {
@@ -941,6 +937,7 @@ async fn json_and_stream_clients_replay_native_thinking_and_tools() {
     }));
     assert!(records.contains(r#""ignored_request_field_count":1"#));
     assert!(!records.contains("client_metadata"));
+    assert!(!records.contains("messages.default-automatic-cache.v1"));
     // Native adaptive intent stays adaptive, without a numeric-budget approximation.
     assert!(!records.contains("messages.budget-as-effort.v1"));
     assert!(!records.contains("0.375"));

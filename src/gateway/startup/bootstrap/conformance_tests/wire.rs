@@ -452,6 +452,9 @@ pub(super) fn delivered(api: Api, bytes: &[u8], stream: bool) -> Value {
                     | "response.reasoning_summary_text.done" => {
                         Some(("summary", "summary_index", "text"))
                     }
+                    "response.reasoning_text.delta" | "response.reasoning_text.done" => {
+                        Some(("reasoning", "content_index", "text"))
+                    }
                     "response.function_call_arguments.delta"
                     | "response.function_call_arguments.done" => {
                         Some(("arguments", "", "arguments"))
@@ -511,18 +514,21 @@ pub(super) fn delivered(api: Api, bytes: &[u8], stream: bool) -> Value {
                             item["arguments"].as_str().unwrap()
                         ),
                         "message" | "reasoning" => {
-                            let (field, kind) = if item["type"] == "message" {
-                                ("content", "text")
+                            let fields: &[(&str, &str)] = if item["type"] == "message" {
+                                &[("content", "text")]
                             } else {
-                                ("summary", "summary")
+                                &[("summary", "summary"), ("content", "reasoning")]
                             };
-                            for (part, value) in item[field].as_array().unwrap().iter().enumerate()
-                            {
-                                assert_eq!(
-                                    finished.remove(&(index, kind, part as u64)).unwrap(),
-                                    value["text"].as_str().unwrap(),
-                                    "completed item cannot replace incremental {kind}"
-                                );
+                            for (field, kind) in fields {
+                                for (part, value) in
+                                    item[field].as_array().into_iter().flatten().enumerate()
+                                {
+                                    assert_eq!(
+                                        finished.remove(&(index, *kind, part as u64)).unwrap(),
+                                        value["text"].as_str().unwrap(),
+                                        "completed item cannot replace incremental {kind}"
+                                    );
+                                }
                             }
                         }
                         other => panic!("delivered item {other}"),
@@ -709,32 +715,72 @@ pub(super) fn intake_view(api: Api, value: &Value) -> Value {
 
 pub(super) fn assert_delivery(
     api: Api,
+    upstream: Api,
     profile: Profile,
     turn: usize,
     value: &Value,
     shape: Option<ReasoningShape>,
 ) {
-    if let Some(shape) = shape {
+    if let Some(shape) =
+        shape.filter(|shape| *shape != ReasoningShape::Signed || api == Api::Messages)
+    {
         assert_reasoning(api, shape, value, false, turn == 0);
     } else if profile == Profile::Reasoning {
-        // This is the accepted native Responses reasoning lane, not a tool-only control.
-        assert_eq!(api, Api::Responses);
-        let reasoning = value["output"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .find(|i| i["type"] == "reasoning")
-            .unwrap();
-        assert_eq!(
-            reasoning["summary"],
-            json!([{"type":"summary_text","text":"Plan 🧪"}])
-        );
-        assert!(
-            reasoning["encrypted_content"]
-                .as_str()
-                .unwrap()
-                .starts_with("mc1.")
-        );
+        match (upstream, api) {
+            (_, Api::Chat) => {
+                let message = &value["choices"][0]["message"];
+                assert!(message.get("reasoning_content").is_none());
+                assert!(message.get("reasoning").is_none());
+            }
+            (Api::Chat, Api::Responses) => {
+                let item = value["output"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .find(|item| item["type"] == "reasoning")
+                    .unwrap();
+                assert_eq!(item["summary"], json!([]));
+                assert_eq!(
+                    item["content"],
+                    json!([{"type":"reasoning_text","text":"Plan 🧪"}])
+                );
+                assert!(item.get("encrypted_content").is_none());
+            }
+            (Api::Responses | Api::Messages, Api::Responses) => {
+                let item = value["output"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .find(|item| item["type"] == "reasoning")
+                    .unwrap();
+                assert_eq!(
+                    item["summary"],
+                    json!([{"type":"summary_text","text":"Plan 🧪"}])
+                );
+                assert!(
+                    item["encrypted_content"]
+                        .as_str()
+                        .unwrap()
+                        .starts_with("mc1.")
+                );
+            }
+            (Api::Messages, Api::Messages) => {
+                assert_reasoning(api, ReasoningShape::Signed, value, false, turn == 0)
+            }
+            (Api::Responses, Api::Messages) => {
+                assert_reasoning(api, ReasoningShape::Signed, value, false, false)
+            }
+            (_, Api::Messages) => {
+                assert!(
+                    value["content"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .all(|block| block["type"] != "thinking"
+                            && block["type"] != "redacted_thinking")
+                );
+            }
+        }
     }
     if profile == Profile::Text {
         let text = match api {
@@ -980,9 +1026,11 @@ pub(super) fn assert_failure(api: Api, stream: bool, status: u16, bytes: &[u8], 
 
 pub(super) fn assert_history(
     api: Api,
+    client: Api,
     profile: Profile,
     body: &Value,
     shape: Option<ReasoningShape>,
+    bailian: bool,
 ) {
     let history = body[api.history()].as_array().unwrap();
     if let Some(shape) = shape {
@@ -1085,21 +1133,64 @@ pub(super) fn assert_history(
     assert_eq!(
         results,
         vec![
-            (json!("call-a"), json!("ENOENT: missing.json")),
-            (json!("call-z"), json!("revision=9007199254740993; label=a")),
+            (
+                json!("call-a"),
+                json!(if client == Api::Messages && api != Api::Messages {
+                    "[tool result is_error=true]\nENOENT: missing.json"
+                } else {
+                    "ENOENT: missing.json"
+                })
+            ),
+            (
+                json!("call-z"),
+                json!(if client == Api::Messages && api != Api::Messages {
+                    "[tool result is_error=false]\nrevision=9007199254740993; label=a"
+                } else {
+                    "revision=9007199254740993; label=a"
+                })
+            ),
         ],
         "reverse-order feedback must reach upstream"
     );
     if profile == Profile::Reasoning && shape.is_none() {
-        let reasoning = history.iter().find(|i| i["type"] == "reasoning").unwrap();
-        assert_eq!(
-            reasoning["encrypted_content"], "synthetic-reason-0",
-            "same-issuer replay must open the delivered seal"
-        );
-        assert_eq!(
-            reasoning["summary"],
-            json!([{"type":"summary_text","text":"Plan 🧪"}])
-        );
+        match (api, client) {
+            (Api::Chat, Api::Chat | Api::Messages) => assert!(
+                history
+                    .iter()
+                    .all(|item| item.get("reasoning_content").is_none())
+            ),
+            (Api::Chat, _) => assert!(
+                history
+                    .iter()
+                    .any(|item| item["reasoning_content"] == "Plan 🧪")
+            ),
+            (Api::Responses, Api::Chat) => {
+                assert!(history.iter().all(|item| item["type"] != "reasoning"))
+            }
+            (Api::Responses, _) if bailian => {
+                // The selected Bailian carrier does not accept encrypted
+                // reasoning; the existing transfer rule omits its whole owner.
+                assert!(history.iter().all(|item| item["type"] != "reasoning"));
+                assert!(!body.to_string().contains("Plan 🧪"));
+            }
+            (Api::Responses, _) => {
+                let item = history
+                    .iter()
+                    .find(|item| item["type"] == "reasoning")
+                    .unwrap_or_else(|| {
+                        panic!("synthetic projected history has no reasoning item: {body}")
+                    });
+                assert_eq!(
+                    item["encrypted_content"], "synthetic-reason-0",
+                    "same-issuer replay must open the delivered seal"
+                );
+                assert_eq!(
+                    item["summary"],
+                    json!([{"type":"summary_text","text":"Plan 🧪"}])
+                );
+            }
+            (Api::Messages, _) => assert_reasoning(api, ReasoningShape::Signed, body, true, true),
+        }
     }
 }
 

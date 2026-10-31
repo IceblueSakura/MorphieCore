@@ -1,9 +1,5 @@
 //! Trusted model-effective limits, checked after target-local control projection.
-use crate::protocol::failure::CarrierReason;
-use crate::{
-    protocol::CodecError,
-    semantic::task::generation::{EffortLevel, GenerationRequest, Item},
-};
+use crate::{protocol::CodecError, semantic::task::generation::EffortLevel};
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct ModelLimits {
@@ -69,42 +65,6 @@ impl ModelLimits {
                 .maximum_output_tokens
                 .or(self.maximum_output_tokens),
         })
-    }
-
-    pub(crate) fn check_request(&self, request: &GenerationRequest) -> Result<(), CodecError> {
-        self.check_values(
-            request.controls().max_output_tokens,
-            request
-                .settings()
-                .effort
-                .value()
-                .map(|effort| effort.level)
-                .into_iter()
-                .chain(request.items().iter().filter_map(|(_, item)| match item {
-                    Item::ConfigurationUpdate(update) => update.effort.map(|effort| effort.level),
-                    _ => None,
-                })),
-        )
-    }
-
-    pub(crate) fn check_values(
-        &self,
-        output: Option<u64>,
-        efforts: impl IntoIterator<Item = EffortLevel>,
-    ) -> Result<(), CodecError> {
-        self.validate()?;
-        if output
-            .zip(self.maximum_output_tokens)
-            .is_some_and(|(value, maximum)| value > maximum)
-        {
-            return Err(CodecError::Unsupported(CarrierReason::Unavailable));
-        }
-        if let Some(allowed) = &self.allowed_effort
-            && efforts.into_iter().any(|effort| !allowed.contains(&effort))
-        {
-            return Err(CodecError::Unsupported(CarrierReason::Unavailable));
-        }
-        Ok(())
     }
 }
 
@@ -172,10 +132,6 @@ mod tests {
         ] {
             assert!(invalid.validate().is_err());
         }
-        // Planning fields do not turn output requests into input-token estimates.
-        narrower
-            .check_values(Some(300_000), std::iter::empty())
-            .unwrap();
         let input_only = ModelLimits {
             maximum_input_tokens: Some(1_048_576),
             ..Default::default()

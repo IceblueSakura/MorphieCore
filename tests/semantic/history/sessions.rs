@@ -379,7 +379,7 @@ fn assert_history(api: Api, request: &Request, turn: usize) {
             .semantic
             .settings()
             .effort
-            .value()
+            .as_ref()
             .unwrap()
             .scope,
         if matches!(api, Api::Messages) {
@@ -394,7 +394,7 @@ fn assert_history(api: Api, request: &Request, turn: usize) {
             .semantic
             .settings()
             .effort
-            .value()
+            .as_ref()
             .unwrap()
             .level,
         if turn >= 7 {

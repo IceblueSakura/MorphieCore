@@ -1,4 +1,5 @@
 //! Google AI Studio bindings. One public model, its Google endpoints in failover order.
+use crate::lowering::disposition::Dispositions;
 use crate::{
     protocol::{
         google::{generate_content, interactions},
@@ -41,11 +42,17 @@ impl GoogleBinding {
             },
         })
     }
-    fn accepted_contract(&self) -> GenerationFeatureSet {
+    fn accepted_contract(&self) -> Dispositions {
         let mut contract = generate_content::semantic_contract();
         // The existing Interactions candidate retains its official image-result carrier.
-        contract.tool_result_media = true;
-        contract.response_effort = self.reasoning_policy().is_some();
+        contract.set_native(
+            crate::semantic::task::generation::Feature::ToolResultMedia,
+            true,
+        );
+        contract.set_native(
+            crate::semantic::task::generation::Feature::ResponseEffort,
+            self.reasoning_policy().is_some(),
+        );
         contract
     }
 
@@ -89,11 +96,15 @@ impl GoogleBinding {
             upstream_model: self.upstream.into(),
             canonical_model: ModelId::new(self.model).expect("static model"),
             representation: generate_content::TargetContract {
-                semantics: GenerationFeatureSet {
-                    temperature: !ignored_sampling,
-                    top_p: !ignored_sampling,
-                    ..generate_content::semantic_contract()
-                },
+                dispositions: (generate_content::semantic_contract())
+                    .with_native(
+                        crate::semantic::task::generation::Feature::Temperature,
+                        !ignored_sampling,
+                    )
+                    .with_native(
+                        crate::semantic::task::generation::Feature::TopP,
+                        !ignored_sampling,
+                    ),
                 sampling: if ignored_sampling {
                     crate::protocol::google::SamplingPolicy::Ignored
                 } else {
@@ -155,15 +166,13 @@ impl GoogleBinding {
     }
     pub fn public_model(&self) -> PublicModel {
         let model = ModelId::new(self.model).expect("static model");
-        let mut public = PublicModel::new(
+        PublicModel::new(
             model.clone(),
             model,
             TaskKind::Generation,
             self.route().id,
             self.accepted_contract(),
-        );
-        public.standard_context = false;
-        public
+        )
     }
     pub fn canonical_model(&self) -> CanonicalModel {
         CanonicalModel {

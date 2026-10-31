@@ -1,4 +1,5 @@
 //! One bounded Router gate for exact prefixes, final handoff and both cache carriers.
+use crate::lowering::disposition::Dispositions;
 use crate::{
     gateway::*,
     protocol::openai::{Dialect, TargetContract as Contract},
@@ -177,12 +178,12 @@ fn gateway(origin: &str, profile: GenerationApi, dialect: Dialect) -> Gateway {
             ModelId::new("canonical").unwrap(),
             TaskKind::Generation,
             RouteId::new("route").unwrap(),
-            GenerationFeatureSet::full(),
+            Dispositions::full(),
         )],
         vec![CanonicalModel {
             id: ModelId::new("canonical").unwrap(),
             task: TaskKind::Generation,
-            contract: GenerationFeatureSet::full(),
+            contract: Dispositions::full(),
         }],
     )
     .unwrap()

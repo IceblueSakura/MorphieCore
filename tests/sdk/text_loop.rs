@@ -23,8 +23,8 @@ use morphiecore::{
     },
     semantic::{
         task::generation::{
-            ContentPart, Continuation, GenerationRequirements, GenerationResponse, Item, Outcome,
-            PrefixCacheBoundary, StreamEvent,
+            ContentPart, Continuation, GenerationResponse, Item, Outcome, PrefixCacheBoundary,
+            StreamEvent,
         },
         value::{Presence, ReplayOrigin, Text},
     },
@@ -130,7 +130,11 @@ async fn handle(State(state): State<Suite>, headers: HeaderMap, body: Bytes) -> 
             "type":"input_text","text":"hello 🧪","prompt_cache_breakpoint":{"mode":"explicit"}
         }])
     );
-    assert!(!GenerationRequirements::derive(&decoded.task.semantic).explicit_cache);
+    assert!(
+        !(decoded.task.semantic)
+            .features()
+            .contains_key(&morphiecore::semantic::task::generation::Feature::ExplicitCache)
+    );
     assert_eq!(
         decoded.task.semantic.items()[0]
             .1

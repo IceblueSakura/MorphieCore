@@ -2,9 +2,7 @@
 
 use crate::{
     provider::ProviderDefinition,
-    topology::{
-        CanonicalModel, Endpoint, EndpointId, GenerationFeatureSet, PublicModel, Route, RouteId,
-    },
+    topology::{CanonicalModel, Dispositions, Endpoint, EndpointId, PublicModel, Route, RouteId},
 };
 use std::collections::BTreeMap;
 
@@ -56,11 +54,8 @@ pub enum TopologyError {
 
 /// `promise` must be pointwise implied by `endpoint`. Whether a narrower promise
 /// is published is a route policy decision made in trusted configuration.
-fn promised(
-    semantic: &GenerationFeatureSet,
-    endpoint: &crate::lowering::target::TargetContract,
-) -> bool {
-    endpoint.accepted_semantics().supports(semantic)
+fn promised(semantic: &Dispositions, endpoint: &crate::lowering::target::TargetContract) -> bool {
+    endpoint.dispositions().supports(semantic)
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -308,39 +303,9 @@ fn compile_deployments(
             if endpoint.canonical_model != model.canonical_model {
                 return Err(TopologyError::CanonicalModelMismatch);
             }
-            let native = match endpoint.protocol {
-                super::GenerationProtocol::AnthropicMessages => {
-                    let mut ceiling =
-                        crate::protocol::anthropic::messages::Profile::AdaptiveTextTools
-                            .semantic_contract();
-                    // Reviewed binding opt-ins only; other codec-only features stay closed.
-                    ceiling.explicit_cache = true;
-                    ceiling.strict_tools = true;
-                    ceiling.tool_examples = true;
-                    ceiling.document_context = true;
-                    ceiling.automatic_prefix_cache = true;
-                    ceiling.ordered_instructions = true;
-                    ceiling.tool_changes = true;
-                    Some(ceiling)
-                }
-                super::GenerationProtocol::GoogleGenerateContent => {
-                    Some(crate::protocol::google::generate_content::semantic_contract())
-                }
-                super::GenerationProtocol::GoogleInteractions => {
-                    Some(crate::protocol::google::interactions::semantic_contract())
-                }
-                _ => None,
-            };
-            // A skippable candidate may be narrower than the public contract: requests it
-            // cannot represent skip it, reducing failover rather than admission.
-            if let Some(native) = native
-                && (!native.supports(endpoint.representation.semantics()) || model.standard_context)
-            {
-                return Err(TopologyError::ContractUnsatisfiable);
-            }
+            // Skippable candidates can be narrower than the public input contract.
             if route.policy.candidates == super::CandidatePolicy::RequireAll
-                && (!promised(&model.contract, &endpoint.representation)
-                    || model.standard_context && !endpoint.representation.standard_context())
+                && !promised(&model.contract, &endpoint.representation)
             {
                 return Err(TopologyError::ContractUnsatisfiable);
             }
@@ -451,7 +416,7 @@ mod tests {
         CanonicalModel {
             id: ModelId::new("fixture-model").unwrap(),
             task: TaskKind::Generation,
-            contract: GenerationFeatureSet::full(),
+            contract: Dispositions::full(),
         }
     }
     fn model(contract: TargetContract) -> PublicModel {
@@ -460,7 +425,7 @@ mod tests {
             ModelId::new("fixture-model").unwrap(),
             TaskKind::Generation,
             RouteId::new("fixture-route").unwrap(),
-            contract.semantics,
+            contract.dispositions,
         )
     }
 
@@ -552,7 +517,10 @@ mod tests {
             Err(TopologyError::UnknownCanonicalModel)
         );
         let mut limited = canonical();
-        limited.contract.image_input = false;
+        limited.contract.set_native(
+            crate::semantic::task::generation::Feature::ImageInput,
+            false,
+        );
         assert_eq!(
             compile(
                 vec![provider()],
@@ -707,17 +675,17 @@ mod tests {
     #[test]
     fn public_contract_must_be_satisfiable_by_every_candidate() {
         let promise = TargetContract {
-            semantics: GenerationFeatureSet {
-                strict_tools: true,
-                ..GenerationFeatureSet::full()
-            },
+            dispositions: (Dispositions::full()).with_native(
+                crate::semantic::task::generation::Feature::StrictTools,
+                true,
+            ),
             ..TargetContract::full()
         };
         let candidate = TargetContract {
-            semantics: GenerationFeatureSet {
-                strict_tools: false,
-                ..GenerationFeatureSet::full()
-            },
+            dispositions: (Dispositions::full()).with_native(
+                crate::semantic::task::generation::Feature::StrictTools,
+                false,
+            ),
             ..TargetContract::full()
         };
         assert_eq!(

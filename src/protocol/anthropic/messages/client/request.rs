@@ -406,6 +406,7 @@ pub fn decode_client_request(bytes: &[u8]) -> Result<Request, CodecError> {
         &parsed_messages,
         settings.reasoning.mode == Presence::Value(ReasoningMode::Budgeted),
         selection.as_ref(),
+        false,
     )?;
     // Messages turns are not kept as envelopes: each target regroups items its own
     // way (native by role, Chat by assistant text and calls).

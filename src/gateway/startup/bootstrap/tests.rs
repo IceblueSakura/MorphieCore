@@ -585,16 +585,36 @@ fn codex_history_reaches_the_native_binding_by_named_rules() {
     assert_eq!(
         rules,
         [
-            "messages.default-automatic-cache.v1",
-            "messages.normalize-tool-arguments.v1",
-            "messages.omit-sampling.v1",
-            "messages.project-call-ids.v1",
+            "generation.omit-encrypted-reasoning-include.v1",
+            "generation.omit-temperature.v1",
         ]
     );
-    // Reasoning-only effort cannot become response-wide effort, and display
-    // alone cannot enable adaptive thinking.
-    assert!(prepare(serde_json::json!({"effort":"xhigh"}), &input).is_err());
-    assert!(prepare(serde_json::json!({"summary":"auto"}), &input).is_err());
+    let (wire, rules) = prepare(serde_json::json!({"effort":"xhigh"}), &input).unwrap();
+    assert_eq!(wire["output_config"], serde_json::json!({"effort":"xhigh"}));
+    assert!(
+        wire.get("thinking").is_none(),
+        "effort does not invent activation"
+    );
+    assert_eq!(
+        rules,
+        [
+            "generation.omit-encrypted-reasoning-include.v1",
+            "generation.omit-temperature.v1",
+            "generation.project-effort.v1"
+        ]
+    );
+    let (wire, rules) = prepare(serde_json::json!({"summary":"auto"}), &input).unwrap();
+    assert!(
+        wire.get("thinking").is_none(),
+        "auto presentation does not enable thinking"
+    );
+    assert_eq!(
+        rules,
+        [
+            "generation.omit-encrypted-reasoning-include.v1",
+            "generation.omit-temperature.v1"
+        ]
+    );
     // Foreign opaque values are dropped; readable reasoning without this target's
     // signature becomes assistant text in every turn.
     let foreign = crate::protocol::replay_envelope::seal(
@@ -654,9 +674,8 @@ fn codex_history_reaches_the_native_binding_by_named_rules() {
     assert_eq!(
         rules,
         [
-            "messages.default-automatic-cache.v1",
-            "messages.normalize-tool-arguments.v1",
-            "messages.omit-sampling.v1",
+            "generation.omit-encrypted-reasoning-include.v1",
+            "generation.omit-temperature.v1",
             "messages.reasoning-as-text.v1",
             "messages.transfer-visible-history.v1",
         ]
@@ -947,14 +966,14 @@ fn configured_failover_orders_and_limits_a_models_providers() {
         .representation
         .openai_mut()
         .unwrap()
-        .semantics
-        .compaction = true;
+        .dispositions
+        .set_native(crate::semantic::task::generation::Feature::Compaction, true);
     second
         .representation
         .openai_mut()
         .unwrap()
-        .semantics
-        .compaction = true;
+        .dispositions
+        .set_native(crate::semantic::task::generation::Feature::Compaction, true);
     assert_eq!(
         first.encode_request(&replay).unwrap()["input"][0]["encrypted_content"],
         "synthetic-compacted-history"
@@ -1055,14 +1074,14 @@ fn configured_failover_orders_and_limits_a_models_providers() {
             "google.gemini-3.8-flash.response-effort-to-thinking.v1"
         );
         assert_eq!(
-            input.effort.value(),
+            input.effort.as_ref(),
             Some(&EffortControl {
                 scope: EffortScope::Response,
                 level: EffortLevel::Medium,
             })
         );
         let mut expected = input.clone();
-        expected.effort = crate::semantic::value::Presence::Value(EffortControl {
+        expected.effort = Some(EffortControl {
             scope: EffortScope::Reasoning,
             level: EffortLevel::Medium,
         });
@@ -1073,8 +1092,8 @@ fn configured_failover_orders_and_limits_a_models_providers() {
             !candidate
                 .endpoint
                 .representation
-                .semantics()
-                .response_effort
+                .dispositions()
+                .native(crate::semantic::task::generation::Feature::ResponseEffort)
         );
     }
     assert_eq!(request, before);

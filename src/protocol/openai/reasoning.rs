@@ -24,43 +24,20 @@ pub(super) fn requires_extended_controls(settings: &GenerationSettings) -> bool 
         || value.presentation.visibility == crate::semantic::value::Presence::Null
         || settings
             .effort
-            .value()
+            .as_ref()
             .is_some_and(|e| e.scope != EffortScope::Reasoning)
-        || settings.effort == crate::semantic::value::Presence::Null
             && (value.presence == ReasoningPresence::Null
                 || value.activation.value() == Some(&ReasoningActivation::Disabled))
         || value.activation == crate::semantic::value::Presence::Null
         || value.activation.value() == Some(&ReasoningActivation::Enabled)
             && !settings
                 .effort
-                .value()
+                .as_ref()
                 .is_some_and(|e| e.scope == EffortScope::Reasoning)
         || matches!(
             value.mode.value(),
             Some(ReasoningMode::Adaptive | ReasoningMode::Budgeted)
         )
-}
-
-pub(super) fn admit_configuration_mapping(
-    update: &mut ConfigurationUpdate,
-    mapping: Option<&crate::protocol::reasoning::ReasoningEffortMapping>,
-    decode: bool,
-) -> Result<(), CodecError> {
-    if let (Some(mapping), Some(control)) = (mapping, update.effort) {
-        if control.scope != mapping.scope {
-            return Err(CodecError::Unsupported(CarrierReason::Reasoning));
-        }
-        let level = if decode {
-            mapping.decode(control.level)?
-        } else {
-            mapping.encode(control.level)?
-        };
-        update.effort = Some(EffortControl {
-            scope: control.scope,
-            level,
-        });
-    }
-    Ok(())
 }
 
 /// `reported` distinguishes response-echo admission from request admission: the
@@ -149,17 +126,17 @@ pub(super) fn chat_request(
 fn read_effort(
     o: &Map<String, Value>,
     reasoning: &mut ReasoningRequest,
-    control: &mut crate::semantic::value::Presence<EffortControl>,
+    control: &mut Option<EffortControl>,
     key: &'static str,
 ) -> Result<(), CodecError> {
     use crate::semantic::value::Presence;
     match o.get(key) {
         None => {}
-        Some(Value::Null) => *control = Presence::Null,
+        Some(Value::Null) => *control = None,
         Some(value) => {
             let update = effort(value.as_str().ok_or(CodecError::invalid())?)?;
             reasoning.activation = update.activation.map_or(Presence::Absent, Presence::Value);
-            *control = update.effort.map_or(Presence::Absent, Presence::Value);
+            *control = update.effort;
         }
     }
     Ok(())
@@ -186,16 +163,14 @@ pub(super) fn write_request(
     }
     let level = effort_label(&ConfigurationUpdate {
         activation: value.activation.value().copied(),
-        effort: settings.effort.value().copied(),
+        effort: settings.effort.as_ref().copied(),
     })?;
     let put_effort = |o: &mut Map<String, Value>, key: &str| {
         if let Some(level) = level {
             o.insert(key.into(), json!(level));
-        } else if settings.effort == crate::semantic::value::Presence::Null {
-            o.insert(key.into(), Value::Null);
         }
     };
-    if value.presence() == ReasoningPresence::Absent && settings.effort.is_absent() {
+    if value.presence() == ReasoningPresence::Absent && settings.effort.is_none() {
         return Ok(());
     }
     if profile == GenerationApi::Chat {

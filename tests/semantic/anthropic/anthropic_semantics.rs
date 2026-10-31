@@ -815,7 +815,7 @@ fn automatic_cache_keeps_examples_context_and_deferred_definitions() {
     assert_eq!(
         p.encode_generation_request(&edited, &exact.fidelity, &target())
             .err(),
-        Some(error)
+        Some(error.into())
     );
     let mut extended = body.clone();
     extended["messages"].as_array_mut().unwrap().push(json!({
@@ -866,7 +866,11 @@ fn root_system_blocks_and_disabled_controls_have_independent_semantic_owners() {
     assert_eq!(encoded.value["cache_control"], json!({"type":"ephemeral"}));
     let instruction = content.semantic.instructions().value().unwrap();
     assert_eq!(content.semantic.items().len(), 1);
-    assert!(GenerationRequirements::derive(&content.semantic).explicit_cache);
+    assert!(
+        (content.semantic)
+            .features()
+            .contains_key(&morphiecore::semantic::task::generation::Feature::ExplicitCache)
+    );
     assert_eq!(
         instruction.parts[0].cache,
         Some(PrefixCacheBoundary::Ttl(PrefixCacheTtl::OneHour))
@@ -986,7 +990,11 @@ fn root_system_blocks_and_disabled_controls_have_independent_semantic_owners() {
         .encode_generation_request(&edited, &content.fidelity, &target())
         .unwrap();
     assert!(encoded.value["system"][0].get("cache_control").is_none());
-    assert!(GenerationRequirements::derive(&edited).explicit_cache);
+    assert!(
+        (edited)
+            .features()
+            .contains_key(&morphiecore::semantic::task::generation::Feature::ExplicitCache)
+    );
     let nested_wire = br#"{"model":"synthetic-model","max_tokens":32,"messages":[{"role":"user","content":"lookup"},{"role":"assistant","content":[{"type":"tool_use","id":"c","name":"lookup","input":{},"cache_control":{"type":"ephemeral","ttl":"1h"}}]},{"role":"user","content":[{"type":"tool_result","tool_use_id":"c","cache_control":{"type":"ephemeral"},"content":[{"type":"text","text":"stable","cache_control":{"type":"ephemeral","ttl":"1h"}},{"type":"text","text":"tail"}]}]}]}"#;
     let nested = p
         .decode_generation_request(nested_wire, LocalScope::new(1), &target())
@@ -1101,9 +1109,12 @@ fn root_system_blocks_and_disabled_controls_have_independent_semantic_owners() {
     assert_eq!(
         p.encode_generation_request(&cached_edit, &Default::default(), &target())
             .err(),
-        Some(morphiecore::protocol::CodecError::Invalid(
-            morphiecore::protocol::failure::ShapeReason::InvalidValue
-        ))
+        Some(
+            morphiecore::protocol::CodecError::Invalid(
+                morphiecore::protocol::failure::ShapeReason::InvalidValue
+            )
+            .into()
+        )
     );
     let mut automatic_conflict = empty_wire.clone();
     automatic_conflict["cache_control"]["ttl"] = json!("5m");
@@ -1128,7 +1139,7 @@ fn root_system_blocks_and_disabled_controls_have_independent_semantic_owners() {
     assert_eq!(
         p.encode_generation_request(&conflict_edit, &empty.fidelity, &target())
             .err(),
-        Some(conflict_error)
+        Some(conflict_error.into())
     );
     let cached_wire = br#"{"model":"synthetic-model","max_tokens":32,"tools":[{"name":"lookup","input_schema":{"type":"object"},"cache_control":{"type":"ephemeral","ttl":"1h"}}],"messages":[{"role":"user","content":"go"}]}"#;
     let cached = p
@@ -1144,7 +1155,11 @@ fn root_system_blocks_and_disabled_controls_have_independent_semantic_owners() {
         morphiecore::protocol::anthropic::messages::client::decode_client_request(cached_wire)
             .unwrap();
     assert_eq!(client.task.semantic.settings(), cached.semantic.settings());
-    assert!(GenerationRequirements::derive(&client.task.semantic).explicit_cache);
+    assert!(
+        (client.task.semantic)
+            .features()
+            .contains_key(&morphiecore::semantic::task::generation::Feature::ExplicitCache)
+    );
     let encoded = p
         .encode_generation_request(&cached.semantic, &cached.fidelity, &target())
         .unwrap();
@@ -1178,22 +1193,31 @@ fn root_system_blocks_and_disabled_controls_have_independent_semantic_owners() {
         .encode_generation_request(&removed, &cached.fidelity, &target())
         .unwrap();
     assert!(encoded.value["tools"][0].get("cache_control").is_none());
-    assert!(!GenerationRequirements::derive(&removed).explicit_cache);
+    assert!(
+        !(removed)
+            .features()
+            .contains_key(&morphiecore::semantic::task::generation::Feature::ExplicitCache)
+    );
     for profile in [
         morphiecore::protocol::openai::GenerationApi::Chat,
         morphiecore::protocol::openai::GenerationApi::Responses,
     ] {
-        assert_eq!(
-            morphiecore::protocol::openai::lowering::lower_request(
-                &client.task.semantic,
-                &client.task.fidelity,
-                profile,
-                morphiecore::protocol::openai::TargetContract::full(),
-            )
-            .err()
-            .unwrap(),
-            morphiecore::protocol::conversion::generation::RepresentationError::Controls
-        );
+        let lowered = morphiecore::protocol::openai::lowering::lower_request(
+            &client.task.semantic,
+            &client.task.fidelity,
+            profile,
+            morphiecore::protocol::openai::TargetContract::full(),
+        )
+        .unwrap();
+        let wire = match profile {
+            morphiecore::protocol::openai::GenerationApi::Chat => {
+                morphiecore::protocol::openai::chat::encode_generation(&lowered).unwrap()
+            }
+            morphiecore::protocol::openai::GenerationApi::Responses => {
+                morphiecore::protocol::openai::responses::encode_generation(&lowered).unwrap()
+            }
+        };
+        assert!(!wire.to_string().contains("cache_control"));
     }
     assert!(
         morphiecore::protocol::google::generate_content::encode_generation_request(
@@ -1238,8 +1262,13 @@ fn root_system_blocks_and_disabled_controls_have_independent_semantic_owners() {
         )
         .unwrap();
     assert_eq!(four.semantic.settings().automatic_prefix_cache, None);
-    let requirements = GenerationRequirements::derive(&four.semantic);
-    assert!(requirements.explicit_cache && !requirements.automatic_prefix_cache);
+    let requirements = (four.semantic).features();
+    assert!(
+        requirements.contains_key(&morphiecore::semantic::task::generation::Feature::ExplicitCache)
+            && !requirements.contains_key(
+                &morphiecore::semantic::task::generation::Feature::AutomaticPrefixCache
+            )
+    );
     let encoded = p
         .encode_generation_request(&four.semantic, &four.fidelity, &target())
         .unwrap();
@@ -1362,7 +1391,7 @@ fn root_system_blocks_and_disabled_controls_have_independent_semantic_owners() {
     let uncapped = decoded.semantic.clone().with_settings(settings).unwrap();
     assert!(
         matches!(p.encode_generation_request(&uncapped, &decoded.fidelity, &target()),
-        Err(morphiecore::protocol::CodecError::Unsupported(value)) if value == morphiecore::protocol::failure::CarrierReason::Unavailable)
+        Err(morphiecore::protocol::ConversionFailure { cause: morphiecore::protocol::ConversionCause::Codec(morphiecore::protocol::CodecError::Unsupported(value)), .. }) if value == morphiecore::protocol::failure::CarrierReason::Unavailable)
     );
     for max_tokens in [Value::Null, json!(0)] {
         let mut invalid: Value = serde_json::from_slice(raw).unwrap();

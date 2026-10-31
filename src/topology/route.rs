@@ -2,7 +2,7 @@
 
 use crate::{
     protocol::conversion::generation::ReportedFactPolicy,
-    topology::GenerationFeatureSet,
+    topology::Dispositions,
     topology::{EndpointId, ModelId, RouteId, TaskKind},
 };
 
@@ -75,8 +75,7 @@ pub struct PublicModel {
     pub canonical_model: ModelId,
     pub task: TaskKind,
     pub route: RouteId,
-    pub contract: GenerationFeatureSet,
+    pub contract: Dispositions,
     /// Public context admission is not a property of model intelligence.
-    pub standard_context: bool,
     pub reported_facts: ReportedFactPolicy,
 }

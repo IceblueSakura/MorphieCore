@@ -17,8 +17,8 @@ use serde_json::{Map, Value, json};
 pub(super) fn read_policy(
     o: &Map<String, Value>,
     profile: GenerationApi,
-) -> Result<Presence<ServicePolicy>, CodecError> {
-    read_presence(o, "service_tier", |v| {
+) -> Result<Option<ServicePolicy>, CodecError> {
+    Ok(read_presence(o, "service_tier", |v| {
         Ok(match v.as_str() {
             Some("auto") => ServicePolicy::ProjectConfigured,
             Some("default") => ServicePolicy::StandardProcessing,
@@ -33,9 +33,11 @@ pub(super) fn read_policy(
                 return Err(CodecError::invalid());
             }
         })
-    })
+    })?
+    .value()
+    .copied())
 }
-pub(super) fn policy_wire(
+pub(crate) fn policy_wire(
     policy: ServicePolicy,
     profile: GenerationApi,
 ) -> Result<&'static str, CodecError> {
@@ -54,15 +56,12 @@ pub(super) fn policy_wire(
 }
 pub(super) fn write_policy(
     o: &mut Map<String, Value>,
-    policy: &Presence<ServicePolicy>,
+    policy: &Option<ServicePolicy>,
     profile: GenerationApi,
 ) -> Result<(), CodecError> {
-    if let Some(value) = policy.value() {
-        policy_wire(*value, profile)?;
+    if let Some(value) = policy {
+        o.insert("service_tier".into(), json!(policy_wire(*value, profile)?));
     }
-    put_presence(o, "service_tier", policy, |value| {
-        json!(policy_wire(*value, profile).expect("validated service policy"))
-    });
     Ok(())
 }
 pub(super) fn read_class(

@@ -1,5 +1,4 @@
 //! Responses wire entry points. Envelopes, task requests, shared items and SSE stay distinct.
-pub(in crate::protocol::openai) mod dialect;
 pub mod envelope;
 mod history;
 pub(crate) mod managed;

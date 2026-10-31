@@ -56,7 +56,7 @@ pub struct RequestContext {
     pub model: String,
     pub delivery: Delivery,
     pub execution: ExecutionHints,
-    pub service_policy: Presence<ServicePolicy>,
+    pub service_policy: Option<ServicePolicy>,
 }
 #[derive(Clone, Debug, PartialEq)]
 pub struct DecodedResponsesRequest {
@@ -67,7 +67,7 @@ impl RequestContext {
     pub fn validate(&self) -> Result<(), CodecError> {
         text(&self.model, "model", 256)?;
         self.delivery.validate()?;
-        if let Some(policy) = self.service_policy.value() {
+        if let Some(policy) = self.service_policy.as_ref() {
             super::super::service::policy_wire(*policy, GenerationApi::Responses)?;
         }
         Ok(self.execution.validate()?)
@@ -483,7 +483,7 @@ pub(in crate::protocol::openai) fn write_metadata(
         .context
         .write(&metadata.instruction_fidelity, o, completed)?;
     if let Some(echo) = metadata.request_metadata_echo() {
-        put_presence(o, "metadata", echo, |value| json!(value));
+        o.insert("metadata".into(), json!(echo));
     }
     // Required nullable wire members are not invented observations in the IR.
     for field in [
@@ -547,7 +547,7 @@ mod tests {
         )]));
         for (report, request, expected, echoed) in [
             (Presence::Absent, Presence::Absent, Value::Null, false),
-            (Presence::Absent, Presence::Null, Value::Null, true),
+            (Presence::Absent, Presence::Null, Value::Null, false),
             (
                 Presence::Absent,
                 Presence::Value(Default::default()),
@@ -579,7 +579,7 @@ mod tests {
             .unwrap();
             source.metadata.context.execution.metadata = report.clone();
             source.metadata.delivery = Some(std::sync::Arc::new(GenerationDelivery {
-                request_metadata: request,
+                request_metadata: request.value().cloned(),
                 ..Default::default()
             }));
             source.metadata.validate().unwrap();
@@ -639,7 +639,7 @@ mod tests {
             "model":"m","status":"completed","output":[]}))
         .unwrap();
         source.metadata.delivery = Some(std::sync::Arc::new(GenerationDelivery {
-            request_metadata: Presence::Value(std::collections::BTreeMap::from([(
+            request_metadata: Some(std::collections::BTreeMap::from([(
                 "k".into(),
                 "x".repeat(513),
             )])),

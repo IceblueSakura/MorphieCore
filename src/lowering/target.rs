@@ -1,5 +1,6 @@
 //! Protocol-owned endpoint capabilities, not a client protocol or execution policy.
 use crate::{
+    lowering::disposition::Dispositions,
     protocol::{
         anthropic,
         cache::CacheTargetPolicy,
@@ -8,7 +9,6 @@ use crate::{
         },
         openai::TargetContract as OpenAiCaps,
     },
-    semantic::task::generation::GenerationFeatureSet,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -89,12 +89,12 @@ impl TargetContract {
             _ => None,
         }
     }
-    pub fn semantics(&self) -> &GenerationFeatureSet {
+    pub fn dispositions(&self) -> &Dispositions {
         match self {
-            Self::OpenAi(c) => &c.semantics,
-            Self::AnthropicMessages(c) => &c.semantics,
-            Self::GoogleGenerateContent(c) => &c.semantics,
-            Self::GoogleInteractions(c) => &c.semantics,
+            Self::OpenAi(c) => &c.dispositions,
+            Self::AnthropicMessages(c) => &c.dispositions,
+            Self::GoogleGenerateContent(c) => &c.dispositions,
+            Self::GoogleInteractions(c) => &c.dispositions,
         }
     }
     pub(crate) fn messages_terminal_policy(
@@ -122,64 +122,12 @@ impl TargetContract {
             _ => None,
         }
     }
-    /// Accepted request features after selected adaptation, not native support.
-    /// Value/mode restrictions still belong to the shared target encoder.
-    pub(crate) fn accepted_semantics(&self) -> GenerationFeatureSet {
-        use crate::{
-            protocol::reasoning::ReasoningConversion, semantic::task::generation::EffortScope,
-        };
-        let mut contract = self.semantics().clone();
-        if matches!(self, Self::AnthropicMessages(c)
-            if c.sampling == anthropic::messages::SamplingPolicy::Fixed)
-        {
-            // Selected omission admits other source protocols' controls without
-            // claiming removed fields as native Messages carriers.
-            contract.temperature = true;
-            contract.top_p = true;
-        }
-        if matches!(self, Self::GoogleGenerateContent(c)
-            if c.sampling == crate::protocol::google::SamplingPolicy::Ignored)
-            || matches!(self, Self::GoogleInteractions(c)
-                if c.sampling == crate::protocol::google::SamplingPolicy::Ignored)
-        {
-            contract.temperature = true;
-            contract.top_p = true;
-        }
-        let policy = match self {
-            Self::GoogleGenerateContent(c) => c.reasoning_policy.as_ref(),
-            Self::GoogleInteractions(c) => c.reasoning_policy.as_ref(),
-            _ => None,
-        };
-        if contract.reasoning
-            && policy.is_some_and(|p| {
-                matches!(
-                    p.conversion,
-                    ReasoningConversion::Scope {
-                        from: EffortScope::Response,
-                        to: EffortScope::Reasoning,
-                        ..
-                    }
-                )
-            })
-        {
-            contract.response_effort = true;
-        }
-        contract
-    }
     pub fn cache(&self) -> CacheTargetPolicy {
         match self {
             Self::OpenAi(c) => c.cache,
             Self::AnthropicMessages(c) => c.cache,
             Self::GoogleGenerateContent(c) => c.cache,
             Self::GoogleInteractions(c) => c.cache,
-        }
-    }
-    pub fn standard_context(&self) -> bool {
-        match self {
-            Self::OpenAi(c) => c.standard_context,
-            Self::AnthropicMessages(_)
-            | Self::GoogleGenerateContent(_)
-            | Self::GoogleInteractions(_) => false,
         }
     }
     pub fn forced_stream(&self) -> bool {

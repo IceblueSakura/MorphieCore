@@ -291,7 +291,11 @@ impl ClientAdapter {
                         ),
                     );
                     let usage = decoded.semantic.usage();
-                    crate::protocol::anthropic::messages::client::project_snapshot(&mut decoded)?;
+                    losses.extend(
+                        crate::protocol::anthropic::messages::client::project_snapshot(
+                            &mut decoded,
+                        )?,
+                    );
                     if usage != decoded.semantic.usage() {
                         losses.push(crate::protocol::anthropic::messages::client::usage_loss());
                     }
@@ -610,41 +614,25 @@ impl ClientEncoder {
             error.at(crate::protocol::conversion::generation::ConversionBoundary::EventProject)
         })
     }
-    pub(crate) fn update_metadata(&mut self, metadata: ResponseMetadata) -> Result<(), SseError> {
+    pub(crate) fn update_metadata(
+        &mut self,
+        mut metadata: ResponseMetadata,
+    ) -> Result<(), SseError> {
         match &mut self.encoder {
             Encoder::Chat(e) => e.update_metadata(metadata),
             Encoder::Responses(e) => e.update_metadata(metadata),
             Encoder::Messages(e) => {
-                if let Err(error) = metadata.context.validate() {
-                    e.reject();
-                    return Err(CodecError::from(error).into());
-                }
+                let losses =
+                    crate::protocol::anthropic::messages::client::metadata_losses(&metadata);
                 if let Err(error) =
-                    crate::protocol::reports::validate_single(&metadata.context.reports)
+                    crate::protocol::anthropic::messages::client::project_metadata(&mut metadata)
                 {
-                    e.reject();
-                    return Err(error.into());
-                }
-                if metadata
-                    .context
-                    .reports
-                    .iter()
-                    .any(|r| r.settings.as_ref().is_some_and(|s| !s.safety.is_empty()))
-                {
-                    e.reject();
-                    return Err(CodecError::Unsupported(CarrierReason::Safety).into());
-                }
-                if let Err(error) = crate::protocol::anthropic::messages::client::validate_execution(
-                    &metadata.context.execution,
-                ) {
                     e.reject();
                     return Err(error.into());
                 }
                 e.update_service_class(metadata.context.service_class().clone())?;
                 e.update_delivery(metadata.delivery.as_deref());
-                for mut loss in
-                    crate::protocol::anthropic::messages::client::metadata_losses(&metadata)
-                {
+                for mut loss in losses {
                     loss = loss.with_boundary(("event.encode").into());
                     if !self.losses.contains(&loss) {
                         self.losses.push(loss);

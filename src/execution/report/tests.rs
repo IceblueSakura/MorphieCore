@@ -121,7 +121,7 @@ fn failed_candidate_and_output_views_do_not_pollute_the_producer() {
     report.end(true);
     report.result(ResultState::Succeeded);
     let r = report.snapshot();
-    assert_eq!(r.intake.entries.len(), 1);
+    assert!(r.intake.entries.is_empty());
     assert_eq!(r.producing_attempt, Some(2));
     assert!(r.failure.is_none());
     assert!(r.attempts[0].failure.is_some());

@@ -174,7 +174,7 @@ pub fn encode_generation(target: &RequestRepresentation<'_>) -> Result<Value, Co
     if target.adaptation.rules.bailian_requests || target.adaptation.rules.thinking_controls {
         let mut standard = encoded_settings.clone();
         standard.reasoning = ReasoningRequest::absent();
-        standard.effort = crate::semantic::value::Presence::Absent;
+        standard.effort = None;
         if target.adaptation.rules.bailian_requests {
             standard.tools = None;
             standard.tool_choice = None;

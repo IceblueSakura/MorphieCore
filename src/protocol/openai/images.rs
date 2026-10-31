@@ -145,7 +145,13 @@ pub fn decode_request(bytes: &[u8]) -> Result<Request, CodecError> {
             options: Presence::Absent,
         },
         identity: ClientIdentityHints {
-            user: optional(map, "user", |v| Ok(string(v)?.into()))?,
+            user: {
+                let user = optional(map, "user", |v| Ok(string(v)?.into()))?;
+                if user == Presence::Null {
+                    return Err(CodecError::invalid());
+                }
+                user.value().cloned()
+            },
             ..Default::default()
         },
     };
@@ -161,8 +167,7 @@ pub fn validate_request(request: &Request) -> Result<(), CodecError> {
     if !valid_model(&request.model)
         || request.delivery.streaming()
         || !request.delivery.options.is_absent()
-        || !request.identity.safety_identifier.is_absent()
-        || matches!(request.identity.user, Presence::Null)
+        || !request.identity.safety_identifier.is_none()
         // This profile defaults to PNG, unlike the protocol-neutral request.
         || request.task.compression.value().is_some()
             && !matches!(request.task.format.value(),Some(ImageFormat::Jpeg|ImageFormat::Webp))
@@ -207,7 +212,9 @@ pub fn encode_request(request: &Request, model: &str) -> Result<Value, CodecErro
         let label: &str = (*v).into();
         json!(label)
     });
-    put(&mut map, "user", &request.identity.user, |v| json!(v));
+    if let Some(value) = &request.identity.user {
+        map.insert("user".into(), json!(value));
+    }
     Ok(Value::Object(map))
 }
 fn size(value: &Value) -> Result<ImageSize, CodecError> {

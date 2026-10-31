@@ -1,7 +1,6 @@
 //! Model restrictions apply after projection, not to protocol-wide carriers.
 use morphiecore::{
     execution::{
-        AttemptError,
         plan::{RejectionReason, representable},
         prepare,
     },
@@ -37,11 +36,19 @@ fn google_response_effort_is_a_selected_direction_not_native_support() {
     let binding = &GOOGLE_BINDINGS[0];
     let rule = "google.gemini-3.8-flash.response-effort-to-thinking.v1";
     for mut endpoint in [binding.endpoint(), binding.interactions_endpoint()] {
-        assert!(!endpoint.representation.semantics().response_effort);
+        assert!(
+            !endpoint
+                .representation
+                .dispositions()
+                .native(morphiecore::semantic::task::generation::Feature::ResponseEffort)
+        );
         let mut public = binding.public_model();
         // RequireAll checks the selected input contract, not a fabricated native bit.
-        public.contract = endpoint.representation.semantics().clone();
-        public.contract.response_effort = true;
+        public.contract = endpoint.representation.dispositions().clone();
+        public.contract.set_native(
+            morphiecore::semantic::task::generation::Feature::ResponseEffort,
+            true,
+        );
         let mut route = binding.route();
         route.endpoints = vec![endpoint.id.clone()];
         route.policy.candidates = CandidatePolicy::RequireAll;
@@ -65,7 +72,7 @@ fn google_response_effort_is_a_selected_direction_not_native_support() {
                 "thinking":{"type":"adaptive"},"output_config":{"effort":level},
                 "messages":[{"role":"user","content":"go"}]}));
             assert_eq!(
-                request.task.semantic.settings().effort.value(),
+                request.task.semantic.settings().effort.as_ref(),
                 Some(&EffortControl {
                     scope: EffortScope::Response,
                     level: expected
@@ -129,7 +136,7 @@ fn google_response_effort_is_a_selected_direction_not_native_support() {
                 !rules.contains(&rule),
                 "already native or absent controls stay unchanged"
             );
-            if request.task.semantic.settings().effort.is_absent() {
+            if request.task.semantic.settings().effort.is_none() {
                 assert!(wire.pointer("/generationConfig/thinkingConfig").is_none());
                 assert!(wire.pointer("/generation_config/thinking_level").is_none());
             }
@@ -138,15 +145,18 @@ fn google_response_effort_is_a_selected_direction_not_native_support() {
             let mut invalid = endpoint.clone();
             let (semantics, policy) = match &mut invalid.representation {
                 morphiecore::lowering::target::TargetContract::GoogleGenerateContent(c) => {
-                    (&mut c.semantics, &mut c.reasoning_policy)
+                    (&mut c.dispositions, &mut c.reasoning_policy)
                 }
                 morphiecore::lowering::target::TargetContract::GoogleInteractions(c) => {
-                    (&mut c.semantics, &mut c.reasoning_policy)
+                    (&mut c.dispositions, &mut c.reasoning_policy)
                 }
                 _ => unreachable!(),
             };
             if fabricated_native_support {
-                semantics.response_effort = true;
+                semantics.set_native(
+                    morphiecore::semantic::task::generation::Feature::ResponseEffort,
+                    true,
+                );
             } else {
                 policy.as_mut().unwrap().conversion = ReasoningConversion::Scope {
                     from: EffortScope::Response,
@@ -168,16 +178,26 @@ fn google_response_effort_is_a_selected_direction_not_native_support() {
             }
             _ => unreachable!(),
         }
-        assert!(endpoint.encode_request(&request).is_err());
-        assert_eq!(
-            compile_one(endpoint),
-            Err(TopologyError::ContractUnsatisfiable)
-        );
+        let (wire, rules) = projected(&endpoint, &request);
+        assert_eq!(rules, ["generation.project-effort.v1"]);
+        if endpoint.protocol == GenerationProtocol::GoogleGenerateContent {
+            assert_eq!(
+                wire["generationConfig"],
+                json!({"maxOutputTokens":2048,
+                "thinkingConfig":{"thinkingLevel":"LOW"}})
+            );
+        } else {
+            assert_eq!(
+                wire["generation_config"],
+                json!({"max_output_tokens":2048,"thinking_level":"low"})
+            );
+        }
+        assert!(compile_one(endpoint).is_ok());
     }
 }
 
 #[test]
-fn google_scope_mapping_does_not_saturate_disable_or_allocate() {
+fn google_scope_mapping_approximates_levels_without_weakening_activation_or_history() {
     let binding = &GOOGLE_BINDINGS[0];
     for endpoint in [binding.endpoint(), binding.interactions_endpoint()] {
         let base = json!({"model":binding.model,"max_tokens":2048,
@@ -187,11 +207,24 @@ fn google_scope_mapping_does_not_saturate_disable_or_allocate() {
             body["output_config"]["effort"] = json!(level);
             let request = messages(body);
             assert!(morphiecore::execution::admit(&binding.public_model(), &request).is_ok());
-            rejected(
-                &endpoint,
-                &request,
-                morphiecore::protocol::failure::CarrierReason::Reasoning,
+            let (wire, rules) = projected(&endpoint, &request);
+            assert_eq!(
+                rules,
+                ["google.gemini-3.8-flash.response-effort-to-thinking.v1"]
             );
+            if endpoint.protocol == morphiecore::topology::GenerationProtocol::GoogleGenerateContent
+            {
+                assert_eq!(
+                    wire["generationConfig"],
+                    json!({"maxOutputTokens":2048,
+                    "thinkingConfig":{"thinkingLevel":"HIGH"}})
+                );
+            } else {
+                assert_eq!(
+                    wire["generation_config"],
+                    json!({"max_output_tokens":2048,"thinking_level":"high"})
+                );
+            }
         }
         for thinking in [
             json!({"type":"disabled"}),
@@ -202,11 +235,36 @@ fn google_scope_mapping_does_not_saturate_disable_or_allocate() {
             let request = messages(body);
             let before = request.clone();
             assert!(morphiecore::execution::admit(&binding.public_model(), &request).is_ok());
+            if request.task.semantic.reasoning().activation.value()
+                == Some(&ReasoningActivation::Enabled)
+            {
+                let (wire, rules) = projected(&endpoint, &request);
+                assert_eq!(
+                    rules,
+                    [
+                        "generation.adaptive-preserve-explicit-effort.v1",
+                        "google.gemini-3.8-flash.response-effort-to-thinking.v1"
+                    ]
+                );
+                if endpoint.protocol
+                    == morphiecore::topology::GenerationProtocol::GoogleGenerateContent
+                {
+                    assert_eq!(
+                        wire["generationConfig"],
+                        json!({"maxOutputTokens":2048,
+                        "thinkingConfig":{"thinkingLevel":"LOW"}})
+                    );
+                } else {
+                    assert_eq!(
+                        wire["generation_config"],
+                        json!({"max_output_tokens":2048,"thinking_level":"low"})
+                    );
+                }
+                continue;
+            }
             assert_eq!(
                 representable(&endpoint, &request),
-                Err(RejectionReason::Conversion(Box::new(
-                    endpoint.encode_request(&request).unwrap_err()
-                )))
+                Err(RejectionReason::Semantic(Feature::ReasoningActivation))
             );
             assert!(
                 prepare(
@@ -248,28 +306,28 @@ fn google_scope_mapping_does_not_saturate_disable_or_allocate() {
         assert!(morphiecore::execution::admit(&binding.public_model(), &request).is_ok());
         assert_eq!(
             representable(&endpoint, &request),
-            Err(RejectionReason::Conversion(Box::new(
-                endpoint.encode_request(&request).unwrap_err()
-            )))
+            Err(RejectionReason::Semantic(Feature::MessageEffort))
         );
     }
 }
 
-fn rejected(
-    endpoint: &Endpoint,
-    request: &Request,
-    reason: morphiecore::protocol::failure::CarrierReason,
-) {
+fn projected(endpoint: &Endpoint, request: &Request) -> (Value, Vec<&'static str>) {
     let before = request.clone();
-    assert!(matches!(endpoint.encode_request(request),
-        Err(ConversionFailure { cause: morphiecore::protocol::ConversionCause::Codec(CodecError::Unsupported(value)), .. }) if value == reason));
-    assert!(matches!(representable(endpoint, request),
-        Err(RejectionReason::Conversion(error))
-        if matches!(error.cause, morphiecore::protocol::ConversionCause::Codec(CodecError::Unsupported(value)) if value == reason)));
-    assert!(matches!(prepare(endpoint, &GOOGLE_BINDINGS[0].provider(),
-        &SecretMaterial::new("synthetic").unwrap(), request),
-        Err(AttemptError::Conversion(ConversionFailure { cause: morphiecore::protocol::ConversionCause::Codec(CodecError::Unsupported(value)), .. })) if value == reason));
+    let (wire, rules) = endpoint.encode_request_with_rules(request).unwrap();
+    assert_eq!(representable(endpoint, request), Ok(()));
+    let prepared = prepare(
+        endpoint,
+        &GOOGLE_BINDINGS[0].provider(),
+        &SecretMaterial::new("synthetic").unwrap(),
+        request,
+    )
+    .unwrap();
+    assert_eq!(
+        serde_json::from_slice::<Value>(&prepared.body).unwrap(),
+        wire
+    );
     assert_eq!(request, &before);
+    (wire, rules)
 }
 
 #[test]
@@ -302,17 +360,38 @@ fn gemini_model_values_are_checked_by_both_preflight_and_preparation() {
         assert_eq!(request, before);
         let minimal = source(json!({"model":binding.model,"input":"go",
             "reasoning":{"effort":"minimal"},"max_output_tokens":4096}));
-        rejected(
-            &endpoint,
-            &minimal,
-            morphiecore::protocol::failure::CarrierReason::Unavailable,
-        );
+        let (wire, rules) = projected(&endpoint, &minimal);
+        assert_eq!(rules, ["generation.project-effort.v1"]);
+        if endpoint.protocol == morphiecore::topology::GenerationProtocol::GoogleGenerateContent {
+            assert_eq!(
+                wire["generationConfig"],
+                json!({"maxOutputTokens":4096,
+                "thinkingConfig":{"thinkingLevel":"LOW"}})
+            );
+        } else {
+            assert_eq!(
+                wire["generation_config"],
+                json!({"max_output_tokens":4096,"thinking_level":"low"})
+            );
+        }
         let excessive =
             source(json!({"model":binding.model,"input":"go","max_output_tokens":65537}));
-        rejected(
-            &endpoint,
-            &excessive,
-            morphiecore::protocol::failure::CarrierReason::Unavailable,
+        let (wire, rules) = projected(&endpoint, &excessive);
+        assert_eq!(rules, ["generation.clamp-output-to-model-maximum.v1"]);
+        assert_eq!(
+            wire[if endpoint.protocol
+                == morphiecore::topology::GenerationProtocol::GoogleGenerateContent
+            {
+                "generationConfig"
+            } else {
+                "generation_config"
+            }],
+            if endpoint.protocol == morphiecore::topology::GenerationProtocol::GoogleGenerateContent
+            {
+                json!({"maxOutputTokens":65536})
+            } else {
+                json!({"max_output_tokens":65536})
+            }
         );
 
         // Restrictions belong to this binding, not the generic Google carriers.
@@ -358,16 +437,34 @@ fn gemini_preserves_native_budgets_and_checks_fallback_levels_without_requantizi
             }
             _ => unreachable!(),
         }
-        rejected(
-            &endpoint,
-            &request,
-            morphiecore::protocol::failure::CarrierReason::Unavailable,
+        let (wire, rules) = projected(&endpoint, &request);
+        assert_eq!(
+            rules,
+            [
+                "generation.project-effort.v1",
+                "synthetic.budget-to-effort.v1"
+            ]
         );
+        if endpoint.protocol == morphiecore::topology::GenerationProtocol::GoogleGenerateContent {
+            assert_eq!(
+                wire["generationConfig"],
+                json!({"maxOutputTokens":4096,
+                "thinkingConfig":{"thinkingLevel":"LOW"}})
+            );
+        } else {
+            assert_eq!(
+                wire["generation_config"],
+                json!({"max_output_tokens":4096,"thinking_level":"low"})
+            );
+        }
         // A wire field alone is not a declaration of native model support.
         if let morphiecore::lowering::target::TargetContract::GoogleGenerateContent(c) =
             &mut endpoint.representation
         {
-            c.native_thinking_budget = true;
+            c.dispositions.set_native(
+                morphiecore::semantic::task::generation::Feature::ReasoningBudget,
+                true,
+            );
         }
         let native_budget =
             endpoint.protocol == morphiecore::topology::GenerationProtocol::GoogleGenerateContent;
@@ -380,10 +477,17 @@ fn gemini_preserves_native_budgets_and_checks_fallback_levels_without_requantizi
             assert!(!rules.contains(&"synthetic.budget-to-effort.v1"));
             assert_eq!(representable(&endpoint, &request), Ok(()));
         } else {
-            rejected(
-                &endpoint,
-                &request,
-                morphiecore::protocol::failure::CarrierReason::Unavailable,
+            let (wire, rules) = projected(&endpoint, &request);
+            assert_eq!(
+                wire["generation_config"],
+                json!({"max_output_tokens":4096,"thinking_level":"low"})
+            );
+            assert_eq!(
+                rules,
+                [
+                    "generation.project-effort.v1",
+                    "synthetic.budget-to-effort.v1"
+                ]
             );
         }
         let mut settings = request.task.semantic.settings().clone();
@@ -455,9 +559,9 @@ fn openai_limits_check_calibrated_levels_and_do_not_insert_caps() {
         assert!(matches!(
             adapter.encode_request(&request, "synthetic", &caps),
             Err(ConversionFailure {
-                cause: morphiecore::protocol::ConversionCause::Representation(
-                    morphiecore::protocol::conversion::generation::RepresentationError::Controls
-                ),
+                cause: morphiecore::protocol::ConversionCause::Codec(CodecError::Invalid(
+                    morphiecore::protocol::failure::ShapeReason::InvalidValue
+                )),
                 ..
             })
         ));
@@ -466,15 +570,24 @@ fn openai_limits_check_calibrated_levels_and_do_not_insert_caps() {
         let mut settings = capped.task.semantic.settings().clone();
         settings.controls.max_output_tokens = Some(33);
         capped.task.semantic = capped.task.semantic.with_settings(settings).unwrap();
-        assert!(matches!(
-            adapter.encode_request(&capped, "synthetic", &caps),
-            Err(ConversionFailure {
-                cause: morphiecore::protocol::ConversionCause::Representation(
-                    morphiecore::protocol::conversion::generation::RepresentationError::Controls
-                ),
-                ..
-            })
-        ));
+        let (wire, rules) = adapter
+            .encode_request_with_rules(&capped, "synthetic", &caps)
+            .unwrap();
+        assert_eq!(
+            wire[if profile == GenerationApi::Chat {
+                "max_completion_tokens"
+            } else {
+                "max_output_tokens"
+            }],
+            32
+        );
+        assert_eq!(
+            rules,
+            [
+                "generation.clamp-output-to-model-maximum.v1",
+                "synthetic.effort.v1"
+            ]
+        );
         let mut settings = capped.task.semantic.settings().clone();
         settings.controls.max_output_tokens = Some(32);
         capped.task.semantic = capped.task.semantic.with_settings(settings).unwrap();
@@ -508,16 +621,22 @@ fn google_sampling_omission_is_binding_selected_and_preparation_matches_prefligh
             endpoint.representation,
             morphiecore::lowering::target::TargetContract::GoogleInteractions(_)
         );
-        let rule = if interactions {
-            "interactions.omit-ignored-sampling.v1"
-        } else {
-            "gemini.omit-ignored-sampling.v1"
-        };
-        assert!(!endpoint.representation.semantics().temperature);
-        assert!(!endpoint.representation.semantics().top_p);
+        let omission_rules = ["generation.omit-temperature.v1", "generation.omit-top-p.v1"];
+        assert!(
+            !endpoint
+                .representation
+                .dispositions()
+                .native(morphiecore::semantic::task::generation::Feature::Temperature)
+        );
+        assert!(
+            !endpoint
+                .representation
+                .dispositions()
+                .native(morphiecore::semantic::task::generation::Feature::TopP)
+        );
         representable(&endpoint, &request).unwrap();
         let (wire, rules) = endpoint.encode_request_with_rules(&request).unwrap();
-        assert_eq!(rules, [rule]);
+        assert_eq!(rules, omission_rules);
         let config = &wire[if interactions {
             "generation_config"
         } else {
@@ -547,7 +666,7 @@ fn google_sampling_omission_is_binding_selected_and_preparation_matches_prefligh
             .with_settings(settings)
             .unwrap();
         let (_, rules) = endpoint.encode_request_with_rules(&absent).unwrap();
-        assert!(!rules.contains(&rule));
+        assert!(rules.is_empty());
         if interactions {
             let morphiecore::lowering::target::TargetContract::GoogleInteractions(caps) =
                 &mut endpoint.representation
@@ -555,7 +674,9 @@ fn google_sampling_omission_is_binding_selected_and_preparation_matches_prefligh
                 unreachable!()
             };
             caps.sampling = SamplingPolicy::Reject;
-            assert!(endpoint.encode_request(&request).is_err());
+            let (projected_wire, rules) = endpoint.encode_request_with_rules(&request).unwrap();
+            assert_eq!(projected_wire, wire);
+            assert_eq!(rules, omission_rules);
             assert!(
                 google::interactions::encode_generation_request(
                     &request.task.semantic,

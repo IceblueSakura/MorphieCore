@@ -18,34 +18,61 @@ pub enum RequestSlice {
 impl RequestSlice {
     pub fn apply(
         self,
-        mut contract: crate::semantic::task::generation::GenerationFeatureSet,
-    ) -> crate::semantic::task::generation::GenerationFeatureSet {
+        mut contract: crate::lowering::disposition::Dispositions,
+    ) -> crate::lowering::disposition::Dispositions {
         if matches!(self, Self::RestrictedLuna) {
-            contract.temperature = false;
-            contract.top_p = false;
-            contract.logprobs = false;
-            contract.verbosity = false;
-            contract.truncation = false;
-            contract.parallel_tool_calls = false;
+            contract.set_native(
+                crate::semantic::task::generation::Feature::Temperature,
+                false,
+            );
+            contract.set_native(crate::semantic::task::generation::Feature::TopP, false);
+            contract.set_native(crate::semantic::task::generation::Feature::Logprobs, false);
+            contract.set_native(crate::semantic::task::generation::Feature::Verbosity, false);
+            contract.set_native(
+                crate::semantic::task::generation::Feature::Truncation,
+                false,
+            );
+            contract.set_native(
+                crate::semantic::task::generation::Feature::ParallelTools,
+                false,
+            );
         }
         if matches!(self, Self::OpenCodeHy4) {
             // A coding-model listing does not establish these optional request controls.
             // Source: https://opencode.ai/docs/go/#endpoints
-            contract.structured_output = false;
+            contract.set_native(
+                crate::semantic::task::generation::Feature::StructuredOutput,
+                false,
+            );
             // Readable reasoning history remains semantic input; unverified controls are
             // rejected by the target adapter rather than disabling this shared owner.
-            contract.logprobs = false;
-            contract.verbosity = false;
-            contract.truncation = false;
-            contract.parallel_tool_calls = false;
+            contract.set_native(crate::semantic::task::generation::Feature::Logprobs, false);
+            contract.set_native(crate::semantic::task::generation::Feature::Verbosity, false);
+            contract.set_native(
+                crate::semantic::task::generation::Feature::Truncation,
+                false,
+            );
+            contract.set_native(
+                crate::semantic::task::generation::Feature::ParallelTools,
+                false,
+            );
         }
         if matches!(self, Self::AudioText) {
-            contract.reasoning = false;
-            contract.verbosity = false;
-            contract.truncation = false;
-            contract.structured_output = false;
-            contract.logprobs = false;
-            contract.parallel_tool_calls = false;
+            contract.set_native(crate::semantic::task::generation::Feature::Reasoning, false);
+            contract.set_native(crate::semantic::task::generation::Feature::Verbosity, false);
+            contract.set_native(
+                crate::semantic::task::generation::Feature::Truncation,
+                false,
+            );
+            contract.set_native(
+                crate::semantic::task::generation::Feature::StructuredOutput,
+                false,
+            );
+            contract.set_native(crate::semantic::task::generation::Feature::Logprobs, false);
+            contract.set_native(
+                crate::semantic::task::generation::Feature::ParallelTools,
+                false,
+            );
         }
         contract
     }
@@ -97,7 +124,6 @@ impl ApiKeyBinding {
             contract: self
                 .public_slice
                 .apply(models::contract(self.canonical_model)),
-            standard_context: false,
             reported_facts: ReportedFactPolicy::Faithful,
         }
     }
@@ -176,14 +202,25 @@ impl ApiKeyBinding {
                 && family == crate::protocol::openai::GenerationApi::Chat
                 && self.dialect == Dialect::Bailian
                 && matches!(self.canonical_model, "qwen3.8-flash" | "qwen3.8-max"),
-            semantics: self
+            dispositions: self
                 .endpoint_slice
-                .apply(models::contract(self.canonical_model)),
+                .apply(models::contract(self.canonical_model))
+                .with_native(crate::semantic::task::generation::Feature::Identity, false)
+                .with_native(crate::semantic::task::generation::Feature::Metadata, false)
+                .with_native(
+                    crate::semantic::task::generation::Feature::ServicePolicy,
+                    false,
+                )
+                .with_native(
+                    crate::semantic::task::generation::Feature::ToolBudget,
+                    false,
+                )
+                .with_native(
+                    crate::semantic::task::generation::Feature::Prediction,
+                    false,
+                ),
             replay_origin: replay.then_some(scope.clone()),
             cache: adapter.adaptation.cache,
-            identity_hints: false,
-            standard_context: false,
-            prediction: false,
             model_limits: models::planning_limits(self.canonical_model, provider.id.as_str()),
             ..TargetContract::full()
         };

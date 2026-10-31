@@ -18,7 +18,7 @@ pub mod transcription;
 
 pub use compile::{CompiledTopology, TopologyError, compile};
 pub use endpoint::{Endpoint, EndpointTarget, ExecutionContract};
-pub use model::{CanonicalModel, GenerationFeatureSet};
+pub use model::{CanonicalModel, Dispositions};
 pub use model_metadata::ModelMetadata;
 pub use route::{CandidatePolicy, FallbackPolicy, PublicModel, Route, RoutePolicy};
 

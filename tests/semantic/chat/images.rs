@@ -24,18 +24,21 @@ fn lowering_rejects_disabled_images_and_undeclared_detail_without_mutating_ir() 
         .unwrap();
     let before = request.clone();
     let mut contract = TargetContract::full();
-    contract.semantics.image_input = false;
+    contract.dispositions.set_native(
+        morphiecore::semantic::task::generation::Feature::ImageInput,
+        false,
+    );
     assert!(
         adapter(GenerationApi::Responses)
             .encode_request(&request, "synthetic", &contract)
             .is_err()
     );
     let xiaomi = GenerationCodec::new(GenerationApi::Responses, Dialect::Xiaomi, None);
-    assert!(
-        xiaomi
-            .encode_request_with_rules(&request, "synthetic", &TargetContract::full())
-            .is_err()
-    );
+    let (omitted, rules) = xiaomi
+        .encode_request_with_rules(&request, "synthetic", &TargetContract::full())
+        .unwrap();
+    assert!(omitted["input"][0]["content"][1].get("detail").is_none());
+    assert!(rules.contains(&"generation.omit-image-detail.v1"));
     assert_eq!(
         adapter(GenerationApi::Responses)
             .encode_request(&request, "synthetic", &TargetContract::full())
@@ -50,22 +53,25 @@ fn lowering_rejects_disabled_images_and_undeclared_detail_without_mutating_ir() 
                     {"type":"input_image","image_url":"data:image/png;base64,AQID","detail":"auto"}]}]})
                 .to_string().as_bytes(),
         ).unwrap();
-    assert!(
-        xiaomi
-            .encode_request_with_rules(&tool, "synthetic", &TargetContract::full())
-            .is_err()
-    );
+    let (omitted, _) = xiaomi
+        .encode_request_with_rules(&tool, "synthetic", &TargetContract::full())
+        .unwrap();
+    assert!(omitted["input"][1]["output"][0].get("detail").is_none());
     let original = wire(
         json!([{"type":"input_image","image_url":"https://example.test/x","detail":"original"}]),
     );
     let request = adapter(GenerationApi::Responses)
         .decode_request(&serde_json::to_vec(&original).unwrap())
         .unwrap();
+    let (omitted, rules) = adapter(GenerationApi::Chat)
+        .encode_request_with_rules(&request, "synthetic", &TargetContract::full())
+        .unwrap();
     assert!(
-        adapter(GenerationApi::Chat)
-            .encode_request(&request, "synthetic", &TargetContract::full())
-            .is_err()
+        omitted["messages"][0]["content"][0]["image_url"]
+            .get("detail")
+            .is_none()
     );
+    assert!(rules.contains(&"generation.omit-image-detail.v1"));
     assert!(
         GenerationCodec::new(GenerationApi::Chat, Dialect::DeepSeek, None)
             .encode_request(&request, "synthetic", &TargetContract::full())

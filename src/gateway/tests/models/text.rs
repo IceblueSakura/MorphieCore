@@ -191,7 +191,7 @@ fn text_contract_intersects_source_efforts_and_comparable_limits_without_inventi
     assert_eq!(value["token_limits"]["max_input_tokens"], 90_000);
     assert_eq!(
         value["reasoning"]["effort"]["reasoning"],
-        json!({"state":"faithful","values":["high"]})
+        json!({"state":"approved_adaptation","values":["minimal","low","medium","high","xhigh","max"],"rules":["generation.project-effort.v1"]})
     );
     let mut second = entry.candidates[1].as_ref().clone();
     second
@@ -235,7 +235,7 @@ fn text_contract_intersects_source_efforts_and_comparable_limits_without_inventi
     assert_eq!(value["token_limits"]["max_input_tokens"], 90_000);
     assert_eq!(
         value["reasoning"]["effort"]["reasoning"],
-        json!({"state":"non_uniform"})
+        json!({"state":"approved_adaptation","values":["minimal","low","medium","high","xhigh","max"],"rules":["generation.project-effort.v1"]})
     );
     entry.candidates.truncate(1);
     let mut first = entry.candidates[0].as_ref().clone();
@@ -281,7 +281,7 @@ fn text_contract_intersects_source_efforts_and_comparable_limits_without_inventi
     assert_eq!(
         descriptor(entry)["reasoning"]["effort"]["reasoning"],
         json!({
-            "state":"approved_adaptation","values":["medium","high"],"rules":["example.effort.v1"]
+            "state":"approved_adaptation","values":["minimal","low","medium","high","xhigh","max"],"rules":["example.effort.v1"]
         })
     );
 }
@@ -351,7 +351,7 @@ fn text_reasoning_uses_source_scopes_and_never_advertises_noop_activation_or_def
     assert_eq!(
         value["reasoning"]["effort"]["response"],
         json!({
-            "state":"approved_adaptation","values":["low","medium","high"],
+            "state":"approved_adaptation","values":["low","medium","high","xhigh","max"],
             "rules":["google.gemini-3.8-flash.response-effort-to-thinking.v1"]
         })
     );
@@ -371,7 +371,8 @@ fn text_reasoning_uses_source_scopes_and_never_advertises_noop_activation_or_def
     assert_eq!(
         value["reasoning"]["activation"],
         json!({
-            "state":"faithful","values":["disabled","adaptive"]
+            "state":"approved_adaptation","values":["enabled","disabled","adaptive"],
+            "rules":["generation.budget-to-effort.v1","generation.project-effort.v1"]
         })
     );
 }
@@ -460,7 +461,13 @@ fn image_domains_preserve_placement_detail_and_candidate_intersection() {
     let value = descriptor(entry.clone());
     let images = value["input"]["image"].as_array().unwrap();
     assert!(!images.is_empty());
-    assert!(images.iter().all(|d| d["detail"] == "omitted"));
+    for detail in ["omitted", "auto"] {
+        assert!(
+            images
+                .iter()
+                .any(|d| d["detail"] == detail && d["state"] == "faithful")
+        );
+    }
 
     // A Chat alternative removes tool-result image support, not ordinary user images.
     entry.candidates = vec![
@@ -471,7 +478,18 @@ fn image_domains_preserve_placement_detail_and_candidate_intersection() {
     let images = value["input"]["image"].as_array().unwrap();
     assert!(!images.is_empty());
     assert!(images.iter().all(|d| d["placement"] == "user"));
-    entry.public.contract.image_input = false;
+    for candidate in &mut entry.candidates {
+        Arc::make_mut(candidate)
+            .endpoint
+            .representation
+            .openai_mut()
+            .unwrap()
+            .dispositions
+            .set_native(
+                crate::semantic::task::generation::Feature::ImageInput,
+                false,
+            );
+    }
     let value = descriptor(entry);
     assert_eq!(value["input"]["image"], json!([]));
     assert_eq!(value["input"]["text"], json!({"state":"faithful"}));

@@ -1,8 +1,7 @@
 //! OpenAI target capabilities; independent of endpoint execution and credentials.
 mod request;
 use crate::{
-    protocol::conversion::generation::ReportedFactPolicy,
-    semantic::task::generation::GenerationFeatureSet,
+    lowering::disposition::Dispositions, protocol::conversion::generation::ReportedFactPolicy,
 };
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TargetContract {
@@ -18,17 +17,11 @@ pub struct TargetContract {
     /// Delivery policy for reported facts; `Faithful` unless a consumer
     /// explicitly demands the strict complete form.
     pub reported_facts: ReportedFactPolicy,
-    pub semantics: GenerationFeatureSet,
+    pub dispositions: Dispositions,
     pub model_limits: crate::protocol::model_limits::ModelLimits,
     pub images: crate::protocol::image_constraints::ImageConstraints,
     pub files: crate::protocol::file_constraints::FileConstraints,
     pub cache: crate::protocol::cache::CacheTargetPolicy,
-    /// Identity/safety acceptance is independent of optional cache hints.
-    pub identity_hints: bool,
-    /// Target admits metadata/service-tier/tool-budget context fields.
-    pub standard_context: bool,
-    /// The selected model supports the native Chat predicted-output optimization.
-    pub prediction: bool,
 }
 impl TargetContract {
     pub fn full() -> Self {
@@ -40,14 +33,11 @@ impl TargetContract {
             replay_origin: None,
             resource_time: None,
             reported_facts: ReportedFactPolicy::Faithful,
-            semantics: GenerationFeatureSet::full(),
+            dispositions: Dispositions::full(),
             model_limits: Default::default(),
             images: crate::protocol::image_constraints::ImageConstraints::all(),
             files: crate::protocol::file_constraints::FileConstraints::all(),
             cache: crate::protocol::cache::CacheTargetPolicy::all(),
-            identity_hints: true,
-            standard_context: true,
-            prediction: true,
         }
     }
 }

@@ -6,7 +6,7 @@ use crate::{
     protocol::embedding::{
         number, optional_count, optional_string, required, string, valid_model, *,
     },
-    semantic::{task::embedding::*, value::Presence},
+    semantic::task::embedding::*,
 };
 use base64::{Engine, engine::general_purpose::STANDARD};
 use serde_json::{Value, json};
@@ -58,7 +58,7 @@ impl ParsedRequest {
             EmbeddingRequest::new(samples).map_err(|_| CodecError::invalid())?,
         );
         request.encoding = self.encoding;
-        request.identity.user = self.user.map_or(Presence::Absent, Presence::Value);
+        request.identity.user = self.user;
         request.validate().map_err(|_| CodecError::invalid())?;
         Ok(request)
     }

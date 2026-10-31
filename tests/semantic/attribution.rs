@@ -8,7 +8,6 @@ use morphiecore::{
         native::ReplayTarget,
         openai::{Dialect, GenerationApi, GenerationCodec, TargetContract},
     },
-    semantic::value::Presence,
     topology::catalog::GOOGLE_BINDINGS,
 };
 use serde_json::{Value, json};
@@ -95,18 +94,20 @@ fn openai_preserves_independent_fields_and_checks_all_source_bounds() {
             assert!(source(profile, json!({field:"用".repeat(maximum + 1)})).is_err());
             let mut invalid = good.clone();
             if field == "user" {
-                invalid.context.identity.user = Presence::Value("x".repeat(maximum + 1));
+                invalid.context.identity.user = Some("x".repeat(maximum + 1));
             } else {
-                invalid.context.identity.safety_identifier =
-                    Presence::Value("x".repeat(maximum + 1));
+                invalid.context.identity.safety_identifier = Some("x".repeat(maximum + 1));
             }
             let mut without = TargetContract::full();
-            without.identity_hints = false;
+            without.dispositions.set_native(
+                morphiecore::semantic::task::generation::Feature::Identity,
+                false,
+            );
             assert!(adapter.encode_request(&invalid, "m", &without).is_err());
         }
         // An invalid lower-priority native user must not hide behind a valid safety ID.
         let mut invalid = source(profile, json!({"safety_identifier":"valid"})).unwrap();
-        invalid.context.identity.user = Presence::Value("x".repeat(257));
+        invalid.context.identity.user = Some("x".repeat(257));
         assert!(
             MessagesCaps::new(
                 MessagesProfile::AdaptiveTextTools,
@@ -136,7 +137,7 @@ fn openai_preserves_independent_fields_and_checks_all_source_bounds() {
 fn single_carriers_preserve_priority_presence_and_separate_legacy_cache_loss() {
     for (fields, selected, lost_identity) in [
         (json!({}), None, false),
-        (json!({"safety_identifier":null}), Some(Value::Null), false),
+        (json!({"safety_identifier":null}), None, false),
         (
             json!({"safety_identifier":"usr_b"}),
             Some(json!("usr_b")),
@@ -150,8 +151,8 @@ fn single_carriers_preserve_priority_presence_and_separate_legacy_cache_loss() {
         ),
         (
             json!({"user":"legacy_a","safety_identifier":null}),
-            Some(Value::Null),
-            true,
+            Some(json!("legacy_a")),
+            false,
         ),
         (
             json!({"user":"legacy_a","safety_identifier":""}),
@@ -209,7 +210,7 @@ fn single_carriers_preserve_priority_presence_and_separate_legacy_cache_loss() {
     for rule in [
         "generation.omit-identity-hints.v1",
         "cache.omit-legacy-user-bucketing.v1",
-        "cache.omit-key.v1",
+        "generation.omit-cache-key.v1",
     ] {
         assert_eq!(rules.iter().filter(|r| **r == rule).count(), 1);
     }

@@ -48,7 +48,7 @@ pub struct RequestContext {
     pub cache: CacheHints,
     pub identity: ClientIdentityHints,
     pub metadata: Presence<std::collections::BTreeMap<String, String>>,
-    pub service_policy: Presence<ServicePolicy>,
+    pub service_policy: Option<ServicePolicy>,
 }
 impl RequestContext {
     pub fn streaming(&self) -> bool {
@@ -65,7 +65,7 @@ impl RequestContext {
             }
             options.validate()?;
         }
-        if let Some(policy) = self.service_policy.value() {
+        if let Some(policy) = self.service_policy.as_ref() {
             super::super::service::policy_wire(
                 *policy,
                 crate::protocol::openai::GenerationApi::Chat,
@@ -89,7 +89,7 @@ pub(crate) fn validate_context(context: &ExecutionHints) -> Result<(), CodecErro
         .prompt_cache_options
         .value()
         .is_some_and(|options| {
-            !options.comparison_response_id.is_absent() || !options.prewarm.is_absent()
+            !options.comparison_response_id.is_none() || !options.prewarm.is_none()
         })
     {
         return Err(CodecError::Unsupported(CarrierReason::Unavailable));
@@ -206,7 +206,7 @@ pub fn encode_request(
             &context.model,
             crate::protocol::openai::GenerationApi::Chat,
         )?;
-        if !context.metadata.is_absent() || !context.service_policy.is_absent() {
+        if !context.metadata.is_absent() || !context.service_policy.is_none() {
             return Err(CodecError::Unsupported(CarrierReason::Unavailable));
         }
     }

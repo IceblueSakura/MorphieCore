@@ -3,7 +3,7 @@ use morphiecore::{
         CodecError, DecodedRequest, GenerationRequestEnvelope as Request,
         anthropic::{
             self,
-            messages::{Dialect, Profile, SamplingPolicy, TargetContract},
+            messages::{Dialect, Profile, TargetContract},
         },
         fidelity::FidelityRecords,
         native::ReplayTarget,
@@ -19,7 +19,7 @@ fn target() -> ReplayTarget {
 }
 fn caps() -> TargetContract {
     let mut caps = TargetContract::new(Profile::AdaptiveTextTools, Dialect::Standard);
-    caps.semantics = Profile::AdaptiveTextTools.representation_contract();
+    caps.dispositions = Profile::AdaptiveTextTools.representation_contract();
     caps
 }
 fn typed(budget: Option<u64>) -> Request {
@@ -72,7 +72,7 @@ fn nullable_summary_preference_never_becomes_a_hidden_display_guarantee() {
             (
                 Presence::Value(ReasoningDisplay::Summary),
                 Presence::Value(ReasoningSummary::Auto),
-                Some("summarized"),
+                None,
             ),
             (Presence::Absent, Presence::Null, None),
         ] {
@@ -120,7 +120,7 @@ fn configured_fallback_never_replaces_supported_native_allocation_or_visibility(
     };
     let mut request = typed(Some(1024));
     let mut settings = request.task.semantic.settings().clone();
-    settings.effort = Presence::Value(EffortControl {
+    settings.effort = Some(EffortControl {
         scope: EffortScope::Response,
         level: EffortLevel::Medium,
     });
@@ -190,9 +190,9 @@ fn model_maximum_checks_inserted_default_without_replacing_explicit_caps() {
         projected
             .evidence
             .iter()
-            .filter(|rule| rule.rule() == anthropic::messages::RequestRule::DefaultMaxTokens.name())
+            .filter(|rule| rule.rule() == "messages.default-max-tokens.v1")
             .count(),
-        1
+        0
     );
     assert_eq!(request, before);
     limited.default_output_tokens = Some(2048);
@@ -203,12 +203,16 @@ fn model_maximum_checks_inserted_default_without_replacing_explicit_caps() {
     assert!(
         !projected
             .evidence
-            .contains_rule(anthropic::messages::RequestRule::DefaultMaxTokens.name())
+            .contains_rule("messages.default-max-tokens.v1")
     );
     limited.model_limits.maximum_output_tokens = Some(4095);
-    assert!(matches!(limited.encode_request(&explicit, &target()),
-        Err(ConversionFailure { cause: morphiecore::protocol::ConversionCause::Codec(CodecError::Unsupported(value)), .. })
-            if value == morphiecore::protocol::failure::CarrierReason::Unavailable));
+    let clamped = limited.encode_request(&explicit, &target()).unwrap();
+    assert_eq!(clamped.value["max_tokens"], 4095);
+    assert!(
+        clamped
+            .evidence
+            .contains_rule("generation.clamp-output-to-model-maximum.v1")
+    );
     limited.default_output_tokens = Some(0);
     assert!(matches!(
         limited.encode_request(&explicit, &target()),
@@ -245,9 +249,11 @@ fn output_defaults_check_budgets_after_selected_conversions() {
     assert!(matches!(
         target_caps.encode_request(&request, &target()),
         Err(ConversionFailure {
-            cause: morphiecore::protocol::ConversionCause::Codec(CodecError::Invalid(
-                morphiecore::protocol::failure::ShapeReason::InvalidValue
-            )),
+            cause: morphiecore::protocol::ConversionCause::Representation(
+                morphiecore::protocol::conversion::generation::RepresentationError::Admission(
+                    Feature::ReasoningBudget
+                )
+            ),
             ..
         })
     ));
@@ -276,18 +282,23 @@ fn output_defaults_check_budgets_after_selected_conversions() {
         projected
             .evidence
             .iter()
-            .filter(|r| r.rule() == anthropic::messages::RequestRule::DefaultMaxTokens.name())
+            .filter(|r| r.rule() == "messages.default-max-tokens.v1")
             .count(),
-        1
+        0
     );
     target_caps.model_limits.allowed_effort = Some(vec![EffortLevel::High].into());
-    assert!(matches!(target_caps.encode_request(&request, &target()),
-        Err(ConversionFailure { cause: morphiecore::protocol::ConversionCause::Codec(CodecError::Unsupported(value)), .. }) if value == morphiecore::protocol::failure::CarrierReason::Unavailable));
+    assert_eq!(
+        target_caps
+            .encode_request(&request, &target())
+            .unwrap()
+            .value["output_config"]["effort"],
+        "high"
+    );
     assert_eq!(request, before);
 
     let mut settings = typed(None).task.semantic.settings().clone();
     settings.controls.max_output_tokens = None;
-    settings.effort = Presence::Value(EffortControl {
+    settings.effort = Some(EffortControl {
         scope: EffortScope::Response,
         level: EffortLevel::Medium,
     });
@@ -314,7 +325,7 @@ fn output_defaults_check_budgets_after_selected_conversions() {
     assert_eq!(qualitative, original);
     // Only the non-native reasoning-scoped effort needs the configured numeric fallback.
     let mut settings = qualitative.task.semantic.settings().clone();
-    settings.effort = Presence::Value(EffortControl {
+    settings.effort = Some(EffortControl {
         scope: EffortScope::Reasoning,
         level: EffortLevel::Medium,
     });
@@ -328,9 +339,11 @@ fn output_defaults_check_budgets_after_selected_conversions() {
     assert!(matches!(
         target_caps.encode_request(&qualitative, &target()),
         Err(ConversionFailure {
-            cause: morphiecore::protocol::ConversionCause::Codec(CodecError::Invalid(
-                morphiecore::protocol::failure::ShapeReason::InvalidValue
-            )),
+            cause: morphiecore::protocol::ConversionCause::Representation(
+                morphiecore::protocol::conversion::generation::RepresentationError::Admission(
+                    Feature::ReasoningBudget
+                )
+            ),
             ..
         })
     ));
@@ -393,11 +406,17 @@ fn ordinary_budgets_preserve_numeric_intent_and_native_strict_relation() {
         );
     }
     let mut adaptive_only = caps();
-    adaptive_only.manual_thinking = false;
-    assert!(adaptive_only.encode_request(&request, &target()).is_err());
+    adaptive_only.dispositions.set_native(
+        morphiecore::semantic::task::generation::Feature::ReasoningBudget,
+        false,
+    );
+    let projected = adaptive_only.encode_request(&request, &target()).unwrap();
+    assert_eq!(projected.value["thinking"]["type"], "adaptive");
+    assert!(projected.value["thinking"].get("budget_tokens").is_none());
+    assert_eq!(projected.value["output_config"]["effort"], "low");
 }
 #[test]
-fn removed_sampling_has_no_native_carrier_but_selected_fixed_projection_remains() {
+fn removed_sampling_omits_advisory_controls_without_changing_the_source() {
     let mut request = typed(None);
     let mut settings = request.task.semantic.settings().clone();
     settings.controls = settings
@@ -411,35 +430,39 @@ fn removed_sampling_has_no_native_carrier_but_selected_fixed_projection_remains(
     let source = request.clone();
     let profile = Profile::AdaptiveTextTools;
     let contract = profile.representation_contract();
-    assert!(!contract.temperature && !contract.top_p && !contract.top_k);
+    assert!(
+        !contract.native(morphiecore::semantic::task::generation::Feature::Temperature)
+            && !contract.native(morphiecore::semantic::task::generation::Feature::TopP)
+            && !contract.native(morphiecore::semantic::task::generation::Feature::TopK)
+    );
     let binding = &morphiecore::topology::catalog::MESSAGES_BINDINGS[0];
-    assert!(binding.public_model().contract.temperature);
-    assert!(!binding.endpoint().representation.semantics().temperature);
-    assert!(caps().encode_request(&request, &target()).is_err());
     assert!(
-        profile
-            .encode_generation_request(&request.task.semantic, &Default::default(), &target())
-            .is_err()
+        binding
+            .public_model()
+            .contract
+            .native(morphiecore::semantic::task::generation::Feature::Temperature)
     );
-    let mut fixed = caps();
-    fixed.sampling = SamplingPolicy::Fixed;
-    assert!(fixed.encode_request(&request, &target()).is_err());
-    let mut settings = request.task.semantic.settings().clone();
-    settings.controls.top_k = None;
-    request.task.semantic = request.task.semantic.with_settings(settings).unwrap();
-    // Removing top_k cannot accidentally make remaining temperature/top_p disappear.
-    assert!(caps().encode_request(&request, &target()).is_err());
-    let projected = fixed.encode_request(&request, &target()).unwrap();
-    assert!(projected.value.get("temperature").is_none());
-    assert!(projected.value.get("top_p").is_none());
     assert!(
-        projected
-            .evidence
-            .contains_rule(anthropic::messages::RequestRule::OmitSampling.name())
+        !binding
+            .endpoint()
+            .representation
+            .dispositions()
+            .native(Feature::Temperature)
     );
-    assert_eq!(request.task.semantic.controls().temperature(), Some(0.25));
-    assert_eq!(source.task.semantic.controls().top_k, Some(7));
-    assert_eq!(source.task.semantic.controls().top_p(), Some(0.75));
+    let projected = caps().encode_request(&request, &target()).unwrap();
+    for (field, rule) in [
+        ("temperature", "generation.omit-temperature.v1"),
+        ("top_p", "generation.omit-top-p.v1"),
+        ("top_k", "generation.omit-top-k.v1"),
+    ] {
+        assert!(projected.value.get(field).is_none());
+        assert!(projected.evidence.contains_rule(rule));
+    }
+    let native = profile
+        .encode_generation_request(&request.task.semantic, &Default::default(), &target())
+        .unwrap();
+    assert_eq!(native.value, projected.value);
+    assert_eq!(request, source);
 }
 #[test]
 fn native_identity_keeps_presence_and_bounds_with_selected_cross_projection() {
@@ -450,16 +473,20 @@ fn native_identity_keeps_presence_and_bounds_with_selected_cross_projection() {
             anthropic::messages::client::decode_client_request(wire.to_string().as_bytes())
                 .unwrap();
         let expected = if value.is_null() {
-            Presence::Null
+            None
         } else {
-            Presence::Value(value.as_str().unwrap().into())
+            Some(value.as_str().unwrap().into())
         };
         assert_eq!(decoded.context.identity.user, expected);
         let mut request = typed(None);
         request.context.identity.user = expected;
         let before = request.clone();
         let native = caps().encode_request(&request, &target()).unwrap();
-        assert_eq!(native.value["metadata"], json!({"user_id":value}));
+        if value.is_null() {
+            assert!(native.value.get("metadata").is_none());
+        } else {
+            assert_eq!(native.value["metadata"], json!({"user_id":value}));
+        }
         assert!(
             !native
                 .evidence

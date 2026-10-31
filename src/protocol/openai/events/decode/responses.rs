@@ -1250,9 +1250,7 @@ mod snapshot_tests {
 mod mapping_evidence_tests {
     use super::*;
     use crate::protocol::{
-        conversion::generation::{Change, ConversionBoundary as B, Field, Owner},
-        openai::dialect::adaptation::Adaptation,
-        reasoning::ReasoningEffortMapping,
+        openai::dialect::adaptation::Adaptation, reasoning::ReasoningEffortMapping,
     };
     #[test]
     fn response_alias_keeps_event_boundary_and_input_only_output_rejects() {
@@ -1273,21 +1271,23 @@ mod mapping_evidence_tests {
         let mut decoder = EventDecoder::new(GenerationApi::Responses).with_adaptation(adaptation);
         decoder.push(&serde_json::json!({"type":"response.created","sequence_number":0,"response":{"id":"r","object":"response","created_at":1,"model":"synthetic","status":"in_progress","output":[],"reasoning":{"effort":"xhigh"}}})).unwrap();
         let root = decoder.take_evidence();
-        assert_eq!(root.len(), 1);
-        let effect = &root[0];
+        assert!(root.is_empty());
         assert_eq!(
-            (
-                effect.boundary(),
-                effect.owner(),
-                effect.semantic_field(),
-                effect.change()
-            ),
-            (
-                B::EventDecode,
-                Owner::Root,
-                Field::ReportedEffort,
-                Change::Normalize
-            )
+            decoder
+                .metadata()
+                .unwrap()
+                .context
+                .reports
+                .iter()
+                .last()
+                .unwrap()
+                .settings
+                .as_ref()
+                .unwrap()
+                .effort
+                .unwrap()
+                .level,
+            EffortLevel::High
         );
         assert!(decoder.push(&json!({"type":"response.output_item.added","sequence_number":1,"output_index":0,"item":{"type":"configuration_update","id":"config","reasoning":{"effort":"xhigh"}}})).is_err());
         assert!(decoder.take_evidence().is_empty());

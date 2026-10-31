@@ -1,7 +1,7 @@
 //! Pure target admission, request expectations and explicit client delivery projection.
 use crate::{
     protocol::embedding::{valid_model, *},
-    semantic::{task::embedding::*, value::Presence},
+    semantic::task::embedding::*,
 };
 use std::num::NonZeroU64;
 
@@ -370,8 +370,8 @@ impl Contract {
         }
         let mut adaptations = vec![];
         let user = match (&request.identity.user, self.user) {
-            (Presence::Value(_), UserPolicy::Reject) => return Err(EmbeddingError),
-            (Presence::Value(_), UserPolicy::Omit) => {
+            (Some(_), UserPolicy::Reject) => return Err(EmbeddingError),
+            (Some(_), UserPolicy::Omit) => {
                 adaptations.push(AdaptationRecord {
                     rule: Rule::OmitUser,
                     direction: Direction::Request,
@@ -379,7 +379,7 @@ impl Contract {
                 });
                 None
             }
-            (Presence::Value(s), UserPolicy::Forward) => Some(s.clone()),
+            (Some(s), UserPolicy::Forward) => Some(s.clone()),
             _ => None,
         };
         let encoding = request.encoding.unwrap_or(Encoding::Float);

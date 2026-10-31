@@ -1,4 +1,5 @@
 //! One Router smoke exercises independent targets, request preservation and visibility.
+use crate::lowering::disposition::Dispositions;
 use crate::{
     gateway::*,
     protocol::openai::TargetContract as Representation,
@@ -260,7 +261,7 @@ async fn ordered_route_only_falls_back_before_visible_delivery() {
             ModelId::new("canonical").unwrap(),
             TaskKind::Generation,
             route.id.clone(),
-            GenerationFeatureSet::text_images(),
+            Dispositions::text_images(),
         );
         let topology = compile(
             providers,
@@ -270,7 +271,7 @@ async fn ordered_route_only_falls_back_before_visible_delivery() {
             vec![CanonicalModel {
                 id: ModelId::new("canonical").unwrap(),
                 task: TaskKind::Generation,
-                contract: GenerationFeatureSet::full(),
+                contract: Dispositions::full(),
             }],
         )
         .unwrap()

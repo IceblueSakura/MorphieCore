@@ -324,15 +324,7 @@ fn google_messages_terminals_keep_source_facts_and_ordered_calls() {
                         vec![]
                     }
                 );
-                let rule = if interactions {
-                    (!calls).then_some("messages.interactions-completed-as-end-turn.v1")
-                } else {
-                    Some(if calls {
-                        "messages.google-tool-stop.v1"
-                    } else {
-                        "messages.google-stop-without-sequences.v1"
-                    })
-                };
+                let rule = (!interactions && calls).then_some("messages.google-tool-stop.v1");
                 let losses: Vec<_> = delivery
                     .effects()
                     .into_iter()
@@ -476,7 +468,7 @@ fn google_finish_explanation_omission_keeps_incomplete_source_and_requires_recei
 }
 
 #[test]
-fn google_service_reports_keep_processing_meaning_in_clients_and_reject_capacity_targets() {
+fn google_service_reports_keep_processing_meaning_and_omit_uncarried_capacity_reports() {
     for interactions in [false, true] {
         for profile in [GenerationApi::Chat, GenerationApi::Responses] {
             for stream in [false, true] {
@@ -532,30 +524,42 @@ fn google_service_reports_keep_processing_meaning_in_clients_and_reject_capacity
                     &Presence::Value(crate::semantic::context::ServiceClass::PriorityProcessing)
                 );
                 let mut incompatible = delivery(&endpoint, &request);
-                let error = incompatible.encode_json(&source).unwrap_err();
+                let wire: Value =
+                    serde_json::from_slice(&incompatible.encode_json(&source).unwrap()).unwrap();
+                assert!(wire["usage"].get("service_tier").is_none());
                 assert!(
-                    matches!(
-                        error.codec(),
-                        Some(crate::protocol::CodecError::Unsupported(
-                            CarrierReason::Field(
-                                crate::protocol::conversion::generation::Field::ServiceClass
-                            )
-                        ))
-                    ),
-                    "{error:?}"
+                    incompatible
+                        .effects()
+                        .iter()
+                        .any(|effect| effect.rule() == "messages.omit-reported-service-class.v1")
                 );
                 let mut incompatible = delivery(&endpoint, &request);
-                let error = incompatible.finish_stream(&source).unwrap_err();
+                let mut message_source =
+                    Attempt::new(endpoint.adapter().unwrap(), 65536, Default::default());
+                message_source.begin(200, "text/event-stream").unwrap();
+                let mut body = feed(
+                    &mut message_source,
+                    &mut incompatible,
+                    &frames,
+                    true,
+                    interactions,
+                );
+                message_source.finish().unwrap();
+                body.extend(
+                    incompatible
+                        .finish_stream(&message_source)
+                        .unwrap()
+                        .into_bytes()
+                        .concat(),
+                );
+                let wire = String::from_utf8(body).unwrap();
+                assert_eq!(wire.matches("event: message_stop\n").count(), 1);
+                assert!(!wire.contains("\"service_tier\":\"priority\""));
                 assert!(
-                    matches!(
-                        error.codec(),
-                        Some(crate::protocol::CodecError::Unsupported(
-                            CarrierReason::Field(
-                                crate::protocol::conversion::generation::Field::ServiceClass
-                            )
-                        ))
-                    ),
-                    "{error:?}"
+                    incompatible
+                        .effects()
+                        .iter()
+                        .any(|effect| effect.rule() == "messages.omit-reported-service-class.v1")
                 );
                 assert!(
                     incompatible

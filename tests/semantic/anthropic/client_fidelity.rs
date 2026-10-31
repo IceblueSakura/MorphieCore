@@ -71,7 +71,7 @@ fn response() -> DecodedResponse {
     }
 }
 #[test]
-fn unsigned_reasoning_delivery_rejects_without_changing_the_source() {
+fn unsigned_reasoning_delivery_omits_only_the_uncarriable_owner_without_changing_the_source() {
     use morphiecore::{adapter::ClientAdapter, semantic::value::Text};
     let mut source = response();
     let mut items = vec![(
@@ -87,8 +87,24 @@ fn unsigned_reasoning_delivery_rejects_without_changing_the_source() {
     )];
     items.extend(source.semantic.items().iter().cloned());
     source.semantic = source.semantic.with_items(items).unwrap();
+    source.semantic = source
+        .semantic
+        .with_usage(Some(Usage {
+            cached_input_tokens: Some(0),
+            input_cache_write_tokens: Some(0),
+            ..Usage::operation(2, 3, 5)
+        }))
+        .unwrap();
     let original = source.clone();
-    assert!(ClientAdapter::Messages.snapshot(source.clone()).is_err());
+    let (represented, wire) = ClientAdapter::Messages.snapshot(source.clone()).unwrap();
+    assert_eq!(wire["content"], json!([{"type":"text","text":"answer"}]));
+    assert!(
+        represented
+            .semantic
+            .items()
+            .iter()
+            .all(|(_, item)| !matches!(item, Item::Reasoning(_)))
+    );
     assert_eq!(
         encode_client_response(&source, "m").unwrap_err(),
         CodecError::Unsupported(morphiecore::protocol::failure::CarrierReason::Replay)
@@ -128,9 +144,12 @@ fn empty_probability_reports_need_no_messages_carrier_or_loss() {
         let encoded = TargetContract::new(Profile::AdaptiveTextTools, MessagesDialect::Standard)
             .encode_request(&decoded, &ReplayTarget::new("synthetic", "m").unwrap());
         if logprobs {
+            let encoded = encoded.unwrap();
+            assert!(encoded.value.get("logprobs").is_none());
             assert!(
-                encoded.is_err(),
-                "requested probabilities still need a carrier"
+                encoded
+                    .evidence
+                    .contains_rule("generation.omit-logprobs.v1")
             );
         } else {
             let encoded = encoded.unwrap();
@@ -164,7 +183,9 @@ fn empty_probability_reports_need_no_messages_carrier_or_loss() {
         }).to_string().as_bytes()).unwrap();
         let original = decoded.clone();
         assert_eq!(
-            GenerationRequirements::derive(&decoded.task.semantic).text_metadata,
+            (decoded.task.semantic)
+                .features()
+                .contains_key(&morphiecore::semantic::task::generation::Feature::TextMetadata),
             !allowed
         );
         if allowed {
@@ -587,7 +608,7 @@ fn known_boolean_and_unresolved_configuration_nulls_cannot_disappear_at_intake()
 #[test]
 fn leading_instructions_compose_once_and_effort_boundaries_split_same_role_history() {
     use morphiecore::protocol::{
-        anthropic::messages::{self, Carriers},
+        anthropic::messages::{self},
         native::ReplayTarget,
     };
     let text =
@@ -595,8 +616,19 @@ fn leading_instructions_compose_once_and_effort_boundaries_split_same_role_histo
     let target = ReplayTarget::new("synthetic", "m").unwrap();
     let profile = messages::Profile::AdaptiveTextTools;
     let mut caps = messages::TargetContract::new(profile, messages::Dialect::Standard);
-    caps.semantics = profile.representation_contract();
-    caps.carriers = Carriers::all();
+    caps.dispositions = profile.representation_contract();
+    caps.dispositions.set_native(
+        morphiecore::semantic::task::generation::Feature::ReplayMismatch,
+        true,
+    );
+    caps.dispositions.set_native(
+        morphiecore::semantic::task::generation::Feature::MessageEffort,
+        true,
+    );
+    caps.dispositions.set_native(
+        morphiecore::semantic::task::generation::Feature::ToolChanges,
+        true,
+    );
     for root in [None, Some(text("root"))] {
         let mut settings = GenerationSettings::default();
         settings.controls.max_output_tokens = Some(32);
@@ -676,13 +708,16 @@ fn leading_instructions_compose_once_and_effort_boundaries_split_same_role_histo
         {"role":"user","content":[{"type":"text","text":"second"}]}])
     );
     assert!(projection.evidence.is_empty());
-    caps.carriers.message_effort = false;
+    caps.dispositions.set_native(
+        morphiecore::semantic::task::generation::Feature::MessageEffort,
+        false,
+    );
     let flattened = caps.encode_request(&request, &target).unwrap();
     assert_eq!(flattened.value["output_config"], json!({"effort":"low"}));
     assert!(
         flattened
             .evidence
-            .contains_rule(messages::RequestRule::FlattenMessageEffort.name())
+            .contains_rule("messages.flatten-message-effort.v1")
     );
     assert_eq!(request, original);
     let body = json!({"model":"m","max_tokens":32,"messages":[
@@ -919,10 +954,14 @@ fn messages_tool_examples_keep_order_presence_and_tool_change_owners() {
     assert!(matches!(&decoded.task.semantic.items()[1].1,
         Item::ToolChange(ToolChange { action: ToolChangeAction::AddDefinition(tool), .. })
             if tool.input_examples == Some(vec![])));
-    assert!(GenerationRequirements::derive(&decoded.task.semantic).tool_examples);
+    assert!(
+        (decoded.task.semantic)
+            .features()
+            .contains_key(&morphiecore::semantic::task::generation::Feature::ToolExamples)
+    );
     assert_eq!(
         profile.semantic_contract().check(&decoded.task.semantic),
-        Err(GenerationFeature::ToolExamples)
+        Err(Feature::ToolExamples)
     );
     profile
         .representation_contract()
@@ -1012,14 +1051,36 @@ fn messages_tool_examples_keep_order_presence_and_tool_change_owners() {
         profile,
         morphiecore::protocol::anthropic::messages::Dialect::Standard,
     );
-    caps.semantics = profile.representation_contract();
-    caps.carriers = morphiecore::protocol::anthropic::messages::Carriers::all();
+    caps.dispositions = profile.representation_contract();
+    caps.dispositions.set_native(
+        morphiecore::semantic::task::generation::Feature::ReplayMismatch,
+        true,
+    );
+    caps.dispositions.set_native(
+        morphiecore::semantic::task::generation::Feature::MessageEffort,
+        true,
+    );
+    caps.dispositions.set_native(
+        morphiecore::semantic::task::generation::Feature::ToolChanges,
+        true,
+    );
     let target = ReplayTarget::new("synthetic", "m").unwrap();
     caps.encode_request(&decoded, &target).unwrap();
-    caps.carriers.tool_changes = false;
-    assert!(matches!(caps.encode_request(&decoded, &target),
-        Err(morphiecore::protocol::ConversionFailure { cause: morphiecore::protocol::ConversionCause::Codec(CodecError::Unsupported(label)), .. })
-            if matches!(label,morphiecore::protocol::failure::CarrierReason::Tools)));
+    caps.dispositions.set_native(
+        morphiecore::semantic::task::generation::Feature::ToolChanges,
+        false,
+    );
+    assert!(matches!(
+        caps.encode_request(&decoded, &target),
+        Err(morphiecore::protocol::ConversionFailure {
+            cause: morphiecore::protocol::ConversionCause::Representation(
+                morphiecore::protocol::conversion::generation::RepresentationError::Admission(
+                    morphiecore::semantic::task::generation::Feature::ToolChanges
+                )
+            ),
+            ..
+        })
+    ));
     for (present, expected) in [(false, None), (true, Some(vec![]))] {
         let mut simple = body.clone();
         simple["messages"] = json!([{"role":"user","content":"go"}]);
@@ -1055,9 +1116,18 @@ fn messages_tool_examples_keep_order_presence_and_tool_change_owners() {
     let mut only_inline = request.settings().clone();
     only_inline.tools = None;
     let only_inline = request.clone().with_settings(only_inline).unwrap();
-    assert!(GenerationRequirements::derive(&only_inline).tool_examples);
+    assert!(
+        (only_inline)
+            .features()
+            .contains_key(&morphiecore::semantic::task::generation::Feature::ToolExamples)
+    );
     let bound = morphiecore::topology::catalog::MESSAGES_BINDINGS[0].endpoint();
-    assert!(bound.representation.semantics().tool_examples);
+    assert!(
+        bound
+            .representation
+            .dispositions()
+            .native(Feature::ToolExamples)
+    );
     for profile in [GenerationApi::Chat, GenerationApi::Responses] {
         assert!(
             GenerationCodec::new(profile, Dialect::Standard, None)
@@ -1496,13 +1566,24 @@ fn messages_serializes_interleaved_owners_parts_and_delayed_signatures() {
                 if *item == ItemId::new(if thinking { 10 } else { 3 })
                     && fragment == if thinking { "Plan" } else { "A" })
             {
+                if thinking {
+                    assert!(
+                        batch.is_empty(),
+                        "a later signature cannot retract published reasoning"
+                    );
+                } else {
+                    assert!(
+                        batch.contains("text_delta"),
+                        "visible head content streams before EOF"
+                    );
+                }
+            }
+            if thinking
+                && matches!(event, StreamEvent::ItemFinished { item, .. } if *item == ItemId::new(10))
+            {
                 assert!(
-                    batch.contains(if thinking {
-                        "thinking_delta"
-                    } else {
-                        "text_delta"
-                    }),
-                    "head content must publish before later owners or EOF"
+                    batch.contains("thinking_delta") && batch.contains("signature_delta"),
+                    "carried reasoning publishes as soon as its signature is known, before EOF"
                 );
             }
             if thinking
@@ -2141,8 +2222,19 @@ fn pi_haiku_profile_keeps_carriers_or_records_rules() {
         anthropic::messages::Profile::AdaptiveTextTools,
         anthropic::messages::Dialect::Standard,
     );
-    caps.semantics = anthropic::messages::Profile::AdaptiveTextTools.representation_contract();
-    caps.carriers = anthropic::messages::Carriers::all();
+    caps.dispositions = anthropic::messages::Profile::AdaptiveTextTools.representation_contract();
+    caps.dispositions.set_native(
+        morphiecore::semantic::task::generation::Feature::ReplayMismatch,
+        true,
+    );
+    caps.dispositions.set_native(
+        morphiecore::semantic::task::generation::Feature::MessageEffort,
+        true,
+    );
+    caps.dispositions.set_native(
+        morphiecore::semantic::task::generation::Feature::ToolChanges,
+        true,
+    );
     let exact = caps.encode_request(&decoded, &target).unwrap();
     assert!(
         exact.evidence.is_empty(),
@@ -2171,22 +2263,43 @@ fn pi_haiku_profile_keeps_carriers_or_records_rules() {
     let mut limited = caps.clone();
     limited.model_limits.allowed_effort = Some(vec![EffortLevel::High, EffortLevel::Medium].into());
     let before = decoded.clone();
-    assert!(matches!(limited.encode_request(&decoded, &target),
-        Err(morphiecore::protocol::ConversionFailure { cause: morphiecore::protocol::ConversionCause::Codec(
-            morphiecore::protocol::CodecError::Unsupported(value)), .. }) if value == morphiecore::protocol::failure::CarrierReason::Unavailable));
-    limited.carriers.message_effort = false;
+    let nearest = limited.encode_request(&decoded, &target).unwrap();
+    assert_eq!(
+        nearest.value["messages"][1]["output_config"]["effort"],
+        "medium"
+    );
+    assert!(
+        nearest
+            .evidence
+            .contains_rule("generation.project-effort.v1")
+    );
+    limited.dispositions.set_native(
+        morphiecore::semantic::task::generation::Feature::MessageEffort,
+        false,
+    );
     let flattened = limited.encode_request(&decoded, &target).unwrap();
     assert_eq!(flattened.value["output_config"], json!({"effort":"medium"}));
     assert!(
         flattened
             .evidence
-            .contains_rule(anthropic::messages::RequestRule::FlattenMessageEffort.name())
+            .contains_rule("messages.flatten-message-effort.v1")
     );
     assert_eq!(decoded, before);
 
     // Without carriers: tolerant binding is omitted, the reply's effort is the level in
     // effect for it, and the tool set is the final available one.
-    caps.carriers = Default::default();
+    caps.dispositions.set_native(
+        morphiecore::semantic::task::generation::Feature::ReplayMismatch,
+        false,
+    );
+    caps.dispositions.set_native(
+        morphiecore::semantic::task::generation::Feature::MessageEffort,
+        false,
+    );
+    caps.dispositions.set_native(
+        morphiecore::semantic::task::generation::Feature::ToolChanges,
+        false,
+    );
     let flat = caps.encode_request(&decoded, &target).unwrap();
     let rules: Vec<_> = flat.evidence.iter().map(|r| r.rule()).collect();
     assert_eq!(
@@ -2229,7 +2342,10 @@ fn pi_haiku_profile_keeps_carriers_or_records_rules() {
     enforced["thinking"]["block_binding"]["prefix_mismatch_behavior"] = json!("error");
     let decoded = native_request(&enforced);
     assert!(caps.encode_request(&decoded, &target).is_err());
-    caps.carriers.block_binding = true;
+    caps.dispositions.set_native(
+        morphiecore::semantic::task::generation::Feature::ReplayMismatch,
+        true,
+    );
     assert_eq!(
         caps.encode_request(&decoded, &target).unwrap().value["thinking"]["block_binding"],
         json!({"prefix_mismatch_behavior":"error"})
@@ -2358,15 +2474,31 @@ fn client_intake_carries_caps_and_rejects_active_fields_it_cannot_carry() {
     let selected = decode_client_request(selected.to_string().as_bytes()).unwrap();
     assert_eq!(
         selected.service_policy,
-        Presence::Value(ServicePolicy::StandardCapacityOnly)
+        Some(ServicePolicy::StandardCapacityOnly)
     );
-    assert!(selected.check_context(false).is_err());
+    let mut limited = morphiecore::protocol::openai::TargetContract::full();
+    limited.dispositions.set_native(
+        morphiecore::semantic::task::generation::Feature::Metadata,
+        false,
+    );
+    limited.dispositions.set_native(
+        morphiecore::semantic::task::generation::Feature::ServicePolicy,
+        false,
+    );
+    limited.dispositions.set_native(
+        morphiecore::semantic::task::generation::Feature::ToolBudget,
+        false,
+    );
+    let omitted = GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None)
+        .encode_request(&selected, "synthetic", &limited)
+        .unwrap();
+    assert!(omitted.get("service_tier").is_none());
     assert_eq!(
         caps.encode_request(&selected, &target).unwrap().value["service_tier"],
         "standard_only"
     );
     let mut manual = decode_client_request(body.to_string().as_bytes()).unwrap();
-    manual.service_policy = Presence::Value(ServicePolicy::PreferCommittedCapacity);
+    manual.service_policy = Some(ServicePolicy::PreferCommittedCapacity);
     let wire = caps.encode_request(&manual, &target).unwrap().value;
     assert_eq!(wire["service_tier"], "auto");
     assert!(
@@ -2374,19 +2506,28 @@ fn client_intake_carries_caps_and_rejects_active_fields_it_cannot_carry() {
             .decode_generation_request(wire.to_string().as_bytes(), LocalScope::ROOT, &target)
             .is_err()
     );
+    let (wire, rules) = GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None)
+        .encode_request_with_rules(
+            &manual,
+            "synthetic",
+            &morphiecore::protocol::openai::TargetContract::full(),
+        )
+        .unwrap();
+    assert!(wire.get("service_tier").is_none());
+    assert!(rules.contains(&"generation.omit-service-policy.v1"));
+    manual.service_policy = Some(ServicePolicy::ProjectConfigured);
     assert!(
-        GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None)
-            .encode_request(
-                &manual,
-                "synthetic",
-                &morphiecore::protocol::openai::TargetContract::full()
-            )
-            .is_err()
+        caps.encode_request(&manual, &target)
+            .unwrap()
+            .value
+            .get("service_tier")
+            .is_none()
     );
-    manual.service_policy = Presence::Value(ServicePolicy::ProjectConfigured);
-    assert!(caps.encode_request(&manual, &target).is_err());
     assert!(caps.encode_request(&decoded, &target).is_err());
-    caps.semantics.strict_tools = true;
+    caps.dispositions.set_native(
+        morphiecore::semantic::task::generation::Feature::StrictTools,
+        true,
+    );
     assert!(caps.encode_request(&decoded, &target).is_err());
     strict["tools"][0]["input_schema"]["additionalProperties"] = json!(false);
     let eligible = decode_client_request(strict.to_string().as_bytes()).unwrap();

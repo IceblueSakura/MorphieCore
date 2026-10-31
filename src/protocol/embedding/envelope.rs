@@ -1,5 +1,5 @@
 //! Embedding envelopes and deployment bounds, separate from task values and source facts.
-use crate::semantic::{context::ClientIdentityHints, task::embedding::*, value::Presence};
+use crate::semantic::{context::ClientIdentityHints, task::embedding::*};
 
 pub const MAX_INPUTS: usize = 128;
 pub const MAX_INPUT_BYTES: usize = 256 << 10;
@@ -48,12 +48,11 @@ impl Request {
     }
     pub fn validate(&self) -> Result<(), EmbeddingError> {
         if !valid_model(&self.model)
-            || self.identity.safety_identifier != Presence::Absent
-            || self.identity.user == Presence::Null
+            || self.identity.safety_identifier.is_some()
             || self
                 .identity
                 .user
-                .value()
+                .as_ref()
                 .is_some_and(|s| s.is_empty() || s.len() > 256)
         {
             return Err(EmbeddingError);

@@ -135,7 +135,9 @@ pub(crate) fn decode_generation_with(
     controls.logprobs = read_presence(o, "logprobs", |v| {
         v.as_bool()
             .ok_or(CodecError::Invalid(ShapeReason::Probabilities))
-    })?;
+    })?
+    .value()
+    .copied();
     controls.top_logprobs = o
         .get("top_logprobs")
         .filter(|v| !v.is_null())
@@ -146,7 +148,7 @@ pub(crate) fn decode_generation_with(
                 .ok_or(CodecError::invalid())
         })
         .transpose()?;
-    if controls.top_logprobs.is_some() && controls.logprobs != Presence::Value(true) {
+    if controls.top_logprobs.is_some() && controls.logprobs != Some(true) {
         return Err(CodecError::invalid());
     }
     if o.get("response_format").is_some_and(Value::is_null) {
@@ -164,7 +166,7 @@ pub(crate) fn decode_generation_with(
                 Presence::Value(())
             },
             format,
-            verbosity,
+            verbosity: verbosity.value().copied(),
         },
         ..Default::default()
     };
@@ -385,24 +387,22 @@ pub fn encode_generation(target: &RequestRepresentation<'_>) -> Result<Value, Co
     if let Some(penalty) = controls.frequency_penalty() {
         o.insert("frequency_penalty".into(), penalty.into());
     }
-    put_presence(o, "logprobs", &target.semantic.controls().logprobs, |v| {
-        json!(v)
-    });
+    if let Some(value) = target.semantic.controls().logprobs {
+        o.insert("logprobs".into(), json!(value));
+    }
     if let Some(n) = target.semantic.controls().top_logprobs {
         o.insert("top_logprobs".into(), json!(n));
     }
-    put_presence(
-        o,
-        "verbosity",
-        &target.semantic.text_options().verbosity,
-        |v| {
-            json!(match v {
+    if let Some(value) = target.semantic.text_options().verbosity {
+        o.insert(
+            "verbosity".into(),
+            json!(match value {
                 Verbosity::Low => "low",
                 Verbosity::Medium => "medium",
                 Verbosity::High => "high",
-            })
-        },
-    );
+            }),
+        );
+    }
     match &target.semantic.text_options().format {
         crate::semantic::value::Presence::Absent => {}
         crate::semantic::value::Presence::Null => {

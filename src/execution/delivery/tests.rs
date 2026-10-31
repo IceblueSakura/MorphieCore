@@ -266,7 +266,7 @@ fn messages_end_turn_derivation_uses_original_request_without_mutating_reports()
                     Some(CompletionCause::Natural)
                 );
                 assert!(
-                    delivery
+                    !delivery
                         .report
                         .attempt()
                         .evidence
@@ -338,7 +338,13 @@ fn messages_end_turn_stream_waits_for_eof_and_final_metadata() {
             br#"{"model":"m","max_tokens":32,"messages":[{"role":"user","content":"go"}]}"#,
         )
         .unwrap();
-    for mode in ["complete", "before-eof", "cancel", "late-metadata"] {
+    for mode in [
+        "complete",
+        "before-eof",
+        "cancel",
+        "late-metadata",
+        "interrupted-summary",
+    ] {
         let codec = GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None);
         let mut attempt = Attempt::new(codec, 65536, Default::default());
         let mut delivery = ResponseDelivery::new(
@@ -352,10 +358,10 @@ fn messages_end_turn_stream_waits_for_eof_and_final_metadata() {
         attempt.begin(200, "text/event-stream").unwrap();
         let part = json!({"type":"output_text","text":"answer","annotations":[],"logprobs":[]});
         let item = json!({"id":"msg","type":"message","role":"assistant","status":"completed","content":[part]});
-        let response = json!({"id":"r","object":"response","created_at":1,"model":"m","status":"completed","output":[item],
+        let mut response = json!({"id":"r","object":"response","created_at":1,"model":"m","status":"completed","output":[item],
             "metadata":if mode=="late-metadata" {json!({"must_keep":"value"})}else{Value::Null},
             "usage":{"input_tokens":1,"output_tokens":1,"total_tokens":2,"input_tokens_details":{"cached_tokens":0,"cache_write_tokens":0}}});
-        let frames = [
+        let mut frames = vec![
             json!({"type":"response.created","response":{"id":"r","object":"response","created_at":1,"model":"m","status":"in_progress","output":[],"metadata":null}}),
             json!({"type":"response.output_item.added","output_index":0,"item":{"id":"msg","type":"message","role":"assistant","status":"in_progress","content":[]}}),
             json!({"type":"response.content_part.added","output_index":0,"item_id":"msg","content_index":0,"part":{"type":"output_text","text":"","annotations":[],"logprobs":[]}}),
@@ -365,6 +371,31 @@ fn messages_end_turn_stream_waits_for_eof_and_final_metadata() {
             json!({"type":"response.output_item.done","output_index":0,"item":item}),
             json!({"type":"response.completed","response":response}),
         ];
+        if mode == "interrupted-summary" {
+            let reasoning = json!({"id":"reason","type":"reasoning","status":"completed",
+                "summary":[{"type":"summary_text","text":"S"}]});
+            response["output"]
+                .as_array_mut()
+                .unwrap()
+                .push(reasoning.clone());
+            frames.pop();
+            // Publish visible content first, then omit the unsigned owner's entire
+            // lifecycle, including its interrupted part, without altering completion.
+            frames.extend([
+                json!({"type":"response.output_item.added","output_index":1,"item":{
+                    "id":"reason","type":"reasoning","status":"in_progress","summary":[]}}),
+                json!({"type":"response.reasoning_summary_part.added","output_index":1,"item_id":"reason",
+                    "summary_index":0,"part":{"type":"summary_text","text":""}}),
+                json!({"type":"response.reasoning_summary_text.delta","output_index":1,"item_id":"reason",
+                    "summary_index":0,"delta":"S"}),
+                json!({"type":"response.reasoning_summary_text.done","output_index":1,"item_id":"reason",
+                    "summary_index":0,"text":"S"}),
+                json!({"type":"response.reasoning_summary_part.done","output_index":1,"item_id":"reason",
+                    "summary_index":0,"part":{"type":"summary_text","text":"S"},"status":"incomplete"}),
+                json!({"type":"response.output_item.done","output_index":1,"item":reasoning}),
+                json!({"type":"response.completed","response":response}),
+            ]);
+        }
         let mut output = vec![];
         let mut encoding_error = None;
         for (sequence, mut frame) in frames.into_iter().enumerate() {
@@ -403,7 +434,7 @@ fn messages_end_turn_stream_waits_for_eof_and_final_metadata() {
             delivery.cancel();
         }
         let result = delivery.finish_stream(&attempt);
-        if mode == "complete" {
+        if matches!(mode, "complete" | "late-metadata" | "interrupted-summary") {
             assert!(encoding_error.is_none());
             output.extend(result.unwrap().into_bytes().into_iter().flatten());
             let text = String::from_utf8_lossy(&output);
@@ -419,26 +450,66 @@ fn messages_end_turn_stream_waits_for_eof_and_final_metadata() {
                 snapshot.semantic.details().completion,
                 Some(CompletionCause::Natural)
             );
-        } else if mode == "late-metadata" {
-            assert!(result.is_err());
-            let error = encoding_error.unwrap_or_else(|| result.unwrap_err());
-            assert!(matches!(
-                error.codec(),
-                Some(CodecError::Unsupported(CarrierReason::Unavailable))
-            ));
+            if mode == "late-metadata" {
+                assert!(
+                    delivery
+                        .effects()
+                        .iter()
+                        .any(|effect| effect.rule() == "messages.omit-reported-execution-hints.v1")
+                );
+            }
+            if mode == "interrupted-summary" {
+                let mut json_delivery = ResponseDelivery::new(
+                    ClientAdapter::Messages,
+                    "public",
+                    Default::default(),
+                    Default::default(),
+                    Obfuscation::Disabled,
+                )
+                .with_request(&endpoint, &request, &request);
+                let json: Value =
+                    serde_json::from_slice(&json_delivery.encode_json(&attempt).unwrap()).unwrap();
+                assert_eq!(json["content"], json!([{"type":"text","text":"answer"}]));
+                assert_eq!(json["stop_reason"], "end_turn");
+                assert_eq!(snapshot.semantic.items().len(), 1);
+                assert!(
+                    delivery
+                        .effects()
+                        .iter()
+                        .any(|effect| effect.rule() == "messages.omit-uncarried-reasoning.v1")
+                );
+                let mut native = crate::protocol::anthropic::messages::MessageSseDecoder::new(
+                    200,
+                    "text/event-stream",
+                    Default::default(),
+                )
+                .unwrap();
+                let mut rest = output.as_slice();
+                while !rest.is_empty() {
+                    let used = native.consume(rest).unwrap();
+                    assert!(used > 0);
+                    rest = &rest[used..];
+                }
+                let message = native.finish().unwrap();
+                assert_eq!(message.content.len(), 1);
+                assert_eq!(
+                    message.stop_reason.value(),
+                    Some(&crate::protocol::anthropic::messages::StopReason::EndTurn)
+                );
+            }
         } else {
             assert!(result.is_err());
         }
         assert_eq!(attempt.response().unwrap(), &source);
         assert_eq!(attempt.terminal_event().unwrap(), &terminal);
-        if mode != "complete" {
+        if !matches!(mode, "complete" | "late-metadata" | "interrupted-summary") {
             assert!(!String::from_utf8_lossy(&output).contains("message_stop"));
         }
     }
 }
 
 #[test]
-fn messages_empty_reports_match_json_stream_and_retained_views_without_loss() {
+fn messages_report_omissions_match_json_stream_and_retained_views() {
     let part = json!({"type":"output_text","text":"partial","annotations":[],"logprobs":[]});
     let item = json!({"id":"msg","type":"message","role":"assistant","status":"incomplete","content":[part]});
     for (hints, allowed) in [
@@ -543,41 +614,15 @@ fn messages_empty_reports_match_json_stream_and_retained_views_without_loss() {
             } else {
                 delivery.encode_json(&attempt)
             };
-            if !allowed {
-                assert!(
-                    result.is_err(),
-                    "rejection must prevent terminal finalization"
-                );
-                let error = error.unwrap_or_else(|| result.unwrap_err());
-                assert!(
-                    matches!(
-                        error.codec(),
-                        Some(CodecError::Unsupported(CarrierReason::Unavailable))
-                    ),
-                    "{stream} {late} {hints}: {error:?}"
-                );
-                assert!(delivery.complete(&attempt).is_err());
-                assert!(!String::from_utf8_lossy(&output).contains("message_stop"));
-                assert!(
-                    ClientAdapter::Messages
-                        .stream_encoder(
-                            observed.metadata.clone(),
-                            Default::default(),
-                            Default::default(),
-                            Obfuscation::Disabled
-                        )
-                        .is_err()
-                );
-                assert!(
-                    crate::protocol::anthropic::messages::client::encode_client_response(
-                        &observed, "m"
-                    )
-                    .is_err()
-                );
-                continue;
-            }
             assert!(error.is_none(), "{stream} {late} {hints}: {error:?}");
             output.extend(result.unwrap());
+            assert_eq!(
+                delivery
+                    .effects()
+                    .iter()
+                    .any(|effect| effect.rule() == "messages.omit-reported-execution-hints.v1"),
+                !allowed
+            );
             delivery.commit().unwrap();
             delivery.complete(&attempt).unwrap();
             let (retained, wire) = delivery.snapshot(&attempt).unwrap();
@@ -595,7 +640,7 @@ fn messages_empty_reports_match_json_stream_and_retained_views_without_loss() {
             } else {
                 assert_eq!(serde_json::from_slice::<Value>(&output).unwrap(), wire);
             }
-            let omitted = hints.get("metadata") == Some(&Value::Null);
+            let omitted = hints != json!({});
             for view in [
                 if stream {
                     View::DownstreamSse
@@ -636,6 +681,7 @@ fn messages_empty_reports_match_json_stream_and_retained_views_without_loss() {
             );
             let mut unsupported = observed.metadata.clone();
             unsupported.context.execution.metadata = Presence::Value(Default::default());
+            unsupported.context.execution.max_tool_calls = Presence::Value(0);
             assert!(encoder.update_metadata(unsupported).is_err());
             assert!(encoder.update_metadata(observed.metadata.clone()).is_err());
             assert!(encoder.finish().is_err());
@@ -708,7 +754,7 @@ fn original_request_metadata_is_attempt_local_and_matches_responses_snapshots() 
             let mut metadata = prepared.context.metadata.clone();
             let amount = metadata.delivery.as_ref().unwrap().request_metadata_bytes();
             let mut context = (*prepared.context).clone();
-            Arc::make_mut(metadata.delivery.as_mut().unwrap()).request_metadata = Presence::Absent;
+            Arc::make_mut(metadata.delivery.as_mut().unwrap()).request_metadata = None;
             context.metadata = metadata;
             context.accounted_bytes = Default::default();
             let absent_bytes = context.retained_bytes().unwrap();
@@ -776,12 +822,12 @@ fn original_request_metadata_is_attempt_local_and_matches_responses_snapshots() 
                 .as_ref()
                 .unwrap()
                 .request_metadata,
-            original.context.metadata
+            original.context.metadata.value().cloned()
         );
         assert_eq!(attempt.response().unwrap(), &observation);
         assert!(observation.metadata.delivery.is_none());
         assert!(observation.metadata.context.execution.metadata.is_absent());
-        assert!(delivery.effects().iter().any(|e| e.rule()
+        assert!(!delivery.effects().iter().any(|e| e.rule()
             == "responses.echo-request-metadata.v1"
             && e.change() == crate::protocol::conversion::generation::Change::InferFromRequest));
         let (_, again) = ClientAdapter::openai(responses.clone(), TargetContract::full())
@@ -789,8 +835,7 @@ fn original_request_metadata_is_attempt_local_and_matches_responses_snapshots() 
             .unwrap();
         assert_eq!(again["metadata"], saved["metadata"]);
         let mut no_echo = retained.clone();
-        Arc::make_mut(no_echo.metadata.delivery.as_mut().unwrap()).request_metadata =
-            Presence::Absent;
+        Arc::make_mut(no_echo.metadata.delivery.as_mut().unwrap()).request_metadata = None;
         let stored = crate::protocol::openai::responses::managed::retained_size(
             &original.task,
             &retained,

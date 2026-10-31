@@ -188,7 +188,7 @@ fn native_control_types_conflicts_and_unowned_fields_never_silently_disappear() 
     );
 }
 #[test]
-fn output_caps_sampling_and_model_specific_ignored_controls_fail_closed() {
+fn unsupported_advisory_controls_omit_without_weakening_native_constraints() {
     let target = endpoint("dashscope-flash", GenerationProtocol::OpenAiChat);
     for (field, value) in [
         ("temperature", json!(2)),
@@ -203,7 +203,11 @@ fn output_caps_sampling_and_model_specific_ignored_controls_fail_closed() {
         let input = client(GenerationApi::Chat)
             .decode_client_request(wire.to_string().as_bytes())
             .unwrap();
-        assert!(target.encode_request_with_rules(&input).is_err(), "{field}");
+        let before = input.clone();
+        let (wire, rules) = target.encode_request_with_rules(&input).unwrap();
+        assert!(wire.get(field).is_none(), "{field}");
+        assert!(!rules.is_empty(), "{field}");
+        assert_eq!(input, before);
     }
     let mut off = chat();
     off["enable_thinking"] = json!(false);
@@ -227,9 +231,10 @@ fn output_caps_sampling_and_model_specific_ignored_controls_fail_closed() {
         let input = client(GenerationApi::Chat)
             .decode_client_request(budget.to_string().as_bytes())
             .unwrap();
-        assert!(
-            matches!(target.encode_request_with_rules(&input),Err(ConversionFailure { cause: morphiecore::protocol::ConversionCause::Codec(CodecError::Unsupported(field)), .. }) if field == morphiecore::protocol::failure::CarrierReason::Reasoning)
-        );
+        let (wire, rules) = target.encode_request_with_rules(&input).unwrap();
+        assert!(wire.get("thinking_budget").is_none());
+        assert_eq!(wire["reasoning_effort"], "low");
+        assert!(rules.contains(&"generation.budget-to-effort.v1"));
         let mut cap = chat();
         cap["max_completion_tokens"] = json!(64);
         let input = client(GenerationApi::Chat)
@@ -302,7 +307,7 @@ fn qualitative_aliases_are_model_bound_and_never_budget_presets() {
             .semantic
             .settings()
             .effort
-            .value()
+            .as_ref()
             .unwrap()
             .level,
         EffortLevel::XHigh
@@ -312,11 +317,19 @@ fn qualitative_aliases_are_model_bound_and_never_budget_presets() {
         let input = client(GenerationApi::Chat)
             .decode_client_request(wire.to_string().as_bytes())
             .unwrap();
-        assert!(
-            endpoint("dashscope-glm", GenerationProtocol::OpenAiChat)
-                .encode_request_with_rules(&input)
-                .is_err()
-        );
+        let output = endpoint("dashscope-glm", GenerationProtocol::OpenAiChat)
+            .encode_request_with_rules(&input);
+        if value == "none" {
+            assert!(output.is_err());
+        } else {
+            let (wire, rules) = output.unwrap();
+            assert_eq!(
+                wire["reasoning_effort"],
+                if value == "minimal" { "low" } else { "high" }
+            );
+            assert!(wire.get("thinking_budget").is_none());
+            assert!(!rules.is_empty());
+        }
     }
 }
 #[test]
@@ -326,11 +339,10 @@ fn model_binding_and_local_delivery_prefs_cannot_be_bypassed_by_direct_native_ad
     let input = client(GenerationApi::Chat)
         .decode_client_request(wire.to_string().as_bytes())
         .unwrap();
-    assert!(
-        native(GenerationApi::Chat)
-            .encode_request(&input, "glm-5.3", &TargetContract::full())
-            .is_err()
-    );
+    let output = native(GenerationApi::Chat)
+        .encode_request(&input, "glm-5.3", &TargetContract::full())
+        .unwrap();
+    assert_eq!(output["reasoning_effort"], "high");
     let mut caps = TargetContract::full();
     caps.adaptation = native(GenerationApi::Chat).adaptation;
     let lowered = morphiecore::protocol::openai::lowering::lower_request(
@@ -396,10 +408,18 @@ fn model_binding_and_local_delivery_prefs_cannot_be_bypassed_by_direct_native_ad
     let input = client(GenerationApi::Responses)
         .decode_client_request(wire.to_string().as_bytes())
         .unwrap();
-    assert!(
-        matches!(endpoint("dashscope-flash",GenerationProtocol::OpenAiResponses).encode_request_with_rules(&input),
-            Err(ConversionFailure { cause: morphiecore::protocol::ConversionCause::Codec(CodecError::Unsupported(field)), .. }) if field == morphiecore::protocol::failure::CarrierReason::Unavailable)
-    );
+    assert!(matches!(
+        endpoint("dashscope-flash", GenerationProtocol::OpenAiResponses)
+            .encode_request_with_rules(&input),
+        Err(ConversionFailure {
+            cause: morphiecore::protocol::ConversionCause::Representation(
+                morphiecore::protocol::conversion::generation::RepresentationError::Admission(
+                    morphiecore::semantic::task::generation::Feature::Effort
+                )
+            ),
+            ..
+        })
+    ));
     assert!(
         native(GenerationApi::Responses)
             .decode_client_request(wire.to_string().as_bytes())
@@ -415,7 +435,7 @@ fn model_binding_and_local_delivery_prefs_cannot_be_bypassed_by_direct_native_ad
             .semantic
             .settings()
             .effort
-            .value()
+            .as_ref()
             .unwrap()
             .level,
         EffortLevel::High
@@ -571,13 +591,22 @@ fn responses_presentation_projects_without_changing_computation_or_source() {
     assert_eq!(wire["reasoning"], json!({"effort":"low"}));
     assert!(wire.get("enable_thinking").is_none());
     assert!(wire.get("include").is_none());
-    assert_eq!(rules, ["responses.omit-encrypted-reasoning-include.v1"]);
+    assert_eq!(rules, ["generation.omit-encrypted-reasoning-include.v1"]);
     assert_eq!(input, original);
     let standard = GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None)
         .encode_request(&input, "m", &TargetContract::full())
         .unwrap();
     assert_eq!(standard["reasoning"], body["reasoning"]);
     assert_eq!(standard["include"], body["include"]);
+    let mut default_text = body.clone();
+    default_text["text"] = json!({"format":{"type":"text"}});
+    let default_text = client(GenerationApi::Responses)
+        .decode_client_request(default_text.to_string().as_bytes())
+        .unwrap();
+    let before = default_text.clone();
+    let (wire, _) = target.encode_request_with_rules(&default_text).unwrap();
+    assert!(wire.get("text").is_none());
+    assert_eq!(default_text, before);
     let mut explicit = input.clone();
     let mut settings = explicit.task.semantic.settings().clone();
     settings.reasoning.read_history = Presence::Value(true);
@@ -585,9 +614,11 @@ fn responses_presentation_projects_without_changing_computation_or_source() {
     assert!(matches!(
         target.encode_request(&explicit),
         Err(ConversionFailure {
-            cause: morphiecore::protocol::ConversionCause::Codec(CodecError::Unsupported(
-                morphiecore::protocol::failure::CarrierReason::Unavailable
-            )),
+            cause: morphiecore::protocol::ConversionCause::Representation(
+                morphiecore::protocol::conversion::generation::RepresentationError::Admission(
+                    morphiecore::semantic::task::generation::Feature::ReasoningHistoryRead
+                )
+            ),
             ..
         })
     ));
@@ -602,8 +633,8 @@ fn responses_presentation_projects_without_changing_computation_or_source() {
     assert_eq!(
         rules,
         [
-            "responses.omit-encrypted-reasoning-include.v1",
-            "responses.omit-reasoning-summary.v1"
+            "generation.omit-encrypted-reasoning-include.v1",
+            "generation.omit-reasoning-summary.v1"
         ]
     );
     assert_eq!(input, original);
@@ -628,10 +659,7 @@ fn responses_unlisted_guarantees_reject_without_weakening_constraints() {
     let target = endpoint("dashscope-flash", GenerationProtocol::OpenAiResponses);
     for patch in [
         json!({"text":{"format":{"type":"json_object"}}}),
-        json!({"reasoning":{"summary":null}}),
         json!({"parallel_tool_calls":false}),
-        json!({"truncation":"auto"}),
-        json!({"max_output_tokens":15}),
     ] {
         let mut wire = response_request();
         wire["tools"][0]["strict"] = json!(false);
@@ -642,6 +670,24 @@ fn responses_unlisted_guarantees_reject_without_weakening_constraints() {
             .decode_client_request(wire.to_string().as_bytes())
             .unwrap();
         assert!(target.encode_request_with_rules(&input).is_err(), "{patch}");
+    }
+    for (patch, field) in [
+        (json!({"reasoning":{"summary":null}}), "reasoning"),
+        (json!({"truncation":"auto"}), "truncation"),
+        (json!({"max_output_tokens":15}), "max_output_tokens"),
+    ] {
+        let mut wire = response_request();
+        wire["tools"][0]["strict"] = json!(false);
+        wire.as_object_mut()
+            .unwrap()
+            .extend(patch.as_object().unwrap().clone());
+        let input = client(GenerationApi::Responses)
+            .decode_client_request(wire.to_string().as_bytes())
+            .unwrap();
+        let before = input.clone();
+        let (wire, _) = target.encode_request_with_rules(&input).unwrap();
+        assert!(wire.get(field).is_none(), "{field}");
+        assert_eq!(input, before);
     }
     let mut wire = response_request();
     wire["tools"][0]["strict"] = json!(true);

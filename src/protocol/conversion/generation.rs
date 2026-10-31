@@ -19,7 +19,7 @@ pub enum RepresentationError {
     #[error("projection stage budget exceeded")]
     ProjectionLimit,
     #[error(transparent)]
-    Admission(#[from] GenerationFeature),
+    Admission(#[from] Feature),
     #[error(transparent)]
     Semantic(#[from] GenerationError),
     #[error(transparent)]

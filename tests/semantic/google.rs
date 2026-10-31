@@ -1199,7 +1199,7 @@ fn next_request_restores_signatures_on_their_parts_in_any_item_order() {
     settings.text = TextOptions {
         presence: morphiecore::semantic::value::Presence::Value(()),
         format: morphiecore::semantic::value::Presence::Value(OutputConstraint::Text),
-        verbosity: morphiecore::semantic::value::Presence::Value(Verbosity::Low),
+        verbosity: Some(Verbosity::Low),
     };
     let advisory = request.clone().with_settings(settings.clone()).unwrap();
     let (body, rules) =
@@ -1253,7 +1253,7 @@ fn next_request_restores_signatures_on_their_parts_in_any_item_order() {
     let mut endpoint = morphiecore::topology::catalog::GOOGLE_BINDINGS[0].endpoint();
     assert!(endpoint.encode_request_with_rules(&source).is_err());
     endpoint.representation = morphiecore::protocol::google::generate_content::TargetContract {
-        semantics: morphiecore::protocol::google::generate_content::representation_contract(),
+        dispositions: morphiecore::protocol::google::generate_content::representation_contract(),
         ..Default::default()
     }
     .into();
@@ -1921,18 +1921,19 @@ fn tool_results_preserve_supported_values_and_reject_unproven_media() {
     }
     assert!(
         morphiecore::protocol::google::generate_content::representation_contract()
-            .structured_tool_results
+            .native(Feature::StructuredToolResult)
     );
     assert!(
         morphiecore::protocol::google::interactions::representation_contract()
-            .structured_tool_results
+            .native(Feature::StructuredToolResult)
     );
     assert!(
         !morphiecore::protocol::google::generate_content::semantic_contract()
-            .structured_tool_results
+            .native(Feature::StructuredToolResult)
     );
     assert!(
-        !morphiecore::protocol::google::interactions::semantic_contract().structured_tool_results
+        !morphiecore::protocol::google::interactions::semantic_contract()
+            .native(Feature::StructuredToolResult)
     );
     for value in [
         json!({}),

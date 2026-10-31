@@ -658,7 +658,7 @@ mod tests {
             "synthetic.intake.v1",
             Field::HistoryAnnotations,
             B::RequestDecode,
-            Change::Default(crate::protocol::conversion::generation::DefaultBasis::SelectedPolicy),
+            Change::Approximate,
         ));
         trace.report.intake(intake);
         trace.executor_order("affinity");

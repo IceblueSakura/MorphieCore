@@ -1,5 +1,6 @@
 //! Responses event coordinates, item snapshots and wire rendering.
 use super::*;
+use crate::lowering::disposition::Rule;
 use crate::protocol::{
     failure::{CarrierReason, ShapeReason},
     openai::events::responses_wire::*,
@@ -76,7 +77,7 @@ impl EventEncoder {
             .system_fingerprint
             .value()
             .is_some()
-            .then_some(projection::ProjectionRule::OmitResponsesSystemFingerprint);
+            .then_some(Rule::OMIT_RESPONSES_SYSTEM_FINGERPRINT);
         delivered.context.system_fingerprint = crate::semantic::value::Presence::Absent;
         crate::protocol::openai::responses::envelope::write_metadata(
             &delivered,

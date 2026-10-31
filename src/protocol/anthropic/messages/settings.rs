@@ -24,7 +24,7 @@ pub(in crate::protocol::anthropic::messages) fn output_settings(
     settings: &mut GenerationSettings,
 ) {
     if let Presence::Value(effort) = config.effort {
-        settings.effort = Presence::Value(EffortControl {
+        settings.effort = Some(EffortControl {
             scope: EffortScope::Response,
             level: effort_level(effort),
         });

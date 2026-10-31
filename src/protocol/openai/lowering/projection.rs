@@ -1,114 +1,11 @@
 //! Bounded, body-free evidence for the selected response projection rules.
+use crate::lowering::disposition::Rule;
 use crate::{
     protocol::openai::{GenerationApi, lowering::RepresentationError},
     semantic::task::generation::Usage,
 };
 
 pub const MAX_PROJECTION_STAGES: usize = 16;
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum ProjectionRule {
-    OmitPrediction,
-    OmitOpeningReport,
-    UsageReportView,
-    OmitReportedReasoningControls,
-    OmitChatReportedSettings,
-    OmitChatTextItemStatus,
-    EchoRequestMetadata,
-    OmitResponsesSystemFingerprint,
-    OmitResponsesInputImageTokens,
-    OmitResponsesInputTextTokens,
-    OmitResponsesOutputTextTokens,
-    OmitResponsesInputAudioTokens,
-    OmitResponsesOutputAudioTokens,
-    OmitResponsesAcceptedPredictionTokens,
-    OmitResponsesRejectedPredictionTokens,
-    OmitResponsesMessageEnvelopes,
-    OmitChatMessagePhase,
-    RegroupChatMessageItems,
-    CoarsenChatCompletionCause,
-    OmitResponsesCompletionCause,
-    RecitationAsContentFilter,
-    ContextWindowAsLength,
-    OmitResponsesContextWindowReason,
-    OmitExplanatoryRefusalDetails,
-    OmitTerminalExplanation,
-    OmitUnrepresentableServiceClass,
-}
-impl ProjectionRule {
-    pub const fn name(self) -> &'static str {
-        match self {
-            Self::OmitPrediction => "generation.omit-prediction.v1",
-            Self::OmitOpeningReport => "responses.terminal-report-snapshot.v1",
-            Self::UsageReportView => "generation.usage-report-view.v1",
-            Self::OmitReportedReasoningControls => {
-                "responses.omit-incidental-reasoning-controls.v1"
-            }
-            Self::OmitChatReportedSettings => "chat.omit-incidental-settings.v1",
-            Self::OmitChatTextItemStatus => "chat.omit-text-item-status.v1",
-            Self::EchoRequestMetadata => "responses.echo-request-metadata.v1",
-            Self::OmitResponsesSystemFingerprint => "responses.omit-system-fingerprint.v1",
-            Self::OmitResponsesInputImageTokens => "responses.omit-input-image-tokens.v1",
-            Self::OmitResponsesInputTextTokens => "responses.omit-input-text-tokens.v1",
-            Self::OmitResponsesOutputTextTokens => "responses.omit-output-text-tokens.v1",
-            Self::OmitResponsesInputAudioTokens => "responses.omit-input-audio-tokens.v1",
-            Self::OmitResponsesOutputAudioTokens => "responses.omit-output-audio-tokens.v1",
-            Self::OmitResponsesAcceptedPredictionTokens => {
-                "responses.omit-accepted-prediction-tokens.v1"
-            }
-            Self::OmitResponsesRejectedPredictionTokens => {
-                "responses.omit-rejected-prediction-tokens.v1"
-            }
-            Self::OmitResponsesMessageEnvelopes => "responses.omit-message-envelopes.v1",
-            Self::OmitChatMessagePhase => "chat.omit-message-phase.v1",
-            Self::RegroupChatMessageItems => "chat.regroup-message-items.v1",
-            Self::CoarsenChatCompletionCause => "chat.coarsen-completion-cause.v1",
-            Self::OmitResponsesCompletionCause => "responses.omit-completion-cause.v1",
-            Self::RecitationAsContentFilter => "openai.recitation-as-content-filter.v1",
-            Self::ContextWindowAsLength => "chat.context-window-as-length.v1",
-            Self::OmitResponsesContextWindowReason => "responses.omit-context-window-reason.v1",
-            Self::OmitExplanatoryRefusalDetails => "openai.omit-explanatory-refusal-details.v1",
-            Self::OmitTerminalExplanation => "openai.omit-terminal-explanation.v1",
-            Self::OmitUnrepresentableServiceClass => "openai.omit-unrepresentable-service-class.v1",
-        }
-    }
-    pub const fn field(self) -> &'static str {
-        match self {
-            Self::OmitPrediction => "generation.prediction",
-            Self::OmitOpeningReport => "response.reports.opening",
-            Self::UsageReportView => "generation.usage.reports",
-            Self::OmitReportedReasoningControls => "response.reported.reasoning",
-            Self::OmitChatReportedSettings => "response.reported.settings",
-            Self::EchoRequestMetadata => "response.context.metadata",
-            Self::OmitChatTextItemStatus => "generation.message.status",
-            Self::OmitResponsesSystemFingerprint => "response.context.system_fingerprint",
-            Self::OmitResponsesInputImageTokens => "generation.usage.input_image_tokens",
-            Self::OmitResponsesInputTextTokens => "generation.usage.input_text_tokens",
-            Self::OmitResponsesOutputTextTokens => "generation.usage.output_text_tokens",
-            Self::OmitResponsesInputAudioTokens => "generation.usage.input_audio_tokens",
-            Self::OmitResponsesOutputAudioTokens => "generation.usage.output_audio_tokens",
-            Self::OmitResponsesAcceptedPredictionTokens => {
-                "generation.usage.accepted_prediction_tokens"
-            }
-            Self::OmitResponsesRejectedPredictionTokens => {
-                "generation.usage.rejected_prediction_tokens"
-            }
-            Self::OmitResponsesMessageEnvelopes | Self::RegroupChatMessageItems => {
-                "generation.message_envelopes"
-            }
-            Self::OmitChatMessagePhase => "generation.message.phase",
-            Self::CoarsenChatCompletionCause | Self::OmitResponsesCompletionCause => {
-                "response.terminal.completion"
-            }
-            Self::RecitationAsContentFilter
-            | Self::ContextWindowAsLength
-            | Self::OmitResponsesContextWindowReason => "response.terminal.incomplete",
-            Self::OmitExplanatoryRefusalDetails => "response.terminal.refusal",
-            Self::OmitTerminalExplanation => "response.terminal.explanation",
-            Self::OmitUnrepresentableServiceClass => "generation.service_class",
-        }
-    }
-}
 
 /// A served class is not the requested policy. Never invent an approximate tier.
 pub(crate) fn service_class_view(
@@ -129,14 +26,14 @@ pub(crate) fn service_class_view(
 pub(crate) fn reported_service_class(
     metadata: &mut crate::protocol::ResponseMetadata,
     profile: GenerationApi,
-) -> Option<ProjectionRule> {
+) -> Option<Rule> {
     let mut changed = false;
     for report in metadata.context.reports.iter_mut() {
         let view = service_class_view(&report.service_class, profile);
         changed |= view != report.service_class;
         report.service_class = view;
     }
-    changed.then_some(ProjectionRule::OmitUnrepresentableServiceClass)
+    changed.then_some(Rule::OMIT_UNREPRESENTABLE_SERVICE_CLASS)
 }
 
 /// Chat length reports an overall token stop, not the lifecycle of each source
@@ -175,7 +72,7 @@ pub(crate) fn chat_text_status(
         .iter()
         .filter(|(_, item)| item.lifecycle() == Some(ItemLifecycle::Completed))
         .map(|(id, _)| {
-            ProjectionRule::OmitChatTextItemStatus
+            Rule::OMIT_CHAT_TEXT_ITEM_STATUS
                 .effect(ConversionBoundary::ResponseProject)
                 .at(Owner::item(*id))
         })
@@ -198,21 +95,21 @@ pub(crate) fn chat_text_status(
 pub(crate) fn request_metadata_echo(
     metadata: &crate::protocol::ResponseMetadata,
     policy: super::ReportedFactPolicy,
-) -> Result<Option<ProjectionRule>, RepresentationError> {
+) -> Result<Option<Rule>, RepresentationError> {
     if metadata.request_metadata_echo().is_none() {
         return Ok(None);
     }
     if policy == super::ReportedFactPolicy::StrictComplete {
         return Err(RepresentationError::ReportedFacts);
     }
-    Ok(Some(ProjectionRule::EchoRequestMetadata))
+    Ok(Some(Rule::ECHO_REQUEST_METADATA))
 }
 
 /// This changes reported echoes only, never request admission or generated items.
 pub(crate) fn reported_settings(
     metadata: &mut crate::protocol::ResponseMetadata,
     profile: GenerationApi,
-) -> Result<Option<ProjectionRule>, RepresentationError> {
+) -> Result<Option<Rule>, RepresentationError> {
     use crate::semantic::{task::generation::*, value::Presence};
     metadata
         .context
@@ -242,7 +139,7 @@ pub(crate) fn reported_settings(
         }
         metadata.context.instruction_messages = None;
         metadata.instruction_fidelity = Default::default();
-        return Ok(had_settings.then_some(ProjectionRule::OmitChatReportedSettings));
+        return Ok(had_settings.then_some(Rule::OMIT_CHAT_REPORTED_SETTINGS));
     }
     let mut changed = false;
     for report in metadata.context.reports.iter_mut() {
@@ -274,84 +171,66 @@ pub(crate) fn reported_settings(
         }
         if settings
             .effort
-            .value()
+            .as_ref()
             .is_some_and(|effort| effort.scope == EffortScope::Response)
         {
-            settings.effort = Presence::Absent;
+            settings.effort = None;
         }
         if settings.reasoning.activation == Presence::Null
             || settings.reasoning.activation == Presence::Value(ReasoningActivation::Enabled)
-                && settings.effort.value().is_none()
+                && settings.effort.as_ref().is_none()
         {
             settings.reasoning.activation = Presence::Absent;
         }
         settings.validate()?;
         changed |= before != *settings;
     }
-    Ok(changed.then_some(ProjectionRule::OmitReportedReasoningControls))
+    Ok(changed.then_some(Rule::OMIT_REPORTED_REASONING_CONTROLS))
 }
-impl ProjectionRule {
-    pub(crate) fn effect(
-        self,
-        boundary: crate::protocol::conversion::generation::ConversionBoundary,
-    ) -> crate::protocol::conversion::generation::Effect {
-        use crate::protocol::conversion::generation::{Change, Effect};
-        let change = match self {
-            Self::EchoRequestMetadata => Change::InferFromRequest,
-            Self::RegroupChatMessageItems
-            | Self::CoarsenChatCompletionCause
-            | Self::RecitationAsContentFilter
-            | Self::ContextWindowAsLength => Change::Approximate,
-            _ => Change::Omit,
-        };
-        Effect::new(self.name(), self.field().into(), boundary, change)
-    }
-}
-
 /// Fixed Responses only carries cache and reasoning breakdowns. Named profiles
 /// can additionally carry image/text counts; admission is not enlarged here.
 /// https://github.com/openai/openai-python/blob/be9d66628ad7377bd36fe5a76ae6d735843f0e76/src/openai/types/responses/response_usage.py
 pub(crate) fn responses_usage(
     mut usage: Usage,
     rules: &crate::protocol::openai::dialect::adaptation::WireRules,
-) -> Result<(Usage, Vec<ProjectionRule>), RepresentationError> {
+) -> Result<(Usage, Vec<Rule>), RepresentationError> {
     usage.validate()?;
     let mut losses = Vec::new();
     for (value, carrier, rule) in [
         (
             &mut usage.input_image_tokens,
             rules.responses_image_usage,
-            ProjectionRule::OmitResponsesInputImageTokens,
+            Rule::OMIT_RESPONSES_INPUT_IMAGE_TOKENS,
         ),
         (
             &mut usage.input_text_tokens,
             rules.responses_text_usage,
-            ProjectionRule::OmitResponsesInputTextTokens,
+            Rule::OMIT_RESPONSES_INPUT_TEXT_TOKENS,
         ),
         (
             &mut usage.output_text_tokens,
             rules.responses_text_usage,
-            ProjectionRule::OmitResponsesOutputTextTokens,
+            Rule::OMIT_RESPONSES_OUTPUT_TEXT_TOKENS,
         ),
         (
             &mut usage.input_audio_tokens,
             false,
-            ProjectionRule::OmitResponsesInputAudioTokens,
+            Rule::OMIT_RESPONSES_INPUT_AUDIO_TOKENS,
         ),
         (
             &mut usage.output_audio_tokens,
             false,
-            ProjectionRule::OmitResponsesOutputAudioTokens,
+            Rule::OMIT_RESPONSES_OUTPUT_AUDIO_TOKENS,
         ),
         (
             &mut usage.accepted_prediction_tokens,
             false,
-            ProjectionRule::OmitResponsesAcceptedPredictionTokens,
+            Rule::OMIT_RESPONSES_ACCEPTED_PREDICTION_TOKENS,
         ),
         (
             &mut usage.rejected_prediction_tokens,
             false,
-            ProjectionRule::OmitResponsesRejectedPredictionTokens,
+            Rule::OMIT_RESPONSES_REJECTED_PREDICTION_TOKENS,
         ),
     ] {
         if !carrier && value.take().is_some() {
@@ -427,7 +306,7 @@ mod tests {
             !native
                 .projection()
                 .iter()
-                .any(|e| e.rule() == ProjectionRule::OmitChatTextItemStatus.name())
+                .any(|e| e.rule() == Rule::OMIT_CHAT_TEXT_ITEM_STATUS.name())
         );
         for reason in [
             IncompleteReason::ContentFilter,
@@ -662,7 +541,7 @@ mod tests {
     fn reported_settings_omit_only_incidental_echoes() {
         let mut settings = GenerationSettings {
             reasoning: ReasoningRequest::present(Some(ReasoningSummary::Detailed)),
-            effort: Presence::Value(EffortControl {
+            effort: Some(EffortControl {
                 scope: EffortScope::Response,
                 level: EffortLevel::High,
             }),
@@ -673,19 +552,19 @@ mod tests {
         let mut chat = metadata(settings.clone());
         assert_eq!(
             reported_settings(&mut chat, GenerationApi::Chat),
-            Ok(Some(ProjectionRule::OmitChatReportedSettings))
+            Ok(Some(Rule::OMIT_CHAT_REPORTED_SETTINGS))
         );
         assert!(chat.context.settings().is_none());
 
         let mut responses = metadata(settings.clone());
         assert_eq!(
             reported_settings(&mut responses, GenerationApi::Responses),
-            Ok(Some(ProjectionRule::OmitReportedReasoningControls))
+            Ok(Some(Rule::OMIT_REPORTED_REASONING_CONTROLS))
         );
         let kept = responses.context.settings().unwrap();
         assert_eq!(kept.reasoning.budget_tokens, None);
         assert_eq!(kept.reasoning.mode, Presence::Absent);
-        assert_eq!(kept.effort, Presence::Absent);
+        assert_eq!(kept.effort, None);
         assert_eq!(
             kept.reasoning.summary(),
             Some(ReasoningSummary::Detailed),
@@ -694,7 +573,7 @@ mod tests {
 
         // A representable reasoning-scoped effort is delivered unchanged.
         let mut exact = metadata(GenerationSettings {
-            effort: Presence::Value(EffortControl {
+            effort: Some(EffortControl {
                 scope: EffortScope::Reasoning,
                 level: EffortLevel::Low,
             }),

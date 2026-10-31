@@ -4,21 +4,20 @@
 //! terminal mappings are shared by those directions, not owned by a delivery front end.
 use crate::protocol::failure::CarrierReason;
 mod accounting;
-mod carriers;
+pub(crate) mod carriers;
 pub mod client;
 pub mod sse;
 pub use sse::{GenerationSseDecoder, MessageSseDecoder};
 mod target;
-pub use carriers::Carriers;
-pub use target::{Dialect, SamplingPolicy, TargetContract};
+pub use target::{Dialect, TargetContract};
 mod items;
 mod media;
 mod request;
 mod response;
-mod service;
+pub(crate) mod service;
 mod settings;
 mod shape;
-mod strict_schema;
+pub(crate) mod strict_schema;
 mod terminal;
 pub mod wire;
 use crate::protocol::CodecError;
@@ -36,67 +35,201 @@ pub enum Profile {
 }
 impl Profile {
     /// Default binding admission, kept separate from codec carrier availability.
-    pub fn semantic_contract(self) -> crate::semantic::task::generation::GenerationFeatureSet {
-        use crate::semantic::task::generation::GenerationFeatureSet;
-        GenerationFeatureSet {
-            compaction: false,
-            instructions: true,
+    pub fn semantic_contract(self) -> crate::lowering::disposition::Dispositions {
+        use crate::lowering::disposition::Dispositions;
+        (Dispositions::empty())
+            .with_native(
+                crate::semantic::task::generation::Feature::Compaction,
+                false,
+            )
+            .with_native(
+                crate::semantic::task::generation::Feature::Instructions,
+                true,
+            )
             // Mid-conversation system messages need model-level binding evidence.
-            ordered_instructions: false,
-            temperature: false,
-            max_output_tokens: true,
-            tools: true,
-            custom_tools: false,
-            structured_arguments: true,
-            structured_tool_results: false,
-            tool_execution_reports: true,
-            tool_result_errors: true,
-            tool_result_media: true,
-            text_metadata: false,
-            top_p: false,
-            top_k: false,
-            stop_sequences: false,
-            presence_penalty: false,
-            frequency_penalty: false,
-            seed: false,
-            logprobs: false,
-            verbosity: false,
-            truncation: false,
-            structured_output: true,
-            reasoning: true,
-            response_effort: true,
-            image_input: true,
-            audio_input: false,
-            video_input: false,
-            audio_output: false,
-            audio_history: false,
-            file_input: true,
-            document_context: false,
-            parallel_tool_calls: true,
-            strict_tools: false,
-            tool_examples: false,
-            tool_changes: false,
-            conditional_tool_defaults: true,
-            explicit_cache: false,
-            cached_context: false,
-            safety: false,
-            automatic_prefix_cache: false,
-        }
+            .with_native(
+                crate::semantic::task::generation::Feature::OrderedInstructions,
+                false,
+            )
+            .with_native(
+                crate::semantic::task::generation::Feature::Temperature,
+                false,
+            )
+            .with_native(
+                crate::semantic::task::generation::Feature::MaxOutputTokens,
+                true,
+            )
+            .with_native(crate::semantic::task::generation::Feature::Tools, true)
+            .with_native(
+                crate::semantic::task::generation::Feature::CustomTools,
+                false,
+            )
+            .with_native(
+                crate::semantic::task::generation::Feature::StructuredArguments,
+                true,
+            )
+            .with_native(
+                crate::semantic::task::generation::Feature::StructuredToolResult,
+                false,
+            )
+            .with_native(
+                crate::semantic::task::generation::Feature::ToolExecutionReport,
+                true,
+            )
+            .with_native(
+                crate::semantic::task::generation::Feature::ToolResultError,
+                true,
+            )
+            .with_native(
+                crate::semantic::task::generation::Feature::ToolResultMedia,
+                true,
+            )
+            .with_native(
+                crate::semantic::task::generation::Feature::TextMetadata,
+                false,
+            )
+            .with_native(crate::semantic::task::generation::Feature::TopP, false)
+            .with_native(crate::semantic::task::generation::Feature::TopK, false)
+            .with_native(
+                crate::semantic::task::generation::Feature::StopSequences,
+                false,
+            )
+            .with_native(
+                crate::semantic::task::generation::Feature::PresencePenalty,
+                false,
+            )
+            .with_native(
+                crate::semantic::task::generation::Feature::FrequencyPenalty,
+                false,
+            )
+            .with_native(crate::semantic::task::generation::Feature::Seed, false)
+            .with_native(crate::semantic::task::generation::Feature::Logprobs, false)
+            .with_native(crate::semantic::task::generation::Feature::Verbosity, false)
+            .with_native(
+                crate::semantic::task::generation::Feature::Truncation,
+                false,
+            )
+            .with_native(
+                crate::semantic::task::generation::Feature::StructuredOutput,
+                true,
+            )
+            .with_native(crate::semantic::task::generation::Feature::Reasoning, true)
+            .with_native(
+                crate::semantic::task::generation::Feature::ResponseEffort,
+                true,
+            )
+            .with_native(
+                crate::semantic::task::generation::Feature::ReasoningBudget,
+                true,
+            )
+            .with_native(crate::semantic::task::generation::Feature::ImageInput, true)
+            .with_native(
+                crate::semantic::task::generation::Feature::AudioInput,
+                false,
+            )
+            .with_native(
+                crate::semantic::task::generation::Feature::VideoInput,
+                false,
+            )
+            .with_native(
+                crate::semantic::task::generation::Feature::AudioOutput,
+                false,
+            )
+            .with_native(
+                crate::semantic::task::generation::Feature::AudioHistory,
+                false,
+            )
+            .with_native(crate::semantic::task::generation::Feature::FileInput, true)
+            .with_native(
+                crate::semantic::task::generation::Feature::DocumentContext,
+                false,
+            )
+            .with_native(
+                crate::semantic::task::generation::Feature::ParallelTools,
+                true,
+            )
+            .with_native(
+                crate::semantic::task::generation::Feature::StrictTools,
+                false,
+            )
+            .with_native(
+                crate::semantic::task::generation::Feature::ToolExamples,
+                false,
+            )
+            .with_native(
+                crate::semantic::task::generation::Feature::ToolChanges,
+                false,
+            )
+            .with_native(
+                crate::semantic::task::generation::Feature::ConditionalToolStrictness,
+                true,
+            )
+            .with_native(
+                crate::semantic::task::generation::Feature::ExplicitCache,
+                false,
+            )
+            .with_native(
+                crate::semantic::task::generation::Feature::CachedContext,
+                false,
+            )
+            .with_native(crate::semantic::task::generation::Feature::Safety, false)
+            .with_native(
+                crate::semantic::task::generation::Feature::AutomaticPrefixCache,
+                false,
+            )
+            .with_native(
+                crate::semantic::task::generation::Feature::EagerToolInput,
+                true,
+            )
+            .with_native(
+                crate::semantic::task::generation::Feature::ReplayMismatch,
+                false,
+            )
     }
     /// Codec support does not activate strict tools on an existing binding.
-    pub fn representation_contract(
-        self,
-    ) -> crate::semantic::task::generation::GenerationFeatureSet {
+    pub fn representation_contract(self) -> crate::lowering::disposition::Dispositions {
         let mut contract = self.semantic_contract();
-        contract.strict_tools = true;
-        contract.tool_examples = true;
-        contract.document_context = true;
-        contract.explicit_cache = true;
-        contract.automatic_prefix_cache = true;
-        contract.stop_sequences = true;
-        contract.ordered_instructions = true;
+        contract.set_native(
+            crate::semantic::task::generation::Feature::ReplayMismatch,
+            true,
+        );
+        contract.set_native(
+            crate::semantic::task::generation::Feature::MessageEffort,
+            true,
+        );
+        contract.set_native(
+            crate::semantic::task::generation::Feature::StrictTools,
+            true,
+        );
+        contract.set_native(
+            crate::semantic::task::generation::Feature::ToolExamples,
+            true,
+        );
+        contract.set_native(
+            crate::semantic::task::generation::Feature::DocumentContext,
+            true,
+        );
+        contract.set_native(
+            crate::semantic::task::generation::Feature::ExplicitCache,
+            true,
+        );
+        contract.set_native(
+            crate::semantic::task::generation::Feature::AutomaticPrefixCache,
+            true,
+        );
+        contract.set_native(
+            crate::semantic::task::generation::Feature::StopSequences,
+            true,
+        );
+        contract.set_native(
+            crate::semantic::task::generation::Feature::OrderedInstructions,
+            true,
+        );
         // Without the binding's carrier, changes collapse under a named rule.
-        contract.tool_changes = true;
+        contract.set_native(
+            crate::semantic::task::generation::Feature::ToolChanges,
+            true,
+        );
         contract
     }
     pub fn decode_request(self, bytes: &[u8]) -> Result<Request, CodecError> {

@@ -28,7 +28,7 @@ pub(super) fn admits_request(request: &super::Request) -> bool {
     admits_schemas(tools, output)
 }
 
-pub(super) fn admits_generation(
+pub(crate) fn admits_generation(
     request: &crate::semantic::task::generation::GenerationRequest,
 ) -> bool {
     use crate::semantic::task::generation::*;
@@ -113,7 +113,7 @@ impl Budget {
     }
 }
 
-pub(super) fn admits(schema: &Value) -> bool {
+pub(crate) fn admits(schema: &Value) -> bool {
     let Some(object) = schema.as_object() else {
         return false;
     };

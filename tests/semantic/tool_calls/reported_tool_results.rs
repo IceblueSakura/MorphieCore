@@ -109,7 +109,10 @@ fn reported_results_preserve_facts_and_reject_missing_downstream_carriers() {
         output
     );
     let mut no_media = TargetContract::full();
-    no_media.semantics.tool_result_media = false;
+    no_media.dispositions.set_native(
+        morphiecore::semantic::task::generation::Feature::ToolResultMedia,
+        false,
+    );
     assert!(lower_response(&expected, &f, &m, GenerationApi::Responses, no_media).is_err());
 
     // Even a plain function result has no assistant-output carrier in these protocols.

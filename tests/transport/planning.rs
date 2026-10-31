@@ -82,7 +82,7 @@ mod candidates {
             model_id.clone(),
             TaskKind::Generation,
             route.id.clone(),
-            GenerationFeatureSet::text_images(),
+            Dispositions::text_images(),
         );
         compile(
             vec![provider("first"), provider("second")],
@@ -92,7 +92,7 @@ mod candidates {
             vec![CanonicalModel {
                 id: model_id,
                 task: TaskKind::Generation,
-                contract: GenerationFeatureSet::full(),
+                contract: Dispositions::full(),
             }],
         )
         .unwrap()
@@ -289,7 +289,27 @@ mod candidates {
             [false, false]
         );
         let text_only = topology.model("qwen3.8-flash").unwrap();
-        assert!(morphiecore::execution::admit(text_only, &read("qwen3.8-flash")).is_err());
+        // Isolate the model image limit from the independent tool-output carrier limit.
+        let request = GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None)
+            .decode_client_request(
+                &serde_json::to_vec(&json!({
+                    "model":"qwen3.8-flash",
+                    "input":[{"role":"user","content":[
+                        {"type":"input_image","image_url":"data:image/png;base64,AQID"}]}]
+                }))
+                .unwrap(),
+            )
+            .unwrap();
+        morphiecore::execution::admit(text_only, &request).unwrap();
+        for endpoint in topology.route_endpoints(&text_only.route) {
+            assert_eq!(
+                morphiecore::execution::plan::representable(endpoint, &request)
+                    .unwrap_err()
+                    .code(),
+                "admission.image_input"
+            );
+        }
+        assert!(ExecutionPlan::for_request(&topology, &request).is_err());
     }
 }
 mod fallback_policy {

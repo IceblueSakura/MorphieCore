@@ -12,12 +12,12 @@
 //!   precedence over legacy `user` fields.
 //! - **Explicit Null/Empty**: `null` and empty strings are treated as deliberate client
 //!   choices and are never overridden by fallback.
-//! - **Strict Validation**: Values violating target-specific constraints (such as Google
-//!   Cloud label charset or 63-character limit) reject fail-closed without truncation
-//!   or hashing.
+//! - **Target Constraints**: Unrepresentable attribution is omitted with a named
+//!   loss, never truncated, hashed or replaced by a fallback identifier.
 use crate::{
-    protocol::{ClientProtocol, CodecError, GenerationRequestEnvelope as Request, cache::HintRule},
-    semantic::{context::ClientIdentityHints, value::Presence},
+    lowering::disposition::{OMIT_IDENTITY_HINTS, OMIT_USER_BUCKETING, Rule},
+    protocol::{ClientProtocol, CodecError, GenerationRequestEnvelope as Request},
+    semantic::context::ClientIdentityHints,
 };
 
 /// Supported identity carrier targets.
@@ -38,7 +38,7 @@ pub(crate) struct Projection {
     /// Projected identity fields suitable for target payload encoding.
     pub identity: ClientIdentityHints,
     /// Declared hint omission rules recording any lost fields.
-    pub losses: Vec<HintRule>,
+    pub losses: Vec<Rule>,
 }
 
 /// Projects request identity hints to the target carrier.
@@ -47,8 +47,7 @@ pub(crate) struct Projection {
 /// 1. Native transfers preserve matching fields without loss.
 /// 2. Cross-protocol transfers prioritize `safety_identifier` over legacy `user`.
 /// 3. Google Cloud label formatting is enforced strictly on projected values.
-/// 4. Any remaining unrepresented hints produce [`HintRule::OmitIdentityHints`]
-///    and [`HintRule::OmitLegacyUserBucketing`].
+/// 4. Remaining unrepresented hints use the shared identity/bucketing dispositions.
 pub(crate) fn project(request: &Request, carrier: Carrier) -> Result<Projection, CodecError> {
     let source = &request.context.identity;
     source.validate()?;
@@ -73,17 +72,17 @@ pub(crate) fn project(request: &Request, carrier: Carrier) -> Result<Projection,
         }
         Carrier::Messages if native_response => {
             identity.user = source.user.clone();
-            remaining.user = Presence::Absent;
+            remaining.user = None;
         }
         Carrier::None => {}
         _ => {
-            // Null and empty are explicit choices, not opportunities to fall back.
-            let selected = if !remaining.safety_identifier.is_absent() {
+            // An explicit empty identifier still prevents fallback.
+            let selected = if !remaining.safety_identifier.is_none() {
                 &mut remaining.safety_identifier
             } else {
                 &mut remaining.user
             };
-            if !matches!(carrier, Carrier::GoogleLabels) || *selected != Presence::Null {
+            {
                 let value = std::mem::take(selected);
                 match carrier {
                     Carrier::Messages => identity.user = value,
@@ -95,19 +94,22 @@ pub(crate) fn project(request: &Request, carrier: Carrier) -> Result<Projection,
     }
     match carrier {
         Carrier::OpenAi => crate::protocol::openai::validate_identity(&identity)?,
-        Carrier::GoogleLabels => {
-            if let Some(value) = identity.safety_identifier.value() {
-                validate_label_value(value)?;
-            }
+        Carrier::GoogleLabels
+            if identity
+                .safety_identifier
+                .as_ref()
+                .is_some_and(|value| validate_label_value(value).is_err()) =>
+        {
+            remaining.safety_identifier = identity.safety_identifier.take();
         }
         _ => {}
     }
     let mut losses = vec![];
     if remaining != ClientIdentityHints::default() {
-        losses.push(HintRule::OmitIdentityHints);
+        losses.push(OMIT_IDENTITY_HINTS);
     }
-    if openai_source && !source.user.is_absent() && !matches!(carrier, Carrier::OpenAi) {
-        losses.push(HintRule::OmitLegacyUserBucketing);
+    if openai_source && source.user.is_some() && !matches!(carrier, Carrier::OpenAi) {
+        losses.push(OMIT_USER_BUCKETING);
     }
     Ok(Projection { identity, losses })
 }

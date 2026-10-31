@@ -53,7 +53,7 @@ pub enum PlanError {
 pub enum RejectionReason {
     Streaming,
     BodyLimit,
-    Semantic(crate::semantic::task::generation::GenerationFeature),
+    Semantic(crate::semantic::task::generation::Feature),
     Image,
     ReplayScope,
     Representation,

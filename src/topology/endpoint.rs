@@ -2,55 +2,12 @@
 //! protocol profile and upstream model binding.
 use crate::{
     lowering::target::TargetContract,
-    protocol::failure::CarrierReason,
     provider::{
         EndpointPath, ProviderId, TrustedOrigin,
         auth::{CredentialBindingId, CredentialKind},
     },
     topology::{EndpointId, GenerationProtocol, TaskKind},
 };
-
-/// Messages tool and replay controls on another protocol's target. Eager argument
-/// streaming only changes delivery granularity; tolerant `drop_block` only relaxes a
-/// check other targets do not make. Explicit enforcement has no carrier and rejects.
-fn omit_messages_controls(
-    request: &crate::protocol::GenerationRequestEnvelope,
-) -> Result<
-    (
-        std::borrow::Cow<'_, crate::protocol::GenerationRequestEnvelope>,
-        Vec<&'static str>,
-    ),
-    crate::protocol::CodecError,
-> {
-    use crate::semantic::task::generation::{ReplayMismatch, ToolDefinition};
-    let semantic = &request.task.semantic;
-    let mut settings = semantic.settings().clone();
-    let mut rules = vec![];
-    match settings.reasoning.replay_mismatch.take() {
-        Some(ReplayMismatch::Drop) => rules.push("messages.omit-block-binding.v1"),
-        Some(ReplayMismatch::Reject) => {
-            return Err(crate::protocol::CodecError::Unsupported(
-                CarrierReason::Reasoning,
-            ));
-        }
-        None => {}
-    }
-    let mut eager = false;
-    for tool in settings.tools.iter_mut().flatten() {
-        if let ToolDefinition::Function(tool) = tool {
-            eager |= tool.eager_input.take().is_some();
-        }
-    }
-    if eager {
-        rules.push("generation.omit-eager-tool-input.v1");
-    }
-    if rules.is_empty() {
-        return Ok((std::borrow::Cow::Borrowed(request), rules));
-    }
-    let mut copy = request.clone();
-    copy.task.semantic = semantic.clone().with_settings(settings)?;
-    Ok((std::borrow::Cow::Owned(copy), rules))
-}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct EndpointTarget {
@@ -204,14 +161,7 @@ impl Endpoint {
     > {
         let result = (|| {
             use crate::adapter::UpstreamAdapter;
-            let (request, omitted) = match &self.representation {
-                TargetContract::AnthropicMessages(_) => {
-                    (std::borrow::Cow::Borrowed(request), vec![])
-                }
-                _ => omit_messages_controls(request)?,
-            };
-            let request = request.as_ref();
-            let mut projection = match (self.adapter()?, &self.representation) {
+            match (self.adapter()?, &self.representation) {
                 (UpstreamAdapter::OpenAi(adapter), TargetContract::OpenAi(caps)) => {
                     let mut contract = caps.as_ref().clone();
                     contract.replay_origin = contract.replay_origin.map(|_| self.replay_origin());
@@ -230,18 +180,7 @@ impl Endpoint {
                     TargetContract::GoogleInteractions(caps),
                 ) => caps.encode_request(request, &target),
                 _ => Err(crate::protocol::CodecError::ProfileMismatch.into()),
-            }?;
-            for rule in omitted {
-                projection
-                    .evidence
-                    .push(crate::protocol::conversion::generation::Effect::new(
-                        rule,
-                        crate::protocol::conversion::generation::Field::ToolResultError,
-                        crate::protocol::conversion::generation::ConversionBoundary::RequestProject,
-                        crate::protocol::conversion::generation::Change::Approximate,
-                    ));
             }
-            Ok(projection)
         })();
         result.map_err(|error: crate::protocol::ConversionFailure| {
             error.at(crate::protocol::conversion::generation::ConversionBoundary::RequestEncode)
@@ -291,6 +230,21 @@ impl Endpoint {
             .model_limits()
             .validate()
             .map_err(|_| TopologyError::ContractUnsatisfiable)?;
+        let native = match &self.representation {
+            TargetContract::AnthropicMessages(caps) => Some(caps.profile.representation_contract()),
+            TargetContract::GoogleGenerateContent(_) => {
+                Some(crate::protocol::google::generate_content::semantic_contract())
+            }
+            TargetContract::GoogleInteractions(_) => {
+                Some(crate::protocol::google::interactions::semantic_contract())
+            }
+            TargetContract::OpenAi(_) => None,
+        };
+        if native
+            .is_some_and(|ceiling| !ceiling.supports_native(self.representation.dispositions()))
+        {
+            return Err(TopologyError::ContractUnsatisfiable);
+        }
         if let Some(caps) = self.representation.messages() {
             caps.validate()
                 .map_err(|_| TopologyError::ContractUnsatisfiable)?;

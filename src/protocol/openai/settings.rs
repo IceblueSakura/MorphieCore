@@ -93,7 +93,7 @@ pub(super) fn read(
         .and_then(Value::as_array)
         .is_some_and(|a| a.iter().any(|v| v == "message.output_text.logprobs"))
     {
-        s.controls.logprobs = crate::semantic::value::Presence::Value(true);
+        s.controls.logprobs = Some(true);
     }
     s.controls.truncation = o
         .get("truncation")
@@ -115,7 +115,7 @@ pub(super) fn read(
             return Err(CodecError::invalid());
         }
         s.text.format = read_presence(t, "format", |v| read_format(v, reported, direction))?;
-        s.text.verbosity = read_presence(t, "verbosity", verbosity)?;
+        s.text.verbosity = read_presence(t, "verbosity", verbosity)?.value().copied();
         Ok(())
     })?;
     function_tools::read_settings(o, GenerationApi::Responses, &mut s, direction)?;
@@ -249,7 +249,7 @@ pub(super) fn write(s: &GenerationSettings, o: &mut Map<String, Value>) -> Resul
     }
     function_tools::write_settings(s, GenerationApi::Responses, o)?;
     reasoning::write_request(s, o, GenerationApi::Responses)?;
-    if s.controls.logprobs == crate::semantic::value::Presence::Value(true) {
+    if s.controls.logprobs == Some(true) {
         let a = o.entry("include").or_insert_with(|| json!([]));
         a.as_array_mut()
             .expect("typed include")
@@ -268,13 +268,16 @@ pub(super) fn write(s: &GenerationSettings, o: &mut Map<String, Value>) -> Resul
                 t.insert("format".into(), write_format(format)?);
             }
         }
-        put_presence(&mut t, "verbosity", &s.text.verbosity, |v| {
-            json!(match v {
-                Verbosity::Low => "low",
-                Verbosity::Medium => "medium",
-                Verbosity::High => "high",
-            })
-        });
+        if let Some(value) = s.text.verbosity {
+            t.insert(
+                "verbosity".into(),
+                json!(match value {
+                    Verbosity::Low => "low",
+                    Verbosity::Medium => "medium",
+                    Verbosity::High => "high",
+                }),
+            );
+        }
         o.insert("text".into(), Value::Object(t));
     }
     Ok(())

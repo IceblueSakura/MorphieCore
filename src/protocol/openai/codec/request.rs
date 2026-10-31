@@ -183,15 +183,14 @@ impl GenerationCodec {
             if self.adaptation.rules.bailian_requests
                 && let Some(mapping) =
                     openai::dialect::bailian::effort_mapping(&request.model, self.protocol)
-                && let Some(control) = settings.effort.value().copied()
+                && let Some(control) = settings.effort.as_ref().copied()
             {
                 let level = mapping.encode(control.level)?;
                 if level != control.level {
-                    settings.effort =
-                        Presence::Value(crate::semantic::task::generation::EffortControl {
-                            scope: control.scope,
-                            level,
-                        });
+                    settings.effort = Some(crate::semantic::task::generation::EffortControl {
+                        scope: control.scope,
+                        level,
+                    });
                     request.task.evidence.record_effort_mapping(
                         mapping.rule,
                         control,

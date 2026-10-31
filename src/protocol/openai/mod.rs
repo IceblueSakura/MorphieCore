@@ -25,7 +25,7 @@ mod function_tools;
 pub mod images;
 pub mod obfuscation;
 mod reasoning;
-mod service;
+pub(crate) mod service;
 mod settings;
 pub mod speech;
 mod strict_schema;
@@ -64,8 +64,10 @@ impl RequestRepresentation<'_> {
     pub fn profile(&self) -> GenerationApi {
         self.profile
     }
-    pub fn requirements(&self) -> crate::semantic::task::generation::GenerationRequirements {
-        crate::semantic::task::generation::GenerationRequirements::derive(&self.semantic)
+    pub fn features(
+        &self,
+    ) -> std::collections::BTreeMap<crate::semantic::task::generation::Feature, usize> {
+        self.semantic.features()
     }
 }
 pub struct ResponseRepresentation<'a> {

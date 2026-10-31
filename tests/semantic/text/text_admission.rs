@@ -14,8 +14,7 @@ fn nullable_reasoning_effort_and_optional_function_headers_follow_their_own_sche
             .encode_request(&decoded, "m", &contract)
             .unwrap()
             .get("reasoning_effort")
-            .unwrap()
-            .is_null()
+            .is_none()
     );
     let wire = json!({"id":"r","object":"response","created_at":0,"model":"m","status":"completed","output":[{"id":null,"type":"function_call","call_id":"call","name":"lookup","arguments":"{}","status":null}]});
     let decoded = GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None)

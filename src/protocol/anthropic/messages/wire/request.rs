@@ -794,8 +794,8 @@ pub(in crate::protocol::anthropic::messages) fn validate_automatic_cache(
 #[derive(Clone, PartialEq)]
 pub struct Request {
     pub model: String,
-    pub user_id: Presence<String>,
-    pub service_policy: Presence<crate::semantic::context::ServicePolicy>,
+    pub user_id: Option<String>,
+    pub service_policy: Option<crate::semantic::context::ServicePolicy>,
     pub max_tokens: u64,
     pub stop_sequences: Vec<String>,
     pub messages: Vec<InputMessage>,
@@ -865,8 +865,7 @@ impl Request {
     }
     pub fn validate(&self) -> Result<(), CodecError> {
         label(&self.model)?;
-        nonnull(&self.service_policy)?;
-        if let Some(policy) = self.service_policy.value() {
+        if let Some(policy) = self.service_policy.as_ref() {
             crate::protocol::anthropic::messages::service::policy_wire(*policy)?;
         }
         if self.max_tokens == 0 {
@@ -990,7 +989,7 @@ impl Request {
             self.cache_control.value().map(|c| c.ttl()),
         )?;
         let mut bytes = self.model.len();
-        charge(&mut bytes, self.user_id.value().map_or(0, String::len))?;
+        charge(&mut bytes, self.user_id.as_ref().map_or(0, String::len))?;
         count(self.stop_sequences.len())?;
         for stop in &self.stop_sequences {
             if stop.is_empty() {
@@ -1044,6 +1043,7 @@ impl Request {
             &self.messages,
             matches!(self.thinking.value(), Some(Thinking::Enabled { .. })),
             self.tool_choice.value().map(|c| &c.selection),
+            true,
         )?;
         let mut block_count = 0;
         let mut image_count = 0;
@@ -1084,23 +1084,24 @@ impl Request {
             "messages": self.messages.iter().map(InputMessage::wire).collect::<Vec<_>>(),
         });
         let o = v.as_object_mut().expect("object");
-        if !self.user_id.is_absent() {
+        if let Some(value) = &self.user_id {
             let mut metadata = Map::new();
-            put(&mut metadata, "user_id", &self.user_id, |value| {
-                json!(value)
-            });
+            metadata.insert("user_id".into(), json!(value));
             o.insert("metadata".into(), metadata.into());
         }
         if !self.stop_sequences.is_empty() {
             o.insert("stop_sequences".into(), json!(self.stop_sequences));
         }
         put(o, "system", &self.system, TextContent::wire);
-        put(o, "service_tier", &self.service_policy, |policy| {
-            json!(
-                crate::protocol::anthropic::messages::service::policy_wire(*policy)
-                    .expect("validated service policy")
-            )
-        });
+        if let Some(policy) = self.service_policy {
+            o.insert(
+                "service_tier".into(),
+                json!(
+                    crate::protocol::anthropic::messages::service::policy_wire(policy)
+                        .expect("validated service policy")
+                ),
+            );
+        }
         put(o, "tools", &self.tools, |a| {
             json!(a.iter().map(Tool::wire).collect::<Vec<_>>())
         });
@@ -1112,12 +1113,14 @@ impl Request {
         v
     }
 }
-/// Source and target share native turn rules, independently of byte accounting.
+/// Common turn identities are shared. Only an actual native manual-thinking
+/// contract requires the historical thinking prefix after target projection.
 /// Tool-result-only user messages continue the same assistant turn.
 pub(in crate::protocol::anthropic::messages) fn validate_turns(
     messages: &[InputMessage],
     manual: bool,
     selection: Option<&Selection>,
+    native_history: bool,
 ) -> Result<(), CodecError> {
     if manual && matches!(selection, Some(Selection::Any | Selection::Tool(_))) {
         return Err(CodecError::invalid());
@@ -1178,7 +1181,7 @@ pub(in crate::protocol::anthropic::messages) fn validate_turns(
             }
         }
     }
-    if !pending.is_empty() || manual && starts_with_thinking == Some(false) {
+    if !pending.is_empty() || native_history && manual && starts_with_thinking == Some(false) {
         return Err(CodecError::invalid());
     }
     Ok(())
@@ -1209,10 +1212,10 @@ pub(in crate::protocol::anthropic::messages) fn validate_request_controls(
     Ok(())
 }
 pub(in crate::protocol::anthropic::messages) fn validate_user_id(
-    value: &Presence<String>,
+    value: &Option<String>,
 ) -> Result<(), CodecError> {
     if value
-        .value()
+        .as_ref()
         .is_some_and(|s| s.chars().count() > 512 || s.len() > 2048)
     {
         return Err(CodecError::Limit);
@@ -1221,11 +1224,13 @@ pub(in crate::protocol::anthropic::messages) fn validate_user_id(
 }
 pub(in crate::protocol::anthropic::messages) fn read_user_id(
     o: &Map<String, Value>,
-) -> Result<Presence<String>, CodecError> {
+) -> Result<Option<String>, CodecError> {
     let Some(metadata) = o.get("metadata") else {
-        return Ok(Presence::Absent);
+        return Ok(None);
     };
-    let value = presence(closed(metadata, &["user_id"])?, "user_id", string)?;
+    let value = presence(closed(metadata, &["user_id"])?, "user_id", string)?
+        .value()
+        .cloned();
     validate_user_id(&value)?;
     Ok(value)
 }

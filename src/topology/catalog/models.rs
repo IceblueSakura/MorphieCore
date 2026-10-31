@@ -1,6 +1,6 @@
 //! Explicit canonical declarations. Upstream aliases and public routes never create models.
 use crate::{
-    semantic::task::generation::GenerationFeatureSet,
+    lowering::disposition::Dispositions,
     topology::{CanonicalModel, ModelId, TaskKind},
 };
 pub struct ModelDefinition {
@@ -208,7 +208,7 @@ pub const MODELS: &[ModelDefinition] = &[
         developer: "Zhipu AI",
     },
 ];
-pub fn contract(id: &str) -> GenerationFeatureSet {
+pub fn contract(id: &str) -> Dispositions {
     if let Some(binding) = super::MESSAGES_BINDINGS.iter().find(|b| b.model == id) {
         // Shared public admission is narrower than the model's native capabilities.
         // Do not copy Messages-only cache support into OpenAI-compatible bindings.
@@ -218,21 +218,37 @@ pub fn contract(id: &str) -> GenerationFeatureSet {
         .iter()
         .find(|m| m.id == id)
         .expect("explicit canonical reference");
-    GenerationFeatureSet {
-        image_input: definition.images,
-        file_input: definition.files,
-        audio_input: id == "gpt-audio-mini",
+    (Dispositions::text_images())
+        .with_native(
+            crate::semantic::task::generation::Feature::ImageInput,
+            definition.images,
+        )
+        .with_native(
+            crate::semantic::task::generation::Feature::FileInput,
+            definition.files,
+        )
+        .with_native(
+            crate::semantic::task::generation::Feature::AudioInput,
+            id == "gpt-audio-mini",
+        )
         // Sources: MiniCPM-V docs/api.md and the Zhipu Chat reference (docs/refs/multimodal.md).
-        video_input: matches!(
-            id,
-            "MiniCPM-V-4.7-1B" | "MiniCPM-V-4.7-35B-A3B" | "glm-5.3-flash"
-        ),
-        strict_tools: definition.strict_tools,
+        .with_native(
+            crate::semantic::task::generation::Feature::VideoInput,
+            matches!(
+                id,
+                "MiniCPM-V-4.7-1B" | "MiniCPM-V-4.7-35B-A3B" | "glm-5.3-flash"
+            ),
+        )
+        .with_native(
+            crate::semantic::task::generation::Feature::StrictTools,
+            definition.strict_tools,
+        )
         // Admission still needs the media kind's input. Only Responses carries tool
         // media; standard Chat has no carrier, so Chat targets reject it.
-        tool_result_media: true,
-        ..GenerationFeatureSet::text_images()
-    }
+        .with_native(
+            crate::semantic::task::generation::Feature::ToolResultMedia,
+            true,
+        )
 }
 pub fn canonical_models() -> Vec<CanonicalModel> {
     MODELS

@@ -87,7 +87,7 @@ mod tests {
                 .map(|i| super::super::CanonicalModel {
                     id: ModelId::new(&format!("canonical-{i}")).unwrap(),
                     task: super::super::TaskKind::Generation,
-                    contract: super::super::GenerationFeatureSet::full(),
+                    contract: super::super::Dispositions::full(),
                 })
                 .collect(),
         )

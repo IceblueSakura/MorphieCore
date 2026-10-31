@@ -316,7 +316,11 @@ mod tests {
             .representation
             .openai_mut()
             .unwrap()
-            .prediction = false;
+            .dispositions
+            .set_native(
+                crate::semantic::task::generation::Feature::Prediction,
+                false,
+            );
         let mut second = first.clone();
         second.endpoint.id = crate::topology::EndpointId::new("fixture-second").unwrap();
         second.endpoint.upstream_model = "private-second".into();
@@ -325,7 +329,8 @@ mod tests {
             .representation
             .openai_mut()
             .unwrap()
-            .prediction = true;
+            .dispositions
+            .set_native(crate::semantic::task::generation::Feature::Prediction, true);
         second.secret = credentials::Source::ApiKey(Arc::new(
             crate::provider::SecretMaterial::new("synthetic-second-credential").unwrap(),
         ));
@@ -380,7 +385,8 @@ mod tests {
                 .representation
                 .openai()
                 .unwrap()
-                .prediction;
+                .dispositions
+                .native(crate::semantic::task::generation::Feature::Prediction);
             assert_eq!(wire["model"], candidate.endpoint.upstream_model);
             assert_eq!(wire.get("prediction").is_some(), supports_prediction);
             assert_eq!(

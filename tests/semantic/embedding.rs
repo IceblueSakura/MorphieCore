@@ -12,7 +12,7 @@ use morphiecore::{
         google::embeddings as google,
         openai::embeddings as openai,
     },
-    semantic::{task::embedding::*, value::Presence},
+    semantic::task::embedding::*,
 };
 use serde_json::{Value, json};
 fn contract() -> Contract {
@@ -234,7 +234,7 @@ fn google_entries_preserve_sample_boundaries_and_per_sample_dimensions() {
     .unwrap();
     let mut request = Request::new("public-vector", task);
     request.encoding = Some(Encoding::Base64);
-    request.identity.user = Presence::Value("private-user".into());
+    request.identity.user = Some("private-user".into());
     let snapshot = request.clone();
     let prepared = contract().prepare(&request).unwrap();
     assert_eq!(prepared.expectation.dimensions, vec![128, 256]);

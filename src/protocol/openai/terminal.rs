@@ -1,8 +1,9 @@
 //! Typed terminal details, shared by static and event codecs.
+use crate::lowering::disposition::Rule;
 use crate::{
     protocol::{
         failure::{CarrierReason, SourceFailureEvidence},
-        openai::{CodecError, lowering::projection::ProjectionRule, shape::*},
+        openai::{CodecError, shape::*},
     },
     semantic::task::generation::*,
 };
@@ -117,36 +118,32 @@ pub(super) fn chat_incomplete(incomplete: bool, details: &TerminalDetails) -> bo
 pub(super) fn terminal_losses(
     details: &TerminalDetails,
     profile: crate::protocol::openai::GenerationApi,
-) -> Result<Vec<ProjectionRule>, CodecError> {
+) -> Result<Vec<Rule>, CodecError> {
     use crate::protocol::openai::GenerationApi;
     if profile == GenerationApi::Responses {
         check_response_details(details)?;
     }
     let mut losses = vec![];
     if details.refusal.value().is_some() {
-        losses.push(ProjectionRule::OmitExplanatoryRefusalDetails);
+        losses.push(Rule::OMIT_EXPLANATORY_REFUSAL_DETAILS);
     }
     if details.explanation.value().is_some() {
-        losses.push(ProjectionRule::OmitTerminalExplanation);
+        losses.push(Rule::OMIT_TERMINAL_EXPLANATION);
     }
     match (&details.completion, profile) {
         (None, _) => {}
         (Some(CompletionCause::NaturalOrStopSequence), GenerationApi::Chat) => {}
-        (Some(_), GenerationApi::Chat) => losses.push(ProjectionRule::CoarsenChatCompletionCause),
-        (Some(_), GenerationApi::Responses) => {
-            losses.push(ProjectionRule::OmitResponsesCompletionCause)
-        }
+        (Some(_), GenerationApi::Chat) => losses.push(Rule::COARSEN_CHAT_COMPLETION_CAUSE),
+        (Some(_), GenerationApi::Responses) => losses.push(Rule::OMIT_RESPONSES_COMPLETION_CAUSE),
     }
     match (&details.incomplete, profile) {
         (Some(IncompleteReason::ContextWindowExceeded), GenerationApi::Chat) => {
-            losses.push(ProjectionRule::ContextWindowAsLength)
+            losses.push(Rule::CONTEXT_WINDOW_AS_LENGTH)
         }
         (Some(IncompleteReason::ContextWindowExceeded), GenerationApi::Responses) => {
-            losses.push(ProjectionRule::OmitResponsesContextWindowReason)
+            losses.push(Rule::OMIT_RESPONSES_CONTEXT_WINDOW_REASON)
         }
-        (Some(IncompleteReason::Recitation), _) => {
-            losses.push(ProjectionRule::RecitationAsContentFilter)
-        }
+        (Some(IncompleteReason::Recitation), _) => losses.push(Rule::RECITATION_AS_CONTENT_FILTER),
         _ => {}
     }
     Ok(losses)

@@ -70,7 +70,7 @@ impl Sample {
         };
         let settings = GenerationSettings {
             instructions: Presence::Value(text("current configuration").into()),
-            effort: Presence::Value(EffortControl {
+            effort: Some(EffortControl {
                 scope: if family == "messages" {
                     EffortScope::Response
                 } else {

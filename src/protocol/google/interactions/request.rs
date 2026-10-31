@@ -15,12 +15,10 @@ pub enum RequestRule {
     OmitPrediction,
     OmitVerbosity,
     OmitMessagePhase,
-    Hint(crate::protocol::cache::HintRule),
     SummarizeReasoning,
     TransferVisibleHistory,
     ReasoningAsText,
     OmitSchemaName,
-    OmitCacheKey,
     JoinInstructionParts,
 }
 impl RequestRule {
@@ -32,9 +30,7 @@ impl RequestRule {
             Change, ConversionBoundary as B, Effect, Field, Owner,
         };
         let (field, change) = match self {
-            Self::Hint(hint) => return hint.effect(),
             Self::JoinInstructionParts => (Field::InstructionAuthority, Change::Approximate),
-            Self::OmitCacheKey => (Field::Cache, Change::Omit),
             Self::OmitMessagePhase => (Field::MessagePhase, Change::Omit),
             Self::OmitPrediction => (Field::Prediction, Change::Omit),
             Self::OmitSampling => (Field::Sampling, Change::Omit),
@@ -61,12 +57,14 @@ impl RequestRule {
             Self::OmitPrediction => "generation.omit-prediction.v1",
             Self::OmitVerbosity => "interactions.omit-verbosity.v1",
             Self::OmitMessagePhase => "interactions.omit-message-phase.v1",
-            Self::Hint(rule) => rule.name(),
-            Self::SummarizeReasoning => "interactions.summarize-reasoning.v1",
-            Self::TransferVisibleHistory => "interactions.transfer-visible-history.v1",
-            Self::ReasoningAsText => "interactions.reasoning-as-text.v1",
-            Self::OmitSchemaName => "interactions.omit-schema-name.v1",
-            Self::OmitCacheKey => "interactions.omit-cache-key.v1",
+            Self::SummarizeReasoning => crate::lowering::disposition::INTERACTIONS_SUMMARY.id,
+            Self::TransferVisibleHistory => {
+                crate::lowering::disposition::TRANSFER_INTERACTIONS_HISTORY.id
+            }
+            Self::ReasoningAsText => {
+                crate::lowering::disposition::INTERACTIONS_REASONING_AS_TEXT.id
+            }
+            Self::OmitSchemaName => crate::lowering::disposition::INTERACTIONS_SCHEMA_NAME.id,
             Self::JoinInstructionParts => "interactions.join-instruction-parts.v1",
         }
     }
@@ -112,7 +110,7 @@ pub(super) fn project(
         return Err(unsupported());
     }
     if s.controls.top_logprobs.is_some()
-        || !s.controls.logprobs.is_absent()
+        || !s.controls.logprobs.is_none()
         || s.controls.truncation.is_some()
         || !s.output_modalities.is_absent()
         || !s.audio.is_absent()
@@ -128,7 +126,7 @@ pub(super) fn project(
         }) => {}
         _ => return Err(unsupported()),
     }
-    if !s.text.verbosity.is_absent() {
+    if !s.text.verbosity.is_none() {
         rules.insert(RequestRule::OmitVerbosity);
     }
     let mut body = Map::new();
@@ -312,10 +310,8 @@ fn thinking(
         Presence::Absent | Presence::Value(ReasoningMode::Adaptive) => {}
         _ => return Err(unsupported()),
     }
-    let effort = settings.effort.value();
-    if effort.is_some_and(|e| e.scope != EffortScope::Reasoning)
-        || settings.effort == Presence::Null
-    {
+    let effort = settings.effort.as_ref();
+    if effort.is_some_and(|e| e.scope != EffortScope::Reasoning) {
         return Err(unsupported());
     }
     let level = match effort {

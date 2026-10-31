@@ -44,7 +44,7 @@ pub fn encode_request(request: &Request, model: &str) -> Result<Value, CodecErro
         let label: &str = (*moderation).into();
         value["provider"]["options"] = json!({"openai":{"moderation":label}});
     }
-    if let Some(user) = request.identity.user.value() {
+    if let Some(user) = request.identity.user.as_ref() {
         value["user"] = json!(user);
     }
     Ok(value)

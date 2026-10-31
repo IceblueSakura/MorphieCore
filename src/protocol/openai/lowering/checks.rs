@@ -169,7 +169,7 @@ pub(super) fn represent_reasoning(
         return Err(RepresentationError::Reasoning);
     }
     let chat_control = controls.presence() == ReasoningPresence::Present
-        && (settings.effort.is_absent()
+        && (settings.effort.is_none()
             && controls.activation.is_absent()
             && controls.read_history.is_absent()
             && !native_budget

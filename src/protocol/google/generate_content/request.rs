@@ -26,7 +26,6 @@ pub enum RequestRule {
     OmitPrediction,
     OmitVerbosity,
     OmitMessagePhase,
-    Hint(crate::protocol::cache::HintRule),
     /// Gemini has one summary form, without concise or detailed variants.
     SummarizeReasoning,
     /// Incompatible complete reasoning is omitted, retaining visible history.
@@ -34,8 +33,6 @@ pub enum RequestRule {
     /// Explicit opt-in for unattributed readable reasoning.
     ReasoningAsText,
     OmitSchemaName,
-    /// Gemini caches implicitly and has no cache-key carrier.
-    OmitCacheKey,
     /// A pre-ownership surrogate signature returned by an older gateway is dropped.
     OmitLegacySignature,
 }
@@ -48,8 +45,6 @@ impl RequestRule {
             Change, ConversionBoundary as B, Effect, Field, Owner,
         };
         let (field, change) = match self {
-            Self::Hint(hint) => return hint.effect(),
-            Self::OmitCacheKey => (Field::Cache, Change::Omit),
             Self::OmitLegacySignature => (Field::Replay, Change::Omit),
             Self::OmitMessagePhase => (Field::MessagePhase, Change::Omit),
             Self::OmitPrediction => (Field::Prediction, Change::Omit),
@@ -77,12 +72,14 @@ impl RequestRule {
             Self::OmitPrediction => "generation.omit-prediction.v1",
             Self::OmitVerbosity => "gemini.omit-verbosity.v1",
             Self::OmitMessagePhase => "gemini.omit-message-phase.v1",
-            Self::Hint(rule) => rule.name(),
-            Self::SummarizeReasoning => "gemini.summarize-reasoning.v1",
-            Self::TransferVisibleHistory => "gemini.transfer-visible-history.v1",
-            Self::ReasoningAsText => "gemini.reasoning-as-text.v1",
-            Self::OmitSchemaName => "gemini.omit-schema-name.v1",
-            Self::OmitCacheKey => "gemini.omit-cache-key.v1",
+            Self::SummarizeReasoning => crate::lowering::disposition::GENERATE_CONTENT_SUMMARY.id,
+            Self::TransferVisibleHistory => {
+                crate::lowering::disposition::TRANSFER_GENERATE_CONTENT_HISTORY.id
+            }
+            Self::ReasoningAsText => {
+                crate::lowering::disposition::GENERATE_CONTENT_REASONING_AS_TEXT.id
+            }
+            Self::OmitSchemaName => crate::lowering::disposition::GENERATE_CONTENT_SCHEMA_NAME.id,
             Self::OmitLegacySignature => "gemini.omit-legacy-signature.v1",
         }
     }
@@ -122,7 +119,7 @@ pub(super) fn project(
     {
         return Err(unsupported());
     }
-    if !s.text.verbosity.is_absent() {
+    if !s.text.verbosity.is_none() {
         rules.insert(RequestRule::OmitVerbosity);
     }
     let mut body = Map::new();
@@ -132,7 +129,7 @@ pub(super) fn project(
             super::safety::settings(&s.safety).into(),
         );
     }
-    if let Some(value) = identity.safety_identifier.value() {
+    if let Some(value) = identity.safety_identifier.as_ref() {
         body.insert("labels".into(), json!({"safety_identifier":value}));
     }
     if let Some(reference) = request.cached_context() {
@@ -288,14 +285,13 @@ pub(super) fn project(
         _ => return Err(unsupported()),
     }
     match &s.controls.logprobs {
-        Presence::Absent => {}
-        Presence::Value(value) => {
+        None => {}
+        Some(value) => {
             generation.insert("responseLogprobs".into(), json!(value));
         }
-        Presence::Null => return Err(unsupported()),
     }
     if let Some(count) = s.controls.top_logprobs {
-        if s.controls.logprobs != Presence::Value(true) {
+        if s.controls.logprobs != Some(true) {
             return Err(unsupported());
         }
         generation.insert("logprobs".into(), count.into());
@@ -389,9 +385,8 @@ fn thinking(
         Presence::Value(ReasoningMode::Budgeted) if reasoning.budget_tokens.is_some() => {}
         _ => return Err(unsupported()),
     }
-    let effort = settings.effort.value();
+    let effort = settings.effort.as_ref();
     if effort.is_some_and(|e| e.scope != EffortScope::Reasoning)
-        || settings.effort == Presence::Null
         || effort.is_some() && reasoning.budget_tokens.is_some()
     {
         return Err(unsupported());

@@ -37,7 +37,7 @@ pub use content::structured::StructuredValue;
 pub use content::text::{
     Logprob, RefusalContent, TextContent, TopLogprob, compatible_logprobs, validate_logprobs,
 };
-pub use contract::{GenerationFeature, GenerationFeatureSet};
+pub use contract::Feature;
 pub use error::GenerationError;
 pub use history::continuation::{CallReference, Continuation};
 pub use history::envelope::{MessageEnvelope, MessageEnvelopeRole};
@@ -54,7 +54,7 @@ pub use request::{
     ContextStage, GenerationControls, GenerationRequest, GenerationSettings, InstructionText,
     RootInstructions, SelectedHistory, Truncation,
 };
-pub use requirements::{GenerationRequirements, GenerationResponseRequirements};
+pub use requirements::GenerationResponseRequirements;
 pub use resources::table::{ResourceDependency, ResourceId, ResourceTable, ResourceUse};
 pub use resources::{
     FileDescription, FileDetail, ImageDetail, ImageFormat, ImageSizePolicy, MAX_FILE_DECODED_BYTES,

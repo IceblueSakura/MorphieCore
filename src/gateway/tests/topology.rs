@@ -7,9 +7,9 @@ use crate::{
     },
     semantic::value::ReplayOrigin,
     topology::{
-        self, CanonicalModel, CompiledTopology, Endpoint, EndpointId, EndpointTarget,
-        ExecutionContract, GenerationFeatureSet, GenerationProtocol, ModelId, ModelMetadata,
-        PublicModel, Route, RouteId, TaskKind,
+        self, CanonicalModel, CompiledTopology, Dispositions, Endpoint, EndpointId, EndpointTarget,
+        ExecutionContract, GenerationProtocol, ModelId, ModelMetadata, PublicModel, Route, RouteId,
+        TaskKind,
     },
 };
 
@@ -78,7 +78,10 @@ pub(crate) fn topology_at(origin: &str) -> CompiledTopology {
             replay_origin: Some(scope),
             ..TargetContract::full()
         };
-        representation.semantics.temperature = !limited;
+        representation.dispositions.set_native(
+            crate::semantic::task::generation::Feature::Temperature,
+            !limited,
+        );
         Endpoint {
             id: EndpointId::new(id).unwrap(),
             provider: provider.id.clone(),
@@ -129,8 +132,11 @@ pub(crate) fn topology_at(origin: &str) -> CompiledTopology {
     ]
     .into_iter()
     .map(|(id, route)| {
-        let mut contract = GenerationFeatureSet::full();
-        contract.temperature = id != "limited-model";
+        let mut contract = Dispositions::full();
+        contract.set_native(
+            crate::semantic::task::generation::Feature::Temperature,
+            id != "limited-model",
+        );
         PublicModel::new(
             ModelId::new(id).unwrap(),
             canonical.clone(),
@@ -150,7 +156,7 @@ pub(crate) fn topology_at(origin: &str) -> CompiledTopology {
         vec![CanonicalModel {
             id: canonical.clone(),
             task: TaskKind::Generation,
-            contract: GenerationFeatureSet::full(),
+            contract: Dispositions::full(),
         }],
     )
     .unwrap()

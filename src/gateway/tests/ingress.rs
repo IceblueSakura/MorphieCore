@@ -86,7 +86,10 @@ async fn source_decode_and_planning_failures_have_separate_boundaries_without_at
         ),
         crate::protocol::openai::TargetContract::full(),
     );
-    entry.public.contract.tools = false;
+    entry
+        .public
+        .contract
+        .set_native(crate::semantic::task::generation::Feature::Tools, false);
     state.entries.insert(
         (ClientProtocol::Responses, "fixture-model".into()),
         Arc::new(entry),
@@ -95,25 +98,17 @@ async fn source_decode_and_planning_failures_have_separate_boundaries_without_at
         "input":[{"role":"assistant","content":"prior"}],
         "tools":[{"type":"function","name":"lookup","strict":false}]});
     let report = Report::default();
-    assert_eq!(
-        admission::prepare(
-            state,
-            ClientProtocol::Responses,
-            &serde_json::to_vec(&wire).unwrap(),
-            &report
-        )
-        .err()
-        .unwrap()
-        .status,
-        400
-    );
+    admission::prepare(
+        state,
+        ClientProtocol::Responses,
+        &serde_json::to_vec(&wire).unwrap(),
+        &report,
+    )
+    .unwrap();
     let snapshot = report.snapshot();
     assert!(snapshot.intake.entries.is_empty());
     assert!(snapshot.attempts.is_empty());
-    assert_eq!(
-        snapshot.failure.unwrap().boundary,
-        Some(crate::protocol::conversion::generation::ConversionBoundary::RequestProject)
-    );
+    assert!(snapshot.failure.is_none());
     let mut invalid = wire.clone();
     invalid["tools"][0]["name"] = serde_json::Value::Null;
     let failed_decode = Report::default();
@@ -127,13 +122,20 @@ async fn source_decode_and_planning_failures_have_separate_boundaries_without_at
         .is_err()
     );
     assert!(failed_decode.snapshot().intake.entries.is_empty());
+    assert_eq!(
+        failed_decode.snapshot().failure.unwrap().boundary,
+        Some(crate::protocol::conversion::generation::ConversionBoundary::RequestDecode)
+    );
     let entry = Arc::make_mut(
         state
             .entries
             .get_mut(&(ClientProtocol::Responses, "fixture-model".into()))
             .unwrap(),
     );
-    entry.public.contract.tools = true;
+    entry
+        .public
+        .contract
+        .set_native(crate::semantic::task::generation::Feature::Tools, true);
     for candidate in &mut entry.candidates {
         Arc::make_mut(candidate)
             .endpoint
@@ -246,8 +248,22 @@ async fn activated_members_keep_route_order_with_a_shared_client_carrier() {
             br#"{"model":"fixture-model","input":"x","include":["reasoning.encrypted_content"]}"#,
         )
         .unwrap();
-    // RequireAll still rejects controls unsupported by the Chat candidate.
-    assert!(entry.eligible(&opaque, &gate.state.affinity).is_err());
+    let before = opaque.clone();
+    let selected = entry.eligible(&opaque, &gate.state.affinity).unwrap();
+    assert_eq!(
+        selected
+            .iter()
+            .map(|c| c.candidate.endpoint.id.as_str())
+            .collect::<Vec<_>>(),
+        ["fixture-responses", "fixture-chat"]
+    );
+    let (_, rules) = selected[1]
+        .candidate
+        .endpoint
+        .encode_request_with_rules(&opaque)
+        .unwrap();
+    assert_eq!(rules, ["generation.omit-encrypted-reasoning-include.v1"]);
+    assert_eq!(opaque, before);
 }
 
 #[test]
@@ -373,23 +389,23 @@ async fn model_request_limits_do_not_suppress_client_reported_facts() {
             .unwrap(),
         )
         .unwrap();
-    assert!(
-        entry
-            .client
-            .as_openai()
-            .unwrap()
-            .0
-            .encode_request(
-                &request,
-                "synthetic",
-                entry.candidates[0]
-                    .endpoint
-                    .representation
-                    .openai()
-                    .unwrap()
-            )
-            .is_err()
-    );
+    let (wire, rules) = entry
+        .client
+        .as_openai()
+        .unwrap()
+        .0
+        .encode_request_with_rules(
+            &request,
+            "synthetic",
+            entry.candidates[0]
+                .endpoint
+                .representation
+                .openai()
+                .unwrap(),
+        )
+        .unwrap();
+    assert!(wire.get("temperature").is_none());
+    assert_eq!(rules, ["generation.omit-temperature.v1"]);
     let provider = GenerationCodec {
         protocol: GenerationApi::Responses,
         adaptation: entry.candidates[0]

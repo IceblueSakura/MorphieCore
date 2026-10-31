@@ -2,7 +2,6 @@
 use super::{
     RepresentationError, TargetContract,
     checks::{check_tool_selection, represent_reasoning, text_items, validate_wire_ids},
-    message_groups, projection,
 };
 use crate::{
     protocol::{
@@ -12,19 +11,31 @@ use crate::{
     semantic::task::generation::*,
 };
 
-pub fn check(
-    r: &GenerationRequest,
-    c: TargetContract,
-) -> Result<GenerationRequirements, RepresentationError> {
-    r.validate()?;
-    c.semantics.check(r).map_err(RepresentationError::Admission)
-}
 pub fn lower_request<'a>(
-    r: &'a GenerationRequest,
+    request: &'a GenerationRequest,
+    fidelity: &'a FidelityRecords,
+    profile: GenerationApi,
+    contract: TargetContract,
+) -> Result<RequestRepresentation<'a>, crate::protocol::ConversionFailure> {
+    let projection = crate::lowering::request::project_semantic(
+        request,
+        crate::lowering::request::Target::OpenAi(profile, &contract),
+        "",
+    )?;
+    let mut rendered = render_request(projection.value, fidelity, profile, contract)?;
+    rendered
+        .projection
+        .extend(projection.evidence.into_effects());
+    Ok(rendered)
+}
+
+pub(crate) fn render_request<'a>(
+    semantic: std::borrow::Cow<'a, GenerationRequest>,
     fidelity: &'a FidelityRecords,
     profile: GenerationApi,
     c: TargetContract,
 ) -> Result<RequestRepresentation<'a>, RepresentationError> {
+    let r = semantic.as_ref();
     r.validate()?;
     if r.items()
         .iter()
@@ -32,63 +43,8 @@ pub fn lower_request<'a>(
     {
         return Err(RepresentationError::ReplayFormat);
     }
-    let mut semantic = std::borrow::Cow::Borrowed(r);
-    let mut projection = Vec::new();
-    if (profile == GenerationApi::Chat || c.adaptation.rules.bailian_requests)
-        && let Some((projected, effects)) = super::strictness::project(
-            r,
-            |_| c.semantics.strict_tools && !c.adaptation.rules.bailian_requests,
-            |_| true,
-        )?
-    {
-        semantic = std::borrow::Cow::Owned(projected);
-        projection.extend(effects);
-    }
-    if profile == GenerationApi::Chat
-        && let Some(projected) = crate::protocol::phase::omit_request(semantic.as_ref())?
-    {
-        semantic = std::borrow::Cow::Owned(projected);
-        projection.push(
-            projection::ProjectionRule::OmitChatMessagePhase.effect(
-                crate::protocol::conversion::generation::ConversionBoundary::RequestProject,
-            ),
-        );
-    }
-    if let Some((groups, loss)) =
-        message_groups::project(semantic.items(), semantic.message_envelopes(), profile)?
-    {
-        // Replay dependencies must be checked against the final target value below.
-        semantic = std::borrow::Cow::Owned(semantic.into_owned().with_message_envelopes(groups)?);
-        projection.push(
-            loss.effect(
-                crate::protocol::conversion::generation::ConversionBoundary::RequestProject,
-            ),
-        );
-    }
-    if semantic.settings().prediction.is_some() && (profile != GenerationApi::Chat || !c.prediction)
-    {
-        let mut settings = semantic.settings().clone();
-        settings.prediction = None;
-        semantic = std::borrow::Cow::Owned(semantic.into_owned().with_settings(settings)?);
-        projection.push(
-            projection::ProjectionRule::OmitPrediction.effect(
-                crate::protocol::conversion::generation::ConversionBoundary::RequestProject,
-            ),
-        );
-    }
-    if c.adaptation.rules.parallel_tools_always_enabled {
-        match semantic.settings().parallel_tool_calls {
-            Some(false) => return Err(RepresentationError::Tools),
-            Some(true) => {
-                let mut settings = semantic.settings().clone();
-                settings.parallel_tool_calls = None;
-                semantic = std::borrow::Cow::Owned(semantic.into_owned().with_settings(settings)?);
-            }
-            None => {}
-        }
-    }
-    let r = semantic.as_ref();
-    let q = check(r, c.clone())?;
+    let projection = Vec::new();
+    let q = r.features();
     if r.controls().top_k.is_some()
         && !(profile == GenerationApi::Chat && c.adaptation.rules.thinking_controls)
         || profile == GenerationApi::Responses && r.controls().has_extended_controls()
@@ -104,17 +60,17 @@ pub fn lower_request<'a>(
     {
         return Err(RepresentationError::Controls);
     }
-    if q.automatic_prefix_cache || q.cached_context {
+    if q.contains_key(&Feature::AutomaticPrefixCache) || q.contains_key(&Feature::CachedContext) {
         return Err(RepresentationError::Controls);
     }
-    if q.safety_settings {
+    if q.contains_key(&Feature::Safety) {
         return Err(RepresentationError::Safety);
     }
-    if q.tool_result_errors {
+    if q.contains_key(&Feature::ToolResultError) {
         return Err(RepresentationError::Tools);
     }
     check_strict_schemas(r.settings())?;
-    if q.provider_observations {
+    if q.contains_key(&Feature::ProviderObservation) {
         return Err(RepresentationError::UnmigratedSemantic);
     }
     check_tool_selection(r.tool_choice())?;
@@ -138,7 +94,7 @@ pub fn lower_request<'a>(
         }
     }
     if profile == GenerationApi::Chat
-        && q.reasoning
+        && q.contains_key(&Feature::Reasoning)
         && !c.adaptation.rules.readable_reasoning
         && r.items()
             .iter()
@@ -153,7 +109,7 @@ pub fn lower_request<'a>(
     {
         return Err(RepresentationError::Terminal);
     }
-    if profile == GenerationApi::Chat && q.truncation {
+    if profile == GenerationApi::Chat && q.contains_key(&Feature::Truncation) {
         return Err(RepresentationError::UnmigratedSemantic);
     }
     if profile == GenerationApi::Chat
@@ -166,7 +122,7 @@ pub fn lower_request<'a>(
     }
     if profile == GenerationApi::Chat
         && r.controls().top_logprobs.is_some()
-        && r.controls().logprobs != crate::semantic::value::Presence::Value(true)
+        && r.controls().logprobs != Some(true)
     {
         return Err(RepresentationError::Controls);
     }
@@ -273,9 +229,6 @@ pub fn lower_request<'a>(
         }
     }
     validate_wire_ids(r.items(), fidelity, false)?;
-    c.model_limits
-        .check_request(r)
-        .map_err(|_| RepresentationError::Controls)?;
     Ok(RequestRepresentation {
         adaptation: c.adaptation,
         semantic,

@@ -790,14 +790,12 @@ mod tests {
                 Some(if complete_ttls { 70 } else { 40 })
             );
             assert_eq!(source.usage().unwrap().input_cache_write_tokens, None);
-            assert!(evidence.iter().any(|e| e.semantic_field()
-                == crate::protocol::conversion::generation::Field::CacheWriteTokens
-                && e.change()
-                    == if complete_ttls {
-                        crate::protocol::conversion::generation::Change::Derive
-                    } else {
-                        crate::protocol::conversion::generation::Change::Estimate
-                    }));
+            assert_eq!(
+                evidence.iter().any(|e| e.semantic_field()
+                    == crate::protocol::conversion::generation::Field::CacheWriteTokens
+                    && e.change() == crate::protocol::conversion::generation::Change::Estimate),
+                !complete_ttls
+            );
         }
         let mut counts = Usage::operation(0, 0, 100);
         counts.input_tokens = None;
@@ -1061,7 +1059,7 @@ mod provenance_tests {
         let mut delivery = GenerationDelivery::default();
         let effects = complete(&mut delivery, &response, ClientProtocol::Responses, 999).unwrap();
         assert!(
-            effects
+            !effects
                 .iter()
                 .any(|e| e.semantic_field() == Field::OutputTokens && e.change() == Change::Derive)
         );

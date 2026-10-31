@@ -91,6 +91,22 @@ fn rank(level: EffortLevel) -> u8 {
     }
 }
 
+pub(crate) fn nearest_effort(
+    level: EffortLevel,
+    levels: &[EffortLevel],
+) -> Result<EffortLevel, CodecError> {
+    levels
+        .iter()
+        .copied()
+        .min_by_key(|candidate| {
+            (
+                rank(level).abs_diff(rank(*candidate)),
+                std::cmp::Reverse(rank(*candidate)),
+            )
+        })
+        .ok_or_else(CodecError::invalid)
+}
+
 impl ThinkingBudgets {
     /// Validates that entries are non-empty, contains at most 6 levels, all
     /// budgets are non-zero, and no duplicate effort levels exist.
@@ -209,25 +225,6 @@ impl ReasoningRequestPolicy {
         Ok(())
     }
 
-    /// Checks whether this policy applies to the source request's effort scope.
-    ///
-    /// Scope policies apply only to their declared input scope. Other controls
-    /// still reach ordinary target validation; this is not a fallback mapping.
-    pub(crate) fn applies_to(&self, source: &GenerationRequest) -> bool {
-        let ReasoningConversion::Scope { from, .. } = self.conversion else {
-            return true;
-        };
-        source
-            .settings()
-            .effort
-            .value()
-            .is_some_and(|c| c.scope == from)
-            || source.items().iter().any(|(_, item)| {
-                matches!(item, Item::ConfigurationUpdate(update)
-                    if update.effort.is_some_and(|c| c.scope == from))
-            })
-    }
-
     /// Emits a structured [`Effect::Reasoning`] evidence receipt.
     pub(crate) fn receipt(
         &self,
@@ -238,7 +235,7 @@ impl ReasoningRequestPolicy {
             ReasoningConversion::BudgetToEffort { table, .. } => target
                 .settings()
                 .effort
-                .value()
+                .as_ref()
                 .map(|effort| table.budget(effort.level))
                 .transpose()?,
             ReasoningConversion::EffortToBudget { .. } => target.reasoning().budget_tokens,
@@ -273,7 +270,7 @@ impl ReasoningRequestPolicy {
         for (index, (_, item)) in source.items().iter().enumerate() {
             if let Item::ConfigurationUpdate(update) = item {
                 let mut controls = GenerationSettings {
-                    effort: update.effort.map_or(Presence::Absent, Presence::Value),
+                    effort: update.effort,
                     ..Default::default()
                 };
                 if let Some(activation) = update.activation {
@@ -288,7 +285,7 @@ impl ReasoningRequestPolicy {
                 if projected.reasoning.budget_tokens.is_some() {
                     return Err(CodecError::Unsupported(CarrierReason::Unavailable));
                 }
-                let effort = projected.effort.value().copied();
+                let effort = projected.effort.as_ref().copied();
                 if update.effort != effort {
                     items.to_mut()[index].1 =
                         Item::ConfigurationUpdate(ConfigurationUpdate { effort, ..*update });
@@ -312,35 +309,38 @@ impl ReasoningRequestPolicy {
         let mut target = source.clone();
         match &self.conversion {
             ReasoningConversion::Scope { from, to, levels } => {
-                if let Some(control) = source.effort.value()
+                if let Some(control) = source.effort.as_ref()
                     && control.scope == *from
                 {
+                    let selected = nearest_effort(
+                        control.level,
+                        &levels.iter().map(|(level, _)| *level).collect::<Vec<_>>(),
+                    )?;
                     let level = levels
                         .iter()
-                        .find(|(key, _)| *key == control.level)
+                        .find(|(key, _)| *key == selected)
                         .map(|(_, to)| *to)
                         .ok_or(CodecError::Unsupported(CarrierReason::Reasoning))?;
-                    target.effort = Presence::Value(EffortControl { scope: *to, level });
+                    target.effort = Some(EffortControl { scope: *to, level });
                 }
             }
             ReasoningConversion::BudgetToEffort { scope, table } => {
                 if let Some(budget) = source.reasoning.budget_tokens {
-                    if !source.effort.is_absent() {
-                        return Err(CodecError::Unsupported(CarrierReason::Unavailable));
-                    }
-                    let (level, _) = table.nearest(budget)?;
                     target.reasoning.budget_tokens = None;
                     if target.reasoning.mode == Presence::Value(ReasoningMode::Budgeted) {
                         target.reasoning.mode = Presence::Absent;
                     }
-                    target.effort = Presence::Value(EffortControl {
-                        scope: *scope,
-                        level,
-                    });
+                    if target.effort.is_none() {
+                        let (level, _) = table.nearest(budget)?;
+                        target.effort = Some(EffortControl {
+                            scope: *scope,
+                            level,
+                        });
+                    }
                 }
             }
             ReasoningConversion::EffortToBudget { scope, table } => {
-                if let Some(control) = source.effort.value() {
+                if let Some(control) = source.effort.as_ref() {
                     if control.scope != *scope || source.reasoning.budget_tokens.is_some() {
                         return Err(CodecError::Unsupported(CarrierReason::Reasoning));
                     }
@@ -352,17 +352,17 @@ impl ReasoningRequestPolicy {
                     target.reasoning.presence = ReasoningPresence::Present;
                     target.reasoning.mode = Presence::Value(ReasoningMode::Budgeted);
                     target.reasoning.budget_tokens = Some(table.budget(control.level)?);
-                    target.effort = Presence::Absent;
+                    target.effort = None;
                 }
             }
             ReasoningConversion::PreserveDisabled => {
                 if source.reasoning.activation == Presence::Value(ReasoningActivation::Disabled)
                     && source
                         .effort
-                        .value()
+                        .as_ref()
                         .is_some_and(|c| c.scope == EffortScope::Response)
                 {
-                    target.effort = Presence::Absent;
+                    target.effort = None;
                 }
             }
         }
@@ -416,7 +416,12 @@ impl ReasoningEffortMapping {
 
     /// Encodes a qualitative effort level to the target model's native representation.
     pub fn encode(&self, level: EffortLevel) -> Result<EffortLevel, CodecError> {
-        self.lookup(self.encode, level)
+        self.validate()?;
+        self.encode
+            .iter()
+            .find(|(from, _)| *from == level)
+            .map(|(_, to)| Ok(*to))
+            .unwrap_or_else(|| nearest_effort(level, self.native_levels))
     }
 
     /// Decodes a qualitative effort level from the target model's native representation.

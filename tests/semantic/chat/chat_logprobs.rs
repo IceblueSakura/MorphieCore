@@ -95,12 +95,16 @@ fn chat_probability_request_controls_project_and_reject_invalid_combinations() {
             .is_none()
     );
     let mut contract = Contract::full();
-    contract.semantics.logprobs = false;
-    assert!(
-        adapter(GenerationApi::Chat)
-            .encode_request(&request, "m", &contract)
-            .is_err()
+    contract.dispositions.set_native(
+        morphiecore::semantic::task::generation::Feature::Logprobs,
+        false,
     );
+    let (omitted, rules) = adapter(GenerationApi::Chat)
+        .encode_request_with_rules(&request, "m", &contract)
+        .unwrap();
+    assert!(omitted.get("logprobs").is_none());
+    assert!(omitted.get("top_logprobs").is_none());
+    assert!(rules.contains(&"generation.omit-logprobs.v1"));
     for value in [Value::Null, json!(false)] {
         let mut wire = wire.clone();
         wire["logprobs"] = value.clone();

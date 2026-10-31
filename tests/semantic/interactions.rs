@@ -1357,7 +1357,7 @@ fn projects_stateless_steps_tools_and_controls() {
     let mut endpoint = morphiecore::topology::catalog::GOOGLE_BINDINGS[0].interactions_endpoint();
     assert!(endpoint.encode_request_with_rules(&request).is_err());
     endpoint.representation = morphiecore::protocol::google::interactions::TargetContract {
-        semantics: morphiecore::protocol::google::interactions::representation_contract(),
+        dispositions: morphiecore::protocol::google::interactions::representation_contract(),
         ..Default::default()
     }
     .into();
@@ -1459,7 +1459,7 @@ fn rejects_unrepresentable_critical_tool_semantics() {
     );
     assert_eq!(
         advisory.task.semantic.text_options().verbosity,
-        morphiecore::semantic::value::Presence::Value(Verbosity::Low)
+        Some(Verbosity::Low)
     );
     let mut settings = advisory.task.semantic.settings().clone();
     settings.text.format =
@@ -1800,10 +1800,7 @@ fn tool_result_execution_reports_require_a_real_carrier() {
             morphiecore::protocol::google::generate_content::semantic_contract(),
             morphiecore::protocol::google::interactions::semantic_contract(),
         ] {
-            assert_eq!(
-                contract.check(&source),
-                Err(GenerationFeature::ToolExecutionReport)
-            );
+            assert_eq!(contract.check(&source), Err(Feature::ToolExecutionReport));
         }
         assert_eq!(source, original);
     }

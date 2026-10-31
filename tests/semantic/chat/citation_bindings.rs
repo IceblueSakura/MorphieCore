@@ -397,8 +397,20 @@ fn native_file_reports_preserve_list_ordinals_and_namespaced_identity_without_fa
         .unwrap()
         .build()
         .unwrap();
-    let needs = GenerationRequirements::derive(&request);
-    assert_eq!(needs.file_inputs, 0);
-    assert_eq!(needs.image_inputs, 0);
-    assert!(needs.text_metadata);
+    let needs = (request).features();
+    assert_eq!(
+        needs
+            .get(&morphiecore::semantic::task::generation::Feature::FileInput)
+            .copied()
+            .unwrap_or(0),
+        0
+    );
+    assert_eq!(
+        needs
+            .get(&morphiecore::semantic::task::generation::Feature::ImageInput)
+            .copied()
+            .unwrap_or(0),
+        0
+    );
+    assert!(needs.contains_key(&morphiecore::semantic::task::generation::Feature::TextMetadata));
 }

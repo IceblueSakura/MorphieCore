@@ -77,7 +77,7 @@ fn requests_reject_unselected_controls_while_incidental_reports_project() {
         .unwrap()
         .unwrap();
     assert_eq!(
-        semantic.settings().effort.value().unwrap().level,
+        semantic.settings().effort.as_ref().unwrap().level,
         EffortLevel::XHigh
     );
     assert_eq!(request, source);
@@ -137,7 +137,7 @@ fn requests_reject_unselected_controls_while_incidental_reports_project() {
     }
     .project(&effort)
     .unwrap();
-    assert_eq!(scoped.effort.value().unwrap().scope, EffortScope::Response);
+    assert_eq!(scoped.effort.as_ref().unwrap().scope, EffortScope::Response);
     let mut disabled = scoped;
     disabled.reasoning.activation = Presence::Value(ReasoningActivation::Disabled);
     let disabled = ReasoningRequestPolicy {
@@ -147,7 +147,7 @@ fn requests_reject_unselected_controls_while_incidental_reports_project() {
     }
     .project(&disabled)
     .unwrap();
-    assert!(disabled.effort.is_absent());
+    assert!(disabled.effort.is_none());
     assert_eq!(
         disabled.reasoning.activation.value(),
         Some(&ReasoningActivation::Disabled)
@@ -190,7 +190,7 @@ fn requests_reject_unselected_controls_while_incidental_reports_project() {
         let settings = GenerationSettings {
             instructions: Presence::Value(Text::new("hello", "test", 32).unwrap().into()),
             reasoning: control,
-            effort: Presence::Value(EffortControl {
+            effort: Some(EffortControl {
                 scope: EffortScope::Reasoning,
                 level: EffortLevel::High,
             }),
@@ -233,10 +233,25 @@ fn requests_reject_unselected_controls_while_incidental_reports_project() {
                     morphiecore::protocol::openai::responses::encode_generation(&target).unwrap()["reasoning"],
                     serde_json::json!({"effort":"high","summary":"auto"})
                 );
-            } else {
+            } else if dimension == 1 {
                 assert_eq!(
                     lower_request(&request, &fidelity, profile, TargetContract::full()).err(),
-                    Some(RepresentationError::Reasoning)
+                    Some(RepresentationError::Reasoning.into())
+                );
+            } else {
+                let target =
+                    lower_request(&request, &fidelity, profile, TargetContract::full()).unwrap();
+                assert_eq!(
+                    target.semantic().settings().effort.unwrap().level,
+                    EffortLevel::High
+                );
+                assert!(target.semantic().reasoning().budget_tokens.is_none());
+                assert!(target.semantic().reasoning().mode.is_absent());
+                assert!(
+                    target
+                        .projection()
+                        .iter()
+                        .any(|effect| effect.change().is_loss())
                 );
             }
             let target = lower_response(

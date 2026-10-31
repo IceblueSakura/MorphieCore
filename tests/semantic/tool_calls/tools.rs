@@ -127,15 +127,14 @@ fn chat_tool_text_arrays_preserve_parts_and_project_only_final_ir() {
             let mut cached = r.clone();
             cached["input"][5]["output"][0]["prompt_cache_breakpoint"] = json!({"mode":"explicit"});
             let cached = responses::decode_generation(&cached).unwrap();
-            assert!(
-                lower_request(
-                    &cached.semantic,
-                    &cached.fidelity,
-                    GenerationApi::Chat,
-                    Contract::full()
-                )
-                .is_err()
-            );
+            let projected = lower_request(
+                &cached.semantic,
+                &cached.fidelity,
+                GenerationApi::Chat,
+                Contract::full(),
+            )
+            .unwrap();
+            assert!(!projected.semantic().items()[5].1.has_cache_breakpoints());
         }
         assert_eq!(request_wire(&decoded, GenerationApi::Chat), c);
         assert_eq!(request_wire(&decoded, GenerationApi::Responses), r);
@@ -488,15 +487,16 @@ fn program_output_requires_terminal_status_and_complete_opaque_fields() {
 #[test]
 fn program_items_have_no_chat_projection() {
     let d = responses::decode_generation(&program_history()).unwrap();
-    assert!(matches!(
+    assert_eq!(
         lower_request(
             &d.semantic,
             &d.fidelity,
             GenerationApi::Chat,
             Contract::full()
-        ),
-        Err(RepresentationError::Tools)
-    ));
+        )
+        .err(),
+        Some(RepresentationError::Tools.into())
+    );
     let r = GenerationResponse::new(
         vec![(ItemId::new(1), program_items()[0].1.clone())],
         Outcome::Completed,

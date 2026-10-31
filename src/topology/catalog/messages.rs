@@ -1,8 +1,8 @@
 //! Native Messages bindings. Directory bootstrap activates one only when `models` lists it.
 use crate::{
-    protocol::anthropic::messages::{Carriers, Dialect, Profile, TargetContract},
+    lowering::disposition::Dispositions,
+    protocol::anthropic::messages::{Dialect, Profile, TargetContract},
     provider::{CredentialBindingId, CredentialKind, ProviderDefinition, catalog},
-    semantic::task::generation::GenerationFeatureSet,
     topology::*,
 };
 pub struct MessagesBinding {
@@ -21,13 +21,31 @@ pub const MESSAGES_BINDINGS: &[MessagesBinding] = &[MessagesBinding {
     developer: "Anthropic",
 }];
 /// Reviewed native Haiku inputs and pi's ordered agent profile.
-fn haiku_contract(mut contract: GenerationFeatureSet) -> GenerationFeatureSet {
-    contract.strict_tools = true;
-    contract.tool_examples = true;
-    contract.document_context = true;
-    contract.automatic_prefix_cache = true;
-    contract.ordered_instructions = true;
-    contract.tool_changes = true;
+fn haiku_contract(mut contract: Dispositions) -> Dispositions {
+    contract.set_native(
+        crate::semantic::task::generation::Feature::StrictTools,
+        true,
+    );
+    contract.set_native(
+        crate::semantic::task::generation::Feature::ToolExamples,
+        true,
+    );
+    contract.set_native(
+        crate::semantic::task::generation::Feature::DocumentContext,
+        true,
+    );
+    contract.set_native(
+        crate::semantic::task::generation::Feature::AutomaticPrefixCache,
+        true,
+    );
+    contract.set_native(
+        crate::semantic::task::generation::Feature::OrderedInstructions,
+        true,
+    );
+    contract.set_native(
+        crate::semantic::task::generation::Feature::ToolChanges,
+        true,
+    );
     contract
 }
 impl MessagesBinding {
@@ -49,15 +67,27 @@ impl MessagesBinding {
         // Preserve the pinned OpenCode Messages fallback as binding policy.
         // https://github.com/anomalyco/opencode/blob/e5a557efeee02c94486d391afc48f24a49ebc9a5/packages/ai/src/protocols/anthropic-messages.ts
         representation.default_output_tokens = Some(32_000);
-        representation.sampling = crate::protocol::anthropic::messages::SamplingPolicy::Fixed;
-        representation.manual_thinking = false;
+        representation.dispositions.set_native(
+            crate::semantic::task::generation::Feature::ReasoningBudget,
+            false,
+        );
         representation.automatic_cache_default =
             Some(crate::semantic::task::generation::PrefixCacheTtl::FiveMinutes);
         // Haiku supports owner-local 5m/1h markers; the pinned Go bridge preserves them.
         // This does not admit request-wide automatic caching or certify live cache use.
-        representation.semantics.explicit_cache = true;
-        representation.semantics = haiku_contract(representation.semantics);
-        representation.carriers = Carriers::all();
+        representation.dispositions.set_native(
+            crate::semantic::task::generation::Feature::ExplicitCache,
+            true,
+        );
+        representation.dispositions = haiku_contract(representation.dispositions);
+        representation.dispositions.set_native(
+            crate::semantic::task::generation::Feature::ReplayMismatch,
+            true,
+        );
+        representation.dispositions.set_native(
+            crate::semantic::task::generation::Feature::MessageEffort,
+            true,
+        );
         let path = provider
             .generation_entry(crate::provider::GenerationOperation::AnthropicMessages)
             .expect("declared path")
@@ -101,23 +131,30 @@ impl MessagesBinding {
         let model = ModelId::new(self.model).expect("static model");
         let mut contract = Profile::AdaptiveTextTools.semantic_contract();
         // Accepted cross-protocol projection, not native Messages carriers.
-        contract.temperature = true;
-        contract.top_p = true;
-        let mut public = PublicModel::new(
+        contract.set_native(
+            crate::semantic::task::generation::Feature::Temperature,
+            true,
+        );
+        contract.set_native(crate::semantic::task::generation::Feature::TopP, true);
+        PublicModel::new(
             model.clone(),
             model,
             TaskKind::Generation,
             self.route().id,
             contract,
-        );
-        public.standard_context = false;
-        public
+        )
     }
     pub fn canonical_model(&self) -> CanonicalModel {
         let mut contract = haiku_contract(Profile::AdaptiveTextTools.semantic_contract());
-        contract.temperature = true;
-        contract.top_p = true;
-        contract.explicit_cache = true;
+        contract.set_native(
+            crate::semantic::task::generation::Feature::Temperature,
+            true,
+        );
+        contract.set_native(crate::semantic::task::generation::Feature::TopP, true);
+        contract.set_native(
+            crate::semantic::task::generation::Feature::ExplicitCache,
+            true,
+        );
         CanonicalModel {
             id: ModelId::new(self.model).expect("static model"),
             task: TaskKind::Generation,

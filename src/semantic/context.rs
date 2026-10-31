@@ -111,28 +111,28 @@ pub enum CacheTtl {
 }
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct CacheOptions {
-    pub mode: Presence<CacheMode>,
-    pub ttl: Presence<CacheTtl>,
-    pub comparison_response_id: Presence<String>,
-    pub prewarm: Presence<bool>,
+    pub mode: Option<CacheMode>,
+    pub ttl: Option<CacheTtl>,
+    pub comparison_response_id: Option<String>,
+    pub prewarm: Option<bool>,
 }
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct CacheHints {
-    pub prompt_cache_key: Presence<String>,
-    pub prompt_cache_retention: Presence<CacheRetention>,
+    pub prompt_cache_key: Option<String>,
+    pub prompt_cache_retention: Option<CacheRetention>,
     pub prompt_cache_options: Presence<CacheOptions>,
 }
 /// Client identity and safety metadata are not cache keys or session identities.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct ClientIdentityHints {
-    pub safety_identifier: Presence<String>,
-    pub user: Presence<String>,
+    pub safety_identifier: Option<String>,
+    pub user: Option<String>,
 }
 impl ClientIdentityHints {
     pub fn validate(&self) -> Result<(), ContextError> {
         for (value, max) in [(&self.safety_identifier, 128), (&self.user, 512)] {
             if value
-                .value()
+                .as_ref()
                 .is_some_and(|s| s.chars().count() > max || s.len() > max * 4)
             {
                 return Err(ContextError::Limit);
@@ -145,25 +145,18 @@ impl CacheHints {
     pub fn validate(&self) -> Result<(), ContextError> {
         if self
             .prompt_cache_key
-            .value()
+            .as_ref()
             .is_some_and(|s| s.chars().count() > 256 || s.len() > 1024)
         {
             return Err(ContextError::Limit);
         }
-        if let Some(options) = self.prompt_cache_options.value() {
-            if options.mode == Presence::Null
-                || options.ttl == Presence::Null
-                || options.prewarm == Presence::Null
-            {
-                return Err(ContextError::Invalid(ContextReason::CacheOptions));
-            }
-            if options
+        if let Some(options) = self.prompt_cache_options.value()
+            && options
                 .comparison_response_id
-                .value()
+                .as_ref()
                 .is_some_and(|s| s.len() > 256)
-            {
-                return Err(ContextError::Limit);
-            }
+        {
+            return Err(ContextError::Limit);
         }
         // Fixed field cardinality and the individual text bounds fit this budget.
         const {
@@ -180,17 +173,12 @@ pub struct ExecutionHints {
     pub max_tool_calls: Presence<u64>,
     pub store: Presence<bool>,
     pub background: Presence<bool>,
-    pub previous_response_id: Presence<()>,
-    pub conversation: Presence<()>,
-    pub prompt: Presence<()>,
-    pub moderation: Presence<()>,
-    pub context_management: Presence<Vec<()>>,
 }
 
 pub(crate) fn validate_metadata(
-    metadata: &Presence<BTreeMap<String, String>>,
+    metadata: Option<&BTreeMap<String, String>>,
 ) -> Result<(), ContextError> {
-    if metadata.value().is_some_and(|m| {
+    if metadata.is_some_and(|m| {
         m.len() > 16
             || m.iter()
                 .any(|(k, v)| k.chars().count() > 64 || v.chars().count() > 512)
@@ -202,8 +190,8 @@ pub(crate) fn validate_metadata(
 
 /// Dynamic map storage and escaped-text working space; the container is charged
 /// by its owner. Share the same accounting for reported and request-echo maps.
-pub(crate) fn metadata_retained_bytes(metadata: &Presence<BTreeMap<String, String>>) -> usize {
-    metadata.value().map_or(0, |map| {
+pub(crate) fn metadata_retained_bytes(metadata: Option<&BTreeMap<String, String>>) -> usize {
+    metadata.map_or(0, |map| {
         map.iter().fold(0usize, |bytes, (key, value)| {
             bytes
                 .saturating_add(1024)
@@ -221,34 +209,28 @@ impl ExecutionHints {
         }
         let mut bytes = std::mem::size_of_val(self);
         for value in [
-            self.cache.prompt_cache_key.value(),
+            self.cache.prompt_cache_key.as_ref(),
             self.cache
                 .prompt_cache_options
                 .value()
-                .and_then(|o| o.comparison_response_id.value()),
-            self.identity.safety_identifier.value(),
-            self.identity.user.value(),
+                .and_then(|o| o.comparison_response_id.as_ref()),
+            self.identity.safety_identifier.as_ref(),
+            self.identity.user.as_ref(),
         ]
         .into_iter()
         .flatten()
         {
             bytes = bytes.saturating_add(text(value));
         }
-        bytes.saturating_add(metadata_retained_bytes(&self.metadata))
+        bytes.saturating_add(metadata_retained_bytes(self.metadata.value()))
     }
     pub fn validate(&self) -> Result<(), ContextError> {
         self.cache.validate()?;
         self.identity.validate()?;
-        if self.store == Presence::Value(true)
-            || self.background == Presence::Value(true)
-            || self
-                .context_management
-                .value()
-                .is_some_and(|v| !v.is_empty())
-        {
+        if self.store == Presence::Value(true) || self.background == Presence::Value(true) {
             return Err(ContextError::Stateful);
         }
-        validate_metadata(&self.metadata)?;
+        validate_metadata(self.metadata.value())?;
         if self.max_tool_calls == Presence::Value(0) {
             return Err(ContextError::Invalid(ContextReason::MaxToolCalls));
         }

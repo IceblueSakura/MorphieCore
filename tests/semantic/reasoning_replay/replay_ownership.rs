@@ -47,6 +47,41 @@ fn opaque_value_is_semantic_and_debug_is_redacted() {
 }
 
 #[test]
+fn foreign_reasoning_transfer_precedes_candidate_feature_admission() {
+    use morphiecore::protocol::openai::{Dialect, GenerationCodec, TargetContract};
+    let codec = GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None);
+    let mut source = codec
+        .decode_request(
+            json!({"model":"synthetic","input":[
+                wire("rs", "synthetic-foreign-token", "completed"),
+                {"role":"user","content":"visible"}
+            ]})
+            .to_string()
+            .as_bytes(),
+        )
+        .unwrap();
+    source.task.fidelity.bind_replay_origin(&origin()).unwrap();
+    let before = source.clone();
+    let mut target = TargetContract::full();
+    target.dispositions.set_native(Feature::Reasoning, false);
+    target.replay_origin =
+        Some(morphiecore::semantic::value::ReplayOrigin::new("different-issuer").unwrap());
+    let (wire, rules) = codec
+        .encode_request_with_rules(&source, "synthetic", &target)
+        .unwrap();
+    assert!(
+        wire["input"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|item| item["type"] != "reasoning")
+    );
+    assert!(wire.to_string().contains("visible"));
+    assert_eq!(rules, ["responses.transfer-visible-history.v1"]);
+    assert_eq!(source, before);
+}
+
+#[test]
 fn final_incomplete_reasoning_replays_exactly_but_partial_tokens_do_not() {
     for status in ["in_progress", "incomplete", "completed"] {
         let mut d = responses::decode_response(&envelope(
@@ -82,10 +117,13 @@ fn final_incomplete_reasoning_replays_exactly_but_partial_tokens_do_not() {
             let mut foreign = contract();
             foreign.replay_origin =
                 Some(morphiecore::semantic::value::ReplayOrigin::new("different-issuer").unwrap());
-            assert!(matches!(
-                lower_request(&history, &d.fidelity, GenerationApi::Responses, foreign),
-                Err(morphiecore::protocol::openai::lowering::RepresentationError::ReplayOrigin)
-            ));
+            assert_eq!(
+                lower_request(&history, &d.fidelity, GenerationApi::Responses, foreign).err(),
+                Some(
+                    morphiecore::protocol::openai::lowering::RepresentationError::ReplayOrigin
+                        .into()
+                )
+            );
         }
     }
 }

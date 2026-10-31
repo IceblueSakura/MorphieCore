@@ -23,7 +23,7 @@ fn request_projection_has_an_independent_wire_oracle() {
     let mut source = request();
     source.task.count = Presence::Value(2);
     source.task.quality = Presence::Value(ImageQualityRequest::Exact(ImageQuality::Low));
-    source.identity.user = Presence::Value("fixture-user".into());
+    source.identity.user = Some("fixture-user".into());
     let before = source.clone();
     assert_eq!(
         UpstreamAdapter::GrokImagineImage2

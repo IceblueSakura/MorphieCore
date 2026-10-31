@@ -1,11 +1,9 @@
 //! Partial gateway-boundary declarations, not model-effectiveness or full-loop promises.
+use crate::lowering::disposition::Rule;
 use crate::{
     adapter::ClientAdapter,
     gateway::{ApiError, BoundEntry, Runtime, StartupError},
-    protocol::{
-        ClientProtocol, conversion::generation::ReportedFactPolicy,
-        openai::lowering::projection::ProjectionRule,
-    },
+    protocol::{ClientProtocol, conversion::generation::ReportedFactPolicy},
 };
 use axum::{body::Body, extract::State, http::HeaderValue, response::Response};
 use bytes::Bytes;
@@ -166,77 +164,7 @@ impl<'a> Entry<'a> {
     }
     fn from_bound(entry: &'a BoundEntry) -> Self {
         let protocol = entry.client.protocol();
-        let mut request = vec![];
-        // These are explicit public rejections, not an inventory of codec carriers.
-        for (admitted, feature, domain) in [
-            (
-                entry.public.contract.safety,
-                "generation.safety",
-                "explicit_policy",
-            ),
-            (
-                entry.public.contract.cached_context,
-                "generation.cached_context",
-                "existing_reference",
-            ),
-            (
-                entry.public.contract.conditional_tool_defaults,
-                "generation.tools",
-                "normalization_default_strictness",
-            ),
-        ] {
-            if !admitted {
-                request.push(Case::new(feature, domain, Treatment::Rejected));
-            }
-        }
-        if protocol == ClientProtocol::Messages {
-            let native_all =
-                |supports: fn(&crate::semantic::task::generation::GenerationFeatureSet) -> bool| {
-                    entry.candidates.iter().all(|candidate| {
-                        candidate.endpoint.protocol
-                            == crate::topology::GenerationProtocol::AnthropicMessages
-                            && supports(candidate.endpoint.representation.semantics())
-                    })
-                };
-            for (admitted, supported, feature, domain) in [
-                (
-                    entry.public.contract.tool_examples,
-                    native_all(|c| c.tool_examples),
-                    "generation.tools",
-                    "bounded_ordered_input_examples",
-                ),
-                (
-                    entry.public.contract.document_context,
-                    native_all(|c| c.document_context),
-                    "generation.document_context",
-                    "per_use_presence_in_documents_and_tool_results",
-                ),
-                (
-                    entry.public.contract.explicit_cache,
-                    native_all(|c| c.explicit_cache),
-                    "generation.cache",
-                    "valid_owner_local_breakpoints_5m_or_1h",
-                ),
-                (
-                    entry.public.contract.automatic_prefix_cache,
-                    native_all(|c| c.automatic_prefix_cache),
-                    "generation.cache",
-                    "request_wide_automatic_policy",
-                ),
-            ] {
-                if !admitted || supported {
-                    request.push(Case::new(
-                        feature,
-                        domain,
-                        if admitted {
-                            Treatment::Faithful
-                        } else {
-                            Treatment::Rejected
-                        },
-                    ));
-                }
-            }
-        }
+        let request = vec![];
         let (settings_domain, settings_rule, settings_admitted) = match &entry.client {
             ClientAdapter::Messages => (
                 "incidental_settings_without_safety",
@@ -250,9 +178,9 @@ impl<'a> Entry<'a> {
                     "independent_reasoning_controls_without_carrier"
                 },
                 if protocol == ClientProtocol::Chat {
-                    ProjectionRule::OmitChatReportedSettings
+                    Rule::OMIT_CHAT_REPORTED_SETTINGS
                 } else {
-                    ProjectionRule::OmitReportedReasoningControls
+                    Rule::OMIT_REPORTED_REASONING_CONTROLS
                 }
                 .name(),
                 adapter.contract(contract).reported_facts != ReportedFactPolicy::StrictComplete,
@@ -339,12 +267,11 @@ impl<'a> Entry<'a> {
             );
             match (exact, protocol) {
                 (false, ClientProtocol::Chat) => {
-                    case.rules
-                        .push(ProjectionRule::CoarsenChatCompletionCause.name());
+                    case.rules.push(Rule::COARSEN_CHAT_COMPLETION_CAUSE.name());
                 }
                 (false, ClientProtocol::Responses) => {
                     case.rules
-                        .push(ProjectionRule::OmitResponsesCompletionCause.name());
+                        .push(Rule::OMIT_RESPONSES_COMPLETION_CAUSE.name());
                 }
                 _ => {}
             }
