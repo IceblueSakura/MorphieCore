@@ -36,6 +36,10 @@ nix flake check      # Tool availability and an instrumented Cargo smoke test
 
 direnv users can allow the root `.envrc` once. Dependencies and toolchain versions are pinned via `flake.lock` and `rust-toolchain.toml`. Update all Nix inputs with `nix flake update`, check the [official stable Rust manifest](https://static.rust-lang.org/dist/channel-rust-stable.toml) before changing the exact toolchain version, and run `nix flake check` before updating Cargo dependencies. The smoke test compiles and runs an instrumented crate, merges its profile and verifies an executed LCOV line; it does not replace the [offline baseline](#offline-baseline). Keep protocol/SDK reference pins independent from application dependency updates.
 
+For Cargo updates, check current non-yanked stable releases before editing exact direct-dependency pins, then run `cargo update` and `cargo fetch --locked` inside the devShell. `cargo update --dry-run --verbose` identifies remaining older transitive versions; use `cargo tree --invert <name>@<version>` to trace their owners. Respect upstream exact constraints rather than adding root pins or patches solely to force newer versions. Validate the resulting lock with the offline baseline and affected SDK/client gates.
+
+**Environment acceptance, 2026-10-31:** the refreshed Nix inputs, distribution-matched coverage tools and updated Cargo resolution pass `nix flake check`, the full offline baseline, all 18 SDK scenarios and all 12 isolated current-client scenarios inside the devShell on `x86_64-linux`. The other declared systems have evaluation-only evidence. The official stable Rust and direct-crate release checks require no version-pin changes; Cargo refreshes 15 transitive packages and adds `utf_types`. Remaining older `generic-array` and `matchit` releases follow exact upstream constraints from crypto-common and Axum.
+
 ## Test layout
 
 | Entry | Scope and execution |
