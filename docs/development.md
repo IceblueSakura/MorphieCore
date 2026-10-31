@@ -26,15 +26,15 @@ This guide owns tooling, test procedures and evidence reporting. Use offline, sy
 
 ## Environment
 
-[flake.nix](../flake.nix) provides the toolchain; `flake.lock` pins nixpkgs and rust-overlay. The overlay reads the exact stable version in `rust-toolchain.toml`; rustup and host-wide upgrades are not needed. The shell also pins Python 3.13 tooling and Node 24 LTS through nixpkgs.
+[flake.nix](../flake.nix) provides the toolchain; `flake.lock` pins nixpkgs and rust-overlay. The overlay reads the exact stable version and components in `rust-toolchain.toml`; rustup and host-wide upgrades are not needed. Both shells include cargo-llvm-cov and LLVM coverage tools from that same Rust distribution. The default shell also pins Python 3.13 tooling and Node 24 LTS through nixpkgs.
 
 ```sh
 nix develop          # Rust, Python 3.13 and uv
-nix develop .#rust   # Rust only
-nix flake check      # Tool availability, not the Rust test baseline
+nix develop .#rust   # Rust and coverage tools
+nix flake check      # Tool availability and an instrumented Cargo smoke test
 ```
 
-direnv users can allow the root `.envrc` once. Dependencies and toolchain versions are pinned via `flake.lock` and `rust-toolchain.toml`.
+direnv users can allow the root `.envrc` once. Dependencies and toolchain versions are pinned via `flake.lock` and `rust-toolchain.toml`. Update all Nix inputs with `nix flake update`, check the [official stable Rust manifest](https://static.rust-lang.org/dist/channel-rust-stable.toml) before changing the exact toolchain version, and run `nix flake check` before updating Cargo dependencies. The smoke test compiles and runs an instrumented crate, merges its profile and verifies an executed LCOV line; it does not replace the [offline baseline](#offline-baseline). Keep protocol/SDK reference pins independent from application dependency updates.
 
 ## Test layout
 
@@ -432,25 +432,10 @@ For OpenAPI changes, also run the [schema checks](#python-checks) and compare pa
 
 ## Coverage and pruning
 
-`cargo-llvm-cov` needs LLVM tools matching rustc's LLVM major version. Check `rustc -vV` and use scoped Nix tooling, not a global install. The pinned nixpkgs package's own fixtures also need the project's Rust toolchain and matching LLVM; override both rather than disabling its checks:
+`cargo-llvm-cov` and its own package fixtures use the project's Rust toolchain and matching `llvm-tools-preview` component. The devShell exposes `llvm-cov` and `llvm-profdata` and sets `LLVM_COV`/`LLVM_PROFDATA`; no separate LLVM major selection or global installation is needed:
 
 ```sh
-nix shell --impure --expr '
-  let
-    flake = builtins.getFlake (toString ./.);
-    pkgs = import flake.inputs.nixpkgs {
-      system = builtins.currentSystem;
-      overlays = [ flake.inputs.rust-overlay.overlays.default ];
-    };
-    toolchain = pkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml;
-    rustPlatform = pkgs.makeRustPlatform { cargo = toolchain; rustc = toolchain; };
-    llvm = pkgs.llvmPackages_23;
-  in [
-    (pkgs.cargo-llvm-cov.override { inherit rustPlatform; llvmPackages_22 = llvm; })
-    llvm.llvm
-  ]' --command bash -c '
-  export LLVM_COV=$(command -v llvm-cov) LLVM_PROFDATA=$(command -v llvm-profdata)
-  cargo llvm-cov --locked --offline --lcov --output-path <out>.lcov'
+nix develop --command cargo llvm-cov --locked --offline --lcov --output-path <out>.lcov
 ```
 
 When measuring coverage changes, use the same test selection before and after, and keep reports under ignored `testdata/reports/`. A run leaves startup-test `default_*.profraw` files in the repository root; remove them afterwards. `--json --output-path testdata/reports/coverage.json` exports machine-readable file summaries. Report the scope precisely: an aggregate of `src/` also includes unit tests embedded there; focused production-only modules are a clearer measure for local changes. Inspect uncovered paths for missing invariants before adding tests. Do not force defensive unreachable branches or count generated cases as separate contracts.
