@@ -152,9 +152,7 @@ impl TargetContract {
                 metadata.insert("user_id".into(), serde_json::json!(value));
                 projection.value["metadata"] = metadata.into();
             }
-            if let Some(stream) = request.delivery.stream.value() {
-                projection.value["stream"] = serde_json::json!(stream);
-            }
+            projection.value["stream"] = serde_json::json!(true);
             projection.evidence.extend_prefer_summary(evidence);
 
             super::shape::bounded(&projection.value)?;

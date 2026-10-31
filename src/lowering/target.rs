@@ -133,9 +133,11 @@ impl TargetContract {
     pub fn forced_stream(&self) -> bool {
         match self {
             Self::OpenAi(c) => c.adaptation.rules.responses_forced_stream,
-            Self::AnthropicMessages(_) => false,
-            // Google bindings always stream; JSON clients get the aggregate.
-            Self::GoogleGenerateContent(_) | Self::GoogleInteractions(_) => true,
+            // Qualified native bindings stream even for JSON clients, retaining
+            // incomplete arguments that have no complete native JSON carrier.
+            Self::AnthropicMessages(_)
+            | Self::GoogleGenerateContent(_)
+            | Self::GoogleInteractions(_) => true,
         }
     }
 }

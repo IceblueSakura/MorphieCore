@@ -458,9 +458,10 @@ fn removed_sampling_omits_advisory_controls_without_changing_the_source() {
         assert!(projected.value.get(field).is_none());
         assert!(projected.evidence.contains_rule(rule));
     }
-    let native = profile
+    let mut native = profile
         .encode_generation_request(&request.task.semantic, &Default::default(), &target())
         .unwrap();
+    native.value["stream"] = json!(true);
     assert_eq!(native.value, projected.value);
     assert_eq!(request, source);
 }

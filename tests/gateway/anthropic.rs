@@ -165,6 +165,40 @@ async fn answer(
         assert_eq!(body["stream"], true);
         return controlled_response(prompt, control);
     }
+    if prompt == "partial-tool" {
+        // An unfinished native object has only an SSE carrier, including when
+        // the downstream client requests a JSON response.
+        assert_eq!(body["stream"], true);
+        assert_eq!(headers["accept"], "text/event-stream");
+        let events = [
+            json!({"type":"message_start","message":{"id":"partial","type":"message",
+                "role":"assistant","model":"claude-haiku-5-5","content":[],
+                "stop_reason":null,"stop_sequence":null,
+                "usage":{"input_tokens":1,"output_tokens":0}}}),
+            json!({"type":"content_block_start","index":0,
+                "content_block":{"type":"tool_use","id":"partial-call","name":"lookup","input":{}}}),
+            json!({"type":"content_block_delta","index":0,
+                "delta":{"type":"input_json_delta","partial_json":" \n{\"key\":\"unfinished\\u0"}}),
+            json!({"type":"content_block_stop","index":0}),
+            json!({"type":"message_delta","delta":{"stop_reason":"max_tokens","stop_sequence":null},
+                "usage":{"output_tokens":2}}),
+            json!({"type":"message_stop"}),
+        ];
+        return Response::builder()
+            .header("content-type", "text/event-stream")
+            .body(axum::body::Body::from(
+                events
+                    .iter()
+                    .map(|event| {
+                        format!(
+                            "event: {}\ndata: {event}\n\n",
+                            event["type"].as_str().unwrap()
+                        )
+                    })
+                    .collect::<String>(),
+            ))
+            .unwrap();
+    }
     if prompt == "overflow" {
         return (
             axum::http::StatusCode::BAD_REQUEST,
@@ -402,6 +436,129 @@ async fn native_fixture() -> NativeFixture {
         _upstream: upstream,
         _directory: directory,
     }
+}
+
+#[tokio::test]
+async fn incomplete_native_tool_prefixes_survive_json_sse_and_stored_retrieval() {
+    let fixture = native_fixture().await;
+    let prefix = " \n{\"key\":\"unfinished\\u0";
+    for responses in [false, true] {
+        for stream in [false, true] {
+            let function = json!({"name":"lookup","strict":false,
+                "parameters":{"type":"object","properties":{"key":{"type":"string"}}}});
+            let (path, mut request) = if responses {
+                let mut tool = function.clone();
+                tool["type"] = json!("function");
+                (
+                    "/v1/responses",
+                    json!({"model":MESSAGES_BINDINGS[0].model,
+                    "max_output_tokens":64,"store":true,"input":"partial-tool","tools":[tool]}),
+                )
+            } else {
+                (
+                    "/v1/chat/completions",
+                    json!({"model":MESSAGES_BINDINGS[0].model,
+                    "max_completion_tokens":64,"messages":[{"role":"user","content":"partial-tool"}],
+                    "tools":[{"type":"function","function":function}],
+                    "stream_options":{"include_usage":true,"include_obfuscation":false}}),
+                )
+            };
+            request["stream"] = json!(stream);
+            if !stream {
+                request.as_object_mut().unwrap().remove("stream_options");
+            }
+            let result = fixture
+                .client
+                .post(format!("{}{path}", fixture.base))
+                .bearer_auth("synthetic-client-identity-00000001")
+                .json(&request)
+                .send()
+                .await
+                .unwrap();
+            if result.status() != 200 {
+                fixture.gateway.flush_diagnostics().await;
+                panic!(
+                    "responses={responses}, stream={stream}: {}; {}",
+                    result.text().await.unwrap(),
+                    std::fs::read_to_string(&fixture.diagnostics).unwrap()
+                );
+            }
+            let delivered = if stream {
+                let wire = result.text().await.unwrap();
+                let events: Vec<Value> = wire
+                    .lines()
+                    .filter_map(|line| line.strip_prefix("data: "))
+                    .filter(|line| *line != "[DONE]")
+                    .map(|line| serde_json::from_str(line).unwrap())
+                    .collect();
+                if responses {
+                    let terminal = events.last().unwrap();
+                    assert_eq!(terminal["type"], "response.incomplete");
+                    let fragments: String = events
+                        .iter()
+                        .filter(|event| event["type"] == "response.function_call_arguments.delta")
+                        .map(|event| event["delta"].as_str().unwrap())
+                        .collect();
+                    assert_eq!(fragments, prefix);
+                    terminal["response"].clone()
+                } else {
+                    let fragments: String = events
+                        .iter()
+                        .filter_map(|event| {
+                            event
+                                .pointer("/choices/0/delta/tool_calls/0/function/arguments")
+                                .and_then(Value::as_str)
+                        })
+                        .collect();
+                    assert_eq!(fragments, prefix);
+                    assert!(
+                        events
+                            .iter()
+                            .any(|event| event.pointer("/choices/0/finish_reason")
+                                == Some(&json!("length")))
+                    );
+                    assert!(wire.ends_with("data: [DONE]\n\n"));
+                    continue;
+                }
+            } else {
+                result.json::<Value>().await.unwrap()
+            };
+            if responses {
+                assert_eq!(delivered["status"], "incomplete");
+                assert_eq!(
+                    delivered["incomplete_details"]["reason"],
+                    "max_output_tokens"
+                );
+                assert_eq!(delivered["output"][0]["status"], "incomplete");
+                assert_eq!(delivered["output"][0]["call_id"], "partial-call");
+                assert_eq!(delivered["output"][0]["name"], "lookup");
+                assert_eq!(delivered["output"][0]["arguments"], prefix);
+                let saved = fixture
+                    .client
+                    .get(format!(
+                        "{}/v1/responses/{}",
+                        fixture.base,
+                        delivered["id"].as_str().unwrap()
+                    ))
+                    .bearer_auth("synthetic-client-identity-00000001")
+                    .send()
+                    .await
+                    .unwrap();
+                assert_eq!(saved.status(), 200);
+                let saved: Value = saved.json().await.unwrap();
+                for field in ["output", "status", "incomplete_details"] {
+                    assert_eq!(saved[field], delivered[field]);
+                }
+            } else {
+                assert_eq!(delivered["choices"][0]["finish_reason"], "length");
+                let call = &delivered["choices"][0]["message"]["tool_calls"][0];
+                assert_eq!(call["id"], "partial-call");
+                assert_eq!(call["function"]["name"], "lookup");
+                assert_eq!(call["function"]["arguments"], prefix);
+            }
+        }
+    }
+    assert_eq!(fixture.seen.lock().unwrap().len(), 4);
 }
 
 #[tokio::test]

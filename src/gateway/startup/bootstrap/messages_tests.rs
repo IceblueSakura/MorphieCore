@@ -539,7 +539,7 @@ async fn configured_messages_cache_projects_each_candidate_without_mutating_owne
                             "cache_control":{"type":"ephemeral"}}]}
                     ])
                 );
-                assert_eq!(wire["stream"], stream);
+                assert_eq!(wire["stream"], true);
                 assert_eq!(wire["max_tokens"], 64);
                 assert_eq!(request, original);
             }

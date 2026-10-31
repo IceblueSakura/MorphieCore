@@ -26,9 +26,30 @@ fn coalesce_events(
 
 #[test]
 fn native_tool_argument_strings_match_stream_terminal_and_retained_history() {
-    use crate::semantic::task::generation::{Item, ToolArguments};
+    native_tool_argument_views(
+        GenerationApi::Responses,
+        " \n\t{\"serial\":9007199254740993, \"n\":1e0}\n",
+        false,
+    );
+}
+
+#[test]
+fn incomplete_native_tool_arguments_keep_prefixes_in_json_stream_and_history() {
+    for api in [GenerationApi::Chat, GenerationApi::Responses] {
+        for arguments in [
+            " \n\t{\"serial\":9007199254740993, \"n\":1e",
+            r#"{"key":"unfinished\u0"#,
+        ] {
+            native_tool_argument_views(api, arguments, true);
+        }
+    }
+}
+
+fn native_tool_argument_views(api: GenerationApi, arguments: &str, incomplete: bool) {
+    use crate::semantic::task::generation::{
+        IncompleteReason, Item, ItemLifecycle, Outcome, ToolArguments,
+    };
     let endpoint = crate::topology::catalog::MESSAGES_BINDINGS[0].endpoint();
-    let arguments = " \n\t{\"serial\":9007199254740993, \"n\":1e0}\n";
     let frames = [
         json!({"type":"message_start","message":{"id":"r","type":"message","role":"assistant",
             "model":endpoint.upstream_model,"content":[],"stop_reason":null,"stop_sequence":null,
@@ -38,7 +59,7 @@ fn native_tool_argument_strings_match_stream_terminal_and_retained_history() {
         json!({"type":"content_block_delta","index":0,
             "delta":{"type":"input_json_delta","partial_json":arguments}}),
         json!({"type":"content_block_stop","index":0}),
-        json!({"type":"message_delta","delta":{"stop_reason":"tool_use","stop_sequence":null},
+        json!({"type":"message_delta","delta":{"stop_reason":if incomplete {"max_tokens"} else {"tool_use"},"stop_sequence":null},
             "usage":{"output_tokens":2}}),
         json!({"type":"message_stop"}),
     ];
@@ -47,12 +68,15 @@ fn native_tool_argument_strings_match_stream_terminal_and_retained_history() {
         attempt.begin(200, "text/event-stream").unwrap();
         let mut delivery = ResponseDelivery::new(
             ClientAdapter::openai(
-                GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None),
+                GenerationCodec::new(api, Dialect::Standard, None),
                 TargetContract::full(),
             ),
             "public",
             Default::default(),
-            Default::default(),
+            StreamOptions {
+                include_obfuscation: Presence::Value(false),
+                ..Default::default()
+            },
             Obfuscation::Disabled,
         );
         let mut output = vec![];
@@ -70,7 +94,7 @@ fn native_tool_argument_strings_match_stream_terminal_and_retained_history() {
                 output.extend(
                     delivery
                         .encode_events(&attempt, &events)
-                        .unwrap()
+                        .unwrap_or_else(|error| panic!("{api:?}: {events:?}: {error:?}"))
                         .into_bytes()
                         .concat(),
                 );
@@ -78,9 +102,35 @@ fn native_tool_argument_strings_match_stream_terminal_and_retained_history() {
         }
         attempt.finish().unwrap();
         let source = attempt.response().unwrap().clone();
-        assert!(matches!(&source.semantic.items()[0].1,
-            Item::ToolCall(call) if matches!(call.arguments, ToolArguments::Structured(_))));
+        let Item::ToolCall(source_call) = &source.semantic.items()[0].1 else {
+            panic!("source tool call")
+        };
+        if incomplete {
+            assert_eq!(
+                source_call.arguments,
+                ToolArguments::StructuredPartial(arguments.into())
+            );
+            assert_eq!(source_call.status, ItemLifecycle::Incomplete);
+            assert_eq!(source.semantic.outcome(), Outcome::Incomplete);
+            assert_eq!(
+                source.semantic.details().incomplete,
+                Some(IncompleteReason::MaxOutputTokens)
+            );
+            assert!(
+                crate::protocol::anthropic::messages::client::encode_client_response(
+                    &source, "public"
+                )
+                .is_err()
+            );
+        } else {
+            assert!(matches!(
+                source_call.arguments,
+                ToolArguments::Structured(_)
+            ));
+        }
         let delivered: Value = if stream {
+            assert!(!String::from_utf8_lossy(&output).contains("response.incomplete"));
+            assert!(!String::from_utf8_lossy(&output).contains("[DONE]"));
             output.extend(
                 delivery
                     .finish_stream(&attempt)
@@ -89,27 +139,92 @@ fn native_tool_argument_strings_match_stream_terminal_and_retained_history() {
                     .concat(),
             );
             let text = String::from_utf8(output).unwrap();
-            let terminal: Value = text
+            let emitted: Vec<Value> = text
                 .lines()
                 .filter_map(|line| line.strip_prefix("data: "))
+                .filter(|line| *line != "[DONE]")
                 .map(|line| serde_json::from_str::<Value>(line).unwrap())
-                .next_back()
-                .unwrap();
-            assert_eq!(terminal["response"]["output"][0]["arguments"], arguments);
-            terminal["response"].clone()
+                .collect();
+            match api {
+                GenerationApi::Responses => {
+                    let terminal = emitted.last().unwrap();
+                    assert_eq!(terminal["response"]["output"][0]["arguments"], arguments);
+                    if incomplete {
+                        assert_eq!(terminal["type"], "response.incomplete");
+                        assert_eq!(terminal["response"]["status"], "incomplete");
+                        assert_eq!(
+                            terminal["response"]["incomplete_details"]["reason"],
+                            "max_output_tokens"
+                        );
+                        assert_eq!(terminal["response"]["output"][0]["status"], "incomplete");
+                    }
+                    let deltas: String = emitted
+                        .iter()
+                        .filter(|event| event["type"] == "response.function_call_arguments.delta")
+                        .map(|event| event["delta"].as_str().unwrap())
+                        .collect();
+                    assert_eq!(deltas, arguments);
+                    terminal["response"].clone()
+                }
+                GenerationApi::Chat => {
+                    let deltas: String = emitted
+                        .iter()
+                        .filter_map(|event| {
+                            event
+                                .pointer("/choices/0/delta/tool_calls/0/function/arguments")
+                                .and_then(Value::as_str)
+                        })
+                        .collect();
+                    assert_eq!(deltas, arguments);
+                    assert!(emitted.iter().any(|event| {
+                        event.pointer("/choices/0/finish_reason")
+                            == Some(&json!(if incomplete { "length" } else { "tool_calls" }))
+                    }));
+                    assert!(text.ends_with("data: [DONE]\n\n"));
+                    // Chat chunks do not carry a full response envelope.
+                    Value::Null
+                }
+            }
         } else {
             serde_json::from_slice(&delivery.encode_json(&attempt).unwrap()).unwrap()
         };
         let (retained, bytes) = delivery.snapshot(&attempt).unwrap();
         let saved: Value = serde_json::from_slice(&bytes).unwrap();
-        assert_eq!(saved["output"], delivered["output"]);
-        let Item::ToolCall(call) = &retained.semantic.items()[0].1 else {
-            panic!("tool call")
+        let wire_arguments = match api {
+            GenerationApi::Responses => {
+                assert_eq!(saved["output"], delivered["output"]);
+                &saved["output"][0]["arguments"]
+            }
+            GenerationApi::Chat => {
+                if !stream {
+                    assert_eq!(saved["choices"], delivered["choices"]);
+                }
+                if incomplete {
+                    assert_eq!(saved["choices"][0]["finish_reason"], "length");
+                }
+                &saved["choices"][0]["message"]["tool_calls"][0]["function"]["arguments"]
+            }
         };
+        let call = retained
+            .semantic
+            .items()
+            .iter()
+            .find_map(|(_, item)| match item {
+                Item::ToolCall(call) => Some(call),
+                _ => None,
+            })
+            .unwrap();
         assert_eq!(
             call.arguments.as_raw().unwrap(),
-            saved["output"][0]["arguments"].as_str().unwrap()
+            wire_arguments.as_str().unwrap()
         );
+        if incomplete {
+            assert_eq!(wire_arguments, arguments);
+            assert_eq!(call.status, ItemLifecycle::Incomplete);
+            assert_eq!(call.call_id, source_call.call_id);
+            assert_eq!(call.name, source_call.name);
+            assert_eq!(retained.semantic.outcome(), Outcome::Incomplete);
+        }
         assert_eq!(attempt.response().unwrap(), &source);
     }
 }

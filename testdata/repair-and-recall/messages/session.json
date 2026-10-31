@@ -166,7 +166,7 @@
         "strict": false
       }
     ],
-    "stream": false
+    "stream": true
   },
   "turns": [
     {

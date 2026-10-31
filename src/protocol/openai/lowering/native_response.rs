@@ -229,10 +229,12 @@ fn project_inner(
                         serde_json::to_string(value.value()).map_err(|_| CodecError::invalid())?,
                     );
                 }
-                // Generated arguments are a raw string, not tool-execution input.
-                // Removing an unrelated message phase must not parse or rewrite it.
+                // Generated arguments are a string carrier, not executable input.
+                // Preserve an incomplete prefix without parsing or repairing it.
+                ToolArguments::StructuredPartial(prefix) => {
+                    call.arguments = ToolArguments::Raw(prefix.clone());
+                }
                 ToolArguments::Raw(_) => {}
-                ToolArguments::StructuredPartial(_) => return Err(CodecError::invalid()),
             }
         }
     }

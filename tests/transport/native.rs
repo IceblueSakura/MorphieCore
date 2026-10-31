@@ -78,7 +78,7 @@ mod native_bindings {
                     .into()
             },
             execution: ExecutionContract {
-                streaming: false,
+                streaming: !chat,
                 retry_before_commit: false,
                 request_body_limit: 4096,
                 response_body_limit: 4096,
@@ -131,7 +131,7 @@ mod native_bindings {
             .map(|(_, value)| value.as_str())
     }
     fn hello_wire() -> Value {
-        json!({"model":"synthetic-model","max_tokens":32,
+        json!({"model":"synthetic-model","max_tokens":32,"stream":true,
             "messages":[{"role":"user","content":[{"type":"text","text":"hello"}]}]})
     }
 
@@ -348,7 +348,7 @@ mod native_bindings {
             )
             .unwrap();
         let expected = json!({
-            "model":"synthetic-model", "max_tokens":32,
+            "model":"synthetic-model", "max_tokens":32, "stream":true,
             "messages":[{"role":"user","content":[{"type":"text","text":text}]}]
         });
         let mut bounded = native.clone();
@@ -372,9 +372,12 @@ mod native_bindings {
         assert!(representable(&native, &unsupported).is_err());
         assert!(prepare(&native, &p, &secret(), &unsupported).is_err());
 
-        request.delivery.stream = Presence::Value(true);
-        assert!(representable(&native, &request).is_err());
-        assert!(prepare(&native, &p, &secret(), &request).is_err());
+        native.execution.streaming = false;
+        for stream in [false, true] {
+            request.delivery.stream = Presence::Value(stream);
+            assert!(representable(&native, &request).is_err());
+            assert!(prepare(&native, &p, &secret(), &request).is_err());
+        }
         native.execution.streaming = true;
         representable(&native, &request).unwrap();
         let streaming = prepare(&native, &p, &secret(), &request).unwrap();
@@ -568,7 +571,7 @@ mod native_catalog {
         assert_eq!(
             wire,
             serde_json::json!({
-                "model":"claude-haiku-5-5", "max_tokens":64,
+                "model":"claude-haiku-5-5", "max_tokens":64, "stream":true,
                 "cache_control":{"type":"ephemeral"},
                 "system":[{"type":"text","text":"Be brief."}],
                 "messages":[{"role":"user","content":[{"type":"text","text":"hi"}]}],
@@ -655,7 +658,7 @@ mod native_catalog {
             assert_eq!(
                 wire,
                 serde_json::json!({
-                    "model":"claude-haiku-5-5", "max_tokens":32, "stream":stream,
+                    "model":"claude-haiku-5-5", "max_tokens":32, "stream":true,
                     "cache_control":{"type":"ephemeral"},
                     "messages":[{"role":"user","content":[{"type":"text","text":"synthetic"}]}]
                 })

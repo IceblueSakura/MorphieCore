@@ -7,7 +7,7 @@ from pydantic import TypeAdapter, ValidationError
 from openai.types.chat.completion_create_params import CompletionCreateParamsNonStreaming
 from openai.types.responses.response_create_params import ResponseCreateParamsNonStreaming
 from openai.types.responses.response_input_item_param import Message
-from anthropic.types.message_create_params import MessageCreateParamsNonStreaming
+from anthropic.types.message_create_params import MessageCreateParamsStreaming
 from sdk_support import require_sdk
 
 require_sdk("openai")
@@ -15,7 +15,7 @@ require_sdk("anthropic")
 adapters = {
     "chat": TypeAdapter(CompletionCreateParamsNonStreaming),
     "responses": TypeAdapter(ResponseCreateParamsNonStreaming),
-    "messages": TypeAdapter(MessageCreateParamsNonStreaming),
+    "messages": TypeAdapter(MessageCreateParamsStreaming),
 }
 for case in json.load(sys.stdin):
     wire = case["wire"]

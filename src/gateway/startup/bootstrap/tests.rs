@@ -572,7 +572,7 @@ fn codex_history_reaches_the_native_binding_by_named_rules() {
     let projected = "mc_0af6315558b41599b4a0fbfa5d31d4431b2e5c81";
     assert_eq!(
         wire,
-        serde_json::json!({"model":"claude-haiku-5-5","max_tokens":64,"system":"brief",
+        serde_json::json!({"model":"claude-haiku-5-5","max_tokens":64,"stream":true,"system":"brief",
         "tools":[{"name":"lookup","input_schema":{"type":"object","properties":{}},"strict":false}],
         "cache_control":{"type":"ephemeral"},"messages":[
             {"role":"user","content":[{"type":"text","text":"go"}]},

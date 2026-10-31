@@ -516,11 +516,16 @@ impl ClientEncoder {
                 .and_then(|part| part.text())
                 .ok_or(CodecError::invalid())?;
             let original = call.arguments.as_raw().ok_or(CodecError::invalid())?;
+            // Equal bytes attest an incomplete prefix without treating it as
+            // executable JSON. Complete values may differ only in serialization.
             if call_id != &call.call_id
                 || name != &call.name
                 || delivered.status != Some(call.status)
-                || StructuredValue::from_bytes(arguments.as_bytes()).map_err(CodecError::from)?
-                    != StructuredValue::from_bytes(original.as_bytes()).map_err(CodecError::from)?
+                || (arguments != original
+                    && StructuredValue::from_bytes(arguments.as_bytes())
+                        .map_err(CodecError::from)?
+                        != StructuredValue::from_bytes(original.as_bytes())
+                            .map_err(CodecError::from)?)
             {
                 return Err(CodecError::invalid().into());
             }
