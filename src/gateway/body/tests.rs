@@ -159,8 +159,7 @@ async fn observed_response(
         .into();
     } else {
         endpoint.protocol = crate::topology::GenerationProtocol::OpenAiResponses;
-        let mut caps = crate::protocol::openai::TargetContract::full();
-        caps.adaptation.rules.responses_forced_stream = true;
+        let caps = crate::protocol::openai::TargetContract::full();
         endpoint.representation = caps.into();
     }
     let candidate = Arc::new(BoundCandidate {
@@ -597,10 +596,16 @@ async fn failed_responses_reach_chat_clients_as_classified_failures() {
         "error":{"code":"rate_limit_exceeded","message":"private upstream detail"},
         "output":[{"id":"message","type":"message","role":"assistant","status":"incomplete",
             "content":[{"type":"output_text","text":"partial 🧪","annotations":[],"logprobs":[]}]}]});
-    // Static: no Chat carrier for a failed response, so the class is the HTTP answer.
+    // JSON delivery still uses qualified Responses SSE intake. A failed result
+    // has no Chat success carrier, so its class is the HTTP answer.
     let gate = gateway(Limits::default());
-    let (tx, source, _, _) = upstream(200, "application/json");
-    tx.send(Ok(failed.to_string().into())).await.unwrap();
+    let (tx, source, _, _) = upstream(200, "text/event-stream");
+    tx.send(Ok(crate::test_responses_wire::response_stream(
+        failed.clone(),
+    )
+    .into()))
+        .await
+        .unwrap();
     drop(tx);
     let report = crate::execution::report::Report::default();
     let error = bounded(chat_over_responses(&gate, source, false, report.clone()))

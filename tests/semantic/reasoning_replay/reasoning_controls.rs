@@ -294,7 +294,7 @@ fn requests_reject_unselected_controls_while_incidental_reports_project() {
             } else {
                 assert!(target.metadata().context.settings().is_none());
             }
-            let mut encoder = EventEncoder::new(profile, metadata.clone()).unwrap();
+            let mut encoder = EventEncoder::new(profile, target.metadata().clone()).unwrap();
             let mut frames = encoder.encode(&StreamEvent::Started, &fidelity).unwrap();
             frames.extend(
                 encoder
@@ -341,7 +341,7 @@ fn requests_reject_unselected_controls_while_incidental_reports_project() {
                     if matches!(&message.parts[0].content, ContentPart::Text(text) if text.as_str() == "ok"))
             );
             assert_eq!(
-                encoder
+                target
                     .projection()
                     .iter()
                     .any(|stage| stage.change().is_loss()),

@@ -1,14 +1,11 @@
 //! Bounded reported observations, not requested settings or an event archive.
 use super::{ContextError, ServiceClass};
-use crate::semantic::{
-    task::generation::{GenerationSettings, MAX_TOTAL_BYTES},
-    value::Presence,
-};
+use crate::semantic::task::generation::{GenerationSettings, MAX_TOTAL_BYTES};
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct ResponseReport {
     pub settings: Option<GenerationSettings>,
-    pub service_class: Presence<ServiceClass>,
+    pub service_class: Option<ServiceClass>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

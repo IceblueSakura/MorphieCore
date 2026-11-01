@@ -2,10 +2,7 @@
 use crate::protocol::failure::ShapeReason;
 use crate::protocol::openai::content::intake::Items;
 use crate::protocol::openai::{CodecError, shape::*};
-use crate::semantic::{
-    task::generation::*,
-    value::{Presence, Text},
-};
+use crate::semantic::{task::generation::*, value::Text};
 use serde_json::{Map, Value, json};
 pub(in crate::protocol::openai) fn read(
     o: &Map<String, Value>,
@@ -29,7 +26,11 @@ pub(in crate::protocol::openai) fn read_existing(
             return Err(CodecError::invalid());
         }
     };
-    let logprobs = read_presence(o, "logprobs", read_logprobs)?;
+    let logprobs = o
+        .get("logprobs")
+        .filter(|value| !value.is_null())
+        .map(read_logprobs)
+        .transpose()?;
     if matches!(
         items.direction,
         DecodeDirection::Request | DecodeDirection::Client(_)
@@ -157,9 +158,8 @@ pub(in crate::protocol::openai) fn write(
         );
     }
     match t.logprobs() {
-        Presence::Absent => {}
-        Presence::Null => v["logprobs"] = Value::Null,
-        Presence::Value(p) => v["logprobs"] = json!(p),
+        None => {}
+        Some(p) => v["logprobs"] = json!(p),
     }
     v
 }

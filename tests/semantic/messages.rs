@@ -148,10 +148,27 @@ mod message_envelopes {
                 morphiecore::protocol::failure::ShapeReason::InvalidValue
             )
         );
+        let projected = morphiecore::protocol::openai::lowering::lower_response(
+            &source.semantic,
+            &source.fidelity,
+            &source.metadata,
+            GenerationApi::Responses,
+            morphiecore::protocol::openai::TargetContract::full(),
+        )
+        .unwrap();
+        assert!(
+            projected
+                .projection()
+                .iter()
+                .any(|effect| effect.rule() == "responses.omit-message-envelopes.v1")
+        );
         let mut encoder =
-            EventEncoder::new(GenerationApi::Responses, source.metadata.clone()).unwrap();
+            EventEncoder::new(GenerationApi::Responses, projected.metadata().clone()).unwrap();
         let mut wire = vec![];
         for event in &events {
+            if matches!(event, StreamEvent::MessageEnvelope(_)) {
+                continue;
+            }
             wire.extend(encoder.encode(event, &source.fidelity).unwrap());
         }
         encoder.finish().unwrap();
@@ -170,11 +187,12 @@ mod message_envelopes {
         }
         assert_eq!(consumer.materialize().unwrap().semantic.items().len(), 2);
         assert!(
-            encoder
+            projected
                 .projection()
                 .iter()
                 .any(|stage| stage.change().is_loss())
         );
+        assert!(encoder.projection().is_empty());
         // The decoder groups the calls with an envelope event that both profiles carry.
         assert!(
             events
@@ -182,9 +200,22 @@ mod message_envelopes {
                 .any(|event| matches!(event, StreamEvent::MessageEnvelope(_)))
         );
         for profile in [GenerationApi::Chat, GenerationApi::Responses] {
-            let mut encoder = EventEncoder::new(profile, source.metadata.clone()).unwrap();
+            let projected = morphiecore::protocol::openai::lowering::lower_response(
+                &source.semantic,
+                &source.fidelity,
+                &source.metadata,
+                profile,
+                morphiecore::protocol::openai::TargetContract::full(),
+            )
+            .unwrap();
+            let mut encoder = EventEncoder::new(profile, projected.metadata().clone()).unwrap();
             let mut consumer = EventDecoder::new(profile);
             for event in &events {
+                if profile == GenerationApi::Responses
+                    && matches!(event, StreamEvent::MessageEnvelope(_))
+                {
+                    continue;
+                }
                 for wire in encoder.encode(event, &source.fidelity).unwrap() {
                     consumer.push(&wire).unwrap();
                 }
@@ -718,14 +749,12 @@ mod phase {
                         message.parts[0].content = ContentPart::Text(
                             value
                                 .clone()
-                                .with_logprobs(morphiecore::semantic::value::Presence::Value(vec![
-                                    Logprob {
-                                        token: "left".into(),
-                                        logprob: (-1).into(),
-                                        bytes: None,
-                                        top_logprobs: None,
-                                    },
-                                ]))
+                                .with_logprobs(Some(vec![Logprob {
+                                    token: "left".into(),
+                                    logprob: (-1).into(),
+                                    bytes: None,
+                                    top_logprobs: None,
+                                }]))
                                 .unwrap(),
                         );
                         rich.semantic = rich.semantic.with_items(items).unwrap();

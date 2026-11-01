@@ -64,6 +64,7 @@ fn context_edits_invalidate_creator_reports_even_when_debug_is_redacted() {
             morphiecore::protocol::openai::TargetContract::full(),
         )
         .err()
+        .map(|error| error.cause)
     };
     assert_eq!(lower(&parsed.semantic), None);
     let with_context = GenerationResponse::from_resources(
@@ -74,7 +75,7 @@ fn context_edits_invalidate_creator_reports_even_when_debug_is_redacted() {
     .unwrap();
     assert_eq!(
         lower(&with_context),
-        Some(morphiecore::protocol::conversion::generation::RepresentationError::Tools)
+        Some(morphiecore::protocol::conversion::generation::RepresentationError::Tools.into())
     );
 }
 

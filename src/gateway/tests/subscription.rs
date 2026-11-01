@@ -176,7 +176,7 @@ async fn subscription_sse_materializes_json_or_sse_without_losing_calls_or_fakin
                 let last = events.last_mut().unwrap();
                 last["type"] = json!(format!("response.{outcome}"));
                 last["response"] = response.clone();
-                let upstream_sse = stream || dialect == Dialect::Siwc;
+                let upstream_sse = true;
                 let bytes = if upstream_sse {
                     events
                         .iter()

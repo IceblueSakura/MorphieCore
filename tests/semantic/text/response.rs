@@ -101,8 +101,11 @@ fn incomplete_and_failed_responses_do_not_encode_as_success() {
             &metadata,
             GenerationApi::Chat,
             Contract::full()
-        ),
-        Err(RepresentationError::Terminal)
+        )
+        .map_err(|error| error.cause),
+        Err(morphiecore::protocol::ConversionCause::Representation(
+            RepresentationError::Terminal
+        ))
     ));
     assert_eq!(
         responses::encode_response(

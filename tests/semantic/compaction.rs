@@ -342,8 +342,11 @@ fn compaction_replay_rejects_incompatible_or_unbound_context_without_stripping()
             GenerationApi::Responses,
             contract()
         )
-        .err(),
-        Some(morphiecore::protocol::conversion::generation::RepresentationError::ReplayPhase),
+        .err()
+        .map(|error| error.cause),
+        Some(
+            morphiecore::protocol::conversion::generation::RepresentationError::ReplayPhase.into()
+        ),
     );
     assert!(!format!("{:?}", content()).contains("synthetic-context"));
     let oversized = morphiecore::semantic::value::Text::new(

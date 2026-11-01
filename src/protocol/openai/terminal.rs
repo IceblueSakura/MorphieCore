@@ -8,6 +8,60 @@ use crate::{
     semantic::task::generation::*,
 };
 use serde_json::{Map, Value, json};
+
+pub(super) fn decode_chat_finish(
+    reason: &str,
+    adaptation: &crate::protocol::openai::dialect::adaptation::Adaptation,
+    calls: bool,
+) -> Result<(StreamTerminal, TerminalDetails), CodecError> {
+    use crate::protocol::openai::dialect::adaptation::ChatFinishReason;
+    let mut details = TerminalDetails::default();
+    let incomplete = match reason {
+        "stop" => {
+            details.completion = Some(CompletionCause::NaturalOrStopSequence);
+            return Ok((StreamTerminal::Completed, details));
+        }
+        "tool_calls" if calls => return Ok((StreamTerminal::Completed, details)),
+        "tool_calls" => return Err(CodecError::invalid()),
+        "length" => IncompleteReason::MaxOutputTokens,
+        "content_filter" => IncompleteReason::ContentFilter,
+        _ => match adaptation
+            .rules
+            .chat_finish_reasons
+            .iter()
+            .find(|(label, _)| *label == reason)
+            .map(|(_, reason)| reason)
+        {
+            Some(ChatFinishReason::ContentFilter) => IncompleteReason::ContentFilter,
+            Some(ChatFinishReason::ContextWindow) => IncompleteReason::ContextWindowExceeded,
+            Some(ChatFinishReason::Repetition | ChatFinishReason::Interrupted) => {
+                IncompleteReason::Other(text(reason, "incomplete reason", MAX_NAME_BYTES)?)
+            }
+            Some(
+                kind @ (ChatFinishReason::ResourceFailure
+                | ChatFinishReason::NetworkFailure
+                | ChatFinishReason::ServerFailure),
+            ) => {
+                let status = match kind {
+                    ChatFinishReason::ResourceFailure => 503,
+                    ChatFinishReason::NetworkFailure => 502,
+                    _ => 500,
+                };
+                return Err(CodecError::StreamFailure(SourceFailureEvidence::envelope(
+                    status,
+                    crate::protocol::failure::RecognitionBasis::EnvelopeCode,
+                    Some(reason),
+                    None,
+                    None,
+                )));
+            }
+            None => return Err(CodecError::Unsupported(CarrierReason::Terminal)),
+        },
+    };
+    details.incomplete = Some(incomplete);
+    Ok((StreamTerminal::Incomplete, details))
+}
+
 pub(super) fn decode_details(o: &Map<String, Value>) -> Result<TerminalDetails, CodecError> {
     let error = o
         .get("error")
@@ -115,7 +169,7 @@ pub(super) fn chat_incomplete(incomplete: bool, details: &TerminalDetails) -> bo
 /// Selected terminal approximations for a profile; an empty list means exact.
 /// Chat `stop` officially covers a natural stop and a matched stop sequence:
 /// https://github.com/openai/openai-python/blob/be9d66628ad7377bd36fe5a76ae6d735843f0e76/src/openai/types/chat/chat_completion.py
-pub(super) fn terminal_losses(
+pub(crate) fn terminal_losses(
     details: &TerminalDetails,
     profile: crate::protocol::openai::GenerationApi,
 ) -> Result<Vec<Rule>, CodecError> {
@@ -124,10 +178,10 @@ pub(super) fn terminal_losses(
         check_response_details(details)?;
     }
     let mut losses = vec![];
-    if details.refusal.value().is_some() {
+    if details.refusal.as_ref().is_some() {
         losses.push(Rule::OMIT_EXPLANATORY_REFUSAL_DETAILS);
     }
-    if details.explanation.value().is_some() {
+    if details.explanation.as_ref().is_some() {
         losses.push(Rule::OMIT_TERMINAL_EXPLANATION);
     }
     match (&details.completion, profile) {

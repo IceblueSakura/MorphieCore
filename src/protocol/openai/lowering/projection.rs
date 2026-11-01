@@ -9,16 +9,16 @@ pub const MAX_PROJECTION_STAGES: usize = 16;
 
 /// A served class is not the requested policy. Never invent an approximate tier.
 pub(crate) fn service_class_view(
-    class: &crate::semantic::value::Presence<crate::semantic::context::ServiceClass>,
+    class: &Option<crate::semantic::context::ServiceClass>,
     profile: GenerationApi,
-) -> crate::semantic::value::Presence<crate::semantic::context::ServiceClass> {
+) -> Option<crate::semantic::context::ServiceClass> {
     if class
-        .value()
+        .as_ref()
         .is_some_and(|class| crate::protocol::openai::service::class_wire(*class, profile).is_err())
     {
-        crate::semantic::value::Presence::Absent
+        None
     } else {
-        class.clone()
+        *class
     }
 }
 
@@ -34,62 +34,6 @@ pub(crate) fn reported_service_class(
         report.service_class = view;
     }
     changed.then_some(Rule::OMIT_UNREPRESENTABLE_SERVICE_CLASS)
-}
-
-/// Chat length reports an overall token stop, not the lifecycle of each source
-/// message. Build only the selected plain-text view; never edit source evidence.
-pub(crate) fn chat_text_status(
-    source: &crate::semantic::task::generation::GenerationResponse,
-    policy: super::ReportedFactPolicy,
-) -> Result<
-    Option<(
-        crate::semantic::task::generation::GenerationResponse,
-        Vec<crate::protocol::conversion::generation::Effect>,
-    )>,
-    RepresentationError,
-> {
-    use crate::{
-        protocol::conversion::generation::{ConversionBoundary, Owner},
-        semantic::task::generation::*,
-    };
-    if source.outcome() != Outcome::Incomplete
-        || source.details().incomplete != Some(IncompleteReason::MaxOutputTokens)
-        || source.items().is_empty()
-        || !source.items().iter().all(|(_, item)| {
-            matches!(item, Item::Message(m)
-                if m.role == MessageRole::Assistant && m.participant.is_none()
-                    && matches!(m.status, ItemLifecycle::Completed | ItemLifecycle::Incomplete)
-                    && !m.parts.is_empty()
-                    && m.parts.iter().all(|p|
-                        p.cache.is_none() && p.replay.is_none()
-                            && matches!(&p.content, ContentPart::Text(t) if t.is_plain())))
-        })
-    {
-        return Ok(None);
-    }
-    let effects: Vec<_> = source
-        .items()
-        .iter()
-        .filter(|(_, item)| item.lifecycle() == Some(ItemLifecycle::Completed))
-        .map(|(id, _)| {
-            Rule::OMIT_CHAT_TEXT_ITEM_STATUS
-                .effect(ConversionBoundary::ResponseProject)
-                .at(Owner::item(*id))
-        })
-        .collect();
-    if effects.is_empty() {
-        return Ok(None);
-    }
-    if policy == super::ReportedFactPolicy::StrictComplete {
-        return Err(RepresentationError::ReportedFacts);
-    }
-    let mut items = source.items().to_vec();
-    for (_, item) in &mut items {
-        if let Item::Message(message) = item {
-            message.status = ItemLifecycle::Incomplete;
-        }
-    }
-    Ok(Some((source.clone().with_items(items)?, effects)))
 }
 
 pub(crate) fn request_metadata_echo(
@@ -248,7 +192,7 @@ mod tests {
 
     #[test]
     fn text_status_omission_is_token_cap_only_and_strict_complete_rejects_it() {
-        use super::super::ReportedFactPolicy::{Faithful, StrictComplete};
+        use super::super::ReportedFactPolicy::StrictComplete;
         use crate::protocol::openai::{Dialect, GenerationCodec, TargetContract};
         use serde_json::json;
         // Independent Responses shape: an item can complete before the response
@@ -265,24 +209,33 @@ mod tests {
             Some(ItemLifecycle::Completed)
         );
         assert_eq!(source.outcome(), Outcome::Incomplete);
-        let (view, effects) = chat_text_status(source, Faithful).unwrap().unwrap();
+        let mut items = source.items().to_vec();
+        let Item::Message(message) = &mut items[0].1 else {
+            panic!("message");
+        };
+        message.status = ItemLifecycle::Incomplete;
+        let view = source.clone().with_items(items).unwrap();
+        let effects = vec![
+            Rule::OMIT_CHAT_TEXT_ITEM_STATUS
+                .effect(crate::protocol::conversion::generation::ConversionBoundary::EventProject)
+                .at(crate::protocol::conversion::generation::Owner::item(
+                    source.items()[0].0,
+                )),
+        ];
+        let mut strict = TargetContract::full();
+        strict.reported_facts = StrictComplete;
         assert_eq!(
-            view.items()[0].1.lifecycle(),
-            Some(ItemLifecycle::Incomplete)
+            super::super::lower_response(
+                source,
+                &decoded.fidelity,
+                &decoded.metadata,
+                GenerationApi::Chat,
+                strict
+            )
+            .err()
+            .map(|error| error.cause),
+            Some(RepresentationError::ReportedFacts.into())
         );
-        assert_eq!(
-            source.items()[0].1.lifecycle(),
-            Some(ItemLifecycle::Completed)
-        );
-        assert_eq!(view.details(), source.details());
-        assert_eq!(effects.len(), 1);
-        // Direct decision check: missing unrelated settings/usage cannot mask
-        // whether strict mode rejected this actual lifecycle omission.
-        assert_eq!(
-            chat_text_status(source, StrictComplete),
-            Err(RepresentationError::ReportedFacts)
-        );
-        assert!(chat_text_status(&view, Faithful).unwrap().is_none());
         let target = super::super::lower_response(
             source,
             &decoded.fidelity,
@@ -320,7 +273,16 @@ mod tests {
                     ..Default::default()
                 })
                 .unwrap();
-            assert!(chat_text_status(&other, Faithful).unwrap().is_none());
+            assert!(
+                super::super::lower_response(
+                    &other,
+                    &decoded.fidelity,
+                    &decoded.metadata,
+                    GenerationApi::Chat,
+                    TargetContract::full()
+                )
+                .is_err()
+            );
         }
         let extras = [
             json!({"id":"f","type":"function_call","call_id":"c","name":"f",
@@ -334,11 +296,6 @@ mod tests {
             let mut mixed = body.clone();
             mixed["output"].as_array_mut().unwrap().push(item);
             let mixed = codec.decode_response(mixed.to_string().as_bytes()).unwrap();
-            assert!(
-                chat_text_status(&mixed.semantic, Faithful)
-                    .unwrap()
-                    .is_none()
-            );
             assert!(
                 super::super::lower_response(
                     &mixed.semantic,
@@ -395,7 +352,7 @@ mod tests {
                 metadata.context.reports =
                     crate::semantic::context::ResponseReports::single(Default::default());
                 let report = metadata.context.reports.iter_mut().next().unwrap();
-                report.service_class = Presence::Value(class);
+                report.service_class = Some(class);
                 if profile == GenerationApi::Responses {
                     report.settings = Some(GenerationSettings {
                         tools: Some(vec![]),
@@ -414,7 +371,7 @@ mod tests {
                     TargetContract::full(),
                 )
                 .unwrap();
-                assert_eq!(view.metadata().context.service_class().is_absent(), omitted);
+                assert_eq!(view.metadata().context.service_class().is_none(), omitted);
                 assert_eq!(
                     view.projection()
                         .iter()
@@ -445,7 +402,7 @@ mod tests {
                     .iter_mut()
                     .next()
                     .unwrap()
-                    .service_class = Presence::Value(if class == ServiceClass::PriorityCapacity {
+                    .service_class = Some(if class == ServiceClass::PriorityCapacity {
                     ServiceClass::StandardCapacity
                 } else {
                     ServiceClass::PriorityCapacity
@@ -462,7 +419,10 @@ mod tests {
                         strict.clone(),
                     );
                     if omitted {
-                        assert_eq!(result.err(), Some(RepresentationError::ReportedFacts));
+                        assert_eq!(
+                            result.err().map(|error| error.cause),
+                            Some(RepresentationError::ReportedFacts.into())
+                        );
                     } else {
                         assert!(result.is_ok());
                     }
@@ -492,11 +452,11 @@ mod tests {
         let mut metadata = decoded.metadata.clone();
         metadata.context.reports = ResponseReports::Lifecycle {
             opening: Some(Box::new(ResponseReport {
-                service_class: Presence::Value(ServiceClass::StandardCapacity),
+                service_class: Some(ServiceClass::StandardCapacity),
                 ..Default::default()
             })),
             terminal: Some(Box::new(ResponseReport {
-                service_class: Presence::Value(ServiceClass::PriorityCapacity),
+                service_class: Some(ServiceClass::PriorityCapacity),
                 ..Default::default()
             })),
         };
@@ -508,8 +468,13 @@ mod tests {
                 GenerationApi::Responses,
                 TargetContract::full()
             )
-            .err(),
-            Some(RepresentationError::Metadata)
+            .err()
+            .map(|error| error.cause),
+            Some(crate::protocol::ConversionCause::Codec(
+                crate::protocol::CodecError::Invalid(
+                    crate::protocol::failure::ShapeReason::Metadata
+                )
+            ))
         );
         assert!(EventEncoder::new(GenerationApi::Responses, metadata.clone()).is_err());
         let mut opening = metadata.clone();

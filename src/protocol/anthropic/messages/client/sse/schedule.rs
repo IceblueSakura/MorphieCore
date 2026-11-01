@@ -74,7 +74,7 @@ pub(super) enum Ready {
     CloseOwner(ItemId),
 }
 #[derive(Default)]
-pub(super) struct Schedule {
+pub(crate) struct Schedule {
     owners: BTreeMap<ItemId, Box<Owner>>,
     omitted: BTreeSet<ItemId>,
     order: VecDeque<ItemId>,
@@ -82,6 +82,36 @@ pub(super) struct Schedule {
     events: usize,
 }
 impl Schedule {
+    pub(crate) fn project(
+        &mut self,
+        event: &StreamEvent,
+        limits: crate::protocol::stream::SseLimits,
+    ) -> Result<
+        (
+            Vec<StreamEvent>,
+            Vec<crate::protocol::conversion::generation::Effect>,
+        ),
+        CodecError,
+    > {
+        let queued = self.push(event, limits)?;
+        let terminal = matches!(event, StreamEvent::Terminal { .. });
+        let mut events = vec![];
+        let mut losses = vec![];
+        while let Some(ready) = self.pop(terminal) {
+            match ready {
+                Ready::Event(event) => events.push(*event),
+                Ready::OmitReasoning(item) => losses.push(
+                    super::super::projection::reasoning_omission(item, ("event.project").into()),
+                ),
+                // Wire-only closures do not invent semantic part/item finality.
+                Ready::ClosePart(..) | Ready::CloseOwner(..) => {}
+            }
+        }
+        if !queued {
+            events.push(event.clone());
+        }
+        Ok((events, losses))
+    }
     fn charge(&mut self, amount: usize) -> Result<(), CodecError> {
         self.bytes = self.bytes.checked_add(amount).ok_or(CodecError::Limit)?;
         if self.bytes > MAX_TOTAL_BYTES {
@@ -160,6 +190,7 @@ impl Schedule {
         }
         let (item, part) = match event {
             StreamEvent::PartStarted { item, part, .. }
+            | StreamEvent::ValueFinished { item, part }
             | StreamEvent::PartFinished { item, part }
             | StreamEvent::PartInterrupted { item, part }
             | StreamEvent::Delta { item, part, .. } => (*item, Some(*part)),
@@ -302,7 +333,10 @@ impl Schedule {
                 if pending.closed {
                     return Err(CodecError::invalid());
                 }
-                pending.closed = matches!(event, StreamEvent::PartFinished { .. });
+                pending.closed = matches!(
+                    event,
+                    StreamEvent::PartFinished { .. } | StreamEvent::PartInterrupted { .. }
+                );
                 pending.events.push_back(Box::new(event.clone()));
             } else {
                 owner.events.push_back(Box::new(event.clone()));

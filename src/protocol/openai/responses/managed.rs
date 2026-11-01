@@ -250,7 +250,7 @@ mod tests {
     use super::*;
     use crate::{
         protocol::openai::{Dialect, GenerationApi, GenerationCodec, TargetContract},
-        semantic::{task::generation::*, value::Presence},
+        semantic::task::generation::*,
     };
     use serde_json::json;
 
@@ -277,12 +277,12 @@ mod tests {
         assert!(
             matches!(&request.task.semantic.items()[2].1, Item::ToolResult(r) if r.call_id.as_ref().unwrap().as_str() == "c")
         );
-        assert_eq!(request.context.store, Presence::Value(false));
+        assert_eq!(request.context.store, Some(false));
         assert_eq!(
             adapter
                 .encode_request(&request, "selected", &TargetContract::full())
                 .unwrap(),
-            json!({"model":"selected","store":false,"instructions":"new","input":[
+            json!({"model":"selected","store":false,"stream":true,"instructions":"new","input":[
                 {"type":"message","role":"user","content":[{"type":"input_text","text":"first"}]},
                 {"type":"function_call","id":"call-item","call_id":"c","name":"lookup","arguments":"{}"},
                 {"type":"function_call_output","call_id":"c","output":"found"}
@@ -715,9 +715,7 @@ mod tests {
             if dialect == Dialect::OpenRouter {
                 expected["provider"] = json!({"require_parameters":true});
             }
-            if dialect == Dialect::Siwc {
-                expected["stream"] = json!(true);
-            }
+            expected["stream"] = json!(true);
             for request in [&stored, &stateless] {
                 assert_eq!(
                     adapter.encode_request(request, "m", &contract).unwrap(),
@@ -744,9 +742,7 @@ mod tests {
             if dialect == Dialect::OpenRouter {
                 expected_next["provider"] = json!({"require_parameters":true});
             }
-            if dialect == Dialect::Siwc {
-                expected_next["stream"] = json!(true);
-            }
+            expected_next["stream"] = json!(true);
             assert_eq!(
                 adapter.encode_request(&next, "m", &contract).unwrap(),
                 expected_next

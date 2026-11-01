@@ -234,29 +234,29 @@ async fn transports(
     profile: Profile,
     control: Control,
 ) -> Vec<String> {
-    let json = observe(binding, client, profile, false, control).await;
+    let mut json = observe(binding, client, profile, false, control).await;
     let sse = observe(binding, client, profile, true, control).await;
-    if client == Api::Chat
-        && binding.4 == Api::Responses
-        && matches!(
-            json.0[0].as_str(),
-            "accepted@1" | "representation.replay_format@1"
-        )
-    {
-        // Correct non-null upstream echoes expose the existing stream-only guard.
-        assert_eq!(sse.0, ["codec.unsupported.metadata@1"]);
-        assert!(sse.1.is_empty());
-        eprintln!(
-            "delivery-gap {}: Chat SSE metadata guard; pending R2",
-            binding.1
-        );
-    } else {
-        assert_eq!(
-            json, sse,
-            "{}/{client:?}/{profile:?}: JSON/SSE agreement",
-            binding.1
-        );
+    if client == Api::Chat {
+        for (complete, streamed) in json.1.iter_mut().zip(&sse.1) {
+            if let Some(metadata) = complete["reports"]
+                .as_object_mut()
+                .unwrap()
+                .remove("metadata")
+            {
+                assert_eq!(binding.4, Api::Responses);
+                assert_eq!(metadata, serde_json::json!({"synthetic":"echo"}));
+                assert!(
+                    streamed["reports"].get("metadata").is_none(),
+                    "Chat chunks have no metadata carrier"
+                );
+            }
+        }
     }
+    assert_eq!(
+        json, sse,
+        "{}/{client:?}/{profile:?}: JSON/SSE agreement",
+        binding.1
+    );
     json.0
 }
 
@@ -853,7 +853,7 @@ fn intake_experiment_covers_json_capable_catalog_bindings() {
             "uncovered intake binding: {}",
             endpoint.id.as_str()
         );
-        assert!(endpoint.representation.forced_stream());
+        assert!(endpoint.protocol.requires_streaming_intake());
         assert!(!endpoint.adapter().unwrap().accepts_json());
         eprintln!(
             "intake {}: already streaming-only; no JSON decoder to compare",
@@ -1034,8 +1034,6 @@ async fn catalog_subscription_production_lanes() {
                 let actual = transports(&binding, client, profile, Control::Default).await;
                 let expected = if entry.profile == "openai" && profile != Profile::Text {
                     &["planning:[\"admission.tools\"]@0"][..]
-                } else if profile == Profile::Reasoning && client == Api::Chat {
-                    &["representation.replay_format@1"][..]
                 } else {
                     ACCEPT
                 };
@@ -1115,7 +1113,7 @@ async fn agent_default_production_lanes() {
                     let actual = lane(binding, client, profile, stream, Control::Default).await;
                     assert_eq!(
                         actual,
-                        expected(binding.1, client, profile, stream),
+                        expected(binding.1, client, profile),
                         "{}/{client:?}/{profile:?}/{stream}",
                         binding.1
                     );
@@ -1133,7 +1131,7 @@ async fn stored_production_responses_agree_with_delivered_history() {
                 let actual = lane(binding, Api::Responses, profile, stream, Control::Stored).await;
                 assert_eq!(
                     actual,
-                    expected(binding.1, Api::Responses, profile, stream),
+                    expected(binding.1, Api::Responses, profile),
                     "stored {}/{profile:?}/{stream}",
                     binding.1
                 );
@@ -1215,8 +1213,7 @@ async fn incomplete_responses_reasoning_keeps_its_delivery_and_replay_status() {
 }
 
 // Current observations only; every blocker targets acceptance via pending_resolution.
-// Columns are Chat text/tools and Responses text/tools. R2 also owns the explicit
-// Chat-SSE metadata divergence in transports. These are not reasoning contracts.
+// Columns are Chat text/tools and Responses text/tools; reasoning has separate lanes.
 const ACCEPT: &[&str] = &["accepted@1", "accepted@1"];
 const BASIC_EXPECTATIONS: &[(&[&str], [&[&str]; 4])] = &[
     (
@@ -1313,7 +1310,7 @@ fn basic_expected(binding: &str, client: Api, profile: Profile) -> &'static [&'s
     columns[index]
 }
 
-fn expected(binding: &str, client: Api, profile: Profile, stream: bool) -> &'static [&'static str] {
+fn expected(binding: &str, client: Api, profile: Profile) -> &'static [&'static str] {
     use Api::*;
     use Profile::*;
     if profile != Reasoning && binding != "opencode-go-haiku-messages" {
@@ -1327,16 +1324,11 @@ fn expected(binding: &str, client: Api, profile: Profile, stream: bool) -> &'sta
         ("deepseek-chat", Chat, Reasoning) => &["planning:[\"admission.client_representation\"]@0"],
         ("deepseek-chat", Responses, Reasoning) => ACCEPT,
         ("openrouter-responses", Responses, Reasoning) => ACCEPT,
-        ("openrouter-responses" | "dashscope-flash-responses", Chat, Reasoning) if stream => {
-            &["codec.unsupported.metadata@1"]
-        }
-        ("openrouter-responses" | "dashscope-flash-responses", Chat, Reasoning) => {
-            &["representation.replay_format@1"]
-        }
+        ("openrouter-responses" | "dashscope-flash-responses", Chat, Reasoning) => ACCEPT,
         ("dashscope-flash-responses", Responses, Reasoning) => ACCEPT,
         ("opencode-go-haiku-messages", Chat | Messages, Text | Tools)
         | ("opencode-go-haiku-messages", Responses, Text | Tools) => ACCEPT,
-        ("opencode-go-haiku-messages", Chat, Reasoning) => &["representation.replay_format@1"],
+        ("opencode-go-haiku-messages", Chat, Reasoning) => ACCEPT,
         ("opencode-go-haiku-messages", Responses, Reasoning) => ACCEPT,
         ("opencode-go-haiku-messages", Messages, Reasoning) => ACCEPT,
         _ => panic!("unreviewed lane: {binding}/{client:?}/{profile:?}"),

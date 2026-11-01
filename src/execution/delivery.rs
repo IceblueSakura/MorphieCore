@@ -103,11 +103,13 @@ pub struct ResponseDelivery {
     client: ClientAdapter,
     messages_terminal: Option<crate::protocol::anthropic::messages::client::GoogleTerminalPolicy>,
     messages_without_stops: bool,
+    messages_ambiguous_stops: bool,
     public_label: String,
     limits: SseLimits,
     options: StreamOptions,
     padding: Option<Obfuscation>,
     encoder: Option<ClientEncoder>,
+    projection: Option<crate::adapter::ClientProjection>,
     prepared_source: Option<PreparedSource>,
     coalescer: Option<coalescing::Coalescer>,
     source: Option<std::sync::Arc<()>>,
@@ -139,11 +141,13 @@ impl ResponseDelivery {
             client,
             messages_terminal: None,
             messages_without_stops: false,
+            messages_ambiguous_stops: false,
             public_label: public_label.into(),
             limits,
             options,
             padding: Some(padding),
             encoder: None,
+            projection: None,
             prepared_source: None,
             coalescer: None,
             source: None,
@@ -208,6 +212,8 @@ impl ResponseDelivery {
             } else {
                 None
             };
+            self.messages_ambiguous_stops = !self.messages_without_stops
+                && endpoint.protocol != crate::topology::GenerationProtocol::AnthropicMessages;
         }
         self
     }
@@ -389,35 +395,7 @@ impl ResponseDelivery {
             &mut decoded,
             &crate::protocol::replay_envelope::CLIENT_ORIGIN,
         )?;
-        let mut losses = if attempt.is_native() {
-            self.client.project_native(&mut decoded)?
-        } else {
-            vec![]
-        };
-        if let Some(policy) = self.messages_terminal
-            && let Some((details, loss)) = policy.project(&decoded.semantic, "response.project")?
-        {
-            decoded.semantic = decoded
-                .semantic
-                .with_details(details)
-                .map_err(crate::protocol::CodecError::from)?;
-            losses.push(loss);
-        }
-        if self.messages_without_stops
-            && let Some((details, effect)) =
-                crate::protocol::anthropic::messages::client::completed_without_stops(
-                    &decoded.semantic,
-                    "response.project",
-                )?
-        {
-            decoded.semantic = decoded
-                .semantic
-                .with_progress(crate::semantic::task::generation::InteractionProgress::TurnFinished)
-                .map_err(CodecError::from)?
-                .with_details(details)
-                .map_err(CodecError::from)?;
-            losses.push(effect);
-        }
+        let losses = vec![];
         if self.client.protocol() == ClientProtocol::Responses || attempt.is_native() {
             for (owner, _) in decoded.semantic.items() {
                 if decoded.fidelity.response_item_id(*owner).is_none() {
@@ -574,17 +552,75 @@ impl ResponseDelivery {
     ) -> Result<(crate::protocol::DecodedResponse, Vec<u8>, EvidenceDelta), AttemptError> {
         let mut evidence = self.complete_presentation(attempt, view)?;
         let (mut response, effects) = self.client_view(attempt)?;
-        if attempt.is_native()
-            && let Some(encoder) = &self.encoder
-        {
-            encoder.retain_native_arguments(&mut response)?;
+        let source = response.clone();
+        let hidden = source
+            .semantic
+            .items()
+            .iter()
+            .any(|(_, item)| item.has_replay_attachment());
+        if hidden && !self.managed_responses() {
+            return Err(CodecError::Unsupported(CarrierReason::Replay).into());
         }
+        if !self
+            .projection
+            .as_ref()
+            .is_some_and(|projection| projection.started())
+        {
+            let wire = crate::protocol::replay_projection::strip(&response, false)?;
+            self.project_events(attempt, &[], false)?;
+            let projection = self.projection.as_mut().expect("projection");
+            projection.update_fidelity(&wire.fidelity)?;
+            projection.metadata(&wire.metadata)?;
+            crate::adapter::emit_response_events(&wire, |event| {
+                projection.project(&[event]).map(|_| ())
+            })?;
+            projection.update_fidelity(&wire.fidelity)?;
+        } else if !self.projection.as_ref().expect("projection").finished() {
+            self.projection
+                .as_mut()
+                .expect("projection")
+                .metadata(&response.metadata)?;
+            self.project_events(attempt, &[attempt.terminal_event()?.clone()], false)?;
+        }
+        self.projection
+            .as_mut()
+            .expect("projection")
+            .update_fidelity(&source.fidelity)?;
+        response.semantic = self.projection.as_ref().expect("projection").snapshot()?;
+        response.metadata = self
+            .projection
+            .as_mut()
+            .expect("projection")
+            .snapshot_metadata(&response.metadata)?;
+        response.fidelity = self
+            .projection
+            .as_ref()
+            .expect("projection")
+            .fidelity()
+            .clone();
+        response.fidelity.retain_owners(response.semantic.items());
+        evidence.extend(
+            self.projection
+                .as_mut()
+                .expect("projection")
+                .take_evidence(),
+        );
         for effect in effects {
             evidence.push(effect);
         }
-        let (decoded, mut value, effects) = self
-            .client
-            .snapshot_with_history(response, self.managed_responses())?;
+        let (mut decoded, mut value, effects) = self.client.render_projected(response)?;
+        if hidden {
+            decoded.semantic = source
+                .semantic
+                .with_usage_reports(decoded.semantic.usage_reports().clone())
+                .and_then(|view| view.with_details(decoded.semantic.details().clone()))
+                .and_then(|view| view.with_progress(decoded.semantic.progress()))
+                .and_then(|view| {
+                    view.with_safety_reports(decoded.semantic.safety_reports().to_vec())
+                })
+                .map_err(CodecError::from)?;
+            decoded.fidelity = source.fidelity;
+        }
         for effect in effects {
             evidence.push(effect);
         }
@@ -644,60 +680,12 @@ impl ResponseDelivery {
                     crate::execution::attempt::DeliveryReason::PendingContentNeedsDrain,
                 ));
             }
-            let mut terminal = attempt.terminal_event()?.clone();
-            let mut evidence = self.complete_presentation(attempt, View::DownstreamSse)?;
+            let terminal = attempt.terminal_event()?.clone();
+            let evidence = self.complete_presentation(attempt, View::DownstreamSse)?;
             if self.is_messages() {
                 crate::protocol::anthropic::messages::client::validate_tool_calls(
                     attempt.response()?,
                 )?;
-            }
-            let mut projected_terminal = false;
-            let mut progress = None;
-            if let Some(policy) = self.messages_terminal
-                && let Some((details, effect)) =
-                    policy.project(&attempt.response()?.semantic, "event.project")?
-            {
-                if let StreamEvent::Terminal {
-                    details: target, ..
-                } = &mut terminal
-                {
-                    *target = details;
-                }
-                evidence.push(effect);
-                projected_terminal = true;
-            }
-            if !projected_terminal
-                && self.messages_without_stops
-                && let Some((details, effect)) =
-                    crate::protocol::anthropic::messages::client::completed_without_stops(
-                        &attempt.response()?.semantic,
-                        "event.project",
-                    )?
-            {
-                if let StreamEvent::Terminal {
-                    details: target, ..
-                } = &mut terminal
-                {
-                    *target = details;
-                }
-                progress = Some(StreamEvent::Progress(
-                    crate::semantic::task::generation::InteractionProgress::TurnFinished,
-                ));
-                evidence.push(effect);
-            }
-            if self
-                .encoder
-                .as_ref()
-                .is_some_and(|e| e.needs_phase_source_check())
-            {
-                for effect in self
-                    .client
-                    .check_chat_source(&self.client_view(attempt)?.0)?
-                {
-                    evidence.push(effect.with_boundary(
-                        crate::protocol::conversion::generation::ConversionBoundary::EventProject,
-                    ));
-                }
             }
             if !self.managed_responses()
                 && attempt
@@ -709,7 +697,7 @@ impl ResponseDelivery {
             {
                 return Err(CodecError::Unsupported(CarrierReason::Replay).into());
             }
-            let terminal_events: Vec<_> = progress.into_iter().chain([terminal]).collect();
+            let terminal_events = [terminal];
             let mut prepared = self.prepare(attempt, &terminal_events)?;
             prepared.evidence.extend(evidence);
             let (frames, evidence) = self.encode_prepared_raw(prepared)?;
@@ -771,19 +759,24 @@ impl ResponseDelivery {
             .expect("preparation context initialized")
             .context
             .clone();
+        self.project_events(attempt, &[], true)?;
+        let metadata = self
+            .projection
+            .as_mut()
+            .expect("projection")
+            .metadata(&context.metadata)?;
         if self.encoder.is_none() {
             let padding = self.padding.take().ok_or(AttemptError::Delivery(
                 crate::execution::attempt::DeliveryReason::PaddingConsumed,
             ))?;
             self.encoder = Some(self.client.stream_encoder(
-                context.metadata.clone(),
+                metadata,
                 self.limits,
                 self.options.clone(),
                 padding,
             )?);
         }
         let managed = self.managed_responses();
-        let encoder = self.encoder.as_mut().expect("encoder initialized");
         if !managed
             && events.iter().any(|event| match event {
                 StreamEvent::PartReplay { .. } => true,
@@ -808,14 +801,26 @@ impl ResponseDelivery {
                 crate::protocol::replay_projection::wire_event(event, &context.fidelity)
             })
             .collect();
-        let projected = if attempt.is_native() {
-            encoder.project_native(&wire_events)?
-        } else if attempt.is_responses() {
-            encoder.project_phase(&wire_events)?
-        } else {
-            None
-        };
-        let events = projected.as_deref().unwrap_or(&wire_events);
+        self.projection
+            .as_mut()
+            .expect("projection")
+            .update_fidelity(&context.fidelity)?;
+        let sealed = wire_events
+            .into_iter()
+            .map(|event| {
+                super::replay::seal_event(
+                    event,
+                    &crate::protocol::replay_envelope::CLIENT_ORIGIN,
+                    &context.fidelity,
+                )
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let projected = self.project_events(attempt, &sealed, true)?;
+        self.projection
+            .as_mut()
+            .expect("projection")
+            .update_fidelity(&context.fidelity)?;
+        let events = &projected;
         if self.client.protocol() != ClientProtocol::Messages
             && (self.client.protocol() == ClientProtocol::Responses || attempt.is_native())
         {
@@ -834,32 +839,96 @@ impl ResponseDelivery {
                 }
             }
         }
-        self.prepared_source
+        self.projection
             .as_mut()
-            .expect("preparation context initialized")
-            .context = context.clone();
-        let events = events
-            .iter()
-            .cloned()
-            .map(|event| {
-                super::replay::seal_event(
-                    event,
-                    &crate::protocol::replay_envelope::CLIENT_ORIGIN,
-                    &context.fidelity,
-                )
-            })
-            .collect::<Result<_, _>>()?;
-        let evidence = self
+            .expect("projection")
+            .update_fidelity(&context.fidelity)?;
+        let events = events.clone();
+        let mut evidence = self
             .encoder
             .as_mut()
             .expect("encoder initialized")
             .take_evidence();
+        evidence.extend(
+            self.projection
+                .as_mut()
+                .expect("projection")
+                .take_evidence(),
+        );
+        let metadata = self
+            .projection
+            .as_mut()
+            .expect("projection")
+            .metadata(&context.metadata)?;
+        if context.metadata != metadata {
+            let updated = Arc::make_mut(&mut context);
+            updated.metadata = metadata;
+            updated.accounted_bytes = Default::default();
+            updated.frame_bytes = Default::default();
+        }
+        self.prepared_source
+            .as_mut()
+            .expect("preparation context initialized")
+            .context = context.clone();
         Ok(PreparedEvents {
             events,
             context,
             barrier,
             evidence,
         })
+    }
+    fn project_events(
+        &mut self,
+        attempt: &Attempt,
+        events: &[StreamEvent],
+        streaming: bool,
+    ) -> Result<Vec<StreamEvent>, AttemptError> {
+        self.projection
+            .get_or_insert_with(|| {
+                crate::adapter::ClientProjection::new(
+                    self.client.clone(),
+                    attempt.is_native(),
+                    streaming,
+                )
+                .with_limits(self.limits)
+                .with_grouping(attempt.is_native() || attempt.is_responses())
+                .with_messages_terminal(
+                    self.messages_without_stops,
+                    self.messages_ambiguous_stops,
+                    self.messages_terminal,
+                )
+            })
+            .project(events)
+            .map_err(Into::into)
+    }
+    pub(crate) fn observe_events(
+        &mut self,
+        attempt: &Attempt,
+        events: &[StreamEvent],
+    ) -> Result<(), AttemptError> {
+        self.ready()?;
+        self.bind(attempt)?;
+        let fidelity = attempt.fidelity().ok_or(AttemptError::Protocol(
+            crate::execution::attempt::ProtocolReason::MissingResponseFidelity,
+        ))?;
+        let events = events
+            .iter()
+            .filter_map(|event| crate::protocol::replay_projection::wire_event(event, fidelity))
+            .map(|event| {
+                super::replay::seal_event(
+                    event,
+                    &crate::protocol::replay_envelope::CLIENT_ORIGIN,
+                    fidelity,
+                )
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        self.project_events(attempt, &[], false)?;
+        let metadata = self.metadata(attempt)?;
+        let projection = self.projection.as_mut().expect("projection");
+        projection.update_fidelity(fidelity)?;
+        projection.metadata(&metadata)?;
+        self.project_events(attempt, &events, false)?;
+        Ok(())
     }
     /// Encoding uses only the prepared context; it never reads or reprojects intake.
     pub(crate) fn encode_prepared(

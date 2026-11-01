@@ -136,7 +136,7 @@ pub enum StreamEvent {
         item: ItemId,
         part: PartId,
         annotations: Vec<Annotation>,
-        logprobs: crate::semantic::value::Presence<Vec<Logprob>>,
+        logprobs: Option<Vec<Logprob>>,
     },
     ValueFinished {
         item: ItemId,

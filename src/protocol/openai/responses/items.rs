@@ -770,11 +770,21 @@ pub(in crate::protocol::openai) fn encode_items(
                 v
             }
             Item::ToolCall(c) => {
+                // Stored native history keeps typed invocation inputs. Listing
+                // renders their string carrier without editing replay dependencies.
+                let arguments = match &c.arguments {
+                    ToolArguments::Raw(value) | ToolArguments::StructuredPartial(value) => {
+                        std::borrow::Cow::Borrowed(value.as_str())
+                    }
+                    ToolArguments::Structured(value) => {
+                        std::borrow::Cow::Owned(value.value().to_string())
+                    }
+                };
                 let mut v = json!({
                     "type": "function_call",
                     "call_id": c.call_id.as_str(),
                     "name": c.name.as_str(),
-                    "arguments": c.arguments.as_raw().expect("checked raw arguments"),
+                    "arguments": arguments,
                 });
                 write_call_context(&c.context, v.as_object_mut().expect("object"));
                 v

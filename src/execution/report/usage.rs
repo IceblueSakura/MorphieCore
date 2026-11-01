@@ -157,6 +157,9 @@ mod tests {
         };
         for profile in [GenerationApi::Chat, GenerationApi::Responses] {
             for streaming in [false, true] {
+                if profile == GenerationApi::Responses && !streaming {
+                    continue;
+                }
                 for explicit_zero in [false, true] {
                     let chat = profile == GenerationApi::Chat;
                     let mut usage = if chat {

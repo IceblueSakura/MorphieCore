@@ -75,10 +75,10 @@ impl EventEncoder {
         let fingerprint = delivered
             .context
             .system_fingerprint
-            .value()
+            .as_ref()
             .is_some()
             .then_some(Rule::OMIT_RESPONSES_SYSTEM_FINGERPRINT);
-        delivered.context.system_fingerprint = crate::semantic::value::Presence::Absent;
+        delivered.context.system_fingerprint = None;
         crate::protocol::openai::responses::envelope::write_metadata(
             &delivered,
             v.as_object_mut().expect("object"),
@@ -272,7 +272,7 @@ impl EventEncoder {
                 }] = json!(p.value().wire_text());
                 if p.kind == PartKind::Text {
                     v["logprobs"] = crate::protocol::openai::content::text::event_logprobs(
-                        p.logprobs.value().map(Vec::as_slice).unwrap_or_default(),
+                        p.logprobs.as_deref().unwrap_or_default(),
                     );
                 }
                 vec![v]
@@ -409,14 +409,15 @@ impl EventEncoder {
                 } else {
                     crate::protocol::reports::terminal_view(&mut metadata.context.reports)?;
                 }
-                let target = crate::protocol::openai::lowering::lower_response(
-                    &response,
-                    &self.fidelity,
-                    &metadata,
-                    GenerationApi::Responses,
-                    self.contract.clone(),
-                )
-                .map_err(|_| CodecError::Unsupported(CarrierReason::Terminal))?;
+                let target = crate::protocol::openai::ResponseRepresentation {
+                    semantic: std::borrow::Cow::Borrowed(&response),
+                    fidelity: &self.fidelity,
+                    metadata: std::borrow::Cow::Owned(metadata),
+                    profile: GenerationApi::Responses,
+                    adaptation: self.contract.adaptation.clone(),
+                    projection: vec![],
+                    projection_steps: 0,
+                };
                 let v = crate::protocol::openai::responses::encode_response(&target)?;
                 let kind = match terminal {
                     StreamTerminal::Completed => "response.completed",

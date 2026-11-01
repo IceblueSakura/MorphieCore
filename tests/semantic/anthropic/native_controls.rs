@@ -42,7 +42,7 @@ fn typed(budget: Option<u64>) -> Request {
                 phase: None,
                 parts: vec![Part::new(
                     PartId::new(1),
-                    ContentPart::Text(TextContent::new(value, vec![], Presence::Absent).unwrap()),
+                    ContentPart::Text(TextContent::new(value, vec![], None).unwrap()),
                 )],
             }),
         )],

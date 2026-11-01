@@ -1,11 +1,8 @@
 //! Messages capacity policy and reported service have different native vocabularies.
-use super::shape::{nonnull, presence, put};
+use super::shape::{nonnull, presence};
 use crate::{
     protocol::{CodecError, failure::CarrierReason},
-    semantic::{
-        context::{ServiceClass, ServicePolicy},
-        value::Presence,
-    },
+    semantic::context::{ServiceClass, ServicePolicy},
 };
 use serde_json::{Map, Value, json};
 
@@ -31,7 +28,7 @@ pub(crate) fn policy_wire(policy: ServicePolicy) -> Result<&'static str, CodecEr
         ))),
     }
 }
-pub(super) fn read_class(o: &Map<String, Value>) -> Result<Presence<ServiceClass>, CodecError> {
+pub(super) fn read_class(o: &Map<String, Value>) -> Result<Option<ServiceClass>, CodecError> {
     presence(o, "service_tier", |v| {
         Ok(match v.as_str() {
             Some("standard") => ServiceClass::StandardCapacity,
@@ -42,6 +39,7 @@ pub(super) fn read_class(o: &Map<String, Value>) -> Result<Presence<ServiceClass
             }
         })
     })
+    .map(|value| value.value().copied())
 }
 pub(super) fn class_wire(class: ServiceClass) -> Result<&'static str, CodecError> {
     match class {
@@ -55,13 +53,10 @@ pub(super) fn class_wire(class: ServiceClass) -> Result<&'static str, CodecError
 }
 pub(super) fn write_class(
     o: &mut Map<String, Value>,
-    class: &Presence<ServiceClass>,
+    class: &Option<ServiceClass>,
 ) -> Result<(), CodecError> {
-    if let Some(value) = class.value() {
-        class_wire(*value)?;
+    if let Some(value) = class {
+        o.insert("service_tier".into(), json!(class_wire(*value)?));
     }
-    put(o, "service_tier", class, |value| {
-        json!(class_wire(*value).expect("validated reported service"))
-    });
     Ok(())
 }

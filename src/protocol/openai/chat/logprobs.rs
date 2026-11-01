@@ -2,7 +2,7 @@
 //! Missing/null carriers mean unreported; a reported empty array is still a fact.
 //! Pinned shapes: https://github.com/openai/openai-python/blob/be9d66628ad7377bd36fe5a76ae6d735843f0e76/src/openai/types/chat/chat_completion_token_logprob.py
 use crate::protocol::openai::{CodecError, shape::*};
-use crate::semantic::{task::generation::*, value::Presence};
+use crate::semantic::task::generation::*;
 use serde_json::{Value, json};
 
 pub(crate) fn validate(probs: &[Logprob]) -> Result<(), CodecError> {
@@ -42,7 +42,7 @@ pub(in crate::protocol::openai) fn write(probs: &[Logprob]) -> Value {
 }
 pub(in crate::protocol::openai) fn carrier(
     kind: PartKind,
-    probs: &Presence<Vec<Logprob>>,
+    probs: &Option<Vec<Logprob>>,
 ) -> Result<Option<Value>, CodecError> {
     let key = match kind {
         PartKind::Text => "content",
@@ -52,9 +52,8 @@ pub(in crate::protocol::openai) fn carrier(
         }
     };
     Ok(match probs {
-        Presence::Absent => None,
-        Presence::Null => Some(json!({"content":null,"refusal":null})),
-        Presence::Value(probs) => {
+        None => None,
+        Some(probs) => {
             validate(probs)?;
             let mut value = json!({"content":null,"refusal":null});
             value[key] = write(probs);
@@ -84,11 +83,9 @@ pub(in crate::protocol::openai) fn attach(
             })
             .ok_or(CodecError::invalid())?;
         *content = match content {
-            ContentPart::Text(text) => {
-                ContentPart::Text(text.clone().with_logprobs(Presence::Value(probs))?)
-            }
+            ContentPart::Text(text) => ContentPart::Text(text.clone().with_logprobs(Some(probs))?),
             ContentPart::Refusal(text) => {
-                ContentPart::Refusal(text.clone().with_logprobs(Presence::Value(probs))?)
+                ContentPart::Refusal(text.clone().with_logprobs(Some(probs))?)
             }
             _ => unreachable!(),
         };

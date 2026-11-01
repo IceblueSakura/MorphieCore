@@ -42,7 +42,7 @@ fn report(terminal: bool) -> ResponseReport {
             reasoning,
             ..Default::default()
         }),
-        service_class: Presence::Value(if terminal {
+        service_class: Some(if terminal {
             ServiceClass::StandardProcessing
         } else {
             ServiceClass::ConfiguredProcessing
@@ -183,18 +183,32 @@ fn each_resolution_is_closed_phase_local_and_source_checked() {
             ))
         ));
     }
-    for initial in [Value::Null, json!("priority")] {
-        let mut decoder = adapter().event_decoder();
-        decoder
-            .push(&event("created", 0, json!({}), initial))
-            .unwrap();
-        assert!(matches!(
-            decoder.push(&event("completed", 1, json!({}), json!("default"))),
-            Err(morphiecore::protocol::CodecError::Invalid(
-                morphiecore::protocol::failure::ShapeReason::Metadata
-            ))
-        ));
-    }
+    let mut decoder = adapter().event_decoder();
+    decoder
+        .push(&event("created", 0, json!({}), json!("priority")))
+        .unwrap();
+    assert!(matches!(
+        decoder.push(&event("completed", 1, json!({}), json!("default"))),
+        Err(morphiecore::protocol::CodecError::Invalid(
+            morphiecore::protocol::failure::ShapeReason::Metadata
+        ))
+    ));
+    let mut unreported = adapter().event_decoder();
+    unreported
+        .push(&event("created", 0, json!({}), Value::Null))
+        .unwrap();
+    unreported
+        .push(&event("completed", 1, json!({}), json!("default")))
+        .unwrap();
+    assert_eq!(
+        unreported
+            .materialize()
+            .unwrap()
+            .metadata
+            .context
+            .service_class(),
+        &Some(morphiecore::semantic::context::ServiceClass::StandardProcessing)
+    );
     let mut malformed = event("completed", 1, json!({"mode":7}), json!("default"));
     // Container null is an observation, not an absent-field wildcard, even
     // beside another setting and with the selected lifecycle rules enabled.
@@ -251,7 +265,7 @@ fn nullable_report_mode_remains_an_explicit_observation_in_json_and_sse() {
         ReportPhase::Terminal,
         ResponseReport {
             settings: Some(settings),
-            service_class: Presence::Absent,
+            service_class: None,
         },
     ));
     let fidelity = FidelityRecords::default();
@@ -391,7 +405,7 @@ fn terminal_absence_never_inherits_opening_and_terminal_only_never_invents_openi
         Some(&ResponseReport::default())
     );
     assert!(m.context.settings().is_none());
-    assert!(m.context.service_class().is_absent());
+    assert!(m.context.service_class().is_none());
     let mut encoder = EventEncoder::new(
         GenerationApi::Responses,
         metadata(ResponseReports::phased(ReportPhase::Terminal, report(true))),

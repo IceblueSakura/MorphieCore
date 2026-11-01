@@ -156,15 +156,8 @@ impl GenerationCodec {
                     )?
                 }
             };
-            if self.adaptation.rules.responses_forced_stream {
-                if self.protocol != GenerationApi::Responses {
-                    return Err(CodecError::ProfileMismatch.into());
-                }
+            if self.protocol == GenerationApi::Responses {
                 value["stream"] = Value::Bool(true);
-                // Empty instructions carry no new task instruction; never substitute a prompt.
-                if !self.adaptation.rules.responses_siwc && value.get("instructions").is_none() {
-                    value["instructions"] = Value::String(String::new());
-                }
             }
             if self.protocol == GenerationApi::Chat
                 && self.adaptation.rules.reasoning_alias

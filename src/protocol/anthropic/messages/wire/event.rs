@@ -77,7 +77,7 @@ pub enum Event {
     MessageDelta {
         stop_reason: Presence<StopReason>,
         stop_sequence: Presence<String>,
-        stop_details: Presence<crate::semantic::task::generation::RefusalDetails>,
+        stop_details: Option<crate::semantic::task::generation::RefusalDetails>,
         usage: Usage,
         input_transformations: bool,
     },
@@ -174,7 +174,7 @@ impl Event {
                 usage,
                 ..
             } => {
-                if let Some(details) = stop_details.value() {
+                if let Some(details) = stop_details.as_ref() {
                     details.validate()?;
                     if stop_reason
                         .value()
@@ -189,7 +189,7 @@ impl Event {
                 }
                 // The pinned MessageDeltaUsage has no service-tier carrier.
                 // https://github.com/anthropics/anthropic-sdk-python/blob/b4b7916deaf4e5570cd627b1ae7ee4394a4de39f/src/anthropic/types/message_delta_usage.py
-                if !usage.service_class.is_absent() {
+                if !usage.service_class.is_none() {
                     return Err(CodecError::Unsupported(CarrierReason::Unavailable));
                 }
                 if stop_sequence.value().is_some()

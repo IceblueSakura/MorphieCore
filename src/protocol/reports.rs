@@ -29,7 +29,7 @@ use crate::semantic::{
 ///
 /// If `resolution` is true, permitted runtime resolutions (e.g. `auto -> detailed`)
 /// are accepted. Unpermitted modifications reject immediately.
-pub(super) fn relation(reports: &ResponseReports, resolution: bool) -> Result<(), CodecError> {
+pub(crate) fn relation(reports: &ResponseReports, resolution: bool) -> Result<(), CodecError> {
     reports.validate()?;
     let ResponseReports::Lifecycle {
         opening: Some(opening),
@@ -65,12 +65,12 @@ pub(super) fn relation(reports: &ResponseReports, resolution: bool) -> Result<()
     }
     let before = &opening.service_class;
     let after = &terminal.service_class;
-    if !before.is_absent()
-        && !after.is_absent()
+    if before.is_some()
+        && after.is_some()
         && before != after
         && !(resolution
-            && *before == Presence::Value(ServiceClass::ConfiguredProcessing)
-            && *after == Presence::Value(ServiceClass::StandardProcessing))
+            && *before == Some(ServiceClass::ConfiguredProcessing)
+            && *after == Some(ServiceClass::StandardProcessing))
     {
         return Err(CodecError::Invalid(ShapeReason::Metadata));
     }
@@ -133,7 +133,7 @@ pub(super) fn update(previous: &ResponseReports, next: &ResponseReports) -> Resu
             }
         }
         (ResponseReports::Single(old), ResponseReports::Single(new)) => {
-            if !old.service_class.is_absent() && old.service_class != new.service_class {
+            if !old.service_class.is_none() && old.service_class != new.service_class {
                 return Err(CodecError::Invalid(ShapeReason::Metadata));
             }
         }

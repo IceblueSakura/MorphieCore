@@ -627,37 +627,23 @@ async fn json_and_stream_clients_replay_native_thinking_and_tools() {
                 .await
                 .unwrap();
             if !responses {
-                let mut result = result;
-                let published = stream && result.status() == 200;
-                if published {
-                    let mut bytes = vec![];
-                    let aborted = loop {
-                        match result.chunk().await {
-                            Ok(Some(chunk)) => bytes.extend_from_slice(&chunk),
-                            Ok(None) => break false,
-                            Err(_) => break true,
-                        }
-                    };
-                    let wire = String::from_utf8(bytes).unwrap();
-                    assert!(aborted || wire.contains("\"error\""));
-                    assert!(!wire.contains("[DONE]"));
-                    assert!(!wire.contains("\"finish_reason\":\""));
-                    assert!(!wire.contains("reasoning_details"));
-                    assert!(!wire.contains("synthetic-native-signature"));
-                } else {
-                    assert_eq!(result.status(), 502);
-                    let error: Value = result.json().await.unwrap();
-                    assert_eq!(error["error"]["code"], "upstream_error");
-                }
-                let attempts = seen.lock().unwrap().len() - count_before;
-                if published {
-                    assert_eq!(attempts, 1, "published failures must not replay");
-                } else {
-                    assert!((1..=2).contains(&attempts));
-                }
-                tokio::time::pause();
-                tokio::time::advance(Duration::from_secs(60)).await;
-                tokio::time::resume();
+                assert_eq!(result.status(), 200);
+                let body = client_body(result, profile, stream).await;
+                let message = &body["choices"][0]["message"];
+                assert_eq!(message["content"], Value::Null);
+                assert_eq!(
+                    message["tool_calls"],
+                    json!([{"id":"call-local","type":"function",
+                    "function":{"name":"lookup","arguments":" \n\t{\"key\":\"A\"}"}}])
+                );
+                assert_eq!(body["choices"][0]["finish_reason"], "tool_calls");
+                assert_eq!(body["usage"]["prompt_tokens"], 16);
+                assert_eq!(body["usage"]["total_tokens"], 23);
+                assert!(message.get("reasoning_content").is_none());
+                assert!(message.get("reasoning_details").is_none());
+                assert!(!body.to_string().contains("synthetic-native-signature"));
+                assert!(!body.to_string().contains("synthetic-redacted"));
+                assert_eq!(seen.lock().unwrap().len(), count_before + 1);
             } else {
                 assert_eq!(seen.lock().unwrap().len(), count_before + 1);
                 let status = result.status();

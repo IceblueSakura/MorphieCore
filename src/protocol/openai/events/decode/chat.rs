@@ -491,7 +491,7 @@ impl EventDecoder {
                 (item, part)
             };
             if probs.is_empty() {
-                if self.state()?.part(item, part)?.logprobs.is_absent() {
+                if self.state()?.part(item, part)?.logprobs.is_none() {
                     self.emit(
                         StreamEvent::LogprobsSnapshot {
                             item,
@@ -713,15 +713,11 @@ impl EventDecoder {
                 out,
             )?;
         }
-        let terminal = match reason.as_str() {
-            // Forced tool choice can report `stop` beside its calls.
-            Some("stop") => StreamTerminal::Completed,
-            Some("tool_calls") if !self.chat.calls.is_empty() => StreamTerminal::Completed,
-            Some("length" | "content_filter") => StreamTerminal::Incomplete,
-            _ => {
-                return Err(CodecError::Unsupported(CarrierReason::Unavailable));
-            }
-        };
+        let (terminal, details) = crate::protocol::openai::terminal::decode_chat_finish(
+            reason.as_str().ok_or(CodecError::invalid())?,
+            &self.adaptation,
+            !self.chat.calls.is_empty(),
+        )?;
         let items = self.state()?.items().to_vec();
         for item in items {
             if item.status.is_some() {
@@ -787,27 +783,7 @@ impl EventDecoder {
             self.emit(StreamEvent::MessageEnvelope(group), out)?;
         }
         self.chat.finish_reason = reason.as_str().map(str::to_owned);
-        self.chat.pending = Some((
-            terminal,
-            if terminal == StreamTerminal::Incomplete {
-                TerminalDetails {
-                    error: None,
-                    completion: None,
-                    incomplete: Some(if reason.as_str() == Some("content_filter") {
-                        IncompleteReason::ContentFilter
-                    } else {
-                        IncompleteReason::MaxOutputTokens
-                    }),
-                    ..Default::default()
-                }
-            } else {
-                TerminalDetails {
-                    completion: (reason.as_str() == Some("stop"))
-                        .then_some(CompletionCause::NaturalOrStopSequence),
-                    ..Default::default()
-                }
-            },
-        ));
+        self.chat.pending = Some((terminal, details));
         if let Some(value) = terminal_usage {
             let usage = crate::protocol::openai::accounting::usage(
                 Some(value),

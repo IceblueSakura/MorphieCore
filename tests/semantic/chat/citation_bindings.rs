@@ -1,7 +1,4 @@
-use morphiecore::semantic::{
-    task::generation::*,
-    value::{Presence, Text},
-};
+use morphiecore::semantic::{task::generation::*, value::Text};
 fn text(s: &str) -> Text {
     Text::allowing_empty(s, "synthetic", MAX_TEXT_BYTES).unwrap()
 }
@@ -39,7 +36,7 @@ fn message(id: u64, annotations: Vec<Annotation>) -> (ItemId, Item) {
                 id: PartId::new(id),
                 cache: None,
                 content: ContentPart::Text(
-                    TextContent::new(text("claim"), annotations, Presence::Absent).unwrap(),
+                    TextContent::new(text("claim"), annotations, None).unwrap(),
                 ),
             }],
         }),
@@ -207,11 +204,7 @@ fn point_claims_use_text_boundaries_not_list_positions_and_clear_on_edits() {
         (TextUnit::UnicodeScalars, 3, true),
         (TextUnit::UnicodeScalars, 4, false),
     ] {
-        let result = TextContent::new(
-            text("é😀X"),
-            vec![annotation(unit, offset, 99)],
-            Presence::Absent,
-        );
+        let result = TextContent::new(text("é😀X"), vec![annotation(unit, offset, 99)], None);
         assert_eq!(result.is_ok(), valid, "{unit:?} {offset}");
         if !valid {
             assert_eq!(result.unwrap_err(), GenerationError::InvalidCitation);
@@ -219,12 +212,7 @@ fn point_claims_use_text_boundaries_not_list_positions_and_clear_on_edits() {
     }
     let first = annotation(TextUnit::UnicodeScalars, 2, 0);
     let second = annotation(TextUnit::UnicodeScalars, 2, 7);
-    let value = TextContent::new(
-        text("é😀X"),
-        vec![first.clone(), second.clone()],
-        Presence::Absent,
-    )
-    .unwrap();
+    let value = TextContent::new(text("é😀X"), vec![first.clone(), second.clone()], None).unwrap();
     assert_eq!(value.annotations(), &[first.clone(), second]);
     assert_eq!(value.clone().replace_text(text("é😀X")), value);
     assert!(value.replace_text(text("changed")).is_plain());
@@ -313,8 +301,12 @@ fn unresolved_file_citation_units_reject_native_json_history_and_old_ir_shapes()
                 GenerationApi::Responses,
                 TargetContract::full(),
             )
-            .err(),
-            Some(morphiecore::protocol::conversion::generation::RepresentationError::TextMetadata)
+            .err()
+            .map(|error| error.cause),
+            Some(
+                morphiecore::protocol::conversion::generation::RepresentationError::TextMetadata
+                    .into()
+            )
         );
     }
 }

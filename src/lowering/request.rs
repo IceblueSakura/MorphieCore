@@ -635,7 +635,7 @@ impl<'a> Target<'a> {
             _ => true,
         };
         if api == GenerationApi::Chat
-            && (streaming || contract.adaptation.rules.responses_forced_stream)
+            && streaming
             && custom_output
             && source
                 .tools()
@@ -1928,15 +1928,25 @@ pub(crate) fn project<'a>(
     for rule in attribution.losses {
         evidence.push(rule.effect(ConversionBoundary::RequestProject));
     }
-    if context.max_tool_calls == Presence::Null {
-        context.max_tool_calls = Presence::Absent;
+    if context.max_tool_calls.is_some() {
+        match table.get(Feature::ToolBudget) {
+            Disposition::Reject(_) => {
+                return Err(
+                    crate::protocol::conversion::generation::RepresentationError::Admission(
+                        Feature::ToolBudget,
+                    )
+                    .into(),
+                );
+            }
+            Disposition::Equivalent => context.max_tool_calls = None,
+            _ => omit_option(
+                &mut context.max_tool_calls,
+                Feature::ToolBudget,
+                &table,
+                &mut evidence,
+            ),
+        }
     }
-    apply_presence(
-        &mut context.max_tool_calls,
-        Feature::ToolBudget,
-        &table,
-        &mut evidence,
-    )?;
     apply_presence(
         &mut context.metadata,
         Feature::Metadata,

@@ -279,7 +279,7 @@ pub(super) fn text_items(
                                     .is_err()
                                 })
                         }
-                        ContentPart::Refusal(t) => request && !t.logprobs().is_absent(),
+                        ContentPart::Refusal(t) => request && !t.logprobs().is_none(),
                         _ => false,
                     }) =>
                 {
@@ -293,7 +293,7 @@ pub(super) fn text_items(
                 let probs = match &part.content {
                     ContentPart::Text(t) => t.logprobs(),
                     ContentPart::Refusal(t) => {
-                        if profile == GenerationApi::Responses && !t.logprobs().is_absent() {
+                        if profile == GenerationApi::Responses && !t.logprobs().is_none() {
                             return Err(RepresentationError::TextMetadata);
                         }
                         t.logprobs()
@@ -301,7 +301,7 @@ pub(super) fn text_items(
                     _ => continue,
                 };
                 if profile == GenerationApi::Chat
-                    && let Some(probs) = probs.value()
+                    && let Some(probs) = probs.as_ref()
                 {
                     crate::protocol::openai::chat::logprobs::validate(probs)
                         .map_err(|_| RepresentationError::TextMetadata)?;
@@ -310,7 +310,7 @@ pub(super) fn text_items(
             if profile == GenerationApi::Responses
                 && m.parts.iter().any(|p| {
                     matches!(&p.content, ContentPart::Text(t)
-                        if matches!(t.logprobs(), crate::semantic::value::Presence::Null) || t.logprobs().value().is_some_and(|v| !v.iter().all(complete_logprob)))
+                        if t.logprobs().as_ref().is_some_and(|v| !v.iter().all(complete_logprob)))
                 })
             {
                 return Err(RepresentationError::TextMetadata);

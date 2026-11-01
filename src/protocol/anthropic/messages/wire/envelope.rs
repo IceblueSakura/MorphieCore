@@ -59,7 +59,7 @@ pub struct ServerToolUsage {
 }
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Usage {
-    pub service_class: Presence<crate::semantic::context::ServiceClass>,
+    pub service_class: Option<crate::semantic::context::ServiceClass>,
     pub input_tokens: Presence<u64>,
     pub output_tokens: u64,
     pub cache_creation_input_tokens: Presence<u64>,
@@ -160,7 +160,7 @@ pub struct Message {
     pub content: Vec<Block>,
     pub stop_reason: Presence<StopReason>,
     pub stop_sequence: Presence<String>,
-    pub stop_details: Presence<RefusalDetails>,
+    pub stop_details: Option<RefusalDetails>,
     pub usage: Usage,
     /// The upstream reported changes to its request input. Entries index the upstream
     /// request, so they are never forwarded.
@@ -225,7 +225,7 @@ impl Message {
     pub fn validate(&self, opening: bool) -> Result<(), CodecError> {
         label(&self.id)?;
         self.usage.validate()?;
-        if let Some(class) = self.usage.service_class.value() {
+        if let Some(class) = self.usage.service_class.as_ref() {
             crate::protocol::anthropic::messages::service::class_wire(*class)?;
         }
         label(&self.model)?;
@@ -244,7 +244,7 @@ impl Message {
             return Err(CodecError::invalid());
         }
         let mut bytes = self.id.len() + self.model.len();
-        if let Some(details) = self.stop_details.value() {
+        if let Some(details) = self.stop_details.as_ref() {
             details.validate()?;
             if !opening && self.stop_reason != Presence::Value(StopReason::Refusal) {
                 return Err(CodecError::invalid());
@@ -295,60 +295,72 @@ impl Message {
 /// Read stable details only after excluding beta execution/billing authority.
 pub(in crate::protocol::anthropic::messages) fn read_refusal(
     o: &serde_json::Map<String, Value>,
-) -> Result<Presence<RefusalDetails>, CodecError> {
+) -> Result<Option<RefusalDetails>, CodecError> {
     reject_fallback_reports(o)?;
-    presence(o, "stop_details", |value| {
-        let fields = object(value)?;
-        if required(fields, "type")?.as_str() != Some("refusal") {
-            return Err(CodecError::Unsupported(CarrierReason::Unavailable));
-        }
-        let result = RefusalDetails {
-            category: presence(fields, "category", |value| {
-                Ok(match value.as_str() {
-                    Some("cyber") => RefusalCategory::Cyber,
-                    Some("bio") => RefusalCategory::Biological,
-                    Some("frontier_llm") => RefusalCategory::FrontierModelDevelopment,
-                    Some("reasoning_extraction") => RefusalCategory::ReasoningExtraction,
-                    Some("general_harms") => RefusalCategory::GeneralHarms,
-                    _ => {
-                        return Err(CodecError::invalid());
-                    }
-                })
-            })?,
-            explanation: presence(fields, "explanation", |value| {
-                Text::allowing_empty(
-                    string(value)?,
-                    "refusal explanation",
-                    MAX_TERMINAL_REPORT_BYTES,
-                )
-                .map_err(|_| CodecError::Limit)
-            })?,
-        };
-        result.validate()?;
-        Ok(result)
-    })
+    o.get("stop_details")
+        .filter(|value| !value.is_null())
+        .map(|value| {
+            let fields = object(value)?;
+            if required(fields, "type")?.as_str() != Some("refusal") {
+                return Err(CodecError::Unsupported(CarrierReason::Unavailable));
+            }
+            let result = RefusalDetails {
+                category: fields
+                    .get("category")
+                    .filter(|value| !value.is_null())
+                    .map(|value| {
+                        Ok(match value.as_str() {
+                            Some("cyber") => RefusalCategory::Cyber,
+                            Some("bio") => RefusalCategory::Biological,
+                            Some("frontier_llm") => RefusalCategory::FrontierModelDevelopment,
+                            Some("reasoning_extraction") => RefusalCategory::ReasoningExtraction,
+                            Some("general_harms") => RefusalCategory::GeneralHarms,
+                            _ => return Err(CodecError::invalid()),
+                        })
+                    })
+                    .transpose()?,
+                explanation: fields
+                    .get("explanation")
+                    .filter(|value| !value.is_null())
+                    .map(|value| {
+                        Text::allowing_empty(
+                            string(value)?,
+                            "refusal explanation",
+                            MAX_TERMINAL_REPORT_BYTES,
+                        )
+                        .map_err(|_| CodecError::Limit)
+                    })
+                    .transpose()?,
+            };
+            result.validate()?;
+            Ok(result)
+        })
+        .transpose()
 }
 pub(in crate::protocol::anthropic::messages) fn write_refusal(
     o: &mut serde_json::Map<String, Value>,
-    details: &Presence<RefusalDetails>,
+    details: &Option<RefusalDetails>,
 ) {
-    put(o, "stop_details", details, |details| {
+    if let Some(details) = details {
         let mut value = json!({"type":"refusal"});
         let fields = value.as_object_mut().expect("refusal details");
-        put(fields, "category", &details.category, |category| {
-            json!(match category {
-                RefusalCategory::Cyber => "cyber",
-                RefusalCategory::Biological => "bio",
-                RefusalCategory::FrontierModelDevelopment => "frontier_llm",
-                RefusalCategory::ReasoningExtraction => "reasoning_extraction",
-                RefusalCategory::GeneralHarms => "general_harms",
-            })
-        });
-        put(fields, "explanation", &details.explanation, |text| {
-            json!(text.as_str())
-        });
-        value
-    });
+        if let Some(category) = details.category {
+            fields.insert(
+                "category".into(),
+                json!(match category {
+                    RefusalCategory::Cyber => "cyber",
+                    RefusalCategory::Biological => "bio",
+                    RefusalCategory::FrontierModelDevelopment => "frontier_llm",
+                    RefusalCategory::ReasoningExtraction => "reasoning_extraction",
+                    RefusalCategory::GeneralHarms => "general_harms",
+                }),
+            );
+        }
+        if let Some(text) = &details.explanation {
+            fields.insert("explanation".into(), json!(text.as_str()));
+        }
+        o.insert("stop_details".into(), value);
+    }
 }
 
 /// Protected beta facts never enter the stable explanatory owner.

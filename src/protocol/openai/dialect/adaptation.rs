@@ -1,8 +1,21 @@
 //! Explicit wire rules selected by trusted adapters, never by business JSON.
 use crate::semantic::value::ReplayOrigin;
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ChatFinishReason {
+    ContentFilter,
+    ContextWindow,
+    Repetition,
+    Interrupted,
+    ResourceFailure,
+    NetworkFailure,
+    ServerFailure,
+}
+
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct WireRules {
+    /// Closed aliases selected by a trusted dialect, shared by JSON and chunks.
+    pub chat_finish_reasons: &'static [(&'static str, ChatFinishReason)],
     /// Closed opening-to-terminal reasoning/service resolutions on the selected
     /// OpenRouter Responses contract. Same-phase drift is never admitted.
     pub responses_lifecycle_reports: bool,
@@ -11,7 +24,6 @@ pub struct WireRules {
     pub responses_siwc: bool,
     /// Public SIWC requires upstream SSE regardless of downstream delivery.
     /// https://developers.openai.com/siwc/token-sharing-open-source/models-and-inference
-    pub responses_forced_stream: bool,
     /// Closed public access-program report, not permission to execute hosted tools.
     /// https://developers.openai.com/siwc/token-sharing-open-source/models-and-inference
     pub responses_access_programs: bool,

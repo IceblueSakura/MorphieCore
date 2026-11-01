@@ -484,11 +484,16 @@ async fn real_router_uses_provider_http_for_json_sse_tools_and_cross_profile() {
                     .send()
                     .await
                     .unwrap();
-                assert_eq!(replayed.status(), 200);
+                let status = replayed.status();
+                let bytes = replayed.bytes().await.unwrap();
                 assert_eq!(
-                    responses_delivery(&replayed.bytes().await.unwrap(), stream)
-                        .semantic
-                        .outcome(),
+                    status,
+                    200,
+                    "{}; replayed history: {later:?}",
+                    String::from_utf8_lossy(&bytes)
+                );
+                assert_eq!(
+                    responses_delivery(&bytes, stream).semantic.outcome(),
                     Outcome::Completed
                 );
 

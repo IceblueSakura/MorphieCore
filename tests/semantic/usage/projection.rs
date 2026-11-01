@@ -49,13 +49,29 @@ fn canonical_report_events_reach_terminal_carriers_without_rewriting_source_fact
     let original = report.clone();
     let fidelity = FidelityRecords::default();
     for profile in [GenerationApi::Chat, GenerationApi::Responses] {
-        let mut encoder = EventEncoder::new(profile, metadata()).unwrap();
+        let mut reports = UsageReports::default();
+        reports.replace(report.clone()).unwrap();
+        let source = response().with_usage_reports(reports).unwrap();
+        let meta = metadata();
+        let projected =
+            lower_response(&source, &fidelity, &meta, profile, Contract::full()).unwrap();
+        let mut encoder = EventEncoder::new(profile, projected.metadata().clone()).unwrap();
         for event in text_events() {
             encoder.encode(&event, &fidelity).unwrap();
         }
         assert!(
             encoder
-                .encode(&StreamEvent::UsageReport(report.clone()), &fidelity)
+                .encode(
+                    &StreamEvent::UsageReport(
+                        projected
+                            .semantic()
+                            .usage_reports()
+                            .operation()
+                            .unwrap()
+                            .clone()
+                    ),
+                    &fidelity
+                )
                 .unwrap()
                 .is_empty()
         );
@@ -80,7 +96,7 @@ fn canonical_report_events_reach_terminal_carriers_without_rewriting_source_fact
             assert_eq!(usage["input_tokens_details"]["cached_tokens"], 0);
             assert!(usage["input_tokens_details"].get("image_tokens").is_none());
             assert!(
-                encoder
+                projected
                     .projection()
                     .iter()
                     .any(|stage| { stage.rule() == "responses.omit-input-image-tokens.v1" })
@@ -138,17 +154,10 @@ fn canonical_modalities_use_exact_chat_carriers_without_report_loss() {
 #[test]
 fn responses_fingerprint_projection_is_explicit_and_keeps_source_metadata() {
     use crate::events_support::terminal;
-    use morphiecore::{
-        protocol::openai::{events::EventEncoder, responses},
-        semantic::value::Presence,
-    };
+    use morphiecore::protocol::openai::{events::EventEncoder, responses};
     let source = response().with_usage(None).unwrap();
     let fidelity = FidelityRecords::default();
-    for fingerprint in [
-        Presence::Absent,
-        Presence::Null,
-        Presence::Value("synthetic-fp".into()),
-    ] {
+    for fingerprint in [None, Some("synthetic-fp".into())] {
         let mut meta = metadata();
         meta.context.system_fingerprint = fingerprint.clone();
         let original = meta.clone();
@@ -170,7 +179,7 @@ fn responses_fingerprint_projection_is_explicit_and_keeps_source_metadata() {
                 .iter()
                 .filter(|s| s.rule() == "responses.omit-system-fingerprint.v1")
                 .count(),
-            usize::from(fingerprint.value().is_some())
+            usize::from(fingerprint.as_ref().is_some())
         );
         let back = projected
             .reproject(GenerationApi::Chat, Contract::full())
@@ -194,9 +203,10 @@ fn responses_fingerprint_projection_is_explicit_and_keeps_source_metadata() {
                 .unwrap()
                 .get("system_fingerprint")
                 .is_some(),
-            !fingerprint.is_absent()
+            !fingerprint.is_none()
         );
-        let mut encoder = EventEncoder::new(GenerationApi::Responses, meta.clone()).unwrap();
+        let mut encoder =
+            EventEncoder::new(GenerationApi::Responses, projected.metadata().clone()).unwrap();
         for event in text_events() {
             encoder.encode(&event, &fidelity).unwrap();
         }
@@ -206,9 +216,10 @@ fn responses_fingerprint_projection_is_explicit_and_keeps_source_metadata() {
                 .iter()
                 .filter(|stage| stage.change().is_loss())
                 .count(),
-            usize::from(fingerprint.value().is_some())
+            0
         );
-        let mut failed = EventEncoder::new(GenerationApi::Responses, meta.clone()).unwrap();
+        let mut failed =
+            EventEncoder::new(GenerationApi::Responses, projected.metadata().clone()).unwrap();
         for event in text_events() {
             failed.encode(&event, &fidelity).unwrap();
         }
@@ -219,7 +230,7 @@ fn responses_fingerprint_projection_is_explicit_and_keeps_source_metadata() {
                 .iter()
                 .filter(|stage| stage.change().is_loss())
                 .count(),
-            usize::from(fingerprint.value().is_some())
+            0
         );
         assert!(failed.finish().is_err());
         let output = encoder
@@ -237,12 +248,12 @@ fn responses_fingerprint_projection_is_explicit_and_keeps_source_metadata() {
                 .iter()
                 .filter(|s| s.change().is_loss())
                 .count(),
-            usize::from(fingerprint.value().is_some())
+            0
         );
     }
     for value in [String::new(), "x".repeat(257)] {
         let mut meta = metadata();
-        meta.context.system_fingerprint = Presence::Value(value);
+        meta.context.system_fingerprint = Some(value);
         assert!(
             lower_response(
                 &source,
@@ -266,8 +277,12 @@ fn projection_stage_overflow_is_rejected() {
     fn descend(value: &ResponseRepresentation<'_>, remaining: usize) {
         if remaining == 0 {
             assert!(matches!(
-                value.reproject(GenerationApi::Chat, Contract::full()),
-                Err(RepresentationError::ProjectionLimit)
+                value
+                    .reproject(GenerationApi::Chat, Contract::full())
+                    .map_err(|error| error.cause),
+                Err(morphiecore::protocol::ConversionCause::Representation(
+                    RepresentationError::ProjectionLimit
+                ))
             ));
         } else {
             let next = value
@@ -395,7 +410,7 @@ fn chat_stream_null_metadata_is_lossless_even_under_strict_reporting() {
 }
 
 #[test]
-fn accounting_loss_cannot_hide_group_phase_replay_or_resource_rejections() {
+fn accounting_projection_preserves_admitted_text_and_rejects_invalid_resources() {
     let original = response();
     let fidelity = FidelityRecords::default();
     let metadata = metadata();
@@ -445,16 +460,25 @@ fn accounting_loss_cannot_hide_group_phase_replay_or_resource_rejections() {
         ),
     );
     variants.push(original.clone().with_items(items).unwrap());
-    for changed in variants {
+    for (changed, expected) in
+        variants
+            .into_iter()
+            .zip(["answer", "answersecond", "answeranswer", "answer"])
+    {
+        let projected = lower_response(
+            &changed,
+            &fidelity,
+            &metadata,
+            GenerationApi::Chat,
+            Contract::full(),
+        )
+        .unwrap();
+        let wire = chat::encode_response(&projected).unwrap();
+        assert_eq!(wire["choices"][0]["message"]["content"], expected);
         assert!(
-            lower_response(
-                &changed,
-                &fidelity,
-                &metadata,
-                GenerationApi::Chat,
-                Contract::full()
-            )
-            .is_err()
+            wire["choices"][0]["message"]
+                .get("reasoning_content")
+                .is_none()
         );
         assert_eq!(changed.usage(), original.usage());
     }
@@ -472,4 +496,84 @@ fn accounting_loss_cannot_hide_group_phase_replay_or_resource_rejections() {
         assert_eq!(checked.semantic(), &request);
         assert_eq!(checked.profile(), profile);
     }
+}
+
+#[test]
+fn detailed_usage_loss_is_checked_before_scalar_projection() {
+    use morphiecore::{
+        protocol::{
+            ConversionCause,
+            conversion::generation::{ReportedFactPolicy, RepresentationError},
+        },
+        semantic::context::{ResponseReport, ResponseReports},
+    };
+    let mut meta = metadata();
+    meta.context.reports = ResponseReports::Single(Box::new(ResponseReport {
+        settings: Some(GenerationSettings {
+            tools: Some(vec![]),
+            tool_choice: Some(ToolChoice::Auto),
+            parallel_tool_calls: Some(false),
+            ..Default::default()
+        }),
+        service_class: None,
+    }));
+    let fidelity = FidelityRecords::default();
+    let mut report = UsageReport::operation(Usage {
+        cached_input_tokens: Some(0),
+        input_cache_write_tokens: Some(0),
+        reasoning_tokens: Some(0),
+        ..Usage::operation(10, 2, 12)
+    });
+    let mut reports = UsageReports::default();
+    reports.replace(report.clone()).unwrap();
+    let control = response().with_usage_reports(reports).unwrap();
+    let mut strict = Contract::full();
+    strict.reported_facts = ReportedFactPolicy::StrictComplete;
+    lower_response(
+        &control,
+        &fidelity,
+        &meta,
+        GenerationApi::Responses,
+        strict.clone(),
+    )
+    .unwrap();
+    report.details.tool_requests.push(ToolUseCount {
+        kind: ToolUsageKind::WebSearch,
+        count: Some(1),
+    });
+    let mut reports = UsageReports::default();
+    reports.replace(report).unwrap();
+    let source = control.with_usage_reports(reports).unwrap();
+    let faithful = lower_response(
+        &source,
+        &fidelity,
+        &meta,
+        GenerationApi::Responses,
+        Contract::full(),
+    )
+    .unwrap();
+    assert!(
+        faithful
+            .projection()
+            .iter()
+            .any(|effect| effect.rule() == "generation.usage-report-view.v1")
+    );
+    let error = match lower_response(&source, &fidelity, &meta, GenerationApi::Responses, strict) {
+        Ok(_) => panic!("strict-complete must reject the lost report detail"),
+        Err(error) => error,
+    };
+    assert_eq!(
+        error.cause,
+        ConversionCause::Representation(RepresentationError::ReportedFacts)
+    );
+    assert_eq!(
+        source
+            .usage_reports()
+            .operation()
+            .unwrap()
+            .details
+            .tool_requests[0]
+            .count,
+        Some(1)
+    );
 }

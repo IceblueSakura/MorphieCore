@@ -25,7 +25,6 @@ fn prediction_subsets_obey_the_joint_bound_not_only_individual_bounds() {
 use crate::{events_support as events, events_support::text};
 use morphiecore::{
     protocol::{
-        conversion::generation::RepresentationError,
         fidelity::FidelityRecords,
         openai::{GenerationApi, TargetContract as Contract, lowering::lower_response},
     },
@@ -69,17 +68,18 @@ fn separate_reasoning_and_missing_counts_do_not_guess_totals_or_views() {
         .unwrap();
     assert_eq!(response.usage().unwrap().input_tokens, None);
     for profile in [GenerationApi::Chat, GenerationApi::Responses] {
-        assert_eq!(
-            lower_response(
-                &response,
-                &FidelityRecords::default(),
-                &events::metadata(),
-                profile,
-                Contract::full()
-            )
-            .err(),
-            Some(RepresentationError::UsageProjection)
+        let fidelity = FidelityRecords::default();
+        let metadata = events::metadata();
+        let projected =
+            lower_response(&response, &fidelity, &metadata, profile, Contract::full()).unwrap();
+        assert!(projected.semantic().usage().is_none());
+        assert!(
+            projected
+                .projection()
+                .iter()
+                .any(|effect| effect.rule() == "openai.omit-native-usage-view.v1")
         );
+        assert_eq!(response.usage().unwrap().input_tokens, None);
     }
 }
 #[test]

@@ -3,7 +3,7 @@ use crate::semantic::task::generation::{
     GenerationError, Item, ItemId, ItemLifecycle, MAX_NAME_BYTES, MAX_TEXT_BYTES, RefusalDetails,
     Usage, UsageReports, nonempty_within,
 };
-use crate::semantic::value::{Presence, Text};
+use crate::semantic::value::Text;
 
 /// Result of one response, not completion of the logical turn or tool execution.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -37,8 +37,8 @@ pub struct TerminalDetails {
     pub error: Option<ResponseError>,
     pub incomplete: Option<IncompleteReason>,
     pub completion: Option<CompletionCause>,
-    pub refusal: Presence<RefusalDetails>,
-    pub explanation: Presence<super::TerminalExplanation>,
+    pub refusal: Option<RefusalDetails>,
+    pub explanation: Option<super::TerminalExplanation>,
 }
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CompletionCause {
@@ -55,8 +55,8 @@ impl TerminalDetails {
                 + e.param.as_ref().map_or(0, |p| p.as_str().len())
                 + e.original_type.as_ref().map_or(0, |p| p.as_str().len())
         });
-        self.refusal.value().map_or(0, RefusalDetails::bytes)
-            + self.explanation.value().map_or(0, |v| v.bytes())
+        self.refusal.as_ref().map_or(0, RefusalDetails::bytes)
+            + self.explanation.as_ref().map_or(0, |v| v.bytes())
             + error
             + match &self.completion {
                 Some(CompletionCause::StopSequence(text)) => text.as_str().len(),
@@ -72,17 +72,17 @@ impl TerminalDetails {
     pub fn validate(&self, outcome: Outcome) -> Result<(), GenerationError> {
         if self
             .refusal
-            .value()
+            .as_ref()
             .map_or(0, RefusalDetails::bytes)
-            .saturating_add(self.explanation.value().map_or(0, |v| v.bytes()))
+            .saturating_add(self.explanation.as_ref().map_or(0, |v| v.bytes()))
             > super::MAX_TERMINAL_REPORT_BYTES
         {
             return Err(GenerationError::Limit);
         }
-        if let Some(explanation) = self.explanation.value() {
+        if let Some(explanation) = self.explanation.as_ref() {
             explanation.validate()?;
         }
-        if let Some(report) = self.refusal.value() {
+        if let Some(report) = self.refusal.as_ref() {
             report.validate()?;
             if outcome != Outcome::Incomplete
                 || self.incomplete != Some(IncompleteReason::ContentFilter)

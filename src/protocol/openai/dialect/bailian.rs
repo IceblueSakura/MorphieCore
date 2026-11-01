@@ -339,9 +339,9 @@ pub(in crate::protocol::openai) fn check_context(
     profile: GenerationApi,
 ) -> Result<(), CodecError> {
     if !ctx.metadata.is_absent()
-        || !ctx.max_tool_calls.is_absent()
+        || !ctx.max_tool_calls.is_none()
         || service.is_some()
-        || profile == GenerationApi::Responses && !ctx.background.is_absent()
+        || profile == GenerationApi::Responses && !ctx.background.is_none()
     {
         return Err(CodecError::Unsupported(CarrierReason::Unavailable));
     }

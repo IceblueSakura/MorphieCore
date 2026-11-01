@@ -69,7 +69,7 @@ fn expected() -> Value {
 fn stable_refusal_details_survive_sse_and_reject_repeated_policy_or_explanation_drift() {
     use morphiecore::{
         protocol::{CodecError, anthropic::messages::client::sse::ClientEventEncoder},
-        semantic::{task::generation::*, value::Presence},
+        semantic::task::generation::*,
     };
     for conflict in [
         None,
@@ -95,7 +95,7 @@ fn stable_refusal_details_survive_sse_and_reject_repeated_policy_or_explanation_
         let mut decoder =
             MessageSseDecoder::new(200, "text/event-stream", SseLimits::default()).unwrap();
         let result = feed(&mut decoder, &wire(&events));
-        if conflict.is_some() {
+        if conflict.as_ref().is_some_and(|value| !value.is_null()) {
             assert!(matches!(
                 result,
                 Err(SseError::Codec(CodecError::Invalid(
@@ -134,9 +134,9 @@ fn stable_refusal_details_survive_sse_and_reject_repeated_policy_or_explanation_
         let response = attempt.response().unwrap();
         assert_eq!(
             response.semantic.details().refusal,
-            Presence::Value(RefusalDetails {
-                category: Presence::Value(RefusalCategory::Cyber),
-                explanation: Presence::Value(
+            Some(RefusalDetails {
+                category: Some(RefusalCategory::Cyber),
+                explanation: Some(
                     morphiecore::semantic::value::Text::new("same", "fixture", 32).unwrap()
                 ),
             })
@@ -992,9 +992,7 @@ fn native_events_deliver_both_clients_and_keep_terminal_behind_eof() {
     feed(&mut decoded, &output).unwrap();
     assert_eq!(
         decoded.finish().unwrap().usage.service_class,
-        morphiecore::semantic::value::Presence::Value(
-            morphiecore::semantic::context::ServiceClass::PriorityCapacity
-        )
+        Some(morphiecore::semantic::context::ServiceClass::PriorityCapacity)
     );
 }
 

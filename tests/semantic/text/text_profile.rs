@@ -564,26 +564,13 @@ fn custom_tools_and_text_array_results_are_not_function_arguments() {
             .encode_request_with_rules(&request, "m", &contract())
             .is_err()
     );
-    let mut forced = adapter.clone();
-    forced.adaptation.rules.responses_forced_stream = true;
     let mut json_request = request.clone();
     json_request.delivery.stream = Presence::Value(false);
-    assert!(matches!(
-        forced
-            .encode_request_with_rules(&json_request, "m", &contract())
-            .unwrap_err(),
-        morphiecore::protocol::ConversionFailure {
-            boundary: Some(
-                morphiecore::protocol::conversion::generation::ConversionBoundary::RequestEncode
-            ),
-            cause: morphiecore::protocol::ConversionCause::Representation(
-                morphiecore::protocol::conversion::generation::RepresentationError::Admission(
-                    morphiecore::semantic::task::generation::Feature::CustomTools
-                )
-            ),
-            ..
-        }
-    ));
+    let (json_encoded, _) = adapter
+        .encode_request_with_rules(&json_request, "m", &contract())
+        .unwrap();
+    assert_eq!(json_encoded["stream"], false);
+    assert_eq!(json_encoded["tools"][1]["type"], "custom");
     streaming["tool_choice"] = json!("none");
     let disabled = adapter
         .decode_request(streaming.to_string().as_bytes())
@@ -950,7 +937,7 @@ fn reported_cache_context_is_an_independent_response_fact() {
     );
     assert_eq!(
         decoded.metadata.context.service_class().clone(),
-        Presence::Value(ServiceClass::StandardProcessing)
+        Some(ServiceClass::StandardProcessing)
     );
     requested.context.service_policy = Some(ServicePolicy::PriorityProcessing);
     let target = lower_request(
@@ -981,7 +968,7 @@ fn reported_cache_context_is_an_independent_response_fact() {
             .reports
             .latest_mut()
             .expect("report")
-            .service_class = Presence::Value(class);
+            .service_class = Some(class);
         let target = lower_response(
             &reported.semantic,
             &reported.fidelity,

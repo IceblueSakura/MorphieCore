@@ -67,7 +67,7 @@ pub(super) fn encode(
     details: &TerminalDetails,
 ) -> Result<(super::StopReason, Option<&str>), CodecError> {
     details.validate(outcome)?;
-    if !details.explanation.is_absent() {
+    if !details.explanation.is_none() {
         return Err(CodecError::Unsupported(CarrierReason::Unavailable));
     }
     if progress == InteractionProgress::NeedsContinuation {

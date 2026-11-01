@@ -104,7 +104,7 @@ pub(crate) fn project_candidate(
     request: &crate::protocol::GenerationRequestEnvelope,
     client: Option<&crate::adapter::ClientAdapter>,
 ) -> Result<crate::execution::attempt::RequestProjection, RejectionReason> {
-    if (request.delivery.streaming() || endpoint.representation.forced_stream())
+    if (request.delivery.streaming() || endpoint.protocol.requires_streaming_intake())
         && !endpoint.execution.streaming
     {
         return Err(RejectionReason::Streaming);

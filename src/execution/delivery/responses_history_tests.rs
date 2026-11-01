@@ -46,6 +46,14 @@ fn setup(store: Option<bool>) -> (Attempt, ResponseDelivery) {
             },
         );
     }
+    let request = client()
+        .decode_client_request(br#"{"model":"public","input":"go","max_output_tokens":32}"#)
+        .unwrap();
+    delivery = delivery.with_request(
+        &crate::topology::catalog::GOOGLE_BINDINGS[0].endpoint(),
+        &request,
+        &request,
+    );
     (attempt, delivery)
 }
 fn source_parts() -> Value {
@@ -102,6 +110,7 @@ fn stored_responses_keep_signed_owners_without_public_manifest_in_json_and_sse()
                 .unwrap()
                 .concat()
         } else {
+            delivery.observe_events(&attempt, &events).unwrap();
             vec![]
         };
         assert!(!String::from_utf8_lossy(&prefix).contains("response.incomplete"));
@@ -133,7 +142,18 @@ fn stored_responses_keep_signed_owners_without_public_manifest_in_json_and_sse()
                 .encode_json_snapshot(&attempt)
                 .map(|(response, batch)| (response, batch.into_bytes().concat()))
                 .unwrap();
-            check_public(&serde_json::from_slice::<Value>(&body).unwrap());
+            let public = serde_json::from_slice::<Value>(&body).unwrap();
+            check_public(&public);
+            for item in public["output"].as_array().unwrap() {
+                let id = item["id"].as_str().unwrap();
+                assert!(
+                    retained
+                        .semantic
+                        .items()
+                        .iter()
+                        .any(|(owner, _)| retained.fidelity.response_item_id(*owner) == Some(id))
+                );
+            }
             retained
         };
         assert!(delivery.complete(&attempt).is_err());

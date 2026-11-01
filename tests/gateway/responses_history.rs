@@ -74,11 +74,11 @@ async fn stored_history_capacity_delete_and_restart_release_without_hidden_dispa
     let _upstream = super::Guard(tokio::spawn(async move {
         axum::serve(listener, axum::Router::new().route("/responses", axum::routing::post(move || {
             let ordinal = observed.fetch_add(1, Ordering::SeqCst);
-            async move { axum::Json(json!({"id":format!("fixture-response-{ordinal}"),"object":"response",
+            async move { ([("content-type","text/event-stream")], super::responses_wire::response_stream(json!({"id":format!("fixture-response-{ordinal}"),"object":"response",
                 "created_at":1,"status":"completed","model":"private-model","output":[{"type":"message",
                     "id":format!("fixture-message-{ordinal}"),"role":"assistant","status":"completed",
                     "content":[{"type":"output_text","text":"done","annotations":[]}]}],
-                "usage":{"input_tokens":1,"output_tokens":1,"total_tokens":2}})) }
+                "usage":{"input_tokens":1,"output_tokens":1,"total_tokens":2}}))) }
         }))).await.unwrap();
     }));
     let client = reqwest::Client::builder()

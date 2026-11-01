@@ -363,7 +363,7 @@ fn prepare_from(
     >,
 ) -> Result<crate::protocol::conversion::generation::Conversion<UpstreamRequest>, AttemptError> {
     let auth = operation_auth(endpoint, provider)?;
-    let streaming = request.delivery.streaming() || endpoint.representation.forced_stream();
+    let streaming = request.delivery.streaming() || endpoint.protocol.requires_streaming_intake();
     if streaming && !endpoint.execution.streaming {
         return Err(AttemptError::Delivery(
             crate::execution::attempt::DeliveryReason::EndpointCannotStream,

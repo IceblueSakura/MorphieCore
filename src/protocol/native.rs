@@ -6,7 +6,7 @@ use crate::{
     semantic::{
         context::ExecutionHints,
         task::generation::*,
-        value::{Presence, ReplayOrigin, Text},
+        value::{ReplayOrigin, Text},
     },
 };
 use std::borrow::Cow;
@@ -145,11 +145,11 @@ pub(crate) fn native_reasoning_history<'a>(
 
 /// Explicit stateless defaults do not ask the upstream for storage or context.
 pub(crate) fn normalize_stateless_defaults(context: &mut ExecutionHints) {
-    if context.store == Presence::Value(false) {
-        context.store = Presence::Absent;
+    if context.store == Some(false) {
+        context.store = None;
     }
-    if context.background == Presence::Value(false) {
-        context.background = Presence::Absent;
+    if context.background == Some(false) {
+        context.background = None;
     }
 }
 

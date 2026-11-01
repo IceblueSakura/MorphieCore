@@ -1,8 +1,8 @@
-//! Standard Chat delivery copies omit unsigned reasoning, never opaque replay.
+//! Standard Chat delivery copies omit uncarried reasoning owners and opaque replay.
 use crate::{
     protocol::{
         conversion::generation::{Change, ConversionBoundary, Effect, Field, Owner},
-        openai::{GenerationApi, dialect::adaptation::WireRules, lowering::RepresentationError},
+        openai::{GenerationApi, dialect::adaptation::WireRules},
     },
     semantic::task::generation::*,
 };
@@ -17,36 +17,6 @@ pub(crate) fn loss(item: ItemId, boundary: ConversionBoundary) -> Effect {
     Effect::new(RULE, Field::DeliveredProjection, boundary, Change::Omit).at(Owner::item(item))
 }
 
-pub(crate) fn project(
-    source: &GenerationResponse,
-    profile: GenerationApi,
-    rules: &WireRules,
-) -> Result<Option<(GenerationResponse, Vec<Effect>)>, RepresentationError> {
-    if !selected(profile, rules) {
-        return Ok(None);
-    }
-    let mut effects = vec![];
-    for (id, item) in source.items() {
-        if let Item::Reasoning(reasoning) = item {
-            if reasoning.replay.is_some() {
-                return Err(RepresentationError::ReplayFormat);
-            }
-            effects.push(loss(*id, ConversionBoundary::ResponseProject));
-        }
-    }
-    if effects.is_empty() {
-        return Ok(None);
-    }
-    let items = source
-        .items()
-        .iter()
-        .filter(|(_, item)| !matches!(item, Item::Reasoning(_)))
-        .cloned()
-        .collect();
-    Ok(Some((source.clone().with_items(items)?, effects)))
-}
-
-/// Owner identity, not fragment spelling, determines which events are omitted.
 pub(crate) fn owner(event: &StreamEvent) -> Option<ItemId> {
     match event {
         StreamEvent::ItemStarted { item, .. }

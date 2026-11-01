@@ -44,7 +44,7 @@ pub struct RequestContext {
     pub n: Presence<u64>,
     pub stream: Presence<bool>,
     pub stream_options: Presence<StreamOptions>,
-    pub store: Presence<bool>,
+    pub store: Option<bool>,
     pub cache: CacheHints,
     pub identity: ClientIdentityHints,
     pub metadata: Presence<std::collections::BTreeMap<String, String>>,
@@ -72,7 +72,7 @@ impl RequestContext {
             )?;
         }
         validate_context(&ExecutionHints {
-            store: self.store.clone(),
+            store: self.store,
             cache: self.cache.clone(),
             identity: self.identity.clone(),
             metadata: self.metadata.clone(),
@@ -215,7 +215,9 @@ pub fn encode_request(
     o.insert("model".into(), json!(context.model));
     put_presence(o, "n", &context.n, |v| json!(v));
     put_presence(o, "stream", &context.stream, |v| json!(v));
-    put_presence(o, "store", &context.store, |v| json!(v));
+    if let Some(store) = context.store {
+        o.insert("store".into(), json!(store));
+    }
     if target.adaptation.rules.bailian_requests {
         if let Some(options) = context.stream_options.value()
             && !options.include_usage.is_absent()

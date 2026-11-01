@@ -19,7 +19,6 @@ pub(crate) struct EventProjection {
     losses: Vec<crate::protocol::conversion::generation::Effect>,
     profile: GenerationApi,
     phase_only: bool,
-    omit_readable_reasoning: bool,
     message: Option<ItemId>,
     reasoning: Vec<ItemId>,
     text_owners: BTreeMap<ItemId, ItemId>,
@@ -50,7 +49,6 @@ impl EventProjection {
             losses: vec![],
             profile,
             phase_only: false,
-            omit_readable_reasoning: false,
             message: None,
             reasoning: vec![],
             text_owners: BTreeMap::new(),
@@ -72,19 +70,11 @@ impl EventProjection {
     pub(crate) fn effects(&self) -> &[crate::protocol::conversion::generation::Effect] {
         &self.losses
     }
-    pub(crate) fn with_readable_reasoning_omission(mut self, omit: bool) -> Self {
-        self.omit_readable_reasoning = omit;
-        self
-    }
-    pub(crate) fn for_phase(omit: bool) -> Self {
+    pub(crate) fn for_phase() -> Self {
         Self {
             phase_only: true,
-            omit_readable_reasoning: omit,
             ..Self::new(GenerationApi::Chat)
         }
-    }
-    pub(crate) fn needs_source_check(&self) -> bool {
-        self.phase_only
     }
     fn record(&mut self, loss: crate::protocol::conversion::generation::Effect) {
         if !self.losses.contains(&loss) {
@@ -120,41 +110,6 @@ impl EventProjection {
         let result = (|| {
             let mut out = vec![];
             for event in events {
-                if self.omit_readable_reasoning {
-                    if let StreamEvent::ItemStarted {
-                        item,
-                        kind: ItemKind::Reasoning,
-                        ..
-                    } = event
-                    {
-                        if super::super::readable_reasoning::carries_replay(event) {
-                            return Err(CodecError::Representation {
-                                boundary: crate::protocol::conversion::generation::ConversionBoundary::EventProject,
-                                cause: super::super::RepresentationError::ReplayFormat,
-                            });
-                        }
-                        if self.reasoning.len() >= MAX_ITEMS {
-                            return Err(CodecError::Limit);
-                        }
-                        self.reasoning.push(*item);
-                        self.record(super::super::readable_reasoning::loss(
-                            *item,
-                            crate::protocol::conversion::generation::ConversionBoundary::EventProject,
-                        ));
-                        continue;
-                    }
-                    if super::super::readable_reasoning::owner(event)
-                        .is_some_and(|item| self.reasoning.contains(&item))
-                    {
-                        if super::super::readable_reasoning::carries_replay(event) {
-                            return Err(CodecError::Representation {
-                                boundary: crate::protocol::conversion::generation::ConversionBoundary::EventProject,
-                                cause: super::super::RepresentationError::ReplayFormat,
-                            });
-                        }
-                        continue;
-                    }
-                }
                 let mut event = event.clone();
                 let metadata = match &event {
                     StreamEvent::Delta { item, logprobs, .. } => {
@@ -167,7 +122,7 @@ impl EventProjection {
                         annotations,
                         logprobs,
                         ..
-                    } => Some((*item, !annotations.is_empty() || !logprobs.is_absent())),
+                    } => Some((*item, !annotations.is_empty() || !logprobs.is_none())),
                     _ => None,
                 };
                 if metadata.is_some_and(|(id, active)| active && self.text_owners.contains_key(&id))
@@ -220,6 +175,11 @@ impl EventProjection {
                                     self.close_later(*item);
                                     self.calls.push(*item);
                                 }
+                            }
+                            ItemKind::CustomCall { .. } if self.profile == GenerationApi::Chat => {
+                                self.owner(&mut out);
+                                self.close_later(*item);
+                                self.calls.push(*item);
                             }
                             _ => {}
                         }
@@ -291,7 +251,7 @@ impl EventProjection {
                         annotations,
                         logprobs,
                     } if self.text_owners.contains_key(item) => {
-                        if !annotations.is_empty() || !logprobs.is_absent() {
+                        if !annotations.is_empty() || !logprobs.is_none() {
                             *part = self.text_part.ok_or(CodecError::invalid())?.0;
                             *item = self.text_owners[item];
                             self.text_metadata_end = Some(event);
@@ -355,38 +315,6 @@ impl EventProjection {
                         if !self.reasoning.contains(item) {
                             continue;
                         }
-                    }
-                    StreamEvent::Usage(usage) if !self.phase_only => {
-                        let projected = super::client_usage(*usage)?;
-                        for loss in super::usage_loss(Some(*usage), projected, "event.project") {
-                            self.record(loss);
-                        }
-                        let Some(projected) = projected else {
-                            continue;
-                        };
-                        *usage = projected;
-                    }
-                    StreamEvent::UsageReport(report) if !self.phase_only => {
-                        report.validate()?;
-                        if report.has_unrepresented_details() {
-                            self.record(crate::protocol::usage::report_loss("event.project"));
-                        }
-                        if report.scope != UsageScope::Operation
-                            || report.stage != UsageStage::Final
-                        {
-                            continue;
-                        }
-                        let Some(source) = report.scalar_summary() else {
-                            continue;
-                        };
-                        let projected = super::client_usage(source)?;
-                        for loss in super::usage_loss(Some(source), projected, "event.project") {
-                            self.record(loss);
-                        }
-                        let Some(usage) = projected else {
-                            continue;
-                        };
-                        event = StreamEvent::Usage(usage);
                     }
                     StreamEvent::MessageEnvelope(envelope) => {
                         let members: Vec<_> = self

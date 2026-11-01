@@ -10,7 +10,7 @@ pub struct StreamPart {
     pub value_finished: bool,
     pub finished: bool,
     pub annotations: Vec<Annotation>,
-    pub logprobs: crate::semantic::value::Presence<Vec<Logprob>>,
+    pub logprobs: Option<Vec<Logprob>>,
     pub(super) metadata_bytes: usize,
     pub(super) metadata_finished: bool,
 }

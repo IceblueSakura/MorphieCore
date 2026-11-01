@@ -187,13 +187,9 @@ fn incremental_chain_emits_before_terminal_and_does_not_commit_by_encoding() {
 
 #[test]
 fn static_intake_finish_is_idempotent_and_cancellation_discards_the_result() {
-    let mut intake = Attempt::new(
-        standard(GenerationApi::Responses),
-        1 << 20,
-        SseLimits::default(),
-    );
+    let mut intake = Attempt::new(standard(GenerationApi::Chat), 1 << 20, SseLimits::default());
     intake.begin(200, "application/json").unwrap();
-    let body = wire::response(2).to_string();
+    let body = chat_wire::response(2).to_string();
     assert_eq!(intake.push(body.as_bytes()).unwrap().0, body.len());
     let observed = intake.finish().unwrap().clone();
     assert_eq!(intake.finish().unwrap(), &observed);
@@ -354,14 +350,48 @@ fn strict_completeness_can_fail_late_without_fabricating_a_terminal() {
     chunks[1]["choices"][0]["delta"]["tool_calls"][0]["function"]["arguments"] = json!("{\"x\":1,");
     chunks[2]["choices"][0]["delta"]["tool_calls"][0]["function"]["arguments"] = json!("\"x\":2}");
     chunks.last_mut().unwrap()["usage"]["prompt_tokens_details"] = json!({"cached_tokens":0});
+    let opening: Vec<u8> = chunks
+        .iter()
+        .take(2)
+        .flat_map(|chunk| format!("data: {chunk}\n\n").into_bytes())
+        .collect();
+    let encoded = consume(&mut intake, &mut output, &opening).unwrap();
+    assert!(!encoded.is_empty());
+    output.commit().unwrap();
     let mut body: Vec<u8> = chunks
         .iter()
+        .skip(2)
         .flat_map(|chunk| format!("data: {chunk}\n\n").into_bytes())
         .collect();
     body.extend_from_slice(b"data: [DONE]\n\n");
-    let encoded = consume(&mut intake, &mut output, &body).unwrap();
-    assert!(!encoded.is_empty());
-    output.commit().unwrap();
+    let mut remaining = body.as_slice();
+    let error = loop {
+        let (used, events) = intake.push(remaining).unwrap();
+        assert!(used > 0);
+        remaining = &remaining[used..];
+        if let Err(error) = output.encode_events(&intake, &events) {
+            break error;
+        }
+        assert!(
+            !remaining.is_empty(),
+            "duplicate arguments must reach JSON-object validation"
+        );
+    };
+    assert!(matches!(
+        error.codec(),
+        Some(morphiecore::protocol::CodecError::Event(
+            morphiecore::semantic::task::generation::EventError::Semantic(
+                GenerationError::InvalidJsonValue
+            )
+        ))
+    ));
+    // Raw Chat arguments remain source data. Only the JSON-object delivery
+    // projection rejects the duplicate key; later valid source EOF cannot repair it.
+    while !remaining.is_empty() {
+        let (n, _) = intake.push(remaining).unwrap();
+        assert!(n > 0);
+        remaining = &remaining[n..];
+    }
     intake.finish().unwrap();
     assert!(
         output
@@ -387,8 +417,13 @@ fn static_delivery_wraps_the_issuer_value_and_commit_is_explicit() {
     let mut body = wire::response(2);
     body["output"].as_array_mut().unwrap().insert(0, json!({"id":"rs1","type":"reasoning","status":"completed","summary":[],"encrypted_content":"synthetic-token"}));
     let mut intake = Attempt::new(source.clone(), 1 << 20, SseLimits::default());
-    intake.begin(200, "application/json").unwrap();
-    intake.push(body.to_string().as_bytes()).unwrap();
+    intake.begin(200, "text/event-stream").unwrap();
+    let stream = wire::response_stream(body);
+    let mut remaining = stream.as_bytes();
+    while !remaining.is_empty() {
+        let (used, _) = intake.push(remaining).unwrap();
+        remaining = &remaining[used..];
+    }
     intake.finish().unwrap();
     let mut permitted = delivery(
         source,

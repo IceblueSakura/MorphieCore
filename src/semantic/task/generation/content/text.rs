@@ -1,6 +1,6 @@
 //! Readable text and dependent annotations/probabilities have one immutable owner.
 use crate::semantic::task::generation::{Annotation, GenerationError, MAX_ITEMS, MAX_TEXT_BYTES};
-use crate::semantic::value::{Presence, Text};
+use crate::semantic::value::Text;
 use serde::{Deserialize, Serialize};
 use serde_json::Number;
 
@@ -28,14 +28,14 @@ pub struct Logprob {
 pub struct TextContent {
     text: Text,
     annotations: Vec<Annotation>,
-    logprobs: Presence<Vec<Logprob>>,
+    logprobs: Option<Vec<Logprob>>,
 }
 impl From<Text> for TextContent {
     fn from(text: Text) -> Self {
         Self {
             text,
             annotations: vec![],
-            logprobs: Presence::Absent,
+            logprobs: None,
         }
     }
 }
@@ -43,7 +43,7 @@ impl TextContent {
     pub fn new(
         text: Text,
         annotations: Vec<Annotation>,
-        logprobs: Presence<Vec<Logprob>>,
+        logprobs: Option<Vec<Logprob>>,
     ) -> Result<Self, GenerationError> {
         let value = Self {
             text,
@@ -59,12 +59,12 @@ impl TextContent {
     pub fn annotations(&self) -> &[Annotation] {
         &self.annotations
     }
-    pub fn logprobs(&self) -> &Presence<Vec<Logprob>> {
+    pub fn logprobs(&self) -> &Option<Vec<Logprob>> {
         &self.logprobs
     }
     pub fn with_logprobs(
         mut self,
-        logprobs: Presence<Vec<Logprob>>,
+        logprobs: Option<Vec<Logprob>>,
     ) -> Result<Self, GenerationError> {
         self.logprobs = logprobs;
         self.validate()?;
@@ -75,7 +75,7 @@ impl TextContent {
         if self.text == text { self } else { text.into() }
     }
     pub fn is_plain(&self) -> bool {
-        self.annotations.is_empty() && self.logprobs.is_absent()
+        self.annotations.is_empty() && self.logprobs.is_none()
     }
     pub fn bytes(&self) -> usize {
         if self.is_plain() {
@@ -89,14 +89,14 @@ impl TextContent {
                     .iter()
                     .fold(0usize, |n, a| n.saturating_add(a.bytes())),
             )
-            .saturating_add(self.logprobs.value().map_or(0, |v| {
+            .saturating_add(self.logprobs.as_ref().map_or(0, |v| {
                 crate::semantic::value::json_size(v, MAX_TEXT_BYTES).unwrap_or(usize::MAX)
             }))
     }
     pub fn validate(&self) -> Result<(), GenerationError> {
         if self.text.as_str().len() > MAX_TEXT_BYTES
             || self.annotations.len() > MAX_ITEMS
-            || self.logprobs.value().is_some_and(|v| v.len() > MAX_ITEMS)
+            || self.logprobs.as_ref().is_some_and(|v| v.len() > MAX_ITEMS)
             || self.bytes() > MAX_TEXT_BYTES
         {
             return Err(GenerationError::Limit);
@@ -104,7 +104,7 @@ impl TextContent {
         for annotation in &self.annotations {
             annotation.validate_claim(self.text.as_str())?;
         }
-        if let Presence::Value(probs) = &self.logprobs {
+        if let Some(probs) = &self.logprobs {
             validate_logprobs(probs)?;
         }
         Ok(())
@@ -114,18 +114,18 @@ impl TextContent {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RefusalContent {
     text: Text,
-    logprobs: Presence<Vec<Logprob>>,
+    logprobs: Option<Vec<Logprob>>,
 }
 impl From<Text> for RefusalContent {
     fn from(text: Text) -> Self {
         Self {
             text,
-            logprobs: Presence::Absent,
+            logprobs: None,
         }
     }
 }
 impl RefusalContent {
-    pub fn new(text: Text, logprobs: Presence<Vec<Logprob>>) -> Result<Self, GenerationError> {
+    pub fn new(text: Text, logprobs: Option<Vec<Logprob>>) -> Result<Self, GenerationError> {
         let value = Self { text, logprobs };
         value.validate()?;
         Ok(value)
@@ -133,12 +133,12 @@ impl RefusalContent {
     pub fn as_str(&self) -> &str {
         self.text.as_str()
     }
-    pub fn logprobs(&self) -> &Presence<Vec<Logprob>> {
+    pub fn logprobs(&self) -> &Option<Vec<Logprob>> {
         &self.logprobs
     }
     pub fn with_logprobs(
         mut self,
-        logprobs: Presence<Vec<Logprob>>,
+        logprobs: Option<Vec<Logprob>>,
     ) -> Result<Self, GenerationError> {
         self.logprobs = logprobs;
         self.validate()?;
@@ -151,7 +151,7 @@ impl RefusalContent {
         self.text
             .as_str()
             .len()
-            .saturating_add(self.logprobs.value().map_or(0, |p| {
+            .saturating_add(self.logprobs.as_ref().map_or(0, |p| {
                 crate::semantic::value::json_size(p, MAX_TEXT_BYTES).unwrap_or(usize::MAX)
             }))
     }
@@ -159,7 +159,7 @@ impl RefusalContent {
         if self.bytes() > MAX_TEXT_BYTES {
             return Err(GenerationError::Limit);
         }
-        if let Some(probs) = self.logprobs.value() {
+        if let Some(probs) = self.logprobs.as_ref() {
             validate_logprobs(probs)?;
         }
         Ok(())

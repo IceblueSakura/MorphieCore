@@ -1,11 +1,8 @@
 //! Independent timestamp admission and typed edits, without Provider or Gateway bindings.
 use morphiecore::{
-    protocol::{
-        conversion::generation::RepresentationError,
-        openai::{
-            GenerationApi, TargetContract as Contract, events::EventEncoder,
-            lowering::lower_response, responses::envelope,
-        },
+    protocol::openai::{
+        GenerationApi, TargetContract as Contract, events::EventEncoder, lowering::lower_response,
+        responses::envelope,
     },
     semantic::value::Presence,
 };
@@ -32,16 +29,30 @@ fn timestamp_typed_edits_cannot_bypass_context_lowering_or_event_encoding() {
         } else {
             metadata.created = Some(number("-1e-9999"));
         }
-        assert!(matches!(
+        assert_eq!(
             lower_response(
                 &decoded.semantic,
                 &decoded.fidelity,
                 &metadata,
                 GenerationApi::Responses,
                 Contract::full()
-            ),
-            Err(RepresentationError::Metadata)
-        ));
+            )
+            .err()
+            .map(|error| error.cause),
+            Some(morphiecore::protocol::ConversionCause::Codec(
+                if completion {
+                    morphiecore::protocol::CodecError::Context(
+                        morphiecore::semantic::context::ContextError::Invalid(
+                            morphiecore::semantic::context::ContextReason::CompletionTimestamp,
+                        ),
+                    )
+                } else {
+                    morphiecore::protocol::CodecError::Invalid(
+                        morphiecore::protocol::failure::ShapeReason::Metadata,
+                    )
+                }
+            ))
+        );
         assert!(EventEncoder::new(GenerationApi::Responses, metadata).is_err());
     }
 }

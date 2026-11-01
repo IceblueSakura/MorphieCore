@@ -73,12 +73,12 @@ pub struct ExecutionHints {
     pub identity: ClientIdentityHints,
     #[serde(default, skip_serializing_if = "Presence::is_absent")]
     pub metadata: Presence<BTreeMap<String, String>>,
-    #[serde(default, skip_serializing_if = "Presence::is_absent")]
-    pub max_tool_calls: Presence<u64>,
-    #[serde(default, skip_serializing_if = "Presence::is_absent")]
-    pub store: Presence<bool>,
-    #[serde(default, skip_serializing_if = "Presence::is_absent")]
-    pub background: Presence<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_tool_calls: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub store: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub background: Option<bool>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -187,9 +187,9 @@ impl From<&semantic::ExecutionHints> for ExecutionHints {
             cache: (&value.cache).into(),
             identity: (&value.identity).into(),
             metadata: value.metadata.clone(),
-            max_tool_calls: value.max_tool_calls.clone(),
-            store: value.store.clone(),
-            background: value.background.clone(),
+            max_tool_calls: value.max_tool_calls,
+            store: value.store,
+            background: value.background,
         }
     }
 }
@@ -293,9 +293,9 @@ impl From<&ExecutionHints> for semantic::ExecutionHints {
             cache: (&value.cache).into(),
             identity: (&value.identity).into(),
             metadata: value.metadata.clone(),
-            max_tool_calls: value.max_tool_calls.clone(),
-            store: value.store.clone(),
-            background: value.background.clone(),
+            max_tool_calls: value.max_tool_calls,
+            store: value.store,
+            background: value.background,
         }
     }
 }

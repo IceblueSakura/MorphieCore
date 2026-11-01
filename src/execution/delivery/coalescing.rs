@@ -114,7 +114,7 @@ impl EventContext {
                 + metadata.id.as_ref().map_or(0, String::len)
                 + metadata.model.len()
                 + metadata.created.as_ref().map_or(0, |n| n.to_string().len())
-                + context.system_fingerprint.value().map_or(0, String::len)
+                + context.system_fingerprint.as_ref().map_or(0, String::len)
                 + metadata
                     .storage
                     .as_ref()
@@ -150,7 +150,7 @@ impl EventContext {
                 .metadata
                 .context
                 .system_fingerprint
-                .value()
+                .as_ref()
                 .map_or(0, |s| escaped_bytes(s))
     }
 }

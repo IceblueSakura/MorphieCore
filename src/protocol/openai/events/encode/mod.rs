@@ -78,7 +78,7 @@ impl EventEncoder {
             }
             if self.profile == GenerationApi::Chat && self.state()?.started() {
                 let old = &self.metadata.context;
-                if !old.system_fingerprint.is_absent()
+                if !old.system_fingerprint.is_none()
                     && old.system_fingerprint != metadata.context.system_fingerprint
                 {
                     // Intake normalization is not permission to rewrite already emitted facts.
@@ -270,7 +270,7 @@ impl EventEncoder {
             }
             if self.profile == GenerationApi::Responses
                 && !values.is_empty()
-                && self.metadata.context.system_fingerprint.value().is_some()
+                && self.metadata.context.system_fingerprint.as_ref().is_some()
             {
                 self.record_loss(Rule::OMIT_RESPONSES_SYSTEM_FINGERPRINT);
             }

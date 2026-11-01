@@ -56,7 +56,9 @@ pub(super) fn metadata(
                 )?,
                 system_fingerprint: read_presence(o, "system_fingerprint", |v| {
                     v.as_str().map(str::to_owned).ok_or(CodecError::invalid())
-                })?,
+                })?
+                .value()
+                .cloned(),
                 ..Default::default()
             },
             Default::default(),
@@ -323,7 +325,7 @@ mod tests {
         assert_eq!(options.prewarm, Some(false));
         assert_eq!(options.comparison_response_id, None);
         assert_eq!(hints.identity.safety_identifier, None);
-        assert!(hints.background.is_absent());
+        assert!(hints.background.is_none());
         for invalid in [
             json!({"prompt_cache_options":null}),
             json!({"prompt_cache_retention":"Day"}),
@@ -356,7 +358,7 @@ mod tests {
                 user: None,
                 ..Default::default()
             },
-            background: Presence::Value(false),
+            background: Some(false),
             ..Default::default()
         };
         let mut output = Map::new();

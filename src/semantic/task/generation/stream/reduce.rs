@@ -128,7 +128,7 @@ pub fn reduce(mut state: StreamState, event: StreamEvent) -> Result<StreamState,
                 value_finished: false,
                 finished: false,
                 annotations: vec![],
-                logprobs: crate::semantic::value::Presence::Absent,
+                logprobs: None,
                 metadata_bytes: 0,
                 metadata_finished: false,
             });
@@ -164,12 +164,12 @@ pub fn reduce(mut state: StreamState, event: StreamEvent) -> Result<StreamState,
                 let mut probs = state
                     .part(item, part)?
                     .logprobs
-                    .value()
+                    .as_ref()
                     .cloned()
                     .unwrap_or_default();
                 probs.extend(logprobs);
                 validate_logprobs(&probs)?;
-                let probs = crate::semantic::value::Presence::Value(probs);
+                let probs = Some(probs);
                 let bytes = metadata_cost(&state.part(item, part)?.annotations, &probs)?;
                 state.charge(bytes.saturating_sub(state.part(item, part)?.metadata_bytes))?;
                 let p = state.open_part(item, part)?;
@@ -201,15 +201,12 @@ pub fn reduce(mut state: StreamState, event: StreamEvent) -> Result<StreamState,
             let p = state.open_part(item, part)?;
             if !matches!(p.kind, PartKind::Text | PartKind::Refusal)
                 || p.value_finished
-                || !compatible_logprobs(
-                    p.logprobs.value().map(Vec::as_slice).unwrap_or_default(),
-                    &logprobs,
-                )
+                || !compatible_logprobs(p.logprobs.as_deref().unwrap_or_default(), &logprobs)
             {
                 return Err(EventError::Lifecycle);
             }
             validate_logprobs(&logprobs)?;
-            let value = crate::semantic::value::Presence::Value(logprobs);
+            let value = Some(logprobs);
             let n = metadata_cost(&p.annotations, &value)?;
             let old = p.metadata_bytes;
             if p.data.bytes()?.saturating_add(n) > MAX_TEXT_BYTES {
@@ -289,8 +286,8 @@ pub fn reduce(mut state: StreamState, event: StreamEvent) -> Result<StreamState,
                 return Err(EventError::Lifecycle);
             }
             if !compatible_logprobs(
-                p.logprobs.value().map(Vec::as_slice).unwrap_or_default(),
-                logprobs.value().map(Vec::as_slice).unwrap_or_default(),
+                p.logprobs.as_deref().unwrap_or_default(),
+                logprobs.as_deref().unwrap_or_default(),
             ) {
                 return Err(EventError::Lifecycle);
             }
@@ -464,9 +461,9 @@ pub fn reduce(mut state: StreamState, event: StreamEvent) -> Result<StreamState,
 }
 fn metadata_cost(
     annotations: &[Annotation],
-    probs: &crate::semantic::value::Presence<Vec<Logprob>>,
+    probs: &Option<Vec<Logprob>>,
 ) -> Result<usize, EventError> {
-    if annotations.is_empty() && probs.is_absent() {
+    if annotations.is_empty() && probs.is_none() {
         return Ok(0);
     }
     let a = annotations.iter().try_fold(0usize, |n, a| {
@@ -475,7 +472,7 @@ fn metadata_cost(
             .ok_or(EventError::Limit)
     })?;
     let p = probs
-        .value()
+        .as_ref()
         .map(|p| {
             crate::semantic::value::json_size(p, MAX_TEXT_BYTES).map_err(|_| EventError::Limit)
         })

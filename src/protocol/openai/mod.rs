@@ -100,15 +100,12 @@ impl ResponseRepresentation<'_> {
         &self,
         profile: GenerationApi,
         contract: crate::protocol::openai::TargetContract,
-    ) -> Result<
-        ResponseRepresentation<'_>,
-        crate::protocol::conversion::generation::RepresentationError,
-    > {
+    ) -> Result<ResponseRepresentation<'_>, crate::protocol::ConversionFailure> {
         use crate::protocol::openai::lowering::{
             self as generation, projection::MAX_PROJECTION_STAGES,
         };
         if self.projection_steps >= MAX_PROJECTION_STAGES {
-            return Err(generation::RepresentationError::ProjectionLimit);
+            return Err(generation::RepresentationError::ProjectionLimit.into());
         }
         let mut next = generation::lower_response(
             &self.semantic,
@@ -118,7 +115,7 @@ impl ResponseRepresentation<'_> {
             contract,
         )?;
         if self.projection_steps.saturating_add(next.projection_steps) > MAX_PROJECTION_STAGES {
-            return Err(generation::RepresentationError::ProjectionLimit);
+            return Err(generation::RepresentationError::ProjectionLimit.into());
         }
         next.projection_steps += self.projection_steps;
         let mut stages = self.projection.clone();

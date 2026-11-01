@@ -3,7 +3,6 @@ use crate::semantic::task::generation::{
     Item, OutputConstraint, PrefixCacheBoundary, ResourceKind, ResourceLocation, ResourceUse,
     StrictDefault, ToolDefinition,
 };
-use crate::semantic::value::Presence;
 use std::collections::BTreeMap;
 
 fn mark(facts: &mut BTreeMap<Feature, usize>, feature: Feature, present: bool) {
@@ -201,15 +200,15 @@ impl GenerationRequest {
                                     &mut facts,
                                     TextMetadata,
                                     !text.annotations().is_empty()
-                                        || !text.logprobs().is_absent()
-                                            && !matches!(text.logprobs(), Presence::Value(p) if p.is_empty()),
+                                        || !text.logprobs().is_none()
+                                            && !matches!(text.logprobs(), Some(p) if p.is_empty()),
                                 );
                             }
                             ContentPart::Refusal(text) => mark(
                                 &mut facts,
                                 TextMetadata,
-                                !text.logprobs().is_absent()
-                                    && !matches!(text.logprobs(), Presence::Value(p) if p.is_empty()),
+                                !text.logprobs().is_none()
+                                    && !matches!(text.logprobs(), Some(p) if p.is_empty()),
                             ),
                             ContentPart::Audio(_) | ContentPart::AudioReference(_) => {
                                 mark(&mut facts, AudioHistory, true)
@@ -372,14 +371,14 @@ impl GenerationResponseRequirements {
                     for part in &message.parts {
                         match &part.content {
                             ContentPart::Text(text) => {
-                                let probabilities = !text.logprobs().is_absent()
-                                    && !matches!(text.logprobs(), Presence::Value(probs) if probs.is_empty());
+                                let probabilities = !text.logprobs().is_none()
+                                    && !matches!(text.logprobs(), Some(probs) if probs.is_empty());
                                 q.text_metadata |= !text.annotations().is_empty() || probabilities;
                                 q.logprobs |= probabilities;
                             }
                             ContentPart::Refusal(text) => {
-                                let probabilities = !text.logprobs().is_absent()
-                                    && !matches!(text.logprobs(), Presence::Value(probs) if probs.is_empty());
+                                let probabilities = !text.logprobs().is_none()
+                                    && !matches!(text.logprobs(), Some(probs) if probs.is_empty());
                                 q.text_metadata |= probabilities;
                                 q.logprobs |= probabilities;
                             }

@@ -41,6 +41,25 @@ Retained from the October 17–21 reviews; [scoped accounting](../architecture.m
 - Interactions may report a total whose relationship to input/output/tool-input is not established. In particular, do not turn a residual into an invented `internal` counter or sum tool input by analogy with generateContent.
 - Messages input, cache-read and cache-write categories are disjoint. Cache-write duration details and thinking-as-output-subset are separate relationships, not aliases for another protocol's counters.
 
+## Chat terminal source recheck, 2026-11-01
+
+These mutable official references describe Provider labels, not additional public
+Chat finish reasons or new SDK pins.
+
+| Source | Documented labels and meaning |
+|---|---|
+| [DeepSeek Chat](https://api-docs.deepseek.com/api/create-chat-completion/) | JSON and chunk choices include `insufficient_system_resource` for an inference-resource interruption and `aborted` for interrupted generation |
+| [Zhipu OpenAPI](https://docs.bigmodel.cn/openapi/openapi.json) | `sensitive` is safety interception, `model_context_window_exceeded` is context exhaustion, and `network_error` is an inference failure. The chunk description includes the context label even where its enum list omits it |
+| [Xiaomi MiMo Chat](https://mimo.mi.com/docs/zh-CN/api/chat/openai-api) | JSON and chunk choices use `repetition_truncation` when repetition is detected |
+| [OpenRouter errors](https://www.openrouter.ai/docs/api_reference/errors-and-debugging) | Mid-stream Chat failures carry a top-level error and a choice with `finish_reason:"error"`; the stream HTTP status can remain `200` |
+
+The independent JSON/chunk expectations in
+[`tests/transport/chat.rs`](../../tests/transport/chat.rs) qualify the closed
+dialect maps. Failure labels never become successful termination; interruption
+labels retain incomplete outcomes. Unknown labels remain malformed known values.
+Delivery mappings and retained L5 boundaries belong to
+[Architecture](../architecture.md#conversion-ladder), not this source note.
+
 ## Remaining dated cross-protocol evidence
 
 - **2026-10-18 target review:** Qwen total-output versus answer-only ceilings and ignored controls are retained in the [Bailian source note](2026-10-19-bailian-compatible-requests.md). DeepSeek developer-role demotion is retained in the [instruction-authority review](2026-10-25-instruction-authority.md). Client strictness/cache/compaction observations are retained in the [client guide](2026-10-27-client-and-proxy-sources.md#earlier-client-observations).

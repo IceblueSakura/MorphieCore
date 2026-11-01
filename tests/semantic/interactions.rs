@@ -536,7 +536,7 @@ fn service_reports_preserve_matching_v1_phases_without_inference_or_capacity_ali
     use morphiecore::semantic::context::{ReportPhase, ServiceClass};
     let base = interaction_frames();
     let expected = decode_interaction(&base, true).unwrap();
-    assert!(expected.metadata.context.service_class().is_absent());
+    assert!(expected.metadata.context.service_class().is_none());
     for (native, class) in [
         ("standard", ServiceClass::StandardProcessing),
         ("flex", ServiceClass::FlexibleProcessing),
@@ -555,7 +555,7 @@ fn service_reports_preserve_matching_v1_phases_without_inference_or_capacity_ali
                     .at(phase)
                     .unwrap()
                     .service_class,
-                Presence::Value(class)
+                Some(class)
             );
         }
         assert_eq!(reported.semantic, expected.semantic);
@@ -591,7 +591,7 @@ fn service_reports_preserve_matching_v1_phases_without_inference_or_capacity_ali
                 .at(ReportPhase::Terminal)
                 .unwrap()
                 .service_class,
-            Presence::Value(class)
+            Some(class)
         );
         let mut erased = frames.clone();
         erased.last_mut().unwrap()["interaction"]
@@ -607,7 +607,7 @@ fn service_reports_preserve_matching_v1_phases_without_inference_or_capacity_ali
                 .at(ReportPhase::Opening)
                 .unwrap()
                 .service_class,
-            Presence::Value(class)
+            Some(class)
         );
         assert!(
             opening_only
@@ -617,11 +617,10 @@ fn service_reports_preserve_matching_v1_phases_without_inference_or_capacity_ali
                 .at(ReportPhase::Terminal)
                 .unwrap()
                 .service_class
-                .is_absent()
+                .is_none()
         );
     }
     for value in [
-        serde_json::Value::Null,
         json!(false),
         json!("deferred"),
         json!("unspecified"),
@@ -632,6 +631,18 @@ fn service_reports_preserve_matching_v1_phases_without_inference_or_capacity_ali
             frames[phase]["interaction"]["service_tier"] = value.clone();
             assert!(decode_interaction(&frames, true).is_err());
         }
+    }
+    for phase in [0, base.len() - 1] {
+        let mut frames = base.clone();
+        frames[phase]["interaction"]["service_tier"] = serde_json::Value::Null;
+        assert!(
+            decode_interaction(&frames, true)
+                .unwrap()
+                .metadata
+                .context
+                .service_class()
+                .is_none()
+        );
     }
     let mut wrong_owner = base;
     wrong_owner[1]["service_tier"] = json!("standard");

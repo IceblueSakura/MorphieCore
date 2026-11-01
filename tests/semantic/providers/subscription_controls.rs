@@ -123,7 +123,7 @@ fn native_request_directions_use_actual_subscription_bindings() {
                     .unwrap();
                 let mut expected = wire.clone();
                 expected["model"] = json!(binding.upstream);
-                expected["stream"] = json!(stream || grouped);
+                expected["stream"] = json!(true);
                 expected["input"][0] = json!({"role":"developer","content":"ordered"});
                 assert_eq!(actual, expected, "{}", binding.identity);
                 assert!(rules.is_empty());
@@ -188,7 +188,7 @@ fn response(grouped: bool, streamed: bool) -> DecodedResponse {
                         PartId::new(if streamed { 4 } else { 3 }),
                         ContentPart::Text(
                             TextContent::from(text("checking"))
-                                .with_logprobs(Presence::Value(vec![]))
+                                .with_logprobs(Some(vec![]))
                                 .unwrap(),
                         ),
                     )],

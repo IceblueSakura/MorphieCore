@@ -26,7 +26,7 @@ use morphiecore::{
             ContentPart, Continuation, GenerationResponse, Item, Outcome, PrefixCacheBoundary,
             StreamEvent,
         },
-        value::{Presence, ReplayOrigin, Text},
+        value::{ReplayOrigin, Text},
     },
 };
 use serde_json::Value;
@@ -324,7 +324,7 @@ async fn handle(State(state): State<Suite>, headers: HeaderMap, body: Bytes) -> 
                         ..
                     } => {
                         annotations.clear();
-                        *logprobs = Presence::Absent;
+                        *logprobs = None;
                     }
                     StreamEvent::AnnotationAdded { .. } | StreamEvent::LogprobsSnapshot { .. } => {
                         continue;

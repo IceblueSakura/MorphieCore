@@ -650,3 +650,149 @@ fn dashscope_reasoning_cannot_resume_after_text_or_call_publication() {
         assert!(d.finish().is_err());
     }
 }
+
+#[test]
+fn dialect_finish_reasons_have_independent_json_and_chunk_expectations() {
+    use morphiecore::protocol::{
+        CodecError,
+        openai::{Dialect, GenerationCodec},
+    };
+    use morphiecore::semantic::value::Text;
+    let other = |value| IncompleteReason::Other(Text::new(value, "fixture", 128).unwrap());
+    for (dialect, reason, expected) in [
+        (
+            Dialect::Zhipu,
+            "sensitive",
+            Ok(IncompleteReason::ContentFilter),
+        ),
+        (
+            Dialect::Zhipu,
+            "model_context_window_exceeded",
+            Ok(IncompleteReason::ContextWindowExceeded),
+        ),
+        (
+            Dialect::Xiaomi,
+            "repetition_truncation",
+            Ok(other("repetition_truncation")),
+        ),
+        (Dialect::DeepSeek, "aborted", Ok(other("aborted"))),
+        (Dialect::DeepSeek, "insufficient_system_resource", Err(503)),
+        (Dialect::Zhipu, "network_error", Err(502)),
+        (Dialect::OpenRouter, "error", Err(500)),
+    ] {
+        let codec = GenerationCodec::new(GenerationApi::Chat, dialect, None);
+        let complete = json!({"id":"r","object":"chat.completion","created":1,"model":"m",
+            "choices":[{"index":0,"message":{"role":"assistant","content":"partial"},"finish_reason":reason}]});
+        let chunk = |delta, finish| {
+            json!({"id":"r","object":"chat.completion.chunk","created":1,"model":"m",
+            "choices":[{"index":0,"delta":delta,"finish_reason":finish}]})
+        };
+        let json = codec.decode_response(complete.to_string().as_bytes());
+        let mut stream = codec.event_decoder();
+        stream
+            .push(&chunk(
+                json!({"role":"assistant","content":"partial"}),
+                Value::Null,
+            ))
+            .unwrap();
+        let terminal = stream.push(&chunk(json!({}), json!(reason)));
+        match expected {
+            Ok(expected) => {
+                let decoded = json.unwrap();
+                terminal.unwrap();
+                stream.done().unwrap();
+                let streamed = stream.materialize().unwrap();
+                for response in [&decoded, &streamed] {
+                    assert_eq!(
+                        response.semantic.outcome(),
+                        Outcome::Incomplete,
+                        "{dialect:?}/{reason}"
+                    );
+                    assert_eq!(
+                        response.semantic.details().incomplete.as_ref(),
+                        Some(&expected)
+                    );
+                    assert_eq!(
+                        response.semantic.items()[0].1.lifecycle(),
+                        Some(ItemLifecycle::Incomplete)
+                    );
+                    let Item::Message(message) = &response.semantic.items()[0].1 else {
+                        panic!("message");
+                    };
+                    let ContentPart::Text(text) = &message.parts[0].content else {
+                        panic!("text");
+                    };
+                    assert_eq!(text.as_str(), "partial");
+                }
+                let source = decoded.clone();
+                let view = lower_response(
+                    &decoded.semantic,
+                    &decoded.fidelity,
+                    &decoded.metadata,
+                    GenerationApi::Responses,
+                    Contract::full(),
+                )
+                .unwrap();
+                let wire = responses::encode_response(&view).unwrap();
+                assert_eq!(wire["status"], "incomplete");
+                if matches!(
+                    expected,
+                    IncompleteReason::Other(_) | IncompleteReason::ContextWindowExceeded
+                ) {
+                    assert_eq!(wire["incomplete_details"], json!({}));
+                } else {
+                    assert_eq!(
+                        wire["incomplete_details"],
+                        json!({"reason":"content_filter"})
+                    );
+                }
+                if matches!(expected, IncompleteReason::Other(_)) {
+                    assert!(view.projection().iter().any(|effect| effect.rule()
+                        == "responses.omit-unrepresented-incomplete-reason.v1"));
+                    assert_eq!(
+                        view.semantic().details().incomplete,
+                        Some(IncompleteReason::Unspecified)
+                    );
+                }
+                assert_eq!(decoded, source);
+            }
+            Err(status) => {
+                for error in [json.unwrap_err(), terminal.unwrap_err()] {
+                    let CodecError::StreamFailure(failure) = error else {
+                        panic!("{error:?}");
+                    };
+                    assert_eq!(failure.status_hint.unwrap().get(), status);
+                }
+                assert!(stream.done().is_err());
+            }
+        }
+        // Neither a foreign dialect alias nor an unclassified future label is
+        // a standard stop, token limit, cancellation or successful completion.
+        let standard = GenerationCodec::new(GenerationApi::Chat, Dialect::Standard, None);
+        assert!(
+            standard
+                .decode_response(complete.to_string().as_bytes())
+                .is_err()
+        );
+        let mut unknown = complete;
+        unknown["choices"][0]["finish_reason"] = json!("future_unknown");
+        assert!(
+            codec
+                .decode_response(unknown.to_string().as_bytes())
+                .is_err()
+        );
+        let mut unknown_stream = codec.event_decoder();
+        unknown_stream
+            .push(&chunk(
+                json!({"role":"assistant","content":"partial"}),
+                Value::Null,
+            ))
+            .unwrap();
+        assert!(
+            unknown_stream
+                .push(&chunk(json!({}), json!("future_unknown")))
+                .is_err()
+        );
+        assert!(unknown_stream.done().is_err());
+    }
+}

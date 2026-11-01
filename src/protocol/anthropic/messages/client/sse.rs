@@ -14,13 +14,12 @@ use crate::{
             InteractionProgress, ItemId, ItemKind, Outcome, PartId, PartKind, StreamEvent,
             StreamTerminal, UsageReport, UsageScope, UsageStage,
         },
-        value::Presence,
     },
 };
 use bytes::Bytes;
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet};
-mod schedule;
+pub(crate) mod schedule;
 
 enum OpenItem {
     Text,
@@ -48,7 +47,7 @@ pub struct ClientEventEncoder {
     seen_start: bool,
     finished: bool,
     rejected: bool,
-    service_class: Presence<ServiceClass>,
+    service_class: Option<ServiceClass>,
     open: BTreeMap<ItemId, OpenItem>,
     owners_seen: BTreeSet<ItemId>,
     text_parts: BTreeMap<(ItemId, PartId), usize>,
@@ -136,7 +135,7 @@ impl ClientEventEncoder {
             seen_start: false,
             finished: false,
             rejected: false,
-            service_class: Presence::Absent,
+            service_class: None,
             open: BTreeMap::new(),
             owners_seen: BTreeSet::new(),
             text_parts: BTreeMap::new(),
@@ -175,18 +174,15 @@ impl ClientEventEncoder {
         self.delivery_usage = delivery.and_then(|d| d.usage);
     }
     /// Messages reports the assigned service in opening usage, not a late delta.
-    pub fn update_service_class(
-        &mut self,
-        class: Presence<ServiceClass>,
-    ) -> Result<(), CodecError> {
+    pub fn update_service_class(&mut self, class: Option<ServiceClass>) -> Result<(), CodecError> {
         let result = (|| {
             if self.rejected || self.finished {
                 return Err(CodecError::invalid());
             }
-            if let Some(value) = class.value() {
+            if let Some(value) = class.as_ref() {
                 crate::protocol::anthropic::messages::service::class_wire(*value)?;
             }
-            if (self.started || self.seen_start || !self.service_class.is_absent())
+            if (self.started || self.seen_start || self.service_class.is_some())
                 && self.service_class != class
             {
                 return Err(CodecError::Unsupported(CarrierReason::Field(
@@ -238,10 +234,7 @@ impl ClientEventEncoder {
             }
         }
         if let Some(selected) = selected {
-            let wire = crate::protocol::anthropic::messages::accounting::wire(
-                &selected,
-                Presence::Absent,
-            )?;
+            let wire = crate::protocol::anthropic::messages::accounting::wire(&selected, None)?;
             if self.started {
                 if wire.cache_creation.value()
                     != self
@@ -430,18 +423,12 @@ impl ClientEventEncoder {
             StreamEvent::PartStarted {
                 item,
                 part,
-                kind: kind @ (PartKind::Text | PartKind::Refusal),
+                kind: PartKind::Text | PartKind::Refusal,
             } if self
                 .open
                 .get(item)
                 .is_some_and(|block| matches!(block, OpenItem::Text)) =>
             {
-                if *kind == PartKind::Refusal {
-                    let loss = super::projection::refusal_loss("event.encode");
-                    if !self.losses.contains(&loss) {
-                        self.losses.push(loss);
-                    }
-                }
                 let index = open_block(&mut self.next, out, json!({"type":"text","text":""}))?;
                 self.text_parts.insert((*item, *part), index);
             }
@@ -464,8 +451,7 @@ impl ClientEventEncoder {
                 return Err(CodecError::Unsupported(CarrierReason::Unavailable));
             }
             StreamEvent::TextMetadata { logprobs, .. }
-                if !logprobs.is_absent()
-                    && !matches!(logprobs, Presence::Value(probs) if probs.is_empty()) =>
+                if !logprobs.is_none() && !matches!(logprobs, Some(probs) if probs.is_empty()) =>
             {
                 return Err(CodecError::Unsupported(CarrierReason::Unavailable));
             }
@@ -648,13 +634,13 @@ impl ClientEventEncoder {
                 };
                 let mut details = details.clone();
                 details.validate(outcome)?;
-                if details.explanation.value().is_some() {
+                if details.explanation.as_ref().is_some() {
                     let loss = super::projection::explanation_loss("event.encode");
                     if !self.losses.contains(&loss) {
                         self.losses.push(loss);
                     }
                 }
-                details.explanation = Presence::Absent;
+                details.explanation = None;
                 let (stop, sequence) = crate::protocol::anthropic::messages::terminal::encode(
                     outcome,
                     self.progress,

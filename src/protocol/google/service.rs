@@ -4,17 +4,17 @@ use crate::{
         CodecError,
         failure::{CarrierReason, ShapeReason},
     },
-    semantic::{context::ServiceClass, value::Presence},
+    semantic::context::ServiceClass,
 };
 use serde_json::{Map, Value};
 
 pub(super) fn read(
     object: &Map<String, Value>,
     field: &'static str,
-) -> Result<Presence<ServiceClass>, CodecError> {
+) -> Result<Option<ServiceClass>, CodecError> {
     Ok(match object.get(field) {
-        None => Presence::Absent,
-        Some(Value::String(value)) => Presence::Value(match value.as_str() {
+        None | Some(Value::Null) => None,
+        Some(Value::String(value)) => Some(match value.as_str() {
             "standard" => ServiceClass::StandardProcessing,
             "flex" => ServiceClass::FlexibleProcessing,
             "priority" => ServiceClass::PriorityProcessing,

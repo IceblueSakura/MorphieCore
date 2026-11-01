@@ -311,7 +311,7 @@ pub fn check_event(
             probability_target(state, *item, *part, logprobs, profile, contract)?;
             if profile == GenerationApi::Chat {
                 let old = &state.part(*item, *part)?.logprobs;
-                if let Some(old) = old.value()
+                if let Some(old) = old.as_ref()
                     && old != logprobs
                 {
                     return Err(RepresentationError::TextMetadata);
@@ -332,19 +332,19 @@ pub fn check_event(
             {
                 return Err(RepresentationError::TextMetadata);
             }
-            if !logprobs.is_absent() {
+            if !logprobs.is_none() {
                 probability_target(
                     state,
                     *item,
                     *part,
-                    logprobs.value().map(Vec::as_slice).unwrap_or_default(),
+                    logprobs.as_ref().map(Vec::as_slice).unwrap_or_default(),
                     profile,
                     contract,
                 )?;
             }
             if profile == GenerationApi::Chat
-                && let Some(old) = state.part(*item, *part)?.logprobs.value()
-                && logprobs.value() != Some(old)
+                && let Some(old) = state.part(*item, *part)?.logprobs.as_ref()
+                && logprobs.as_ref() != Some(old)
             {
                 // A final snapshot cannot retract or rewrite facts already emitted to Chat.
                 return Err(RepresentationError::TextMetadata);

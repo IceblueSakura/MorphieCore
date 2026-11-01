@@ -1,9 +1,7 @@
 //! Client Messages delivery projection, named losses and JSON rendering.
 use crate::{
     protocol::{
-        CodecError, DecodedResponse,
-        anthropic::messages as wire,
-        failure::{CarrierReason, ShapeReason},
+        CodecError, DecodedResponse, anthropic::messages as wire, failure::CarrierReason,
         replay_envelope,
     },
     semantic::{task::generation::*, value::Presence},
@@ -188,10 +186,10 @@ pub(crate) fn project_metadata(
     for report in metadata.context.reports.iter_mut() {
         if report
             .service_class
-            .value()
+            .as_ref()
             .is_some_and(|class| wire::service::class_wire(*class).is_err())
         {
-            report.service_class = Presence::Absent;
+            report.service_class = None;
         }
         report.settings = None;
     }
@@ -199,75 +197,10 @@ pub(crate) fn project_metadata(
     metadata.context.execution = Default::default();
     metadata.context.instruction_messages = None;
     metadata.instruction_fidelity = Default::default();
-    metadata.context.system_fingerprint = Presence::Absent;
+    metadata.context.system_fingerprint = None;
     Ok(())
 }
 
-/// Retained content, metadata and accounting reflect the actual Messages carrier.
-pub(crate) fn project_snapshot(
-    response: &mut DecodedResponse,
-) -> Result<Vec<crate::protocol::conversion::generation::Effect>, CodecError> {
-    let mut losses = vec![];
-    let items = response
-        .semantic
-        .items()
-        .iter()
-        .filter_map(|(id, item)| {
-            if let Item::Reasoning(reasoning) = item
-                && project_reasoning(reasoning).is_err()
-            {
-                losses.push(reasoning_omission(*id, ("response.project").into()));
-                None
-            } else {
-                Some((*id, item.clone()))
-            }
-        })
-        .collect();
-    if !losses.is_empty() {
-        response.semantic = response.semantic.clone().with_items(items)?;
-    }
-    response.fidelity.retain_owners(response.semantic.items());
-    response.metadata.context.validate()?;
-    if !response.semantic.safety_reports().is_empty()
-        || response
-            .metadata
-            .context
-            .reports
-            .iter()
-            .any(|r| r.settings.as_ref().is_some_and(|s| !s.safety.is_empty()))
-    {
-        return Err(CodecError::Unsupported(CarrierReason::Safety));
-    }
-    project_metadata(&mut response.metadata)?;
-    let selected = match wire::accounting::project_reports(response.semantic.usage_reports()) {
-        Ok(selected) => selected,
-        Err(CodecError::Unsupported(_))
-            if response
-                .metadata
-                .delivery
-                .as_ref()
-                .is_some_and(|d| d.usage.is_some()) =>
-        {
-            UsageReports::default()
-        }
-        Err(error) => return Err(error),
-    };
-    if selected.operation().is_none()
-        && response
-            .metadata
-            .delivery
-            .as_ref()
-            .is_none_or(|d| d.usage.is_none())
-    {
-        return Err(CodecError::Invalid(ShapeReason::Usage));
-    }
-    response.semantic = response.semantic.clone().with_usage_reports(selected)?;
-    let mut details = response.semantic.details().clone();
-    details.validate(response.semantic.outcome())?;
-    details.explanation = Presence::Absent;
-    response.semantic = response.semantic.clone().with_details(details)?;
-    Ok(losses)
-}
 pub(crate) fn metadata_losses(
     metadata: &crate::protocol::ResponseMetadata,
 ) -> Vec<crate::protocol::conversion::generation::Effect> {
@@ -289,7 +222,7 @@ pub(crate) fn metadata_losses(
     }
     if metadata.context.reports.iter().any(|r| {
         r.service_class
-            .value()
+            .as_ref()
             .is_some_and(|class| wire::service::class_wire(*class).is_err())
     }) {
         losses.push(crate::protocol::conversion::generation::Effect::Field {
@@ -319,7 +252,7 @@ pub(crate) fn metadata_losses(
             owner: crate::protocol::conversion::generation::Owner::Root,
         });
     }
-    if metadata.context.system_fingerprint.value().is_some() {
+    if metadata.context.system_fingerprint.as_ref().is_some() {
         losses.push(crate::protocol::conversion::generation::Effect::Field {
             rule: crate::protocol::conversion::generation::RuleId::new(
                 "messages.omit-system-fingerprint.v1",
@@ -330,43 +263,6 @@ pub(crate) fn metadata_losses(
             owner: crate::protocol::conversion::generation::Owner::Root,
         });
     }
-    losses
-}
-/// Messages has no refusal content block; `stop_reason: "refusal"` reports classifier
-/// intervention, not a model-authored refusal message, so the text is kept as text.
-pub(crate) fn refusal_loss(
-    direction: &'static str,
-) -> crate::protocol::conversion::generation::Effect {
-    crate::protocol::conversion::generation::Effect::Field {
-        rule: crate::protocol::conversion::generation::RuleId::new("messages.refusal-as-text.v1"),
-        field: ("generation.content.refusal").into(),
-        boundary: (direction).into(),
-        change: ("approximate").into(),
-        owner: crate::protocol::conversion::generation::Owner::Root,
-    }
-}
-pub(crate) fn content_losses(
-    response: &GenerationResponse,
-) -> Vec<crate::protocol::conversion::generation::Effect> {
-    let mut losses = Vec::new();
-    if response.details().explanation.value().is_some() {
-        losses.push(explanation_loss("response.project"));
-    }
-    if wire::accounting::project_reports(response.usage_reports())
-        .is_ok_and(|selected| selected != *response.usage_reports())
-        && (response.usage_reports().has_details()
-            || response
-                .usage_reports()
-                .operation()
-                .is_some_and(|r| r.stage != UsageStage::Final))
-    {
-        losses.push(crate::protocol::usage::report_loss("response.project"));
-    }
-    let refusal = response.items().iter().any(|(_, item)| {
-        matches!(item, Item::Message(m)
-            if m.parts.iter().any(|p| matches!(p.content, ContentPart::Refusal(_))))
-    });
-    losses.extend(refusal.then(|| refusal_loss("response.project")));
     losses
 }
 pub(super) fn explanation_loss(
@@ -420,6 +316,7 @@ pub(super) fn tool_input(call: &ToolCall) -> Result<Value, CodecError> {
     }
     let input = match &call.arguments {
         ToolArguments::Structured(value) => value.clone(),
+        ToolArguments::Raw(raw) if raw.is_empty() => StructuredValue::new(serde_json::json!({}))?,
         ToolArguments::Raw(raw) => StructuredValue::from_bytes(raw.as_bytes())?,
         ToolArguments::StructuredPartial(_) => {
             return Err(CodecError::Unsupported(CarrierReason::Tools));

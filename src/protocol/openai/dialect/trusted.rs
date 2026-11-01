@@ -3,7 +3,7 @@
 use crate::{
     protocol::openai::{
         GenerationApi,
-        dialect::adaptation::{Adaptation, WireRules},
+        dialect::adaptation::{Adaptation, ChatFinishReason, WireRules},
     },
     semantic::value::ReplayOrigin,
 };
@@ -46,7 +46,6 @@ impl Dialect {
             Self::Siwc => (
                 "openai-responses",
                 WireRules {
-                    responses_forced_stream: true,
                     responses_siwc: true,
                     responses_access_programs: true,
                     responses_zero_tool_accounting: true,
@@ -82,6 +81,13 @@ impl Dialect {
             Self::DeepSeek => (
                 "deepseek-v1",
                 WireRules {
+                    chat_finish_reasons: &[
+                        (
+                            "insufficient_system_resource",
+                            ChatFinishReason::ResourceFailure,
+                        ),
+                        ("aborted", ChatFinishReason::Interrupted),
+                    ],
                     system_instruction_messages: true,
                     responses_developer_is_user: profile == GenerationApi::Responses,
                     parallel_tools_always_enabled: true,
@@ -97,6 +103,7 @@ impl Dialect {
             Self::OpenRouter => (
                 "openrouter-v1",
                 WireRules {
+                    chat_finish_reasons: &[("error", ChatFinishReason::ServerFailure)],
                     chat_video_url: true,
                     responses_input_video: true,
                     readable_reasoning: true,
@@ -185,6 +192,14 @@ impl Dialect {
             Self::Zhipu => (
                 "zhipu-v1",
                 WireRules {
+                    chat_finish_reasons: &[
+                        ("sensitive", ChatFinishReason::ContentFilter),
+                        (
+                            "model_context_window_exceeded",
+                            ChatFinishReason::ContextWindow,
+                        ),
+                        ("network_error", ChatFinishReason::NetworkFailure),
+                    ],
                     // Chat and Responses have different role and message-shape contracts.
                     // https://docs.bigmodel.cn/api-reference/模型-api/对话补全
                     // https://docs.bigmodel.cn/api-reference/response/创建-response
@@ -206,6 +221,7 @@ impl Dialect {
             Self::Xiaomi => (
                 "xiaomi-v1",
                 WireRules {
+                    chat_finish_reasons: &[("repetition_truncation", ChatFinishReason::Repetition)],
                     omit_image_detail: true,
                     readable_reasoning: true,
                     responses_unreported_text_logprobs: true,

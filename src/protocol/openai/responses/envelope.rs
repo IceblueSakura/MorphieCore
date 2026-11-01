@@ -243,7 +243,7 @@ impl ResponseContext {
             })?,
             // Responses wire has no `system_fingerprint` position; the field is
             // Chat-only and rejected on Responses bodies by `response_fields`.
-            system_fingerprint: crate::semantic::value::Presence::Absent,
+            system_fingerprint: None,
         };
         value.validate()?;
         Ok((value, fidelity))

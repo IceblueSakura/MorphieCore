@@ -25,7 +25,7 @@ fn index(o: &Map<String, Value>, key: &'static str) -> Result<usize, CodecError>
         .map(|n| n as usize)
         .ok_or(CodecError::invalid())
 }
-fn sync_replays(
+pub(crate) fn sync_replays(
     state: &StreamState,
     fidelity: &mut FidelityRecords,
     owner: Option<ItemId>,

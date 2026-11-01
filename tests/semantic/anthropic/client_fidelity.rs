@@ -222,11 +222,8 @@ fn empty_probability_reports_need_no_messages_carrier_or_loss() {
         let ContentPart::Text(text) = &message.parts[0].content else {
             unreachable!()
         };
-        message.parts[0].content = ContentPart::Text(
-            text.clone()
-                .with_logprobs(Presence::Value(probs.clone()))
-                .unwrap(),
-        );
+        message.parts[0].content =
+            ContentPart::Text(text.clone().with_logprobs(Some(probs.clone())).unwrap());
         source.semantic = source
             .semantic
             .with_items(items)
@@ -261,7 +258,7 @@ fn empty_probability_reports_need_no_messages_carrier_or_loss() {
                 item: ItemId::new(1),
                 part: PartId::new(1),
                 annotations: vec![],
-                logprobs: Presence::Value(probs.clone()),
+                logprobs: Some(probs.clone()),
             },
         ] {
             let mut stream = ClientEventEncoder::new("r", "m");
@@ -336,11 +333,10 @@ fn messages_empty_probabilities_preserve_null_and_refusal_boundaries() {
     use morphiecore::semantic::value::Text;
     for refusal in [false, true] {
         for (logprobs, allowed) in [
-            (Presence::Absent, true),
-            (Presence::Null, false),
-            (Presence::Value(vec![]), true),
+            (None, true),
+            (Some(vec![]), true),
             (
-                Presence::Value(vec![Logprob {
+                Some(vec![Logprob {
                     token: "answer".into(),
                     logprob: (-1).into(),
                     bytes: None,
@@ -1317,7 +1313,7 @@ fn messages_final_usage_requires_reported_counts_and_unambiguous_cache_categorie
         .reports
         .latest_mut()
         .expect("report")
-        .service_class = Presence::Value(ServiceClass::StandardCapacity);
+        .service_class = Some(ServiceClass::StandardCapacity);
     assert_eq!(
         encode_client_response(&response, "m").unwrap()["usage"]["service_tier"],
         "standard"
@@ -1334,21 +1330,18 @@ fn messages_final_usage_requires_reported_counts_and_unambiguous_cache_categorie
             .reports
             .latest_mut()
             .expect("report")
-            .service_class = Presence::Value(class);
+            .service_class = Some(class);
         assert!(matches!(encode_client_response(&wrong_service, "m"),
             Err(morphiecore::protocol::CodecError::Unsupported(reason))
                 if reason == morphiecore::protocol::failure::CarrierReason::Field(morphiecore::protocol::conversion::generation::Field::ServiceClass)));
     }
-    for terminal_class in [
-        Presence::Absent,
-        Presence::Value(ServiceClass::PriorityCapacity),
-    ] {
+    for terminal_class in [None, Some(ServiceClass::PriorityCapacity)] {
         let mut phased = response.clone();
         phased.metadata.context.reports =
             morphiecore::semantic::context::ResponseReports::Lifecycle {
                 opening: Some(Box::new(morphiecore::semantic::context::ResponseReport {
                     settings: None,
-                    service_class: Presence::Value(ServiceClass::StandardCapacity),
+                    service_class: Some(ServiceClass::StandardCapacity),
                 })),
                 terminal: Some(Box::new(morphiecore::semantic::context::ResponseReport {
                     settings: None,
@@ -1366,7 +1359,7 @@ fn messages_final_usage_requires_reported_counts_and_unambiguous_cache_categorie
     late_service.encode(&StreamEvent::Started).unwrap();
     assert!(
         late_service
-            .update_service_class(Presence::Value(ServiceClass::StandardCapacity))
+            .update_service_class(Some(ServiceClass::StandardCapacity))
             .is_err()
     );
     assert!(late_service.encode(&terminal()).is_err());
@@ -1414,7 +1407,7 @@ fn messages_final_usage_requires_reported_counts_and_unambiguous_cache_categorie
     assert_eq!(response, original);
     let mut stream = ClientEventEncoder::new("r", "m");
     stream
-        .update_service_class(response.metadata.context.service_class().clone())
+        .update_service_class(*response.metadata.context.service_class())
         .unwrap();
     let mut frames = stream.encode(&StreamEvent::Usage(usage)).unwrap();
     frames.extend(
@@ -1450,7 +1443,7 @@ fn messages_final_usage_requires_reported_counts_and_unambiguous_cache_categorie
         .reports
         .latest_mut()
         .expect("report")
-        .service_class = Presence::Absent;
+        .service_class = None;
     usage.input_cache_write_tokens = Some(1);
     response.semantic = response.semantic.with_usage(Some(usage)).unwrap();
     assert!(encode_client_response(&response, "m").is_err());
@@ -2114,7 +2107,7 @@ fn messages_rejects_citations_in_static_output_and_each_event_shape() {
         TextContent::new(
             morphiecore::semantic::value::Text::new(text.as_str(), "synthetic", 128).unwrap(),
             vec![annotation.clone()],
-            Presence::Absent,
+            None,
         )
         .unwrap(),
     );
@@ -2135,7 +2128,7 @@ fn messages_rejects_citations_in_static_output_and_each_event_shape() {
             item: ItemId::new(1),
             part: PartId::new(1),
             annotations: vec![annotation],
-            logprobs: Presence::Absent,
+            logprobs: None,
         },
     ] {
         let mut stream = ClientEventEncoder::new("r", "m");

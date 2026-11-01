@@ -16,7 +16,7 @@ use crate::{
     semantic::{
         context::{ResponseReport, ResponseReports},
         task::generation::*,
-        value::{JsonLimits, Presence, Text, parse_json},
+        value::{JsonLimits, Text, parse_json},
     },
     transport::sse::SseDecoder,
 };
@@ -262,7 +262,7 @@ impl GenerationSseDecoder {
             }
             self.emit(StreamEvent::SafetyReport(report), out)?;
             if blocked {
-                return self.terminal(Some(IncompleteReason::ContentFilter), Presence::Absent, out);
+                return self.terminal(Some(IncompleteReason::ContentFilter), None, out);
             }
         }
         let candidates = match o.get("candidates") {
@@ -315,11 +315,11 @@ impl GenerationSseDecoder {
         let explanation = match string(candidate, "finishMessage")
             .map_err(|_| invalid(ShapeReason::TerminalExplanation))?
         {
-            None => Presence::Absent,
+            None => None,
             Some(_) if reason.is_none() => {
                 return Err(invalid(ShapeReason::TerminalExplanation));
             }
-            Some(message) => Presence::Value(TerminalExplanation {
+            Some(message) => Some(TerminalExplanation {
                 text: Text::allowing_empty(
                     message,
                     "Gemini finishMessage",
@@ -741,7 +741,7 @@ impl GenerationSseDecoder {
     fn terminal(
         &mut self,
         incomplete: Option<IncompleteReason>,
-        explanation: Presence<TerminalExplanation>,
+        explanation: Option<TerminalExplanation>,
         out: &mut Vec<StreamEvent>,
     ) -> Result<(), SseError> {
         self.close(out)?;

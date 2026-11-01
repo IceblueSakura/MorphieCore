@@ -19,12 +19,9 @@ impl EventEncoder {
             "choices": [{"index": 0, "delta": delta, "finish_reason": finish}],
             "usage": null,
         });
-        put_presence(
-            value.as_object_mut().expect("object"),
-            "system_fingerprint",
-            &self.metadata.context.system_fingerprint,
-            |v| json!(v),
-        );
+        if let Some(fingerprint) = &self.metadata.context.system_fingerprint {
+            value["system_fingerprint"] = json!(fingerprint);
+        }
         crate::protocol::openai::service::write_class(
             value.as_object_mut().expect("object"),
             &crate::protocol::openai::lowering::projection::service_class_view(
@@ -55,20 +52,12 @@ impl EventEncoder {
                 part,
                 logprobs,
                 ..
-            } if !logprobs.is_empty() => (
-                *item,
-                *part,
-                crate::semantic::value::Presence::Value(logprobs.clone()),
-            ),
+            } if !logprobs.is_empty() => (*item, *part, Some(logprobs.clone())),
             StreamEvent::LogprobsSnapshot {
                 item,
                 part,
                 logprobs,
-            } => (
-                *item,
-                *part,
-                crate::semantic::value::Presence::Value(logprobs.clone()),
-            ),
+            } => (*item, *part, Some(logprobs.clone())),
             StreamEvent::TextMetadata {
                 item,
                 part,
@@ -78,8 +67,7 @@ impl EventEncoder {
             _ => return Ok(None),
         };
         let p = self.state()?.part(item, part)?;
-        if !matches!(event, StreamEvent::Delta { .. }) && (probs.is_absent() || p.logprobs == probs)
-        {
+        if !matches!(event, StreamEvent::Delta { .. }) && (probs.is_none() || p.logprobs == probs) {
             return Ok(None);
         }
         crate::protocol::openai::chat::logprobs::carrier(p.kind, &probs)
@@ -161,14 +149,15 @@ impl EventEncoder {
     }
     fn chat_terminal(&mut self) -> Result<Vec<Value>, CodecError> {
         let response = materialize(self.state()?)?;
-        let target = crate::protocol::openai::lowering::lower_response(
+        crate::protocol::openai::lowering::require_reported_facts(
             &response,
-            &self.fidelity,
             &self.metadata,
-            GenerationApi::Chat,
-            self.contract.clone(),
+            &self.contract,
         )
-        .map_err(|_| CodecError::Unsupported(CarrierReason::Terminal))?;
+        .map_err(|cause| CodecError::Representation {
+            boundary: crate::protocol::conversion::generation::ConversionBoundary::EventProject,
+            cause,
+        })?;
         let finish = crate::protocol::openai::terminal::chat_finish(&response)?;
         let mut chunks = vec![];
         chunks.push(self.chunk(json!({}), json!(finish)));
@@ -177,7 +166,7 @@ impl EventEncoder {
             .delivery
             .as_ref()
             .and_then(|d| d.usage)
-            .or_else(|| target.semantic().usage())
+            .or_else(|| response.usage())
         {
             let mut v = if self.contract.adaptation.rules.repeated_finish_usage {
                 self.chunk(json!({}), json!(finish))
@@ -198,11 +187,10 @@ impl EventEncoder {
             &self.fidelity,
             GenerationApi::Chat,
             &self.contract.adaptation,
-            target.semantic(),
+            &response,
             self.metadata.required_id()?,
             last.as_object_mut().expect("object"),
         );
-        super::record_stages(&mut self.projection, target.projection().iter().cloned());
         Ok(chunks)
     }
     pub(in crate::protocol::openai::events) fn chat(

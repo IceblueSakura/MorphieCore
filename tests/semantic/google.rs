@@ -8,10 +8,7 @@ use morphiecore::{
         openai::{Dialect, GenerationApi, GenerationCodec},
         stream::{SseError as WireFailure, SseLimits},
     },
-    semantic::{
-        task::generation::*,
-        value::{Presence, Text},
-    },
+    semantic::{task::generation::*, value::Text},
 };
 use serde_json::{Value, json};
 
@@ -387,7 +384,7 @@ fn stream_maps_thoughts_text_calls_and_owned_signatures() {
     let ContentPart::Text(content) = &message.parts[0].content else {
         panic!()
     };
-    let probabilities = content.logprobs().value().unwrap();
+    let probabilities = content.logprobs().as_ref().unwrap();
     assert_eq!(probabilities[0].token.as_str(), "Reading.");
     assert_eq!(probabilities[0].logprob.as_f64(), Some(-0.25));
     assert_eq!(probabilities[0].bytes, None);
@@ -481,8 +478,13 @@ fn stream_maps_thoughts_text_calls_and_owned_signatures() {
             morphiecore::protocol::openai::TargetContract::full()
         )
         .err()
-        .unwrap(),
-        morphiecore::protocol::conversion::generation::RepresentationError::Safety
+        .unwrap()
+        .cause,
+        morphiecore::protocol::ConversionCause::Codec(
+            morphiecore::protocol::CodecError::Unsupported(
+                morphiecore::protocol::failure::CarrierReason::Safety
+            )
+        )
     );
     let mut metadata = denied.metadata.clone();
     metadata.created = Some(1.into());
@@ -795,7 +797,7 @@ fn service_reports_map_only_concrete_processing_classes_and_keep_strict_updates(
         "candidates":[{"content":{"role":"model","parts":[{"text":"A"}]},"finishReason":"STOP"}],
         "usageMetadata":{"promptTokenCount":1,"candidatesTokenCount":2,"totalTokenCount":3}});
     let expected = decode(&wire(std::slice::from_ref(&base))).unwrap();
-    assert!(expected.metadata.context.service_class().is_absent());
+    assert!(expected.metadata.context.service_class().is_none());
     for (native, class) in [
         ("standard", ServiceClass::StandardProcessing),
         ("flex", ServiceClass::FlexibleProcessing),
@@ -804,10 +806,7 @@ fn service_reports_map_only_concrete_processing_classes_and_keep_strict_updates(
         let mut frame = base.clone();
         frame["usageMetadata"]["serviceTier"] = json!(native);
         let reported = decode(&wire(std::slice::from_ref(&frame))).unwrap();
-        assert_eq!(
-            reported.metadata.context.service_class(),
-            &Presence::Value(class)
-        );
+        assert_eq!(reported.metadata.context.service_class(), &Some(class));
         assert_eq!(reported.semantic, expected.semantic);
         let mut opening = frame.clone();
         opening["candidates"][0]
@@ -846,7 +845,6 @@ fn service_reports_map_only_concrete_processing_classes_and_keep_strict_updates(
         ));
     }
     for invalid in [
-        Value::Null,
         json!(false),
         json!("unspecified"),
         json!("deferred"),
@@ -856,6 +854,16 @@ fn service_reports_map_only_concrete_processing_classes_and_keep_strict_updates(
         frame["usageMetadata"]["serviceTier"] = invalid;
         assert!(decode(&wire(&[frame])).is_err());
     }
+    let mut unreported = base;
+    unreported["usageMetadata"]["serviceTier"] = Value::Null;
+    assert!(
+        decode(&wire(&[unreported]))
+            .unwrap()
+            .metadata
+            .context
+            .service_class()
+            .is_none()
+    );
 }
 
 #[test]
@@ -881,10 +889,10 @@ fn candidate_finish_explanations_are_bounded_observations_with_real_finish_reaso
             assert_eq!(observed.semantic.outcome(), outcome);
             assert_eq!(observed.semantic.details().incomplete, incomplete);
             assert!(observed.semantic.details().error.is_none());
-            assert!(observed.semantic.details().refusal.is_absent());
+            assert!(observed.semantic.details().refusal.is_none());
             assert_eq!(
                 observed.semantic.details().explanation,
-                Presence::Value(TerminalExplanation {
+                Some(TerminalExplanation {
                     text: Text::allowing_empty(message, "fixture", 128).unwrap(),
                 })
             );
@@ -979,7 +987,7 @@ fn optional_token_probability_is_not_a_reported_zero() {
         panic!("text")
     };
     assert_eq!(
-        text.logprobs().value().unwrap()[0].top_logprobs,
+        text.logprobs().as_ref().unwrap()[0].top_logprobs,
         Some(vec![
             TopLogprob {
                 token: Some("A".into()),
@@ -1020,7 +1028,7 @@ fn optional_token_probability_is_not_a_reported_zero() {
     let ContentPart::Text(text) = &message.parts[0].content else {
         panic!("text")
     };
-    let probability = &text.logprobs().value().unwrap()[0];
+    let probability = &text.logprobs().as_ref().unwrap()[0];
     assert_eq!(probability.logprob.as_f64(), Some(0.0));
     assert_eq!(probability.bytes, None);
 }

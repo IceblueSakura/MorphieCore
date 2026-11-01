@@ -306,8 +306,8 @@ mod native_bindings {
         let p = provider();
         let mut native = standard_native();
         let mut request = native_request();
-        request.context.store = Presence::Value(false);
-        request.context.background = Presence::Value(false);
+        request.context.store = Some(false);
+        request.context.background = Some(false);
         let original = request.clone();
         representable(&native, &request).unwrap();
         let prepared = prepare(&native, &p, &secret(), &request).unwrap();
@@ -368,7 +368,7 @@ mod native_bindings {
         ));
 
         let mut unsupported = request.clone();
-        unsupported.context.store = Presence::Null;
+        unsupported.context.store = Some(true);
         assert!(representable(&native, &unsupported).is_err());
         assert!(prepare(&native, &p, &secret(), &unsupported).is_err());
 
@@ -437,7 +437,7 @@ mod native_bindings {
     }
 
     #[test]
-    fn native_static_intake_waits_for_the_complete_body() {
+    fn qualified_native_intake_rejects_json_without_losing_codec_json_validation() {
         let native = standard_native();
         assert!(matches!(
             native.adapter().unwrap(),
@@ -445,21 +445,34 @@ mod native_bindings {
         ));
         let body = br#"{"id":"r","type":"message","role":"assistant","model":"synthetic-model","content":[{"type":"text","text":"answer"}],"stop_reason":"end_turn","usage":{"input_tokens":1,"output_tokens":2}}"#;
         let attempt = || Attempt::new(native.adapter().unwrap(), 4096, SseLimits::default());
-        for fragment in [1, 7, body.len()] {
-            let mut attempt = attempt();
-            attempt.begin(200, "application/json").unwrap();
-            for chunk in body.chunks(fragment) {
-                assert!(attempt.push(chunk).unwrap().1.is_empty());
-            }
-            assert!(attempt.response().is_err());
-            assert_eq!(attempt.finish().unwrap().metadata.created, None);
-        }
-        let mut trailing = attempt();
-        trailing.begin(200, "application/json").unwrap();
-        trailing.push(body).unwrap();
-        trailing.push(b"x").unwrap();
-        assert!(trailing.finish().is_err());
-        assert!(trailing.begin(200, "application/json").is_err());
+        let UpstreamAdapter::AnthropicMessages { profile, target } = native.adapter().unwrap()
+        else {
+            unreachable!()
+        };
+        let scope = morphiecore::semantic::task::generation::LocalScope::new(2);
+        assert_eq!(
+            profile
+                .decode_generation_response(body, scope, &target)
+                .unwrap()
+                .metadata
+                .created,
+            None
+        );
+        let mut trailing = body.to_vec();
+        trailing.push(b'x');
+        assert!(
+            profile
+                .decode_generation_response(&trailing, scope, &target)
+                .is_err()
+        );
+        let mut rejected = attempt();
+        assert!(matches!(
+            rejected.begin(200, "application/json"),
+            Err(morphiecore::execution::AttemptError::Protocol(
+                morphiecore::execution::attempt::ProtocolReason::UnexpectedResponseMediaType
+            ))
+        ));
+        assert!(rejected.begin(200, "text/event-stream").is_err());
         let mut empty_stream = attempt();
         empty_stream.begin(200, "text/event-stream").unwrap();
         assert!(empty_stream.finish().is_err());

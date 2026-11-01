@@ -352,8 +352,8 @@ impl EventDecoder {
                     &m.context.reports,
                     self.adaptation.rules.responses_lifecycle_reports,
                 )?;
-            } else if !old.context.service_class().is_absent() {
-                if !m.context.service_class().is_absent()
+            } else if !old.context.service_class().is_none() {
+                if !m.context.service_class().is_none()
                     && old.context.service_class() != m.context.service_class()
                 {
                     return Err(CodecError::Invalid(ShapeReason::Metadata));
@@ -362,10 +362,10 @@ impl EventDecoder {
                     .reports
                     .latest_mut()
                     .expect("single report")
-                    .service_class = old.context.service_class().clone();
+                    .service_class = *old.context.service_class();
             }
-            if !old.context.system_fingerprint.is_absent() {
-                if !m.context.system_fingerprint.is_absent()
+            if !old.context.system_fingerprint.is_none() {
+                if !m.context.system_fingerprint.is_none()
                     && old.context.system_fingerprint != m.context.system_fingerprint
                     && !self.adaptation.rules.chunk_metadata_drift
                 {

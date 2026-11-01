@@ -248,6 +248,10 @@ async fn produce(
                     }
                 }
                 trace.stage(Stage::Intake);
+            } else if !events.is_empty() {
+                delivery
+                    .observe_events(attempt, &events)
+                    .map_err(projection_failed(trace, ConversionBoundary::EventProject))?;
             }
         }
     }
@@ -480,7 +484,7 @@ pub(in crate::gateway) async fn produce_candidate(
     let is_stream = media.type_() == mime::TEXT && media.subtype() == "event-stream";
     let is_json = media.type_() == mime::APPLICATION
         && (media.subtype() == mime::JSON || media.suffix() == Some(mime::JSON));
-    let upstream_stream = stream || candidate.endpoint.representation.forced_stream();
+    let upstream_stream = stream || candidate.endpoint.protocol.requires_streaming_intake();
     #[cfg(test)]
     let upstream_stream = upstream_stream || limits.force_upstream_stream;
     if (upstream_stream && !is_stream) || (!upstream_stream && !is_json) {

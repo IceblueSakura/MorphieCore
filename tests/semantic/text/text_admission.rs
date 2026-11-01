@@ -44,11 +44,7 @@ fn known_unrepresentable_event_fields_and_changed_bound_metadata_fail_early() {
             fidelity::FidelityRecords,
             openai::{ResponseMetadata, events::EventEncoder},
         },
-        semantic::{
-            context::ServiceClass,
-            task::generation::*,
-            value::{Presence, Text},
-        },
+        semantic::{context::ServiceClass, task::generation::*, value::Text},
     };
     let metadata = ResponseMetadata {
         delivery: None,
@@ -96,7 +92,7 @@ fn known_unrepresentable_event_fields_and_changed_bound_metadata_fail_early() {
         .reports
         .latest_mut()
         .expect("report")
-        .service_class = Presence::Value(ServiceClass::StandardProcessing);
+        .service_class = Some(ServiceClass::StandardProcessing);
     let mut encoder = EventEncoder::new(GenerationApi::Chat, metadata.clone()).unwrap();
     encoder.encode(&StreamEvent::Started, &fidelity).unwrap();
     metadata
@@ -104,7 +100,7 @@ fn known_unrepresentable_event_fields_and_changed_bound_metadata_fail_early() {
         .reports
         .latest_mut()
         .expect("report")
-        .service_class = Presence::Value(ServiceClass::PriorityProcessing);
+        .service_class = Some(ServiceClass::PriorityProcessing);
     assert!(encoder.update_metadata(metadata).is_err());
     assert!(encoder.finish().is_err());
     use morphiecore::protocol::{

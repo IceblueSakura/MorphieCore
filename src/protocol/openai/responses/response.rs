@@ -110,7 +110,7 @@ pub fn encode(target: &ResponseRepresentation<'_>) -> Result<Value, CodecError> 
     }) {
         return Err(CodecError::Unsupported(CarrierReason::Unavailable));
     }
-    if !target.metadata.context.system_fingerprint.is_absent() {
+    if !target.metadata.context.system_fingerprint.is_none() {
         return Err(CodecError::Unsupported(CarrierReason::Unavailable));
     }
     check_response_carriers(&target.semantic)?;

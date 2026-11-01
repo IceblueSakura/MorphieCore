@@ -83,7 +83,7 @@ async fn same_provider_fallback_is_ordered_bounded_and_never_crosses_publication
                         let initial=json!({"type":"response.created","sequence_number":1,"response":{"object":"response","id":"r","model":"upstream-model","created_at":1,"status":"in_progress","output":[]}});
                         return ([("content-type","text/event-stream")],format!("event: response.created\ndata: {initial}\n\n")).into_response();
                     }
-                    Json(json!({"object":"response","id":"r","model":"upstream-model","created_at":1,"status":"completed","output":[{"type":"message","id":"msg","role":"assistant","status":"completed","content":[{"type":"output_text","text":"ok","annotations":[],"logprobs":[]}]}]})).into_response()
+                    ([("content-type","text/event-stream")], super::responses_wire::response_stream(json!({"object":"response","id":"r","model":"upstream-model","created_at":1,"status":"completed","output":[{"type":"message","id":"msg","role":"assistant","status":"completed","content":[{"type":"output_text","text":"ok","annotations":[],"logprobs":[]}]}]}))).into_response()
                 }
             }))).await.unwrap()
         });

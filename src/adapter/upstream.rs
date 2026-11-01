@@ -49,13 +49,10 @@ impl UpstreamAdapter {
         bytes: &[u8],
     ) -> Result<DecodedResponse, crate::protocol::ConversionFailure> {
         let result = match self {
-            Self::OpenAi(adapter) => adapter.decode_response(bytes),
-            Self::AnthropicMessages { profile, target } => {
-                profile.decode_generation_response(bytes, NATIVE_SCOPE, target)
+            Self::OpenAi(adapter) if adapter.protocol == GenerationApi::Chat => {
+                adapter.decode_response(bytes)
             }
-            Self::GoogleGenerateContent { .. } | Self::GoogleInteractions { .. } => {
-                Err(CodecError::Unsupported(CarrierReason::Unavailable))
-            }
+            _ => Err(CodecError::Unsupported(CarrierReason::Unavailable)),
         };
         result.map_err(|error: CodecError| {
             crate::protocol::ConversionFailure::from(error)
@@ -66,7 +63,7 @@ impl UpstreamAdapter {
         !matches!(self, Self::OpenAi(_))
     }
     pub(crate) fn accepts_json(&self) -> bool {
-        matches!(self, Self::OpenAi(_) | Self::AnthropicMessages { .. })
+        matches!(self, Self::OpenAi(adapter) if adapter.protocol == GenerationApi::Chat)
     }
     pub(crate) fn stream_decoder(
         &self,

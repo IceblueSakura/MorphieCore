@@ -66,13 +66,17 @@ pub fn subscription_response(namespaced: bool) -> Value {
             "input_tokens_details":{"cached_tokens":1,"cache_write_tokens":0},
             "output_tokens_details":{"reasoning_tokens":2}}})
 }
+/// Expand a terminal fixture independently of the production codecs.
+/// Readable message/reasoning parts are complete fixture values. In-progress
+/// owners remain open; in-progress call arguments remain unfinished prefixes.
 pub fn response_events(final_response: Value) -> Vec<Value> {
     let mut initial = final_response.clone();
     initial["status"] = json!("in_progress");
     initial["output"] = json!([]);
-    initial["usage"] = Value::Null;
-    if initial.get("completed_at").is_some() {
-        initial["completed_at"] = Value::Null;
+    for field in ["usage", "completed_at", "error", "incomplete_details"] {
+        if initial.get(field).is_some() {
+            initial[field] = Value::Null;
+        }
     }
     let mut events = vec![json!({"type":"response.created","response":initial})];
     for (index, item) in final_response["output"]
@@ -82,74 +86,125 @@ pub fn response_events(final_response: Value) -> Vec<Value> {
         .enumerate()
     {
         let id = item["id"].as_str().unwrap();
+        let kind = item["type"].as_str().unwrap();
+        let unfinished = item["status"] == "in_progress";
         let mut added = item.clone();
-        match item["type"].as_str().unwrap() {
+        added["status"] = json!("in_progress");
+        match kind {
             "reasoning" => {
-                added["status"] = json!("in_progress");
                 added["summary"] = json!([]);
                 added["content"] = json!([]);
-                added["encrypted_content"] = json!("synthetic-partial-token");
             }
             "custom_tool_call" => added["input"] = json!(""),
-            "function_call" => {
-                added["status"] = json!("in_progress");
-                added["arguments"] = json!("");
-            }
-            "message" => {
-                added["status"] = json!("in_progress");
-                added["content"] = json!([]);
-            }
-            _ => unreachable!(),
+            "function_call" => added["arguments"] = json!(""),
+            "message" => added["content"] = json!([]),
+            "function_call_output" | "custom_tool_call_output" => {}
+            _ => panic!("unsupported Responses fixture item: {kind}"),
         }
         events.push(json!({"type":"response.output_item.added","output_index":index,"item":added}));
-        match item["type"].as_str().unwrap() {
+        match kind {
             "reasoning" => {
-                events.push(json!({"type":"response.reasoning_summary_part.added","output_index":index,"item_id":id,"summary_index":0,"part":{"type":"summary_text","text":""}}));
-                events.push(json!({"type":"response.reasoning_summary_text.delta","output_index":index,"item_id":id,"summary_index":0,"delta":"Plan 🧪"}));
-                events.push(json!({"type":"response.reasoning_summary_text.done","output_index":index,"item_id":id,"summary_index":0,"text":"Plan 🧪"}));
-                events.push(json!({"type":"response.reasoning_summary_part.done","output_index":index,"item_id":id,"summary_index":0,"part":{"type":"summary_text","text":"Plan 🧪"}}));
-                // Readable reasoning has delta/done, not message content_part events.
-                events.push(json!({"type":"response.reasoning_text.delta","output_index":index,"item_id":id,"content_index":0,"delta":"Check"}));
-                events.push(json!({"type":"response.reasoning_text.done","output_index":index,"item_id":id,"content_index":0,"text":"Check"}));
+                for (part_index, part) in item["summary"].as_array().unwrap().iter().enumerate() {
+                    events.push(json!({"type":"response.reasoning_summary_part.added","output_index":index,"item_id":id,"summary_index":part_index,"part":{"type":"summary_text","text":""}}));
+                    events.push(json!({"type":"response.reasoning_summary_text.delta","output_index":index,"item_id":id,"summary_index":part_index,"delta":part["text"]}));
+                    events.push(json!({"type":"response.reasoning_summary_text.done","output_index":index,"item_id":id,"summary_index":part_index,"text":part["text"]}));
+                    events.push(json!({"type":"response.reasoning_summary_part.done","output_index":index,"item_id":id,"summary_index":part_index,"part":part}));
+                }
+                for (part_index, part) in item
+                    .get("content")
+                    .and_then(Value::as_array)
+                    .into_iter()
+                    .flatten()
+                    .enumerate()
+                {
+                    events.push(json!({"type":"response.reasoning_text.delta","output_index":index,"item_id":id,"content_index":part_index,"delta":part["text"]}));
+                    events.push(json!({"type":"response.reasoning_text.done","output_index":index,"item_id":id,"content_index":part_index,"text":part["text"]}));
+                }
             }
             "custom_tool_call" | "function_call" => {
-                let custom = item["type"] == "custom_tool_call";
-                let (stem, key) = if custom {
+                let (stem, key) = if kind == "custom_tool_call" {
                     ("custom_tool_call_input", "input")
                 } else {
                     ("function_call_arguments", "arguments")
                 };
                 events.push(json!({"type":format!("response.{stem}.delta"),"output_index":index,"item_id":id,"delta":item[key]}));
-                let mut done = json!({"type":format!("response.{stem}.done"),"output_index":index,"item_id":id});
-                done[key] = item[key].clone();
-                events.push(done);
+                if !unfinished {
+                    let mut done = json!({"type":format!("response.{stem}.done"),"output_index":index,"item_id":id});
+                    done[key] = item[key].clone();
+                    events.push(done);
+                }
             }
             "message" => {
-                let part = &item["content"][0];
-                let mut probabilities = part["logprobs"].clone();
-                for p in probabilities.as_array_mut().unwrap() {
-                    p.as_object_mut().unwrap().remove("bytes");
-                    for top in p["top_logprobs"].as_array_mut().unwrap() {
-                        top.as_object_mut().unwrap().remove("bytes");
+                for (part_index, part) in item["content"].as_array().unwrap().iter().enumerate() {
+                    let refusal = part["type"] == "refusal";
+                    let (stem, key) = if refusal {
+                        ("refusal", "refusal")
+                    } else {
+                        ("output_text", "text")
+                    };
+                    let opening = if refusal {
+                        json!({"type":"refusal","refusal":""})
+                    } else {
+                        json!({"type":"output_text","text":"","annotations":[]})
+                    };
+                    let mut probabilities = part
+                        .get("logprobs")
+                        .filter(|v| !v.is_null())
+                        .cloned()
+                        .unwrap_or_else(|| json!([]));
+                    for p in probabilities.as_array_mut().unwrap() {
+                        p.as_object_mut().unwrap().remove("bytes");
+                        for top in p["top_logprobs"].as_array_mut().unwrap() {
+                            top.as_object_mut().unwrap().remove("bytes");
+                        }
                     }
+                    events.push(json!({"type":"response.content_part.added","output_index":index,"item_id":id,"content_index":part_index,"part":opening}));
+                    events.push(json!({"type":format!("response.{stem}.delta"),"output_index":index,"item_id":id,"content_index":part_index,"delta":part[key],"logprobs":probabilities,"obfuscation":"synthetic-padding"}));
+                    for (annotation_index, annotation) in part
+                        .get("annotations")
+                        .and_then(Value::as_array)
+                        .into_iter()
+                        .flatten()
+                        .enumerate()
+                    {
+                        events.push(json!({"type":"response.output_text.annotation.added","output_index":index,"item_id":id,"content_index":part_index,"annotation_index":annotation_index,"annotation":annotation}));
+                    }
+                    let mut done = json!({"type":format!("response.{stem}.done"),"output_index":index,"item_id":id,"content_index":part_index,"logprobs":probabilities});
+                    done[key] = part[key].clone();
+                    events.push(done);
+                    events.push(json!({"type":"response.content_part.done","output_index":index,"item_id":id,"content_index":part_index,"part":part}));
                 }
-                events.push(json!({"type":"response.content_part.added","output_index":index,"item_id":id,"content_index":0,"part":{"type":"output_text","text":"","annotations":[]}}));
-                events.push(json!({"type":"response.output_text.delta","output_index":index,"item_id":id,"content_index":0,"delta":part["text"],"logprobs":probabilities,"obfuscation":"synthetic-padding"}));
-                for (annotation_index, annotation) in
-                    part["annotations"].as_array().unwrap().iter().enumerate()
-                {
-                    events.push(json!({"type":"response.output_text.annotation.added","output_index":index,"item_id":id,"content_index":0,"annotation_index":annotation_index,"annotation":annotation}));
-                }
-                events.push(json!({"type":"response.output_text.done","output_index":index,"item_id":id,"content_index":0,"text":part["text"],"logprobs":probabilities}));
-                events.push(json!({"type":"response.content_part.done","output_index":index,"item_id":id,"content_index":0,"part":part}));
             }
+            "function_call_output" | "custom_tool_call_output" => {}
             _ => unreachable!(),
         }
-        events.push(json!({"type":"response.output_item.done","output_index":index,"item":item}));
+        if !unfinished {
+            events
+                .push(json!({"type":"response.output_item.done","output_index":index,"item":item}));
+        }
     }
-    events.push(json!({"type":"response.completed","response":final_response}));
+    let terminal = match final_response["status"].as_str().unwrap() {
+        "completed" => "response.completed",
+        "incomplete" => "response.incomplete",
+        "failed" => "response.failed",
+        status => panic!("nonterminal Responses fixture: {status}"),
+    };
+    events.push(json!({"type":terminal,"response":final_response}));
     for (i, e) in events.iter_mut().enumerate() {
         e["sequence_number"] = json!(i);
     }
     events
+}
+
+#[allow(dead_code)]
+pub fn response_stream(response: Value) -> String {
+    response_events(response)
+        .iter()
+        .map(|event| {
+            format!(
+                "event: {}\ndata: {event}\n\n",
+                event["type"].as_str().unwrap()
+            )
+        })
+        .collect()
 }

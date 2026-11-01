@@ -167,7 +167,7 @@ impl super::Message {
             context: crate::semantic::context::ResponseContext {
                 reports: crate::semantic::context::ResponseReports::single(
                     crate::semantic::context::ResponseReport {
-                        service_class: self.usage.service_class.clone(),
+                        service_class: self.usage.service_class,
                         ..Default::default()
                     },
                 ),

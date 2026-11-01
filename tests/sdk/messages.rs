@@ -583,7 +583,8 @@ fn cross_protocol(seen: &Mutex<usize>, body: &[u8], wire: &Value) -> Response {
             "function":{"name":"lookup","arguments":"{\"n\":7}"}}]}),
             Value::Null,
         ),
-        chunk(json!({}), json!("tool_calls")),
+        // A Chat stop beside calls is the selected equivalent tool-use terminal.
+        chunk(json!({}), json!("stop")),
         json!({"id":"cross","object":"chat.completion.chunk","created":1,"model":"synthetic",
             "choices":[],"usage":{"prompt_tokens":2,"completion_tokens":3,"total_tokens":5,
                 "prompt_tokens_details":{"cached_tokens":0}}}),

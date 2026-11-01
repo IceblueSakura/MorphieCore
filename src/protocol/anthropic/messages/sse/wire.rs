@@ -155,7 +155,7 @@ impl MessageSseDecoder {
                 self.charge(
                     message.id.len()
                         + message.model.len()
-                        + message.stop_details.value().map_or(0, |d| d.bytes()),
+                        + message.stop_details.as_ref().map_or(0, |d| d.bytes()),
                 )?;
                 self.message = Some(message);
             }
@@ -290,15 +290,15 @@ impl MessageSseDecoder {
                     .as_ref()
                     .ok_or_else(invalid)?
                     .stop_details
-                    .value()
+                    .as_ref()
                     .map_or(0, |d| d.bytes());
-                let new = stop_details.value().map_or(0, |d| d.bytes());
+                let new = stop_details.as_ref().map_or(0, |d| d.bytes());
                 self.charge(new.saturating_sub(old))?;
                 let message = self.message.as_mut().ok_or_else(invalid)?;
                 self.ending = true;
                 message.input_transformations |= input_transformations;
-                if !stop_details.is_absent() {
-                    if message.stop_details.value().is_some()
+                if stop_details.is_some() {
+                    if message.stop_details.as_ref().is_some()
                         && message.stop_details != stop_details
                     {
                         return Err(CodecError::invalid().into());

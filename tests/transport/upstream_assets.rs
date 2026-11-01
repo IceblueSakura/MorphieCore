@@ -324,10 +324,7 @@ fn vercel_google_stream_preserves_content_and_source_accounting() {
 
 #[test]
 fn interactions_allows_first_service_tier_report_at_terminal() {
-    use morphiecore::semantic::{
-        context::{ReportPhase, ServiceClass},
-        value::Presence,
-    };
+    use morphiecore::semantic::context::{ReportPhase, ServiceClass};
     let target = ReplayTarget::new("public-fixture", "gemini-2.5-flash").unwrap();
     let bytes = jsonl_sse("vercel/interactions-basic.jsonl", Some("event_type"));
     for chunk in [1, 23, 8192] {
@@ -343,7 +340,7 @@ fn interactions_allows_first_service_tier_report_at_terminal() {
         assert!(reports.at(ReportPhase::Opening).is_none());
         assert_eq!(
             reports.at(ReportPhase::Terminal).unwrap().service_class,
-            Presence::Value(ServiceClass::StandardProcessing)
+            Some(ServiceClass::StandardProcessing)
         );
         assert_eq!(
             text(&attempt),

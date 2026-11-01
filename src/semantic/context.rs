@@ -170,9 +170,9 @@ pub struct ExecutionHints {
     pub cache: CacheHints,
     pub identity: ClientIdentityHints,
     pub metadata: Presence<BTreeMap<String, String>>,
-    pub max_tool_calls: Presence<u64>,
-    pub store: Presence<bool>,
-    pub background: Presence<bool>,
+    pub max_tool_calls: Option<u64>,
+    pub store: Option<bool>,
+    pub background: Option<bool>,
 }
 
 pub(crate) fn validate_metadata(
@@ -227,11 +227,11 @@ impl ExecutionHints {
     pub fn validate(&self) -> Result<(), ContextError> {
         self.cache.validate()?;
         self.identity.validate()?;
-        if self.store == Presence::Value(true) || self.background == Presence::Value(true) {
+        if self.store == Some(true) || self.background == Some(true) {
             return Err(ContextError::Stateful);
         }
         validate_metadata(self.metadata.value())?;
-        if self.max_tool_calls == Presence::Value(0) {
+        if self.max_tool_calls == Some(0) {
             return Err(ContextError::Invalid(ContextReason::MaxToolCalls));
         }
         Ok(())
@@ -276,23 +276,21 @@ pub struct ResponseContext {
     pub execution: ExecutionHints,
     pub completed_at: Presence<serde_json::Number>,
     pub cache_diagnostics: Presence<CacheDiagnostics>,
-    pub system_fingerprint: Presence<String>,
+    pub system_fingerprint: Option<String>,
 }
 impl ResponseContext {
     pub fn settings(&self) -> Option<&super::task::generation::GenerationSettings> {
         self.reports.latest().and_then(|r| r.settings.as_ref())
     }
-    pub fn service_class(&self) -> &Presence<ServiceClass> {
-        self.reports
-            .latest()
-            .map_or(&Presence::Absent, |r| &r.service_class)
+    pub fn service_class(&self) -> &Option<ServiceClass> {
+        self.reports.latest().map_or(&None, |r| &r.service_class)
     }
     pub fn validate(&self) -> Result<(), ContextError> {
         use super::task::generation::{GenerationControls, GenerationRequest, Item};
         self.execution.validate()?;
         if self
             .system_fingerprint
-            .value()
+            .as_ref()
             .is_some_and(|s| s.is_empty() || s.len() > 256)
         {
             return Err(ContextError::Invalid(ContextReason::SystemFingerprint));

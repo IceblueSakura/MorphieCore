@@ -577,7 +577,7 @@ impl EventDecoder {
                 &mut Items::new(DecodeDirection::Upstream),
             )?;
             if !text.annotations().is_empty()
-                || text.logprobs().value().is_some_and(|v| !v.is_empty())
+                || text.logprobs().as_ref().is_some_and(|v| !v.is_empty())
             {
                 return Err(CodecError::Invalid(ShapeReason::Probabilities));
             }
@@ -787,7 +787,7 @@ impl EventDecoder {
         if kind == PartKind::Text
             && !o.contains_key("logprobs")
             && (!self.adaptation.rules.responses_unreported_text_logprobs
-                || !self.state()?.part(item, part)?.logprobs.is_absent())
+                || !self.state()?.part(item, part)?.logprobs.is_none())
         {
             return Err(CodecError::Invalid(ShapeReason::Probabilities));
         }
@@ -799,7 +799,7 @@ impl EventDecoder {
             // The required empty event array is not an optional static report.
             // A later content-part snapshot owns explicit empty probability presence.
             if !probabilities.is_empty()
-                || self.state()?.part(item, part)?.logprobs.value().is_some()
+                || self.state()?.part(item, part)?.logprobs.as_ref().is_some()
             {
                 self.emit(
                     StreamEvent::LogprobsSnapshot {

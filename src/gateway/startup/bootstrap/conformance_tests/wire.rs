@@ -1033,7 +1033,9 @@ pub(super) fn assert_history(
     bailian: bool,
 ) {
     let history = body[api.history()].as_array().unwrap();
-    if let Some(shape) = shape {
+    if let Some(shape) =
+        shape.filter(|shape| !(client == Api::Chat && *shape == ReasoningShape::Signed))
+    {
         assert_reasoning(api, shape, body, true, true);
     }
     if profile == Profile::Text {
@@ -1187,6 +1189,15 @@ pub(super) fn assert_history(
                 assert_eq!(
                     item["summary"],
                     json!([{"type":"summary_text","text":"Plan 🧪"}])
+                );
+            }
+            (Api::Messages, Api::Chat) => {
+                assert!(
+                    history
+                        .iter()
+                        .flat_map(|item| item["content"].as_array().into_iter().flatten())
+                        .all(|part| part["type"] != "thinking"
+                            && part["type"] != "redacted_thinking")
                 );
             }
             (Api::Messages, _) => assert_reasoning(api, ReasoningShape::Signed, body, true, true),

@@ -59,13 +59,6 @@ pub(crate) fn decode_with(
     if c.get("index").and_then(Value::as_u64) != Some(0) {
         return Err(CodecError::Unsupported(CarrierReason::Unavailable));
     }
-    let outcome = match string(c, "finish_reason")? {
-        "stop" | "tool_calls" => Outcome::Completed,
-        "length" | "content_filter" => Outcome::Incomplete,
-        _ => {
-            return Err(CodecError::Unsupported(CarrierReason::Unavailable));
-        }
-    };
     let message = object(c.get("message").ok_or(CodecError::invalid())?)?;
     let mut b = Items::new(DecodeDirection::Upstream);
     chat::items::decode_whole(
@@ -75,6 +68,18 @@ pub(crate) fn decode_with(
         chat::items::MessageSide::Output,
     )?;
     crate::protocol::openai::chat::logprobs::attach(&mut b.items, c.get("logprobs"))?;
+    let (terminal, details) = decode_chat_finish(
+        string(c, "finish_reason")?,
+        adaptation,
+        b.items
+            .iter()
+            .any(|(_, item)| matches!(item, Item::ToolCall(_) | Item::CustomCall(_))),
+    )?;
+    let outcome = if terminal == StreamTerminal::Completed {
+        Outcome::Completed
+    } else {
+        Outcome::Incomplete
+    };
     if matches!(outcome, Outcome::Incomplete) {
         for (_, item) in &mut b.items {
             match item {
@@ -105,29 +110,7 @@ pub(crate) fn decode_with(
     let semantic = GenerationResponse::from_resources(b.items, outcome, b.resources)?
         .with_usage(usage)?
         .with_message_envelopes(groups)?
-        .with_details(if outcome == Outcome::Incomplete {
-            TerminalDetails {
-                error: None,
-                completion: None,
-                incomplete: Some(if c["finish_reason"] == "content_filter" {
-                    IncompleteReason::ContentFilter
-                } else {
-                    IncompleteReason::MaxOutputTokens
-                }),
-                ..Default::default()
-            }
-        } else {
-            TerminalDetails {
-                completion: (c["finish_reason"] == "stop")
-                    .then_some(CompletionCause::NaturalOrStopSequence),
-                ..Default::default()
-            }
-        })?;
-    // Chat's finish label must agree with content even though response outcome
-    // no longer encodes a call/no-call distinction.
-    if chat_finish(&semantic)? != string(c, "finish_reason")? {
-        return Err(CodecError::invalid());
-    }
+        .with_details(details)?;
     let metadata = context::metadata(
         o,
         GenerationApi::Chat,
@@ -212,12 +195,9 @@ pub fn encode(target: &ResponseRepresentation<'_>) -> Result<Value, CodecError> 
         &m.context.execution.metadata,
         |v| json!(v),
     );
-    put_presence(
-        value.as_object_mut().expect("object"),
-        "system_fingerprint",
-        &m.context.system_fingerprint,
-        |v| json!(v),
-    );
+    if let Some(fingerprint) = &m.context.system_fingerprint {
+        value["system_fingerprint"] = json!(fingerprint);
+    }
     crate::protocol::openai::service::write_class(
         value.as_object_mut().expect("object"),
         m.context.service_class(),

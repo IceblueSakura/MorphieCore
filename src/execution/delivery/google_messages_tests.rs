@@ -333,14 +333,7 @@ fn google_messages_terminals_keep_source_facts_and_ordered_calls() {
                 assert_eq!(losses.len(), usize::from(rule.is_some()));
                 if let Some(rule) = rule {
                     assert_eq!(losses[0].rule(), rule);
-                    assert_eq!(
-                        losses[0].boundary().as_str(),
-                        if stream {
-                            "event.project"
-                        } else {
-                            "response.project"
-                        }
-                    );
+                    assert_eq!(losses[0].boundary().as_str(), "event.project");
                 }
                 assert_eq!(attempt.response().unwrap(), &original);
                 assert_eq!(attempt.terminal_event().unwrap(), &original_terminal);
@@ -398,10 +391,7 @@ fn google_finish_explanation_omission_keeps_incomplete_source_and_requires_recei
                 original.semantic.details().incomplete,
                 Some(IncompleteReason::MaxOutputTokens)
             );
-            assert!(matches!(
-                original.semantic.details().explanation,
-                Presence::Value(_)
-            ));
+            assert!(original.semantic.details().explanation.is_some());
             if stream {
                 output.extend(
                     delivery
@@ -422,7 +412,7 @@ fn google_finish_explanation_omission_keeps_incomplete_source_and_requires_recei
                     .encode_json_snapshot(&attempt)
                     .map(|(response, batch)| (response, batch.into_bytes().concat()))
                     .unwrap();
-                assert!(retained.semantic.details().explanation.is_absent());
+                assert!(retained.semantic.details().explanation.is_none());
                 let value: Value = serde_json::from_slice(&bytes).unwrap();
                 match client.protocol() {
                     ClientProtocol::Messages => assert_eq!(value["stop_reason"], "max_tokens"),
@@ -445,22 +435,11 @@ fn google_finish_explanation_omission_keeps_incomplete_source_and_requires_recei
                 .filter(|l| l.rule() == rule)
                 .collect();
             assert_eq!(reports.len(), 1);
-            assert_eq!(
-                reports[0].boundary().as_str(),
-                if stream {
-                    if client.protocol() == ClientProtocol::Messages {
-                        "event.encode"
-                    } else {
-                        "event.project"
-                    }
-                } else {
-                    "response.project"
-                }
-            );
+            assert_eq!(reports[0].boundary().as_str(), "event.project");
             assert_eq!(reports[0].change().as_str(), "omit");
             if stream {
                 let (retained, _) = delivery.snapshot(&attempt).unwrap();
-                assert!(retained.semantic.details().explanation.is_absent());
+                assert!(retained.semantic.details().explanation.is_none());
             }
             assert_eq!(attempt.response().unwrap(), &original);
         }
@@ -521,7 +500,7 @@ fn google_service_reports_keep_processing_meaning_and_omit_uncarried_capacity_re
                 }
                 assert_eq!(
                     original.metadata.context.service_class(),
-                    &Presence::Value(crate::semantic::context::ServiceClass::PriorityProcessing)
+                    &Some(crate::semantic::context::ServiceClass::PriorityProcessing)
                 );
                 let mut incompatible = delivery(&endpoint, &request);
                 let wire: Value =
@@ -677,12 +656,18 @@ fn google_messages_projection_requires_context_and_never_repairs_failure() {
                 delivery(&selected, &request)
             };
             assert!(d.messages_terminal.is_none());
-            if guard == "disabled" {
+            if guard == "disabled" || guard == "stops" {
                 // Generic call-free derivation uses admitted request context;
                 // the Google-only flag still owns its separate tool-stop rule.
                 let wire: serde_json::Value =
                     serde_json::from_slice(&d.encode_json(&attempt).unwrap()).unwrap();
                 assert_eq!(wire["stop_reason"], "end_turn");
+                assert_eq!(
+                    d.effects()
+                        .iter()
+                        .any(|effect| effect.rule() == "messages.ambiguous-stop-as-end-turn.v1"),
+                    guard == "stops"
+                );
                 continue;
             }
             let error = d.encode_json(&attempt).unwrap_err();

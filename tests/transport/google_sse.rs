@@ -181,20 +181,29 @@ fn signed_text_and_partial_outputs_keep_replay_and_terminal_contracts() {
 }
 
 #[test]
-fn native_thought_replay_remains_protected_without_a_signature() {
+fn uncarried_native_thought_omission_keeps_visible_incomplete_text() {
     // The native codec retains thought provenance as replay even without a signature.
     // Truly unsigned late reasoning is covered by the Responses projection control.
     let late_thought =
         incomplete_frames(json!([{"text":"Reading."},{"text":"Plan","thought":true}]));
     for stream in [false, true] {
-        let error = deliver(&late_thought, GenerationApi::Chat, stream).unwrap_err();
-        assert!(
-            error.representation() == Some(&morphiecore::protocol::conversion::generation::RepresentationError::ReplayFormat)
-                || error.codec() == Some(&morphiecore::protocol::CodecError::Unsupported(
-                    morphiecore::protocol::failure::CarrierReason::Replay
-                )),
-            "{error:?}"
-        );
+        let body = deliver(&late_thought, GenerationApi::Chat, stream).unwrap();
+        if stream {
+            let body = body.as_str().unwrap();
+            assert!(body.contains("Reading."));
+            assert!(body.contains("\"finish_reason\":\"length\""));
+            assert!(body.contains("[DONE]"));
+            assert!(!body.contains("Plan"));
+            assert!(
+                !body.contains("\"reasoning_content\"") && !body.contains("\"reasoning_details\"")
+            );
+        } else {
+            assert_eq!(
+                body["choices"][0]["message"],
+                json!({"role":"assistant","content":"Reading."})
+            );
+            assert_eq!(body["choices"][0]["finish_reason"], "length");
+        }
     }
     assert!(deliver(&late_thought, GenerationApi::Responses, false).is_ok());
 }

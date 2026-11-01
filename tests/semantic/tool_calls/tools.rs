@@ -509,8 +509,11 @@ fn program_items_have_no_chat_projection() {
             &metadata(),
             GenerationApi::Chat,
             Contract::full()
-        ),
-        Err(RepresentationError::Tools)
+        )
+        .map_err(|error| error.cause),
+        Err(morphiecore::protocol::ConversionCause::Representation(
+            RepresentationError::Tools
+        ))
     ));
     let mut e = events::EventEncoder::new(GenerationApi::Chat, metadata()).unwrap();
     assert!(

@@ -104,6 +104,8 @@ def run(base_url: str) -> None:
             for turn in (1, 2):
                 params = dict(model="public-model", input=history, instructions="Answer precisely",
                               store=False, tools=tools, tool_choice="auto" if turn == 1 else "none",
+                              metadata={"case": "begin-stream" if stream else "begin-json",
+                                        "delivery": "stream" if stream else "json"},
                               reasoning={"summary": "auto" if turn == 1 else None})
                 if turn == 2:
                     params["text"] = {"format": {"type": "json_schema", "name": "answer",
@@ -154,7 +156,7 @@ def run(base_url: str) -> None:
         # Sparse upstream settings/details still produce a complete public schema.
         for stream in (False, True):
             params = dict(model="public-model", input="lookup", store=False,
-                          metadata={"case": "empty-owner"},
+                          metadata={"case": "empty-owner", "delivery": "stream" if stream else "json"},
                           tools=[{"type": "function", **function}])
             if stream:
                 completed = 0
@@ -185,7 +187,7 @@ def run(base_url: str) -> None:
             requests += 1
             completed = 0
             params = dict(model="public-model", input="lookup",
-                          metadata={"case": "nonstandard-usage"})
+                          metadata={"case": "nonstandard-usage", "delivery": "stream" if stream else "json"})
             if stream:
                 with client.responses.stream(**params) as events:
                     for event in events:
@@ -200,7 +202,8 @@ def run(base_url: str) -> None:
         # Requested final usage remains present when upstream accounting is absent.
         for chat in (False, True):
             for streamed in (False, True):
-                params = dict(model="public-model", metadata={"case": "missing-usage"})
+                params = dict(model="public-model", metadata={"case": "missing-usage",
+                              "delivery": "stream" if streamed else "json"})
                 if chat:
                     params["messages"] = [{"role": "user", "content": "lookup"}]
                     if streamed:
@@ -286,7 +289,7 @@ def run_messages(base_url):
         ) as client:
             for model in ("public-model", "cross-model"):
                 for stream in (False, True):
-                    history = [{"role": "user", "content": "begin"}]
+                    history = [{"role": "user", "content": "begin-stream" if stream else "begin-json"}]
                     for _ in range(2):
                         params = dict(model=model, max_tokens=32, messages=history)
                         if stream:

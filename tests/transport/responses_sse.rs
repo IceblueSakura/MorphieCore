@@ -414,9 +414,7 @@ fn rejected_metadata_update_poisoned_stream_cannot_emit_success() {
         .reports
         .latest_mut()
         .expect("report")
-        .service_class = morphiecore::semantic::value::Presence::Value(
-        morphiecore::semantic::context::ServiceClass::PriorityProcessing,
-    );
+        .service_class = Some(morphiecore::semantic::context::ServiceClass::PriorityProcessing);
     assert!(encoder.update_metadata(changed).is_err());
     assert!(encoder.finish().is_err());
 }

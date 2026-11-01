@@ -1,6 +1,6 @@
 //! Target-only projection of native Messages facts onto the OpenAI client carriers.
 use crate::{
-    protocol::{CodecError, DecodedResponse, failure::CarrierReason, openai::GenerationApi},
+    protocol::{CodecError, openai::GenerationApi},
     semantic::task::generation::*,
 };
 mod events;
@@ -24,7 +24,7 @@ fn envelope_loss(profile: GenerationApi, direction: &'static str) -> Effect {
         owner: crate::protocol::conversion::generation::Owner::Root,
     }
 }
-fn usage_loss(
+pub(crate) fn usage_loss(
     before: Option<Usage>,
     after: Option<Usage>,
     direction: &'static str,
@@ -118,7 +118,7 @@ fn usage_loss(
     effects
 }
 
-fn client_usage(usage: Usage) -> Result<Option<Usage>, CodecError> {
+pub(crate) fn client_usage(usage: Usage) -> Result<Option<Usage>, CodecError> {
     usage.validate()?;
     // An uncalibrated total relation cannot become OpenAI's exact sum contract.
     if usage.input_relation == InputTokenRelation::IncludesCache {
@@ -146,254 +146,30 @@ fn client_usage(usage: Usage) -> Result<Option<Usage>, CodecError> {
     )
 }
 
-/// The caller supplies a private delivery copy; the native observation stays intact.
-/// Container boundaries are omitted, object arguments are serialized exactly, and
-/// stop progress is represented by OpenAI outcome plus the preserved tool calls.
-pub(crate) fn project(
-    decoded: &mut DecodedResponse,
-    profile: GenerationApi,
-) -> Result<Vec<Effect>, CodecError> {
-    project_inner(decoded, profile, true)
-}
-
-/// Apply the selected Chat grouping without normalizing native accounting or
-/// progress. A phase is not permission to discard unrelated reported facts.
-pub(crate) fn group_chat(
-    decoded: &mut DecodedResponse,
-    policy: super::ReportedFactPolicy,
-) -> Result<Vec<Effect>, crate::protocol::ConversionFailure> {
-    // Project before grouping: per-source-owner status and evidence would
-    // otherwise disappear into the shared Chat carrier.
-    let mut effects = vec![];
-    if let Some((view, losses)) = super::projection::chat_text_status(&decoded.semantic, policy)? {
-        decoded.semantic = view;
-        effects = losses;
-    }
-    let messages: Vec<_> = decoded
-        .semantic
-        .items()
-        .iter()
-        .filter_map(|(_, item)| {
-            if let Item::Message(message) = item {
-                Some(message)
-            } else {
-                None
-            }
-        })
-        .collect();
-    // A native Chat text+audio message already has exact independent carriers.
-    // Only enter concatenation for multiple message/text owners.
-    if messages.len() <= 1
-        && messages.iter().all(|m| {
-            m.parts
-                .iter()
-                .filter(|p| !matches!(p.content, ContentPart::Audio(_)))
-                .count()
-                <= 1
-        })
-    {
-        return Ok(effects);
-    }
-    effects.extend(project_inner(decoded, GenerationApi::Chat, false)?);
-    Ok(effects)
-}
-
-fn project_inner(
-    decoded: &mut DecodedResponse,
-    profile: GenerationApi,
-    native: bool,
-) -> Result<Vec<Effect>, CodecError> {
-    let source = &decoded.semantic;
-    let attached = source
-        .items()
-        .iter()
-        .any(|(_, item)| item.has_replay_attachment())
-        || profile == GenerationApi::Chat && crate::protocol::phase::has_phase(source.items());
-    match source.progress() {
-        InteractionProgress::Unreported | InteractionProgress::TurnFinished => {}
-        InteractionProgress::AwaitingToolResults
-            if source
-                .items()
-                .iter()
-                .any(|(_, item)| matches!(item, Item::ToolCall(_) | Item::CustomCall(_))) => {}
-        _ => {
-            return Err(CodecError::Unsupported(CarrierReason::Unavailable));
-        }
-    }
-    let mut items = source.items().to_vec();
-    for (_, item) in &mut items {
-        if let Item::ToolCall(call) = item {
-            match &call.arguments {
-                ToolArguments::Structured(value) => {
-                    call.arguments = ToolArguments::Raw(
-                        serde_json::to_string(value.value()).map_err(|_| CodecError::invalid())?,
-                    );
-                }
-                // Generated arguments are a string carrier, not executable input.
-                // Preserve an incomplete prefix without parsing or repairing it.
-                ToolArguments::StructuredPartial(prefix) => {
-                    call.arguments = ToolArguments::Raw(prefix.clone());
-                }
-                ToolArguments::Raw(_) => {}
-            }
-        }
-    }
-    // Build a target representation rather than editing an observed call under
-    // its source dependency adaptations. JSON serialization above preserves its value.
-    let mut projected = if native {
-        GenerationResponse::from_resources(items, source.outcome(), source.resources().clone())?
-            .with_details(source.details().clone())?
-            .with_safety_reports(source.safety_reports().to_vec())?
-            // Derivation requires all disjoint input categories. Missing is not zero.
-            .with_usage(source.usage().map(client_usage).transpose()?.flatten())?
-    } else {
-        source.clone()
-    };
-    if attached {
-        projected = projected.with_message_envelopes(source.message_envelopes().to_vec())?;
-    }
-    if profile == GenerationApi::Chat && !attached {
-        let mut status = if source.outcome() == Outcome::Incomplete {
-            ItemLifecycle::Incomplete
-        } else {
-            ItemLifecycle::Completed
-        };
-        let mut reasoning = vec![];
-        let mut parts = vec![];
-        let mut calls = vec![];
-        let mut owner = None;
-        for (id, item) in projected.items() {
-            match item {
-                // Consecutive blocks such as thinking then redacted thinking keep their order.
-                Item::Reasoning(_) if parts.is_empty() && calls.is_empty() => {
-                    reasoning.push((*id, item.clone()))
-                }
-                Item::Message(message)
-                    if calls.is_empty() && message.role == MessageRole::Assistant =>
-                {
-                    if !native {
-                        if message.participant.is_some()
-                            || owner.is_some() && status != message.status
-                        {
-                            return Err(CodecError::Unsupported(CarrierReason::Unavailable));
-                        }
-                        status = message.status;
-                    }
-                    owner.get_or_insert(*id);
-                    parts.extend(message.parts.clone());
-                }
-                Item::ToolCall(call) => {
-                    let mut call = call.clone();
-                    if native {
-                        call.status = status;
-                    }
-                    calls.push((*id, Item::ToolCall(call)));
-                }
-                Item::CustomCall(_) => calls.push((*id, item.clone())),
-                _ => {
-                    return Err(CodecError::Unsupported(CarrierReason::Unavailable));
-                }
-            }
-        }
-        let owner = match owner {
-            Some(owner) => owner,
-            None => ItemId::scoped(
-                projected
-                    .items()
-                    .first()
-                    .map_or(LocalScope::new(3), |(id, _)| id.scope()),
-                projected
-                    .items()
-                    .iter()
-                    .map(|(id, _)| id.get())
-                    .max()
-                    .unwrap_or(0)
-                    .checked_add(1)
-                    .ok_or(CodecError::Limit)?,
-            ),
-        };
-        // Chat has one output text value. Coalesce only unannotated text; attachment
-        // delivery retains the original layout separately before reaching this view.
-        if parts.len() > 1 {
-            let mut text = String::new();
-            for part in &parts {
-                let ContentPart::Text(value) = &part.content else {
-                    return Err(CodecError::Unsupported(CarrierReason::Unavailable));
-                };
-                if !value.is_plain() || part.cache.is_some() || part.replay.is_some() {
-                    return Err(CodecError::Unsupported(CarrierReason::Unavailable));
-                }
-                text.push_str(value.as_str());
-            }
-            parts[0].content = ContentPart::Text(
-                crate::semantic::value::Text::allowing_empty(text, "Chat text", MAX_TEXT_BYTES)
-                    .map_err(|_| CodecError::Limit)?
-                    .into(),
-            );
-            parts.truncate(1);
-        }
-        let message = Item::Message(Message {
-            participant: None,
-            role: MessageRole::Assistant,
-            parts,
-            status,
-            phase: None,
-        });
-        let mut members = vec![owner];
-        members.extend(calls.iter().map(|(id, _)| *id));
-        reasoning.push((owner, message));
-        reasoning.extend(calls);
-        projected = GenerationResponse::from_resources(
-            reasoning,
-            projected.outcome(),
-            projected.resources().clone(),
-        )?
-        .with_details(projected.details().clone())?
-        .with_safety_reports(projected.safety_reports().to_vec())?
-        .with_usage(projected.usage())?
-        .with_message_envelopes(vec![MessageEnvelope::new(
-            GroupId::new(owner.scope(), owner.get()),
-            MessageEnvelopeRole::Assistant,
-            members,
-        )?])?;
-        if !native {
-            projected = projected
-                .with_usage_reports(source.usage_reports().clone())?
-                .with_progress(source.progress())?;
-        }
-    }
-    let mut losses = vec![];
-    if native && source.usage_reports().has_unrepresented_details() {
-        losses.push(crate::protocol::usage::report_loss("response.project"));
-    }
-    let coalesced = profile == GenerationApi::Chat
-        && !attached
-        && source
-            .items()
-            .iter()
-            .filter_map(|(_, item)| match item {
-                Item::Message(message) => Some(message.parts.len()),
-                _ => None,
-            })
-            .sum::<usize>()
-            > 1;
-    if coalesced || source.message_envelopes() != projected.message_envelopes() {
-        losses.push(envelope_loss(profile, "response.project"));
-    }
-    losses.extend(usage_loss(
-        source.usage(),
-        projected.usage(),
-        "response.project",
-    ));
-    decoded.semantic = projected;
-    decoded.fidelity.retain_owners(decoded.semantic.items());
-    Ok(losses)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::protocol::{anthropic, replay_envelope};
+    use crate::protocol::{DecodedResponse, anthropic, replay_envelope};
+    fn project(
+        decoded: &mut DecodedResponse,
+        profile: GenerationApi,
+    ) -> Result<Vec<Effect>, CodecError> {
+        let client = crate::adapter::ClientAdapter::openai(
+            crate::protocol::openai::GenerationCodec::new(
+                profile,
+                crate::protocol::openai::Dialect::MorphieCore,
+                None,
+            ),
+            crate::protocol::openai::TargetContract::full(),
+        );
+        let mut projection = crate::adapter::ClientProjection::new(client, true, false);
+        crate::adapter::emit_response_events(decoded, |event| {
+            projection.project(&[event]).map(|_| ())
+        })?;
+        decoded.semantic = projection.snapshot()?;
+        decoded.fidelity.retain_owners(decoded.semantic.items());
+        Ok(projection.take_evidence().iter().cloned().collect())
+    }
     const BODY: &[u8] = br#"{"id":"native","type":"message","role":"assistant","model":"model","content":[{"type":"thinking","thinking":"plan","signature":"synthetic-signature"},{"type":"tool_use","id":"c","name":"lookup","input":{"n":9007199254740993.125}}],"stop_reason":"tool_use","usage":{"input_tokens":11,"cache_read_input_tokens":3,"cache_creation_input_tokens":2,"output_tokens":7}}"#;
 
     fn fixture() -> DecodedResponse {
@@ -466,7 +242,18 @@ mod tests {
                     .iter()
                     .any(|r| r.rule() == "generation.usage-report-view.v1")
             );
-            let mut events = EventProjection::new(GenerationApi::Responses);
+            let mut events = crate::adapter::ClientProjection::new(
+                crate::adapter::ClientAdapter::openai(
+                    crate::protocol::openai::GenerationCodec::new(
+                        GenerationApi::Responses,
+                        crate::protocol::openai::Dialect::Standard,
+                        None,
+                    ),
+                    crate::protocol::openai::TargetContract::full(),
+                ),
+                true,
+                true,
+            );
             assert!(
                 events
                     .project(&[StreamEvent::UsageReport(report)])
@@ -475,7 +262,7 @@ mod tests {
             );
             assert!(
                 events
-                    .effects()
+                    .take_evidence()
                     .iter()
                     .any(|r| r.rule() == "generation.usage-report-view.v1")
             );
@@ -567,8 +354,29 @@ mod tests {
                 4096,
                 crate::protocol::stream::SseLimits::default(),
             );
-            attempt.begin(200, "application/json").unwrap();
-            attempt.push(BODY).unwrap();
+            attempt.begin(200, "text/event-stream").unwrap();
+            for frame in [
+                serde_json::json!({"type":"message_start","message":{"id":"native","type":"message","role":"assistant","model":"model","content":[],"stop_reason":null,"usage":{"input_tokens":11,"cache_read_input_tokens":3,"cache_creation_input_tokens":2,"output_tokens":0}}}),
+                serde_json::json!({"type":"content_block_start","index":0,"content_block":{"type":"thinking","thinking":"","signature":""}}),
+                serde_json::json!({"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"plan"}}),
+                serde_json::json!({"type":"content_block_delta","index":0,"delta":{"type":"signature_delta","signature":"synthetic-signature"}}),
+                serde_json::json!({"type":"content_block_stop","index":0}),
+                serde_json::json!({"type":"content_block_start","index":1,"content_block":{"type":"tool_use","id":"c","name":"lookup","input":{}}}),
+                serde_json::json!({"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":r#"{"n":9007199254740993.125}"#}}),
+                serde_json::json!({"type":"content_block_stop","index":1}),
+                serde_json::json!({"type":"message_delta","delta":{"stop_reason":"tool_use"},"usage":{"output_tokens":7}}),
+                serde_json::json!({"type":"message_stop"}),
+            ] {
+                attempt
+                    .push(
+                        format!(
+                            "event: {}\ndata: {frame}\n\n",
+                            frame["type"].as_str().unwrap()
+                        )
+                        .as_bytes(),
+                    )
+                    .unwrap();
+            }
             attempt.finish().unwrap();
             let mut delivery = crate::execution::ResponseDelivery::new(
                 client_adapter.clone(),
@@ -685,29 +493,18 @@ mod tests {
                     crate::protocol::openai::obfuscation::Obfuscation::Disabled,
                 )
                 .unwrap();
-            encoder
-                .project_native(&[
-                    StreamEvent::Usage(source.semantic.usage().unwrap()),
-                    StreamEvent::MessageEnvelope(source.semantic.message_envelopes()[0].clone()),
-                ])
-                .unwrap();
+            let mut projected = source.clone();
+            let effects = project(&mut projected, profile).unwrap();
             assert!(
-                encoder
-                    .effects()
+                effects
                     .iter()
                     .any(|loss| loss.field() == "generation.message_envelopes"
                         && loss.boundary().as_str() == "event.project")
             );
-            assert!(
-                encoder
-                    .effects()
-                    .into_iter()
-                    .any(|loss| loss.semantic_field()
-                        == crate::protocol::conversion::generation::Field::InputTokens
-                        && loss.change()
-                            == crate::protocol::conversion::generation::Change::Derive
-                        && loss.boundary().as_str() == "event.project")
-            );
+            let usage = projected.semantic.usage().unwrap();
+            assert_eq!(usage.input_tokens, Some(16));
+            assert_eq!(usage.output_tokens, Some(7));
+            assert_eq!(usage.total_tokens, Some(23));
             encoder
                 .encode(&StreamEvent::Started, &source.fidelity)
                 .unwrap();
@@ -722,24 +519,14 @@ mod tests {
             assert!(encoder.encode(&terminal, &source.fidelity).is_err());
             assert!(encoder.finish().is_err());
             if profile == GenerationApi::Chat {
-                let mut failed = client_adapter
-                    .stream_encoder(
-                        metadata,
-                        Default::default(),
-                        crate::semantic::context::StreamOptions {
-                            include_obfuscation: crate::semantic::value::Presence::Value(false),
-                            ..Default::default()
-                        },
-                        crate::protocol::openai::obfuscation::Obfuscation::Disabled,
-                    )
-                    .unwrap();
+                let mut failed = EventProjection::new(profile);
                 failed
-                    .project_native(&[StreamEvent::Usage(source.semantic.usage().unwrap())])
+                    .project(&[StreamEvent::Usage(source.semantic.usage().unwrap())])
                     .unwrap();
-                let before = failed.effects();
+                let before = failed.effects().to_vec();
                 assert!(
                     failed
-                        .project_native(&[
+                        .project(&[
                             StreamEvent::ItemStarted {
                                 item: ItemId::new(1),
                                 replay: None,
@@ -783,6 +570,12 @@ mod tests {
             },
         };
         let mut metadata = source.metadata.clone();
+        let mut projection = crate::adapter::ClientProjection::new(
+            crate::adapter::ClientAdapter::Messages,
+            false,
+            true,
+        );
+        projection.metadata(&metadata).unwrap();
         let mut messages = crate::adapter::ClientAdapter::Messages
             .stream_encoder(
                 metadata.clone(),
@@ -791,46 +584,51 @@ mod tests {
                 crate::protocol::openai::obfuscation::Obfuscation::Disabled,
             )
             .unwrap();
-        messages
-            .encode(&StreamEvent::Started, &source.fidelity)
-            .unwrap();
-        messages
-            .encode(
-                &StreamEvent::ItemStarted {
-                    item: ItemId::new(1),
-                    kind: ItemKind::Message { phase: None },
-                    replay: None,
-                },
-                &source.fidelity,
-            )
-            .unwrap();
-        messages
-            .encode(
-                &StreamEvent::PartStarted {
-                    item: ItemId::new(1),
-                    part: PartId::new(1),
-                    kind: PartKind::Refusal,
-                },
-                &source.fidelity,
-            )
-            .unwrap();
+        for event in [
+            StreamEvent::Started,
+            StreamEvent::ItemStarted {
+                item: ItemId::new(1),
+                kind: ItemKind::Message { phase: None },
+                replay: None,
+            },
+            StreamEvent::PartStarted {
+                item: ItemId::new(1),
+                part: PartId::new(1),
+                kind: PartKind::Refusal,
+            },
+        ] {
+            for event in projection.project(&[event]).unwrap() {
+                messages.encode(&event, &source.fidelity).unwrap();
+            }
+        }
         let mut inclusive = Usage::operation(10, 3, 13);
         inclusive.cached_input_tokens = Some(2);
         inclusive.input_cache_write_tokens = Some(0);
-        messages
-            .encode(&StreamEvent::Usage(inclusive), &source.fidelity)
+        let events = projection
+            .project(&[StreamEvent::Usage(inclusive)])
             .unwrap();
+        let report = events
+            .iter()
+            .find_map(|event| match event {
+                StreamEvent::UsageReport(report) => Some(report),
+                _ => None,
+            })
+            .unwrap();
+        assert_eq!(report.counts.input_tokens, Some(8));
+        assert_eq!(report.counts.output_tokens, Some(3));
+        assert_eq!(
+            report.counts.input_relation,
+            InputTokenRelation::ExcludesCacheReadAndWrite
+        );
+        assert_eq!(report.counts.total_tokens, None);
+        for event in events {
+            messages.encode(&event, &source.fidelity).unwrap();
+        }
+        let effects = projection.take_evidence();
         assert!(
-            messages
-                .effects()
+            effects
                 .iter()
                 .any(|loss| loss.rule() == "messages.refusal-as-text.v1")
-        );
-        assert!(
-            messages
-                .effects()
-                .iter()
-                .any(|loss| loss.rule() == "messages.usage-view.v1")
         );
         metadata
             .context

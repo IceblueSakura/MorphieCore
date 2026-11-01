@@ -116,7 +116,7 @@ This page defines accepted principles, domain contracts, and architectural decis
 | Downstream | OpenAI Chat Completions, OpenAI Responses, Anthropic Messages |
 | Upstream | OpenAI Responses/Chat and compatible dialects, Anthropic Messages, Google generateContent, Google Interactions |
 
-Generation supports JSON and SSE transport. Native Messages and Google upstreams use streaming intake even for downstream JSON delivery. Interactions uses stateless, full-history requests.
+Generation supports JSON and SSE delivery. Responses, native Messages and Google upstreams use streaming intake even for downstream JSON delivery. Chat retains the [qualified JSON exception](refs/2026-10-27-client-ir-boundaries.md#production-corpus-and-intake-experiment-2026-10-30) for metadata and URL annotations without chunk carriers. Interactions uses stateless, full-history requests.
 
 All three Generation client protocols dispatch through the public model's configured candidate route. A Messages client request does not require a native Anthropic upstream. Standalone tasks (Embeddings, Images, Speech, Transcription) operate on distinct contracts outside Generation.
 
@@ -436,7 +436,7 @@ Existing rule families remain valid ladder applications:
 | Terminal stops | Coarsen natural/stop-sequence causes to `stop` or `end_turn` under named rules |
 
 - `chat.omit-text-item-status.v1`: Plain-text incomplete message items omit individual item status when overall finish reason is `length`.
-(See [`Rule`](../src/lowering/disposition.rs) for shared rule definitions; the remaining delivery consumers live in [`openai/lowering/projection.rs`](../src/protocol/openai/lowering/projection.rs)).
+(See [`Rule`](../src/lowering/disposition.rs) for request rules and the [delivery projection owner](#delivery-projection-ownership) for client dispositions.)
 
 #### Semantic-equivalence compatibility
 
@@ -480,13 +480,25 @@ The conditional-default consumers share one resolver for root definitions, names
 
 The Messages consumer resolves conditional defaults once, after selected tool-change carrier projection, using the binding's strict opt-in and native exact subset. String enum/const casing and unsupported reference carriers cannot provide an equivalent strict guarantee. Root and inline strict tools share one native grammar budget with JSON output. If tentative conditional strictness exceeds that budget, every conditional definition becomes non-strict; explicit strict definitions and the output schema remain unchanged, and final validation rejects if those alone overflow. Projection and final wire validation reuse the same subset/budget checker. Parameterless definitions receive the required empty-object input schema without a loss receipt; equivalent empty schemas may still use an available strict carrier.
 
-Responses retrieval of native structured tool output retains the argument string actually published by its SSE encoder. The existing bounded stream state owns those bytes; a private retained copy checks call identity, lifecycle and equal bytes or complete parsed-value agreement before replacing its reserialized string. Equal incomplete prefixes require no JSON parse. Native structured observations remain unchanged, and the representation change needs no loss receipt.
+Responses retrieval retains the argument string selected by the shared event projection. SSE, JSON and retained snapshots consume those same selected bytes, including incomplete prefixes without JSON parsing. Native structured observations and protected replay dependencies remain unchanged; representation conversion alone needs no loss receipt.
+
+#### Delivery projection ownership
+
+Implemented on 2026-11-01. `ClientAdapter` owns one stateful `ClientProjection` and a shared fact/disposition table. It selects native argument carriers, reasoning/refusal substitutions, report omissions, usage views, terminal mappings and grouping before rendering. SSE encodes its selected events; JSON and retained history reduce those events and render the resulting snapshot. The old independent snapshot representability owner and encoder-side terminal lowering are removed. Encoders retain protocol grammar, lifecycle and resource checks rather than selecting another conversion policy.
+
+Projection operates on private delivery copies. Execution-assigned response/item aliases are merged before materializing JSON or retained views; protected call dependencies keep their execution ownership until the separately scheduled identity migration. Wire-only Messages block/owner closure does not finish an incomplete semantic item.
+
+Null-equivalent delivery reports and hints use `Option`: service class, fingerprints, refusal details, probability reports and execution echoes. Request/response `metadata` remains three-state because explicit null suppresses request-metadata echo. Equivalent accounting conversions and empty/default carriers do not acquire loss receipts; L3/L4 removals and explicit estimates retain their named evidence.
+
+For a Chat client, native lifecycle opening service reports are omitted under `chat.omit-opening-service-report.v1`; a terminal non-null served class uses its exact carrier. Source opening/terminal reports stay distinct. Messages refusal becomes visible text under `messages.refusal-as-text.v1`, selected before both JSON and SSE renderers.
+
+The [closed dialect terminal maps](refs/2026-10-17-generation-contracts.md#chat-terminal-source-recheck-2026-11-01) share JSON/chunk classification. Resource, network and server failures use the failure path; interrupted generation stays incomplete. Unknown labels reject. Unrepresented Responses incomplete-reason labels take `responses.omit-unrepresented-incomplete-reason.v1` without inventing natural completion. Terminal details that would change a visible completion guarantee retain their L5 boundary.
 
 #### Generated tool arguments and execution input
 
 Selected on 2026-10-29; initial cross-view implementation landed on 2026-10-31. An unfinished generated argument prefix projects exactly to an OpenAI argument string without parsing, repairing or completing its bytes. Preserve incomplete call lifecycle where carried, the incomplete overall outcome and token-limit termination. Format conversion alone needs no loss receipt; unrelated lifecycle, grouping and protected-replay restrictions remain authoritative. A generated string is not a complete validated invocation. Native Messages complete JSON/history still requires an input object; its partial SSE carrier does not supply that object.
 
-Native Messages target requests always select SSE, including the body flag, transport Accept header and response-media admission. JSON clients aggregate that intake after validated EOF, so the source can report incomplete arguments without inventing a native JSON object. The shared delivery projection and removal of replaced upstream JSON dispatch remain R2 work; complete native JSON codecs still provide independent directional protocol coverage.
+All qualified non-Chat target requests select SSE, including the body flag, transport Accept header and response-media admission. JSON clients aggregate that intake after validated EOF, so native Messages can report incomplete arguments without inventing a native JSON object. Replaced non-Chat JSON dispatch is removed; complete native JSON codecs still provide independent directional protocol coverage.
 
 Client acceptance must distinguish error-result events from actual execution. Current pi fails all calls on a length-stopped message even when salvaged arguments parse, then supplies error feedback. That observed consumer behavior supports this narrow contract, not every consumer or a signature/dependency rewrite.
 
@@ -886,6 +898,7 @@ Authoritative log of accepted architectural decisions and their systemic consequ
 | Standard request boundary | 2026-10-26 | Client intake enforces official protocol grammar; Provider dialects isolated to egress |
 | Conversion ladder | 2026-10-30 | Same-name → same-semantic → partial lossy → omit → reject only when omission would misrepresent the response; unknown target facts delegate to upstream validation; one request-side and one delivery-side disposition owner |
 | Candidate request dispositions | 2026-10-31 | One `Feature` vocabulary and target disposition owner replace separate admission/target feature gates, including presentation and parallel permission; conditional strict inference requires a known closed vocabulary, explicit strict keeps upstream delegation, and native assertions keep grammar and replay identity |
+| Delivery dispositions | 2026-11-01 | One adapter-owned event projection selects client facts; SSE renders events and JSON/retained views reduce them. Replaced snapshot checks and encoder terminal lowering are removed; execution aliases and wire-only closure preserve identity/lifecycle |
 | Client semantic boundary | 2026-10-27 | Unknown extension fields discarded; revised 2026-10-30: known fields enter the conversion ladder instead of fail-closed rejection |
 | Three-protocol fidelity | 2026-10-27 | Semantic fidelity across Chat, Responses, and Messages with stream normalization |
 | Text item status omission | 2026-10-27 | Plain text incomplete items omit item status when overall finish is length |
@@ -948,7 +961,7 @@ Authoritative log of accepted architectural decisions and their systemic consequ
 | Responses strictness resolution | 2026-10-28 | Omitted `strict` resolves per tool and target by the documented compatibility rule; revised 2026-10-30: unknown compatibility and grammar overflow resolve non-strict, explicit strict stays guarded |
 | Ladder applications | 2026-10-30 | Nearest effort (ties upward), model-maximum clamp, thinking-off fallback for required Chat history, uncarried reasoning omission, Messages `end_turn`/`tool_use` derivations, `block_binding` levels; `stop` without carrier and unknown Chat/Messages stop causes remain rejections |
 | IR/codec simplification | 2026-10-30 | One request feature vocabulary; delivery projection over the event stream with JSON as reduce-and-render; `Option` presence except contract-defined null meaning; receipts only for L3/L4/estimates; no strictness compatibility classifier. Upstream streaming-only intake and folding `FidelityRecords` identity into IR are selected subject to their roadmap experiments |
-| Upstream intake experiment | 2026-10-30 | R0 preserves a named Chat JSON exception: full-response metadata and URL annotations lack standard chunk carriers. Reachable Responses/Messages corpus comparisons found no analogous blocker; native Messages streaming intake landed on 2026-10-31, with remaining transport/decoder migration in R2. [Evidence and unqualified paths](refs/2026-10-27-client-ir-boundaries.md#production-corpus-and-intake-experiment-2026-10-30) |
+| Qualified upstream intake | 2026-11-01 | Responses, native Messages and Google use SSE-only execution intake, including JSON-client requests; complete JSON codecs remain directional tests. Chat retains R0's metadata/URL-annotation exception. [Original qualification evidence](refs/2026-10-27-client-ir-boundaries.md#production-corpus-and-intake-experiment-2026-10-30) |
 | Reasoning presentation and continuity | 2026-10-28 | `summary:"auto"` and encrypted `include` resolve against target availability; explicit summarizers and missing opaque carriers take named omissions |
 | Carrier-less report omission | 2026-10-28 | Served service classes and refusal categories without carriers are omitted on delivery copies; no approximate service tier; empty logprobs use semantic-equivalence compatibility instead |
 | Messages terminal derivation | 2026-10-28 | Completed call-free outcomes without admitted stop sequences derive `end_turn` from any source |

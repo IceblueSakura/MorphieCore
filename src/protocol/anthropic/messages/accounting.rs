@@ -116,7 +116,7 @@ fn project_usage(u: Usage) -> Result<Usage, CodecError> {
 }
 
 /// Named delivery projection; never fills a missing native child with zero.
-pub(super) fn project(report: &UsageReport) -> Result<Option<UsageReport>, CodecError> {
+pub(crate) fn project(report: &UsageReport) -> Result<Option<UsageReport>, CodecError> {
     report.validate()?;
     if report.scope != UsageScope::Operation {
         return Ok(None);
@@ -144,7 +144,7 @@ pub(super) fn project(report: &UsageReport) -> Result<Option<UsageReport>, Codec
     Ok(Some(selected))
 }
 
-pub(super) fn project_reports(reports: &UsageReports) -> Result<UsageReports, CodecError> {
+pub(crate) fn project_reports(reports: &UsageReports) -> Result<UsageReports, CodecError> {
     let mut selected = UsageReports::default();
     if let Some(mut report) = reports.operation().map(project).transpose()?.flatten() {
         // Complete JSON has a final observation carrier, not a checkpoint carrier.
@@ -157,7 +157,7 @@ pub(super) fn project_reports(reports: &UsageReports) -> Result<UsageReports, Co
 /// Pure native encoding accepts only an exact report, unlike the named client projection.
 pub(super) fn wire(
     report: &UsageReport,
-    service_class: Presence<ServiceClass>,
+    service_class: Option<ServiceClass>,
 ) -> Result<super::Usage, CodecError> {
     if project(report)?.as_ref() != Some(report) {
         return Err(CodecError::Unsupported(CarrierReason::Usage));
@@ -188,7 +188,7 @@ pub(super) fn wire(
 /// A downstream-only completed view; never used by native decoders or encoders.
 pub(super) fn delivery_wire(counts: Usage) -> Result<super::Usage, CodecError> {
     let report = UsageReport::operation(project_usage(counts)?);
-    wire(&report, Presence::Absent)
+    wire(&report, None)
 }
 
 pub(super) fn json_with_fallback(
@@ -207,7 +207,7 @@ pub(super) fn json_with_fallback(
         reports
             .operation()
             .ok_or(CodecError::Invalid(ShapeReason::Usage))?,
-        Presence::Absent,
+        None,
     )?
     .wire())
 }
@@ -322,10 +322,7 @@ mod tests {
             decoded.semantic.usage_reports()
         );
         assert_eq!(decoded, before);
-        assert_eq!(
-            wire(&expected(), Presence::Absent).unwrap().wire(),
-            usage_json()
-        );
+        assert_eq!(wire(&expected(), None).unwrap().wire(), usage_json());
 
         let mut checkpoint = expected();
         checkpoint.stage = UsageStage::Checkpoint;
@@ -333,14 +330,14 @@ mod tests {
         reports.replace(checkpoint).unwrap();
         let mut source = decoded.clone();
         source.semantic = source.semantic.with_usage_reports(reports).unwrap();
+        let (retained, body, losses) = crate::adapter::ClientAdapter::Messages
+            .snapshot_with_evidence(source.clone())
+            .unwrap();
         assert!(
-            super::super::client::content_losses(&source.semantic)
+            losses
                 .iter()
                 .any(|loss| loss.rule() == "generation.usage-report-view.v1")
         );
-        let (retained, body) = crate::adapter::ClientAdapter::Messages
-            .snapshot(source.clone())
-            .unwrap();
         let reparsed = p
             .decode_generation_response(
                 body.to_string().as_bytes(),
@@ -359,7 +356,7 @@ mod tests {
 
         let mut sparse = expected();
         sparse.details.tool_requests.pop();
-        assert!(wire(&sparse, Presence::Absent).is_err());
+        assert!(wire(&sparse, None).is_err());
         let selected = project(&sparse).unwrap().unwrap();
         assert!(selected.details.tool_requests.is_empty());
         assert_eq!(

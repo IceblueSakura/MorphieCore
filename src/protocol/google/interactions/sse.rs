@@ -320,7 +320,7 @@ impl GenerationSseDecoder {
                 instruction_fidelity: Default::default(),
             };
             metadata.context.reports = ResponseReports::Lifecycle {
-                opening: (!service_class.is_absent()).then(|| {
+                opening: (!service_class.is_none()).then(|| {
                     Box::new(ResponseReport {
                         service_class,
                         ..Default::default()
@@ -749,8 +749,8 @@ impl GenerationSseDecoder {
             }
         };
         let metadata = self.metadata.as_ref().expect("Interactions metadata");
-        if !metadata.context.service_class().is_absent()
-            && !service_class.is_absent()
+        if !metadata.context.service_class().is_none()
+            && !service_class.is_none()
             && metadata.context.service_class() != &service_class
         {
             return Err(invalid(ShapeReason::Metadata));

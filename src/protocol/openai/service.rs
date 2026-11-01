@@ -1,16 +1,10 @@
 //! Native service tokens belong here, not in semantic enum serialization.
 //! Chat excludes `ultrafast`; request and reported vocabularies remain independent.
 //! https://github.com/openai/openai-python/blob/be9d66628ad7377bd36fe5a76ae6d735843f0e76/src/openai/types/chat/completion_create_params.py
-use super::{
-    CodecError, GenerationApi,
-    shape::{put_presence, read_presence},
-};
+use super::{CodecError, GenerationApi, shape::read_presence};
 use crate::{
     protocol::failure::CarrierReason,
-    semantic::{
-        context::{ServiceClass, ServicePolicy},
-        value::Presence,
-    },
+    semantic::context::{ServiceClass, ServicePolicy},
 };
 use serde_json::{Map, Value, json};
 
@@ -67,7 +61,7 @@ pub(super) fn write_policy(
 pub(super) fn read_class(
     o: &Map<String, Value>,
     profile: GenerationApi,
-) -> Result<Presence<ServiceClass>, CodecError> {
+) -> Result<Option<ServiceClass>, CodecError> {
     read_presence(o, "service_tier", |v| {
         Ok(match v.as_str() {
             Some("auto") => ServiceClass::ConfiguredProcessing,
@@ -84,6 +78,7 @@ pub(super) fn read_class(
             }
         })
     })
+    .map(|value| value.value().copied())
 }
 pub(super) fn class_wire(
     class: ServiceClass,
@@ -104,14 +99,11 @@ pub(super) fn class_wire(
 }
 pub(super) fn write_class(
     o: &mut Map<String, Value>,
-    class: &Presence<ServiceClass>,
+    class: &Option<ServiceClass>,
     profile: GenerationApi,
 ) -> Result<(), CodecError> {
-    if let Some(value) = class.value() {
-        class_wire(*value, profile)?;
+    if let Some(value) = class {
+        o.insert("service_tier".into(), json!(class_wire(*value, profile)?));
     }
-    put_presence(o, "service_tier", class, |value| {
-        json!(class_wire(*value, profile).expect("validated reported service"))
-    });
     Ok(())
 }

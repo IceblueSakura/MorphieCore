@@ -49,11 +49,28 @@ fn response_terminal_domains_do_not_constrain_string_error_events() {
             fidelity: f.clone(),
             evidence: Default::default(),
         };
-        assert!(
-            codec
-                .encode_response(&decoded, &TargetContract::full())
-                .is_err()
-        );
+        let encoded = codec.encode_response(&decoded, &TargetContract::full());
+        if decoded.semantic.outcome() == Outcome::Failed {
+            assert!(
+                encoded.is_err(),
+                "a foreign response error code has no standard carrier"
+            );
+        } else {
+            let encoded = encoded.unwrap();
+            assert_eq!(encoded["status"], "incomplete");
+            assert_eq!(encoded["incomplete_details"], json!({}));
+            let invalid_source = json!({"id":"r","object":"response","created_at":0,"model":"synthetic",
+                "status":"incomplete","output":[],"incomplete_details":{"reason":"foreign_reason"}});
+            assert!(
+                codec
+                    .decode_response(invalid_source.to_string().as_bytes())
+                    .is_err()
+            );
+            assert_eq!(
+                decoded.semantic.details().incomplete,
+                Some(IncompleteReason::Other(text("foreign_reason")))
+            );
+        }
     }
     let mut encoder = EventEncoder::new(GenerationApi::Responses, metadata()).unwrap();
     let frames = encoder

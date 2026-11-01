@@ -16,6 +16,7 @@ use crate::{
 };
 use bytes::Bytes;
 use serde_json::Value;
+pub(crate) mod projection;
 
 #[derive(Clone)]
 pub enum ClientAdapter {
@@ -49,71 +50,6 @@ impl ClientAdapter {
             if crate::protocol::openai::lowering::readable_reasoning::selected(
                 adapter.protocol, &adapter.adaptation.rules))
     }
-    fn project_readable_reasoning(
-        &self,
-        decoded: &mut DecodedResponse,
-    ) -> Result<Vec<Effect>, crate::protocol::ConversionFailure> {
-        if let Self::OpenAi { adapter, .. } = self
-            && let Some((semantic, effects)) =
-                crate::protocol::openai::lowering::readable_reasoning::project(
-                    &decoded.semantic,
-                    adapter.protocol,
-                    &adapter.adaptation.rules,
-                )?
-        {
-            decoded.semantic = semantic;
-            return Ok(effects);
-        }
-        Ok(vec![])
-    }
-    /// Validate the same selected grouping as static delivery before publishing a
-    /// terminal. Streaming cannot hide an unrepresentable source owner or report.
-    pub(crate) fn check_chat_source(
-        &self,
-        decoded: &DecodedResponse,
-    ) -> Result<Vec<Effect>, crate::protocol::ConversionFailure> {
-        let result = (|| {
-            let (adapter, contract) = self.as_openai()?;
-            if decoded
-                .semantic
-                .items()
-                .iter()
-                .any(|(_, item)| item.has_replay_attachment())
-            {
-                return Err(CodecError::Unsupported(CarrierReason::Replay).into());
-            }
-            let mut decoded = crate::protocol::replay_projection::strip(decoded, true)?;
-            let reasoning_losses = self.project_readable_reasoning(&mut decoded)?;
-            let mut effects = crate::protocol::openai::lowering::native_response::group_chat(
-                &mut decoded,
-                contract.reported_facts,
-            )?;
-            crate::protocol::openai::lowering::lower_response(
-                &decoded.semantic,
-                &decoded.fidelity,
-                &decoded.metadata,
-                GenerationApi::Chat,
-                adapter.contract(contract),
-            )
-            .map_err(|error| {
-                crate::protocol::ConversionFailure::from(error).at(
-                    crate::protocol::conversion::generation::ConversionBoundary::ResponseProject,
-                )
-            })?;
-            // The incremental grouping already emits its own evidence, but it
-            // infers target item closure from the terminal. Only the validated
-            // source snapshot can attest which independent statuses were lost.
-            effects.retain(|effect| {
-                effect.semantic_field()
-                    == crate::protocol::conversion::generation::Field::MessageStatus
-            });
-            effects.extend(reasoning_losses);
-            Ok(effects)
-        })();
-        result.map_err(|error: crate::protocol::ConversionFailure| {
-            error.at(crate::protocol::conversion::generation::ConversionBoundary::ResponseProject)
-        })
-    }
     pub(crate) fn bind_replay_origin(&mut self, origin: &ReplayOrigin) {
         if let Self::OpenAi { adapter, contract } = self {
             adapter.adaptation.scope = Some(origin.clone());
@@ -128,27 +64,6 @@ impl ClientAdapter {
             }
         }
     }
-    pub(crate) fn project_native(
-        &self,
-        response: &mut DecodedResponse,
-    ) -> Result<
-        Vec<crate::protocol::conversion::generation::Effect>,
-        crate::protocol::ConversionFailure,
-    > {
-        let result = (|| {
-            let mut effects = self.project_readable_reasoning(response)?;
-            if let Self::OpenAi { adapter, .. } = self {
-                effects.extend(crate::protocol::openai::lowering::native_response::project(
-                    response,
-                    adapter.protocol,
-                )?);
-            }
-            Ok(effects)
-        })();
-        result.map_err(|error: crate::protocol::ConversionFailure| {
-            error.at(crate::protocol::conversion::generation::ConversionBoundary::ResponseProject)
-        })
-    }
     /// Return the encoded body and its represented history. Hidden continuation
     /// requires the separate execution-authorized managed path.
     pub fn snapshot(
@@ -162,181 +77,112 @@ impl ClientAdapter {
         &self,
         decoded: DecodedResponse,
     ) -> Result<(DecodedResponse, Value, Vec<Effect>), crate::protocol::ConversionFailure> {
-        self.snapshot_with_history(decoded, false)
+        let (projected, losses) = self.project_response(&decoded)?;
+        let (projected, value, mut effects) = self.render_projected(projected)?;
+        effects.extend(losses);
+        Ok((projected, value, effects))
     }
-    /// Only execution-owned storage authorizes a richer typed continuation than
-    /// the public response. Upstream metadata cannot opt into this path.
-    pub(crate) fn snapshot_with_history(
+    pub(crate) fn project_response(
         &self,
-        mut decoded: DecodedResponse,
-        managed: bool,
-    ) -> Result<
-        (
-            DecodedResponse,
-            Value,
-            Vec<crate::protocol::conversion::generation::Effect>,
-        ),
-        crate::protocol::ConversionFailure,
-    > {
-        let result = (|| {
-            let reasoning_losses = self.project_readable_reasoning(&mut decoded)?;
-            let hidden = decoded
-                .semantic
-                .items()
-                .iter()
-                .any(|(_, item)| item.has_replay_attachment());
-            if self.protocol() != ClientProtocol::Responses {
-                if hidden {
-                    return Err(CodecError::Unsupported(CarrierReason::Replay).into());
-                }
-                if crate::protocol::phase::has_phase(decoded.semantic.items()) {
-                    let mut wire = crate::protocol::replay_projection::strip(&decoded, true)?;
-                    let mut losses = if self.protocol() == ClientProtocol::Chat {
-                        crate::protocol::openai::lowering::native_response::group_chat(
-                            &mut wire,
-                            self.as_openai()?.1.reported_facts,
-                        )?
-                    } else {
-                        self.project_native(&mut wire)?
-                    };
-                    losses.extend(reasoning_losses);
-                    let (projected, value, extra) = self.encode_snapshot(wire)?;
-                    losses.extend(extra);
-                    losses.push(crate::protocol::phase::delivery_omission("response.encode"));
-                    return Ok((projected, value, losses));
-                }
-            }
-            if self.protocol() == ClientProtocol::Chat {
-                let mut losses = crate::protocol::openai::lowering::native_response::group_chat(
-                    &mut decoded,
-                    self.as_openai()?.1.reported_facts,
-                )?;
-                losses.extend(reasoning_losses);
-                let (projected, value, extra) = self.encode_snapshot(decoded)?;
-                losses.extend(extra);
-                return Ok((projected, value, losses));
-            }
-            if self.protocol() == ClientProtocol::Responses && hidden {
-                if !managed {
-                    return Err(CodecError::Unsupported(CarrierReason::Replay).into());
-                }
-                decoded
-                    .fidelity
-                    .check_attachment_bindings(decoded.semantic.items())?;
-                let mut wire = crate::protocol::replay_projection::strip(&decoded, false)?;
-                let mut losses = self.project_native(&mut wire)?;
-                let (projected, value, extra) = self.encode_snapshot(wire)?;
-                losses.extend(extra);
-                decoded.semantic = decoded
-                    .semantic
-                    .with_usage_reports(projected.semantic.usage_reports().clone())
-                    .map_err(CodecError::from)?
-                    .with_details(projected.semantic.details().clone())
-                    .map_err(CodecError::from)?
-                    .with_progress(projected.semantic.progress())
-                    .map_err(CodecError::from)?
-                    .with_safety_reports(projected.semantic.safety_reports().to_vec())
-                    .map_err(CodecError::from)?;
-                decoded.metadata = projected.metadata;
-                return Ok((decoded, value, losses));
-            }
-            self.encode_snapshot(decoded)
-        })();
-        result.map_err(|error: crate::protocol::ConversionFailure| {
-            error.at(crate::protocol::conversion::generation::ConversionBoundary::ResponseEncode)
-        })
-    }
-    fn encode_snapshot(
-        &self,
-        mut decoded: DecodedResponse,
-    ) -> Result<
-        (
-            DecodedResponse,
-            Value,
-            Vec<crate::protocol::conversion::generation::Effect>,
-        ),
-        crate::protocol::ConversionFailure,
-    > {
-        let result = (|| {
-            let mut losses = vec![];
-            if decoded
-                .semantic
-                .safety_reports()
-                .iter()
-                .any(|report| report.is_assessment_only())
-            {
-                let blocking = decoded
-                    .semantic
-                    .safety_reports()
+        decoded: &DecodedResponse,
+    ) -> Result<(DecodedResponse, Vec<Effect>), crate::protocol::ConversionFailure> {
+        let hidden = decoded
+            .semantic
+            .items()
+            .iter()
+            .any(|(_, item)| item.has_replay_attachment());
+        if hidden {
+            return Err(CodecError::Unsupported(CarrierReason::Replay).into());
+        }
+        decoded
+            .fidelity
+            .check_attachment_bindings(decoded.semantic.items())?;
+        let mut wire = crate::protocol::replay_projection::strip(decoded, false)?;
+        let native = wire.semantic.progress() != crate::semantic::task::generation::InteractionProgress::Unreported
+            || wire.semantic.items().iter().any(|(_, item)|
+                matches!(item, crate::semantic::task::generation::Item::ToolCall(c)
+                    if !matches!(c.arguments, crate::semantic::task::generation::ToolArguments::Raw(_))));
+        let messages: Vec<_> = wire
+            .semantic
+            .items()
+            .iter()
+            .filter_map(|(_, item)| match item {
+                crate::semantic::task::generation::Item::Message(message) => Some(message),
+                _ => None,
+            })
+            .collect();
+        let group = native
+            || messages.is_empty()
+            || messages.len() > 1
+            || (wire.semantic.outcome() == crate::semantic::task::generation::Outcome::Incomplete
+                && messages.iter().any(|message| {
+                    message.status == crate::semantic::task::generation::ItemLifecycle::Completed
+                }))
+            || messages.iter().any(|message| {
+                message
+                    .parts
                     .iter()
-                    .filter(|report| !report.is_assessment_only())
-                    .cloned()
-                    .collect();
-                decoded.semantic = decoded
-                    .semantic
-                    .with_safety_reports(blocking)
-                    .map_err(CodecError::from)?;
-                losses.push(safety_assessment_loss("response.encode"));
-            }
-            let value = match self {
-                Self::Messages => {
-                    losses.extend(
-                        crate::protocol::anthropic::messages::client::metadata_losses(
-                            &decoded.metadata,
-                        ),
-                    );
-                    losses.extend(
-                        crate::protocol::anthropic::messages::client::content_losses(
-                            &decoded.semantic,
-                        ),
-                    );
-                    let usage = decoded.semantic.usage();
-                    losses.extend(
-                        crate::protocol::anthropic::messages::client::project_snapshot(
-                            &mut decoded,
-                        )?,
-                    );
-                    if usage != decoded.semantic.usage() {
-                        losses.push(crate::protocol::anthropic::messages::client::usage_loss());
-                    }
-                    crate::protocol::anthropic::messages::client::encode_client_response(
-                        &decoded,
-                        &decoded.metadata.model,
-                    )?
-                }
-                Self::OpenAi { adapter, contract } => {
-                    let target = crate::protocol::openai::lowering::lower_response(
-                        &decoded.semantic,
-                        &decoded.fidelity,
-                        &decoded.metadata,
-                        adapter.protocol,
-                        adapter.contract(contract),
+                    .filter(|part| {
+                        !matches!(
+                            part.content,
+                            crate::semantic::task::generation::ContentPart::Audio(_)
+                        )
+                    })
+                    .count()
+                    > 1
+            })
+            || (!messages.is_empty()
+                && wire.semantic.message_envelopes().is_empty()
+                && wire.semantic.items().iter().any(|(_, item)| {
+                    matches!(
+                        item,
+                        crate::semantic::task::generation::Item::ToolCall(_)
+                            | crate::semantic::task::generation::Item::CustomCall(_)
                     )
-                    .map_err(|error| {
-                        crate::protocol::ConversionFailure::from(error)
-                            .at(crate::protocol::conversion::generation::ConversionBoundary::ResponseProject)
-                    })?;
-                    let value = match adapter.protocol {
-                        GenerationApi::Chat => {
-                            crate::protocol::openai::chat::envelope::encode_response(&target)?
-                        }
-                        GenerationApi::Responses => {
-                            crate::protocol::openai::responses::envelope::encode_response(&target)?
-                        }
-                    };
-                    let semantic = target.semantic().clone();
-                    let metadata = target.metadata().clone();
-                    losses.extend(target.projection().iter().cloned());
-                    decoded.semantic = semantic;
-                    decoded.metadata = metadata;
-                    value
+                }));
+        let mut projection =
+            projection::ClientProjection::new(self.clone(), native, false).with_grouping(group);
+        projection.update_fidelity(&wire.fidelity)?;
+        wire.metadata = projection.metadata(&wire.metadata)?;
+        projection::emit(&wire, |event| projection.project(&[event]).map(|_| ()))?;
+        wire.semantic = projection.snapshot()?;
+        projection.update_fidelity(&wire.fidelity)?;
+        wire.fidelity = projection.fidelity().clone();
+        wire.fidelity.retain_owners(wire.semantic.items());
+        wire.metadata = projection.snapshot_metadata(&wire.metadata)?;
+        let effects = projection.take_evidence().iter().cloned().collect();
+        Ok((wire, effects))
+    }
+    pub(crate) fn render_projected(
+        &self,
+        decoded: DecodedResponse,
+    ) -> Result<(DecodedResponse, Value, Vec<Effect>), crate::protocol::ConversionFailure> {
+        let value = match self {
+            Self::Messages => crate::protocol::anthropic::messages::client::encode_client_response(
+                &decoded,
+                &decoded.metadata.model,
+            )?,
+            Self::OpenAi { adapter, contract } => {
+                let target = crate::protocol::openai::ResponseRepresentation {
+                    semantic: std::borrow::Cow::Borrowed(&decoded.semantic),
+                    metadata: std::borrow::Cow::Borrowed(&decoded.metadata),
+                    fidelity: &decoded.fidelity,
+                    profile: adapter.protocol,
+                    adaptation: adapter.contract(contract).adaptation,
+                    projection: vec![],
+                    projection_steps: 1,
+                };
+                match adapter.protocol {
+                    GenerationApi::Chat => {
+                        crate::protocol::openai::chat::envelope::encode_response(&target)?
+                    }
+                    GenerationApi::Responses => {
+                        crate::protocol::openai::responses::envelope::encode_response(&target)?
+                    }
                 }
-            };
-            Ok((decoded, value, losses))
-        })();
-        result.map_err(|error: crate::protocol::ConversionFailure| {
-            error.at(crate::protocol::conversion::generation::ConversionBoundary::ResponseEncode)
-        })
+            }
+        };
+        Ok((decoded, value, vec![]))
     }
     /// Protocol-shaped cache continuation, not conversation storage or target selection.
     pub(crate) fn cache_successor(
@@ -391,8 +237,6 @@ impl ClientAdapter {
                     .with_limits(limits)?;
                 let mut client = ClientEncoder {
                     encoder: Encoder::Messages(encoder),
-                    native_projection: None,
-                    omit_readable_reasoning: false,
                     losses: vec![],
                 };
                 client.update_metadata(metadata)?;
@@ -416,8 +260,6 @@ impl ClientAdapter {
         };
         Ok(ClientEncoder {
             encoder,
-            native_projection: None,
-            omit_readable_reasoning: self.omits_readable_reasoning(),
             losses: vec![],
         })
     }
@@ -483,76 +325,8 @@ enum Encoder {
 pub(crate) struct ClientEncoder {
     losses: Vec<crate::protocol::conversion::generation::Effect>,
     encoder: Encoder,
-    omit_readable_reasoning: bool,
-    native_projection: Option<crate::protocol::openai::lowering::native_response::EventProjection>,
 }
 impl ClientEncoder {
-    /// Responses retrieval retains the argument string actually published by its
-    /// stream, not a second serialization of the native structured observation.
-    pub(crate) fn retain_native_arguments(
-        &self,
-        response: &mut DecodedResponse,
-    ) -> Result<(), SseError> {
-        use crate::semantic::task::generation::{Item, StructuredValue, ToolArguments};
-        let Encoder::Responses(encoder) = &self.encoder else {
-            return Ok(());
-        };
-        let state = encoder.state()?;
-        let mut items = response.semantic.items().to_vec();
-        let mut changed = false;
-        for (owner, item) in &mut items {
-            let Item::ToolCall(call) = item else {
-                continue;
-            };
-            let delivered = state.item(*owner).map_err(CodecError::from)?;
-            let crate::semantic::task::generation::ItemKind::ToolCall { call_id, name, .. } =
-                &delivered.kind
-            else {
-                return Err(CodecError::invalid().into());
-            };
-            let arguments = delivered
-                .parts
-                .first()
-                .and_then(|part| part.text())
-                .ok_or(CodecError::invalid())?;
-            let original = call.arguments.as_raw().ok_or(CodecError::invalid())?;
-            // Equal bytes attest an incomplete prefix without treating it as
-            // executable JSON. Complete values may differ only in serialization.
-            if call_id != &call.call_id
-                || name != &call.name
-                || delivered.status != Some(call.status)
-                || (arguments != original
-                    && StructuredValue::from_bytes(arguments.as_bytes())
-                        .map_err(CodecError::from)?
-                        != StructuredValue::from_bytes(original.as_bytes())
-                            .map_err(CodecError::from)?)
-            {
-                return Err(CodecError::invalid().into());
-            }
-            if arguments != original {
-                call.arguments = ToolArguments::Raw(arguments.into());
-                changed = true;
-            }
-        }
-        if changed {
-            // This is a checked carrier change, not an edit to invocation input.
-            let source = &response.semantic;
-            response.semantic =
-                crate::semantic::task::generation::GenerationResponse::from_resources(
-                    items,
-                    source.outcome(),
-                    source.resources().clone(),
-                )
-                .and_then(|view| view.with_message_envelopes(source.message_envelopes().to_vec()))
-                .and_then(|view| view.with_progress(source.progress()))
-                .and_then(|view| view.with_details(source.details().clone()))
-                .and_then(|view| view.with_usage_reports(source.usage_reports().clone()))
-                .and_then(|view| view.with_safety_reports(source.safety_reports().to_vec()))
-                .map_err(CodecError::from)?;
-        }
-        Ok(())
-    }
-
     pub(crate) fn set_notice(&mut self, notice: crate::protocol::diagnostics::AdaptationNotice) {
         match &mut self.encoder {
             Encoder::Chat(e) => e.set_notice(notice),
@@ -561,64 +335,6 @@ impl ClientEncoder {
         }
     }
 
-    /// Track Chat grouping from the first item, including an unlabelled prefix.
-    /// Absence of phase is decided at EOF, before a successful terminal.
-    pub(crate) fn project_phase(
-        &mut self,
-        events: &[StreamEvent],
-    ) -> Result<Option<Vec<StreamEvent>>, crate::protocol::ConversionFailure> {
-        let result = (|| {
-            if !matches!(self.encoder, Encoder::Chat(_)) {
-                return Ok(None);
-            }
-            let projection = self.native_projection.get_or_insert_with(|| {
-                crate::protocol::openai::lowering::native_response::EventProjection::for_phase(
-                    self.omit_readable_reasoning,
-                )
-            });
-            let projected = projection.project(events)?;
-            for loss in projection.take_evidence() {
-                if !self.losses.contains(&loss) {
-                    self.losses.push(loss);
-                }
-            }
-            Ok(Some(projected))
-        })();
-        result.map_err(|error: crate::protocol::ConversionFailure| {
-            error.at(crate::protocol::conversion::generation::ConversionBoundary::EventProject)
-        })
-    }
-    pub(crate) fn needs_phase_source_check(&self) -> bool {
-        self.native_projection
-            .as_ref()
-            .is_some_and(|p| p.needs_source_check())
-    }
-    pub(crate) fn project_native(
-        &mut self,
-        events: &[StreamEvent],
-    ) -> Result<Option<Vec<StreamEvent>>, crate::protocol::ConversionFailure> {
-        let result = (|| {
-            let profile = match self.encoder {
-                Encoder::Chat(_) => GenerationApi::Chat,
-                Encoder::Responses(_) => GenerationApi::Responses,
-                Encoder::Messages(_) => return Ok(None),
-            };
-            let projection = self.native_projection.get_or_insert_with(|| {
-                crate::protocol::openai::lowering::native_response::EventProjection::new(profile)
-                    .with_readable_reasoning_omission(self.omit_readable_reasoning)
-            });
-            let result = projection.project(events)?;
-            for loss in projection.take_evidence() {
-                if !self.losses.contains(&loss) {
-                    self.losses.push(loss);
-                }
-            }
-            Ok(Some(result))
-        })();
-        result.map_err(|error: crate::protocol::ConversionFailure| {
-            error.at(crate::protocol::conversion::generation::ConversionBoundary::EventProject)
-        })
-    }
     pub(crate) fn update_metadata(
         &mut self,
         mut metadata: ResponseMetadata,
@@ -635,7 +351,7 @@ impl ClientEncoder {
                     e.reject();
                     return Err(error.into());
                 }
-                e.update_service_class(metadata.context.service_class().clone())?;
+                e.update_service_class(*metadata.context.service_class())?;
                 e.update_delivery(metadata.delivery.as_deref());
                 for mut loss in losses {
                     loss = loss.with_boundary(("event.encode").into());

@@ -26,8 +26,8 @@ pub(in crate::protocol::anthropic::messages) fn item_blocks(
                 .map(|p| match &p.content {
                     ContentPart::Text(t)
                         if t.annotations().is_empty()
-                            && (t.logprobs().is_absent()
-                                || matches!(t.logprobs(), Presence::Value(probs) if probs.is_empty())) =>
+                            && (t.logprobs().is_none()
+                                || matches!(t.logprobs(), Some(probs) if probs.is_empty())) =>
                     {
                         Ok(Block::Text(t.as_str().into()))
                     }

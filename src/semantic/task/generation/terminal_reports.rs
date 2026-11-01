@@ -1,6 +1,6 @@
 //! Bounded terminal observations, separate from content, errors and stop causes.
 use super::{GenerationError, MAX_TERMINAL_REPORT_BYTES};
-use crate::semantic::value::{Presence, Text};
+use crate::semantic::value::Text;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RefusalCategory {
@@ -13,13 +13,13 @@ pub enum RefusalCategory {
 
 #[derive(Clone, Eq, PartialEq)]
 pub struct RefusalDetails {
-    pub category: Presence<RefusalCategory>,
-    pub explanation: Presence<Text>,
+    pub category: Option<RefusalCategory>,
+    pub explanation: Option<Text>,
 }
 impl RefusalDetails {
     pub fn bytes(&self) -> usize {
         std::mem::size_of::<Self>()
-            .saturating_add(self.explanation.value().map_or(0, |v| v.as_str().len()))
+            .saturating_add(self.explanation.as_ref().map_or(0, |v| v.as_str().len()))
     }
     pub fn validate(&self) -> Result<(), GenerationError> {
         if self.bytes() > MAX_TERMINAL_REPORT_BYTES {
@@ -31,7 +31,7 @@ impl RefusalDetails {
         use sha2::{Digest, Sha256};
         let mut hash = Sha256::new();
         hash.update(format!("{self:?}").as_bytes());
-        if let Some(text) = self.explanation.value() {
+        if let Some(text) = self.explanation.as_ref() {
             hash.update(text.as_str().as_bytes());
         }
         hash.finalize().into()
@@ -44,9 +44,8 @@ impl std::fmt::Debug for RefusalDetails {
             .field(
                 "explanation",
                 &match self.explanation {
-                    Presence::Absent => "absent",
-                    Presence::Null => "null",
-                    Presence::Value(_) => "[redacted]",
+                    None => "absent",
+                    Some(_) => "[redacted]",
                 },
             )
             .finish()

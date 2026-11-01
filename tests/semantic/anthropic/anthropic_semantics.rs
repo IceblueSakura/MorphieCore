@@ -93,10 +93,7 @@ fn native_intake_keeps_independent_error_execution_progress_and_signature_owners
         serde_json::from_slice::<Value>(response()).unwrap()
     );
     use morphiecore::semantic::context::ServiceClass;
-    assert_eq!(
-        observed.metadata.context.service_class().clone(),
-        Presence::Absent
-    );
+    assert_eq!(observed.metadata.context.service_class().clone(), None);
     let mut reported: Value = serde_json::from_slice(response()).unwrap();
     reported["usage"]["service_tier"] = json!("priority");
     let decoded = p
@@ -108,7 +105,7 @@ fn native_intake_keeps_independent_error_execution_progress_and_signature_owners
         .unwrap();
     assert_eq!(
         decoded.metadata.context.service_class().clone(),
-        Presence::Value(ServiceClass::PriorityCapacity)
+        Some(ServiceClass::PriorityCapacity)
     );
     let mut manual = observed.clone();
     manual
@@ -117,7 +114,7 @@ fn native_intake_keeps_independent_error_execution_progress_and_signature_owners
         .reports
         .latest_mut()
         .expect("report")
-        .service_class = Presence::Value(ServiceClass::PriorityCapacity);
+        .service_class = Some(ServiceClass::PriorityCapacity);
     assert_eq!(
         p.encode_generation_response(&manual, &source, &target())
             .unwrap(),
@@ -129,7 +126,7 @@ fn native_intake_keeps_independent_error_execution_progress_and_signature_owners
         .reports
         .latest_mut()
         .expect("report")
-        .service_class = Presence::Value(ServiceClass::PriorityProcessing);
+        .service_class = Some(ServiceClass::PriorityProcessing);
     assert!(
         p.encode_generation_response(&manual, &source, &target())
             .is_err()
@@ -191,9 +188,9 @@ fn native_protected_dispatch_and_fallback_reports_reject_before_projection() {
     assert_eq!(absent.semantic.outcome(), plain.semantic.outcome());
     assert_eq!(
         absent.semantic.details().refusal,
-        Presence::Value(RefusalDetails {
-            category: Presence::Absent,
-            explanation: Presence::Absent,
+        Some(RefusalDetails {
+            category: None,
+            explanation: None,
         })
     );
     for (field, value) in [
@@ -219,38 +216,44 @@ fn stable_refusal_details_have_independent_native_directions_and_guarded_deliver
     let source = p
         .decode_generation_request(request(), LocalScope::new(1), &target())
         .unwrap();
-    for (wire_details, expected) in [
-        (None, Presence::Absent),
-        (Some(Value::Null), Presence::Null),
+    for (wire_details, expected, projected_details) in [
+        (None, None, None),
+        (Some(Value::Null), None, None),
         (
             Some(json!({"type":"refusal"})),
-            Presence::Value(RefusalDetails {
-                category: Presence::Absent,
-                explanation: Presence::Absent,
+            Some(RefusalDetails {
+                category: None,
+                explanation: None,
             }),
+            Some(json!({"type":"refusal"})),
         ),
         (
             Some(json!({"type":"refusal","category":null,"explanation":null})),
-            Presence::Value(RefusalDetails {
-                category: Presence::Null,
-                explanation: Presence::Null,
+            Some(RefusalDetails {
+                category: None,
+                explanation: None,
             }),
+            Some(json!({"type":"refusal"})),
         ),
         (
             Some(
                 json!({"type":"refusal","category":"cyber","explanation":"synthetic explanation"}),
             ),
-            Presence::Value(RefusalDetails {
-                category: Presence::Value(RefusalCategory::Cyber),
-                explanation: Presence::Value(text("synthetic explanation")),
+            Some(RefusalDetails {
+                category: Some(RefusalCategory::Cyber),
+                explanation: Some(text("synthetic explanation")),
             }),
+            Some(
+                json!({"type":"refusal","category":"cyber","explanation":"synthetic explanation"}),
+            ),
         ),
         (
             Some(json!({"type":"refusal","category":null,"explanation":""})),
-            Presence::Value(RefusalDetails {
-                category: Presence::Null,
-                explanation: Presence::Value(text("")),
+            Some(RefusalDetails {
+                category: None,
+                explanation: Some(text("")),
             }),
+            Some(json!({"type":"refusal","explanation":""})),
         ),
     ] {
         let mut wire = json!({"id":"msg_refusal","type":"message","role":"assistant","model":"synthetic-model",
@@ -264,6 +267,11 @@ fn stable_refusal_details_have_independent_native_directions_and_guarded_deliver
             .unwrap();
         assert_eq!(decoded.semantic.details().refusal, expected);
         assert_eq!(decoded.semantic.outcome(), Outcome::Incomplete);
+        if let Some(value) = projected_details {
+            wire["stop_details"] = value;
+        } else {
+            wire.as_object_mut().unwrap().shift_remove("stop_details");
+        }
         // The reverse oracle is constructed without decoding the report under test.
         let id = ItemId::scoped(LocalScope::new(3), 1);
         let mut usage = Usage::operation(11, 3, 14);
@@ -343,7 +351,7 @@ fn stable_refusal_details_have_independent_native_directions_and_guarded_deliver
             };
             message.status = ItemLifecycle::Incomplete;
             let mut details = manual.semantic.details().clone();
-            details.explanation = Presence::Null;
+            details.explanation = None;
             let report_only = GenerationResponse::new(items, Outcome::Incomplete)
                 .unwrap()
                 .with_details(details)
@@ -357,15 +365,15 @@ fn stable_refusal_details_have_independent_native_directions_and_guarded_deliver
                 morphiecore::protocol::openai::TargetContract::full(),
             );
             let lowered = result.unwrap();
-            assert!(lowered.semantic().details().refusal.is_absent());
+            assert!(lowered.semantic().details().refusal.is_none());
             assert_eq!(lowered.semantic().outcome(), Outcome::Incomplete);
             assert_eq!(
                 lowered.semantic().details().incomplete,
                 Some(IncompleteReason::ContentFilter)
             );
             assert_eq!(report_only.details().refusal, expected);
-            assert_eq!(report_only.details().explanation, Presence::Null);
-            assert!(lowered.semantic().details().explanation.is_absent());
+            assert_eq!(report_only.details().explanation, None);
+            assert!(lowered.semantic().details().explanation.is_none());
             assert!(
                 !lowered
                     .projection()
@@ -377,10 +385,10 @@ fn stable_refusal_details_have_independent_native_directions_and_guarded_deliver
                     .projection()
                     .iter()
                     .any(|v| v.rule() == "openai.omit-explanatory-refusal-details.v1"),
-                expected.value().is_some()
+                expected.as_ref().is_some()
             );
         }
-        if let Some(report) = expected.value() {
+        if let Some(report) = expected.as_ref() {
             assert!(!format!("{report:?}").contains("synthetic explanation"));
         }
     }
@@ -406,9 +414,9 @@ fn stable_refusal_details_have_independent_native_directions_and_guarded_deliver
         });
     }
     let details = TerminalDetails {
-        refusal: Presence::Value(RefusalDetails {
-            category: Presence::Null,
-            explanation: Presence::Value(text("synthetic explanation")),
+        refusal: Some(RefusalDetails {
+            category: None,
+            explanation: Some(text("synthetic explanation")),
         }),
         ..Default::default()
     };
@@ -418,9 +426,9 @@ fn stable_refusal_details_have_independent_native_directions_and_guarded_deliver
     );
     let mut large = details;
     large.incomplete = Some(IncompleteReason::ContentFilter);
-    large.refusal = Presence::Value(RefusalDetails {
-        category: Presence::Absent,
-        explanation: Presence::Value(text(&"x".repeat(MAX_TERMINAL_REPORT_BYTES))),
+    large.refusal = Some(RefusalDetails {
+        category: None,
+        explanation: Some(text(&"x".repeat(MAX_TERMINAL_REPORT_BYTES))),
     });
     assert_eq!(
         large.validate(Outcome::Incomplete),
@@ -621,7 +629,10 @@ fn native_stop_reasons_have_independent_terminal_owners() {
             .flat_map(|event| encoder.encode(event, &fidelity).unwrap())
             .collect();
         encoder.finish().unwrap();
-        assert!(named(encoder.projection()), "{rule}");
+        assert!(
+            encoder.projection().is_empty(),
+            "{rule}: renderers do not select projection rules"
+        );
         let last = frames.last().unwrap();
         if profile == OpenAi::Chat {
             let json = morphiecore::protocol::openai::chat::encode_response(&projected).unwrap();

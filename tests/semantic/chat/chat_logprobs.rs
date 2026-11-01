@@ -6,7 +6,7 @@ use serde_json::{Value, json};
 
 #[test]
 fn audit_probability_extensions_do_not_weaken_known_field_validation() {
-    use morphiecore::semantic::{task::generation::*, value::Presence};
+    use morphiecore::semantic::task::generation::*;
     let mut p = probability("ok");
     p["future_token_field"] = json!({"x":true});
     p["top_logprobs"][0]["future_top_field"] = json!(42);
@@ -22,7 +22,7 @@ fn audit_probability_extensions_do_not_weaken_known_field_validation() {
     };
     assert_eq!(
         text.logprobs(),
-        &Presence::Value(vec![Logprob {
+        &Some(vec![Logprob {
             token: "ok".into(),
             logprob: serde_json::from_str("-0.1234567890123456").unwrap(),
             bytes: None,

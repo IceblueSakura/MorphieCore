@@ -28,7 +28,7 @@ fn no_attachment(value: &Value) {
     }
 }
 #[test]
-fn unsupported_typed_values_remain_rejected_instead_of_becoming_text_or_extras() {
+fn typed_carriers_normalize_without_private_attachments_and_reject_foreign_replay() {
     let adapter = client(Dialect::MorphieCore);
     let base = adapter
         .decode_response(&serde_json::to_vec(&wire::response(2)).unwrap())
@@ -61,15 +61,33 @@ fn unsupported_typed_values_remain_rejected_instead_of_becoming_text_or_extras()
         response(call(ToolArguments::Structured(
             StructuredValue::new(json!({"n":1})).unwrap(),
         ))),
-        response(Item::Reasoning(ReasoningItem {
-            parts: vec![],
-            status: ItemLifecycle::Completed,
-            replay: Some(ReplayValue::final_value(
-                ReplayFormat::GoogleInteractionsV1Thought,
-                event::text("synthetic"),
-            )),
-        })),
     ] {
+        let mut decoded = base.clone();
+        decoded.semantic = semantic.clone();
+        let encoded = adapter.encode_response(&decoded, &contract()).unwrap();
+        no_attachment(&encoded);
+        assert_eq!(encoded["status"], "completed");
+        if matches!(&semantic.items()[0].1, Item::ToolCall(_)) {
+            assert_eq!(encoded["output"][0]["arguments"], r#"{"n":1}"#);
+        } else {
+            assert_eq!(encoded["output"], wire::response(2)["output"]);
+        }
+        if semantic.usage().is_some_and(|usage| {
+            usage.input_relation == InputTokenRelation::ExcludesCacheReadAndWrite
+        }) {
+            assert!(encoded["usage"].is_null());
+        }
+        assert_eq!(decoded.semantic, semantic);
+    }
+    let semantic = response(Item::Reasoning(ReasoningItem {
+        parts: vec![],
+        status: ItemLifecycle::Completed,
+        replay: Some(ReplayValue::final_value(
+            ReplayFormat::GoogleInteractionsV1Thought,
+            event::text("synthetic"),
+        )),
+    }));
+    {
         let mut decoded = base.clone();
         decoded.semantic = semantic.clone();
         assert!(adapter.encode_response(&decoded, &contract()).is_err());

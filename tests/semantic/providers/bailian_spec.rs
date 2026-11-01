@@ -485,6 +485,7 @@ fn responses_non_strict_defaults_and_single_function_selection_have_native_oracl
     let (wire, rules) = target.encode_request_with_rules(&input).unwrap();
     let mut expected = response_request();
     expected["store"] = json!(false);
+    expected["stream"] = json!(true);
     expected["input"] =
         json!([{"type":"message","role":"user","content":[{"type":"input_text","text":"go"}]}]);
     expected["tool_choice"] = json!({"type":"allowed_tools","mode":"required","tools":[{"type":"function","name":"lookup"}]});

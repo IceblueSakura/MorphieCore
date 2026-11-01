@@ -71,6 +71,18 @@ pub enum GenerationProtocol {
     GoogleInteractions,
 }
 impl GenerationProtocol {
+    /// Qualified non-Chat intake always uses the event stream. Chat JSON is the
+    /// selected exception for reports without an official chunk carrier.
+    pub fn requires_streaming_intake(self) -> bool {
+        match self {
+            Self::OpenAiChat => false,
+            Self::OpenAiResponses
+            | Self::AnthropicMessages
+            | Self::GoogleGenerateContent
+            | Self::GoogleInteractions => true,
+        }
+    }
+
     pub fn operation(self) -> crate::provider::GenerationOperation {
         use crate::provider::GenerationOperation;
         match self {

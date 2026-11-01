@@ -138,7 +138,7 @@ async fn ordered_route_only_falls_back_before_visible_delivery() {
                         }
                         return ([("content-type","text/event-stream")],format!("event: response.created\ndata: {initial}\n\n")).into_response();
                     }
-                    Json(json!({"object":"response","id":"b-r","model":"b-alias","created_at":1,"status":"completed","output":[{"type":"message","id":"b-msg","role":"assistant","status":"completed","content":[{"type":"output_text","text":"ok","annotations":[],"logprobs":[]}]}]})).into_response()
+                    ([("content-type","text/event-stream")], super::responses_wire::response_stream(json!({"object":"response","id":"b-r","model":"b-alias","created_at":1,"status":"completed","output":[{"type":"message","id":"b-msg","role":"assistant","status":"completed","content":[{"type":"output_text","text":"ok","annotations":[],"logprobs":[]}]}]}))).into_response()
                 }
             }));
         }

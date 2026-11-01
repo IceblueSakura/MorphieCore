@@ -105,17 +105,15 @@ async fn stored_json_and_sse_support_tool_continuation_retrieval_and_independent
                 calls.len()
             };
             assert!(count <= 4);
-            if body["stream"] == true {
-                return ([("content-type", "text/event-stream")], completed_stream()).into_response();
-            }
+            assert_eq!(body["stream"], true);
             let output = if count == 1 {
                 json!([
                     {"type":"reasoning","id":"reasoning-one","summary":[{"type":"summary_text","text":"checking"}],"encrypted_content":"synthetic-opaque"},
                     {"type":"function_call","id":"call-one","call_id":"c","name":"lookup","arguments":"{}","status":"completed"}
                 ])
             } else { json!([]) };
-            Json(json!({"object":"response","id":"wire-response","model":"private-fixture",
-                "created_at":1,"status":"completed","output":output})).into_response()
+            ([("content-type", "text/event-stream")], super::responses_wire::response_stream(json!({"object":"response","id":"wire-response","model":"private-fixture",
+                "created_at":1,"status":"completed","output":output}))).into_response()
         }
     }));
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -399,12 +397,7 @@ async fn abandoned_stored_stream_is_not_retrievable_and_auth_precedes_lookup() {
 async fn timed_out_unpolled_body_releases_staged_history_without_consumer_cleanup() {
     let upstream = Router::new().route(
         "/responses",
-        post(|| async {
-            Json(
-                json!({"id":"wire-response","object":"response","model":"private-fixture",
-            "created_at":1,"status":"completed","output":[]}),
-            )
-        }),
+        post(|| async { ([("content-type", "text/event-stream")], completed_stream()) }),
     );
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let gate = gateway_with_limits(

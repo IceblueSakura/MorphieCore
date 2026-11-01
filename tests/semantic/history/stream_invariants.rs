@@ -93,7 +93,6 @@ proptest! {
 
 #[test]
 fn point_annotations_wait_for_owner_text_closure_and_cannot_be_rewritten() {
-    use morphiecore::semantic::value::Presence;
     let item = ItemId::new(1);
     let part = PartId::new(1);
     let source = ResourceId::new(1);
@@ -143,7 +142,7 @@ fn point_annotations_wait_for_owner_text_closure_and_cannot_be_rewritten() {
         item,
         part,
         annotations: vec![annotation(offset), annotation(offset)],
-        logprobs: Presence::Absent,
+        logprobs: None,
     };
     let empty = reduce(state.clone(), event(4)).unwrap();
     assert!(matches!(
@@ -192,7 +191,6 @@ fn point_annotations_wait_for_owner_text_closure_and_cannot_be_rewritten() {
 
 #[test]
 fn probability_deltas_and_final_metadata_share_the_part_budget() {
-    use morphiecore::semantic::value::Presence;
     let item = ItemId::new(1);
     let part = PartId::new(1);
     let mut state = StreamState::new();
@@ -227,7 +225,7 @@ fn probability_deltas_and_final_metadata_share_the_part_budget() {
     }
     assert_eq!(
         state.part(item, part).unwrap().logprobs,
-        Presence::Value(probabilities.clone())
+        Some(probabilities.clone())
     );
     assert!(matches!(
         reduce(
@@ -257,7 +255,7 @@ fn probability_deltas_and_final_metadata_share_the_part_budget() {
         item,
         part,
         annotations: vec![],
-        logprobs: Presence::Value(logprobs),
+        logprobs: Some(logprobs),
     };
     assert!(matches!(
         reduce(state.clone(), metadata(vec![])),

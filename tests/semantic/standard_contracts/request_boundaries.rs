@@ -22,7 +22,7 @@ fn chat_storage_and_audio_history_keep_request_meaning() {
         let request = codec
             .decode_client_request(body.to_string().as_bytes())
             .unwrap();
-        assert_eq!(request.context.store, Presence::Value(false));
+        assert_eq!(request.context.store, Some(false));
         assert_eq!(request.task.semantic.resources().iter().count(), 0);
         let Item::Message(message) = &request.task.semantic.items()[0].1 else {
             panic!("message")
@@ -35,7 +35,7 @@ fn chat_storage_and_audio_history_keep_request_meaning() {
     let mut request = codec
         .decode_request(br#"{"model":"m","messages":[{"role":"user","content":"x"}]}"#)
         .unwrap();
-    request.context.store = Presence::Value(false);
+    request.context.store = Some(false);
     let before = request.clone();
     assert_eq!(
         codec

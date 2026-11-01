@@ -17,7 +17,7 @@ fn message(role: MessageRole, part: u64, value: &str) -> Item {
         phase: None,
         parts: vec![Part::new(
             PartId::new(part),
-            ContentPart::Text(TextContent::new(text(value), vec![], Presence::Absent).unwrap()),
+            ContentPart::Text(TextContent::new(text(value), vec![], None).unwrap()),
         )],
     })
 }

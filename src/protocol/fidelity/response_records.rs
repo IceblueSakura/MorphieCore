@@ -297,10 +297,10 @@ fn response_dependency(response: &GenerationResponse) -> [u8; 32] {
     use sha2::{Digest, Sha256};
     let mut hash = Sha256::new();
     hash.update(format!("{response:?}").as_bytes());
-    if let Some(details) = response.details().refusal.value() {
+    if let Some(details) = response.details().refusal.as_ref() {
         hash.update(details.fingerprint());
     }
-    if let Some(explanation) = response.details().explanation.value() {
+    if let Some(explanation) = response.details().explanation.as_ref() {
         hash.update(explanation.fingerprint());
     }
     for (id, value) in response.resources().iter() {
@@ -350,10 +350,7 @@ fn response_dependency(response: &GenerationResponse) -> [u8; 32] {
 #[cfg(test)]
 mod tests {
     use super::response_dependency;
-    use crate::semantic::{
-        task::generation::*,
-        value::{Presence, Text},
-    };
+    use crate::semantic::{task::generation::*, value::Text};
 
     #[test]
     fn redacted_terminal_prose_edits_invalidate_response_dependencies() {
@@ -363,15 +360,15 @@ mod tests {
                 let details = if refusal {
                     TerminalDetails {
                         incomplete: Some(IncompleteReason::ContentFilter),
-                        refusal: Presence::Value(RefusalDetails {
-                            category: Presence::Value(RefusalCategory::GeneralHarms),
-                            explanation: Presence::Value(text),
+                        refusal: Some(RefusalDetails {
+                            category: Some(RefusalCategory::GeneralHarms),
+                            explanation: Some(text),
                         }),
                         ..Default::default()
                     }
                 } else {
                     TerminalDetails {
-                        explanation: Presence::Value(TerminalExplanation { text }),
+                        explanation: Some(TerminalExplanation { text }),
                         ..Default::default()
                     }
                 };

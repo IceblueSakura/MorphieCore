@@ -4,9 +4,7 @@ use super::{
     checks::{
         check_tool_selection, check_usage, represent_reasoning, text_items, validate_wire_ids,
     },
-    message_groups, projection,
 };
-use crate::lowering::disposition::Rule;
 use crate::{
     protocol::{
         ResponseMetadata,
@@ -52,144 +50,25 @@ pub fn lower_response<'a>(
     metadata: &'a ResponseMetadata,
     profile: GenerationApi,
     c: TargetContract,
-) -> Result<ResponseRepresentation<'a>, RepresentationError> {
-    if r.items()
-        .iter()
-        .any(|(_, item)| item.has_replay_attachment())
-    {
-        return Err(RepresentationError::ReplayFormat);
-    }
-    if !r.safety_reports().is_empty() {
-        return Err(RepresentationError::Safety);
-    }
-    let terminal_losses = crate::protocol::openai::terminal::terminal_losses(r.details(), profile)
-        .map_err(|_| RepresentationError::Terminal)?;
-    metadata
-        .context
-        .validate()
-        .map_err(|_| RepresentationError::Metadata)?;
-    let mut metadata = std::borrow::Cow::Borrowed(metadata);
-    let mut semantic = std::borrow::Cow::Borrowed(r);
-    let mut projection: Vec<_> = terminal_losses
-        .into_iter()
-        .map(|loss| {
-            (loss).effect(
-                crate::protocol::conversion::generation::ConversionBoundary::ResponseProject,
-            )
-        })
-        .collect();
-    if let Some((view, effects)) =
-        super::readable_reasoning::project(&semantic, profile, &c.adaptation.rules)?
-    {
-        semantic = std::borrow::Cow::Owned(view);
-        projection.extend(effects);
-    }
-    if profile == GenerationApi::Chat
-        && let Some((view, effects)) = projection::chat_text_status(&semantic, c.reported_facts)?
-    {
-        semantic = std::borrow::Cow::Owned(view);
-        projection.extend(effects);
-    }
-    if profile == GenerationApi::Responses
-        && let Some(rule) = projection::request_metadata_echo(&metadata, c.reported_facts)?
-    {
-        projection.push(
-            rule.effect(
-                crate::protocol::conversion::generation::ConversionBoundary::ResponseProject,
-            ),
-        );
-    }
-    if let Some(loss) = projection::reported_settings(metadata.to_mut(), profile)? {
-        if c.reported_facts == ReportedFactPolicy::StrictComplete {
-            return Err(RepresentationError::ReportedFacts);
-        }
-        projection.push(
-            (loss).effect(
-                crate::protocol::conversion::generation::ConversionBoundary::ResponseProject,
-            ),
-        );
-    }
-    crate::protocol::reports::relation(&metadata.context.reports, true)
-        .map_err(|_| RepresentationError::Metadata)?;
-    if let Some(loss) = projection::reported_service_class(metadata.to_mut(), profile) {
-        if c.reported_facts == ReportedFactPolicy::StrictComplete {
-            return Err(RepresentationError::ReportedFacts);
-        }
-        projection.push(
-            loss.effect(
-                crate::protocol::conversion::generation::ConversionBoundary::ResponseProject,
-            ),
-        );
-    }
-    if profile == GenerationApi::Responses
-        && crate::protocol::reports::terminal_view(&mut metadata.to_mut().context.reports)
-            .map_err(|_| RepresentationError::Metadata)?
-    {
-        if c.reported_facts == ReportedFactPolicy::StrictComplete {
-            return Err(RepresentationError::ReportedFacts);
-        }
-        projection.push(
-            (Rule::OMIT_OPENING_REPORT).effect(
-                crate::protocol::conversion::generation::ConversionBoundary::ResponseProject,
-            ),
-        );
-    }
-    if profile == GenerationApi::Responses && !metadata.context.system_fingerprint.is_absent() {
-        let observed = metadata.context.system_fingerprint.value().is_some();
-        metadata.to_mut().context.system_fingerprint = crate::semantic::value::Presence::Absent;
-        if observed {
-            projection.push((Rule::OMIT_RESPONSES_SYSTEM_FINGERPRINT).effect(
-                crate::protocol::conversion::generation::ConversionBoundary::ResponseProject,
-            ));
-        }
-    }
-    if let Some((groups, loss)) =
-        message_groups::project(semantic.items(), semantic.message_envelopes(), profile)?
-    {
-        semantic = std::borrow::Cow::Owned(semantic.into_owned().with_message_envelopes(groups)?);
-        projection.push(
-            (loss).effect(
-                crate::protocol::conversion::generation::ConversionBoundary::ResponseProject,
-            ),
-        );
-    }
-    if r.usage_reports().has_unrepresented_details() {
-        if c.reported_facts == ReportedFactPolicy::StrictComplete {
-            return Err(RepresentationError::ReportedFacts);
-        }
-        semantic = std::borrow::Cow::Owned(semantic.into_owned().with_usage(r.usage())?);
-        projection.push(
-            (Rule::USAGE_REPORT_VIEW).effect(
-                crate::protocol::conversion::generation::ConversionBoundary::ResponseProject,
-            ),
-        );
-    }
-    if let Some(usage) = r.usage() {
-        let (projected, losses) = match profile {
-            GenerationApi::Chat => (usage, vec![]),
-            GenerationApi::Responses => projection::responses_usage(usage, &c.adaptation.rules)?,
-        };
-        if !losses.is_empty() {
-            semantic = std::borrow::Cow::Owned(semantic.into_owned().with_usage(Some(projected))?);
-            projection.extend(losses.into_iter().map(|loss| {
-                (loss).effect(
-                    crate::protocol::conversion::generation::ConversionBoundary::ResponseProject,
-                )
-            }));
-        }
-    }
-    if !semantic.details().refusal.is_absent() || !semantic.details().explanation.is_absent() {
-        let mut details = semantic.details().clone();
-        details.refusal = crate::semantic::value::Presence::Absent;
-        details.explanation = crate::semantic::value::Presence::Absent;
-        semantic = std::borrow::Cow::Owned(semantic.into_owned().with_details(details)?);
-    }
-    validate_response(&semantic, fidelity, &metadata, profile, &c)?;
-
+) -> Result<ResponseRepresentation<'a>, crate::protocol::ConversionFailure> {
+    let client = crate::adapter::ClientAdapter::openai(
+        crate::protocol::openai::GenerationCodec {
+            protocol: profile,
+            adaptation: c.adaptation.clone(),
+        },
+        c.clone(),
+    );
+    let decoded = crate::protocol::DecodedResponse {
+        semantic: r.clone(),
+        fidelity: fidelity.clone(),
+        metadata: metadata.clone(),
+        evidence: Default::default(),
+    };
+    let (projected, projection) = client.project_response(&decoded)?;
     Ok(ResponseRepresentation {
-        semantic,
+        semantic: std::borrow::Cow::Owned(projected.semantic),
         fidelity,
-        metadata,
+        metadata: std::borrow::Cow::Owned(projected.metadata),
         profile,
         adaptation: c.adaptation,
         projection_steps: projection.len().max(1),
@@ -197,7 +76,7 @@ pub fn lower_response<'a>(
     })
 }
 
-fn validate_response(
+pub(crate) fn validate_response(
     r: &GenerationResponse,
     fidelity: &FidelityRecords,
     metadata: &ResponseMetadata,
@@ -304,7 +183,7 @@ fn validate_response(
     {
         return Err(RepresentationError::Terminal);
     }
-    if let Some(class) = metadata.context.service_class().value() {
+    if let Some(class) = metadata.context.service_class().as_ref() {
         crate::protocol::openai::service::class_wire(*class, profile)
             .map_err(|_| RepresentationError::Metadata)?;
     }

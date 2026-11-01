@@ -174,7 +174,7 @@
       }
     ],
     "store": false,
-    "stream": false
+    "stream": true
   },
   "turns": [
     {

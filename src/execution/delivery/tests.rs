@@ -45,6 +45,120 @@ fn incomplete_native_tool_arguments_keep_prefixes_in_json_stream_and_history() {
     }
 }
 
+#[test]
+fn late_chat_reasoning_identity_keeps_published_and_retained_aliases() {
+    let endpoint = crate::topology::catalog::API_KEY_BINDINGS
+        .iter()
+        .find(|binding| {
+            binding.canonical_model == "gpt-6-luna" && binding.dialect == Dialect::OpenRouter
+        })
+        .unwrap()
+        .endpoint(crate::topology::GenerationProtocol::OpenAiChat)
+        .unwrap();
+    let mut attempt = Attempt::new(endpoint.adapter().unwrap(), 65536, Default::default());
+    attempt.begin(200, "text/event-stream").unwrap();
+    let mut delivery = ResponseDelivery::new(
+        ClientAdapter::openai(
+            GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None),
+            TargetContract::full(),
+        ),
+        "public",
+        Default::default(),
+        StreamOptions {
+            include_obfuscation: Presence::Value(false),
+            ..Default::default()
+        },
+        Obfuscation::Disabled,
+    );
+    delivery.generated_id = Some("public-response".into());
+    let mut output = vec![];
+    for (delta, finish) in [
+        (
+            json!({"role":"assistant","reasoning_details":[{"type":"reasoning.summary","summary":"A","format":"openai-responses-v1","index":0}]}),
+            Value::Null,
+        ),
+        (
+            json!({"reasoning_details":[{"type":"reasoning.encrypted","data":"private-token","format":"openai-responses-v1","index":1,"id":"rs_actual"}]}),
+            Value::Null,
+        ),
+        (json!({"content":"answer"}), json!("stop")),
+    ] {
+        let chunk = json!({"id":"r","object":"chat.completion.chunk","created":1,"model":"m",
+            "choices":[{"index":0,"delta":delta,"finish_reason":finish}]});
+        let (_, events) = attempt
+            .push(format!("data: {chunk}\n\n").as_bytes())
+            .unwrap();
+        output.extend(
+            delivery
+                .encode_events(&attempt, &events)
+                .unwrap()
+                .into_bytes()
+                .concat(),
+        );
+    }
+    let (_, events) = attempt.push(b"data: [DONE]\n\n").unwrap();
+    output.extend(
+        delivery
+            .encode_events(&attempt, &events)
+            .unwrap()
+            .into_bytes()
+            .concat(),
+    );
+    attempt.finish().unwrap();
+    output.extend(
+        delivery
+            .finish_stream(&attempt)
+            .unwrap()
+            .into_bytes()
+            .concat(),
+    );
+    let wire: Vec<Value> = String::from_utf8(output)
+        .unwrap()
+        .lines()
+        .filter_map(|line| line.strip_prefix("data: "))
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    let added = wire
+        .iter()
+        .find(|frame| {
+            frame["type"] == "response.output_item.added" && frame["item"]["type"] == "reasoning"
+        })
+        .unwrap();
+    let id = added["item"]["id"].as_str().unwrap();
+    assert_ne!(id, "rs_actual");
+    for frame in &wire {
+        if frame["output_index"] == 0 {
+            if let Some(item_id) = frame.get("item_id") {
+                assert_eq!(item_id, id);
+            }
+            if let Some(item) = frame.get("item") {
+                assert_eq!(item["id"], id);
+            }
+        }
+    }
+    let terminal = wire
+        .iter()
+        .find(|frame| frame["type"] == "response.completed")
+        .unwrap();
+    assert_eq!(terminal["response"]["output"][0]["id"], id);
+    let (retained, body) = delivery.snapshot(&attempt).unwrap();
+    let body: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(body["output"][0]["id"], id);
+    assert_eq!(
+        retained
+            .fidelity
+            .response_item_id(retained.semantic.items()[0].0),
+        Some(id)
+    );
+    assert_eq!(
+        attempt
+            .fidelity()
+            .unwrap()
+            .response_item_id(retained.semantic.items()[0].0),
+        Some("rs_actual")
+    );
+}
+
 fn native_tool_argument_views(api: GenerationApi, arguments: &str, incomplete: bool) {
     use crate::semantic::task::generation::{
         IncompleteReason, Item, ItemLifecycle, Outcome, ToolArguments,
@@ -63,6 +177,7 @@ fn native_tool_argument_views(api: GenerationApi, arguments: &str, incomplete: b
             "usage":{"output_tokens":2}}),
         json!({"type":"message_stop"}),
     ];
+    let mut delivered_ids = vec![];
     for stream in [false, true] {
         let mut attempt = Attempt::new(endpoint.adapter().unwrap(), 65536, Default::default());
         attempt.begin(200, "text/event-stream").unwrap();
@@ -79,6 +194,7 @@ fn native_tool_argument_views(api: GenerationApi, arguments: &str, incomplete: b
             },
             Obfuscation::Disabled,
         );
+        delivery.generated_id = Some(format!("response-{stream}"));
         let mut output = vec![];
         for frame in &frames {
             let (_, events) = attempt
@@ -98,6 +214,8 @@ fn native_tool_argument_views(api: GenerationApi, arguments: &str, incomplete: b
                         .into_bytes()
                         .concat(),
                 );
+            } else {
+                delivery.observe_events(&attempt, &events).unwrap();
             }
         }
         attempt.finish().unwrap();
@@ -193,6 +311,14 @@ fn native_tool_argument_views(api: GenerationApi, arguments: &str, incomplete: b
         let wire_arguments = match api {
             GenerationApi::Responses => {
                 assert_eq!(saved["output"], delivered["output"]);
+                let id = saved["output"][0]["id"].as_str().unwrap();
+                assert_eq!(
+                    retained
+                        .fidelity
+                        .response_item_id(retained.semantic.items()[0].0),
+                    Some(id)
+                );
+                delivered_ids.push(id.to_owned());
                 &saved["output"][0]["arguments"]
             }
             GenerationApi::Chat => {
@@ -227,14 +353,24 @@ fn native_tool_argument_views(api: GenerationApi, arguments: &str, incomplete: b
         }
         assert_eq!(attempt.response().unwrap(), &source);
     }
+    if api == GenerationApi::Responses {
+        assert_ne!(delivered_ids[0], delivered_ids[1]);
+    }
 }
 
 #[test]
 fn finalized_json_still_needs_handoff_and_cannot_resume_after_rejection() {
     let adapter = GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None);
     let mut attempt = Attempt::new(adapter.clone(), 4096, Default::default());
-    attempt.begin(200, "application/json").unwrap();
-    attempt.push(br#"{"id":"r","object":"response","created_at":1,"model":"m","status":"completed","output":[]}"#).unwrap();
+    attempt.begin(200, "text/event-stream").unwrap();
+    let bytes = crate::test_responses_wire::response_stream(
+        json!({"id":"r","object":"response","created_at":1,"model":"m","status":"completed","output":[]}),
+    );
+    let mut remaining = bytes.as_bytes();
+    while !remaining.is_empty() {
+        let (used, _) = attempt.push(remaining).unwrap();
+        remaining = &remaining[used..];
+    }
     attempt.finish().unwrap();
     for reject in [false, true] {
         let mut delivery = ResponseDelivery::new(
@@ -317,8 +453,20 @@ fn messages_end_turn_derivation_uses_original_request_without_mutating_reports()
                     "input_tokens_details":{"cached_tokens":0,"cache_write_tokens":0}}})
         };
         let mut attempt = Attempt::new(codec, 65536, Default::default());
-        attempt.begin(200, "application/json").unwrap();
-        attempt.push(wire.to_string().as_bytes()).unwrap();
+        let (media, bytes) = if api == GenerationApi::Chat {
+            ("application/json", wire.to_string())
+        } else {
+            (
+                "text/event-stream",
+                crate::test_responses_wire::response_stream(wire),
+            )
+        };
+        attempt.begin(200, media).unwrap();
+        let mut remaining = bytes.as_bytes();
+        while !remaining.is_empty() {
+            let (used, _) = attempt.push(remaining).unwrap();
+            remaining = &remaining[used..];
+        }
         assert!(attempt.response().is_err());
         attempt.finish().unwrap();
         let source = attempt.response().unwrap().clone();
@@ -364,7 +512,7 @@ fn messages_end_turn_derivation_uses_original_request_without_mutating_reports()
                 delivery = delivery.with_request(&endpoint, &effective, &original);
             }
             let result = delivery.encode_json(&attempt);
-            if bound && !original_stops && !effective_stops {
+            if bound {
                 let output: Value = serde_json::from_slice(&result.unwrap()).unwrap();
                 assert_eq!(output["stop_reason"], "end_turn");
                 assert_eq!(output["stop_sequence"], Value::Null);
@@ -389,6 +537,18 @@ fn messages_end_turn_derivation_uses_original_request_without_mutating_reports()
                         .iter()
                         .any(|entry| entry.effect.rule()
                             == "messages.infer-end-turn-from-request.v1")
+                );
+                assert_eq!(
+                    delivery
+                        .report
+                        .attempt()
+                        .evidence
+                        .entries
+                        .iter()
+                        .any(
+                            |entry| entry.effect.rule() == "messages.ambiguous-stop-as-end-turn.v1"
+                        ),
+                    original_stops || effective_stops,
                 );
             } else {
                 assert!(matches!(
@@ -709,18 +869,19 @@ fn messages_report_omissions_match_json_stream_and_retained_views() {
                     assert!(!delivery.lifecycle().may_retry_or_fallback());
                 }
             } else {
-                attempt.begin(200, "application/json").unwrap();
-                attempt
-                    .push(&serde_json::to_vec(&response).unwrap())
-                    .unwrap();
+                attempt.begin(200, "text/event-stream").unwrap();
+                let body = crate::test_responses_wire::response_stream(response.clone());
+                let mut remaining = body.as_bytes();
+                while !remaining.is_empty() {
+                    let (used, events) = attempt.push(remaining).unwrap();
+                    delivery.observe_events(&attempt, &events).unwrap();
+                    remaining = &remaining[used..];
+                }
             }
             attempt.finish().unwrap();
             let observed = attempt.response().unwrap().clone();
             if hints.get("background").is_some() {
-                assert_eq!(
-                    observed.metadata.context.execution.background,
-                    Presence::Value(false)
-                );
+                assert_eq!(observed.metadata.context.execution.background, Some(false));
             }
             let result = if stream {
                 delivery
@@ -796,7 +957,7 @@ fn messages_report_omissions_match_json_stream_and_retained_views() {
             );
             let mut unsupported = observed.metadata.clone();
             unsupported.context.execution.metadata = Presence::Value(Default::default());
-            unsupported.context.execution.max_tool_calls = Presence::Value(0);
+            unsupported.context.execution.max_tool_calls = Some(0);
             assert!(encoder.update_metadata(unsupported).is_err());
             assert!(encoder.update_metadata(observed.metadata.clone()).is_err());
             assert!(encoder.finish().is_err());
@@ -1085,7 +1246,7 @@ fn lifecycle_reports_freeze_opening_batches_and_charge_both_observations() {
     );
     assert_eq!(
         prepared.context.metadata.context.service_class(),
-        &Presence::Value(ServiceClass::ConfiguredProcessing)
+        &Some(ServiceClass::ConfiguredProcessing)
     );
     let wire: Vec<_> = delivery
         .encode_prepared(prepared)
@@ -1740,7 +1901,10 @@ fn assessment_only_safety_reports_are_omitted_and_blocking_reports_reject() {
     ] {
         for stream in [false, true] {
             let (body, losses) = run(protocol, false, stream);
-            let body = String::from_utf8(body.unwrap()).unwrap();
+            let body = String::from_utf8(
+                body.unwrap_or_else(|error| panic!("{protocol:?}/{stream}: {error:?}")),
+            )
+            .unwrap();
             assert!(
                 body.contains("OK") && !body.contains("HARASSMENT"),
                 "{protocol:?}"
@@ -1761,5 +1925,167 @@ fn assessment_only_safety_reports_are_omitted_and_blocking_reports_reject() {
                 "{protocol:?} {stream}: {error}"
             );
         }
+    }
+}
+
+#[test]
+fn responses_snapshot_preserves_wire_identity_and_result_lifecycle() {
+    for (kind, status) in [
+        ("message", "completed"),
+        ("function_call_output", "completed"),
+        ("function_call_output", "incomplete"),
+        ("custom_tool_call_output", "completed"),
+        ("custom_tool_call_output", "incomplete"),
+    ] {
+        let item = if kind == "message" {
+            json!({"id":"upstream-item","type":kind,"status":status,"role":"assistant",
+                "content":[{"type":"output_text","text":"answer","annotations":[]}]})
+        } else {
+            json!({"id":"upstream-item","type":kind,"status":status,"call_id":"c","output":"value"})
+        };
+        let mut wire = json!({"id":"r","object":"response","model":"m","created_at":1,
+            "status":status,"output":[item]});
+        if status == "incomplete" {
+            wire["incomplete_details"] = json!({"reason":"max_output_tokens"});
+        }
+        let codec = GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None);
+        let mut attempt = Attempt::new(codec.clone(), 65536, Default::default());
+        attempt.begin(200, "text/event-stream").unwrap();
+        let bytes = crate::test_responses_wire::response_stream(wire);
+        let mut remaining = bytes.as_bytes();
+        while !remaining.is_empty() {
+            let (used, _) = attempt.push(remaining).unwrap();
+            remaining = &remaining[used..];
+        }
+        attempt.finish().unwrap();
+        let source = attempt.response().unwrap().clone();
+        let mut delivery = ResponseDelivery::new(
+            ClientAdapter::openai(codec, crate::protocol::openai::TargetContract::full()),
+            "public",
+            Default::default(),
+            Default::default(),
+            Obfuscation::Disabled,
+        );
+        let (retained, body) = delivery.encode_json_snapshot(&attempt).unwrap();
+        let body: Value = serde_json::from_slice(&body.into_bytes().concat()).unwrap();
+        assert_eq!(body["output"][0]["id"], "upstream-item");
+        assert_eq!(body["output"][0]["type"], kind);
+        assert_eq!(body["output"][0]["status"], status);
+        assert_eq!(
+            retained.semantic.items()[0].1.lifecycle(),
+            source.semantic.items()[0].1.lifecycle()
+        );
+        assert_eq!(
+            retained
+                .fidelity
+                .response_item_id(retained.semantic.items()[0].0),
+            Some("upstream-item")
+        );
+        assert_eq!(attempt.response().unwrap(), &source);
+    }
+}
+
+#[test]
+fn chat_delivery_uses_terminal_service_reports_without_rewriting_opening_facts() {
+    for stream in [false, true] {
+        let response = json!({"id":"r","object":"response","created_at":1,"model":"m",
+            "status":"completed","service_tier":"default",
+            "output":[{"type":"message","id":"msg","role":"assistant","status":"completed",
+                "content":[{"type":"output_text","text":"answer","annotations":[],"logprobs":[]}]}]});
+        let mut frames = crate::test_responses_wire::response_events(response);
+        frames[0]["response"]["service_tier"] = json!("auto");
+        let endpoint = crate::topology::catalog::API_KEY_BINDINGS
+            .iter()
+            .find(|binding| {
+                binding.canonical_model == "gpt-6-luna" && binding.dialect == Dialect::OpenRouter
+            })
+            .unwrap()
+            .endpoint(crate::topology::GenerationProtocol::OpenAiResponses)
+            .unwrap();
+        let mut attempt = Attempt::new(endpoint.adapter().unwrap(), 65536, Default::default());
+        attempt.begin(200, "text/event-stream").unwrap();
+        let mut delivery = ResponseDelivery::new(
+            ClientAdapter::openai(
+                GenerationCodec::new(GenerationApi::Chat, Dialect::Standard, None),
+                TargetContract::full(),
+            ),
+            "public",
+            Default::default(),
+            StreamOptions {
+                include_obfuscation: Presence::Value(false),
+                ..Default::default()
+            },
+            Obfuscation::Disabled,
+        );
+        let mut output = vec![];
+        for frame in frames {
+            let (_, events) = attempt
+                .push(
+                    format!(
+                        "event: {}\ndata: {frame}\n\n",
+                        frame["type"].as_str().unwrap()
+                    )
+                    .as_bytes(),
+                )
+                .unwrap();
+            if stream {
+                output.extend(
+                    delivery
+                        .encode_events(&attempt, &events)
+                        .unwrap()
+                        .into_bytes()
+                        .concat(),
+                );
+            } else {
+                delivery.observe_events(&attempt, &events).unwrap();
+            }
+        }
+        attempt.finish().unwrap();
+        let source = attempt.response().unwrap().clone();
+        let public: Value = if stream {
+            output.extend(
+                delivery
+                    .finish_stream(&attempt)
+                    .unwrap()
+                    .into_bytes()
+                    .concat(),
+            );
+            let wire = String::from_utf8(output).unwrap();
+            let chunks: Vec<Value> = wire
+                .lines()
+                .filter_map(|line| line.strip_prefix("data: "))
+                .filter(|line| *line != "[DONE]")
+                .map(|line| serde_json::from_str(line).unwrap())
+                .collect();
+            let content: String = chunks
+                .iter()
+                .filter_map(|chunk| {
+                    chunk
+                        .pointer("/choices/0/delta/content")
+                        .and_then(Value::as_str)
+                })
+                .collect();
+            assert_eq!(content, "answer");
+            assert!(
+                chunks
+                    .iter()
+                    .any(|chunk| chunk["service_tier"] == "default")
+            );
+            assert!(chunks.iter().all(|chunk| chunk["service_tier"] != "auto"));
+            let (_, bytes) = delivery.snapshot(&attempt).unwrap();
+            serde_json::from_slice(&bytes).unwrap()
+        } else {
+            serde_json::from_slice(&delivery.encode_json(&attempt).unwrap()).unwrap()
+        };
+        assert_eq!(public["choices"][0]["message"]["content"], "answer");
+        assert_eq!(public["choices"][0]["finish_reason"], "stop");
+        assert_eq!(public["service_tier"], "default");
+        assert!(
+            delivery
+                .effects()
+                .iter()
+                .any(|effect| effect.rule() == "chat.omit-opening-service-report.v1")
+        );
+        assert_eq!(attempt.response().unwrap(), &source);
     }
 }

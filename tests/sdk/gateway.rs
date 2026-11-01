@@ -31,9 +31,15 @@ async fn sdk_messages_completion_from_openai_sources() {
             );
             let chat = body.get("messages").is_some();
             let stream = body["stream"] == true;
+            let first = &body[if chat { "messages" } else { "input" }][0]["content"];
+            let scenario = first
+                .as_str()
+                .or_else(|| first[0]["text"].as_str())
+                .unwrap();
+            assert!(matches!(scenario, "begin-json" | "begin-stream"));
             let count = {
                 let mut seen = seen.lock().unwrap();
-                let count = seen.entry((chat, stream)).or_default();
+                let count = seen.entry((chat, scenario == "begin-stream")).or_default();
                 *count += 1;
                 assert!(*count <= 2);
                 *count
@@ -210,6 +216,7 @@ fn owner_events() -> Vec<Value> {
 struct Scenario {
     chat: bool,
     stream: bool,
+    client_stream: bool,
     cross: bool,
     empty_owner: bool,
     nonstandard_usage: bool,
@@ -293,6 +300,11 @@ async fn provider(
             .entry(Scenario {
                 chat,
                 stream,
+                client_stream: if chat {
+                    stream
+                } else {
+                    request["metadata"]["delivery"] == "stream"
+                },
                 cross,
                 empty_owner: owner_case,
                 nonstandard_usage,

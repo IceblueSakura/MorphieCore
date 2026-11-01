@@ -3,7 +3,7 @@
 //! and from the IR; `client` admits and delivers downstream values. Accounting and
 //! terminal mappings are shared by those directions, not owned by a delivery front end.
 use crate::protocol::failure::CarrierReason;
-mod accounting;
+pub(crate) mod accounting;
 pub(crate) mod carriers;
 pub mod client;
 pub mod sse;

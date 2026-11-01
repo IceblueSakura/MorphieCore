@@ -235,7 +235,10 @@ fn wire(api: Api, source: &Source) -> Vec<u8> {
 }
 fn intake(api: Api, source: &Source, stream: bool, chunk_size: usize) -> Attempt {
     let mut attempt = Attempt::new(api.upstream(), LIMIT, Default::default());
-    let (media, bytes) = if !stream && let Some(v) = &source.json {
+    let (media, bytes) = if matches!(api, Api::Chat)
+        && !stream
+        && let Some(v) = &source.json
+    {
         ("application/json", serde_json::to_vec(v).unwrap())
     } else {
         ("text/event-stream", wire(api, source))
