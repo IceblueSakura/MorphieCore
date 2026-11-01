@@ -320,7 +320,7 @@ fn stable_messages_filters_extras_without_enabling_beta_semantics() {
     for fields in [
         json!({"thinking":{"type":"adaptive","block_binding":{"prefix_mismatch_behavior":"error"}}}),
         json!({"messages":[{"role":"user","content":"x"},{"role":"system","content":[],"output_config":{"effort":"low"}}]}),
-        json!({"messages":[{"role":"user","content":"x"},{"role":"system","content":[{"type":"tool_removal","tool":{"type":"tool_reference","name":"f"}}]}]}),
+        json!({"messages":[{"role":"user","content":[{"type":"tool_removal","tool":{"type":"tool_reference","name":"f"}}]}]}),
     ] {
         let mut body = base.clone();
         body.as_object_mut()

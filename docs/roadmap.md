@@ -58,15 +58,15 @@ This page owns current scope, priorities, dependencies, and exit gates. [Archite
 
 ## Current status
 
-**Current focus (2026-11-01):** request and delivery conversion-ladder owners are complete. Remaining Client/IR work is Messages intake (R3), unknown facts/history delegation (R4), and cleanup/discovery (R5), followed by default-profile installed-Agent acceptance. Remaining blockers appear in [agent-default production findings](#agent-default-production-findings). Stage 4 resumes after the [closure boundary](#closure-boundary). Budget formulas stay deferred; no new binding activation, Google expansion or Stage-5 scheduling follows.
+**Current focus (2026-11-02):** request/delivery conversion-ladder owners and Messages intake are complete. Remaining Client/IR work is unknown facts/history delegation (R4) and cleanup/discovery (R5), followed by the remaining default-profile installed-Agent acceptance. Remaining blockers appear in [agent-default production findings](#agent-default-production-findings). Stage 4 resumes after the [closure boundary](#closure-boundary). Budget formulas stay deferred; no new binding activation, Google expansion or Stage-5 scheduling follows.
 
 **Completed baseline:** Generation Text correctness/lifecycle reviews, domain evidence, telemetry and standard request boundary repairs preceded the 2026-10-27 parsing/stream corrections. Implemented stabilization slices include the order-0 production-construction gate, phased binding-history ownership and discovery, Standard Chat readable-reasoning omission, Bailian Responses presentation/continuity and summary-only history, conditional strictness for OpenAI and Messages targets, grouped call-ID association and the first semantic-equivalence applications. Their offline, SDK and installed-client evidence is separate from live acceptance; see [verification gates](development.md#verification-gates). Stage 4 retains equal priority across its API families.
 
 | Area | State | Next step |
 |---|---|---|
 | Routing | Stable routing baseline frozen; controlled synthetic recovery verified across Router, SDK, and installed clients | Real-failover production evidence required for multi-credential routes; no routing feature additions |
-| Generation IR / Codec | R0–R2 complete; one request owner and one shared delivery projection, with qualified non-Chat streaming intake | Messages intake, remaining history/delegation, then cleanup/discovery |
-| Client compatibility | Gateway installed-client gates remain curated; resolved Go/Haiku body and signed history pass with header opt-ins | Default reasoning/tool/history loops on all three client protocols after R1–R5 |
+| Generation IR / Codec | R0–R3 complete; shared request/delivery owners, qualified non-Chat streaming intake and revised Messages admission | Remaining history/delegation, then cleanup/discovery |
+| Client compatibility | Default native Messages reasoning/tool/history loops pass with current installed pi and OpenCode, without header/compat opt-outs | Remaining default-profile three-protocol and selected cross-protocol exit loops after R4–R5 |
 | Integration | R1a/R1b/R2 loops, controlled recovery and bounded production-profile closure passed | Revalidate changed paths; retain real-failover exclusions without reopening a blanket model/client matrix |
 | Cross-protocol conversion | Stage 3 closed for selected projections; `count_tokens` deferred | Preserve verified evidence; Google API remains paused except text-report and Stage-4 Embedding paths |
 | Decision APIs | Dual standard-SDK direction selected; initial TypeSafe/OpenAI protocol research complete | Contract selection and Stage-4 implementation at equal priority with other modalities |
@@ -106,7 +106,6 @@ The permanent [production-construction gate](development.md#sdk-loopback-gate) d
 
 | Lane | Current gate disposition | Ladder resolution | Slice |
 |---|---|---|---|
-| Messages client → Go/Haiku raw headers | Resolved adaptive and bare manual-budget bodies pass both turns with documented header opt-ins; raw headers still reject before dispatch (M2) | Revised version policy | R3 |
 | Chat client → DeepSeek/Zhipu Chat tools and reasoning | `admission.client_representation` from `required_with_tools` | Deployer `readable_reasoning`; otherwise thinking-off fallback (L3) | R4 |
 | Chat client → TokenPlan Chat, all profiles | `admission.client_representation` from unassessed history | Delegation | R4 |
 | Responses client → OpenAI subscriptions, flat tools | Text defaults dispatch after ceiling omission; flat tools reject because the selected native contract requires namespace definitions and qualified direct calls | Retain the selected tool contract until endpoint evidence qualifies another carrier | Endpoint qualification |
@@ -122,14 +121,15 @@ Each slice moves existing rejection sites onto the ladder through existing owner
 
 **R2 completed (2026-11-01):** the [delivery projection owner](architecture.md#delivery-projection-ownership) replaces the independent view checks and qualified non-Chat JSON dispatch. [Development](development.md#sdk-loopback-gate) owns the full offline, SDK and current installed-client closure evidence.
 
+**R3 completed (2026-11-02):** Messages admits both selected version headers over current grammar, ignores beta headers, applies named sampling/block-binding omissions and accepts ordered tool changes through existing candidate dispositions. Installed pi and OpenCode default native Messages tool/history loops pass without header or compatibility overrides; [Development](development.md#installed-client-synthetic-recovery) owns the separate synthetic acceptance evidence.
+
 | Slice | Work | Exit gate |
 |---|---|---|
-| **R3 Messages intake** | `2023-06-01` over current grammar, removed sampling omission, ignored beta header, `block_binding` levels, tool additions/removals where the route admits tool changes; align [usage](usage.md#messages) with code | Installed pi and OpenCode default Messages requests pass intake without header opt-outs |
 | **R4 Unknown facts and history** | Delegation for unassessed binding facts; `required_with_tools` fallback; visible-history transfer for every request consumer, including unsealed or foreign reasoning, foreign citations and obsolete markers | TokenPlan Chat, DeepSeek/Zhipu Chat tools and two-turn Bailian Responses lanes accept; replay trust checks unchanged |
 | **R5 Cleanup and discovery** | Remove the test-only strict-complete reporting policy, obsolete `mca1.` marker handling, unreachable delivery guards and leftover empty module directories. Run the `FidelityRecords` probe: move response item wire IDs into IR item identity, drop spelling-only records (`input_text_forms`, response and routing extras) under L2/L4, and keep only replay trust bindings outside IR; if the probe removes the history remapping it targets, migrate the remaining records, otherwise record why the side table stays. Convert remaining `Presence` fields; derive `/capabilities` and discovery, including the preferred interface (S10), from the disposition tables; narrow delivery settings to tools/choice/parallel permission and settle checkpoint/final usage ownership; report unsupported `conversation`/`prompt` as unsupported rather than invalid | Discovery publishes the same facts the gate observes; `Presence` remains only on contract-defined null fields; the `FidelityRecords` outcome is recorded |
 | **Exit** | Current-client characterization, then default reasoning/tool/history gateway loops with installed pi on all three client protocols and selected cross-protocol lanes; OpenCode afterwards | Actual execution and replay pass. Preserve resolved built-in model metadata; only test origin/key, operational bounds and documented header opt-ins may differ |
 
-Dependencies: R0–R2 are complete; qualified non-Chat streaming intake retains R0's named Chat JSON exception. R3 is independent. R4 uses the completed planning owner and must requalify paths previously unreachable before dispatch. R5 can now run its `FidelityRecords` probe against the single delivery projection. U stays an endpoint qualification and does not justify a generic duplicate-final relaxation.
+Dependencies: R0–R3 are complete; qualified non-Chat streaming intake retains R0's named Chat JSON exception. R4 uses the completed planning owner and must requalify paths previously unreachable before dispatch. R5 can now run its `FidelityRecords` probe against the single delivery projection. U stays an endpoint qualification and does not justify a generic duplicate-final relaxation.
 
 Stream-header status cleanup remains an optional ownership review that preserves opening validation. Bailian long-context defaults remain a qualification question: catalog context windows are planning metadata, not input-token admission, and no truncation ceiling or budget formula is selected.
 

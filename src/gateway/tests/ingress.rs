@@ -661,7 +661,7 @@ async fn authentication_runs_before_any_body_poll() {
     }
 }
 #[tokio::test]
-async fn messages_version_is_single_current_and_checked_before_body_poll() {
+async fn messages_versions_are_single_and_checked_before_body_poll() {
     let gate = gateway(Limits::default());
     for header in ["anthropic-user-profile-id", "anthropic-workspace-id"] {
         let forbidden = futures_util::stream::poll_fn(
@@ -687,18 +687,14 @@ async fn messages_version_is_single_current_and_checked_before_body_poll() {
         assert_eq!(response.status(), 400);
     }
     for path in ["/v1/messages", "/v1/messages?beta=true"] {
-        for (versions, beta) in [
-            (vec![], None),
-            (vec![""], None),
-            (vec!["2023-06-01"], None),
-            (vec!["2026-10-22"], None),
-            (vec!["invalid"], None),
-            (vec!["2026-10-21, 2026-10-21"], None),
-            (vec!["2026-10-21", "2026-10-21"], None),
-            (
-                vec!["2026-10-21"],
-                Some("fine-grained-tool-streaming-2025-05-14"),
-            ),
+        for versions in [
+            vec![],
+            vec![""],
+            vec!["2026-10-22"],
+            vec!["invalid"],
+            vec!["2026-10-21, 2026-10-21"],
+            vec!["2026-10-21", "2026-10-21"],
+            vec!["2023-06-01", "2026-10-21"],
         ] {
             let mut request = HttpRequest::builder()
                 .method("POST")
@@ -707,9 +703,6 @@ async fn messages_version_is_single_current_and_checked_before_body_poll() {
                 .header("content-type", "application/json");
             for version in versions {
                 request = request.header("anthropic-version", version);
-            }
-            if let Some(beta) = beta {
-                request = request.header("anthropic-beta", beta);
             }
             let forbidden = futures_util::stream::poll_fn(
                 |_| -> std::task::Poll<Option<Result<bytes::Bytes, std::io::Error>>> {
@@ -736,28 +729,31 @@ async fn messages_version_is_single_current_and_checked_before_body_poll() {
             assert_eq!(body["type"], "error");
             assert_eq!(body["error"]["type"], "invalid_request_error");
         }
-        // An empty beta list selects no features and reaches model resolution.
-        let response = gate.router().oneshot(
+        for version in ["2023-06-01", "2026-10-21"] {
+            // Beta headers do not select body semantics or upstream headers.
+            let response = gate.router().oneshot(
             HttpRequest::builder().method("POST").uri(path)
                 .header("x-api-key", KEY).header("content-type", "application/json")
-                .header("anthropic-version", "2026-10-21")
-                .header("anthropic-beta", "")
+                .header("anthropic-version", version)
+                .header("anthropic-beta", "interleaved-thinking-2025-05-14")
+                .header("anthropic-beta", "unknown-feature")
                 .body(axum::body::Body::from(r#"{"model":"unregistered","max_tokens":32,"messages":[{"role":"user","content":"hi"}]}"#))
                 .unwrap()
         ).await.unwrap();
-        assert_eq!(response.status(), 404);
-        let body: serde_json::Value = serde_json::from_slice(
-            &axum::body::to_bytes(response.into_body(), 4096)
-                .await
-                .unwrap(),
-        )
-        .unwrap();
-        assert!(
-            body["error"]["message"]
-                .as_str()
-                .unwrap()
-                .contains("model_not_found")
-        );
+            assert_eq!(response.status(), 404);
+            let body: serde_json::Value = serde_json::from_slice(
+                &axum::body::to_bytes(response.into_body(), 4096)
+                    .await
+                    .unwrap(),
+            )
+            .unwrap();
+            assert!(
+                body["error"]["message"]
+                    .as_str()
+                    .unwrap()
+                    .contains("model_not_found")
+            );
+        }
     }
 }
 #[tokio::test]

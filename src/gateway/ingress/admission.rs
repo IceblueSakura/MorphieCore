@@ -116,17 +116,11 @@ pub(super) fn messages_version(headers: &HeaderMap) -> Result<(), ApiError> {
         return Err(ApiError::invalid());
     }
     // The public contract selects the stable API, not caller-selected beta semantics.
-    if headers
-        .get_all("anthropic-beta")
-        .iter()
-        .any(|value| !value.as_bytes().iter().all(u8::is_ascii_whitespace))
-    {
-        return Err(ApiError::invalid());
-    }
     let mut versions = headers.get_all("anthropic-version").iter();
-    if versions.next().map(|v| v.as_bytes())
-        != Some(crate::protocol::anthropic::messages::API_VERSION.as_bytes())
-        || versions.next().is_some()
+    if !versions.next().is_some_and(|v| {
+        v.as_bytes() == b"2023-06-01"
+            || v.as_bytes() == crate::protocol::anthropic::messages::API_VERSION.as_bytes()
+    }) || versions.next().is_some()
     {
         return Err(ApiError::invalid());
     }

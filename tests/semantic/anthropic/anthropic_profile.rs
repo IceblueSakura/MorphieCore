@@ -159,7 +159,7 @@ fn audit_protected_client_controls_are_not_discarded() {
     let mut body = base;
     body["thinking"] = json!({"type":"adaptive"});
     let plain = decode_client_request(body.to_string().as_bytes()).unwrap();
-    // Block binding retains its native typed owner, but is beta-only at Client intake.
+    // Native binding retains its owner; public intake keeps gateway replay checks.
     use morphiecore::semantic::task::generation::ReplayMismatch;
     for (binding, expected) in [
         (
@@ -174,7 +174,20 @@ fn audit_protected_client_controls_are_not_discarded() {
         (json!({"prefix_mismatch_behavior":null}), None),
     ] {
         body["thinking"]["block_binding"] = binding;
-        assert!(decode_client_request(body.to_string().as_bytes()).is_err());
+        let public = decode_client_request(body.to_string().as_bytes());
+        if expected == Some(ReplayMismatch::Reject) {
+            assert!(public.is_err());
+        } else {
+            let public = public.unwrap();
+            assert!(public.task.semantic.reasoning().replay_mismatch.is_none());
+            assert_eq!(
+                public
+                    .task
+                    .evidence
+                    .contains_rule("messages.omit-block-binding.v1"),
+                expected == Some(ReplayMismatch::Drop)
+            );
+        }
         let decoded = Profile::AdaptiveTextTools
             .decode_generation_request(
                 body.to_string().as_bytes(),
@@ -189,9 +202,7 @@ fn audit_protected_client_controls_are_not_discarded() {
     body["thinking"]["block_binding"] = json!({"prefix_mismatch_behavior":"ignore"});
     assert!(matches!(
         decode_client_request(body.to_string().as_bytes()),
-        Err(CodecError::Unsupported(
-            morphiecore::protocol::failure::CarrierReason::Reasoning
-        ))
+        Err(CodecError::Invalid(_))
     ));
     // The check exists only for adaptive thinking.
     body["max_tokens"] = json!(4096);
@@ -199,9 +210,7 @@ fn audit_protected_client_controls_are_not_discarded() {
             "block_binding":{"prefix_mismatch_behavior":"drop_block"}});
     assert!(matches!(
         decode_client_request(body.to_string().as_bytes()),
-        Err(CodecError::Unsupported(
-            morphiecore::protocol::failure::CarrierReason::Reasoning
-        ))
+        Err(CodecError::Invalid(_))
     ));
 }
 fn message() -> Value {

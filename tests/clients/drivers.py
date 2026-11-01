@@ -25,7 +25,7 @@ def check(condition, code):
 def check_client_version(case, version):
     # The caller supplies the current host's unwrapped binary. Validate its
     # version record, not equality with an independent protocol source lock.
-    prefix = "(?:opencode v)?" if case == "opencode-chat" else ""
+    prefix = "(?:opencode v)?" if case.startswith("opencode-") else ""
     check(re.fullmatch(prefix + r"\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?", version)
           is not None, "invalid_client_version")
 
@@ -116,11 +116,12 @@ class Child:
 
 
 class Pi(Child):
-    def __init__(self, binary, env, work, model):
+    def __init__(self, binary, env, work, model, *, provider="recovery", thinking="low"):
         super().__init__([binary, "--mode", "rpc", "--offline", "--no-session",
             "--no-extensions", "--no-skills", "--no-context-files", "--no-mcp",
             "--no-prompt-templates", "--no-themes", "--tools", "read",
-            "--provider", "recovery", "--model", model, "--thinking", "low"],
+            "--provider", provider, "--model", model,
+            *([] if thinking is None else ["--thinking", thinking])],
             env, work, rpc=True)
         self.serial = 0
 
@@ -251,9 +252,9 @@ def check_opencode_session(database, identity, expected):
 
 
 def opencode_prompt(binary, env, work, prompt, title, session=None, origin=None, timeout=30,
-                    check_output=check_opencode_output):
+                    check_output=check_opencode_output, model="recovery/qwen3.8-flash#low"):
     args = [binary, "run", *(["--server", origin] if origin else ["--standalone"]),
-            "--format", "json", "--title", title, "-m", "recovery/qwen3.8-flash#low"]
+            "--format", "json", "--title", title, "-m", model]
     if session:
         args.extend(["--session", session])
     with Child([*args, prompt], env, work) as child:

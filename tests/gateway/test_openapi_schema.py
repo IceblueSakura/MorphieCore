@@ -18,14 +18,15 @@ def validator(name):
 
 
 class OpenApiSchemaTests(unittest.TestCase):
-    def test_messages_requires_current_version_and_excludes_removed_sampling(self):
+    def test_messages_versions_and_legacy_sampling_match_intake(self):
         parameters = DOCUMENT["paths"]["/v1/messages"]["post"]["parameters"]
         version = next(p for p in parameters if p.get("name") == "anthropic-version")
         self.assertEqual(version["in"], "header")
         self.assertTrue(version["required"])
         check = Draft202012Validator(version["schema"])
         check.validate("2026-10-21")
-        for value in ("", "2023-06-01", "2026-10-22", "2026-10-21,2026-10-21", None):
+        check.validate("2023-06-01")
+        for value in ("", "2026-10-22", "2026-10-21,2026-10-21", None):
             self.assertFalse(check.is_valid(value))
         body = {"model": "synthetic", "max_tokens": 32,
                 "messages": [{"role": "user", "content": "go"}]}
@@ -33,8 +34,13 @@ class OpenApiSchemaTests(unittest.TestCase):
         request.validate(body)
         request.validate({**body, "unknown_extension": True})
         for field in ("temperature", "top_p", "top_k"):
-            for value in (None, 1, 0.5, "invalid"):
+            for value in (None, 0, 1):
+                request.validate({**body, field: value})
+            for value in (-1, True, "invalid"):
                 self.assertFalse(request.is_valid({**body, field: value}))
+        for field, value in (("temperature", 1.1), ("top_p", 2), ("top_k", 0.5),
+                             ("top_k", 18446744073709551616)):
+            self.assertFalse(request.is_valid({**body, field: value}))
 
     def test_request_format_and_known_messages_controls_are_nonnull(self):
         chat = {"model": "synthetic", "messages": []}

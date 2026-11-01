@@ -782,7 +782,7 @@ fn responses_omitted_strict_can_reach_native_best_effort_fallback() {
 }
 
 #[test]
-fn messages_rejects_removed_sampling_even_at_defaults() {
+fn messages_native_grammar_rejects_removed_sampling_even_at_defaults() {
     use morphiecore::protocol::{CodecError, anthropic::messages::Profile as Messages};
     let baseline = messages();
     decode_client_request(baseline.to_string().as_bytes()).unwrap();
@@ -793,10 +793,6 @@ fn messages_rejects_removed_sampling_even_at_defaults() {
             let bytes = wire.to_string();
             let expected = CodecError::Unsupported(
                 morphiecore::protocol::failure::CarrierReason::UnknownField,
-            );
-            assert_eq!(
-                decode_client_request(bytes.as_bytes()).unwrap_err(),
-                expected
             );
             assert_eq!(
                 Messages::AdaptiveTextTools
@@ -841,11 +837,7 @@ fn messages_accepts_direct_only_function_tools() {
                 .push(json!({"role":"system","content":[
                 {"type":"tool_addition","tool":{"type":"tool_definition","definition":tool}}]}));
         }
-        if inline {
-            assert!(decode_client_request(body.to_string().as_bytes()).is_err());
-        } else {
-            decode_client_request(body.to_string().as_bytes()).unwrap();
-        }
+        decode_client_request(body.to_string().as_bytes()).unwrap();
         for value in [
             Value::Null,
             json!("direct"),
@@ -867,11 +859,9 @@ fn messages_accepts_direct_only_function_tools() {
             tool["allowed_callers"] = value;
             assert_eq!(
                 decode_client_request(bad.to_string().as_bytes()).unwrap_err(),
-                morphiecore::protocol::CodecError::Unsupported(if inline {
-                    morphiecore::protocol::failure::CarrierReason::Unavailable
-                } else {
+                morphiecore::protocol::CodecError::Unsupported(
                     morphiecore::protocol::failure::CarrierReason::Tools
-                })
+                )
             );
         }
         let mut bad = body.clone();
@@ -883,11 +873,9 @@ fn messages_accepts_direct_only_function_tools() {
         tool["type"] = json!("code_execution_20260521");
         assert_eq!(
             decode_client_request(bad.to_string().as_bytes()).unwrap_err(),
-            morphiecore::protocol::CodecError::Unsupported(if inline {
-                morphiecore::protocol::failure::CarrierReason::Unavailable
-            } else {
+            morphiecore::protocol::CodecError::Unsupported(
                 morphiecore::protocol::failure::CarrierReason::Tools
-            })
+            )
         );
     }
 }

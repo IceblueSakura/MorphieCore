@@ -1,5 +1,6 @@
 //! Untrusted client Messages: registered fields, protected controls and IR admission.
 use crate::{
+    lowering::disposition::{OMIT_REPLAY_MISMATCH, Rule},
     protocol::{
         CodecError, DecodedRequest, GenerationRequestEnvelope as Request,
         anthropic::messages::{
@@ -10,6 +11,7 @@ use crate::{
             shape::{self, label, object, parse, required, string},
             wire,
         },
+        conversion::generation::{ConversionBoundary, EvidenceDelta},
         failure::CarrierReason,
         fidelity::FidelityRecords,
     },
@@ -65,6 +67,7 @@ fn block_fields(kind: Option<&str>) -> &'static [&'static str] {
         Some("text") => &["type", "text", "citations", "cache_control"],
         Some("thinking") => &["type", "thinking", "signature"],
         Some("redacted_thinking") => &["type", "data"],
+        Some("tool_addition" | "tool_removal") => &["type", "tool", "cache_control"],
         Some("tool_use") => &[
             "type",
             "id",
@@ -108,16 +111,18 @@ fn block_fields(kind: Option<&str>) -> &'static [&'static str] {
 fn blocks(v: &mut Value, ignored: &mut BTreeSet<String>) -> Result<(), CodecError> {
     if let Some(list) = v.as_array_mut() {
         for block in list {
-            if matches!(
-                block.get("type").and_then(Value::as_str),
-                Some("tool_addition" | "tool_removal")
-            ) {
-                return Err(CodecError::Unsupported(CarrierReason::Unavailable));
-            }
             if block.get("cache_control").is_some()
                 && !matches!(
                     block.get("type").and_then(Value::as_str),
-                    Some("text" | "image" | "document" | "tool_use" | "tool_result")
+                    Some(
+                        "text"
+                            | "image"
+                            | "document"
+                            | "tool_use"
+                            | "tool_result"
+                            | "tool_addition"
+                            | "tool_removal"
+                    )
                 )
             {
                 return Err(CodecError::Unsupported(CarrierReason::Unavailable));
@@ -126,6 +131,20 @@ fn blocks(v: &mut Value, ignored: &mut BTreeSet<String>) -> Result<(), CodecErro
             keep(block, block_fields(kind.as_deref()), ignored);
             if let Some(cache) = block.get_mut("cache_control") {
                 keep(cache, &["type", "ttl"], ignored);
+            }
+            if matches!(kind.as_deref(), Some("tool_addition" | "tool_removal"))
+                && let Some(tool) = block.get_mut("tool")
+            {
+                match tool.get("type").and_then(Value::as_str) {
+                    Some("tool_reference") => keep(tool, &["type", "name"], ignored),
+                    Some("tool_definition") => {
+                        keep(tool, &["type", "definition"], ignored);
+                        if let Some(definition) = tool.get_mut("definition") {
+                            tool_fields(definition, ignored)?;
+                        }
+                    }
+                    _ => {}
+                }
             }
             if kind.as_deref() == Some("tool_result")
                 && let Some(content) = block.get_mut("content")
@@ -148,6 +167,29 @@ fn tool_fields(t: &mut Value, ignored: &mut BTreeSet<String>) -> Result<(), Code
 /// Decode a client request; the model is a public label, never an upstream name.
 pub fn decode_client_request(bytes: &[u8]) -> Result<Request, CodecError> {
     let mut v = parse(bytes)?;
+    let mut evidence = EvidenceDelta::default();
+    // Legacy sampling is advisory; malformed known values still reject.
+    let mut removed_sampling = false;
+    for name in ["temperature", "top_p", "top_k"] {
+        if let Some(value) = v.get(name).filter(|v| !v.is_null()) {
+            let valid = if name == "top_k" {
+                value.as_u64().is_some()
+            } else {
+                value.as_f64().is_some_and(|v| (0.0..=1.0).contains(&v))
+            };
+            if !valid {
+                return Err(CodecError::invalid());
+            }
+            removed_sampling = true;
+        }
+        if let Some(o) = v.as_object_mut() {
+            o.remove(name);
+        }
+    }
+    if removed_sampling {
+        evidence
+            .push(Rule::OMIT_MESSAGES_REMOVED_SAMPLING.effect(ConversionBoundary::RequestDecode));
+    }
     let o = object(&v)?;
     wire::request::validate_request_controls(o)?;
     for field in [
@@ -240,16 +282,30 @@ pub fn decode_client_request(bytes: &[u8]) -> Result<Request, CodecError> {
         settings.parallel_tool_calls = choice.disable_parallel_tool_use.value().map(|b| !b);
     }
     if let Some(thinking) = o.get("thinking") {
-        if thinking.get("block_binding").is_some() {
-            return Err(CodecError::Unsupported(CarrierReason::Reasoning));
-        }
         let mut thinking = thinking.clone();
         keep(
             &mut thinking,
-            &["type", "budget_tokens", "display"],
+            &["type", "budget_tokens", "display", "block_binding"],
             &mut ignored,
         );
+        if let Some(binding) = thinking.get_mut("block_binding") {
+            keep(binding, &["prefix_mismatch_behavior"], &mut ignored);
+        }
         let t = object(&thinking)?;
+        if t.contains_key("block_binding") {
+            if t.get("type").and_then(Value::as_str) != Some("adaptive") {
+                return Err(CodecError::invalid());
+            }
+            match wire::request::PrefixMismatch::read(t.get("block_binding"))? {
+                Some(wire::request::PrefixMismatch::Error) => {
+                    return Err(CodecError::Unsupported(CarrierReason::Reasoning));
+                }
+                Some(wire::request::PrefixMismatch::DropBlock) => {
+                    evidence.push(OMIT_REPLAY_MISMATCH.effect(ConversionBoundary::RequestDecode));
+                }
+                None => {}
+            }
+        }
         match t.get("type").and_then(Value::as_str) {
             Some("enabled") => {
                 let budget = t
@@ -353,6 +409,7 @@ pub fn decode_client_request(bytes: &[u8]) -> Result<Request, CodecError> {
                     .collect::<Result<_, _>>()?
             };
             roles.push((role, !parsed.is_empty()));
+            wire::request::input_block_bytes(role, &parsed)?;
             intake.system_message(&parsed, effort)?;
             parsed_messages.push(wire::request::InputMessage {
                 role,
@@ -429,7 +486,7 @@ pub fn decode_client_request(bytes: &[u8]) -> Result<Request, CodecError> {
     fidelity.bind_replay_origin(&crate::protocol::replay_envelope::CLIENT_ORIGIN)?;
     let mut request = Request::from_generation(
         DecodedRequest {
-            evidence: Default::default(),
+            evidence,
             semantic,
             fidelity,
         },

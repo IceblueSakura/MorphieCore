@@ -22,6 +22,11 @@ impl Rule {
     }
 }
 impl Rule {
+    pub const OMIT_MESSAGES_REMOVED_SAMPLING: Self = Self::new(
+        "messages.omit-removed-sampling.v1",
+        Field::Sampling,
+        Change::Omit,
+    );
     pub const fn name(self) -> &'static str {
         self.id
     }

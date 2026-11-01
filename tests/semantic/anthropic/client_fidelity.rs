@@ -8,14 +8,13 @@ use morphiecore::{
     },
     semantic::{task::generation::*, value::Presence},
 };
-use serde_json::json;
+use serde_json::{Value, json};
 
-/// Beta carriers remain available to trusted native bindings, not stable clients.
+/// Exercise the trusted native boundary independently of public admission.
 fn native_request(body: &serde_json::Value) -> morphiecore::protocol::GenerationRequestEnvelope {
     use morphiecore::protocol::{
         GenerationRequestEnvelope, anthropic::messages::Profile, native::ReplayTarget,
     };
-    assert!(decode_client_request(body.to_string().as_bytes()).is_err());
     let decoded = Profile::AdaptiveTextTools
         .decode_generation_request(
             body.to_string().as_bytes(),
@@ -2153,9 +2152,175 @@ fn messages_rejects_citations_in_static_output_and_each_event_shape() {
         );
     }
 }
+#[test]
+fn client_messages_controls_validate_before_named_omission() {
+    let base = json!({"model":"m","max_tokens":64,"messages":[{"role":"user","content":"hi"}]});
+    for binding in [
+        Value::Null,
+        json!({}),
+        json!({"prefix_mismatch_behavior":null}),
+        json!({"prefix_mismatch_behavior":"drop_block","future":true}),
+    ] {
+        let mut body = base.clone();
+        body["thinking"] = json!({"type":"adaptive","block_binding":binding});
+        body["temperature"] = json!(0.5);
+        body["top_p"] = json!(1);
+        body["top_k"] = json!(0);
+        let request = decode_client_request(body.to_string().as_bytes()).unwrap();
+        assert!(request.task.semantic.reasoning().replay_mismatch.is_none());
+        assert!(
+            request
+                .task
+                .evidence
+                .contains_rule("messages.omit-removed-sampling.v1")
+        );
+        assert_eq!(
+            request
+                .task
+                .evidence
+                .contains_rule("messages.omit-block-binding.v1"),
+            binding["prefix_mismatch_behavior"] == "drop_block"
+        );
+        let mut nulls = base.clone();
+        nulls["temperature"] = Value::Null;
+        nulls["top_p"] = Value::Null;
+        nulls["top_k"] = Value::Null;
+        assert!(
+            decode_client_request(nulls.to_string().as_bytes())
+                .unwrap()
+                .task
+                .evidence
+                .is_empty()
+        );
+    }
+    for fields in [
+        json!({"temperature":"0.5"}),
+        json!({"temperature":-1}),
+        json!({"temperature":1.1}),
+        json!({"top_p":true}),
+        json!({"top_p":2}),
+        json!({"top_k":1.5}),
+        json!({"top_k":-1}),
+        json!({"thinking":{"type":"adaptive","block_binding":{"prefix_mismatch_behavior":"error"}}}),
+        json!({"thinking":{"type":"adaptive","block_binding":false}}),
+        json!({"thinking":{"type":"adaptive","block_binding":{"prefix_mismatch_behavior":"invalid"}}}),
+        json!({"thinking":{"type":"enabled","budget_tokens":1024,"block_binding":{}}}),
+    ] {
+        let mut body = base.clone();
+        body.as_object_mut()
+            .unwrap()
+            .extend(fields.as_object().unwrap().clone());
+        assert!(
+            decode_client_request(body.to_string().as_bytes()).is_err(),
+            "{fields}"
+        );
+    }
+}
+
+#[test]
+fn client_tool_changes_keep_order_and_candidate_carriers() {
+    use morphiecore::protocol::{anthropic, native::ReplayTarget};
+    let definition = json!({"name":"write","input_schema":{"type":"object","properties":{
+        "x_extra":{"type":"string","x_schema":true}}},"input_examples":[{"x_extra":"kept"}],
+        "future":true});
+    let changes = json!([
+        {"type":"text","text":"Change tools."},
+        {"type":"tool_removal","tool":{"type":"tool_reference","name":"read","future":1},"future":1},
+        {"type":"tool_addition","tool":{"type":"tool_definition","definition":definition,"future":1},
+            "cache_control":{"type":"ephemeral"},"future":1}]);
+    let body = json!({"model":"m","max_tokens":64,
+        "tools":[{"name":"read","input_schema":{"type":"object"}}],
+        "messages":[{"role":"user","content":"go"},{"role":"system","content":changes}]});
+    let request = decode_client_request(body.to_string().as_bytes()).unwrap();
+    let before = request.clone();
+    let items = request.task.semantic.items();
+    assert!(matches!(items[1].1, Item::Instruction(_)));
+    assert!(matches!(&items[2].1, Item::ToolChange(ToolChange{
+        action:ToolChangeAction::Remove(name),..}) if name.as_str()=="read"));
+    assert!(matches!(&items[3].1, Item::ToolChange(ToolChange{
+        action:ToolChangeAction::AddDefinition(tool),cache:Some(_),..})
+        if tool.name.as_str()=="write" && tool.input_examples.as_ref().is_some()));
+    let target = ReplayTarget::new("synthetic", "synthetic").unwrap();
+    let mut caps = anthropic::messages::TargetContract::new(
+        anthropic::messages::Profile::AdaptiveTextTools,
+        anthropic::messages::Dialect::Standard,
+    );
+    caps.dispositions.set_native(Feature::ToolChanges, true);
+    caps.dispositions
+        .set_native(Feature::OrderedInstructions, true);
+    caps.dispositions.set_native(Feature::ToolExamples, true);
+    let wire = caps.encode_request(&request, &target).unwrap().value;
+    let mut expected = changes.clone();
+    expected[1].as_object_mut().unwrap().remove("future");
+    expected[1]["tool"]
+        .as_object_mut()
+        .unwrap()
+        .remove("future");
+    expected[2].as_object_mut().unwrap().remove("future");
+    expected[2]["tool"]
+        .as_object_mut()
+        .unwrap()
+        .remove("future");
+    expected[2]["tool"]["definition"]
+        .as_object_mut()
+        .unwrap()
+        .remove("future");
+    assert_eq!(wire["messages"][1]["content"], expected);
+    caps.dispositions.set_native(Feature::ToolChanges, false);
+    assert!(
+        caps.encode_request(&request, &target).is_err(),
+        "example-dependent history cannot collapse"
+    );
+    assert_eq!(request, before);
+    let mut plain = body.clone();
+    plain["messages"][1]["content"][2]["tool"]["definition"]
+        .as_object_mut()
+        .unwrap()
+        .remove("input_examples");
+    let decoded = decode_client_request(plain.to_string().as_bytes()).unwrap();
+    let collapsed = caps.encode_request(&decoded, &target).unwrap();
+    assert!(
+        collapsed
+            .evidence
+            .contains_rule("messages.collapse-tool-changes.v1")
+    );
+    assert_eq!(collapsed.value["tools"][0]["name"], "write");
+    assert_eq!(collapsed.value["tools"].as_array().unwrap().len(), 1);
+    plain["messages"][1]["content"] = json!([
+        {"type":"tool_removal","tool":{"type":"tool_reference","name":"read"}},
+        {"type":"tool_addition","tool":{"type":"tool_reference","name":"read"}}]);
+    let decoded = decode_client_request(plain.to_string().as_bytes()).unwrap();
+    assert!(
+        matches!(&decoded.task.semantic.items()[2].1, Item::ToolChange(ToolChange{
+        action:ToolChangeAction::AddReference(name),..}) if name.as_str()=="read")
+    );
+    assert_eq!(
+        caps.encode_request(&decoded, &target).unwrap().value["tools"][0]["name"],
+        "read"
+    );
+    for change in [
+        json!({"type":"tool_removal","tool":{"type":"tool_definition","definition":definition}}),
+        json!({"type":"tool_addition","tool":{"type":"tool_reference","name":"bad name"}}),
+        json!({"type":"tool_addition","tool":{"type":"tool_definition","definition":{
+            "name":"f","input_schema":null}}}),
+        json!({"type":"tool_addition","cache_control":{"type":"ephemeral"},
+            "tool":{"type":"tool_definition","definition":{"name":"f","input_schema":{"type":"object"},
+            "cache_control":{"type":"ephemeral"}}}}),
+    ] {
+        let mut invalid = body.clone();
+        invalid["messages"][1]["content"] = json!([change]);
+        assert!(decode_client_request(invalid.to_string().as_bytes()).is_err());
+    }
+    for role in ["user", "assistant"] {
+        let mut invalid = body.clone();
+        invalid["messages"][1]["role"] = json!(role);
+        assert!(decode_client_request(invalid.to_string().as_bytes()).is_err());
+    }
+}
+
+#[test]
 /// pi 1.3.0's built-in Haiku request shape: per-message effort, block binding and
 /// ordered tool changes keep exact carriers or their named rules.
-#[test]
 fn pi_haiku_profile_keeps_carriers_or_records_rules() {
     use morphiecore::protocol::{anthropic, native::ReplayTarget};
     let strict = json!({"type":"object","properties":{"path":{"type":"string"}},

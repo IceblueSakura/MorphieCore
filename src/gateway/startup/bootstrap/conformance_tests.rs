@@ -1159,17 +1159,19 @@ async fn messages_delivery_controls_complete_without_cache_markers() {
 }
 
 #[tokio::test]
-async fn installed_messages_headers_reject_before_dispatch() {
+async fn installed_messages_headers_complete_without_opt_outs() {
     let binding = BINDINGS.iter().find(|b| b.4 == Api::Messages).unwrap();
     for control in [
         Control::LegacyVersion,
         Control::ThinkingBeta,
         Control::ResolvedHeaders,
     ] {
-        assert_eq!(
-            lane(binding, Api::Messages, Profile::Text, true, control).await,
-            ["gateway.invalid_request@0"]
-        );
+        for profile in [Profile::Text, Profile::Tools, Profile::Reasoning] {
+            assert_eq!(
+                lane(binding, Api::Messages, profile, true, control).await,
+                ACCEPT
+            );
+        }
     }
 }
 

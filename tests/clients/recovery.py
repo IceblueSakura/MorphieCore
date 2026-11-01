@@ -70,8 +70,9 @@ def assert_profile(body, native):
         check(read[0].get("strict") in (None, False), "chat_tool_strictness")
 
 
-def assert_history(body, phase, native, path):
-    assert_profile(body, native)
+def assert_history(body, phase, native, path, *, profile=True):
+    if profile:
+        assert_profile(body, native)
     if phase in (0, 1):
         check(not any(m["role"] == "assistant" for m in body["messages"]), "unexpected_initial_history")
         return

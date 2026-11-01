@@ -19,7 +19,7 @@ async fn installed_case(
     assert!(binary.is_absolute() && binary.is_file());
     let directory = filesystem::private_directory();
     let root = directory.path();
-    let native = case == "pi-messages";
+    let native = case.contains("messages");
     let (domain, binding) = if native {
         ("opencode-go", "opencode-go-api-key")
     } else {
@@ -107,6 +107,27 @@ async fn pi_chat_credential_recovery() {
 #[ignore = "requires explicit unwrapped installed pi; synthetic native Messages recovery"]
 async fn pi_messages_credential_recovery() {
     recovery_case("pi-messages", "MORPHIECORE_PI_BIN").await;
+}
+
+async fn messages_defaults(case: &str, variable: &str) {
+    let report = installed_case("messages_defaults", case, variable, &[]).await;
+    assert_eq!(report["client_requests"], 3);
+    assert_eq!(report["upstream_attempts"], 3);
+    assert_eq!(report["extra_client_requests"], 0);
+    assert_eq!(report["default_headers"], true);
+    assert_eq!(report["tool_history"], true);
+}
+
+#[tokio::test]
+#[ignore = "requires current installed pi; default native Messages tool/history through gateway"]
+async fn pi_messages_default_tool_history() {
+    messages_defaults("pi-messages-default", "MORPHIECORE_PI_BIN").await;
+}
+
+#[tokio::test]
+#[ignore = "requires current installed OpenCode; default native Messages tool/history through gateway"]
+async fn opencode_messages_default_tool_history() {
+    messages_defaults("opencode-messages-default", "MORPHIECORE_OPENCODE_BIN").await;
 }
 
 #[tokio::test]

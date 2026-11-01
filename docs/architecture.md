@@ -122,7 +122,7 @@ All three Generation client protocols dispatch through the public model's config
 
 - **Official Protocol Baselines:** Public Chat, Responses, and Messages adhere to current official versioned specifications. Provider-specific syntax and deviations belong strictly to trusted upstream adapters.
 - **Diagnostic Extensions:** Optional namespaced response fields (`morphiecore`) provide safe-to-ignore telemetry and loss reporting. Standard SDK agent loops operate without parsing or returning these extensions.
-- **Messages Version Policy:** Downstream Messages decodes the current `2026-10-21` body grammar and requires exactly one `anthropic-version` header (including `?beta=true`). Accepted revision (2026-10-30, implementation pending): the dated `2023-06-01` version is also admitted over the same current grammar, its removed sampling fields (`temperature`, `top_p`, `top_k`) take a named omission, and `anthropic-beta` is ignored as a header while beta body fields stay governed by body rules. Until implemented, other versions and nonempty beta lists reject before body collection.
+- **Messages Version Policy:** Downstream Messages requires exactly one `anthropic-version` header, either `2023-06-01` or `2026-10-21` (including `?beta=true`), over the same current body grammar. Missing, duplicate, combined and unsupported versions reject before body collection. Legacy sampling fields (`temperature`, `top_p`, `top_k`) are validated then omitted under `messages.omit-removed-sampling.v1`; null defaults need no loss receipt. `anthropic-beta` is ignored as a header and never selects body semantics or trusted upstream headers.
 
 Provider metadata resides in [providers.json](../src/provider/providers.json). Public models and bindings are defined in [topology/catalog.rs](../src/topology/catalog.rs) and assembled at [gateway startup](../src/gateway/startup/bootstrap.rs).
 
@@ -419,7 +419,8 @@ Applications selected on 2026-10-30: request strictness, effort, ceilings, Messa
 | `stop` without a target carrier | L5 for now; gateway-side truncation may later provide L2 |
 | Messages `stop_sequences` on a non-Messages target with an ambiguous natural/stop-sequence cause | `end_turn` under a named approximation (L3) |
 | Unknown finish or incomplete reasons | Evidence-backed per-dialect maps; Responses carries an unspecified reason as `incomplete_details:{}`; otherwise L5 on Chat and Messages, so no outcome is misreported as a token limit |
-| Messages `thinking.block_binding` | `null`/`{}` L2; `drop_block` L3 under existing replay checks; `"error"` L5 |
+| Messages `thinking.block_binding` | Public adaptive-thinking intake normalizes `null`/`{}` under L2; `drop_block` takes `messages.omit-block-binding.v1` (L3) without relaxing gateway replay checks; `"error"` is L5. Trusted native target carriers remain independent |
+| Legacy Messages sampling | Valid `temperature`/`top_p` in `[0,1]` and nonnegative integer `top_k` take `messages.omit-removed-sampling.v1` (L4) at public intake; malformed known values reject |
 | Messages version and beta headers | See the [version policy](#protocols) |
 | Unscheduled capabilities | Moderation, background, context management and compaction requests, hosted tools and items, `between_tools`, per-message configuration, `clear_at`, nonempty `logit_bias`, legacy function carriers, `inference_geo` and upstream-reported storage keep their current rejection until scheduled |
 
