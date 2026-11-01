@@ -10,6 +10,8 @@ use crate::{
         value::{ReplayOrigin, Text},
     },
 };
+#[cfg(test)]
+pub(crate) use replay::REASONING_FINGERPRINT_BYTES;
 use serde_json::{Map, Value};
 use std::collections::BTreeMap;
 const RESPONSE_EXTRAS_BUDGET: usize = 4096;

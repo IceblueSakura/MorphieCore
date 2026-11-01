@@ -46,6 +46,116 @@ fn incomplete_native_tool_arguments_keep_prefixes_in_json_stream_and_history() {
 }
 
 #[test]
+fn completed_reasoning_is_not_rehashed_for_unrelated_text_batches() {
+    use crate::{
+        protocol::fidelity::REASONING_FINGERPRINT_BYTES,
+        semantic::task::generation::{Item, ReasoningContent},
+    };
+    let endpoint = crate::topology::catalog::MESSAGES_BINDINGS[0].endpoint();
+    let thinking = "r".repeat(32 << 10);
+    for stream in [false, true] {
+        let mut attempt = Attempt::new(endpoint.adapter().unwrap(), 1 << 20, Default::default());
+        attempt.begin(200, "text/event-stream").unwrap();
+        let mut delivery = ResponseDelivery::new(
+            ClientAdapter::openai(
+                GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None),
+                TargetContract::full(),
+            ),
+            "public",
+            Default::default(),
+            Default::default(),
+            Obfuscation::Disabled,
+        );
+        let push = |frame: Value, attempt: &mut Attempt, delivery: &mut ResponseDelivery| {
+            let (_, events) = attempt
+                .push(
+                    format!(
+                        "event: {}\ndata: {frame}\n\n",
+                        frame["type"].as_str().unwrap()
+                    )
+                    .as_bytes(),
+                )
+                .unwrap();
+            if stream {
+                delivery.encode_events(attempt, &events).unwrap();
+            } else {
+                delivery.observe_events(attempt, &events).unwrap();
+            }
+        };
+        for frame in [
+            json!({"type":"message_start","message":{"id":"r","type":"message","role":"assistant",
+                "model":endpoint.upstream_model,"content":[],"stop_reason":null,"stop_sequence":null,
+                "usage":{"input_tokens":1,"output_tokens":0}}}),
+            json!({"type":"content_block_start","index":0,
+                "content_block":{"type":"thinking","thinking":"","signature":""}}),
+            json!({"type":"content_block_delta","index":0,
+                "delta":{"type":"thinking_delta","thinking":thinking}}),
+            json!({"type":"content_block_delta","index":0,
+                "delta":{"type":"signature_delta","signature":"synthetic-signature"}}),
+            json!({"type":"content_block_stop","index":0}),
+        ] {
+            push(frame, &mut attempt, &mut delivery);
+        }
+        let fingerprinted = REASONING_FINGERPRINT_BYTES.get();
+        assert!(fingerprinted >= thinking.len());
+        for index in [1, 2] {
+            push(
+                json!({"type":"content_block_start","index":index,
+                    "content_block":{"type":"text","text":""}}),
+                &mut attempt,
+                &mut delivery,
+            );
+            for _ in 0..32 {
+                push(
+                    json!({"type":"content_block_delta","index":index,
+                        "delta":{"type":"text_delta","text":"x"}}),
+                    &mut attempt,
+                    &mut delivery,
+                );
+            }
+            push(
+                json!({"type":"content_block_stop","index":index}),
+                &mut attempt,
+                &mut delivery,
+            );
+        }
+        assert_eq!(
+            REASONING_FINGERPRINT_BYTES.get(),
+            fingerprinted,
+            "unrelated text must not rebuild reasoning replay dependencies (stream={stream})"
+        );
+        for frame in [
+            json!({"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null},
+                "usage":{"output_tokens":64}}),
+            json!({"type":"message_stop"}),
+        ] {
+            push(frame, &mut attempt, &mut delivery);
+        }
+        attempt.finish().unwrap();
+        let source = attempt.response().unwrap().clone();
+        if stream {
+            delivery.finish_stream(&attempt).unwrap();
+        } else {
+            delivery.encode_json(&attempt).unwrap();
+        }
+        let (retained, _) = delivery.snapshot(&attempt).unwrap();
+        let (owner, Item::Reasoning(reasoning)) = &retained.semantic.items()[0] else {
+            panic!("retained reasoning");
+        };
+        let ReasoningContent::Summary(summary) = &reasoning.parts[0].1 else {
+            panic!("retained summary");
+        };
+        assert_eq!(summary.as_str(), thinking);
+        let origin = retained.fidelity.replay_origin(*owner);
+        assert!(retained.fidelity.replay_matches(*owner, reasoning, origin));
+        let mut edited = reasoning.clone();
+        edited.parts.clear();
+        assert!(!retained.fidelity.replay_matches(*owner, &edited, origin));
+        assert_eq!(attempt.response().unwrap(), &source);
+    }
+}
+
+#[test]
 fn late_chat_reasoning_identity_keeps_published_and_retained_aliases() {
     let endpoint = crate::topology::catalog::API_KEY_BINDINGS
         .iter()

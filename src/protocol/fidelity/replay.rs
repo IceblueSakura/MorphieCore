@@ -1,6 +1,11 @@
 //! Owner-bound replay associations and dependency fingerprints.
 use super::*;
 
+#[cfg(test)]
+std::thread_local! {
+    pub(crate) static REASONING_FINGERPRINT_BYTES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
 impl FidelityRecords {
     /// Capture at trusted decode/event boundaries, never to bless a transformed value.
     pub fn record_replay(
@@ -391,6 +396,8 @@ pub(super) fn fingerprint(item: &ReasoningItem) -> [u8; 32] {
         hash.update([kind]);
         hash.update((text.as_str().len() as u64).to_le_bytes());
         hash.update(text.as_str().as_bytes());
+        #[cfg(test)]
+        REASONING_FINGERPRINT_BYTES.with(|bytes| bytes.set(bytes.get() + text.as_str().len()));
     }
     hash.finalize().into()
 }

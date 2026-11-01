@@ -154,7 +154,6 @@ impl ClientProjection {
                     self.fidelity.record_response_item_id(item.id, id)?;
                 }
             }
-            crate::protocol::openai::events::sync_replays(state, &mut self.fidelity, None)?;
         }
         Ok(())
     }
@@ -917,13 +916,23 @@ impl ClientProjection {
                     event.clone(),
                 )?);
                 let state = self.state.as_ref().expect("reduced event");
-                if matches!(
-                    event,
-                    StreamEvent::ItemStarted { .. }
-                        | StreamEvent::ItemFinished { .. }
-                        | StreamEvent::Terminal { .. }
-                ) {
-                    crate::protocol::openai::events::sync_replays(state, &mut self.fidelity, None)?;
+                match &event {
+                    StreamEvent::ItemStarted { item, .. }
+                    | StreamEvent::ItemFinished { item, .. } => {
+                        crate::protocol::openai::events::sync_replays(
+                            state,
+                            &mut self.fidelity,
+                            Some(*item),
+                        )?;
+                    }
+                    StreamEvent::Terminal { .. } => {
+                        crate::protocol::openai::events::sync_replays(
+                            state,
+                            &mut self.fidelity,
+                            None,
+                        )?;
+                    }
+                    _ => {}
                 }
                 if matches!(event, StreamEvent::Terminal { .. })
                     && let (ClientAdapter::OpenAi { adapter, contract }, Some(metadata)) =
