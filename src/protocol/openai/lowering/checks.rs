@@ -41,31 +41,44 @@ pub(super) fn check_usage(
     Ok(())
 }
 
-/// Chat can carry readable reasoning text on its carrier message: each reasoning
-/// item must hold exactly one non-empty text part and sit immediately before the
-/// message item that carries it.
-fn chat_reasoning_shape(items: &[(ItemId, Item)]) -> bool {
-    items
-        .iter()
-        .enumerate()
-        .all(|(index, (_, item))| match item {
-            // Messages thinking is a summary and often precedes a call without text;
-            // either way it rides the next assistant message as its readable view.
-            Item::Reasoning(reasoning) => {
-                matches!(
-                    reasoning.parts.as_slice(),
-                    [(_, ReasoningContent::Text(text) | ReasoningContent::Summary(text))]
-                        if !text.as_str().is_empty()
-                ) && matches!(items.get(index + 1),
-                    Some((_, Item::Message(message))) if message.role == MessageRole::Assistant)
-                    || matches!(
-                        items.get(index + 1),
-                        Some((_, Item::ToolCall(_) | Item::CustomCall(_)))
-                    ) && !reasoning.parts.is_empty()
-                        && reasoning.replay.is_none()
-            }
-            _ => true,
-        })
+/// History transfer and final validation share the target's actual owner shape.
+pub(crate) fn chat_reasoning_carrier(
+    reasoning: &ReasoningItem,
+    next: Option<&Item>,
+    rules: &crate::protocol::openai::dialect::adaptation::WireRules,
+) -> bool {
+    if rules.readable_reasoning_text_only
+        && (reasoning.replay.is_some()
+            || reasoning
+                .parts
+                .iter()
+                .any(|(_, part)| !matches!(part, ReasoningContent::Text(_))))
+    {
+        return false;
+    }
+    let readable = rules.readable_reasoning
+        && reasoning.replay.is_none()
+        && (matches!(
+            reasoning.parts.as_slice(),
+            [(_, ReasoningContent::Text(text) | ReasoningContent::Summary(text))]
+                if !text.as_str().is_empty()
+        ) && matches!(next,
+            Some(Item::Message(message)) if message.role == MessageRole::Assistant)
+            || !reasoning.parts.is_empty()
+                && matches!(next, Some(Item::ToolCall(_) | Item::CustomCall(_))));
+    // Each retained reasoning owner must in turn have a carrier, so consecutive
+    // structured owners ultimately share the following assistant message or call.
+    let structured = rules.structured_chat_reasoning
+        && (!reasoning.parts.is_empty() || reasoning.replay.is_some())
+        && !reasoning.parts.iter().any(
+            |(_, part)| matches!(part, ReasoningContent::Text(text) if text.as_str().is_empty()),
+        )
+        && next.is_some_and(|item| match item {
+            Item::Reasoning(_) | Item::ToolCall(_) | Item::CustomCall(_) => true,
+            Item::Message(message) => message.role == MessageRole::Assistant,
+            _ => false,
+        });
+    readable || structured
 }
 pub(super) fn represent_reasoning(
     settings: &GenerationSettings,
@@ -177,8 +190,17 @@ pub(super) fn represent_reasoning(
     if has_reasoning_items
         && profile != GenerationApi::Responses
         && !(profile == GenerationApi::Chat
-            && (adaptation.rules.readable_reasoning && chat_reasoning_shape(items)
-                || structured_chat && structured_chat_reasoning_shape(items)))
+            && items
+                .iter()
+                .enumerate()
+                .all(|(index, (_, item))| match item {
+                    Item::Reasoning(reasoning) => chat_reasoning_carrier(
+                        reasoning,
+                        items.get(index + 1).map(|(_, item)| item),
+                        &adaptation.rules,
+                    ),
+                    _ => true,
+                }))
     {
         return Err(RepresentationError::Reasoning);
     }
@@ -463,24 +485,6 @@ fn complete_logprob(p: &Logprob) -> bool {
                 .iter()
                 .all(|a| a.token.is_some() && a.logprob.is_some() && a.bytes.is_some())
         })
-}
-/// Structured details carry several items and parts ahead of one carrier.
-fn structured_chat_reasoning_shape(items: &[(ItemId, Item)]) -> bool {
-    items.iter().enumerate().all(|(n, (_, item))| {
-        let Item::Reasoning(r) = item else {
-            return true;
-        };
-        let empty_text = r
-            .parts
-            .iter()
-            .any(|(_, p)| matches!(p, ReasoningContent::Text(t) if t.as_str().is_empty()));
-        let followed = match items.get(n + 1) {
-            Some((_, Item::Reasoning(_) | Item::ToolCall(_) | Item::CustomCall(_))) => true,
-            Some((_, Item::Message(m))) => m.role == MessageRole::Assistant,
-            _ => false,
-        };
-        !empty_text && (!r.parts.is_empty() || r.replay.is_some()) && followed
-    })
 }
 fn result_representable(
     result: &ToolResult,

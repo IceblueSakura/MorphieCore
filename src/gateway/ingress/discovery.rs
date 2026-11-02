@@ -90,6 +90,7 @@ impl Preference {
 
 pub(in crate::gateway) fn compile(
     entries: &BTreeMap<(ClientProtocol, String), Arc<BoundEntry>>,
+    request_bytes: usize,
 ) -> Result<Contracts, StartupError> {
     if entries.len() > MAX_MODELS * ClientProtocol::ALL.len()
         || entries.values().any(|entry| {
@@ -102,7 +103,12 @@ pub(in crate::gateway) fn compile(
     let mut contracts = Contracts {
         interfaces: entries
             .iter()
-            .map(|(key, entry)| (key.clone(), contract::Interface::from_bound(entry)))
+            .map(|(key, entry)| {
+                (
+                    key.clone(),
+                    contract::Interface::from_bound(entry, request_bytes),
+                )
+            })
             .collect(),
         preferences: BTreeMap::new(),
     };
@@ -158,7 +164,12 @@ impl TextModelView {
         entries: &BTreeMap<(ClientProtocol, String), Arc<BoundEntry>>,
         response_bytes: usize,
     ) -> Result<Self, StartupError> {
-        Self::from_contracts(topology, entries, &compile(entries)?, response_bytes)
+        Self::from_contracts(
+            topology,
+            entries,
+            &compile(entries, crate::gateway::Limits::default().request_bytes)?,
+            response_bytes,
+        )
     }
     pub(in crate::gateway) fn from_contracts(
         topology: &CompiledTopology,

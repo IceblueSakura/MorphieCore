@@ -665,7 +665,7 @@
       },
       "TextGenerationContract": {
         "type": "object",
-        "description": "Simple feature domains, source-pinned Agent-default request preflight, and conditional delivery adaptations are separate assessments. No Provider-effectiveness or history-loop guarantee.",
+        "description": "Partial simple text request domains, source-pinned Agent-default request preflight including the configured ingress body limit, and conditional delivery adaptations are separate assessments. Independent features do not promise arbitrary schemas, combinations, Provider effectiveness or a complete tool/replay loop. See docs/usage.md.",
         "required": [
           "scope",
           "composition",
@@ -769,8 +769,7 @@
             "additionalProperties": false
           }
         },
-        "additionalProperties": false,
-        "description": "Partial simple text request domains through public admission and configured target projection; independent features do not promise arbitrary schemas, combinations, Provider effectiveness or a complete tool/replay loop. See docs/usage.md."
+        "additionalProperties": false
       },
       "TextGenerationInput": {
         "type": "object",

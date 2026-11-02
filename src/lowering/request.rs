@@ -48,8 +48,13 @@ pub(crate) fn chat_history_fallback<'a>(
     admit_source(source)?;
     let mut settings = source.task.semantic.settings().clone();
     settings.effort = None;
-    settings.reasoning = ReasoningRequest::present(None);
+    settings.reasoning.presence = ReasoningPresence::Present;
     settings.reasoning.activation = Some(ReasoningActivation::Disabled);
+    settings.reasoning.mode = Presence::Absent;
+    settings.reasoning.budget_tokens = None;
+    if settings.reasoning.presentation.visibility != Some(ReasoningDisplay::Omitted) {
+        settings.reasoning.presentation = ReasoningPresentation::default();
+    }
     output.value.to_mut().task.semantic = source
         .task
         .semantic
@@ -1871,55 +1876,48 @@ pub(crate) fn project<'a>(
             .or(contract.adaptation.scope.as_ref()),
         _ => Some(native_origin.as_ref().ok_or_else(CodecError::invalid)?),
     };
-    let mut stripped = source.without_uncarried_reasoning(issuer, |reasoning| {
-        let carries =
-            match target {
-                Target::OpenAi(GenerationApi::Responses, contract) => {
-                    if contract.adaptation.rules.bailian_requests {
-                        crate::protocol::openai::dialect::bailian::responses_reasoning_carrier(
-                            reasoning,
-                        )
-                    } else {
-                        reasoning
-                            .replay
-                            .as_ref()
-                            .is_none_or(|value| value.format() == ReplayFormat::ResponsesEncrypted)
-                    }
+    let mut stripped = source.without_uncarried_reasoning(issuer, |reasoning, following| {
+        let carries = match target {
+            Target::OpenAi(GenerationApi::Responses, contract) => {
+                if contract.adaptation.rules.bailian_requests {
+                    crate::protocol::openai::dialect::bailian::responses_reasoning_carrier(
+                        reasoning,
+                    )
+                } else {
+                    reasoning
+                        .replay
+                        .as_ref()
+                        .is_none_or(|value| value.format() == ReplayFormat::ResponsesEncrypted)
                 }
-                Target::OpenAi(GenerationApi::Chat, contract) => {
-                    if reasoning.replay.is_some() {
-                        contract.adaptation.rules.structured_chat_reasoning
-                            && !contract.adaptation.rules.readable_reasoning_text_only
-                            && reasoning.replay.as_ref().is_some_and(|value| {
-                                value.format() == ReplayFormat::ResponsesEncrypted
-                            })
-                    } else {
-                        (contract.adaptation.rules.readable_reasoning
-                            || contract.adaptation.rules.structured_chat_reasoning)
-                            && (!contract.adaptation.rules.readable_reasoning_text_only
-                                || reasoning
+            }
+            Target::OpenAi(GenerationApi::Chat, contract) => {
+                crate::protocol::openai::lowering::chat_reasoning_carrier(
+                    reasoning,
+                    following,
+                    &contract.adaptation.rules,
+                ) && reasoning
+                    .replay
+                    .as_ref()
+                    .is_none_or(|value| value.format() == ReplayFormat::ResponsesEncrypted)
+            }
+            Target::Messages(_) => reasoning.replay.as_ref().is_some_and(|value| {
+                reasoning.status == ItemLifecycle::Completed
+                    && match value.format() {
+                        ReplayFormat::AnthropicMessagesThinking => {
+                            reasoning.parts.len() <= 1
+                                && reasoning
                                     .parts
                                     .iter()
-                                    .all(|(_, part)| matches!(part, ReasoningContent::Text(_))))
-                    }
-                }
-                Target::Messages(_) => reasoning.replay.as_ref().is_some_and(|value| {
-                    reasoning.status == ItemLifecycle::Completed
-                        && match value.format() {
-                            ReplayFormat::AnthropicMessagesThinking => {
-                                reasoning.parts.len() <= 1
-                                    && reasoning.parts.iter().all(|(_, part)| {
-                                        matches!(part, ReasoningContent::Summary(_))
-                                    })
-                            }
-                            ReplayFormat::AnthropicMessagesRedactedThinking => {
-                                reasoning.parts.is_empty()
-                            }
-                            _ => false,
+                                    .all(|(_, part)| matches!(part, ReasoningContent::Summary(_)))
                         }
-                }),
-                Target::GenerateContent(_) | Target::Interactions(_) => reasoning.replay.is_some(),
-            };
+                        ReplayFormat::AnthropicMessagesRedactedThinking => {
+                            reasoning.parts.is_empty()
+                        }
+                        _ => false,
+                    }
+            }),
+            Target::GenerateContent(_) | Target::Interactions(_) => reasoning.replay.is_some(),
+        };
         Ok(!carries)
     })?;
     let mut transferred = stripped.is_some();
@@ -2321,6 +2319,116 @@ mod tests {
                 .encode_request(&intent, &ReplayTarget::new("synthetic", "m").unwrap())
                 .is_err()
         );
+    }
+
+    #[test]
+    fn readable_chat_history_transfers_uncarriable_reasoning_shapes() {
+        use crate::{
+            protocol::openai::{Dialect, GenerationCodec, TargetContract},
+            topology::{EndpointId, catalog::default_topology},
+        };
+        let topology = default_topology().unwrap();
+        let endpoint = topology
+            .endpoint(&EndpointId::new("deepseek-chat").unwrap())
+            .unwrap();
+        let source_codec = GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None);
+        for summary in [
+            json!([]),
+            json!([
+                {"type":"summary_text","text":"first"},
+                {"type":"summary_text","text":"second"}
+            ]),
+        ] {
+            let source = source_codec.decode_client_request(json!({
+                "model":"deepseek-flash","input":[
+                    {"role":"user","content":"go"},
+                    {"type":"reasoning","id":"rs_1","summary":summary},
+                    {"type":"message","id":"msg_1","role":"assistant","status":"completed",
+                        "content":[{"type":"output_text","text":"visible","annotations":[]}]},
+                    {"type":"function_call","call_id":"call_1","name":"lookup","arguments":"{}"},
+                    {"type":"function_call_output","call_id":"call_1","output":"feedback"},
+                    {"role":"user","content":"next"}
+                ]}).to_string().as_bytes()).unwrap();
+            let before = source.clone();
+            let projected = endpoint.encode_request_with_evidence(&source).unwrap();
+            assert!(
+                projected
+                    .evidence
+                    .contains_rule("chat.transfer-visible-history.v1")
+            );
+            assert_eq!(projected.value["messages"][1]["content"], "visible");
+            assert_eq!(
+                projected.value["messages"][1]["tool_calls"][0]["id"],
+                "call_1"
+            );
+            assert_eq!(projected.value["messages"][2]["tool_call_id"], "call_1");
+            assert_eq!(projected.value["messages"][2]["content"], "feedback");
+            assert!(
+                projected.value["messages"][1]
+                    .get("reasoning_content")
+                    .is_none()
+            );
+            assert_eq!(source, before);
+            let mut explicit = source;
+            let mut settings = explicit.task.semantic.settings().clone();
+            settings.reasoning.presence = ReasoningPresence::Present;
+            settings.reasoning.read_history = Some(true);
+            explicit.task.semantic = explicit.task.semantic.with_settings(settings).unwrap();
+            assert!(endpoint.encode_request(&explicit).is_err());
+        }
+        let source = source_codec
+            .decode_client_request(
+                br#"{
+            "model":"deepseek-flash","input":[
+                {"type":"reasoning","id":"rs_keep","summary":[
+                    {"type":"summary_text","text":"retain this"}]},
+                {"type":"reasoning","id":"rs_drop","summary":[],"encrypted_content":"opaque"},
+                {"type":"message","id":"msg_1","role":"assistant","status":"completed",
+                    "content":[{"type":"output_text","text":"visible","annotations":[]}]}
+            ]}"#,
+            )
+            .unwrap();
+        let before = source.clone();
+        let projected = endpoint.encode_request_with_evidence(&source).unwrap();
+        assert_eq!(
+            projected.value["messages"][0]["reasoning_content"],
+            "retain this"
+        );
+        assert_eq!(projected.value["messages"][0]["content"], "visible");
+        assert!(
+            projected
+                .evidence
+                .contains_rule("chat.transfer-visible-history.v1")
+        );
+        assert_eq!(source, before);
+
+        // This target carries history-read intent, so the omission itself must
+        // reject rather than relying on an unsupported-control admission error.
+        let chat = GenerationCodec::new(GenerationApi::Chat, Dialect::MorphieCore, None);
+        for (summary, accepted) in [
+            (json!([]), false),
+            (json!([{"type":"summary_text","text":"retained"}]), true),
+        ] {
+            let mut source = source_codec
+                .decode_client_request(
+                    json!({
+                    "model":"m","input":[
+                        {"type":"reasoning","id":"rs_1","summary":summary},
+                        {"role":"assistant","content":"visible"}
+                    ]})
+                    .to_string()
+                    .as_bytes(),
+                )
+                .unwrap();
+            let mut settings = source.task.semantic.settings().clone();
+            settings.reasoning.presence = ReasoningPresence::Present;
+            settings.reasoning.read_history = Some(true);
+            source.task.semantic = source.task.semantic.with_settings(settings).unwrap();
+            let before = source.clone();
+            let result = chat.encode_request_with_evidence(&source, "m", &TargetContract::full());
+            assert_eq!(result.is_ok(), accepted);
+            assert_eq!(source, before);
+        }
     }
 
     #[test]

@@ -84,7 +84,8 @@ impl Gateway {
                 .chain(embeddings.keys().map(String::as_str)),
             limits.response_bytes,
         )?;
-        let contracts = crate::gateway::ingress::discovery::compile(&entries)?;
+        let contracts =
+            crate::gateway::ingress::discovery::compile(&entries, limits.request_bytes)?;
         let capabilities = crate::gateway::ingress::capabilities::CapabilityView::from_contracts(
             &entries,
             &embeddings,

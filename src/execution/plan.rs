@@ -300,6 +300,7 @@ mod tests {
         use crate::{
             adapter::ClientAdapter,
             protocol::openai::{Dialect, GenerationApi, GenerationCodec, TargetContract},
+            semantic::task::generation::{ReasoningContext, ReplayMismatch},
         };
         let topology = default_topology().unwrap();
         let endpoint = topology
@@ -345,6 +346,26 @@ mod tests {
                 .evidence()
                 .contains_rule("chat.fallback-thinking-off.v1")
         );
+        for (context, mismatch) in [
+            (
+                crate::semantic::value::Presence::Value(ReasoningContext::CurrentTurn),
+                None,
+            ),
+            (
+                crate::semantic::value::Presence::Absent,
+                Some(ReplayMismatch::Reject),
+            ),
+        ] {
+            let mut constrained = request.clone();
+            let mut settings = constrained.task.semantic.settings().clone();
+            settings.reasoning.context = context;
+            settings.reasoning.replay_mismatch = mismatch;
+            constrained.task.semantic = constrained.task.semantic.with_settings(settings).unwrap();
+            let before = constrained.clone();
+            assert!(endpoint.encode_request(&constrained).is_err());
+            assert!(project_candidate(endpoint, &constrained, Some(&plain)).is_err());
+            assert_eq!(constrained, before);
+        }
         let projected = project_candidate(endpoint, &request, Some(&readable)).unwrap();
         assert_eq!(projected.value()["reasoning_effort"], "low");
         assert!(

@@ -63,6 +63,7 @@ impl GenerationRequestEnvelope {
         target: Option<&crate::semantic::value::ReplayOrigin>,
         uncarried: impl Fn(
             &crate::semantic::task::generation::ReasoningItem,
+            Option<&crate::semantic::task::generation::Item>,
         ) -> Result<bool, CodecError>,
     ) -> Result<Option<GenerationRequestEnvelope>, CodecError> {
         use crate::semantic::task::generation::{Item, ItemLifecycle, MessageRole};
@@ -77,16 +78,18 @@ impl GenerationRequestEnvelope {
             }
         }
         let mut omitted = Vec::new();
-        for (id, item) in self.task.semantic.items() {
-            if let Item::Reasoning(reasoning) = item {
-                let no_carrier = uncarried(reasoning)?;
-                if no_carrier
-                    || reasoning.replay.is_some()
-                        && (target.is_none() || fidelity.replay_origin(*id) != target)
-                {
-                    omitted.push(*id);
-                }
+        // Select backwards so shape checks see the next retained owner.
+        let mut following = None;
+        for (id, item) in self.task.semantic.items().iter().rev() {
+            if let Item::Reasoning(reasoning) = item
+                && (reasoning.replay.is_some()
+                    && (target.is_none() || fidelity.replay_origin(*id) != target)
+                    || uncarried(reasoning, following)?)
+            {
+                omitted.push(*id);
+                continue;
             }
+            following = Some(item);
         }
         let mut foreign_parts = Vec::new();
         let mut foreign_calls = Vec::new();

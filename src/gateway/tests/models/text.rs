@@ -102,6 +102,68 @@ fn interface_preference_uses_qualified_primary_native_contract_without_loss_rank
 }
 
 #[tokio::test]
+async fn default_request_qualification_observes_the_ingress_body_limit() {
+    let gate = crate::gateway::tests::support::gateway(Limits {
+        request_bytes: 512,
+        ..Limits::default()
+    });
+    let (_, descriptor) = request(&gate, "GET", "/v1/morphiecore/models/fixture-model").await;
+    let interface = descriptor["data"]["interfaces"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|interface| interface["protocol"] == "chat_completions")
+        .unwrap();
+    let profiles = &interface["generation"]["agent_defaults"]["profiles"];
+    assert_eq!(profiles["text"]["json"]["state"], "faithful");
+    for profile in ["tools", "reasoning"] {
+        let body = ingress::discovery::defaults::request(
+            ClientProtocol::Chat,
+            profile,
+            "fixture-model",
+            false,
+        )
+        .to_string();
+        assert!(body.len() > gate.state.limits.request_bytes);
+        let response = gate
+            .router()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/chat/completions")
+                    .header(
+                        "authorization",
+                        format!("Bearer {}", crate::gateway::tests::support::KEY),
+                    )
+                    .header("content-type", "application/json")
+                    .body(Body::from(body))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::PAYLOAD_TOO_LARGE);
+        for mode in ["json", "sse"] {
+            assert_eq!(profiles[profile][mode]["state"], "unavailable");
+        }
+    }
+    assert_eq!(
+        descriptor["data"]["preferred_interface"]["state"],
+        "not_assessed"
+    );
+    let (_, capabilities) = request(&gate, "GET", "/v1/morphiecore/capabilities").await;
+    let chat = capabilities["data"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|entry| entry["protocol"] == "chat_completions")
+        .unwrap();
+    assert_eq!(
+        chat["agent_defaults"],
+        interface["generation"]["agent_defaults"]
+    );
+}
+
+#[tokio::test]
 async fn text_directory_is_interface_scoped_and_leaves_standard_discovery_unchanged() {
     let gate = crate::gateway::tests::support::gateway(Limits::default());
     let (_, standard) = request(&gate, "GET", "/v1/models").await;

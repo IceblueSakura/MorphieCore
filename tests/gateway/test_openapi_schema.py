@@ -7,7 +7,19 @@ import unittest
 
 from jsonschema import Draft202012Validator, FormatChecker
 
-DOCUMENT = json.loads((Path(__file__).resolve().parents[2] / "docs/openapi.json").read_text())
+def unique_object(pairs):
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError(f"duplicate JSON object key: {key}")
+        result[key] = value
+    return result
+
+
+DOCUMENT = json.loads(
+    (Path(__file__).resolve().parents[2] / "docs/openapi.json").read_text(),
+    object_pairs_hook=unique_object,
+)
 SCHEMAS = DOCUMENT["components"]["schemas"]
 
 

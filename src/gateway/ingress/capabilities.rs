@@ -376,7 +376,7 @@ impl CapabilityView {
         Self::from_contracts(
             entries,
             embeddings,
-            &super::discovery::compile(entries)?,
+            &super::discovery::compile(entries, crate::gateway::Limits::default().request_bytes)?,
             response_bytes,
         )
     }

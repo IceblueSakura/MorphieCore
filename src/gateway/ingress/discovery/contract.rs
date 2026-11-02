@@ -124,7 +124,7 @@ pub(in crate::gateway) struct DefaultRequests {
     qualified_candidates: Vec<bool>,
 }
 impl DefaultRequests {
-    fn from_bound(entry: &BoundEntry, modes: &[&'static str]) -> Self {
+    fn from_bound(entry: &BoundEntry, modes: &[&'static str], request_bytes: usize) -> Self {
         let mut profiles = BTreeMap::new();
         let mut qualified_candidates = vec![true; entry.candidates.len()];
         for profile in ["text", "tools", "reasoning"] {
@@ -136,21 +136,26 @@ impl DefaultRequests {
                     entry.public.id.as_str(),
                     mode == "sse",
                 );
-                let request = entry
-                    .client
-                    .decode_client_request(body.to_string().as_bytes())
-                    .map(|mut request| {
-                        request.conversation = Some(
-                            crate::semantic::context::ConversationContext::independent_request(
-                                "text-discovery",
-                            )
-                            .expect("static request identity"),
-                        );
-                        request
-                    });
+                let body = body.to_string();
+                let request =
+                    entry
+                        .client
+                        .decode_client_request(body.as_bytes())
+                        .map(|mut request| {
+                            request.conversation = Some(
+                                crate::semantic::context::ConversationContext::independent_request(
+                                    "text-discovery",
+                                )
+                                .expect("static request identity"),
+                            );
+                            request
+                        });
                 let capability = Capability::common(entry.candidates.iter().enumerate().map(
                     |(index, candidate)| {
                         let assessment = (|| {
+                            if body.len() > request_bytes {
+                                return Capability::new(State::Unavailable);
+                            }
                             if mode == "sse" && !candidate.endpoint.execution.streaming {
                                 return Capability::new(State::Unavailable);
                             }
@@ -244,7 +249,7 @@ impl Interface {
                     .map(move |(fact, capability)| (*mode, *fact, capability))
             })
     }
-    pub(super) fn from_bound(entry: &BoundEntry) -> Self {
+    pub(super) fn from_bound(entry: &BoundEntry, request_bytes: usize) -> Self {
         let streaming = entry
             .candidates
             .iter()
@@ -328,7 +333,7 @@ impl Interface {
         let output = super::media::Output {
             text: assess(Case::Text),
         };
-        let agent_defaults = DefaultRequests::from_bound(entry, &delivery_modes);
+        let agent_defaults = DefaultRequests::from_bound(entry, &delivery_modes, request_bytes);
         let delivery_adaptations = delivery_modes
             .iter()
             .map(|mode| {

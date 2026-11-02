@@ -1,6 +1,7 @@
 //! OpenAI representability: directional projection over shared immutable-IR constraints.
 pub(in crate::protocol::openai) mod carriers;
 mod checks;
+pub(crate) use checks::chat_reasoning_carrier;
 pub mod events;
 pub(crate) mod message_groups;
 pub(crate) mod native_response;
