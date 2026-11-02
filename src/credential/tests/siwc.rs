@@ -695,6 +695,7 @@ async fn cancellation_during_pending_verification_is_recoverable_after_restart()
 fn siwc_inference_headers_do_not_reuse_product_metadata() {
     let grant = AccessGrant {
         access: Secret::new("synthetic".into()).unwrap(),
+        material_revision: 1,
         identity: VerifiedIdentity {
             subject: "subject".into(),
             scope: None,

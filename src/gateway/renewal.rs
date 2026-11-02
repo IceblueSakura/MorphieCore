@@ -3,13 +3,7 @@
 mod tests;
 use super::Gateway;
 use crate::credential::AccessBinding;
-use std::time::Duration;
 use tokio::time::{Instant, MissedTickBehavior};
-
-const SCAN_INTERVAL: Duration = Duration::from_secs(15);
-const REFRESH_AHEAD: u64 = 120;
-const MIN_RENEWAL_INTERVAL: Duration = Duration::from_secs(60);
-const RENEWAL_TIMEOUT: Duration = Duration::from_secs(90);
 
 impl Gateway {
     pub(super) async fn renew_credentials(&self) {
@@ -25,13 +19,23 @@ impl Gateway {
         if accounts.is_empty() {
             return;
         }
-        let mut ticks = tokio::time::interval(SCAN_INTERVAL);
-        ticks.set_missed_tick_behavior(MissedTickBehavior::Skip);
+        let policy = &self.state.limits;
+        if policy.oauth_renewal_timeout.is_zero() {
+            self.state.shutdown.cancelled().await;
+            return;
+        }
+        // Zero disables periodic scans, not the startup check or shutdown.
+        let mut ticks = (!policy.oauth_scan_interval.is_zero()).then(|| {
+            let mut ticks = tokio::time::interval_at(
+                Instant::now() + policy.oauth_scan_interval,
+                policy.oauth_scan_interval,
+            );
+            ticks.set_missed_tick_behavior(MissedTickBehavior::Skip);
+            ticks
+        });
         loop {
-            tokio::select! {
-                biased;
-                _ = self.state.shutdown.cancelled() => return,
-                _ = ticks.tick() => {},
+            if self.state.shutdown.is_cancelled() {
+                return;
             }
             for (binding, next_attempt) in &mut accounts {
                 if Instant::now() < *next_attempt {
@@ -41,22 +45,39 @@ impl Gateway {
                     biased;
                     _ = self.state.shutdown.cancelled() => return,
                     result = tokio::time::timeout(
-                        RENEWAL_TIMEOUT, binding.refresh_if_due(REFRESH_AHEAD),
+                        policy.oauth_renewal_timeout,
+                        binding.refresh_if_due(policy.oauth_refresh_ahead_seconds),
                     ) => result,
                 };
-                // Short-lived replacement grants must not cause a refresh storm.
-                // Failed rotation already quarantines consumed material; never
-                // resume pending verification or restore old tokens automatically.
-                if !matches!(result, Ok(Ok(false))) {
-                    *next_attempt = Instant::now() + MIN_RENEWAL_INTERVAL;
-                }
                 match result {
-                    Ok(Ok(true)) => tracing::info!("OAuth credential automatically renewed"),
-                    Ok(Ok(false)) | Ok(Err(crate::credential::CredentialError::Busy)) => {}
-                    Ok(Err(_)) | Err(_) => tracing::warn!(
-                        "OAuth automatic renewal failed; inspect morphiecore-auth status"
-                    ),
+                    Ok(Ok(true)) => {
+                        // Short-lived replacement grants must not cause a refresh storm.
+                        *next_attempt = Instant::now() + policy.oauth_minimum_renewal_interval;
+                        tracing::info!("OAuth credential automatically renewed");
+                    }
+                    Ok(Ok(false)) => {}
+                    Ok(Err(crate::credential::CredentialError::Busy)) => {
+                        *next_attempt = Instant::now() + policy.oauth_failed_renewal_delay;
+                    }
+                    Ok(Err(_)) | Err(_) => {
+                        // A delay never restores uncertain material or resumes pending
+                        // verification. Only the lifecycle owner authorizes reuse.
+                        *next_attempt = Instant::now() + policy.oauth_failed_renewal_delay;
+                        tracing::warn!(
+                            "OAuth automatic renewal failed; inspect morphiecore-auth status"
+                        );
+                    }
                 }
+            }
+            tokio::select! {
+                biased;
+                _ = self.state.shutdown.cancelled() => return,
+                _ = async {
+                    match &mut ticks {
+                        Some(ticks) => { ticks.tick().await; }
+                        None => std::future::pending::<()>().await,
+                    }
+                } => {},
             }
         }
     }

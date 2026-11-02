@@ -12,6 +12,13 @@ pub struct Limits {
     /// Success-only account binding retention, independent of prefix hints.
     pub affinity_ttl: Duration,
     pub affinity_capacity: usize,
+    pub oauth_scan_interval: Duration,
+    pub oauth_refresh_ahead_seconds: u64,
+    pub oauth_renewal_timeout: Duration,
+    /// Scheduling only; lifecycle evidence still decides material reuse.
+    pub oauth_failed_renewal_delay: Duration,
+    /// Preserve short-grant storm protection independently of failed renewal.
+    pub oauth_minimum_renewal_interval: Duration,
     pub request_bytes: usize,
     pub response_bytes: usize,
     /// Decoded output bytes per image; cannot enlarge response or endpoint ceilings.
@@ -41,6 +48,11 @@ impl Default for Limits {
             implicit_cache_affinity: true,
             affinity_ttl: Duration::from_secs(3600),
             affinity_capacity: 4096,
+            oauth_scan_interval: Duration::from_secs(15),
+            oauth_refresh_ahead_seconds: 120,
+            oauth_renewal_timeout: Duration::from_secs(90),
+            oauth_failed_renewal_delay: Duration::from_secs(60),
+            oauth_minimum_renewal_interval: Duration::from_secs(60),
             request_bytes: 32 << 20,
             response_bytes: 64 << 20,
             image_bytes: 2 << 20,

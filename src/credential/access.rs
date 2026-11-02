@@ -22,6 +22,8 @@ impl std::fmt::Debug for AccessBinding {
 pub struct AccessGrant {
     pub access: Secret,
     pub identity: VerifiedIdentity,
+    /// Usable, verified publication receipt; never a registration/replay identity.
+    pub material_revision: u64,
 }
 impl CredentialManager {
     /// Pin an explicit local identity, not a token generation. Expiry is checked
@@ -105,6 +107,7 @@ impl AccessBinding {
             .account
             .ok_or(Error::LoginRequired)?;
         self.check_identity(&account)?;
+        let material_revision = account.generation;
         let credential = account.credential.ok_or(Error::LoginRequired)?;
         self.manager
             .driver(&self.profile)?
@@ -117,6 +120,7 @@ impl AccessBinding {
         Ok(AccessGrant {
             access: credential.access,
             identity: self.identity.clone(),
+            material_revision,
         })
     }
 }

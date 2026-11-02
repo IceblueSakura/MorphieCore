@@ -79,6 +79,7 @@ impl AuthDriver for Driver {
 }
 async fn setup(
     hold: bool,
+    limits: Limits,
 ) -> (
     tempfile::TempDir,
     Gateway,
@@ -102,7 +103,7 @@ async fn setup(
         .login("synthetic", "one", LoginOptions::default(), |_| {})
         .await
         .unwrap();
-    let mut gate = gateway(Limits::default());
+    let mut gate = gateway(limits);
     // Registration maintenance is independent of generation candidates.
     Arc::get_mut(&mut gate.state).unwrap().oauth_accounts = vec![
         manager.bind_access("synthetic", "one").unwrap(),
@@ -118,17 +119,115 @@ async fn poll_maintenance(future: &mut std::pin::Pin<Box<impl std::future::Futur
     }
 }
 #[tokio::test(start_paused = true)]
+async fn configured_scan_and_success_spacing_control_rotation_without_requests() {
+    use std::time::Duration;
+    let (_dir, gate, _, calls, _) = setup(
+        false,
+        Limits {
+            oauth_scan_interval: Duration::from_secs(2),
+            oauth_minimum_renewal_interval: Duration::from_secs(6),
+            ..Limits::default()
+        },
+    )
+    .await;
+    let mut maintenance = Box::pin(gate.renew_credentials());
+    poll_maintenance(&mut maintenance).await;
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+    tokio::time::advance(Duration::from_secs(5)).await;
+    poll_maintenance(&mut maintenance).await;
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+    tokio::time::advance(Duration::from_secs(1)).await;
+    poll_maintenance(&mut maintenance).await;
+    assert_eq!(calls.load(Ordering::SeqCst), 2);
+    gate.shutdown();
+    maintenance.await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn zero_scan_is_startup_only_and_zero_renewal_budget_never_consumes_material() {
+    use std::time::Duration;
+    for (limits, expected) in [
+        (
+            Limits {
+                oauth_scan_interval: Duration::ZERO,
+                ..Limits::default()
+            },
+            1,
+        ),
+        (
+            Limits {
+                oauth_renewal_timeout: Duration::ZERO,
+                ..Limits::default()
+            },
+            0,
+        ),
+    ] {
+        let (_dir, gate, manager, calls, _) = setup(false, limits).await;
+        let mut maintenance = Box::pin(gate.renew_credentials());
+        poll_maintenance(&mut maintenance).await;
+        assert_eq!(calls.load(Ordering::SeqCst), expected);
+        tokio::time::advance(Duration::from_secs(3600)).await;
+        poll_maintenance(&mut maintenance).await;
+        assert_eq!(calls.load(Ordering::SeqCst), expected);
+        assert_eq!(manager.list(None).unwrap()[0].state, AccountState::Active);
+        gate.shutdown();
+        maintenance.await;
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn refresh_ahead_is_not_an_implicit_always_renew_window() {
+    let (_dir, gate, manager, calls, _) = setup(
+        false,
+        Limits {
+            oauth_refresh_ahead_seconds: 0,
+            ..Limits::default()
+        },
+    )
+    .await;
+    let original = manager
+        .bind_access("synthetic", "one")
+        .unwrap()
+        .borrow()
+        .unwrap()
+        .material_revision;
+    let mut maintenance = Box::pin(gate.renew_credentials());
+    poll_maintenance(&mut maintenance).await;
+    assert_eq!(calls.load(Ordering::SeqCst), 0);
+    assert_eq!(
+        manager
+            .bind_access("synthetic", "one")
+            .unwrap()
+            .borrow()
+            .unwrap()
+            .material_revision,
+        original
+    );
+    gate.shutdown();
+    maintenance.await;
+}
+#[tokio::test(start_paused = true)]
 async fn duplicate_bindings_renew_without_requests_and_short_grants_are_rate_bounded() {
-    let (_dir, gate, manager, calls, _) = setup(false).await;
+    let (_dir, gate, manager, calls, _) = setup(false, Limits::default()).await;
     assert_eq!(calls.load(Ordering::SeqCst), 0);
     let _router = gate.router();
     assert_eq!(calls.load(Ordering::SeqCst), 0);
     let binding = manager.bind_access("synthetic", "one").unwrap();
     let provenance = binding.provenance();
+    let original_material = binding.borrow().unwrap().material_revision;
     let mut maintenance = Box::pin(gate.renew_credentials());
     poll_maintenance(&mut maintenance).await;
     assert_eq!(calls.load(Ordering::SeqCst), 1);
-    assert!(binding.borrow().is_ok());
+    let renewed = binding.borrow().unwrap();
+    assert!(renewed.material_revision > original_material);
+    assert_eq!(
+        renewed.material_revision,
+        manager.list(None).unwrap()[0].generation
+    );
+    assert_eq!(
+        binding.borrow().unwrap().material_revision,
+        renewed.material_revision
+    );
     assert_eq!(binding.provenance(), provenance);
     tokio::time::advance(std::time::Duration::from_secs(45)).await;
     poll_maintenance(&mut maintenance).await;
@@ -142,7 +241,7 @@ async fn duplicate_bindings_renew_without_requests_and_short_grants_are_rate_bou
 #[tokio::test]
 async fn listener_cancellation_stops_inflight_renewal_without_reusing_consumed_material() {
     for graceful in [false, true] {
-        let (_dir, gate, manager, calls, entered) = setup(true).await;
+        let (_dir, gate, manager, calls, entered) = setup(true, Limits::default()).await;
         let owner = gate.clone();
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let server = tokio::spawn(gate.serve(listener, std::future::pending()));
@@ -188,11 +287,18 @@ async fn listener_cancellation_stops_inflight_renewal_without_reusing_consumed_m
 }
 #[tokio::test(start_paused = true)]
 async fn renewal_timeout_is_bounded_and_never_retried() {
-    let (_dir, gate, manager, calls, _) = setup(true).await;
+    let (_dir, gate, manager, calls, _) = setup(
+        true,
+        Limits {
+            oauth_renewal_timeout: std::time::Duration::from_secs(2),
+            ..Limits::default()
+        },
+    )
+    .await;
     let mut maintenance = Box::pin(gate.renew_credentials());
     poll_maintenance(&mut maintenance).await;
     assert_eq!(calls.load(Ordering::SeqCst), 1);
-    tokio::time::advance(super::RENEWAL_TIMEOUT).await;
+    tokio::time::advance(gate.state.limits.oauth_renewal_timeout).await;
     poll_maintenance(&mut maintenance).await;
     assert_eq!(
         manager.list(None).unwrap()[0].state,

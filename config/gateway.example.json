@@ -9,6 +9,11 @@
   "exchange_timeout_ms": 3600000,
   "affinity_ttl_ms": 3600000,
   "affinity_capacity": 4096,
+  "oauth_scan_interval_ms": 15000,
+  "oauth_refresh_ahead_seconds": 120,
+  "oauth_renewal_timeout_ms": 90000,
+  "oauth_failed_renewal_delay_ms": 60000,
+  "oauth_minimum_renewal_interval_ms": 60000,
   "delta_coalescing": {
     "max_delay_ms": 50,
     "max_pending_bytes": 16384

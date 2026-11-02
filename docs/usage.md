@@ -146,10 +146,13 @@ An Active account rejects another login; use `refresh`, or explicitly sign out b
 Callbacks listen on `127.0.0.1`. Login checks issuer, client and subject. Gateway inference never starts login or refresh.
 
 Automatic renewal runs in the background when running `morphiecore` (`Gateway::serve`):
-- Checks configured OAuth accounts independently of routes and enablement on startup and every 15 seconds.
-- Renews credentials expiring within 120 seconds.
-- Imposes a 90-second timeout per renewal and a 60-second minimum interval per account.
+- Checks configured OAuth accounts independently of routes and enablement on startup and at `oauth_scan_interval_ms` (default 15000).
+- Renews credentials within `oauth_refresh_ahead_seconds` (default 120).
+- Bounds each renewal with `oauth_renewal_timeout_ms` (default 90000); zero dispatches no renewal and consumes no material.
+- Spaces successful short-grant renewals with `oauth_minimum_renewal_interval_ms` (default 60000). Failed eligible work uses `oauth_failed_renewal_delay_ms` (default 60000), not an exponential retry loop.
 - Persists rotated tokens in the private credential store.
+
+All settings belong to `gateway.json`. Zero scan interval keeps the startup check but disables periodic scanning. Timing never restores uncertain refresh material or automatically resumes pending verification. Current SIWC/Grok network and temporary-service failures provide no safe-consumption proof, so ambiguous dispatched refresh remains quarantined; the delay alone authorizes no retry.
 
 Use `status --provider ID` for redacted state and `refresh --provider ID --account NAME` for manual renewal, with the same explicit account/store paths.
 

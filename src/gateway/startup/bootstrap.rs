@@ -49,6 +49,11 @@ struct Configuration {
     exchange_timeout_ms: Option<u64>,
     affinity_ttl_ms: Option<u64>,
     affinity_capacity: Option<usize>,
+    oauth_scan_interval_ms: Option<u64>,
+    oauth_refresh_ahead_seconds: Option<u64>,
+    oauth_renewal_timeout_ms: Option<u64>,
+    oauth_failed_renewal_delay_ms: Option<u64>,
+    oauth_minimum_renewal_interval_ms: Option<u64>,
     #[serde(default = "Limits::default_delta_coalescing")]
     delta_coalescing: Option<crate::execution::delivery::DeltaCoalescing>,
 }
@@ -213,6 +218,25 @@ impl Bootstrap {
             affinity_capacity: configuration
                 .affinity_capacity
                 .unwrap_or(defaults.affinity_capacity),
+            oauth_scan_interval: configuration
+                .oauth_scan_interval_ms
+                .map(Duration::from_millis)
+                .unwrap_or(defaults.oauth_scan_interval),
+            oauth_refresh_ahead_seconds: configuration
+                .oauth_refresh_ahead_seconds
+                .unwrap_or(defaults.oauth_refresh_ahead_seconds),
+            oauth_renewal_timeout: configuration
+                .oauth_renewal_timeout_ms
+                .map(Duration::from_millis)
+                .unwrap_or(defaults.oauth_renewal_timeout),
+            oauth_failed_renewal_delay: configuration
+                .oauth_failed_renewal_delay_ms
+                .map(Duration::from_millis)
+                .unwrap_or(defaults.oauth_failed_renewal_delay),
+            oauth_minimum_renewal_interval: configuration
+                .oauth_minimum_renewal_interval_ms
+                .map(Duration::from_millis)
+                .unwrap_or(defaults.oauth_minimum_renewal_interval),
             ..defaults
         };
         let manager = CredentialManager::new(
