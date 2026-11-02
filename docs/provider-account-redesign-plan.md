@@ -1,17 +1,17 @@
 # Provider account redesign plan
 
-**Status: draft direction accepted with configurable policy parameters, 2026-10-30. Design finalization now takes priority under the user's 2026-11-02 scheduling change. Final design and rewrite scope still require confirmation; implementation slices and rollout are not approved.**
+**Status: design finalized on 2026-11-02. Rewrite scope, implementation slices and rollout require separate approval; this document does not authorize code changes or deployment.**
 
-This document records the user's requirements, decisions and recommendations still under review. The user accepted the final draft from Claude Code session `ea0a9e90-bbc6-42f3-944d-5e03a3a83eaf`, with retries, cooldowns, cache lifetimes and related policy parameters configurable, and subsequently selected its stated numeric defaults. This accepts the design direction, not a finalized specification or rewrite authorization. Do not plan implementation slices, implement the design, change credentials or activate bindings until the user confirms the design and selects the later rewrite scope.
+This document owns the finalized account-redesign specification. It supersedes the earlier multi-target retry/fallback draft and interim single-send choice with request-boundary account selection and at most one bounded same-target retry. Final review selected conservative retry eligibility, a 30 s recovery budget, merged health evidence, material-aware OAuth recovery and short advisory `Retry-After` without `x-should-retry`. File/field names and implementation structure remain engineering choices within this contract, not new behavior decisions.
 
-[Architecture](architecture.md) remains the authority for accepted contracts. [Roadmap](roadmap.md#temporary-routing-freeze) owns the revised priority over the deferred installed-Agent exit and the routing freeze until design and scope confirmation. This separately requested plan owns the account-redesign requirements and proposal; the scheduling change does not finalize its open semantics. [Usage](usage.md#prepare-credentials) describes the currently implemented configuration, not the shapes discussed here.
+[Architecture](architecture.md#routing-and-security-decisions) records the accepted decisions and links here for their detailed contract. [Roadmap](roadmap.md#temporary-routing-freeze) owns scheduling and the routing freeze until rewrite scope and implementation authorization are selected. [Usage](usage.md#prepare-credentials) describes the currently implemented configuration, not this unimplemented redesign. Do not implement the design, change credentials or activate bindings as part of documentation finalization.
 
 ## Contents
 
 - [User requirements](#user-requirements)
 - [Current implementation and rewrite boundary](#current-implementation-and-rewrite-boundary)
-- [Proposed account and configuration model](#proposed-account-and-configuration-model)
-- [Proposed execution policy](#proposed-execution-policy)
+- [Account and configuration model](#account-and-configuration-model)
+- [Execution policy](#execution-policy)
 - [Cache affinity](#cache-affinity)
 - [OAuth maintenance](#oauth-maintenance)
 - [Operational additions and exclusions](#operational-additions-and-exclusions)
@@ -21,19 +21,19 @@ This document records the user's requirements, decisions and recommendations sti
 
 ## User requirements
 
-1. **Several named accounts per Provider.** A Provider such as OpenAI must support multiple named API keys and multiple named OAuth2 registrations together. Account fallback can distinguish exhausted credit, rate limits and other failures.
-2. **Provider-owned recovery configuration.** Configure retries before fallback by failure class, together with retry backoff, cooldown durations and caps. The accepted draft uses Provider classifiers rather than operator-defined per-status rules; the earlier five retries for 5xx, two for 419 and one for 401 were examples, not selected defaults or universal classifications.
+1. **Several named accounts per Provider.** Each Provider supports several named accounts of its declared credential kinds. `openai` denotes OpenAI API-key access; `chatgpt` denotes SIWC OAuth access. They have separate model bindings and service contracts, rather than requiring mixed key/OAuth accounts under one OpenAI Provider. Account recovery can distinguish exhausted credit, rate limits and other failures (Provider split selected on 2026-11-02).
+2. **Provider-owned recovery configuration.** Configure cooldown durations, backoff, reset-hint bounds and the short recovery-time budget (default 30 s). Permit at most one additional inference send for the selected network/server failure set before content publication, always to the same Provider, account, upstream model and effective endpoint. Do not restore per-class retry counters or within-request target switching. Provider classifiers replace operator-defined per-status rules (finalized on 2026-11-02).
 3. **API-key endpoint override.** API-key accounts inherit the Provider's default `base_url` unless they supply their own, including a deployment-specific API prefix. OAuth accounts never override it (user decision, 2026-10-30).
 4. **Global OAuth maintenance settings.** Configure the check interval and refresh-ahead window globally, without a separate timing configuration for every Provider.
-5. **Cache-first execution.** Keep the serving account through recoverable failures where bounded retries can help. Switch promptly for failures that cannot recover within the request, such as confirmed exhausted credit. Repeated temporary errors may eventually justify switching.
-6. **Incremental delivery.** Runtime key addition is optional; restart-based activation is acceptable. Assume accounts of a Provider have the same model capabilities; do not add capability-based routing.
+5. **Cache-first execution.** Preserve cache affinity ahead of keeping every request available. The operator expects normally no more than three accounts and accepts returning an error instead of immediately switching after dispatch. Select accounts at request boundaries; a failed attempt may receive the one same-target retry, but never switches targets or moves the binding. Final recovery outcome updates health; only successful completion can commit affinity (selected on 2026-11-02).
+6. **Incremental delivery.** Runtime key addition is optional; restart-based activation is acceptable. Assume accounts within one Provider have the same model capabilities; this does not equate the separate `openai` and `chatgpt` model catalogs. Do not add capability-scoring routing.
 7. **Maintainability and simplicity.** Prefer one authoritative owner per fact, deterministic behavior and a small configuration surface. Reference projects supply mechanisms and counterexamples, not a feature checklist.
-8. **No implicit switches beyond API keys.** By default, automatic switching between OAuth registrations of any profile (SIWC, Grok and others), fallback between OAuth and API-key accounts, and fallback across Providers are disabled; the operator can enable each explicitly. Only switching between API-key accounts of one Provider follows recovery policy without an opt-in. MorphieCore does not manage billing, and its usage accounting counts tokens only (user decisions, 2026-10-30).
+8. **Automatic selection across route candidates.** Every enabled, validly bound API-key or OAuth account in the current model route may serve a new request, including accounts of other Providers. Account and route configuration authorize these destinations and billing paths; there are no separate fallback switches or switch domains. Stored credentials alone, disabled accounts and Providers outside the route are not candidates. Health and affinity determine request-boundary selection; a failed dispatched request is not resent to another candidate. MorphieCore does not manage billing, and its usage accounting counts tokens only (user decisions, 2026-11-02, replacing the 2026-10-30 switching defaults and the earlier within-request fallback draft).
 9. **Requirements before rewrite.** The current implementation deviates substantially from these requirements. Complete the requirements first, then rewrite account binding and execution policy instead of incrementally reshaping the current path (user decision, 2026-10-30).
 10. **Operator-readable CLI.** Provisioning, validation and explanation commands print human-readable output by default and offer structured JSON as an option (user decision, 2026-10-30).
-11. **Configurable policy parameters.** Retry counts, wait and timeout budgets, retry/cooldown backoff, reset-hint bounds, affinity cache lifetime and capacity, downstream retry-hint horizon and OAuth maintenance timing must be configurable at their authoritative owner. Configuration cannot relax identity, publication, terminal-honesty or credential-lifecycle safety rules (user decision, 2026-10-30).
-12. **Defaults and operator responsibility.** Use the draft's stated defaults. Do not add policy-value range or cross-parameter relationship validation at this stage; the operator selects suitable values. Retain schema/type parsing and credential, identity and target security checks (user decision, 2026-10-30).
-13. **System-wide destination, Generation first.** The new credential/account routing system ultimately replaces the existing system throughout MorphieCore. Initial integration may cover Generation only because it is currently the mature path; other paths join later, without a parallel long-term routing design (user decision, 2026-10-30).
+11. **Configurable policy parameters.** Wait, recovery-time and timeout budgets, cooldown backoff, reset-hint bounds, affinity cache lifetime and capacity, downstream retry-hint horizon and OAuth maintenance timing must be configurable at their authoritative owner. One additional inference attempt is the selected structural ceiling, not a generic retry-count matrix. Configuration cannot relax identity, publication, terminal-honesty or credential-lifecycle safety rules (2026-10-30 decision refined on 2026-11-02).
+12. **Defaults and operator responsibility.** Retain the stated defaults for settings that remain in the selected design; removed retry allowances and send ceilings are not dormant configuration. Do not add policy-value range or cross-parameter relationship validation at this stage; the operator selects suitable values. Retain schema/type parsing and credential, identity and target security checks (2026-10-30 decision refined on 2026-11-02).
+13. **Shared account binding, Generation-first recovery.** Replace credential loading, account references and trusted target binding across existing entrances together; initially integrate the new recovery execution policy in Generation. Existing diagnostics retain bounded named-account requests, and standalone tasks retain their existing execution capabilities without gaining multi-account recovery. Frozen features remain inactive; no parallel legacy pool path remains (user decision, 2026-11-02, refining the 2026-10-30 replacement scope).
 
 An account name identifies a configured execution identity. Two keys are not necessarily independent billing accounts or rate-limit domains. Equal model capabilities also do not establish shared caches, interchangeable OAuth grants or portable private replay state.
 
@@ -43,18 +43,18 @@ The current code is evidence of existing mechanisms and protections, not the tar
 
 | Owner | Current behavior | Rewrite boundary |
 |---|---|---|
-| [Provider catalog](../src/provider/catalog.rs) and [metadata](../src/provider/providers.json) | Compile-time trusted origin, operation paths, one credential kind/profile per Provider with per-endpoint header placement, and default pool | Keep compile-time default origins and paths; declare header placement per credential kind; admit API-key and OAuth accounts under one Provider |
-| [Credential pools](../src/credential/pool.rs) | Ordered references plus fallback/attempt policy; separate pool provisioning; SIWC pools limited to one member | Replace with the Provider's ordered accounts; generalize the SIWC restriction into the default OAuth switching policy |
+| [Provider catalog](../src/provider/catalog.rs) and [metadata](../src/provider/providers.json) | Compile-time trusted origin, operation paths, one credential kind/profile per Provider with per-endpoint header placement, and default pool; current `openai` is SIWC OAuth | Keep trusted catalog contracts and named accounts; split target `openai` API-key and `chatgpt` SIWC Providers, with independent model bindings |
+| [Credential pools](../src/credential/pool.rs) | Ordered references plus fallback/attempt policy; separate pool provisioning; SIWC pools limited to one member | Replace with the Provider's ordered accounts; remove the single-member routing restriction without weakening session lifecycle protections |
 | [Startup model assembly](../src/gateway/startup/models.rs) and [binding](../src/gateway/startup/bind.rs) | Expands endpoint/pool combinations into bounded candidates; replay/cache scopes hash provenance, origin, path and model | Bind explicit account identities and effective targets without copying secret state; keep the scope inputs |
-| [Route policy](../src/topology/route.rs) and [model routes](../src/gateway/startup/models.rs) | Declaring more than one route candidate implicitly enables before-commit fallback; a single-account OAuth binding disables it | Cross-Provider fallback only through an explicit route opt-in |
+| [Route policy](../src/topology/route.rs) and [model routes](../src/gateway/startup/models.rs) | Declaring more than one route candidate implicitly enables before-commit fallback; a single-account OAuth binding disables it | All eligible route candidates participate in request-boundary selection, without credential-kind or Provider opt-ins |
 | [Executor health and affinity](../src/gateway/routing/executors.rs) | Conversation affinity, three-scope cooling, generation fencing, single foreground probe, `Retry-After` cooling | Retain these contracts; see [Cache affinity](#cache-affinity) |
-| [Execution chain](../src/gateway/routing/chain.rs) and [fallback](../src/execution/fallback.rs) | One send per candidate, forward-only advancement; pool attempts counted per endpoint | Replace with one owner for same-account retries, account switches and Provider switches |
+| [Execution chain](../src/gateway/routing/chain.rs) and [fallback](../src/execution/fallback.rs) | One send per candidate, forward-only advancement; pool attempts counted per endpoint | Select the target once; permit at most one serial, bounded same-target retry. Remove within-request candidate advancement and per-target/class retry ledgers |
 | [Failure classification](../src/protocol/failure.rs) | One status table plus global quota substrings shared by all Providers | Classify per Provider contract into a finite fact vocabulary |
 | [Credential access](../src/credential/access.rs), [API keys](../src/credential/api_key.rs) and [renewal](../src/gateway/renewal.rs) | Pinned identities, request-time borrowing, automatic OAuth maintenance with fixed 15 s scan, 120 s refresh-ahead and 90 s renewal timeout | Reuse lifecycle protections; make global timing configurable |
 
 Preserve the existing secure store, OAuth drivers, verified identities, atomic publication/recovery, cancellation, trusted target selection and publication freeze where they fit. This is a rewrite of account binding and execution policy, not a replacement of the semantic IR, codecs or transport stack.
 
-Current Generation, manual upstream diagnostics and standalone tasks have different pool rules. The selected initial integration scope is Generation; the final destination is one credential/account routing system across the whole application. Other paths are deferred, not excluded from replacement. This scope decision does not activate frozen standalone tasks or schedule their migration.
+Current Generation, manual upstream diagnostics and standalone tasks have different pool rules. The selected boundary replaces their shared credential loading and account/target binding together, while the new recovery executor initially serves Generation. Diagnostics retain explicit bounded account requests; standalone tasks retain their existing execution capabilities without new multi-account recovery. This design selection does not activate frozen features or approve implementation slices.
 
 ### Review inputs to retain
 
@@ -69,14 +69,14 @@ These existing issues are inputs to the rewrite, not independently scheduled rep
 
 Revalidate these paths against the implementation when the rewrite starts. Existing mapping or routing expectations are not an oracle for newly selected behavior.
 
-## Proposed account and configuration model
+## Account and configuration model
 
 Use three operator-facing concepts:
 
 ```text
 Provider
   catalog facts: default origin, operation paths, header placement per credential kind
-  recovery policy, including explicit switching opt-ins
+  recovery policy
   ordered named accounts
     credential: API key, or OAuth registration of a profile
     base_url override (API-key accounts only)
@@ -84,11 +84,11 @@ Provider
 
 Model route
   ordered Provider / existing model-binding candidates
-  cross-Provider fallback opt-in (default off)
+  automatic request-boundary selection across eligible candidates
   request-wide execution bounds
 ```
 
-This is a conceptual model, not a configuration schema or an implemented CLI.
+This defines configuration ownership and behavior; exact schema/CLI spelling belongs to the separately authorized rewrite.
 
 ### Ownership and defaults
 
@@ -96,8 +96,24 @@ This is a conceptual model, not a configuration schema or an implemented CLI.
 - Keep account lists and Provider/route policy with the other private configuration under `$HOME/.local/share/morphiecore`, outside the credential store. Each Provider lists its ordered named accounts; explicit pools are removed.
 - Use stable configured account names, not file ordering, startup vector indexes or token values, as operator identities. Credential provenance still owns the security identity.
 - Let declaration order select among new, unbound conversations. Do not add separate priority, weight and ordering fields.
-- By default, the eligible set is the Provider's enabled accounts, narrowed by the [switch domains](#terms). Defer named sub-pools and account subsets until a concrete isolation requirement exists.
-- Introduce no new configuration-precedence stack. Recovery and account-switching opt-ins belong to Provider policy, endpoint override and enablement to accounts, route order, total bounds and the cross-Provider opt-in to the route, and renewal timing to global service settings.
+- Each route candidate expands the Provider's enabled, validly bound accounts in declaration order. Route candidate order precedes account order; credential kind adds no priority. Defer named sub-pools and account subsets until a concrete isolation requirement exists.
+- Account `enabled` controls routing participation only. Configured Active OAuth sessions remain maintained when disabled or unreferenced by routes; logout explicitly ends the session. Credential invalidation, logout and quarantine remain independent safety vetoes, never overridden by account enablement.
+- Introduce no new configuration-precedence stack. Recovery belongs to Provider policy, endpoint override and enablement to accounts, candidate order and total bounds to the route, and renewal timing to global service settings.
+
+### Provider identity and model bindings
+
+Selected on 2026-11-02:
+
+| Provider | Access | Binding contract |
+|---|---|---|
+| `openai` | OpenAI API keys | OpenAI API model availability and supported operations |
+| `chatgpt` | SIWC OAuth | ChatGPT account's SIWC model availability, fixed request controls and SIWC response interpretation |
+
+Provider denotes the configured service access contract, not merely the vendor company or hostname. These Providers may share standard codec machinery without sharing model catalogs, request restrictions or credential provenance. Do not construct a Provider × credential-kind model matrix for this pair; select their protocol/adapter contracts through separate Provider bindings. Catalog defaults remain authoritative; account data cannot select arbitrary dialects.
+
+A public model route includes only explicitly declared Provider/model bindings that preserve its public promise. Adding a `chatgpt` account does not automatically make every `openai` model available there, or authorize substituting another upstream model. Route-wide account eligibility remains, but only within those declared bindings.
+
+The current catalog calls its SIWC Provider `openai`. The target naming therefore requires explicit configuration rebinding, not merely adding a second Provider or silently reinterpreting old references. Provider naming does not itself rename OAuth registrations, issued clients or verified subjects. The breaking transition must preserve compatible credential records without historical Provider aliases or automatic configuration migration; revalidate affinity and private replay identity rather than inheriting them by name.
 
 ### Credential kind and header placement
 
@@ -108,16 +124,18 @@ Validate each account's credential kind against the kinds its Provider declares.
 ### Targets and trust
 
 - Default origins and operation paths remain compile-time catalog facts.
-- An API-key account may override `base_url`. The override moves origin trust into operator configuration, so it must pass the same rules as catalog origins (HTTPS, no userinfo, query or fragment) and normalize origin and API prefix once before the existing operation path contracts apply.
+- An API-key account may override `base_url`. The override moves origin trust into operator configuration, so it must pass the same rules as catalog origins (HTTPS, no userinfo, query or fragment). Treat it as the complete API root and append the catalog-declared operation-relative suffix after normalizing the joining slash. For example, `https://relay.example/custom/v1` plus `responses` gives `https://relay.example/custom/v1/responses`; plus `models` gives `https://relay.example/custom/v1/models`. Do not guess or strip version prefixes. Without an override, retain each operation's full catalog target.
 - OAuth accounts reject an override. Their tokens go only to the origin of the profile's authorization-resource contract.
 - Validate targets before borrowing secrets. Business requests cannot change origins, credentials, auth headers or proxies.
-- Record the override trust rule as an Architecture decision when the design is approved.
+- The override trust decision is recorded in [Architecture](architecture.md#routing-and-security-decisions); it remains unimplemented until the rewrite.
 
 ### OAuth registration identity
 
-Several OAuth registrations of one profile may belong to the same upstream user; SIWC documents that email may be identical across registrations and that usage limits are per ChatGPT user across apps. Provenance currently includes the issued client, so two registrations of one user look like independent accounts. Once OAuth switching is enabled, switching between them cannot escape a shared limit. Configuration validation therefore rejects two registrations with the same verified subject under one Provider.
+Several OAuth registrations of one profile may belong to the same upstream user; SIWC documents that email may be identical across registrations and that usage limits are per ChatGPT user across apps. Provenance currently includes the issued client, so two registrations of one user look like independent accounts. Switching between them cannot escape a shared limit. Configuration validation therefore rejects two registrations with the same verified subject under one Provider.
 
 Each configured OAuth account has one managed login session. Do not support duplicate or concurrent logins for an already active account, multiple token sets under one account, or another alias for the same verified subject within the Provider. Normal refresh updates that session. Explicit reauthorization after invalidation or login after logout remains supported; it replaces the unusable or ended session rather than adding another one. These are MorphieCore-managed account rules, not a restriction on the user's sessions in unrelated applications.
+
+Enforce verified-subject uniqueness atomically when publishing a login, including concurrent publishers, as well as during offline configuration validation. Issued-client provenance must not bypass subject uniqueness. Disabled, signed-out and reauthorization-required accounts retain the subject reservation; explicit account removal releases it. Reauthorization uses the existing account rather than creating another alias.
 
 Exact file and field names are chosen with the rewrite. Replacing the pool schema follows the project's current-schema-only rule: no silent migration, historical aliases or parallel legacy execution path. Reuse existing credential records where compatible.
 
@@ -125,141 +143,173 @@ Exact file and field names are chosen with the rewrite. Replacing the pool schem
 
 The rewrite is a breaking configuration change. Operators re-provision accounts through the CLI following a documented procedure; startup rejects the old pool schema with an error that names the procedure.
 
+Separate obsolete pool configuration from reusable credential records, issued clients, verified identities and recovery states, even where the current store puts them in one document. The explicit transition procedure must preserve compatible credential state while removing obsolete pool metadata; it must not silently migrate application configuration. All existing entrances use the new account binding rather than retaining a legacy pool reader; see the [rewrite boundary](#current-implementation-and-rewrite-boundary).
+
 Provisioning, validation and explanation commands print concise human-readable output by default: what was checked or changed, each problem with its account or Provider name, and the next step. An explicit JSON option prints one structured document with stable field names and the same redaction. Neither form prints secret values or credential locators, and errors keep a non-zero exit status in both. The current `morphiecore-auth` prints JSON by default; commands the rewrite touches follow the new rule.
 
-## Proposed execution policy
+## Execution policy
 
-**Draft direction and stated defaults accepted, 2026-10-30; final design still pending.** This section synthesizes the [reference observations](#reference-observations). Numeric defaults are configurable, not fixed policy. The [configuration surface](#configuration-surface) owns parameter scope; exact schema and implementation are deferred.
+**Finalized on 2026-11-02.** One bounded same-target retry replaces the interim single-send choice without restoring within-request account/Provider fallback. Numeric defaults are configurable at the owners in the [configuration surface](#configuration-surface), within the selected structural and safety rules.
+
+“Next request” means a new gateway HTTP request, including a client retry of the failed turn; it does not require a new user message. MorphieCore may absorb one brief failure on the selected target; clients may still retry a returned failure. Their actual behavior must be verified, not assumed; a fresh request does not authorize the gateway to splice or replay an already-published response.
 
 ### Principles
 
-1. **Cache affinity first.** A bound conversation stays on its target through recoverable failures within the configured wait and retry budgets. A move outside the upstream cache scope loses cache reuse.
-2. **Fallback second.** Move only when the target cannot serve this request within the wait budget: exhausted quota or credit, unusable authentication, repeated transient failure, or a cooldown longer than the budget.
+1. **Cache affinity first.** A new request prefers its bound target, including a short bounded cooldown wait. Recovering the same target preserves affinity; a failure never preemptively rebinds the conversation.
+2. **Selection before dispatch.** Choose another ready candidate only when the bound target cannot serve within the wait budget or is otherwise ineligible. After dispatch, any recovery stays on that exact target; a final failure returns without switching accounts or Providers.
 3. **One ordered list, no balancing.** Selection is deterministic route order. No weights, tiers, round-robin, usage spreading, hedging or cache-value estimates.
-4. **One owner, one budget.** The execution loop owns every send, wait, refresh and move. SDK and transport retries stay off; one request deadline and one send ceiling bound everything.
+4. **One retry owner, two sends at most.** The gateway owns the initial attempt and at most one additional serial attempt, including when probing. SDK and transport retries stay off. The unchanged request deadline bounds the whole exchange; a short recovery budget additionally bounds the retry phase. Shared OAuth maintenance has its own lifecycle and timeout.
 5. **Typed, time-bounded health.** Cooldowns are absolute deadlines at a known scope. No error disables a target permanently, and request-shaped or malformed-output errors never cool or rotate anything.
 
 ### Terms
 
-- **Target:** one account serving one route candidate (Provider, account, upstream model, effective origin). It is the unit of sending, affinity and target-scoped cooldown.
-- **Switch domain:** the targets a request may move between. By the [decided defaults](#decided), all API-key accounts of one Provider form one domain and each OAuth account is its own domain. The two Provider flags merge OAuth registrations, or OAuth with API-key accounts; the route flag merges Providers.
+- **Target:** one account serving one route candidate (Provider, account/security identity, upstream model, operation/protocol and effective origin/path). It is the unit of sending, affinity and target-scoped cooldown; matching hostnames alone does not make two targets identical.
+- **Candidate list:** the current model route's ordered targets. Every eligible target may be selected before dispatch; neither credential kind nor Provider identity introduces a separate switching boundary.
 - **Binding:** a conversation's current target, keyed by explicit conversation carriers (see [Cache affinity](#cache-affinity)).
 - **Cooldown:** an absolute deadline on a target, or on an account across all its targets.
 
 ### Selection
 
 ```text
-anchor = the fresh binding's target, else the route's first target
-domain = targets in the anchor's switch domain, route order, anchor first
-ready  = domain targets not cooling; an expired cooldown admits exactly one probe
+candidates = eligible route targets in declaration order
+bound = the fresh binding's target, if still eligible
+ready = targets not cooling; an expired cooldown requires exclusive probe ownership
 
-if the anchor is cooling and its deadline is within max_wait: wait, then send to the anchor
-else send to the first ready target
-no ready target: fail fast (see Downstream signals)
+if bound is ready: send to bound
+else if bound is cooling and its deadline is within max_wait:
+    wait within the remaining request deadline, then recheck eligibility and acquire
+else: send to the first ready candidate
+no ready candidate: fail fast (see Downstream signals)
 ```
 
-New conversations therefore fill the first ready target of the first domain. Without a conversation carrier every request is new, and fill-first still keeps traffic on one target while it is healthy.
+Only a valid conversation binding earns a short cooldown wait. New conversations choose the first ready route candidate without waiting for an unbound higher-priority target. Without a conversation carrier every request is new, and fill-first still keeps traffic on one target while it is healthy.
 
-When cross-Provider fallback is off, an inability to represent the request before dispatch does not permit selecting a later Provider. Stay within the selected Provider and the permitted switch domain; if no permitted candidate can represent the request, return the appropriate failure without crossing the boundary.
+Check cancellation and remaining deadlines before waiting and before either dispatch. Recheck health and probe ownership after a pre-dispatch wait; if the preferred target cannot be acquired, select another ready eligible candidate before the first send or fail without sending. Do not loop through additional cooldown waits. Once a send begins, only the same-target retry below is permitted; candidate selection runs again only for a new gateway request.
+
+A candidate-local inability to represent the request before dispatch permits checking later candidates, including other Providers. Invalid client input still rejects at ingress; trust, replay and explicit-guarantee rules remain in force. If no candidate can represent the request, return the appropriate failure. An upstream `request` or `malformed` failure remains terminal under the failure table rather than triggering candidate search.
 
 ### Failure classes
 
-Provider classifiers map HTTP status, structured error codes, reset headers and in-band failed outcomes before publication into exactly one class with an optional reset deadline. Codes a Provider classifier does not know fall back to the status column. There is no operator rule language.
+Provider classifiers map HTTP status, structured error codes, reset headers and in-band failed outcomes into exactly one class with an optional reset deadline, independently of publication. Codes a Provider classifier does not know fall back to the status column. There is no operator rule language. Only the explicitly retryable network/server subset of `transient` can receive the additional attempt; a health classification alone does not authorize a retry.
 
-| Class | Typical evidence | Same-target retry | Cooldown | Move within domain |
-|---|---|---|---|---|
-| `request` | 400, 404, 413, 422; context overflow; refused or unsupported input | None | None | No; return the failure |
-| `malformed` | Upstream output that fails strict parsing or protocol validation | None | None | No; return an honest upstream failure |
-| `transient` | Connect failure, 408, 5xx, 529, EOF or attempt timeout before content | Configured retries (default 1), configurable backoff (default 1 s, doubling) | Target: 1 s doubling to 60 s, set only when retries are exhausted | Yes |
-| `rate_limit` | 429 without quota evidence; Provider capacity codes | Configured retries (default 1), only when the reset hint is within `max_wait` | Target: hint capped at 1 h, else 60 s doubling to 30 min | Yes |
-| `quota` | 402; `insufficient_quota`; SIWC `subscription_sharing_usage_limit_exceeded`; Codex `usage_limit_reached`; Anthropic unified-window rejection; OpenCode Go usage limits | None | Account: reset hint capped at 7 days, else 30 min | Yes |
-| `auth` | 401; terminal OAuth refresh errors | OAuth: configured recovery allowance (default 1); each resend requires coordinated refresh producing new material. API key: none | Account: 30 min; an OAuth reauthorization state lasts until login | Yes |
-| `permission` | 403 that the Provider classifier does not map elsewhere | None | Target: 30 min | Yes |
+| Class | Typical evidence | Health effect |
+|---|---|---|
+| `request` | 400, 404, 413, 422; context overflow; refused or unsupported input reported as an error | None |
+| `malformed` | Upstream output that fails strict parsing or protocol validation | None |
+| `transient` | Connect failure, 408, 5xx, 529, premature upstream EOF or upstream attempt timeout | Target: 1 s doubling to 60 s |
+| `rate_limit` | 429 without quota evidence; Provider capacity codes | Target: hint capped at 1 h, else 60 s doubling to 30 min |
+| `quota` | 402; `insufficient_quota`; SIWC `subscription_sharing_usage_limit_exceeded`; Codex `usage_limit_reached`; Anthropic unified-window rejection; OpenCode Go usage limits | Account: reset hint capped at 7 days, else 30 min |
+| `auth` | 401; terminal OAuth refresh errors | Account: 30 min; an OAuth reauthorization state lasts until login |
+| `permission` | 403 that the Provider classifier does not map elsewhere | Target: 30 min |
 
 - Provider-specific statuses such as 419 map into one of these classes in that Provider's classifier.
-- All numeric retry, backoff and cooldown values in this table are selected, configurable defaults. Classes, scopes and retry eligibility remain semantic rules; zero retries disables that recovery, not its safety checks.
+- All numeric cooldown values in this table are retained configurable defaults. Failure classes and health scopes remain semantic rules, not configurable retry permissions.
 - Quota and auth cool the whole account because every model on it fails. Transient and rate-limit failures cool only that account and model.
 - `malformed` exists because a deterministic Provider protocol defect would otherwise cool every account in turn.
-- A timeout after the response head but before content is `transient`. The upstream may bill both sends; MorphieCore manages no billing and accepts this within the send ceiling.
+- A timeout after the response head but before content remains `transient` health evidence, but an ambiguous post-dispatch timeout is not automatically retried. The upstream may already have performed work; even an explicit connection interruption can leave execution uncertain, so gateway/client retries do not promise exactly-once execution.
+- User cancellation, downstream disconnection and gateway-local failures do not become upstream health evidence. Preserve any upstream failure already observed independently; release probe ownership without declaring recovery.
 
-### Retries, waits and bounds
+### Waits and bounds
 
-- `N` retries means up to `N` additional sends to the same target.
-- Retries are counted per request for each target and class, cumulatively; a class change resets nothing.
-- `max_sends` (route, default 4) counts every send, including retries and probes. The request deadline covers sends, waits and refresh work.
-- `max_wait` (global, default 10 s) caps any single in-request wait, whether for a `Retry-After` hint or for a cooling bound target. A longer wait means moving within the domain or failing fast.
-- Waits are cancellable and count against the deadline. No SDK or transport retries.
+- At most two inference sends per gateway request is a fixed ceiling: the original attempt and one retry. There are no per-target/class retry ledgers, independent retry rounds or configurable route send ceilings.
+- The request clock starts when the gateway begins handling the request, before body admission. Resolving a route may tighten the deadline relative to that same start time, never restart it. The deadline covers admission, cooldown waiting, both attempts and recovery cleanup; each attempt remains bounded by the applicable remaining deadlines.
+- `max_wait` (global, default 10 s) caps the pre-dispatch wait for a cooling bound target. A longer wait means selecting another ready eligible candidate or failing fast. It is separate from the short recovery-time budget and cannot extend that budget.
+- Waits are cancellable. No SDK or transport retries, inference hedges, exponential retry-backoff sequence or OAuth refresh-and-resend path.
+
+### Bounded same-target retry
+
+Selected on 2026-11-02:
+
+- Retry only before content publication and only once, for an explicitly allowed transient network/server failure. Keep Provider, account/security identity, upstream model, effective endpoint and admitted request meaning fixed. “Same Provider” does not permit trying another account.
+- Eligible server failures are HTTP 408/500/502/503/504 and Provider-confirmed equivalent overload failures, only when structured evidence has not reclassified them as quota, rate limit, auth or another excluded class. A valid in-band error may qualify only through the same Provider-owned classification and before publication; HTTP 2xx alone supplies no retry evidence.
+- Eligible network failures require positive evidence of a transient connection or I/O interruption, including a known connection-phase timeout or an independently identified premature transport termination. Do not retry an ambiguous post-dispatch timeout, an unclassified `Send`/`Connect` failure, or merely a missing protocol terminal. Preserve enough safe transport facts to distinguish these cases without retaining private URLs or raw third-party errors.
+- Rate limits (429), quota, auth, permission, invalid requests, malformed output, TLS/certificate/trust or local configuration faults, cancellation and gateway-local failures do not qualify. Unlisted 5xx statuses do not gain retry permission through their status family alone.
+- Start one short recovery deadline when the first retryable failure is observed; it covers cleanup, any bounded delay, preparation, the additional send and recovery to deliverable output. Clip it to the original request deadline. Do not merely bound the sleep or grant a new full attempt timeout.
+- Before retrying, close/release the failed upstream and discard its unpublished attempt-local frames, parser state, response IDs and output metadata. Preserve observed usage and attempt diagnostics separately; do not mix first-attempt output into the second response. No attempts overlap.
+- Once the retry reaches validated content eligible for delivery, or a valid no-content terminal, normal processing continues under the original request deadline. Headers, keepalives and lifecycle-only frames do not establish recovery. For buffered JSON, eligible content is an internal readiness milestone, not permission to publish partial JSON; successful completion still requires validated terminal/EOF.
+- The recovery deadline is an independently cancellable constraint, not a replacement full-response transport timeout. Reaching deliverable content removes only that short constraint, never resets the request or attempt clock. If any frame is actually committed downstream before that milestone, the publication fence still forbids resending.
+- Keep any foreground probe ownership throughout the bounded recovery. The first failure is retained as an observation but does not independently release the probe or commit affinity. A successful completed retry recovers health subject to fencing; final failure applies the relevant health scopes without double-counting the initial failure. Cancellation releases ownership while preserving independently observed upstream failures.
+- The recovery budget defaults to 30 s. After the old attempt is released, retry immediately unless a valid upstream retry/reset hint requires waiting. That wait uses the same budget; if it leaves no recovery time, return the original failure without sending again. Do not shorten a valid hint to fit the budget, add an artificial delay or allow SDK/transport retries.
+
+This is the initial selected execution policy, not a later mode. Client retries remain possible, so acceptance must count actual gateway and client transmissions together.
+
+### Outcome and health resolution
+
+Delivery, upstream outcome and health evidence have separate meanings:
+
+- A successful completion under [Cache affinity](#cache-affinity), including output-limit incomplete completion or a completed tool-call/refusal turn, can recover health and conditionally commit affinity. Successful HTTP transport, valid failure delivery or a raw EOF alone cannot.
+- If recovery succeeds, discard the first failure's pending health penalty while retaining its attempt diagnostics and reported usage. Existing generation fencing still prevents an older success from clearing newer health.
+- Otherwise retain every independently observed health-affecting failure. A second request/malformed error, local timeout or cancellation does not erase the first upstream failure. Apply different account/target constraints at their own scopes; do not collapse them into the error shown to the client.
+- Advance each affected scope's backoff at most once per gateway request. For multiple constraints on that scope, retain the latest resulting deadline without incrementing the level for each attempt. Failure timestamps, not delayed cleanup time, anchor observed reset information.
+- The final failed attempt supplies the client-visible failure through the existing protocol mapping. If no second attempt starts, retain the first failure. A recovery deadline expiring during the second attempt is a timeout result, not a fabricated upstream error. Do not concatenate two failure bodies or retract published output.
+- A cancelled or undeliverable response never commits or renews affinity. Release probe/attempt resources and preserve already-observed upstream failure evidence; do not infer an upstream failure from the downstream disconnect.
+
+For example, `503 → quota` retains target-transient and account-quota constraints; `503 → malformed` or `503 → cancellation` retains the transient observation without assigning a new health penalty to the second outcome.
 
 ### Cooldown and recovery
 
-- Deadlines only extend. A failure inside an open cooldown window does not escalate the backoff.
+- Failure updates only extend deadlines. A failure inside an open cooldown window does not escalate the backoff. Verified credential replacement has the narrowly scoped auth-probe exception described under [OAuth maintenance](#oauth-maintenance).
 - The backoff level resets after a success or a configurable failure-free interval (default 30 min).
-- Hints come from `Retry-After` and Provider reset fields, clamped to a configurable floor (default 1 s) and class cap.
-- An expired cooldown admits one foreground probe; a successful send clears every scope of its target. There are no background probes, permanent disables or health persistence; a restart clears health.
+- Hints come from valid `Retry-After` delta-seconds/HTTP-date or Provider-declared reset fields. Missing, invalid or already-expired hints supply no future deadline. Cooldown hints use the configured floor (default 1 s) and class cap; those health bounds do not permit retrying earlier than a valid hint within the current recovery phase.
+- An expired cooldown admits one foreground probe. Only a validated completion eligible under the success-only completion rule clears the relevant scopes, subject to health fencing; HTTP 2xx or a successfully delivered failure is insufficient. Neutral outcomes release probe ownership without clearing health. There are no background probes, permanent disables or health persistence; a restart clears health.
+- Acquire probe ownership atomically across all relevant account/target scopes or acquire none. Account-scoped probing excludes concurrent probes on every model of that account; target-scoped probing excludes only that target. Ownership lasts through same-target recovery and is released on completion/cancellation. Releasing a neutral probe does not certify recovery.
 - Generation fencing keeps stale completions from overwriting newer health or bindings.
 - The current pool-wide rate-limit scope is dropped. Caches and rate limits follow upstream organizations or workspaces, so operators configure one account per independent organization or workspace; several keys of one organization add no failover value.
 
 ### Publication
 
-Retries and moves happen only before the first content is released; lifecycle frames stay held as today. After publication a failure ends with an honest terminal error, never a resend or splice. It still updates health; the binding stays unchanged.
+The one same-target retry is permitted only before content publication. Lifecycle frames stay held as today, and terminal success still requires validated upstream completion/EOF. After publication a failure ends with an honest terminal error, never a resend or splice. Classified upstream failures still update health; the binding stays unchanged.
 
 ### Downstream signals
 
-Clients retry on their own: pi's agent loop retries 429 and 5xx three times by default, and OpenCode retries rate limits and provider failures unless the response carries `x-should-retry: false`. Gateway retries multiply with these.
+The gateway may absorb one short network/server failure before returning an error. The cited pi/OpenCode versions also retry selected rate-limit/server failures, so attempts can multiply. Native failed outcomes, HTTP failures and published stream errors can have different client behavior. Verify the currently installed clients and actual request counts during acceptance.
 
-- When the gateway stops recovering a failure, it answers with `x-should-retry: false`.
-- When no ready target remains and the nearest cooldown ends within the configured downstream retry-hint horizon (default 60 s), it answers 429 (rate limit or quota) or 503 (other) with `Retry-After` set to that deadline, and leaves client retry allowed.
-- Longer cooldowns answer with `x-should-retry: false` and the reset time in the error message, not a multi-hour `Retry-After`.
+- Do not emit downstream `x-should-retry` or forward an upstream copy. Clients retain their own retry policy; gateway exhaustion, long cooldown or unusable credentials do not add a blanket automatic-retry prohibition.
+- Do not turn one account's long `Retry-After` into a route-wide delay when another eligible candidate is ready.
+- When all eligible targets are blocked, return a gateway admission failure: 429 for rate/quota-only blocking, 503 otherwise. For each lifecycle-usable, non-probing target, its earliest probe time is the latest deadline of its blocking scopes; the route hint is the earliest such time. Emit `Retry-After` only if this is a positive known interval within the 60 s horizon, rounded up to whole seconds.
+- No ready target and no credible short deadline means no `Retry-After`: probe ownership, renewal in progress, reauthorization, quarantine and long cooldowns must not acquire an invented reset time. Return the failure honestly; clients may still retry under their own limits.
+- Preserve existing protocol error meanings for dispatched failures, including native failed Responses. Do not turn a native failed outcome into a different HTTP result solely to trigger retries. Upstream credential failure must not masquerade as failed downstream authentication. Ordinary error messages remain redacted and body-free.
+- Headers must be chosen before HTTP headers are committed. Published streams end through their protocol error mechanism, not revised HTTP status or headers.
 
-Both headers are safe to ignore. Verify their effect on currently installed pi and OpenCode during acceptance.
+Retry hints are advisory and do not authorize the gateway to reconstruct or replay a failed published response.
 
 ### Configuration surface
 
 These are conceptual settings, not final field names or a configuration schema. Each parameter has one owner; no per-account/model/request override stack is introduced.
 
-| Owner | Setting | Selected default or unresolved value |
+| Owner | Setting | Selected default |
 |---|---|---|
 | Global | `max_wait` | 10 s |
 | Global | Affinity idle TTL | 1 h |
-| Global | Affinity cache capacity | Bounded; value to confirm |
+| Global | Affinity cache capacity | 4096 entries |
 | Global | Downstream retry-hint horizon | 60 s |
-| Global | Service request ceiling and attempt timeouts | Bounded; values to confirm |
-| Global | OAuth scan interval / refresh-ahead / renewal timeout | Current values as starting points: 15 s / 120 s / 90 s |
-| Global | Failed-renewal backoff: initial delay, multiplier and cap | Bounded; values to confirm |
-| Provider | `transient` retries | 1 |
-| Provider | `rate_limit` retries | 1 |
-| Provider | OAuth `auth` recovery allowance | 1 |
-| Provider | Transient retry backoff: initial delay, multiplier and cap | 1 s / 2 / cap to confirm |
+| Global | Service request ceiling / Generation attempt timeout | 3600 s / 3600 s |
+| Global | Upstream connection timeout | 10 s |
+| Global | OAuth scan interval / refresh-ahead / renewal timeout | 15 s / 120 s / 90 s |
+| Global | Safe failed-renewal delay | Fixed 60 s; no additional backoff curve |
+| Provider | Short recovery-time budget for the one additional attempt | 30 s; zero disables the retry |
 | Provider | Transient cooldown: initial delay, multiplier and cap | 1 s / 2 / 60 s |
 | Provider | Rate-limit fallback cooldown: initial delay, multiplier and cap | 60 s / 2 / 30 min |
 | Provider | Reset-hint floor and class caps | Floor 1 s; rate limit 1 h; quota 7 days |
 | Provider | Quota fallback / auth / permission cooldown | 30 min each |
 | Provider | Failure-free interval resetting backoff | 30 min |
-| Provider | OAuth registration switching | Off |
-| Provider | OAuth/API-key fallback | Off |
-| Route | Cross-Provider fallback | Off |
-| Route | `max_sends` | 4 |
 | Route | Request deadline | Service ceiling |
 
-Provider classifiers, failure scopes and retry eligibility change with Provider contracts, not operator rules. Counts and timing are configurable within those rules: `request`, `malformed`, `quota`, `permission` and API-key `auth` do not gain same-target retries. Terminal OAuth errors still require reauthorization; no retry count permits reuse of uncertain refresh material.
+Capacity and ordinary timeouts reuse current values in [executor affinity](../src/gateway/routing/executors.rs), [service limits](../src/gateway/startup/limits.rs), [Generation catalog](../src/topology/catalog.rs) and [HTTP transport](../src/transport/http.rs). The selected renewal delay uses the existing [60 s maintenance interval](../src/gateway/renewal.rs) as a starting point, but applies only where lifecycle evidence permits another refresh attempt; it cannot release quarantined material. The 30 s recovery budget is a selected policy, not a measured latency guarantee. No first-content timeout is added to the initial attempt; a retry with no deliverable output for the whole recovery budget fails even if the model might still be thinking.
 
-Do not add policy-value range checks or cross-parameter relationship checks at this stage; operators are responsible for suitable values. Schema/type parsing and security validation remain in place. Zero retry counts and zero in-request wait disable those recovery actions; zero does not mean unlimited execution. Configured send, wait and timeout limits still govern execution. The stated numeric defaults are selected; entries without a number remain unspecified rather than acquiring an invented default.
+Provider classifiers, failure scopes and the narrow retryable network/server set change with Provider contracts, not operator rules. The one-extra-attempt ceiling replaces the old per-class retry counts and route send limit; there is no auth resend allowance. Terminal OAuth errors still require reauthorization; no timing setting permits reuse of uncertain refresh material.
+
+Do not add policy-value range checks or cross-parameter relationship checks at this stage; operators are responsible for suitable values. Schema/type parsing and security validation remain in place. Zero in-request wait disables cooldown waiting; zero recovery time disables the extra attempt; zero affinity capacity retains no bindings. Zero never means unlimited execution. Configured wait, recovery and timeout limits still govern execution, with runtime deadlines clipped to their owners' remaining budgets.
 
 Cache lifetime here means gateway-owned affinity state. It does not change an upstream prompt-cache lifetime, promise a cache hit or change gateway-owned Responses history retention. Any protocol-supported upstream cache-retention choice remains governed by that protocol's contract.
 
 ### Worked examples
 
-1. **Transient failure.** A conversation is bound to API key A, which returns 503. A is retried after 1 s and answers. The binding stays on A and no cooldown is set.
-2. **Short and long rate limits.** A returns 429 with `Retry-After: 5`: wait 5 s and resend to A. With `Retry-After: 120`, A's model cools for 120 s and the request moves to key B. When B answers, the binding moves to B and later turns stay there after A recovers; new conversations return to A after 120 s.
-3. **SIWC usage limit.** A conversation on SIWC registration A hits `subscription_sharing_usage_limit_exceeded`. Account A cools for 30 min. With OAuth switching off, the domain is {A}, so the gateway answers 429 with `x-should-retry: false`. With OAuth switching on, the request moves to registration B and the binding follows on success.
-4. **Mixed failures.** Configured with one transient and one rate-limit retry and `max_sends` 4:
-
-   | Send | Target | Result | Next step |
-   |---|---|---|---|
-   | 1 | A | 5xx | Retry A (transient retry 1/1) |
-   | 2 | A | 5xx | Cool A's model; move to B |
-   | 3 | B | 429, `Retry-After: 3` | Wait 3 s; retry B (rate-limit retry 1/1) |
-   | 4 | B | 5xx | `max_sends` reached; fail with `x-should-retry: false` |
+1. **Transient failure.** A conversation is bound to API key A, which returns a retry-eligible server error before publication. Within the short recovery budget, close that attempt and retry A once. If the retry completes successfully, the client sees the successful response and affinity stays on A. If recovery fails, return the failure and apply health effects; do not try B in this request.
+2. **Short and long rate limits.** A returns 429 with `Retry-After: 5`: record the cooldown and return the failure. The next request may wait for A within `max_wait`. With `Retry-After: 120`, a promptly retried request selects ready key B instead. Only B's success moves the binding; later turns stay there after A recovers.
+3. **SIWC usage limit.** A conversation on `chatgpt` account A hits `subscription_sharing_usage_limit_exceeded` without a reset hint. The request fails and account A cools for 30 min. A later request selects another ready candidate explicitly bound to that public model route. No ready candidate means admission failure, not an additional inference send.
+4. **Published failure.** A releases content, then the upstream stream fails. End the stream honestly and record classified upstream health evidence. Do not resend, switch, commit affinity or fabricate completion. Any subsequent client retry is a separate request; partial delivered content is not a gateway continuation prefill.
+5. **Recovery deadline.** A fails before publication, but cleanup or the retry cannot reach deliverable output within the short recovery budget. Stop recovery within the original request deadline, release upstream/probe ownership and return failure. Do not reset the budget, grant a third send or select B.
 
 ### Rejected mechanisms
 
@@ -284,43 +334,46 @@ Cache lifetime here means gateway-owned affinity state. It does not change an up
 
 ## Cache affinity
 
-The [current executor](../src/gateway/routing/executors.rs) already keeps conversation affinity, prefers the bound target over recovered higher-priority targets, commits only after completion, and fences stale completions. The rewrite keeps these contracts with the following rules.
+The [current executor](../src/gateway/routing/executors.rs) keeps conversation affinity and prefers the bound target over recovered higher-priority targets. Its completion hook and health-generation fence do not independently establish successful task outcome or concurrent binding ownership. The rewrite uses the following explicit contracts.
 
 - **Key:** Agent identity, public model and conversation carrier. Carriers come from [ingress admission](../src/gateway/ingress/admission.rs): `X-MorphieCore-Conversation-Id`, then OpenCode `X-Session-Id`, pi `session_id`, Codex `session-id` and pi `x-session-affinity`. Do not derive sessions from content, prefixes or first messages, and do not let one caller's label select another caller's binding.
 - **Identity:** a binding names the effective target: credential provenance, account endpoint and model/protocol scope. Normal OAuth token rotation preserves it; replacement API keys or changed targets cannot inherit it.
 - **Commit:** only after successful completion. That is a valid terminal with a completed outcome, or an outcome that is incomplete only because of the output limit; tool-call turns count. Failed, cancelled, errored or published-then-failed attempts never commit.
+- **Concurrent ownership:** commit conditionally against the binding version observed when the request began, including an absent binding. Replacement, expiry and eviction invalidate older commit rights; an absent→bound→evicted sequence must not let an old absent observer recreate the binding. A stale completion cannot overwrite or renew it. Version tracking must remain bounded by affinity capacity and in-flight work, without permanent per-conversation tombstones. Health fencing remains independent; do not serialize entire conversation requests.
 - **Failure:** a failure never deletes or moves a binding. Cooldown decides whether selection waits for the bound target or moves; only the next success moves the binding.
-- **Lifetime:** configurable sliding idle TTL (global, default 1 h) and configurable bounded capacity. After expiry the conversation is new and fills from route order, which is the only failback. Provider cache lifetimes run from five minutes to about 24 hours, so a longer TTL rarely preserves a warm cache.
+- **Lifetime:** configurable sliding idle TTL (global, default 1 h) and configurable bounded capacity. Only an eligible successful completion renews the binding's TTL; request lookup, failures and read-only queries do not. Remove expired entries before evicting the least recently successful binding when capacity is needed. After expiry or eviction the conversation is new and fills from route order; a valid binding never proactively fails back. Provider cache lifetimes run from five minutes to about 24 hours, so a longer TTL rarely preserves a warm cache.
 - **Replay:** moving a binding strips target-scoped private replay state under the accepted replay trust rules.
 
 Do not base routing on inferred cache value, guessed cache lifetime or missing cache-usage fields.
 
 ### Optional restart continuity
 
-Bounded affinity persistence is the preferred follow-up before hot reload. Store only private hashed conversation keys, target identity fingerprints and necessary expiry/success metadata, never prompts or credentials. Restore only entries whose configuration and credential identities still match, and bound file size, entry count and age.
+Bounded affinity persistence remains a follow-up before hot reload, not part of the first rewrite. If later selected, store only private hashed conversation keys, target identity fingerprints and necessary expiry/success metadata, never prompts or credentials. Restore only entries whose configuration and credential identities still match, and bound file size, entry count and age.
 
 Persistence is not selected for the first rewrite. Corrupt-file handling, stale configuration, privacy, shutdown behavior and whether persistence is opt-in must be decided before implementation. It does not make gateway-owned Responses history durable.
 
 ## OAuth maintenance
 
-Keep one global maintenance policy and the existing account locks and lifecycle owner. Each rotation uses its own registered client and latest refresh material; expiry and principal facts come from the credential driver's verified contract.
+Keep one global maintenance policy and the existing account locks and lifecycle owner. Enumerate configured Active OAuth sessions independently of route references and routing enablement. Each rotation uses its own registered client and latest refresh material; expiry and principal facts come from the credential driver's verified contract.
 
 Selected baseline: keep pure polling. The due check is local (account lock and store read, no network), so frequent scans are cheap. The selected defaults are a 15 s scan, 90 s timeout and 120 s refresh-ahead window. As operator guidance, allow at least the scan interval plus renewal timeout in the refresh-ahead window, and additional room for queueing or failed-renewal backoff; this is not a startup validation rule or a guarantee of timely renewal. A five-minute scan with a three-minute window can miss expiry: a scan seeing four minutes left skips renewal, and the next scan occurs one minute after expiry. A deadline-aware timer remains an alternative if polling delay becomes a concrete problem.
 
 The maintenance loop must:
 
 - Check on startup, serialize renewal for a session and recheck identity/expiry under the lock.
-- Bound renewal time and account for failed-renewal backoff.
+- Bound renewal time; apply the fixed global failed-renewal delay (default 60 s) only to failures for which the profile permits safely attempting renewal again. Do not add another exponential-backoff state machine.
 - Persist replacement material safely and never reuse a potentially consumed refresh token after uncertain failure.
 - Preserve account identity across normal rotation, and surface explicit reauthorization or persistence-recovery states.
 - Treat unknown expiry as unknown; do not perform paid inference to test validity.
 - Keep ordinary credential borrowing network-free. Any selected request-triggered 401 recovery calls the same maintenance owner instead of creating a second refresh implementation, and only where the profile's contract makes refresh the right recovery.
 
-Stated numeric defaults are selected; timing and failed-renewal backoff are configurable. The draft did not specify a failed-renewal backoff curve. Request-triggered renewal follows the accepted execution draft's bounded OAuth recovery. Global timing does not remove Provider-specific token verification or rotation requirements.
+Timing and the safe failed-renewal delay are configurable. A request-triggered auth observation may notify the shared lifecycle owner where the profile permits recovery, but auth failure does not qualify for the network/server retry. Global timing does not remove Provider-specific token verification or rotation requirements.
+
+Once replacement OAuth material for the same managed identity has been verified and durably published, only auth restrictions tied to the replaced material become eligible for an exclusive foreground probe. This does not declare inference healthy, clear quota/permission constraints, move affinity or bypass lifecycle vetoes. A late 401 for an older material revision cannot create or extend an auth penalty against the replacement. Refresh preserves identity; a changed principal/registration still follows the existing provenance and replay-isolation rules.
 
 ### Accepted lifecycle baseline
 
-The user accepted this OAuth baseline on 2026-10-30. It records design decisions, not implementation authorization.
+The user accepted this OAuth baseline on 2026-10-30, with request-boundary selection, no auth-triggered inference resend, routing-only enablement and subject-reservation clarifications on 2026-11-02. It records design decisions, not implementation authorization.
 
 | Concern | Selected behavior |
 |---|---|
@@ -330,25 +383,25 @@ The user accepted this OAuth baseline on 2026-10-30. It records design decisions
 | Uncertain refresh outcome | A timeout after dispatch can mean the server rotated the token but its response was lost. Preserve explicit recovery/quarantine state; do not blindly resend potentially consumed material. Retrying refresh requires evidence that reuse is safe under the profile's contract |
 | Durable replacement | New material must be verified and safely persisted before ordinary borrowing uses it. A crash or storage failure must not silently restore stale tokens or expose unverified replacements |
 | Expiry and scheduling | Unknown expiry stays unknown. Account queueing and failed-renewal delays can exceed the nominal polling interval; frequent scans alone do not guarantee renewal before expiry. Existing code serializes account scans, so this matters as account count grows |
-| Request-time recovery | Use fresh material from the shared owner, then resend only within the configured auth allowance, send ceiling and request deadline, before publication. Request cancellation ends its wait and prevents its resend; an already-started shared refresh remains owned by the credential lifecycle and finishes safely within its own timeout. Cancellation must not restore possibly consumed material |
+| Request-time recovery | Use material published by the shared lifecycle owner; an auth failure may request recovery for a later request but never triggers an inference resend now. Cancellation ends the request's participation; an already-started shared refresh remains lifecycle-owned and finishes safely within its own timeout. Cancellation must not restore possibly consumed material |
 | Lifecycle versus routing health | Temporary cooldown, expired access, reauthorization-required and persistence-recovery states are different facts. A routing cooldown expiring cannot make invalid credentials usable |
-| Account switching | Refreshing one registration is not switching accounts. OAuth-to-OAuth, OAuth-to-key and cross-Provider moves retain their separate opt-ins; refreshing does not restore exhausted subscription quota |
+| Verified replacement and auth probes | Durable verified replacement makes only old-material auth restrictions probe-eligible. Stale 401s do not penalize new material; quota/permission and lifecycle vetoes remain, and successful inference is still required to recover health |
+| Account switching | Refreshing one registration is not switching accounts. A new request may select any eligible route candidate without separate opt-ins; refreshing does not restore exhausted subscription quota |
 | Logout and inspection | Local removal and remote revocation have different outcomes. Surface incomplete revocation honestly; coordinate logout with renewal so a late refresh cannot reactivate a signed-out account. Status/explanation remains read-only and redacted, without exposing token values or credential locations |
 
 The OpenAI [session contract](https://developers.openai.com/siwc/token-sharing-open-source/profiles-and-sessions) and [error guidance](https://developers.openai.com/siwc/token-sharing-open-source/errors-and-recovery), rechecked on 2026-10-30, require session-specific issued clients, serialized rotation with the latest material, and differentiated temporary, unusable-token and invalid-client handling. These are SIWC facts, not a universal refresh contract for every OAuth profile.
 
 ## Operational additions and exclusions
 
-### Recommended additions
+### Initial operational surfaces
 
 | Addition | Value and scope |
 |---|---|
 | Offline configuration validation | Check references, Provider/credential-kind compatibility, override trust rules, duplicate names and OAuth subjects, and configuration types before activation; no policy-value range or relationship checks at this stage. Use the real loader; no login, refresh, paid probe or automatic repair |
-| Read-only account and route explanation | Show normalized reasons, applicable attempt budget, switching boundary, cooldown/renewal state and affinity action. Queries must not change selection, extend TTL or trigger renewal |
+| Read-only account and route explanation | Show normalized reasons, applicable wait/recovery/time bounds, the one-retry ceiling, eligible route candidates, cooldown/renewal state and affinity action. Queries must not change selection, extend TTL or trigger renewal |
 | Explicit account diagnostics | Extend the existing upstream CLI to address a named account with bounded requests and no hidden retries; no automatic sweep of all accounts |
-| Bounded affinity persistence | Preserve cache affinity through restart-based configuration changes; follow the separate persistence review above |
 
-Reuse existing CLI and diagnostic owners. Ordinary reports remain body-free and redacted, with bounded attempt breadcrumbs; do not expose upstream origins or credential locators to clients. Usage reporting counts tokens per account and attempt; it computes no prices or balances. This proposal does not activate the deferred diagnostic aggregation/public-extension work in the [roadmap](roadmap.md#observability-follow-up).
+Reuse existing CLI and diagnostic owners. Ordinary reports remain body-free and redacted, with bounded attempt breadcrumbs; do not expose upstream origins or credential locators to clients. Usage reporting counts reported tokens per account and attempt, including failed attempts where usage is available; unknown usage stays unknown. Client response usage describes the delivered attempt, not a fabricated merged response. Compute no prices or balances. This design does not activate the deferred diagnostic aggregation/public-extension work in the [roadmap](roadmap.md#observability-follow-up).
 
 ### Deferred unless a concrete need emerges
 
@@ -377,42 +430,54 @@ Deferred items do not need placeholder interfaces or configuration fields.
 | Decision | Date | Outcome |
 |---|---|---|
 | Sequencing | 2026-10-30 | Complete requirements first; rewrite account binding and execution policy afterwards |
-| Switching defaults | 2026-10-30 | OAuth registration switching for every profile, OAuth/API-key fallback and cross-Provider fallback are disabled by default and enabled explicitly; API-key switching within a Provider follows recovery policy; MorphieCore manages no billing and counts tokens only |
+| Design finalization | 2026-11-02 | Finalize this specification with the four final-review selections below. Rewrite implementation scope and rollout remain separately authorized; design approval is not implementation or deployment |
+| OpenAI service separation | 2026-11-02 | `openai` is API-key access; `chatgpt` is SIWC OAuth access, with independent model bindings and service contracts. Shared vendor/origin does not imply identical model availability; current SIWC `openai` references require explicit rebinding |
+| Operational priority | 2026-11-02 | Cache affinity and simple code take precedence over transparent recovery of every request; normally no more than three accounts are expected. One bounded same-target retry absorbs brief network/server failures without restoring multi-target recovery |
+| Route-wide eligibility | 2026-11-02 | Replaces the 2026-10-30 switching defaults and opt-in granularity: all enabled, validly bound accounts in the current model route may serve a new request, across credential kinds and Providers. Remove all three fallback switches and switch domains; route/account configuration authorizes destinations and billing paths, not target changes after dispatch. Usage counts tokens only |
+| Bounded same-target retry | 2026-11-02 | Replaces the interim single-send choice and deferral: permit one additional serial inference send before content publication for explicitly retryable network/server faults. Provider, account, model and effective endpoint stay fixed. Short recovery and original request deadlines both apply; no OAuth auth resend, per-class counters, exponential retry sequence or within-request candidate switching |
+| Attempt isolation and recovery ownership | 2026-11-02 | Release the failed upstream and discard unpublished attempt output before retrying; retain usage/failure observations separately. Keep probe ownership through recovery, and commit health/affinity only from eligible final outcomes with existing fencing |
 | Endpoint override | 2026-10-30 | API-key accounts may override `base_url`; OAuth accounts may not |
 | Account configuration | 2026-10-30 | Ordered named accounts per Provider reference the credential store by alias; explicit pools are removed; credentials stay under `$HOME/.local/share/morphiecore/credentials` and account/policy configuration stays outside the store |
-| Opt-in granularity | 2026-10-30 | Two Provider flags (OAuth registration switching, OAuth/API-key fallback) and one route flag (cross-Provider fallback) |
 | OAuth subject uniqueness | 2026-10-30 | Reject duplicate verified subjects under one Provider |
 | Configuration transition | 2026-10-30 | Breaking change with documented CLI re-provisioning and no automatic migration; CLI output is human-readable by default with an optional JSON form |
-| Execution draft direction | 2026-10-30 | Accept cache-first selection, failure classes, bounded recovery, success-only affinity commits and downstream signals, with configurable policy parameters; final design confirmation remains pending |
-| Timeout after response head | 2026-10-30 | Keep the draft's pre-content timeout classification as `transient`, accepting possible duplicate upstream billing within configured bounds |
-| Unbound placement | 2026-10-30 | Switch domains also restrict new conversations, as in the accepted draft |
+| Execution policy | 2026-10-30, finalized 2026-11-02 | Retain cache-first selection, failure classes, cooldowns and success-only affinity. One bounded same-target retry replaces the original multi-target retry/fallback and interim single-send designs; the blanket downstream stop-retrying signal remains superseded |
+| Conservative retry eligibility | 2026-11-02 | Retry selected HTTP 408/500/502/503/504, Provider-confirmed overload equivalents and positively identified transient connection/I/O interruption before publication. Exclude ambiguous post-dispatch timeout, unclassified transport errors, TLS/configuration/malformed faults and the other non-transient classes |
+| Timeout after response head | 2026-10-30, finalized 2026-11-02 | Keep pre-content upstream timeout as transient health evidence, without automatically retrying ambiguous post-dispatch timeouts. Gateway/client retries can still duplicate upstream work; no billing or exactly-once promise |
+| Recovery budget and defaults | 2026-11-02 | Recovery budget 30 s; no artificial delay, valid reset-hint waiting included without shortening the hint. Affinity capacity 4096, service/attempt 3600 s each, connection 10 s, safe failed-renewal delay fixed 60 s. Retain previously selected defaults for other settings |
+| Mixed health observations | 2026-11-02 | Successful recovery clears pending penalties subject to fencing. Otherwise retain all observed upstream health constraints; neutral results do not erase them. Advance backoff once per scope per request and keep later deadlines; client-visible failure remains separate |
+| OAuth material-aware recovery | 2026-11-02 | Verified durable replacement makes only old-material auth restrictions eligible for an exclusive probe; stale 401s cannot penalize new material. Do not clear quota/permission or bypass lifecycle vetoes |
+| Client retry hints | 2026-11-02 | Emit no downstream `x-should-retry`; provide only credible positive route-level `Retry-After` within 60 s, never an account-wide delay when another target is ready. Preserve protocol error semantics and accept client-controlled retries even for long/unknown recovery |
+| Request-boundary selection | 2026-11-02 | New conversations select the first ready route candidate; only valid bindings receive short cooldown waits. After dispatch, recovery stays on that target; only a later request can choose another. Recovered higher-priority targets do not displace a successful binding |
 | Account guidance | 2026-10-30 | Drop pool-wide rate-limit cooling in the proposed rewrite; retain the draft's one-account-per-independent-organization/workspace guidance |
-| Parameter ownership | 2026-10-30 | Retry counts, cooldowns, cache lifetime and related bounds are configurable as listed in the configuration surface; retain failure-class policy rather than introduce a per-status rule language |
-| Design-stage boundary | 2026-10-30 | Continue refining the design only; remove candidate implementation slices and defer rewrite planning until the user confirms the design |
-| Defaults and validation | 2026-10-30 | Adopt the draft's stated defaults; defer policy-value range and cross-parameter relationship checks to operator judgment, preserving schema/type and security checks |
-| Pre-dispatch Provider boundary | 2026-10-30 | Cross-Provider fallback off also forbids moving to another Provider when the selected candidate cannot represent the request before dispatch |
-| Replacement scope | 2026-10-30 | Ultimately replace credential/account routing throughout the system; initially integrate Generation only, with other paths deferred rather than permanently separate |
-| OAuth lifecycle baseline | 2026-10-30 | Accept polling, coordinated renewal, differentiated temporary/terminal/uncertain failures, verified durable replacement, lifecycle/health separation and read-only inspection; request cancellation stops waiting and resending without abandoning an already-started shared refresh |
+| Parameter ownership | 2026-10-30, revised 2026-11-02 | Retained cooldowns, cache lifetime and related bounds remain configurable at their listed owners; the short recovery-time budget belongs to Provider policy. One additional attempt is the structural ceiling, without per-class counters or a route send-limit setting |
+| Implementation boundary | 2026-10-30, clarified 2026-11-02 | Design is finalized; select rewrite scope and implementation authorization separately. Do not treat documentation finalization as permission to change routing code, credentials or deployed bindings |
+| Defaults and validation | 2026-10-30, revised 2026-11-02 | Keep defaults for retained settings; removed retry/send-limit settings do not survive as inactive fields. Defer policy-value range and relationship checks to operator judgment, preserving schema/type and security checks |
+| Pre-dispatch candidate admission | 2026-11-02 | Replaces the 2026-10-30 Provider boundary: candidate-local representation failure permits checking later route candidates across Providers; invalid client input rejects, and trust, replay and explicit guarantees remain mandatory |
+| Replacement scope | 2026-11-02 | Refines the 2026-10-30 scope: replace shared credential/account/target binding across existing entrances together; new recovery execution starts with Generation. Diagnostics and standalone tasks retain existing execution capabilities; no legacy pool path or frozen-feature activation |
+| OAuth lifecycle baseline | 2026-10-30, revised 2026-11-02 | Keep polling, coordinated renewal, differentiated temporary/terminal/uncertain failures, verified durable replacement, lifecycle/health separation and read-only inspection. Auth does not qualify for the inference retry; request cancellation does not abandon an already-started shared refresh |
 | Single OAuth login | 2026-10-30 | One managed session per account; no duplicate/concurrent login or duplicate subject aliases within a Provider. Refresh updates the session; explicit reauthorization or login after logout remains supported |
+| Routing enablement and renewal | 2026-11-02 | Account enablement controls routing only; maintain configured Active OAuth sessions even when disabled or unreferenced. Logout ends the session; credential lifecycle vetoes remain independent |
+| OAuth subject reservation | 2026-11-02 | Check uniqueness atomically at login publication and during validation. Disabled, signed-out and reauthorization-required accounts retain reservations until explicit account removal; reauthorization uses the same account |
+| Concurrent affinity and idle TTL | 2026-11-02 | Successful completion conditionally commits against the observed binding version, independently of health fencing. Only an eligible successful completion renews TTL; lookup, failure and inspection do not |
+| API-root composition | 2026-11-02 | An API-key override is the complete API root plus a catalog-declared operation-relative suffix; normalize the joining slash, never guess or strip version prefixes. Default operation targets stay intact without an override |
+| Initial operations and deferred persistence | 2026-11-02 | Use existing provisioning, offline validation, read-only account/route inspection and bounded named-account diagnostics. No affinity persistence, hot reload or new operations framework in the first rewrite |
 
-### Open
+### Deferred decisions
 
-A recommendation below is not a default configuration or an accepted architecture decision.
+These do not reopen the finalized account/execution contract or block its design acceptance.
 
-| Decision | Recommendation or alternatives to resolve |
+| Decision | Boundary |
 |---|---|
-| Final design confirmation | Review the complete draft with configurable policy parameters before planning the rewrite |
-| Unspecified parameter values | Only settings for which the draft supplied no numeric value remain unspecified; existing stated defaults are selected |
-| Persistence and operations | Select whether/when to persist affinity, its failure policy, and the minimum CLI/diagnostic surfaces |
-| Later rewrite scope | Deferred until design confirmation; runtime mutation remains optional. No slices or rollout schedule are planned now |
+| Rewrite scope and authorization | Shared binding across existing entrances and Generation-first recovery are selected. Detailed implementation scope, sequencing, verification plan and authorization are the next separate decision; no slices or rollout schedule are added here |
+| Optional restart continuity | Persistence remains excluded from the first rewrite. If later selected, decide opt-in, corruption handling, privacy, stale identities and shutdown behavior under [Optional restart continuity](#optional-restart-continuity) |
 
-Keep this draft as the authoritative home for the redesign while it is under refinement. After final design confirmation, record settled contracts in Architecture; only the separately selected rewrite scope adds work and gates to Roadmap. Update Usage when behavior is implemented.
+Keep this document as the detailed redesign specification, linked from Architecture's accepted decisions. Only separately selected rewrite scope adds work and gates to Roadmap. Update Usage when behavior is implemented.
 
 ## Design acceptance criteria
 
-The design must explain deterministic selection and switching boundaries, configurable recovery budgets, cooldown and affinity lifetimes, and honest behavior before and after publication. Identity, trusted targets, replay isolation, cancellation and credential lifecycle protections remain mandatory.
+The design must explain deterministic request-boundary selection, at most one bounded same-target retry, configurable wait/recovery/time bounds, cooldown and affinity lifetimes, and honest behavior before and after publication. Identity, trusted targets, replay isolation, cancellation and credential lifecycle protections remain mandatory.
 
-Final review must settle the remaining policy questions without prescribing modules, implementation slices or a test matrix. Detailed rewrite sequencing and concrete verification plans will be selected only after design confirmation, within the selected system-wide replacement and Generation-first boundary. The project's existing [verification requirements](development.md#verification-gates) remain applicable to that later work.
+The final review has settled the policy choices without prescribing modules, implementation slices or a test matrix. Detailed rewrite sequencing and concrete verification plans are selected separately within the shared-binding and Generation-first boundary. The project's existing [verification requirements](development.md#verification-gates) remain applicable; design finalization supplies no runtime acceptance evidence.
 
 ## Reference observations
 

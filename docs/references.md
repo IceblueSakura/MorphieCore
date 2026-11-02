@@ -111,6 +111,7 @@ Keep dated evidence that is not better owned by a current source guide, accepted
 | [MiniMax H3 video, 2026-10-22](refs/2026-10-22-minimax-h3-video.md) | v2 task/content/error/callback protocol versus incompatible v1 file-ID envelope |
 | [Decision APIs, 2026-10-23](refs/2026-10-23-decision-contracts.md) | OpenAI/TypeSafe and alternative API differences, confidence/grouping/media and discovery/compression gaps |
 | [Downstream OAuth, 2026-10-23](refs/2026-10-23-downstream-oauth.md) | Device Flow, Rust authorization-server comparisons, refresh/revocation and deployment boundaries |
+| [Gateway outcomes, 2026-11-02](refs/2026-10-27-client-and-proxy-sources.md#outcome-and-recovery-recheck-2026-11-02) | Bounded Magpie/LiteLLM/new-api source comparison of terminal evidence, health, affinity and retry exits; evidence for the separately finalized account design, not runtime acceptance |
 
 Research is not design approval or a new work queue. Recheck mutable sources before a new protocol claim; keep SDK shape, synthetic evidence, installed-client behavior and live Provider observations distinct.
 

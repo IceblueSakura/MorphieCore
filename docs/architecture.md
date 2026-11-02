@@ -769,6 +769,8 @@ Request-wide automatic caching is enabled on native Messages targets with verifi
 
 ### Failover
 
+This section and the following affinity section describe the implemented baseline, retained under the [routing freeze](roadmap.md#temporary-routing-freeze). The accepted replacement is the finalized [account and execution specification](provider-account-redesign-plan.md#execution-policy); its implementation remains separately authorized.
+
 Failover operates on precompiled candidate lists under a cache-affine routing policy.
 
 #### Legal candidates
@@ -958,6 +960,9 @@ Authoritative log of accepted architectural decisions and their systemic consequ
 | Entry path safety | 2026-10-20 | Concrete unescaped ASCII paths; rejects dot segments and encoded separators |
 | Automatic OAuth renewal | 2026-10-26 | Background renewal under account locks for tokens expiring within 120s |
 | Stable failover routing | 2026-10-20 | Bounded candidate pools, generation-fenced cooling, and single-attempt defaults |
+| Provider accounts and service identity | 2026-11-02 | Accepted, not implemented: ordered named accounts replace pools; `openai` API-key and `chatgpt` SIWC have separate model/target contracts. All declared route candidates are eligible at request admission. Detailed ownership and identity rules: [account model](provider-account-redesign-plan.md#account-and-configuration-model) |
+| Cache-first bounded recovery | 2026-11-02 | Accepted, not implemented: target fixed after first dispatch; at most one serial pre-publication retry from a conservative network/server set within a 30 s recovery budget and unchanged request deadline. Merge health evidence separately from delivery; success-only versioned affinity, atomic scoped probes, and only short credible `Retry-After`, without `x-should-retry`. Full contract/defaults: [execution policy](provider-account-redesign-plan.md#execution-policy) |
+| Account lifecycle and target trust | 2026-11-02 | Accepted, not implemented: routing disablement does not stop Active OAuth maintenance; subject reservations survive logout until account removal. Verified durable token replacement releases only old-material auth waiting into exclusive probing. API-key roots may be overridden under trusted-target validation; OAuth targets may not. Details: [targets](provider-account-redesign-plan.md#targets-and-trust), [OAuth maintenance](provider-account-redesign-plan.md#oauth-maintenance) |
 | Request conversion reuse | 2026-10-30 | [Bounded request-local retention](#request-conversion-reuse) preserves each body's bound identity and evidence; cache misses do not alter admission, and credential attachment stays attempt-local |
 | Ingress Agent authentication | 2026-10-25 | Authenticates Agent keys at ingress, binding stable `agent_id` to context |
 | Reverse-proxy delivery | 2026-10-26 | Proxy terminates TLS and compression; gateway enforces auth and unbuffered SSE |

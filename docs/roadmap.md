@@ -57,11 +57,11 @@ This page owns current scope, priorities, dependencies, and exit gates. [Archite
 
 ## Current status
 
-**Current focus (2026-11-02):** Slices R0–R5 are complete. The user deferred the full installed-Agent exit until after credential/account routing is rewritten and new models are selected. Next, finalize the [Provider account redesign](provider-account-redesign-plan.md) and confirm its rewrite scope; then implement the rewrite, select models and complete default reasoning/tool/history acceptance across all three client protocols and selected cross-protocol lanes. Stage 4 resumes after that closure.
+**Current focus (2026-11-02):** Slices R0–R5 are complete and the [Provider account redesign](provider-account-redesign-plan.md) is finalized. The user deferred the full installed-Agent exit until after credential/account routing is rewritten and new models are selected. Next, confirm rewrite scope and implementation authorization; then implement the rewrite, select models and complete default reasoning/tool/history acceptance across all three client protocols and selected cross-protocol lanes. Stage 4 resumes after that closure.
 
 | Area | State | Next step |
 |---|---|---|
-| Routing | Existing baseline retained; account redesign takes priority over the deferred Agent exit | Finalize account design and rewrite scope before changing the baseline |
+| Routing | Account design finalized; existing runtime baseline retained | Confirm rewrite scope and implementation authorization before changing the baseline |
 | Generation IR / Codec | R0–R5 complete; shared projections/discovery, qualified intake, history transfer and reviewed null contracts | Maintain these contracts through the installed-Agent exit |
 | Client compatibility | Default native Messages loops pass with installed pi and OpenCode without overrides | Defer full exit loops until account rewrite and new model selection |
 | Integration | R1a/R1b/R2 loops, controlled recovery and production closure passed | Revalidate changed paths against established gates |
@@ -308,9 +308,9 @@ The standards-reset architecture baseline was accepted on 2026-10-23. Implemente
 
 ### Temporary routing freeze
 
-The separately requested [Provider account redesign plan](provider-account-redesign-plan.md) has an **accepted draft direction with configurable policy parameters as of 2026-10-30**. On 2026-11-02, the user selected this order: finalize the design and rewrite scope, rewrite credential/account routing, select new models, complete the full installed-Agent exit, then resume Stage 4. The draft's system-wide destination and Generation-first direction remain; detailed rewrite slices and rollout require final design and scope confirmation. This scheduling change does not resolve the draft's open semantics or authorize changes to deployed credentials.
+The separately requested [Provider account redesign plan](provider-account-redesign-plan.md) was **finalized on 2026-11-02**; Architecture records its [accepted decisions](architecture.md#routing-and-security-decisions). The selected order remains: confirm rewrite scope and implementation authorization, rewrite credential/account routing, select new models, complete the full installed-Agent exit, then resume Stage 4. Shared account binding across existing entrances and Generation-first recovery are the accepted boundary; detailed slices, verification plans and rollout are not yet selected. Design finalization does not authorize changes to code or deployed credentials.
 
-The [stable routing baseline](architecture.md#failover) remains frozen until the account design and rewrite scope are confirmed. Unrelated codec and protocol work must not alter:
+The [stable routing baseline](architecture.md#failover) remains frozen until rewrite scope and implementation authorization are confirmed. Unrelated codec and protocol work must not alter:
 - Pool membership, health probes, or target ordering.
 - Conversation cache affinity or cooldown thresholds.
 - Route selection based on projected loss or codec capability.

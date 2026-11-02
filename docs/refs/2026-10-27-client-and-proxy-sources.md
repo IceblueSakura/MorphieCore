@@ -10,6 +10,7 @@ Checked **2026-10-27** against isolated public release checkouts. These projects
 - [Magpie: cache affinity and failure ownership](#magpie-cache-affinity-and-failure-ownership)
 - [LiteLLM: directional bridges and counterexamples](#litellm-directional-bridges-and-counterexamples)
 - [CLIProxyAPI: bootstrap retries, late results and refresh](#cliproxyapi-bootstrap-retries-late-results-and-refresh)
+- [Outcome and recovery recheck, 2026-11-02](#outcome-and-recovery-recheck-2026-11-02)
 - [Applying these references](#applying-these-references)
 
 ## Source selection and reuse
@@ -100,6 +101,46 @@ Useful mechanisms:
 - Usage can arrive after finish or accompany failure. Refresh serializes by auth ID, then rechecks epoch/token replacement before persisting; persistence failure is not silently successful.
 
 **Do not transplant:** default round-robin, inferred-prefix affinity, synthesized missing call IDs, `{}` argument repair or permissive EOF completion. `EnsurePublished` can publish zero-usage success without a report, and Claude accounting can fold cache creation into cached tokens. None supplies truthful semantic usage or terminal evidence for MorphieCore. Broad request echo is not a Provider-effective settings report.
+
+## Outcome and recovery recheck, 2026-11-02
+
+Bounded direct-source review informing the [account redesign's outcome decision](../provider-account-redesign-plan.md#outcome-and-health-resolution). Rechecked the previously observed main-branch revisions below, not latest releases or dependency pins. Five files per project were inspected; no upstream project execution, Provider calls or installed-client acceptance was performed. These observations do not themselves approve a recovery policy; the user subsequently finalized the linked design on 2026-11-02. new-api is an AGPL mechanism reference only; no code was copied.
+
+### Magpie
+
+Revision [`eba7187`](https://github.com/yetone/magpie/tree/eba7187368a8b05740326c90152db7b833cf0cc3):
+
+- [`sniff.go`](https://github.com/yetone/magpie/blob/eba7187368a8b05740326c90152db7b833cf0cc3/internal/gateway/sniff.go) records stream termination separately from failure. `response.failed` ends the stream and records an error; a terminal event alone does not establish success.
+- [`gateway.go`](https://github.com/yetone/magpie/blob/eba7187368a8b05740326c90152db7b833cf0cc3/internal/gateway/gateway.go#L2818-L2853) checks both status and attempt error before `servedCandidate`/`answered`. Its earlier cancellation branch stops fallback when the request is cancelled before a terminal marker. [`routing.go`](https://github.com/yetone/magpie/blob/eba7187368a8b05740326c90152db7b833cf0cc3/internal/gateway/routing.go#L54-L91) clears health separately from [`affinity.go`](https://github.com/yetone/magpie/blob/eba7187368a8b05740326c90152db7b833cf0cc3/internal/gateway/affinity.go#L515-L558), which can remove the current binding after an unanswered attempt. This differs from MorphieCore's failure-preserves-binding decision.
+- [`fallback.go`](https://github.com/yetone/magpie/blob/eba7187368a8b05740326c90152db7b833cf0cc3/internal/gateway/fallback.go) distinguishes held content from already-passing content. It can publish HTTP headers/keepalives before giving up retry rights. All-resting selection can retain one resting probe; usage-cap exclusion, quota exhaustion and ordinary retry exhaustion have different exits, not one universal retry header policy.
+
+The earlier shorthand “complete error-free reply” must be read with these protocol-specific limits: the inspected passthrough path accepts normal Chat EOF without requiring `[DONE]`, while Responses/Anthropic/Gemini require their terminal evidence. Cross-protocol translation and account-specific execution paths were not exhaustively traced. Borrow the separation of terminal, error, health and affinity observations, not its definition of successful completion or binding removal policy.
+
+### LiteLLM
+
+Revision [`dbcacc7`](https://github.com/BerriAI/litellm/tree/dbcacc7ab7880d5115376cd6c22d22898c50d08f):
+
+- [`streaming_handler.py`](https://github.com/BerriAI/litellm/blob/dbcacc7ab7880d5115376cd6c22d22898c50d08f/litellm/litellm_core_utils/streaming_handler.py#L2354-L2470) finalizes asynchronous streaming success at iterator exhaustion and separately dispatches stream failures. After a finish reason, `ReadError`/`RemoteProtocolError` can take the completion path. Do not import this exception into MorphieCore's validated-EOF requirement.
+- [`router.py`](https://github.com/BerriAI/litellm/blob/dbcacc7ab7880d5115376cd6c22d22898c50d08f/litellm/router.py#L3841-L3990) pre-reads a first chunk for early failure handling. Mid-stream fallback continuation is off by default but can explicitly reuse delivered text as prefill for a new deployment. That option remains outside MorphieCore's publication boundary.
+- [`utils.py`](https://github.com/BerriAI/litellm/blob/dbcacc7ab7880d5115376cd6c22d22898c50d08f/litellm/utils.py#L2203-L2288), [`litellm_logging.py`](https://github.com/BerriAI/litellm/blob/dbcacc7ab7880d5115376cd6c22d22898c50d08f/litellm/litellm_core_utils/litellm_logging.py#L2563-L2592) and [`cooldown_handlers.py`](https://github.com/BerriAI/litellm/blob/dbcacc7ab7880d5115376cd6c22d22898c50d08f/litellm/router_utils/cooldown_handlers.py#L464-L570) distinguish call callbacks, per-attempt failure reporting and cooldown decisions. Background callback dispatch is not proof of completed downstream delivery. Retry exhaustion raises the latest error for the outer fallback path; no-available-deployment can carry cooldown information.
+
+The bounded review did not trace Proxy HTTP error mapping or all native Responses/Anthropic paths. It establishes no final downstream `x-should-retry` contract. Borrow attempt-scoped observations and explicit stream cleanup, not nested retry/fallback budgets, failure-rate cooling or post-publication continuation.
+
+### new-api
+
+Revision [`2d8e50b`](https://github.com/QuantumNous/new-api/tree/2d8e50bf36e94200b809dfb39e73624ec48b1e23):
+
+- [`middleware/distributor.go`](https://github.com/QuantumNous/new-api/blob/2d8e50bf36e94200b809dfb39e73624ec48b1e23/middleware/distributor.go#L164-L169) records affinity when the writer's HTTP status is below 400. [`service/channel_affinity.go`](https://github.com/QuantumNous/new-api/blob/2d8e50bf36e94200b809dfb39e73624ec48b1e23/service/channel_affinity.go#L713-L739) adds configuration/context checks, not a protocol-terminal check.
+- [`relay_responses.go`](https://github.com/QuantumNous/new-api/blob/2d8e50bf36e94200b809dfb39e73624ec48b1e23/relay/channel/openai/relay_responses.go#L88-L177) forwards events; its `response.failed`/`incomplete`/cancelled branch resets image-accounting state rather than returning a task failure. The handler's `nil` error alone cannot justify healthy completion.
+- [`controller/relay.go`](https://github.com/QuantumNous/new-api/blob/2d8e50bf36e94200b809dfb39e73624ec48b1e23/controller/relay.go#L331-L370) bases retry decisions on error classification and retry state, without a publication check at this layer. [`service/channel.go`](https://github.com/QuantumNous/new-api/blob/2d8e50bf36e94200b809dfb39e73624ec48b1e23/service/channel.go#L19-L64) supplies configurable auto-disable decisions. Scanner, helper and transport paths were not fully traced; this does not establish an actual end-to-end post-publication replay.
+
+Use this as a counterexample to HTTP-status or delivery-function-success affinity commits. Do not copy auto-disable as a replacement for time-bounded health.
+
+### Design implications
+
+The comparison supports recording task outcome, publication/delivery and failure cause separately. It does not supply a common policy for clearing health after a valid refusal, output-limit completion, downstream cancellation or a gateway-local encoding failure. Nor does it settle whether exhausted gateway recovery must prohibit a fresh client request.
+
+The finalized [outcome contract](../provider-account-redesign-plan.md#outcome-and-health-resolution) and [downstream signals](../provider-account-redesign-plan.md#downstream-signals) own the user's subsequent selections, not these source observations. Success-only affinity, no-replay-after-publication and terminal honesty stay in force. Verify selected client retry signals with installed pi/OpenCode rather than infer their behavior from these gateways.
 
 ## Applying these references
 
