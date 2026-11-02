@@ -57,13 +57,13 @@ This page owns current scope, priorities, dependencies, and exit gates. [Archite
 
 ## Current status
 
-**Current focus (2026-11-02):** Slices R0–R5 are complete. The remaining stabilization exit is installed-Agent default reasoning/tool/history acceptance across all three client protocols and selected cross-protocol lanes. Stage 4 resumes after that closure.
+**Current focus (2026-11-02):** Slices R0–R5 are complete. The user deferred the full installed-Agent exit until after credential/account routing is rewritten and new models are selected. Next, finalize the [Provider account redesign](provider-account-redesign-plan.md) and confirm its rewrite scope; then implement the rewrite, select models and complete default reasoning/tool/history acceptance across all three client protocols and selected cross-protocol lanes. Stage 4 resumes after that closure.
 
 | Area | State | Next step |
 |---|---|---|
-| Routing | Stable routing baseline frozen; controlled synthetic recovery verified across Router, SDK, and installed clients | Real-failover production evidence required for multi-credential routes |
+| Routing | Existing baseline retained; account redesign takes priority over the deferred Agent exit | Finalize account design and rewrite scope before changing the baseline |
 | Generation IR / Codec | R0–R5 complete; shared projections/discovery, qualified intake, history transfer and reviewed null contracts | Maintain these contracts through the installed-Agent exit |
-| Client compatibility | Default native Messages loops pass with installed pi and OpenCode without overrides | Complete three-protocol and cross-protocol exit loops |
+| Client compatibility | Default native Messages loops pass with installed pi and OpenCode without overrides | Defer full exit loops until account rewrite and new model selection |
 | Integration | R1a/R1b/R2 loops, controlled recovery and production closure passed | Revalidate changed paths against established gates |
 | Cross-protocol conversion | Stage 3 closed for selected projections; `count_tokens` deferred | Stage-4 Embedding paths active; Google API paused |
 | Decision APIs | Dual standard-SDK direction selected (TypeSafe/OpenAI) | Contract selection and Stage-4 implementation |
@@ -114,9 +114,9 @@ R0–R5 migrated rejection sites onto shared request/delivery projections and co
 
 | Slice | Work | Exit gate |
 |---|---|---|
-| **Exit** | Current-client characterization, then default reasoning/tool/history gateway loops with installed pi and OpenCode across all three client protocols and selected cross-protocol lanes. | Gateway execution and replay pass within documented profiles. |
+| **Exit (deferred)** | After account rewrite and new model selection: current-client characterization, then default reasoning/tool/history gateway loops with installed pi and OpenCode across all three client protocols and selected cross-protocol lanes. | Gateway execution and replay pass within documented profiles on the rewritten account path and selected models. |
 
-Dependencies: R0–R5 are complete. Local representation identities remain after the probe; [null-contract evidence](refs/2026-10-27-client-ir-boundaries.md#generation-null-contract-review-2026-11-02) distinguishes defaults from reported absence. The final current-client exit remains independent of offline regression and SDK gates. Routing and credential redesign remain frozen.
+Dependencies: R0–R5 are complete. Local representation identities remain after the probe; [null-contract evidence](refs/2026-10-27-client-ir-boundaries.md#generation-null-contract-review-2026-11-02) distinguishes defaults from reported absence. The final current-client exit remains independent of offline regression and SDK gates. The [account-redesign sequence](#temporary-routing-freeze) now precedes this exit; interim verification uses focused offline and applicable SDK gates without requiring the deferred full installed-Agent loop. Existing acceptance remains dated evidence, not qualification of the rewritten path or newly selected models.
 
 ### Retained rejections
 
@@ -308,9 +308,9 @@ The standards-reset architecture baseline was accepted on 2026-10-23. Implemente
 
 ### Temporary routing freeze
 
-The separately requested [Provider account redesign plan](provider-account-redesign-plan.md) has an **accepted draft direction with configurable policy parameters as of 2026-10-30**. It remains a design draft awaiting final confirmation; implementation details, rewrite slices and scheduling are deferred. It grants no implementation authorization and adds no active work package. Confirm the design and select the rewrite scope explicitly before changing this baseline.
+The separately requested [Provider account redesign plan](provider-account-redesign-plan.md) has an **accepted draft direction with configurable policy parameters as of 2026-10-30**. On 2026-11-02, the user selected this order: finalize the design and rewrite scope, rewrite credential/account routing, select new models, complete the full installed-Agent exit, then resume Stage 4. The draft's system-wide destination and Generation-first direction remain; detailed rewrite slices and rollout require final design and scope confirmation. This scheduling change does not resolve the draft's open semantics or authorize changes to deployed credentials.
 
-The [stable routing baseline](architecture.md#failover) is frozen. Codec and protocol work must not alter:
+The [stable routing baseline](architecture.md#failover) remains frozen until the account design and rewrite scope are confirmed. Unrelated codec and protocol work must not alter:
 - Pool membership, health probes, or target ordering.
 - Conversation cache affinity or cooldown thresholds.
 - Route selection based on projected loss or codec capability.

@@ -1,10 +1,10 @@
 # Provider account redesign plan
 
-**Status: draft direction accepted with configurable policy parameters, 2026-10-30. Final design confirmation and rewrite planning come later. No implementation design or schedule is approved.**
+**Status: draft direction accepted with configurable policy parameters, 2026-10-30. Design finalization now takes priority under the user's 2026-11-02 scheduling change. Final design and rewrite scope still require confirmation; implementation slices and rollout are not approved.**
 
 This document records the user's requirements, decisions and recommendations still under review. The user accepted the final draft from Claude Code session `ea0a9e90-bbc6-42f3-944d-5e03a3a83eaf`, with retries, cooldowns, cache lifetimes and related policy parameters configurable, and subsequently selected its stated numeric defaults. This accepts the design direction, not a finalized specification or rewrite authorization. Do not plan implementation slices, implement the design, change credentials or activate bindings until the user confirms the design and selects the later rewrite scope.
 
-[Architecture](architecture.md) remains the authority for accepted contracts. [Roadmap](roadmap.md#temporary-routing-freeze) retains the current routing freeze and owns scheduling. This separately requested plan owns the account-redesign requirements and proposal; it does not reopen routing through the active IR/codec migration. [Usage](usage.md#prepare-credentials) describes the currently implemented configuration, not the shapes discussed here.
+[Architecture](architecture.md) remains the authority for accepted contracts. [Roadmap](roadmap.md#temporary-routing-freeze) owns the revised priority over the deferred installed-Agent exit and the routing freeze until design and scope confirmation. This separately requested plan owns the account-redesign requirements and proposal; the scheduling change does not finalize its open semantics. [Usage](usage.md#prepare-credentials) describes the currently implemented configuration, not the shapes discussed here.
 
 ## Contents
 
