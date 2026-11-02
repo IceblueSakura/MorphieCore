@@ -44,7 +44,7 @@ impl RequestRule {
             Self::SummarizeReasoning => Effect::Summary {
                 rule: self.name().into(),
                 owner: Owner::Root,
-                input: request.reasoning().presentation.summary.clone(),
+                input: request.reasoning().presentation.summary,
                 output: ReasoningDisplay::Summary,
             },
             _ => Effect::new(self.name(), field, B::RequestProject, change),
@@ -112,16 +112,16 @@ pub(super) fn project(
     if s.controls.top_logprobs.is_some()
         || !s.controls.logprobs.is_none()
         || s.controls.truncation.is_some()
-        || !s.output_modalities.is_absent()
-        || !s.audio.is_absent()
+        || !s.output_modalities.is_none()
+        || !s.audio.is_none()
         || s.parallel_tool_calls == Some(false)
         || crate::protocol::image_constraints::rejects_downsize(request.items())
     {
         return Err(unsupported());
     }
     match &s.text.format {
-        Presence::Absent | Presence::Value(OutputConstraint::Text) => {}
-        Presence::Value(OutputConstraint::JsonSchema {
+        None | Some(OutputConstraint::Text) => {}
+        Some(OutputConstraint::JsonSchema {
             description: None, ..
         }) => {}
         _ => return Err(unsupported()),
@@ -130,7 +130,7 @@ pub(super) fn project(
         rules.insert(RequestRule::OmitVerbosity);
     }
     let mut body = Map::new();
-    if let Presence::Value(OutputConstraint::JsonSchema { name, schema, .. }) = &s.text.format {
+    if let Some(OutputConstraint::JsonSchema { name, schema, .. }) = &s.text.format {
         if !super::schema::admits(schema.root()) {
             return Err(unsupported());
         }
@@ -146,8 +146,8 @@ pub(super) fn project(
     body.insert("store".into(), false.into());
     body.insert("stream".into(), true.into());
     let mut system = match &s.instructions {
-        Presence::Absent => None,
-        Presence::Value(root) => {
+        None => None,
+        Some(root) => {
             if root.parts.iter().any(|part| part.cache.is_some()) {
                 return Err(unsupported());
             }
@@ -158,7 +158,6 @@ pub(super) fn project(
                     .collect(),
             )
         }
-        Presence::Null => return Err(unsupported()),
     };
     for (_, item) in request
         .items()
@@ -281,26 +280,25 @@ fn thinking(
     let r = &settings.reasoning;
     if r.presence == ReasoningPresence::Null
         || r.budget_tokens.is_some()
-        || r.activation == Presence::Null
-        || r.activation.value() == Some(&ReasoningActivation::Disabled)
+        || r.activation.as_ref() == Some(&ReasoningActivation::Disabled)
     {
         return Err(unsupported());
     }
-    if !r.context.is_absent() || !r.read_history.is_absent() {
+    if !r.context.is_absent() || !r.read_history.is_none() {
         return Err(unsupported());
     }
     let summary = match (&r.presentation.visibility, &r.presentation.summary) {
-        (Presence::Value(ReasoningDisplay::Summary), granularity) => {
+        (Some(ReasoningDisplay::Summary), granularity) => {
             if matches!(
                 granularity,
-                Presence::Value(ReasoningSummary::Concise | ReasoningSummary::Detailed)
+                Some(ReasoningSummary::Concise | ReasoningSummary::Detailed)
             ) {
                 rules.insert(RequestRule::SummarizeReasoning);
             }
             Some("auto")
         }
-        (Presence::Value(ReasoningDisplay::Omitted), _) => Some("none"),
-        (Presence::Absent, Presence::Absent) => None,
+        (Some(ReasoningDisplay::Omitted), _) => Some("none"),
+        (None, None) => None,
         _ => return Err(unsupported()),
     };
     if let Some(summary) = summary {

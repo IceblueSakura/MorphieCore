@@ -55,7 +55,7 @@ impl Sample {
             }
             "messages" => {
                 reasoning.mode = Presence::Value(ReasoningMode::Adaptive);
-                reasoning.presentation.visibility = Presence::Value(ReasoningDisplay::Omitted);
+                reasoning.presentation.visibility = Some(ReasoningDisplay::Omitted);
                 usage.input_relation = InputTokenRelation::ExcludesCacheReadAndWrite;
                 usage.total_relation = TotalTokenRelation::Unreported;
                 usage.input_tokens = Some(10);
@@ -69,7 +69,7 @@ impl Sample {
             _ => panic!("unknown abstract sample"),
         };
         let settings = GenerationSettings {
-            instructions: Presence::Value(text("current configuration").into()),
+            instructions: Some(text("current configuration").into()),
             effort: Some(EffortControl {
                 scope: if family == "messages" {
                     EffortScope::Response

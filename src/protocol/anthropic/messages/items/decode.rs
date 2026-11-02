@@ -396,7 +396,7 @@ pub(in crate::protocol::anthropic::messages) fn validate_cache(
         ToolDefinition::Function(tool) if !tool.dispatch.defer_loading => Some(tool.cache),
         _ => None,
     });
-    if let Some(root) = request.instructions().value() {
+    if let Some(root) = request.instructions().as_ref() {
         for part in &root.parts {
             let cache = super::cache_ttl(part.cache)?;
             if text_cache_eligible(part.text.as_str(), cache)? {

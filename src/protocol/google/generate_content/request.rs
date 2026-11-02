@@ -59,7 +59,7 @@ impl RequestRule {
             Self::SummarizeReasoning => Effect::Summary {
                 rule: self.name().into(),
                 owner: Owner::Root,
-                input: request.reasoning().presentation.summary.clone(),
+                input: request.reasoning().presentation.summary,
                 output: ReasoningDisplay::Summary,
             },
             _ => Effect::new(self.name(), field, B::RequestProject, change),
@@ -112,8 +112,8 @@ pub(super) fn project(
         return Err(unsupported());
     }
     if s.controls.truncation.is_some()
-        || !s.output_modalities.is_absent()
-        || !s.audio.is_absent()
+        || !s.output_modalities.is_none()
+        || !s.audio.is_none()
         || s.parallel_tool_calls == Some(false)
         || crate::protocol::image_constraints::rejects_downsize(request.items())
     {
@@ -135,7 +135,7 @@ pub(super) fn project(
     if let Some(reference) = request.cached_context() {
         // Cached resources may fix these controls. Do not invent an overlay.
         // https://ai.google.dev/api/caching#CachedContent
-        if !s.instructions.is_absent()
+        if !s.instructions.is_none()
             || s.tools.is_some()
             || s.tool_choice.is_some()
             || request
@@ -159,8 +159,8 @@ pub(super) fn project(
         body.insert("cachedContent".into(), name.into());
     }
     let mut system = match &s.instructions {
-        Presence::Absent => None,
-        Presence::Value(root) => {
+        None => None,
+        Some(root) => {
             if root.parts.iter().any(|part| part.cache.is_some()) {
                 return Err(unsupported());
             }
@@ -171,7 +171,6 @@ pub(super) fn project(
                     .collect(),
             )
         }
-        Presence::Null => return Err(unsupported()),
     };
     for (_, item) in request
         .items()
@@ -269,8 +268,8 @@ pub(super) fn project(
     }
     let mut generation = Map::new();
     match &s.text.format {
-        Presence::Absent | Presence::Value(OutputConstraint::Text) => {}
-        Presence::Value(OutputConstraint::JsonSchema {
+        None | Some(OutputConstraint::Text) => {}
+        Some(OutputConstraint::JsonSchema {
             name,
             description: None,
             schema,
@@ -356,28 +355,26 @@ fn thinking(
         || reasoning
             .budget_tokens
             .is_some_and(|budget| budget > i32::MAX as u64)
-        || reasoning.activation == Presence::Null
-        || reasoning.activation.value() == Some(&ReasoningActivation::Disabled)
+        || reasoning.activation.as_ref() == Some(&ReasoningActivation::Disabled)
     {
         return Err(unsupported());
     }
-    if !reasoning.context.is_absent() || !reasoning.read_history.is_absent() {
+    if !reasoning.context.is_absent() || !reasoning.read_history.is_none() {
         return Err(unsupported());
     }
     let include = match (
         &reasoning.presentation.visibility,
         &reasoning.presentation.summary,
     ) {
-        (Presence::Value(ReasoningDisplay::Summary), granularity) => {
+        (Some(ReasoningDisplay::Summary), granularity) => {
             if matches!(
                 granularity,
-                Presence::Value(ReasoningSummary::Concise | ReasoningSummary::Detailed)
+                Some(ReasoningSummary::Concise | ReasoningSummary::Detailed)
             ) {
                 rules.insert(RequestRule::SummarizeReasoning);
             }
             true
         }
-        (Presence::Null, _) => return Err(unsupported()),
         _ => false,
     };
     match reasoning.mode {

@@ -627,9 +627,7 @@ fn leading_instructions_compose_once_and_effort_boundaries_split_same_role_histo
     for root in [None, Some(text("root"))] {
         let mut settings = GenerationSettings::default();
         settings.controls.max_output_tokens = Some(32);
-        settings.instructions = root
-            .clone()
-            .map_or(Presence::Absent, |text| Presence::Value(text.into()));
+        settings.instructions = root.clone().map(Into::into);
         let mut items = vec![];
         for (index, content) in ["A", "B"].into_iter().enumerate() {
             items.push((

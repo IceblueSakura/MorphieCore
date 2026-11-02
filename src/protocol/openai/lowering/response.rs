@@ -66,13 +66,13 @@ pub(crate) fn validate_response(
     if metadata
         .context
         .settings()
-        .is_some_and(|s| !s.audio.is_absent() || !s.output_modalities.is_absent())
+        .is_some_and(|s| !s.audio.is_none() || !s.output_modalities.is_none())
     {
         return Err(RepresentationError::UnmigratedSemantic);
     }
     if profile == GenerationApi::Responses
         && metadata.context.settings().is_some_and(|s| {
-            s.reasoning.presentation.visibility.value() == Some(&ReasoningDisplay::Omitted)
+            s.reasoning.presentation.visibility.as_ref() == Some(&ReasoningDisplay::Omitted)
         })
     {
         return Err(RepresentationError::Reasoning);

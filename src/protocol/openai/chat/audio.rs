@@ -22,7 +22,9 @@ pub(in crate::protocol::openai) fn settings(
                     .map_err(|_| CodecError::Unsupported(CarrierReason::Unavailable))
             })
             .collect()
-    })?;
+    })?
+    .value()
+    .cloned();
     s.audio = read_presence(o, "audio", |v| {
         let o = object(v)?;
         direction.fields(o, &["format", "voice"])?;
@@ -32,22 +34,27 @@ pub(in crate::protocol::openai) fn settings(
                 .map_err(|_| CodecError::Unsupported(CarrierReason::Unavailable))?,
             voice: text(string(o, "voice")?, "voice", 128)?,
         })
-    })?;
+    })?
+    .value()
+    .cloned();
     Ok(())
 }
 pub(in crate::protocol::openai) fn write_settings(
     s: &GenerationSettings,
     o: &mut Map<String, Value>,
 ) {
-    put_presence(o, "modalities", &s.output_modalities, |v| {
-        json!(v.iter().map(|v| v.label()).collect::<Vec<_>>())
-    });
-    put_presence(
-        o,
-        "audio",
-        &s.audio,
-        |v| json!({"format":v.format.label(),"voice":v.voice.as_str()}),
-    );
+    if let Some(modalities) = &s.output_modalities {
+        o.insert(
+            "modalities".into(),
+            json!(modalities.iter().map(|v| v.label()).collect::<Vec<_>>()),
+        );
+    }
+    if let Some(audio) = &s.audio {
+        o.insert(
+            "audio".into(),
+            json!({"format":audio.format.label(),"voice":audio.voice.as_str()}),
+        );
+    }
 }
 pub(in crate::protocol::openai) fn read(
     value: &Value,

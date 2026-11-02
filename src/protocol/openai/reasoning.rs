@@ -21,15 +21,13 @@ pub(super) fn requires_extended_controls(settings: &GenerationSettings) -> bool 
     let value = &settings.reasoning;
     value.budget_tokens.is_some()
         || value.replay_mismatch == Some(crate::semantic::task::generation::ReplayMismatch::Reject)
-        || value.presentation.visibility == crate::semantic::value::Presence::Null
         || settings
             .effort
             .as_ref()
             .is_some_and(|e| e.scope != EffortScope::Reasoning)
             && (value.presence == ReasoningPresence::Null
-                || value.activation.value() == Some(&ReasoningActivation::Disabled))
-        || value.activation == crate::semantic::value::Presence::Null
-        || value.activation.value() == Some(&ReasoningActivation::Enabled)
+                || value.activation.as_ref() == Some(&ReasoningActivation::Disabled))
+        || value.activation.as_ref() == Some(&ReasoningActivation::Enabled)
             && !settings
                 .effort
                 .as_ref()
@@ -70,7 +68,11 @@ pub(super) fn request(
     };
     if value.is_null() {
         let mut r = ReasoningRequest::absent().with_encrypted_output(encrypted);
-        r.presence = ReasoningPresence::Null;
+        r.presence = if reported {
+            ReasoningPresence::Null
+        } else {
+            ReasoningPresence::Absent
+        };
         settings.reasoning = r;
         return Ok(());
     }
@@ -86,22 +88,28 @@ pub(super) fn request(
     read_effort(reasoning, &mut r, &mut settings.effort, "effort")?;
     // The standard nullable enum has no boolean disabled carrier.
     // https://github.com/openai/openai-python/blob/be9d66628ad7377bd36fe5a76ae6d735843f0e76/src/openai/types/shared_params/reasoning.py
-    r.presentation.summary = optional_label(reasoning, "summary", summary)?;
+    r.presentation.summary = optional_label(reasoning, "summary", summary)?
+        .value()
+        .copied();
     if reasoning.contains_key("generate_summary") {
-        let old = optional_label(reasoning, "generate_summary", summary)?;
-        if !r.presentation.summary.is_absent() && r.presentation.summary != old {
+        let old = optional_label(reasoning, "generate_summary", summary)?
+            .value()
+            .copied();
+        if !r.presentation.summary.is_none() && r.presentation.summary != old {
             return Err(CodecError::invalid());
         }
         r.presentation.summary = old;
     }
-    if r.presentation.summary.value().is_some() {
-        r.presentation.visibility =
-            crate::semantic::value::Presence::Value(ReasoningDisplay::Summary);
+    if r.presentation.summary.as_ref().is_some() {
+        r.presentation.visibility = Some(ReasoningDisplay::Summary);
     }
     r.context = optional_label(reasoning, "context", |s| {
         s.parse::<ReasoningContext>()
             .map_err(|_| CodecError::Unsupported(CarrierReason::Reasoning))
     })?;
+    if !reported && r.context == crate::semantic::value::Presence::Null {
+        r.context = crate::semantic::value::Presence::Absent;
+    }
     r.mode = optional_label(reasoning, "mode", |s| match s {
         "standard" => Ok(ReasoningMode::Standard),
         "pro" => Ok(ReasoningMode::Pro),
@@ -115,7 +123,7 @@ pub(super) fn chat_request(
     o: &Map<String, Value>,
     settings: &mut GenerationSettings,
 ) -> Result<(), CodecError> {
-    if !o.contains_key("reasoning_effort") {
+    if o.get("reasoning_effort").is_none_or(Value::is_null) {
         return Ok(());
     };
     let mut reasoning = ReasoningRequest::present(None);
@@ -129,13 +137,12 @@ fn read_effort(
     control: &mut Option<EffortControl>,
     key: &'static str,
 ) -> Result<(), CodecError> {
-    use crate::semantic::value::Presence;
     match o.get(key) {
         None => {}
         Some(Value::Null) => *control = None,
         Some(value) => {
             let update = effort(value.as_str().ok_or(CodecError::invalid())?)?;
-            reasoning.activation = update.activation.map_or(Presence::Absent, Presence::Value);
+            reasoning.activation = update.activation;
             *control = update.effort;
         }
     }
@@ -148,11 +155,11 @@ pub(super) fn write_request(
 ) -> Result<(), CodecError> {
     settings.validate()?;
     let value = &settings.reasoning;
-    if requires_extended_controls(settings) || !value.read_history.is_absent() {
+    if requires_extended_controls(settings) || !value.read_history.is_none() {
         return Err(CodecError::Unsupported(CarrierReason::Reasoning));
     }
     if profile == GenerationApi::Responses
-        && value.presentation.visibility.value() == Some(&ReasoningDisplay::Omitted)
+        && value.presentation.visibility.as_ref() == Some(&ReasoningDisplay::Omitted)
     {
         // Typed control intent cannot be replaced by absence or null. This also
         // protects reported settings on events, before a final response exists.
@@ -162,7 +169,7 @@ pub(super) fn write_request(
         o.insert("include".into(), json!(["reasoning.encrypted_content"]));
     }
     let level = effort_label(&ConfigurationUpdate {
-        activation: value.activation.value().copied(),
+        activation: value.activation.as_ref().copied(),
         effort: settings.effort.as_ref().copied(),
     })?;
     let put_effort = |o: &mut Map<String, Value>, key: &str| {
@@ -183,16 +190,16 @@ pub(super) fn write_request(
     }
     let mut reasoning = Map::new();
     put_effort(&mut reasoning, "effort");
-    let summary = if value.presentation.summary.is_absent()
-        && value.presentation.visibility.value() == Some(&ReasoningDisplay::Summary)
+    let summary = if value.presentation.summary.is_none()
+        && value.presentation.visibility.as_ref() == Some(&ReasoningDisplay::Summary)
     {
-        crate::semantic::value::Presence::Value(ReasoningSummary::Auto)
+        Some(ReasoningSummary::Auto)
     } else {
-        value.presentation.summary.clone()
+        value.presentation.summary
     };
-    put_presence(&mut reasoning, "summary", &summary, |v| {
-        json!(summary_label(*v))
-    });
+    if let Some(summary) = summary {
+        reasoning.insert("summary".into(), json!(summary_label(summary)));
+    }
     put_presence(&mut reasoning, "context", &value.context, |v| {
         let label: &'static str = (*v).into();
         json!(label)

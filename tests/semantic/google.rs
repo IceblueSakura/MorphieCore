@@ -1205,8 +1205,8 @@ fn next_request_restores_signatures_on_their_parts_in_any_item_order() {
     assert!(encode_generation_request(&request, &observed.fidelity, &other, None).is_err());
     let mut settings = request.settings().clone();
     settings.text = TextOptions {
-        presence: morphiecore::semantic::value::Presence::Value(()),
-        format: morphiecore::semantic::value::Presence::Value(OutputConstraint::Text),
+        presence: Some(()),
+        format: Some(OutputConstraint::Text),
         verbosity: Some(Verbosity::Low),
     };
     let advisory = request.clone().with_settings(settings.clone()).unwrap();
@@ -1218,8 +1218,7 @@ fn next_request_restores_signatures_on_their_parts_in_any_item_order() {
         ["gemini.omit-verbosity.v1"]
     );
     assert_eq!(advisory.settings(), &settings);
-    settings.text.format =
-        morphiecore::semantic::value::Presence::Value(OutputConstraint::JsonObject);
+    settings.text.format = Some(OutputConstraint::JsonObject);
     let constrained = request.clone().with_settings(settings).unwrap();
     assert!(encode_generation_request(&constrained, &observed.fidelity, &target(), None).is_err());
     let schema = json!({"type":"object","properties":{"ok":{"type":"boolean"}},"required":["ok"],"additionalProperties":false});
@@ -1334,10 +1333,7 @@ fn next_request_restores_signatures_on_their_parts_in_any_item_order() {
             .is_err()
     );
     let mut settings = source.task.semantic.settings().clone();
-    let morphiecore::semantic::value::Presence::Value(OutputConstraint::JsonSchema {
-        schema, ..
-    }) = &mut settings.text.format
-    else {
+    let Some(OutputConstraint::JsonSchema { schema, .. }) = &mut settings.text.format else {
         panic!()
     };
     *schema = json!({"oneOf":[{"type":"object"},{"type":"object"}]}).into();
@@ -1468,7 +1464,7 @@ fn next_request_restores_signatures_on_their_parts_in_any_item_order() {
         wire
     );
     let mut settings = cached.task.semantic.settings().clone();
-    settings.instructions = morphiecore::semantic::value::Presence::Value(
+    settings.instructions = Some(
         Text::new("replacement instruction", "fixture", 256)
             .unwrap()
             .into(),

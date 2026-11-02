@@ -10,10 +10,7 @@ use morphiecore::{
         replay_envelope::issuer,
         stream::SseError as WireFailure,
     },
-    semantic::{
-        task::generation::*,
-        value::{Presence, Text},
-    },
+    semantic::{task::generation::*, value::Text},
 };
 use serde_json::json;
 
@@ -1403,10 +1400,7 @@ fn projects_stateless_steps_tools_and_controls() {
         matches!(request.task.semantic.output(), OutputConstraint::JsonSchema { schema: s, strict: Some(true), .. } if s.root() == &schema)
     );
     let mut settings = request.task.semantic.settings().clone();
-    let morphiecore::semantic::value::Presence::Value(OutputConstraint::JsonSchema {
-        schema, ..
-    }) = &mut settings.text.format
-    else {
+    let Some(OutputConstraint::JsonSchema { schema, .. }) = &mut settings.text.format else {
         panic!()
     };
     *schema = json!({"type":"string","pattern":"^protected$"}).into();
@@ -1432,8 +1426,7 @@ fn projects_stateless_steps_tools_and_controls() {
         ),
     ] {
         let mut settings = request.task.semantic.settings().clone();
-        let Presence::Value(OutputConstraint::JsonSchema { schema: slot, .. }) =
-            &mut settings.text.format
+        let Some(OutputConstraint::JsonSchema { schema: slot, .. }) = &mut settings.text.format
         else {
             panic!("schema")
         };
@@ -1473,8 +1466,7 @@ fn rejects_unrepresentable_critical_tool_semantics() {
         Some(Verbosity::Low)
     );
     let mut settings = advisory.task.semantic.settings().clone();
-    settings.text.format =
-        morphiecore::semantic::value::Presence::Value(OutputConstraint::JsonObject);
+    settings.text.format = Some(OutputConstraint::JsonObject);
     let constrained = advisory
         .task
         .semantic

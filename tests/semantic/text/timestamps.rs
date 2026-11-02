@@ -1,10 +1,7 @@
 //! Independent timestamp admission and typed edits, without Provider or Gateway bindings.
-use morphiecore::{
-    protocol::openai::{
-        GenerationApi, TargetContract as Contract, events::EventEncoder, lowering::lower_response,
-        responses::envelope,
-    },
-    semantic::value::Presence,
+use morphiecore::protocol::openai::{
+    GenerationApi, TargetContract as Contract, events::EventEncoder, lowering::lower_response,
+    responses::envelope,
 };
 use serde_json::Number;
 
@@ -24,7 +21,7 @@ fn timestamp_typed_edits_cannot_bypass_context_lowering_or_event_encoding() {
     for completion in [false, true] {
         let mut metadata = decoded.metadata.clone();
         if completion {
-            metadata.context.completed_at = Presence::Value(number("-1e-9999"));
+            metadata.context.completed_at = Some(number("-1e-9999"));
             assert!(metadata.context.validate().is_err());
         } else {
             metadata.created = Some(number("-1e-9999"));

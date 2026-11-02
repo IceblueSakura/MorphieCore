@@ -210,34 +210,44 @@ fn each_resolution_is_closed_phase_local_and_source_checked() {
         &Some(morphiecore::semantic::context::ServiceClass::StandardProcessing)
     );
     let mut malformed = event("completed", 1, json!({"mode":7}), json!("default"));
-    // Container null is an observation, not an absent-field wildcard, even
-    // beside another setting and with the selected lifecycle rules enabled.
-    for (before, after) in [
-        (Some(Value::Null), None),
-        (None, Some(Value::Null)),
-        (Some(Value::Null), Some(json!({}))),
-        (Some(json!({})), Some(Value::Null)),
+    // Text null is a default. Empty objects and explicit reported reasoning
+    // absence remain observations even beside another setting.
+    for (field, before, after, equivalent) in [
+        ("text", Some(Value::Null), None, true),
+        ("text", None, Some(Value::Null), true),
+        ("text", Some(Value::Null), Some(json!({})), false),
+        ("text", Some(json!({})), Some(Value::Null), false),
+        ("reasoning", Some(Value::Null), None, false),
+        ("reasoning", None, Some(Value::Null), false),
     ] {
         for phase in ["in_progress", "completed"] {
             let mut first = event("created", 0, json!({}), json!("default"));
             let mut next = event(phase, 1, json!({}), json!("default"));
             first["response"]["temperature"] = json!(0.5);
             next["response"]["temperature"] = json!(0.5);
+            first["response"].as_object_mut().unwrap().remove(field);
+            next["response"].as_object_mut().unwrap().remove(field);
             if let Some(value) = &before {
-                first["response"]["text"] = value.clone();
+                first["response"][field] = value.clone();
             }
             if let Some(value) = &after {
-                next["response"]["text"] = value.clone();
+                next["response"][field] = value.clone();
             }
             let mut decoder = adapter().event_decoder();
             decoder.push(&first).unwrap();
-            assert!(matches!(
-                decoder.push(&next),
-                Err(morphiecore::protocol::CodecError::Invalid(
-                    morphiecore::protocol::failure::ShapeReason::SettingsConflict
-                ))
-            ));
-            assert!(decoder.finish().is_err());
+            let result = decoder.push(&next);
+            if equivalent {
+                result.unwrap();
+                assert_eq!(decoder.finish().is_ok(), phase == "completed");
+            } else {
+                assert!(matches!(
+                    result,
+                    Err(morphiecore::protocol::CodecError::Invalid(
+                        morphiecore::protocol::failure::ShapeReason::SettingsConflict
+                    ))
+                ));
+                assert!(decoder.finish().is_err());
+            }
         }
     }
     let mut decoder = adapter().event_decoder();
@@ -446,7 +456,7 @@ fn emitted_reports_cannot_be_rewritten_and_both_slots_count_toward_the_bound() {
     );
     assert!(encoder.finish().is_err());
     let settings = GenerationSettings {
-        instructions: Presence::Value(
+        instructions: Some(
             Text::new("x".repeat(MAX_TEXT_BYTES), "test", MAX_TEXT_BYTES)
                 .unwrap()
                 .into(),

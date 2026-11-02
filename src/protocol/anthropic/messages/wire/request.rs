@@ -557,7 +557,6 @@ impl Thinking {
             Some("adaptive") => {
                 let o = closed(v, &["type", "display", "block_binding"])?;
                 let display = presence(o, "display", Display::read)?;
-                nonnull(&display)?;
                 Ok(Self::Adaptive {
                     display,
                     block_binding: PrefixMismatch::read(o.get("block_binding"))?,
@@ -566,7 +565,6 @@ impl Thinking {
             Some("enabled") => {
                 let o = closed(v, &["type", "budget_tokens", "display"])?;
                 let display = presence(o, "display", Display::read)?;
-                nonnull(&display)?;
                 Ok(Self::Enabled {
                     budget_tokens: uint(required(o, "budget_tokens")?)?,
                     display,
@@ -872,15 +870,10 @@ impl Request {
             return Err(CodecError::invalid());
         }
         validate_user_id(&self.user_id)?;
-        if let Presence::Value(Thinking::Enabled {
-            budget_tokens,
-            display,
-        }) = &self.thinking
+        if let Presence::Value(Thinking::Enabled { budget_tokens, .. }) = &self.thinking
+            && (*budget_tokens < 1024 || *budget_tokens >= self.max_tokens)
         {
-            nonnull(display)?;
-            if *budget_tokens < 1024 || *budget_tokens >= self.max_tokens {
-                return Err(CodecError::invalid());
-            }
+            return Err(CodecError::invalid());
         }
         count(self.messages.len())?;
         let roles: Vec<_> = self
@@ -908,9 +901,6 @@ impl Request {
         nonnull(&self.tools)?;
         nonnull(&self.tool_choice)?;
         nonnull(&self.thinking)?;
-        if let Presence::Value(Thinking::Adaptive { display, .. }) = &self.thinking {
-            nonnull(display)?;
-        }
         nonnull(&self.output_config)?;
         nonnull(&self.cache_control)?;
         nonnull(&self.stream)?;

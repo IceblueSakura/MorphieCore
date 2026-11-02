@@ -25,6 +25,7 @@ Reviewed on **2026-10-27** at **`1b4f828`**, after the five-slice request repair
 - [Conversion-ladder inventory (2026-10-30)](#conversion-ladder-inventory-2026-10-30)
 - [Production corpus and intake experiment (2026-10-30)](#production-corpus-and-intake-experiment-2026-10-30)
 - [Request-owner and Messages continuity review (2026-10-31)](#request-owner-and-messages-continuity-review-2026-10-31)
+- [Generation null-contract review (2026-11-02)](#generation-null-contract-review-2026-11-02)
 
 ## Scope and evidence
 
@@ -566,3 +567,28 @@ The selected manual-thinking prefix boundary is candidate-local. A cross-protoco
 Two scheduler counterexamples sharpen the omission contract. The existing independently constructed interrupted-summary fixture is a valid source event sequence; its interruption must disappear with an omitted owner rather than trigger a late Messages SSE rejection. A `ReasoningText` owner is already uncarriable regardless of a later signature: retaining 200,000 one-byte deltas could exhaust event-object accounting although the source text is small. The schedule now drops decided payloads and tracks their lifecycle within fixed bounds, while only genuinely undecided summaries wait for signatures. Source reduction, EOF and terminal validation remain authoritative. These checks cover synthetic codec/Attempt/delivery and SDK boundaries; current-Agent and real-Provider acceptance are separate gates.
 
 The final baseline found one missing request-table carrier: standard Responses phases must remain native, while Chat and Bailian Responses omit them. The existing Router/SDK complete-history oracle now passes with exact `commentary`/`final_answer` continuation. The interrupted-summary delivery check lives in the existing request-bound EOF test because an unbound delivery cannot infer a natural Messages stop. Its independent semantic event oracle remains separate. [Development](../development.md#sdk-loopback-gate) records final R1 verification and its acceptance boundaries.
+## Generation null-contract review (2026-11-02)
+
+Scope: Generation settings and shared context owners remaining after the stream-intent/document-context migration. Image-generation-specific fields, routing, credentials and new APIs are outside this review. The source baseline remains OpenAI Python **3.37.0** and Anthropic Python **2.1.0** from [the independent source lock](../../tests/upstream/sources.lock.json); installed test-owned SDK declarations were inspected. This review changes neither source pins nor Agent versions.
+
+Primary evidence:
+
+- OpenAI [Responses create parameters](https://github.com/openai/openai-python/blob/e8a0fd28bbdc1699c97ff0f602b1af3dd378382d/src/openai/types/responses/response_create_params.py), [response model](https://github.com/openai/openai-python/blob/e8a0fd28bbdc1699c97ff0f602b1af3dd378382d/src/openai/types/responses/response.py), [reasoning parameters](https://github.com/openai/openai-python/blob/e8a0fd28bbdc1699c97ff0f602b1af3dd378382d/src/openai/types/shared_params/reasoning.py) and [reported reasoning](https://github.com/openai/openai-python/blob/e8a0fd28bbdc1699c97ff0f602b1af3dd378382d/src/openai/types/shared/reasoning.py).
+- OpenAI [Chat parameters](https://github.com/openai/openai-python/blob/e8a0fd28bbdc1699c97ff0f602b1af3dd378382d/src/openai/types/chat/completion_create_params.py) and [reported text configuration](https://github.com/openai/openai-python/blob/e8a0fd28bbdc1699c97ff0f602b1af3dd378382d/src/openai/types/responses/response_text_config.py).
+- Anthropic [adaptive thinking](https://github.com/anthropics/anthropic-sdk-python/blob/9313f13a5a643ceed10fafba6785eab8e04b6e6e/src/anthropic/types/thinking_config_adaptive_param.py) and [enabled thinking](https://github.com/anthropics/anthropic-sdk-python/blob/9313f13a5a643ceed10fafba6785eab8e04b6e6e/src/anthropic/types/thinking_config_enabled_param.py) explicitly allow nullable display and document a model-dependent default.
+
+| Owner | Null disposition and protected distinctions |
+|---|---|
+| Reasoning activation / history read | `Option`; no valid native null activation is produced, and selected Chat `preserve_thinking:null` still rejects before IR. Explicit false remains distinct from absence |
+| Summary / visibility | `Option`; nullable summary has no summary opt-in and never means hidden display. Nullable Messages display uses the model default; explicit summarized/omitted guarantees remain values |
+| Root instructions | `Option`; null and omission supply no new root instructions. The official previous-response contract does not inherit prior root instructions in either case. Empty text and ordered application instructions remain distinct |
+| Text container / format | Nullable report defaults normalize; observed `{}` remains a present container, and explicit text/schema formats remain values. Request `text:null` and `format:null` still reject per the non-nullable create types |
+| Chat modalities / audio options | Nullable defaults normalize; no default modality/options are invented. Null options cannot satisfy a requested audio modality |
+| Cache options | Nullable report defaults normalize. Request null containers and non-nullable mode/TTL/prewarm members still reject; empty default options do not weaken active cache/storage guarantees |
+| Completion time / cache diagnostics / comparison count | Null means no observation. Never invent a timestamp/count or completion. Preserve zero and the tagged `unavailable` / `comparison_response_not_found` observations |
+| Report metadata | Retain tri-state authority. A request containing `{"tenant":"A"}` followed by an upstream `metadata:null` must publish null, not echo the request map; an explicit empty map also suppresses fallback |
+| Reported reasoning object / effective context and mode | Retain explicit-null observations independently of missing reports. Only missing effective settings may take the selected phase-local resolution; request reasoning/context null defaults, while request mode null rejects |
+
+Reported nullability alone is not a request-side clear operation. In particular, `reasoning.summary:null` does not request `display:"omitted"`. Scalar normalization does not erase an observed settings snapshot or let one lifecycle phase fill another. With a sibling reported setting present, `reasoning:null` and an omitted reasoning object remain different observations; likewise an opening effective `context:null` or `mode:null` cannot silently become a known terminal value. Existing report-mode acceptance follows the pinned Python response contract without claiming identical nullability in every SDK.
+
+Independent wire-to-IR and IR-to-wire checks cover null/default normalization, explicit zero/false/empty values, model-default display, required audio options and malformed known members. Metadata fallback and reasoning phase-authority checks remain at their existing owners. [Architecture](../architecture.md#canonical-ownership) owns the accepted representation; this note records its evidence, not an additional plan.

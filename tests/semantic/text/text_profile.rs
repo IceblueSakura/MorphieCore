@@ -131,19 +131,19 @@ fn response_format_shells_map_to_one_owner_with_independent_shapes() {
     for (format, chat_format, responses_text, structured) in [
         (None, None, None, false),
         (
-            Some(Presence::Value(OutputConstraint::Text)),
+            Some(OutputConstraint::Text),
             Some(json!({"type":"text"})),
             Some(json!({"format":{"type":"text"}})),
             false,
         ),
         (
-            Some(Presence::Value(OutputConstraint::JsonObject)),
+            Some(OutputConstraint::JsonObject),
             Some(json!({"type":"json_object"})),
             Some(json!({"format":{"type":"json_object"}})),
             true,
         ),
         (
-            Some(Presence::Value(full.clone())),
+            Some(full.clone()),
             Some(
                 json!({"type":"json_schema","json_schema":{"name":"answer","description":"pick","schema":closed,"strict":true}}),
             ),
@@ -153,19 +153,15 @@ fn response_format_shells_map_to_one_owner_with_independent_shapes() {
             true,
         ),
         (
-            Some(Presence::Value(bare.clone())),
+            Some(bare.clone()),
             Some(json!({"type":"json_schema","json_schema":{"name":"answer","schema":closed}})),
             Some(json!({"format":{"type":"json_schema","name":"answer","schema":closed}})),
             true,
         ),
     ] {
         let options = TextOptions {
-            presence: if format.is_some() {
-                Presence::Value(())
-            } else {
-                Presence::Absent
-            },
-            format: format.unwrap_or(Presence::Absent),
+            presence: if format.is_some() { Some(()) } else { None },
+            format,
             verbosity: None,
         };
         let mut source = json!({"messages":[{"role":"user","content":"hello"}]});
@@ -206,8 +202,8 @@ fn response_format_shells_map_to_one_owner_with_independent_shapes() {
     assert_eq!(
         d.semantic.text_options(),
         &TextOptions {
-            presence: Presence::Value(()),
-            format: Presence::Absent,
+            presence: Some(()),
+            format: None,
             verbosity: Some(Verbosity::Low),
         }
     );
@@ -291,33 +287,6 @@ fn request_formats_reject_known_nulls_without_rejecting_nullable_reports() {
             }
         }
     }
-    let settings = GenerationSettings {
-        text: TextOptions {
-            presence: Presence::Value(()),
-            format: Presence::Null,
-            verbosity: None,
-        },
-        ..GenerationSettings::default()
-    };
-    assert_eq!(
-        GenerationRequest::from_settings(
-            vec![(
-                ItemId::new(1),
-                Item::Message(Message {
-                    participant: None,
-                    role: MessageRole::User,
-                    status: ItemLifecycle::Completed,
-                    phase: None,
-                    parts: vec![Part::new(
-                        PartId::new(1),
-                        ContentPart::Text(text("go").into())
-                    )],
-                })
-            )],
-            settings
-        ),
-        Err(GenerationError::InvalidControl)
-    );
 }
 #[test]
 fn instruction_status_is_checked_in_history_and_reported_echoes() {
@@ -604,35 +573,32 @@ fn reported_text_container_presence_is_not_request_intent() {
         semantic::context::{ResponseContext, ResponseReport, ResponseReports},
     };
     let adapter = GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None);
-    for (wire_text, options) in [
-        (None, TextOptions::default()),
-        (
-            Some(Value::Null),
-            TextOptions {
-                presence: Presence::Null,
-                ..Default::default()
-            },
-        ),
+    for (wire_text, expected_text, options) in [
+        (None, None, TextOptions::default()),
+        (Some(Value::Null), None, TextOptions::default()),
         (
             Some(json!({})),
+            Some(json!({})),
             TextOptions {
-                presence: Presence::Value(()),
+                presence: Some(()),
                 ..Default::default()
             },
         ),
         (
             Some(json!({"format":null})),
+            Some(json!({})),
             TextOptions {
-                presence: Presence::Value(()),
-                format: Presence::Null,
+                presence: Some(()),
+                format: None,
                 verbosity: None,
             },
         ),
         (
             Some(json!({"format":{"type":"text"},"verbosity":"medium"})),
+            Some(json!({"format":{"type":"text"},"verbosity":"medium"})),
             TextOptions {
-                presence: Presence::Value(()),
-                format: Presence::Value(OutputConstraint::Text),
+                presence: Some(()),
+                format: Some(OutputConstraint::Text),
                 verbosity: Some(Verbosity::Medium),
             },
         ),
@@ -681,7 +647,7 @@ fn reported_text_container_presence_is_not_request_intent() {
         )
         .unwrap();
         let output = envelope::encode_response(&projected).unwrap();
-        assert_eq!(output.get("text"), wire_text.as_ref());
+        assert_eq!(output.get("text"), expected_text.as_ref());
         assert!(
             projected
                 .projection()
@@ -699,7 +665,7 @@ fn reported_text_container_presence_is_not_request_intent() {
             let frames = encoder.encode(&event, &fidelity).unwrap();
             assert!(!frames.is_empty());
             for frame in frames {
-                assert_eq!(frame["response"].get("text"), wire_text.as_ref());
+                assert_eq!(frame["response"].get("text"), expected_text.as_ref());
             }
         }
         encoder.finish().unwrap();
@@ -717,31 +683,12 @@ fn reported_text_container_presence_is_not_request_intent() {
             morphiecore::protocol::failure::ShapeReason::InvalidValue
         ))
     ));
-    let request = responses::decode_generation(&json!({"input":"go"}))
-        .unwrap()
-        .semantic;
-    let mut settings = request.settings().clone();
-    settings.text.presence = Presence::Null;
-    settings.validate().unwrap();
-    assert!(matches!(
-        request.with_settings(settings),
-        Err(GenerationError::InvalidControl)
-    ));
-    for presence in [Presence::Absent, Presence::Null] {
-        let mut settings = GenerationSettings::default();
-        settings.text.presence = presence;
-        settings.text.format = Presence::Null;
-        assert!(matches!(
-            settings.validate(),
-            Err(GenerationError::InvalidControl)
-        ));
-        settings.text.format = Presence::Absent;
-        settings.text.verbosity = Some(Verbosity::Low);
-        assert!(matches!(
-            settings.validate(),
-            Err(GenerationError::InvalidControl)
-        ));
-    }
+    let mut settings = GenerationSettings::default();
+    settings.text.format = Some(OutputConstraint::Text);
+    assert_eq!(settings.validate(), Err(GenerationError::InvalidControl));
+    settings.text.format = None;
+    settings.text.verbosity = Some(Verbosity::Low);
+    assert_eq!(settings.validate(), Err(GenerationError::InvalidControl));
 }
 
 #[test]
@@ -788,10 +735,11 @@ fn reasoning_mode_null_is_report_only_and_cannot_enter_a_typed_request() {
 
 #[test]
 fn null_empty_false_and_default_controls_are_deliberate_not_unknown_passthrough() {
-    let d=responses::decode_generation(&json!({"input":"","instructions":null,"reasoning":{"effort":null,"summary":null},"tools":[],"tool_choice":"none","parallel_tool_calls":false,"text":{"format":{"type":"text"},"verbosity":null}})).unwrap();
+    let d=responses::decode_generation(&json!({"input":"","instructions":null,"reasoning":{"effort":null,"summary":null,"context":null},"tools":[],"tool_choice":"none","parallel_tool_calls":false,"text":{"format":{"type":"text"},"verbosity":null}})).unwrap();
+    assert!(d.semantic.reasoning().context.is_absent());
     let out = request_wire(&d);
-    assert_eq!(out["instructions"], Value::Null);
-    assert_eq!(out["reasoning"], json!({"summary":null}));
+    assert!(out.get("instructions").is_none());
+    assert!(out.get("reasoning").is_none());
     assert_eq!(out["parallel_tool_calls"], false);
     assert_eq!(out["tools"], json!([]));
     for bad in [
@@ -874,6 +822,58 @@ fn response_round_trip(response: &Value) -> Value {
     .unwrap()
 }
 #[test]
+fn null_report_defaults_preserve_zero_counts_and_explicit_unavailability() {
+    use morphiecore::semantic::context::{CacheDiagnostics, CacheMissReason};
+    for (diagnostics, expected, output) in [
+        (Value::Null, None, None),
+        (
+            json!({"type":"unavailable"}),
+            Some(CacheDiagnostics::Unavailable),
+            Some(json!({"type":"unavailable"})),
+        ),
+        (
+            json!({"type":"cache_miss","reason":"tools_changed","cache_missed_tokens":0,
+            "comparison_reusable_tokens":null}),
+            Some(CacheDiagnostics::CacheMiss {
+                reason: CacheMissReason::ToolsChanged,
+                cache_missed_tokens: 0,
+                comparison_reusable_tokens: None,
+            }),
+            Some(json!({"type":"cache_miss","reason":"tools_changed","cache_missed_tokens":0})),
+        ),
+        (
+            json!({"type":"cache_miss","reason":"tools_changed","cache_missed_tokens":0,
+            "comparison_reusable_tokens":0}),
+            Some(CacheDiagnostics::CacheMiss {
+                reason: CacheMissReason::ToolsChanged,
+                cache_missed_tokens: 0,
+                comparison_reusable_tokens: Some(0),
+            }),
+            Some(
+                json!({"type":"cache_miss","reason":"tools_changed","cache_missed_tokens":0,
+                "comparison_reusable_tokens":0}),
+            ),
+        ),
+    ] {
+        let mut source = wire::response(2);
+        source["completed_at"] = Value::Null;
+        source["prompt_cache_diagnostics"] = diagnostics;
+        let decoded = envelope::decode_response(&source).unwrap();
+        assert!(decoded.metadata.context.completed_at.is_none());
+        assert_eq!(decoded.metadata.context.cache_diagnostics, expected);
+        let encoded = response_round_trip(&source);
+        assert!(encoded.get("completed_at").is_none());
+        assert_eq!(encoded.get("prompt_cache_diagnostics"), output.as_ref());
+    }
+    for count in [json!(-1), json!(0.5), json!("0")] {
+        let mut source = wire::response(2);
+        source["prompt_cache_diagnostics"] = json!({"type":"cache_miss",
+            "reason":"tools_changed","cache_missed_tokens":0,"comparison_reusable_tokens":count});
+        assert!(envelope::decode_response(&source).is_err());
+    }
+}
+
+#[test]
 fn reported_cache_context_is_an_independent_response_fact() {
     let mut response = wire::response(2);
     response["prompt_cache_options"] = json!({"ttl":"30m","future":true});
@@ -885,7 +885,7 @@ fn reported_cache_context_is_an_independent_response_fact() {
             .execution
             .cache
             .prompt_cache_options,
-        Presence::Value(morphiecore::semantic::context::CacheOptions {
+        Some(morphiecore::semantic::context::CacheOptions {
             ttl: Some(morphiecore::semantic::context::CacheTtl::ThirtyMinutes),
             ..Default::default()
         })
@@ -905,9 +905,20 @@ fn reported_cache_context_is_an_independent_response_fact() {
     request["prompt_cache_options"] = Value::Null;
     assert!(responses::envelope::decode_request(&request).is_err());
     response["prompt_cache_options"] = Value::Null;
-    assert_eq!(
-        response_round_trip(&response)["prompt_cache_options"],
-        Value::Null
+    assert!(
+        envelope::decode_response(&response)
+            .unwrap()
+            .metadata
+            .context
+            .execution
+            .cache
+            .prompt_cache_options
+            .is_none()
+    );
+    assert!(
+        response_round_trip(&response)
+            .get("prompt_cache_options")
+            .is_none()
     );
     response["prompt_cache_options"] = json!({"mode":"explicit","ttl":"30m","prewarm":true});
     response["prompt_cache_diagnostics"] = json!({"type":"cache_miss","reason":"input_changed","cache_missed_tokens":3,"comparison_reusable_tokens":2});
@@ -926,10 +937,7 @@ fn reported_cache_context_is_an_independent_response_fact() {
         responses_round_trip(&wire::request(false))["service_tier"],
         json!("auto")
     );
-    use morphiecore::semantic::{
-        context::{ServiceClass, ServicePolicy},
-        value::Presence,
-    };
+    use morphiecore::semantic::context::{ServiceClass, ServicePolicy};
     let mut requested = envelope::decode_request(&wire::request(false)).unwrap();
     assert_eq!(
         requested.context.service_policy,

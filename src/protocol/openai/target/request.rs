@@ -460,12 +460,12 @@ mod tests {
                 if e.rule() == "generation.omit-cache-retention.v1" && e.semantic_field() == crate::protocol::conversion::generation::Field::CacheRetention
         )));
         assert_eq!(extended, before);
-        extended.context.cache.prompt_cache_options = Presence::Value(Default::default());
+        extended.context.cache.prompt_cache_options = Some(Default::default());
         let output = target
             .encode_request(&extended, "selected-slug", &approved)
             .unwrap();
         assert!(output.get("prompt_cache_options").is_none());
-        extended.context.cache.prompt_cache_options = Presence::Absent;
+        extended.context.cache.prompt_cache_options = None;
         extended.context.cache.prompt_cache_retention =
             Some(crate::semantic::context::CacheRetention::InMemory);
         assert!(matches!(

@@ -39,7 +39,6 @@ This page owns current scope, priorities, dependencies, and exit gates. [Archite
   - [P7 boundary review](#p7-boundary-review)
   - [Controlled routing acceptance](#controlled-routing-acceptance)
 - [Pending decisions](#pending-decisions)
-  - [Client/IR stabilization decisions](#clientir-stabilization-decisions)
   - [Ownership and projection decisions](#ownership-and-projection-decisions)
   - [Scheduling and product decisions](#scheduling-and-product-decisions)
 - [Deferred work](#deferred-work)
@@ -58,13 +57,13 @@ This page owns current scope, priorities, dependencies, and exit gates. [Archite
 
 ## Current status
 
-**Current focus (2026-11-02):** Slices R0–R4 are complete. Active focus is **R5 (Cleanup and discovery)**: finish remaining null-contract migration, then installed-Agent default-profile acceptance. Stage 4 resumes after stabilization closure.
+**Current focus (2026-11-02):** Slices R0–R5 are complete. The remaining stabilization exit is installed-Agent default reasoning/tool/history acceptance across all three client protocols and selected cross-protocol lanes. Stage 4 resumes after that closure.
 
 | Area | State | Next step |
 |---|---|---|
 | Routing | Stable routing baseline frozen; controlled synthetic recovery verified across Router, SDK, and installed clients | Real-failover production evidence required for multi-credential routes |
-| Generation IR / Codec | R0–R4 complete; shared projection owners, qualified intake, history delegation/fallback/transfer | R5: remaining null-contract migration |
-| Client compatibility | Default native Messages loops pass with installed pi and OpenCode without overrides | Complete three-protocol and cross-protocol exit loops after R4–R5 |
+| Generation IR / Codec | R0–R5 complete; shared projections/discovery, qualified intake, history transfer and reviewed null contracts | Maintain these contracts through the installed-Agent exit |
+| Client compatibility | Default native Messages loops pass with installed pi and OpenCode without overrides | Complete three-protocol and cross-protocol exit loops |
 | Integration | R1a/R1b/R2 loops, controlled recovery and production closure passed | Revalidate changed paths against established gates |
 | Cross-protocol conversion | Stage 3 closed for selected projections; `count_tokens` deferred | Stage-4 Embedding paths active; Google API paused |
 | Decision APIs | Dual standard-SDK direction selected (TypeSafe/OpenAI) | Contract selection and Stage-4 implementation |
@@ -109,26 +108,15 @@ Captured pi 1.4.0 shapes run through the permanent [production-construction gate
 
 ### Conversion-ladder migration
 
-Each slice migrates rejection sites onto the conversion ladder through unified request and delivery owners ([Architecture](architecture.md#conversion-ladder)).
+R0–R5 migrated rejection sites onto shared request/delivery projections and compiled discovery. [Architecture](architecture.md#delivery-and-evidence-decisions) owns the completed contracts, including the identity probe and null review.
 
-#### Completed slices (R0–R4)
-
-| Slice | Completed | Key Deliverables & Verified Behavior |
-|---|---|---|
-| **R0 Intake & Reachability** | 2026-10-30 | Permanent construction gate; qualified non-Chat streaming intake with named Chat JSON exception; Go/Haiku metadata preservation. |
-| **R1 Request Disposition** | 2026-10-31 | Unified request disposition owner ([`lowering/disposition.rs`](../src/lowering/disposition.rs)); scalar `Option` migrations; conditional strictness; cache and report omissions. |
-| **R2 Delivery Projection** | 2026-11-01 | Single delivery projection owner ([`ClientAdapter`](../src/adapter/downstream.rs)); unified event stream projection across JSON and SSE views. |
-| **R3 Messages Intake** | 2026-11-02 | Version header admission; legacy sampling/block-binding omission; verified default native tool/history loops for installed pi and OpenCode. |
-| **R4 Unknown facts and history** | 2026-11-02 | Unassessed bindings delegate; Standard Chat required-history tools use the selected thinking-off fallback; target-local visible-history transfer preserves text/tool links and explicit history-read guards. Production-construction lanes cover TokenPlan, DeepSeek/Zhipu tools and two-turn Bailian Responses; replay trust remains independently checked. |
-
-#### Active and pending slices (R5 and exit)
+#### Remaining stabilization exit
 
 | Slice | Work | Exit gate |
 |---|---|---|
-| **R5 Cleanup and discovery** *(Active)* | Finish field-specific null-contract review and conversion of remaining Generation `Presence` controls. Strict-complete policy, obsolete marker handling, redundant delivery guards and input-text-form records are removed; stream intent/document context use `Option`; the [identity probe and shared discovery decision](architecture.md#delivery-and-evidence-decisions) are recorded. | Discovery publishes gate-observed facts; `Presence` remains only on contract-defined null fields. |
 | **Exit** | Current-client characterization, then default reasoning/tool/history gateway loops with installed pi and OpenCode across all three client protocols and selected cross-protocol lanes. | Gateway execution and replay pass within documented profiles. |
 
-Dependencies: R0–R4 are complete. R5 retains local representation identities after the probe; remaining null-contract review precedes the final current-client exit gate. Routing and credential redesign remain frozen.
+Dependencies: R0–R5 are complete. Local representation identities remain after the probe; [null-contract evidence](refs/2026-10-27-client-ir-boundaries.md#generation-null-contract-review-2026-11-02) distinguishes defaults from reported absence. The final current-client exit remains independent of offline regression and SDK gates. Routing and credential redesign remain frozen.
 
 ### Retained rejections
 
@@ -367,14 +355,6 @@ Controlled synthetic recovery is verified:
 Real cross-account failover requires distinct, advanceable production credentials and remains subject to production deployment gates.
 
 ## Pending decisions
-
-### Client/IR stabilization decisions
-
-The user accepted principles P1–P5 and selections S1–S11 on 2026-10-28, generalized S2 to semantic-equivalence compatibility, and on 2026-10-30 accepted the conversion ladder with its selected applications and the IR/codec simplifications. [Architecture](architecture.md#conversion-ladder) owns their content; this table maps scheduling ids to their remaining migration work. Request strictness, presentation and cache selections are implemented.
-
-| Id | Accepted rule | Owner | Slice |
-|---|---|---|---|
-| C | Remaining field-specific `Presence` migration; representation identity probe concluded | [Delivery and evidence decisions](architecture.md#delivery-and-evidence-decisions) | R5 |
 
 ### Ownership and projection decisions
 

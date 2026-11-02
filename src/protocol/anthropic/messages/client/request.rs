@@ -275,7 +275,7 @@ pub fn decode_client_request(bytes: &[u8]) -> Result<Request, CodecError> {
     let mut intake = Intake::new(scope);
     if let Some(mut system) = o.get("system").cloned() {
         blocks(&mut system, &mut ignored)?;
-        settings.instructions = Presence::Value(
+        settings.instructions = Some(
             crate::protocol::anthropic::messages::items::root_instructions(WireText::read(
                 &system,
             )?)?,
@@ -352,7 +352,7 @@ pub fn decode_client_request(bytes: &[u8]) -> Result<Request, CodecError> {
                     .filter(|n| *n >= 1024)
                     .ok_or(CodecError::invalid())?;
                 settings.reasoning = ReasoningRequest::present(None);
-                settings.reasoning.activation = Presence::Value(ReasoningActivation::Enabled);
+                settings.reasoning.activation = Some(ReasoningActivation::Enabled);
                 settings.reasoning.mode = Presence::Value(ReasoningMode::Budgeted);
                 settings.reasoning.budget_tokens = Some(budget);
                 if settings
@@ -368,7 +368,7 @@ pub fn decode_client_request(bytes: &[u8]) -> Result<Request, CodecError> {
                     return Err(CodecError::invalid());
                 }
                 settings.reasoning = ReasoningRequest::present(None);
-                settings.reasoning.activation = Presence::Value(ReasoningActivation::Enabled);
+                settings.reasoning.activation = Some(ReasoningActivation::Enabled);
                 settings.reasoning.mode = Presence::Value(ReasoningMode::Adaptive);
             }
             Some("disabled") => {
@@ -376,7 +376,7 @@ pub fn decode_client_request(bytes: &[u8]) -> Result<Request, CodecError> {
                     return Err(CodecError::invalid());
                 }
                 settings.reasoning = ReasoningRequest::present(None);
-                settings.reasoning.activation = Presence::Value(ReasoningActivation::Disabled);
+                settings.reasoning.activation = Some(ReasoningActivation::Disabled);
             }
             _ => {
                 return Err(CodecError::Unsupported(CarrierReason::Reasoning));
@@ -387,9 +387,6 @@ pub fn decode_client_request(bytes: &[u8]) -> Result<Request, CodecError> {
             "display",
             wire::request::Display::read,
         )?);
-        if settings.reasoning.presentation.visibility == Presence::Null {
-            return Err(CodecError::invalid());
-        }
     }
     if let Some(config) = o.get("output_config") {
         let mut config = config.clone();

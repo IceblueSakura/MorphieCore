@@ -253,7 +253,7 @@ mod native_bindings {
         let mut settings = request.task.semantic.settings().clone();
         settings.controls.max_output_tokens = None;
         settings.reasoning = ReasoningRequest::present(None);
-        settings.reasoning.activation = Presence::Value(ReasoningActivation::Enabled);
+        settings.reasoning.activation = Some(ReasoningActivation::Enabled);
         settings.reasoning.mode = Presence::Value(ReasoningMode::Budgeted);
         settings.reasoning.budget_tokens = Some(2048);
         request.task.semantic = request.task.semantic.with_settings(settings).unwrap();

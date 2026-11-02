@@ -27,7 +27,7 @@ fn typed(budget: Option<u64>) -> Request {
     settings.controls.max_output_tokens = Some(4096);
     if let Some(budget) = budget {
         settings.reasoning = ReasoningRequest::present(None);
-        settings.reasoning.activation = Presence::Value(ReasoningActivation::Enabled);
+        settings.reasoning.activation = Some(ReasoningActivation::Enabled);
         settings.reasoning.mode = Presence::Value(ReasoningMode::Budgeted);
         settings.reasoning.budget_tokens = Some(budget);
     }
@@ -60,57 +60,107 @@ fn typed(budget: Option<u64>) -> Request {
     .unwrap()
 }
 #[test]
+fn nullable_thinking_display_uses_the_model_default_without_hiding_reasoning() {
+    for thinking in [
+        json!({"type":"adaptive"}),
+        json!({"type":"enabled","budget_tokens":1024}),
+    ] {
+        for (display, expected) in [
+            (Value::Null, None),
+            (json!("summarized"), Some(ReasoningDisplay::Summary)),
+            (json!("omitted"), Some(ReasoningDisplay::Omitted)),
+        ] {
+            let mut body = json!({"model":"m","max_tokens":4096,
+                "messages":[{"role":"user","content":"go"}],"thinking":thinking});
+            body["thinking"]["display"] = display.clone();
+            let request =
+                anthropic::messages::client::decode_client_request(body.to_string().as_bytes())
+                    .unwrap();
+            assert_eq!(
+                request.task.semantic.reasoning().presentation.visibility,
+                expected
+            );
+            let native = Profile::AdaptiveTextTools
+                .decode_generation_request(body.to_string().as_bytes(), LocalScope::ROOT, &target())
+                .unwrap();
+            assert_eq!(
+                native.semantic.reasoning().presentation.visibility,
+                expected
+            );
+            let before = request.clone();
+            let output = caps().encode_request(&request, &target()).unwrap();
+            assert_eq!(
+                output.value["thinking"].get("display"),
+                (!display.is_null()).then_some(&display)
+            );
+            assert_eq!(request, before);
+        }
+    }
+    for display in [json!(7), json!(true), json!("unknown"), json!({})] {
+        let body = json!({"model":"m","max_tokens":4096,
+            "messages":[{"role":"user","content":"go"}],
+            "thinking":{"type":"adaptive","display":display}});
+        assert!(
+            anthropic::messages::client::decode_client_request(body.to_string().as_bytes())
+                .is_err()
+        );
+        assert!(
+            Profile::AdaptiveTextTools
+                .decode_generation_request(body.to_string().as_bytes(), LocalScope::ROOT, &target())
+                .is_err()
+        );
+    }
+}
+
+#[test]
 fn nullable_summary_preference_never_becomes_a_hidden_display_guarantee() {
     for budget in [None, Some(1024)] {
         for (visibility, summary, display) in [
-            (Presence::Absent, Presence::Absent, None),
+            (None, None, None),
+            (Some(ReasoningDisplay::Omitted), None, Some("omitted")),
             (
-                Presence::Value(ReasoningDisplay::Omitted),
-                Presence::Absent,
-                Some("omitted"),
-            ),
-            (
-                Presence::Value(ReasoningDisplay::Summary),
-                Presence::Value(ReasoningSummary::Auto),
+                Some(ReasoningDisplay::Summary),
+                Some(ReasoningSummary::Auto),
                 None,
             ),
-            (Presence::Absent, Presence::Null, None),
         ] {
             let mut request = typed(budget);
             let mut reasoning = request.task.semantic.reasoning().clone();
             reasoning.presence = ReasoningPresence::Present;
-            reasoning.activation = Presence::Value(ReasoningActivation::Enabled);
+            reasoning.activation = Some(ReasoningActivation::Enabled);
             reasoning.mode = Presence::Value(if budget.is_some() {
                 ReasoningMode::Budgeted
             } else {
                 ReasoningMode::Adaptive
             });
             reasoning.presentation.visibility = visibility;
-            reasoning.presentation.summary = summary.clone();
+            reasoning.presentation.summary = summary;
             request.task.semantic = request.task.semantic.with_reasoning(reasoning).unwrap();
             let before = request.clone();
-            let encoded = caps().encode_request(&request, &target());
-            if summary == Presence::Null {
-                assert!(encoded.is_err());
-                assert!(
-                    Profile::AdaptiveTextTools
-                        .encode_generation_request(
-                            &request.task.semantic,
-                            &request.task.fidelity,
-                            &target(),
-                        )
-                        .is_err()
-                );
-            } else {
-                let encoded = encoded.unwrap();
-                assert_eq!(
-                    encoded.value["thinking"].get("display"),
-                    display.map(|v| json!(v)).as_ref()
-                );
-            }
+            let encoded = caps().encode_request(&request, &target()).unwrap();
+            assert_eq!(
+                encoded.value["thinking"].get("display"),
+                display.map(|v| json!(v)).as_ref()
+            );
             assert_eq!(request, before);
         }
     }
+    let body =
+        json!({"model":"m","input":"go","max_output_tokens":4096,"reasoning":{"summary":null}});
+    let codec = morphiecore::protocol::openai::GenerationCodec::new(
+        morphiecore::protocol::openai::GenerationApi::Responses,
+        morphiecore::protocol::openai::Dialect::Standard,
+        None,
+    );
+    let request = codec
+        .decode_client_request(body.to_string().as_bytes())
+        .unwrap();
+    assert_eq!(
+        request.task.semantic.reasoning().presentation,
+        ReasoningPresentation::default()
+    );
+    let encoded = caps().encode_request(&request, &target()).unwrap();
+    assert!(encoded.value.get("thinking").is_none());
 }
 
 #[test]
@@ -124,7 +174,7 @@ fn configured_fallback_never_replaces_supported_native_allocation_or_visibility(
         scope: EffortScope::Response,
         level: EffortLevel::Medium,
     });
-    settings.reasoning.presentation.visibility = Presence::Value(ReasoningDisplay::Omitted);
+    settings.reasoning.presentation.visibility = Some(ReasoningDisplay::Omitted);
     request.task.semantic = request.task.semantic.with_settings(settings).unwrap();
     let before = request.clone();
     let mut configured = caps();
@@ -150,7 +200,7 @@ fn configured_fallback_never_replaces_supported_native_allocation_or_visibility(
     let mut settings = request.task.semantic.settings().clone();
     settings.reasoning.budget_tokens = None;
     settings.reasoning.mode = Presence::Absent;
-    settings.reasoning.activation = Presence::Value(ReasoningActivation::Disabled);
+    settings.reasoning.activation = Some(ReasoningActivation::Disabled);
     request.task.semantic = request.task.semantic.with_settings(settings).unwrap();
     configured.reasoning_policy.as_mut().unwrap().conversion =
         ReasoningConversion::PreserveDisabled;

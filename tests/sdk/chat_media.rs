@@ -60,7 +60,7 @@ async fn handle(State(context): State<Context>, headers: HeaderMap, body: Bytes)
         if follow && history[1].get("audio") != Some(&json!({"id":"synthetic-audio"})) {
             return Err(());
         }
-        let audio = request.task.semantic.settings().audio.value().is_some();
+        let audio = request.task.semantic.settings().audio.is_some();
         let stream = request.delivery.streaming();
         if follow || !audio || !stream {
             let message = match (follow, audio) {

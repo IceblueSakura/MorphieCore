@@ -63,7 +63,7 @@ fn requests_reject_unselected_controls_while_incidental_reports_project() {
         },
     };
     let mut settings = GenerationSettings {
-        instructions: Presence::Value(Text::new("hello", "test", 32).unwrap().into()),
+        instructions: Some(Text::new("hello", "test", 32).unwrap().into()),
         reasoning: ReasoningRequest::present(None),
         ..Default::default()
     };
@@ -139,7 +139,7 @@ fn requests_reject_unselected_controls_while_incidental_reports_project() {
     .unwrap();
     assert_eq!(scoped.effort.as_ref().unwrap().scope, EffortScope::Response);
     let mut disabled = scoped;
-    disabled.reasoning.activation = Presence::Value(ReasoningActivation::Disabled);
+    disabled.reasoning.activation = Some(ReasoningActivation::Disabled);
     let disabled = ReasoningRequestPolicy {
         canonical_model: "m".into(),
         rule: "synthetic.preserve-off.v1",
@@ -149,7 +149,7 @@ fn requests_reject_unselected_controls_while_incidental_reports_project() {
     .unwrap();
     assert!(disabled.effort.is_none());
     assert_eq!(
-        disabled.reasoning.activation.value(),
+        disabled.reasoning.activation.as_ref(),
         Some(&ReasoningActivation::Disabled)
     );
     let mut client = morphiecore::protocol::openai::GenerationCodec::new(
@@ -162,7 +162,7 @@ fn requests_reject_unselected_controls_while_incidental_reports_project() {
         .unwrap();
     let mut instruction = instruction;
     let mut settings = instruction.task.semantic.settings().clone();
-    settings.instructions = Presence::Value(Text::new("instructions", "test", 32).unwrap().into());
+    settings.instructions = Some(Text::new("instructions", "test", 32).unwrap().into());
     instruction.task.semantic = instruction.task.semantic.with_settings(settings).unwrap();
     assert_eq!(
         client
@@ -183,12 +183,12 @@ fn requests_reject_unselected_controls_while_incidental_reports_project() {
         let mut control = ReasoningRequest::present(None);
         match dimension {
             0 => control.budget_tokens = Some(1024),
-            1 => control.presentation.visibility = Presence::Value(ReasoningDisplay::Omitted),
-            2 => control.presentation.visibility = Presence::Value(ReasoningDisplay::Summary),
+            1 => control.presentation.visibility = Some(ReasoningDisplay::Omitted),
+            2 => control.presentation.visibility = Some(ReasoningDisplay::Summary),
             _ => control.mode = Presence::Value(ReasoningMode::Adaptive),
         }
         let settings = GenerationSettings {
-            instructions: Presence::Value(Text::new("hello", "test", 32).unwrap().into()),
+            instructions: Some(Text::new("hello", "test", 32).unwrap().into()),
             reasoning: control,
             effort: Some(EffortControl {
                 scope: EffortScope::Reasoning,
@@ -333,7 +333,7 @@ fn requests_reject_unselected_controls_while_incidental_reports_project() {
             if exact {
                 // The native auto label expresses unconstrained visible summary granularity.
                 expected.as_mut().unwrap().reasoning.presentation.summary =
-                    Presence::Value(ReasoningSummary::Auto);
+                    Some(ReasoningSummary::Auto);
             }
             assert_eq!(materialized.metadata.context.settings(), expected.as_ref());
             assert!(

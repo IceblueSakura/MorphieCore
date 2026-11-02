@@ -292,11 +292,7 @@ mod schema_admission {
             }
         );
         let mut settings = request.task.semantic.settings().clone();
-        let morphiecore::semantic::value::Presence::Value(OutputConstraint::JsonSchema {
-            schema,
-            ..
-        }) = &mut settings.text.format
-        else {
+        let Some(OutputConstraint::JsonSchema { schema, .. }) = &mut settings.text.format else {
             panic!("schema output")
         };
         schema.root_mut()["properties"]["overflow"] = json!({"type":["string","null"]});

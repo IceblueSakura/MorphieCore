@@ -79,7 +79,7 @@ pub(super) fn represent_reasoning(
     let structured_chat = adaptation.rules.structured_chat_reasoning;
     let controls = &settings.reasoning;
     let request = history.is_some();
-    if !controls.read_history.is_absent()
+    if !controls.read_history.is_none()
         && (profile != GenerationApi::Chat || !adaptation.rules.chat_preserve_thinking)
     {
         return Err(RepresentationError::Reasoning);
@@ -92,7 +92,7 @@ pub(super) fn represent_reasoning(
         return Err(RepresentationError::Reasoning);
     }
     if profile == GenerationApi::Responses
-        && controls.presentation.visibility.value() == Some(&ReasoningDisplay::Omitted)
+        && controls.presentation.visibility.as_ref() == Some(&ReasoningDisplay::Omitted)
     {
         return Err(RepresentationError::Reasoning);
     }
@@ -170,8 +170,8 @@ pub(super) fn represent_reasoning(
     }
     let chat_control = controls.presence() == ReasoningPresence::Present
         && (settings.effort.is_none()
-            && controls.activation.is_absent()
-            && controls.read_history.is_absent()
+            && controls.activation.is_none()
+            && controls.read_history.is_none()
             && !native_budget
             || !controls.presentation.is_absent());
     if has_reasoning_items

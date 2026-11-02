@@ -119,7 +119,7 @@ pub struct CacheOptions {
 pub struct CacheHints {
     pub prompt_cache_key: Option<String>,
     pub prompt_cache_retention: Option<CacheRetention>,
-    pub prompt_cache_options: Presence<CacheOptions>,
+    pub prompt_cache_options: Option<CacheOptions>,
 }
 /// Client identity and safety metadata are not cache keys or session identities.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -149,7 +149,7 @@ impl CacheHints {
         {
             return Err(ContextError::Limit);
         }
-        if let Some(options) = self.prompt_cache_options.value()
+        if let Some(options) = self.prompt_cache_options.as_ref()
             && options
                 .comparison_response_id
                 .as_ref()
@@ -168,6 +168,7 @@ impl CacheHints {
 pub struct ExecutionHints {
     pub cache: CacheHints,
     pub identity: ClientIdentityHints,
+    /// An explicit null/empty report suppresses request-metadata fallback.
     pub metadata: Presence<BTreeMap<String, String>>,
     pub max_tool_calls: Option<u64>,
     pub store: Option<bool>,
@@ -211,7 +212,7 @@ impl ExecutionHints {
             self.cache.prompt_cache_key.as_ref(),
             self.cache
                 .prompt_cache_options
-                .value()
+                .as_ref()
                 .and_then(|o| o.comparison_response_id.as_ref()),
             self.identity.safety_identifier.as_ref(),
             self.identity.user.as_ref(),
@@ -244,7 +245,7 @@ pub enum CacheDiagnostics {
     CacheMiss {
         reason: CacheMissReason,
         cache_missed_tokens: u64,
-        comparison_reusable_tokens: Presence<u64>,
+        comparison_reusable_tokens: Option<u64>,
     },
 }
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -273,8 +274,8 @@ pub struct ResponseContext {
         )>,
     >,
     pub execution: ExecutionHints,
-    pub completed_at: Presence<serde_json::Number>,
-    pub cache_diagnostics: Presence<CacheDiagnostics>,
+    pub completed_at: Option<serde_json::Number>,
+    pub cache_diagnostics: Option<CacheDiagnostics>,
     pub system_fingerprint: Option<String>,
 }
 impl ResponseContext {
@@ -299,7 +300,7 @@ impl ResponseContext {
             if self.reports.iter().any(|r| {
                 r.settings
                     .as_ref()
-                    .is_some_and(|s| !s.instructions.is_absent())
+                    .is_some_and(|s| !s.instructions.is_none())
             }) || items
                 .iter()
                 .any(|(_, item)| !matches!(item, Item::Instruction(_)))
@@ -312,7 +313,7 @@ impl ResponseContext {
         }
         if self
             .completed_at
-            .value()
+            .as_ref()
             .is_some_and(|n| !super::value::valid_timestamp(n))
         {
             return Err(ContextError::Invalid(ContextReason::CompletionTimestamp));

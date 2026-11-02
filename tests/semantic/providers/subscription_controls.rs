@@ -5,10 +5,7 @@ use morphiecore::{
         fidelity::FidelityRecords,
         openai::{Dialect, GenerationApi, GenerationCodec, TargetContract},
     },
-    semantic::{
-        task::generation::*,
-        value::{Presence, ReplayOrigin},
-    },
+    semantic::{task::generation::*, value::ReplayOrigin},
     topology::catalog::{API_KEY_BINDINGS, SUBSCRIPTION_BINDINGS},
 };
 use serde_json::{Value, json};
@@ -68,7 +65,7 @@ fn request(grouped: bool, stream: bool) -> Request {
             (ItemId::new(2), message(MessageRole::User, 2, "go")),
         ],
         GenerationSettings {
-            instructions: Presence::Value(text("policy").into()),
+            instructions: Some(text("policy").into()),
             tools: Some(tools(grouped)),
             parallel_tool_calls: Some(false),
             reasoning: ReasoningRequest::absent().with_encrypted_output(true),

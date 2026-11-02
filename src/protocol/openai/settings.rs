@@ -4,10 +4,7 @@ use crate::{
         failure::CarrierReason,
         openai::{CodecError, GenerationApi, function_tools, reasoning, shape::*},
     },
-    semantic::{
-        task::generation::*,
-        value::{Presence, Text},
-    },
+    semantic::{task::generation::*, value::Text},
 };
 use serde_json::{Map, Value, json};
 pub(super) const FIELDS: &[&str] = &[
@@ -67,7 +64,9 @@ pub(super) fn read(
         )
         .map(RootInstructions::from)
         .map_err(|_| CodecError::Limit)
-    })?;
+    })?
+    .value()
+    .cloned();
     let mut s = GenerationSettings {
         instructions,
         controls: controls(o, "max_output_tokens")?,
@@ -114,10 +113,14 @@ pub(super) fn read(
         if !reported && t.get("format").is_some_and(Value::is_null) {
             return Err(CodecError::invalid());
         }
-        s.text.format = read_presence(t, "format", |v| read_format(v, reported, direction))?;
+        s.text.format = read_presence(t, "format", |v| read_format(v, reported, direction))?
+            .value()
+            .cloned();
         s.text.verbosity = read_presence(t, "verbosity", verbosity)?.value().copied();
         Ok(())
-    })?;
+    })?
+    .value()
+    .copied();
     function_tools::read_settings(o, GenerationApi::Responses, &mut s, direction)?;
     s.validate()?;
     Ok(s)
@@ -222,15 +225,12 @@ pub(super) fn write(s: &GenerationSettings, o: &mut Map<String, Value>) -> Resul
     if s.controls.has_extended_controls() || s.automatic_prefix_cache.is_some() {
         return Err(CodecError::Unsupported(CarrierReason::Unavailable));
     }
-    let instructions = match &s.instructions {
-        Presence::Absent => Presence::Absent,
-        Presence::Null => Presence::Null,
-        Presence::Value(root) => Presence::Value(
-            root.plain_text()
-                .ok_or(CodecError::Unsupported(CarrierReason::Unavailable))?,
-        ),
-    };
-    put_presence(o, "instructions", &instructions, |t| json!(t.as_str()));
+    if let Some(root) = &s.instructions {
+        let text = root
+            .plain_text()
+            .ok_or(CodecError::Unsupported(CarrierReason::Unavailable))?;
+        o.insert("instructions".into(), json!(text.as_str()));
+    }
     write_control_values(&s.controls, o, "max_output_tokens");
     if let Some(v) = s.controls.top_p() {
         o.insert("top_p".into(), json!(v));
@@ -255,16 +255,11 @@ pub(super) fn write(s: &GenerationSettings, o: &mut Map<String, Value>) -> Resul
             .expect("typed include")
             .push(json!("message.output_text.logprobs"));
     }
-    if s.text.presence == Presence::Null {
-        o.insert("text".into(), Value::Null);
-    } else if s.text.presence.value().is_some() {
+    if s.text.presence.is_some() {
         let mut t = Map::new();
         match &s.text.format {
-            Presence::Absent => {}
-            Presence::Null => {
-                t.insert("format".into(), Value::Null);
-            }
-            Presence::Value(format) => {
+            None => {}
+            Some(format) => {
                 t.insert("format".into(), write_format(format)?);
             }
         }

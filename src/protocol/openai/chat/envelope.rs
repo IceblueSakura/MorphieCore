@@ -82,7 +82,7 @@ pub(crate) fn validate_context(context: &ExecutionHints) -> Result<(), CodecErro
     if context
         .cache
         .prompt_cache_options
-        .value()
+        .as_ref()
         .is_some_and(|options| {
             !options.comparison_response_id.is_none() || !options.prewarm.is_none()
         })
@@ -185,7 +185,7 @@ pub fn encode_request(
             .semantic
             .settings()
             .audio
-            .value()
+            .as_ref()
             .is_some_and(|a| a.format != crate::semantic::task::generation::AudioFormat::Pcm16)
     {
         return Err(CodecError::Unsupported(CarrierReason::Unavailable));

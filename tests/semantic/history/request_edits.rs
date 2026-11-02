@@ -1,16 +1,11 @@
 //! A01: validated edits must uphold the constructor's guarantee.
-use morphiecore::semantic::{
-    task::generation::*,
-    value::{Presence, Text},
-};
+use morphiecore::semantic::{task::generation::*, value::Text};
 
 fn request() -> GenerationRequest {
     GenerationRequest::from_settings(
         vec![],
         GenerationSettings {
-            instructions: Presence::Value(
-                Text::new("synthetic", "instruction", 64).unwrap().into(),
-            ),
+            instructions: Some(Text::new("synthetic", "instruction", 64).unwrap().into()),
             parallel_tool_calls: Some(false),
             ..Default::default()
         },
@@ -21,7 +16,7 @@ fn request() -> GenerationRequest {
 #[test]
 fn reasoning_edit_must_not_return_an_invalid_request() {
     let mut reasoning = ReasoningRequest::absent();
-    reasoning.activation = Presence::Value(ReasoningActivation::Disabled);
+    reasoning.activation = Some(ReasoningActivation::Disabled);
     let edited = request().with_reasoning(reasoning);
     assert_eq!(edited.unwrap_err(), GenerationError::InvalidControl);
 }

@@ -115,7 +115,7 @@ fn google_response_effort_is_a_selected_direction_not_native_support() {
         // A response-wide effort does not by itself insert thinking activation.
         let request = messages(json!({"model":binding.model,"max_tokens":2048,
             "output_config":{"effort":"low"},"messages":[{"role":"user","content":"go"}]}));
-        assert!(request.task.semantic.reasoning().activation.is_absent());
+        assert!(request.task.semantic.reasoning().activation.is_none());
         let before = request.clone();
         assert!(endpoint.encode_request(&request).is_ok());
         assert_eq!(request, before);
@@ -235,7 +235,7 @@ fn google_scope_mapping_approximates_levels_without_weakening_activation_or_hist
             let request = messages(body);
             let before = request.clone();
             assert!(morphiecore::execution::admit(&binding.public_model(), &request).is_ok());
-            if request.task.semantic.reasoning().activation.value()
+            if request.task.semantic.reasoning().activation.as_ref()
                 == Some(&ReasoningActivation::Enabled)
             {
                 let (wire, rules) = projected(&endpoint, &request);

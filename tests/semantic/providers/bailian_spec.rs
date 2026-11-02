@@ -64,10 +64,10 @@ fn native_chat_controls_have_independent_input_and_output_oracles_without_defaul
     controls.top_k = Some(40);
     controls = controls.with_temperature(0.6).unwrap();
     let mut reasoning = ReasoningRequest::present(None);
-    reasoning.activation = Presence::Value(ReasoningActivation::Enabled);
+    reasoning.activation = Some(ReasoningActivation::Enabled);
     reasoning.mode = Presence::Value(ReasoningMode::Budgeted);
     reasoning.budget_tokens = Some(32);
-    reasoning.read_history = Presence::Value(false);
+    reasoning.read_history = Some(false);
     let expected = request(GenerationSettings {
         controls,
         reasoning,
@@ -564,7 +564,7 @@ fn responses_history_keeps_summary_and_transfers_uncarried_readable_reasoning() 
     let mut explicit = input.clone();
     let mut settings = explicit.task.semantic.settings().clone();
     settings.reasoning.presence = ReasoningPresence::Present;
-    settings.reasoning.read_history = Presence::Value(true);
+    settings.reasoning.read_history = Some(true);
     explicit.task.semantic = explicit.task.semantic.with_settings(settings).unwrap();
     assert!(matches!(
         target.encode_request(&explicit),
@@ -610,7 +610,7 @@ fn responses_presentation_projects_without_changing_computation_or_source() {
     assert_eq!(default_text, before);
     let mut explicit = input.clone();
     let mut settings = explicit.task.semantic.settings().clone();
-    settings.reasoning.read_history = Presence::Value(true);
+    settings.reasoning.read_history = Some(true);
     explicit.task.semantic = explicit.task.semantic.with_settings(settings).unwrap();
     assert!(matches!(
         target.encode_request(&explicit),

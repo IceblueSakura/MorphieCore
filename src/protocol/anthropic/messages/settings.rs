@@ -4,15 +4,14 @@ use crate::semantic::{task::generation::*, value::Presence};
 /// Messages has one summarized display; the IR keeps the client's distinction.
 pub(in crate::protocol::anthropic::messages) fn display(
     value: &Presence<crate::protocol::anthropic::messages::Display>,
-) -> Presence<ReasoningDisplay> {
+) -> Option<ReasoningDisplay> {
     match value {
-        Presence::Absent => Presence::Absent,
-        Presence::Null => Presence::Null,
+        Presence::Absent | Presence::Null => None,
         Presence::Value(crate::protocol::anthropic::messages::Display::Summarized) => {
-            Presence::Value(ReasoningDisplay::Summary)
+            Some(ReasoningDisplay::Summary)
         }
         Presence::Value(crate::protocol::anthropic::messages::Display::Omitted) => {
-            Presence::Value(ReasoningDisplay::Omitted)
+            Some(ReasoningDisplay::Omitted)
         }
     }
 }
@@ -31,8 +30,8 @@ pub(in crate::protocol::anthropic::messages) fn output_settings(
     }
     if let Presence::Value(schema) = &config.format {
         // Messages output always conforms to the schema, as OpenAI strict output does.
-        settings.text.presence = Presence::Value(());
-        settings.text.format = Presence::Value(OutputConstraint::JsonSchema {
+        settings.text.presence = Some(());
+        settings.text.format = Some(OutputConstraint::JsonSchema {
             name: None,
             description: None,
             schema: schema.clone(),

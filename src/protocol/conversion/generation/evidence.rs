@@ -448,7 +448,7 @@ impl Owner {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ReasoningControls {
     pub configuration_efforts: Vec<EffortControl>,
-    pub activation: Presence<ReasoningActivation>,
+    pub activation: Option<ReasoningActivation>,
     pub effort: Option<EffortControl>,
     pub budget_tokens: Option<u64>,
     pub max_output_tokens: Option<u64>,
@@ -459,7 +459,7 @@ impl From<&GenerationSettings> for ReasoningControls {
     fn from(settings: &GenerationSettings) -> Self {
         Self {
             configuration_efforts: vec![],
-            activation: settings.reasoning.activation.clone(),
+            activation: settings.reasoning.activation,
             effort: settings.effort,
             budget_tokens: settings.reasoning.budget_tokens,
             max_output_tokens: settings.controls.max_output_tokens,
@@ -514,7 +514,7 @@ pub enum Effect {
     Summary {
         owner: Owner,
         rule: RuleId,
-        input: Presence<ReasoningSummary>,
+        input: Option<ReasoningSummary>,
         output: ReasoningDisplay,
     },
     Sampling {

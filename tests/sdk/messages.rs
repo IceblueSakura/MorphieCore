@@ -72,7 +72,7 @@ async fn handle(
             .task
             .semantic
             .instructions()
-            .value()
+            .as_ref()
             .unwrap()
             .plain_text()
             .unwrap()

@@ -75,13 +75,10 @@ impl GenerationRequest {
     /// Validated semantic storage charge, independent of any wire representation.
     pub(crate) fn retained_bytes(&self) -> Result<usize, GenerationError> {
         let settings = self.settings.validate()?;
-        if self.settings.text.presence == Presence::Null
-            || self.settings.text.format == Presence::Null
-            || self.settings.reasoning.mode == Presence::Null
-        {
+        if self.settings.reasoning.mode == Presence::Null {
             return Err(GenerationError::InvalidControl);
         }
-        let items = if self.items.is_empty() && self.settings.instructions.value().is_some() {
+        let items = if self.items.is_empty() && self.settings.instructions.as_ref().is_some() {
             0
         } else {
             crate::semantic::task::generation::validate::items(&self.items, false, &self.resources)?
@@ -170,7 +167,7 @@ impl GenerationRequest {
     pub fn text_options(&self) -> &TextOptions {
         &self.settings.text
     }
-    pub fn instructions(&self) -> &Presence<RootInstructions> {
+    pub fn instructions(&self) -> &Option<RootInstructions> {
         &self.settings.instructions
     }
     pub fn reasoning(&self) -> &ReasoningRequest {
@@ -203,8 +200,8 @@ impl GenerationRequest {
     }
     pub fn with_output(self, output: OutputConstraint) -> Result<Self, GenerationError> {
         let mut settings = self.settings().clone();
-        settings.text.presence = Presence::Value(());
-        settings.text.format = Presence::Value(output);
+        settings.text.presence = Some(());
+        settings.text.format = Some(output);
         self.with_settings(settings)
     }
     pub fn with_reasoning(self, reasoning: ReasoningRequest) -> Result<Self, GenerationError> {

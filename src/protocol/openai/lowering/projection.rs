@@ -100,10 +100,7 @@ pub(crate) fn reported_settings(
         ) {
             settings.reasoning.mode = Presence::Absent;
         }
-        if matches!(
-            settings.reasoning.presentation.visibility,
-            Presence::Null | Presence::Value(ReasoningDisplay::Omitted)
-        ) {
+        if settings.reasoning.presentation.visibility == Some(ReasoningDisplay::Omitted) {
             settings.reasoning.presentation = Default::default();
         }
         if settings
@@ -113,11 +110,10 @@ pub(crate) fn reported_settings(
         {
             settings.effort = None;
         }
-        if settings.reasoning.activation == Presence::Null
-            || settings.reasoning.activation == Presence::Value(ReasoningActivation::Enabled)
-                && settings.effort.as_ref().is_none()
+        if settings.reasoning.activation == Some(ReasoningActivation::Enabled)
+            && settings.effort.as_ref().is_none()
         {
-            settings.reasoning.activation = Presence::Absent;
+            settings.reasoning.activation = None;
         }
         settings.validate()?;
         changed |= before != *settings;

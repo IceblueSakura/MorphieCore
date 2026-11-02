@@ -275,7 +275,7 @@ impl ReasoningRequestPolicy {
                 };
                 if let Some(activation) = update.activation {
                     controls.reasoning.presence = ReasoningPresence::Present;
-                    controls.reasoning.activation = Presence::Value(activation);
+                    controls.reasoning.activation = Some(activation);
                 }
                 let projected = if exact(&controls) {
                     controls.clone()
@@ -356,7 +356,7 @@ impl ReasoningRequestPolicy {
                 }
             }
             ReasoningConversion::PreserveDisabled => {
-                if source.reasoning.activation == Presence::Value(ReasoningActivation::Disabled)
+                if source.reasoning.activation == Some(ReasoningActivation::Disabled)
                     && source
                         .effort
                         .as_ref()

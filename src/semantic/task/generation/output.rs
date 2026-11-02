@@ -1,5 +1,5 @@
 //! Text output contract; schema syntax is bounded data, not a gateway execution program.
-use crate::semantic::value::{Presence, Text};
+use crate::semantic::value::Text;
 #[derive(Clone, Debug, Eq, PartialEq, Default)]
 pub enum OutputConstraint {
     #[default]
@@ -21,8 +21,8 @@ pub enum Verbosity {
 }
 #[derive(Clone, Debug, Eq, PartialEq, Default)]
 pub struct TextOptions {
-    /// Container state; null is a reported observation, not request intent.
-    pub presence: Presence<()>,
-    pub format: Presence<OutputConstraint>,
+    /// An observed empty object remains distinct from an unreported container.
+    pub presence: Option<()>,
+    pub format: Option<OutputConstraint>,
     pub verbosity: Option<Verbosity>,
 }

@@ -85,7 +85,7 @@ impl GenerationRequest {
                 AutomaticPrefixCache,
                 r.settings().automatic_prefix_cache.is_some(),
             ),
-            (AudioOutput, r.settings().audio.value().is_some()),
+            (AudioOutput, r.settings().audio.as_ref().is_some()),
             (ToolChoice, r.tool_choice().is_some()),
             (ParallelTools, r.parallel_tool_calls() == Some(true)),
             (SerialTools, r.parallel_tool_calls() == Some(false)),
@@ -106,22 +106,19 @@ impl GenerationRequest {
                     OutputConstraint::JsonSchema { name: Some(_), .. }
                 ),
             ),
-            (ReasoningActivation, !r.reasoning().activation.is_absent()),
+            (ReasoningActivation, !r.reasoning().activation.is_none()),
             (ReasoningContext, !r.reasoning().context.is_absent()),
-            (
-                ReasoningHistoryRead,
-                !r.reasoning().read_history.is_absent(),
-            ),
+            (ReasoningHistoryRead, !r.reasoning().read_history.is_none()),
             (ReasoningMode, !r.reasoning().mode.is_absent()),
             (ReasoningBudget, r.reasoning().budget_tokens.is_some()),
             (ReplayMismatch, r.reasoning().replay_mismatch.is_some()),
             (
                 ReasoningDisplay,
-                !r.reasoning().presentation.visibility.is_absent(),
+                !r.reasoning().presentation.visibility.is_none(),
             ),
             (
                 ReasoningSummary,
-                !r.reasoning().presentation.summary.is_absent(),
+                !r.reasoning().presentation.summary.is_none(),
             ),
             (EncryptedReasoning, r.reasoning().encrypted_output()),
             (Effort, !r.settings().effort.is_none()),
@@ -136,7 +133,7 @@ impl GenerationRequest {
         ] {
             mark(&mut facts, feature, present);
         }
-        if let Some(instructions) = r.instructions().value() {
+        if let Some(instructions) = r.instructions().as_ref() {
             count(&mut facts, Instructions, 1);
             for part in &instructions.parts {
                 if let Some(boundary) = part.cache {

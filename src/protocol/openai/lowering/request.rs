@@ -75,7 +75,7 @@ pub(crate) fn render_request<'a>(
     }
     check_tool_selection(r.tool_choice())?;
     if profile != GenerationApi::Chat
-        && (!r.settings().audio.is_absent() || !r.settings().output_modalities.is_absent())
+        && (!r.settings().audio.is_none() || !r.settings().output_modalities.is_none())
     {
         return Err(RepresentationError::UnmigratedSemantic);
     }

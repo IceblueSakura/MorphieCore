@@ -297,7 +297,7 @@ pub(crate) fn validate_identity(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::semantic::{context::*, value::Presence};
+    use crate::semantic::context::*;
     use serde_json::json;
 
     #[test]
@@ -319,7 +319,7 @@ mod tests {
             hints.cache.prompt_cache_retention,
             Some(CacheRetention::Day)
         );
-        let options = hints.cache.prompt_cache_options.value().unwrap();
+        let options = hints.cache.prompt_cache_options.as_ref().unwrap();
         assert_eq!(options.mode, Some(CacheMode::Explicit));
         assert_eq!(options.ttl, Some(CacheTtl::ThirtyMinutes));
         assert_eq!(options.prewarm, Some(false));
@@ -347,7 +347,7 @@ mod tests {
         let hints = ExecutionHints {
             cache: CacheHints {
                 prompt_cache_retention: Some(CacheRetention::InMemory),
-                prompt_cache_options: Presence::Value(CacheOptions {
+                prompt_cache_options: Some(CacheOptions {
                     mode: Some(CacheMode::Implicit),
                     ttl: Some(CacheTtl::ThirtyMinutes),
                     ..Default::default()
@@ -374,12 +374,12 @@ mod tests {
         let report = CacheDiagnostics::CacheMiss {
             reason: CacheMissReason::ToolsChanged,
             cache_missed_tokens: 0,
-            comparison_reusable_tokens: Presence::Null,
+            comparison_reusable_tokens: None,
         };
         assert_eq!(
             serde_json::to_value(wire::CacheDiagnostics::from(&report)).unwrap(),
             json!({
-                "type":"cache_miss","reason":"tools_changed","cache_missed_tokens":0,"comparison_reusable_tokens":null
+                "type":"cache_miss","reason":"tools_changed","cache_missed_tokens":0
             })
         );
     }

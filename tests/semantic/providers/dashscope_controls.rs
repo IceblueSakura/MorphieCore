@@ -5,7 +5,7 @@ use morphiecore::{
         fidelity::FidelityRecords,
         openai::{Dialect, GenerationApi, GenerationCodec, TargetContract},
     },
-    semantic::{task::generation::*, value::Presence},
+    semantic::task::generation::*,
 };
 use serde_json::{Value, json};
 
@@ -34,10 +34,7 @@ fn native_history_reading_has_independent_input_and_output_oracles() {
         let public = GenerationCodec::new(GenerationApi::Chat, Dialect::MorphieCore, None)
             .decode_client_request(wire.to_string().as_bytes())
             .unwrap();
-        assert_eq!(
-            public.task.semantic.reasoning().read_history,
-            Presence::Value(enabled)
-        );
+        assert_eq!(public.task.semantic.reasoning().read_history, Some(enabled));
         let endpoint = morphiecore::topology::catalog::API_KEY_BINDINGS
             .iter()
             .find(|binding| binding.endpoint_prefix == "dashscope-flash")
@@ -47,10 +44,7 @@ fn native_history_reading_has_independent_input_and_output_oracles() {
         let (prepared, losses) = endpoint.encode_request_with_rules(&public).unwrap();
         assert_eq!(prepared["preserve_thinking"], enabled);
         assert!(losses.is_empty());
-        assert_eq!(
-            input.task.semantic.reasoning().read_history,
-            Presence::Value(enabled)
-        );
+        assert_eq!(input.task.semantic.reasoning().read_history, Some(enabled));
         assert!(
             matches!(&input.task.semantic.items()[0].1, Item::Reasoning(r)
                 if r.replay.is_none() && r.parts == vec![(PartId::new(1), ReasoningContent::Text(text("old thought")))])
@@ -59,7 +53,7 @@ fn native_history_reading_has_independent_input_and_output_oracles() {
             reasoning: ReasoningRequest::present(None),
             ..Default::default()
         };
-        settings.reasoning.read_history = Presence::Value(enabled);
+        settings.reasoning.read_history = Some(enabled);
         let semantic = GenerationRequest::from_settings(
             vec![
                 (

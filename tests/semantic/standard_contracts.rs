@@ -106,7 +106,6 @@ fn legacy_and_current_instruction_roles_have_one_ir_meaning_and_canonical_output
 
 #[test]
 fn messages_root_forms_share_request_scope_without_becoming_history() {
-    use morphiecore::semantic::value::Presence;
     let mut source = messages();
     source["system"] = json!("R");
     let string = decode_client_request(source.to_string().as_bytes()).unwrap();
@@ -126,7 +125,7 @@ fn messages_root_forms_share_request_scope_without_becoming_history() {
     );
     assert_eq!(
         block.task.semantic.instructions(),
-        &Presence::Value(RootInstructions::from(Text::new("R", "test", 32).unwrap()))
+        &Some(RootInstructions::from(Text::new("R", "test", 32).unwrap()))
     );
     for request in [&string, &block] {
         let chat = adapter(GenerationApi::Chat)
@@ -167,7 +166,7 @@ fn messages_root_forms_share_request_scope_without_becoming_history() {
             .task
             .semantic
             .instructions()
-            .value()
+            .as_ref()
             .unwrap()
             .parts
             .len(),
@@ -191,7 +190,7 @@ fn messages_root_forms_share_request_scope_without_becoming_history() {
     }
     let mut boundary = block.clone();
     let mut settings = boundary.task.semantic.settings().clone();
-    let Presence::Value(root) = &mut settings.instructions else {
+    let Some(root) = &mut settings.instructions else {
         unreachable!()
     };
     root.parts[0].cache = Some(PrefixCacheBoundary::RequestLifetime);
@@ -239,7 +238,10 @@ fn managed_continuation_replaces_root_but_retains_ordered_application_instructio
             let value = client
                 .encode_request(&combined, "m", &TargetContract::full())
                 .unwrap();
-            assert_eq!(value.get("instructions"), root.as_ref());
+            assert_eq!(
+                value.get("instructions"),
+                root.as_ref().filter(|value| !value.is_null())
+            );
             let instructions: Vec<_> = value["input"]
                 .as_array()
                 .unwrap()
@@ -271,9 +273,7 @@ fn managed_continuation_replaces_root_but_retains_ordered_application_instructio
     ] {
         assert!(
             GenerationSettings {
-                instructions: morphiecore::semantic::value::Presence::Value(RootInstructions {
-                    parts
-                }),
+                instructions: Some(RootInstructions { parts }),
                 ..Default::default()
             }
             .validate()
@@ -423,10 +423,7 @@ fn public_chat_profiles_keep_controls_and_returned_reasoning_explicit() {
     let decoded = readable
         .decode_client_request(body.to_string().as_bytes())
         .unwrap();
-    assert_eq!(
-        decoded.task.semantic.reasoning().read_history,
-        morphiecore::semantic::value::Presence::Value(false)
-    );
+    assert_eq!(decoded.task.semantic.reasoning().read_history, Some(false));
     body["messages"] = json!([
         {"role":"assistant","content":"answer","reasoning_content":"Plan 🧪"},
         {"role":"user","content":"next"}]);

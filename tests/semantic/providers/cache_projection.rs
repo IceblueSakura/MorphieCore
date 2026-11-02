@@ -7,7 +7,6 @@ use serde_json::{Value, json};
 #[test]
 fn retention_omission_is_target_local_and_preserves_explicit_storage_guarantees() {
     use morphiecore::semantic::context::{CacheMode, CacheOptions, CacheRetention};
-    use morphiecore::semantic::value::Presence;
     for profile in [GenerationApi::Chat, GenerationApi::Responses] {
         let mut body = request(profile);
         body["prompt_cache_retention"] = json!("24h");
@@ -43,7 +42,7 @@ fn retention_omission_is_target_local_and_preserves_explicit_storage_guarantees(
         );
         assert_eq!(protected, before);
         let mut explicit = source;
-        explicit.context.cache.prompt_cache_options = Presence::Value(CacheOptions {
+        explicit.context.cache.prompt_cache_options = Some(CacheOptions {
             mode: Some(CacheMode::Explicit),
             ..Default::default()
         });
@@ -89,13 +88,6 @@ fn scoped_session_and_standard_cache_key_remain_independent_on_both_wires() {
     assert!(
         client(GenerationApi::Chat)
             .decode_client_request(empty.to_string().as_bytes())
-            .is_err()
-    );
-    let mut invalid = decoded.clone();
-    invalid.context.cache.prompt_cache_options = morphiecore::semantic::value::Presence::Null;
-    assert!(
-        GenerationCodec::new(GenerationApi::Chat, Dialect::DeepSeek, None)
-            .encode_request(&invalid, "upstream", &Contract::full())
             .is_err()
     );
     let mut advisory = decoded.clone();

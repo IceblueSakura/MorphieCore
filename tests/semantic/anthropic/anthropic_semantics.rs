@@ -1,10 +1,7 @@
 //! Independent semantic mapping and append-only native continuation expectations.
 use morphiecore::{
     protocol::{DecodedRequest, anthropic::messages::Profile, native::ReplayTarget},
-    semantic::{
-        task::generation::*,
-        value::{Presence, Text},
-    },
+    semantic::{task::generation::*, value::Text},
 };
 use serde_json::{Value, json};
 
@@ -875,7 +872,7 @@ fn root_system_blocks_and_disabled_controls_have_independent_semantic_owners() {
         ])
     );
     assert_eq!(encoded.value["cache_control"], json!({"type":"ephemeral"}));
-    let instruction = content.semantic.instructions().value().unwrap();
+    let instruction = content.semantic.instructions().as_ref().unwrap();
     assert_eq!(content.semantic.items().len(), 1);
     assert!(
         (content.semantic)
@@ -897,7 +894,7 @@ fn root_system_blocks_and_disabled_controls_have_independent_semantic_owners() {
         ..Default::default()
     };
     settings.controls.max_output_tokens = Some(32);
-    settings.instructions = Presence::Value(RootInstructions {
+    settings.instructions = Some(RootInstructions {
         parts: vec![
             InstructionText {
                 text: text("stable"),
@@ -992,7 +989,7 @@ fn root_system_blocks_and_disabled_controls_have_independent_semantic_owners() {
         ]}]})
     );
     let mut settings = content.semantic.settings().clone();
-    let morphiecore::semantic::value::Presence::Value(root) = &mut settings.instructions else {
+    let Some(root) = &mut settings.instructions else {
         unreachable!()
     };
     root.parts[0].cache = None;
@@ -1313,7 +1310,7 @@ fn root_system_blocks_and_disabled_controls_have_independent_semantic_owners() {
         decoded
             .semantic
             .instructions()
-            .value()
+            .as_ref()
             .unwrap()
             .parts
             .iter()
@@ -1385,7 +1382,7 @@ fn root_system_blocks_and_disabled_controls_have_independent_semantic_owners() {
         morphiecore::protocol::anthropic::messages::client::decode_client_request(raw).unwrap();
     assert_eq!(
         client.task.semantic.reasoning().activation,
-        Presence::Value(ReasoningActivation::Disabled)
+        Some(ReasoningActivation::Disabled)
     );
     let invalid = std::str::from_utf8(raw)
         .unwrap()

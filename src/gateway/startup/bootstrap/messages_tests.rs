@@ -481,7 +481,7 @@ async fn configured_messages_cache_projects_each_candidate_without_mutating_owne
                 request.task.semantic.settings().automatic_prefix_cache,
                 None
             );
-            let system = request.task.semantic.instructions().value().unwrap();
+            let system = request.task.semantic.instructions().as_ref().unwrap();
             assert_eq!(
                 system.parts.iter().map(|p| p.cache).collect::<Vec<_>>(),
                 [

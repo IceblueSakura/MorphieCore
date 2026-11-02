@@ -128,7 +128,8 @@ impl GenerationRequestEnvelope {
         if omitted.is_empty() && foreign_parts.is_empty() && foreign_calls.is_empty() {
             return Ok(None);
         }
-        if !omitted.is_empty() && self.task.semantic.reasoning().read_history.value() == Some(&true)
+        if !omitted.is_empty()
+            && self.task.semantic.reasoning().read_history.as_ref() == Some(&true)
         {
             return Err(CodecError::Unsupported(CarrierReason::Reasoning));
         }

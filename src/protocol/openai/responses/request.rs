@@ -8,7 +8,7 @@ use crate::{
         settings,
         shape::*,
     },
-    semantic::{task::generation::*, value::Presence},
+    semantic::task::generation::*,
 };
 use serde_json::{Value, json};
 pub fn decode_generation(v: &Value) -> Result<DecodedRequest, CodecError> {
@@ -143,7 +143,7 @@ pub fn encode_generation(target: &RequestRepresentation<'_>) -> Result<Value, Co
         target.semantic.resources(),
     )?;
     let mut encoded_settings = target.semantic.settings().clone();
-    if let Some(root) = encoded_settings.instructions.value()
+    if let Some(root) = encoded_settings.instructions.as_ref()
         && root.plain_text().is_none()
     {
         input.insert(
@@ -153,7 +153,7 @@ pub fn encode_generation(target: &RequestRepresentation<'_>) -> Result<Value, Co
                 "content":settings::instruction_content(root, GenerationApi::Responses)?,
             }),
         );
-        encoded_settings.instructions = Presence::Absent;
+        encoded_settings.instructions = None;
     }
     for item in &mut input {
         if target.adaptation.rules.responses_typed_messages

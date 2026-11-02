@@ -1,8 +1,5 @@
 //! Explicit selection and current configuration, never a session or executor.
-use morphiecore::semantic::{
-    task::generation::*,
-    value::{Presence, Text},
-};
+use morphiecore::semantic::{task::generation::*, value::Text};
 fn text(value: &str) -> Text {
     Text::new(value, "synthetic", 256).unwrap()
 }
@@ -228,7 +225,7 @@ fn selection_budgets_and_settings_are_validated() {
 #[test]
 fn mixed_successor_separates_client_results_and_provider_progress() {
     let settings = GenerationSettings {
-        instructions: Presence::Value(text("original configuration").into()),
+        instructions: Some(text("original configuration").into()),
         ..Default::default()
     };
     let r1 = GenerationResponse::new(

@@ -322,10 +322,11 @@ async fn provider(
         }
     );
     if !chat && !owner_case && !nonstandard_usage && !missing_usage {
-        assert_eq!(
-            request["reasoning"],
-            json!({"summary": if turn == 1 { json!("auto") } else { Value::Null }})
-        );
+        if turn == 1 {
+            assert_eq!(request["reasoning"], json!({"summary":"auto"}));
+        } else {
+            assert!(request.get("reasoning").is_none());
+        }
         assert_eq!(request["tools"][0]["strict"], true);
         assert_eq!(
             request["tools"][0]["parameters"],

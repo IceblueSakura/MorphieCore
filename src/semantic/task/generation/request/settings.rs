@@ -1,6 +1,6 @@
 //! Generation settings shared by requests and reported response echoes.
 use crate::semantic::task::generation::*;
-use crate::semantic::value::{Presence, Text};
+use crate::semantic::value::Text;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Truncation {
     Auto,
@@ -132,7 +132,7 @@ impl RootInstructions {
 pub struct GenerationSettings {
     /// Request-wide plain-text instructions. They precede every ordered item,
     /// including ordered instruction items; history composition does not inherit them.
-    pub instructions: Presence<RootInstructions>,
+    pub instructions: Option<RootInstructions>,
     pub controls: GenerationControls,
     /// Ordered predicted output text: an optimization hint, never an output constraint.
     pub prediction: Option<Vec<Text>>,
@@ -144,13 +144,13 @@ pub struct GenerationSettings {
     pub text: TextOptions,
     pub reasoning: ReasoningRequest,
     pub effort: Option<EffortControl>,
-    pub output_modalities: Presence<Vec<crate::semantic::task::generation::OutputModality>>,
-    pub audio: Presence<crate::semantic::task::generation::AudioOutputOptions>,
+    pub output_modalities: Option<Vec<crate::semantic::task::generation::OutputModality>>,
+    pub audio: Option<crate::semantic::task::generation::AudioOutputOptions>,
     pub safety: Vec<SafetySetting>,
 }
 impl GenerationSettings {
     pub fn output(&self) -> &OutputConstraint {
-        self.text.format.value().unwrap_or(&OutputConstraint::Text)
+        self.text.format.as_ref().unwrap_or(&OutputConstraint::Text)
     }
     pub fn validate(&self) -> Result<usize, GenerationError> {
         if self.controls.max_output_tokens == Some(0)
@@ -187,13 +187,13 @@ impl GenerationSettings {
             return Err(GenerationError::InvalidControl);
         }
         // Absent/null containers cannot hide explicit values or null children.
-        if self.text.presence.value().is_none()
-            && (!self.text.format.is_absent() || !self.text.verbosity.is_none())
+        if self.text.presence.as_ref().is_none()
+            && (!self.text.format.is_none() || !self.text.verbosity.is_none())
         {
             return Err(GenerationError::InvalidControl);
         }
         self.reasoning.validate()?;
-        if (self.reasoning.activation.value() == Some(&ReasoningActivation::Disabled)
+        if (self.reasoning.activation.as_ref() == Some(&ReasoningActivation::Disabled)
             || self.reasoning.presence == ReasoningPresence::Null)
             && self
                 .effort
@@ -202,7 +202,7 @@ impl GenerationSettings {
         {
             return Err(GenerationError::InvalidControl);
         }
-        if let Some(modalities) = self.output_modalities.value()
+        if let Some(modalities) = self.output_modalities.as_ref()
             && (modalities.is_empty()
                 || modalities.len() > 2
                 || (modalities.len() == 2 && modalities[0] == modalities[1]))
@@ -211,17 +211,17 @@ impl GenerationSettings {
         }
         let audio = self
             .output_modalities
-            .value()
+            .as_ref()
             .is_some_and(|v| v.contains(&crate::semantic::task::generation::OutputModality::Audio));
-        if audio != self.audio.value().is_some() {
+        if audio != self.audio.as_ref().is_some() {
             return Err(GenerationError::InvalidControl);
         }
-        if let Some(options) = self.audio.value() {
+        if let Some(options) = self.audio.as_ref() {
             options.validate()?;
         }
         let instructions = self
             .instructions
-            .value()
+            .as_ref()
             .map_or(Ok(0), RootInstructions::validate)?;
         let mut prediction_bytes = 0usize;
         if let Some(parts) = &self.prediction {
@@ -245,11 +245,11 @@ impl GenerationSettings {
             + usize::from(self.automatic_prefix_cache.is_some()) * 32
             + self
                 .audio
-                .value()
+                .as_ref()
                 .map_or(0, |v| v.voice.as_str().len() + v.format.label().len())
             + self
                 .output_modalities
-                .value()
+                .as_ref()
                 .map_or(0, |v| v.iter().map(|m| m.label().len()).sum::<usize>())
             + crate::semantic::task::generation::validate::tools(
                 self.tools.as_deref().unwrap_or_default(),

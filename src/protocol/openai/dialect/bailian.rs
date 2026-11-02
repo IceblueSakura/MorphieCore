@@ -134,13 +134,13 @@ pub(in crate::protocol::openai) fn read_controls(
         } else {
             ReasoningActivation::Disabled
         };
-        if !settings.reasoning.activation.is_absent()
-            && settings.reasoning.activation != Presence::Value(activation)
+        if !settings.reasoning.activation.is_none()
+            && settings.reasoning.activation != Some(activation)
         {
             return Err(CodecError::invalid());
         }
         settings.reasoning.presence = ReasoningPresence::Present;
-        settings.reasoning.activation = Presence::Value(activation);
+        settings.reasoning.activation = Some(activation);
     }
     if let Some(value) = o.get("thinking_budget") {
         if profile != GenerationApi::Chat {
@@ -185,7 +185,7 @@ pub(in crate::protocol::openai) fn standard_reasoning(
     profile: GenerationApi,
 ) -> GenerationSettings {
     let mut standard = settings.clone();
-    standard.reasoning.activation = Presence::Absent;
+    standard.reasoning.activation = None;
     if profile == GenerationApi::Chat {
         standard.reasoning.budget_tokens = None;
         if standard.reasoning.mode == Presence::Value(ReasoningMode::Budgeted) {
@@ -210,10 +210,7 @@ pub(in crate::protocol::openai) fn write_reasoning(
     o: &mut Map<String, Value>,
     profile: GenerationApi,
 ) -> Result<(), CodecError> {
-    if settings.reasoning.activation == Presence::Null {
-        return Err(CodecError::Unsupported(CarrierReason::Reasoning));
-    }
-    if let Some(activation) = settings.reasoning.activation.value() {
+    if let Some(activation) = settings.reasoning.activation.as_ref() {
         o.insert(
             "enable_thinking".into(),
             json!(*activation == ReasoningActivation::Enabled),
@@ -362,7 +359,7 @@ pub(in crate::protocol::openai) fn check_semantic(
     }
     let qwen = matches!(model, "qwen3.8-flash" | "qwen3.8-max");
     let glm = matches!(model, "glm-5.3" | "glm-5.3-prime");
-    let disabled = r.activation.value() == Some(&ReasoningActivation::Disabled);
+    let disabled = r.activation.as_ref() == Some(&ReasoningActivation::Disabled);
     if qwen && !disabled && c.temperature().is_some_and(|v| v < 0.6) {
         return Err(CodecError::Unsupported(CarrierReason::Unavailable));
     }
@@ -383,7 +380,7 @@ pub(in crate::protocol::openai) fn check_semantic(
     if (qwen || glm || model == "kimi-k3") && c.logprobs == Some(true) {
         return Err(CodecError::Unsupported(CarrierReason::Unavailable));
     }
-    if r.activation == Presence::Null || r.presence == ReasoningPresence::Null {
+    if r.presence == ReasoningPresence::Null {
         return Err(CodecError::Unsupported(CarrierReason::Reasoning));
     }
     if r.replay_mismatch.is_some()
@@ -433,11 +430,11 @@ pub(in crate::protocol::openai) fn check_semantic(
     } else {
         if c.has_extended_controls()
             || c.truncation.is_some()
-            || !s.text.presence.is_absent()
+            || !s.text.presence.is_none()
             || s.parallel_tool_calls.is_some()
             || r.encrypted_output()
             || r.budget_tokens.is_some()
-            || !r.read_history.is_absent()
+            || !r.read_history.is_none()
         {
             return Err(CodecError::Unsupported(CarrierReason::Unavailable));
         }

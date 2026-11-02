@@ -15,7 +15,7 @@ use crate::{
             shape::*,
         },
     },
-    semantic::{task::generation::*, value::Presence},
+    semantic::task::generation::*,
 };
 use serde_json::{Map, Value, json};
 pub(in crate::protocol::openai) const FIELDS: &[&str] = &[
@@ -154,19 +154,19 @@ pub(crate) fn decode_generation_with(
     if o.get("response_format").is_some_and(Value::is_null) {
         return Err(CodecError::invalid());
     }
-    let format = read_presence(o, "response_format", |v| read_response_format(v, direction))?;
-    let verbosity = read_presence(o, "verbosity", crate::protocol::openai::settings::verbosity)?;
+    let format = read_presence(o, "response_format", |v| read_response_format(v, direction))?
+        .value()
+        .cloned();
+    let verbosity = read_presence(o, "verbosity", crate::protocol::openai::settings::verbosity)?
+        .value()
+        .copied();
     let mut settings = GenerationSettings {
         controls,
         prediction,
         text: TextOptions {
-            presence: if format.is_absent() && verbosity.is_absent() {
-                Presence::Absent
-            } else {
-                Presence::Value(())
-            },
+            presence: (format.is_some() || verbosity.is_some()).then_some(()),
             format,
-            verbosity: verbosity.value().copied(),
+            verbosity,
         },
         ..Default::default()
     };
@@ -174,8 +174,7 @@ pub(crate) fn decode_generation_with(
     if let Some(value) = o.get("preserve_thinking") {
         if adaptation.rules.chat_preserve_thinking {
             settings.reasoning.presence = ReasoningPresence::Present;
-            settings.reasoning.read_history =
-                Presence::Value(value.as_bool().ok_or(CodecError::invalid())?);
+            settings.reasoning.read_history = Some(value.as_bool().ok_or(CodecError::invalid())?);
         } else if direction.client() {
             direction.fields(
                 &Map::from_iter([("preserve_thinking".into(), value.clone())]),
@@ -303,7 +302,7 @@ pub fn encode_generation(target: &RequestRepresentation<'_>) -> Result<Value, Co
     } else {
         "developer"
     };
-    if let Some(root) = target.semantic.instructions().value() {
+    if let Some(root) = target.semantic.instructions().as_ref() {
         messages.insert(0, json!({
             "role":role,
             "content":crate::protocol::openai::settings::instruction_content(root, GenerationApi::Chat)?,
@@ -404,11 +403,8 @@ pub fn encode_generation(target: &RequestRepresentation<'_>) -> Result<Value, Co
         );
     }
     match &target.semantic.text_options().format {
-        crate::semantic::value::Presence::Absent => {}
-        crate::semantic::value::Presence::Null => {
-            return Err(CodecError::invalid());
-        }
-        crate::semantic::value::Presence::Value(format) => {
+        None => {}
+        Some(format) => {
             o.insert("response_format".into(), write_response_format(format)?);
         }
     }
@@ -423,17 +419,12 @@ pub fn encode_generation(target: &RequestRepresentation<'_>) -> Result<Value, Co
         function_tools::encode(&target.semantic, GenerationApi::Chat, o)?;
     }
     let mut settings = target.semantic.settings().clone();
-    if !settings.reasoning.read_history.is_absent() {
+    if let Some(read_history) = settings.reasoning.read_history {
         if !target.adaptation.rules.chat_preserve_thinking {
             return Err(CodecError::Unsupported(CarrierReason::Reasoning));
         }
-        put_presence(
-            o,
-            "preserve_thinking",
-            &settings.reasoning.read_history,
-            |v| json!(v),
-        );
-        settings.reasoning.read_history = Presence::Absent;
+        o.insert("preserve_thinking".into(), json!(read_history));
+        settings.reasoning.read_history = None;
     }
     if target.adaptation.rules.thinking_controls {
         crate::protocol::openai::dialect::bailian::write_reasoning(

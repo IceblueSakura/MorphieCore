@@ -47,6 +47,37 @@ fn chat_storage_and_audio_history_keep_request_meaning() {
 }
 
 #[test]
+fn chat_nullable_audio_defaults_do_not_satisfy_an_audio_output_request() {
+    let codec = adapter(GenerationApi::Chat);
+    let body = json!({"model":"m","messages":[{"role":"user","content":"go"}],
+        "modalities":null,"audio":null,"verbosity":null,"reasoning_effort":null});
+    let request = codec
+        .decode_client_request(body.to_string().as_bytes())
+        .unwrap();
+    assert!(request.task.semantic.settings().output_modalities.is_none());
+    assert!(request.task.semantic.settings().audio.is_none());
+    assert!(request.task.semantic.settings().text.presence.is_none());
+    assert_eq!(
+        request.task.semantic.reasoning().presence,
+        ReasoningPresence::Absent
+    );
+    let output = codec
+        .encode_request(&request, "m", &TargetContract::full())
+        .unwrap();
+    assert!(output.get("modalities").is_none());
+    assert!(output.get("audio").is_none());
+    for modalities in [json!(["audio"]), json!(["text", "audio"])] {
+        let mut invalid = body.clone();
+        invalid["modalities"] = modalities;
+        assert!(
+            codec
+                .decode_client_request(invalid.to_string().as_bytes())
+                .is_err()
+        );
+    }
+}
+
+#[test]
 fn chat_null_logit_bias_is_the_documented_default_not_active_bias() {
     let chat = adapter(GenerationApi::Chat);
     let body = json!({"model":"m","messages":[{"role":"user","content":"x"}]});
@@ -472,7 +503,7 @@ fn messages_keep_common_turn_identities_and_target_local_manual_thinking_history
     let mut request = decode_client_request(body.to_string().as_bytes()).unwrap();
     let mut settings = request.task.semantic.settings().clone();
     settings.reasoning = ReasoningRequest::present(None);
-    settings.reasoning.activation = Presence::Value(ReasoningActivation::Enabled);
+    settings.reasoning.activation = Some(ReasoningActivation::Enabled);
     settings.reasoning.mode = Presence::Value(ReasoningMode::Budgeted);
     settings.reasoning.budget_tokens = Some(1024);
     request.task.semantic = request.task.semantic.with_settings(settings).unwrap();

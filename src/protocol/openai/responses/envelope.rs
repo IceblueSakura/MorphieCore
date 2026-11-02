@@ -234,14 +234,18 @@ impl ResponseContext {
             ),
             instruction_messages,
             execution: ExecutionHints::read(&execution, GenerationApi::Responses, direction)?,
-            completed_at: read_presence(o, "completed_at", timestamp)?,
+            completed_at: read_presence(o, "completed_at", timestamp)?
+                .value()
+                .cloned(),
             cache_diagnostics: read_presence(o, "prompt_cache_diagnostics", |v| {
                 serde_json::from_value::<crate::protocol::openai::context::wire::CacheDiagnostics>(
                     v.clone(),
                 )
                 .map(|value| (&value).into())
                 .map_err(|_| CodecError::invalid())
-            })?,
+            })?
+            .value()
+            .cloned(),
             // Responses wire has no `system_fingerprint` position; the field is
             // Chat-only and rejected on Responses bodies by `response_fields`.
             system_fingerprint: None,
@@ -272,17 +276,15 @@ impl ResponseContext {
                 )?),
             );
         }
-        if completed {
-            put_presence(o, "completed_at", &self.completed_at, |v| {
-                Value::Number(v.clone())
-            });
+        if completed && let Some(timestamp) = &self.completed_at {
+            o.insert("completed_at".into(), Value::Number(timestamp.clone()));
         }
-        put_presence(
-            o,
-            "prompt_cache_diagnostics",
-            &self.cache_diagnostics,
-            |v| json!(crate::protocol::openai::context::wire::CacheDiagnostics::from(v)),
-        );
+        if let Some(diagnostics) = &self.cache_diagnostics {
+            o.insert(
+                "prompt_cache_diagnostics".into(),
+                json!(crate::protocol::openai::context::wire::CacheDiagnostics::from(diagnostics)),
+            );
+        }
         Ok(())
     }
 }

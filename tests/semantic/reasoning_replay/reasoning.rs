@@ -20,18 +20,16 @@ fn reasoning(status: &str) -> Value {
 #[test]
 fn typed_disabled_summary_is_valid_semantics_without_a_responses_carrier() {
     let mut reasoning = ReasoningRequest::present(None);
-    reasoning.presentation.visibility =
-        morphiecore::semantic::value::Presence::Value(ReasoningDisplay::Omitted);
-    reasoning.activation =
-        morphiecore::semantic::value::Presence::Value(ReasoningActivation::Disabled);
+    reasoning.presentation.visibility = Some(ReasoningDisplay::Omitted);
+    reasoning.activation = Some(ReasoningActivation::Disabled);
     let settings = GenerationSettings {
-        instructions: morphiecore::semantic::value::Presence::Value(text("hello").into()),
+        instructions: Some(text("hello").into()),
         reasoning,
         ..Default::default()
     };
     let request = GenerationRequest::from_settings(vec![], settings.clone()).unwrap();
     assert_eq!(
-        request.reasoning().presentation.visibility.value(),
+        request.reasoning().presentation.visibility.as_ref(),
         Some(&ReasoningDisplay::Omitted)
     );
     let fidelity = FidelityRecords::default();
@@ -86,20 +84,16 @@ fn typed_disabled_summary_is_valid_semantics_without_a_responses_carrier() {
 
 #[test]
 fn standard_summary_presence_and_deprecated_alias_have_independent_wire_expectations() {
-    use morphiecore::semantic::value::Presence;
     for (summary, wire) in [
-        (Presence::Absent, json!({})),
-        (Presence::Null, json!({"summary":null})),
+        (None, json!({})),
+        (None, json!({"summary":null})),
+        (Some(ReasoningSummary::Auto), json!({"summary":"auto"})),
         (
-            Presence::Value(ReasoningSummary::Auto),
-            json!({"summary":"auto"}),
-        ),
-        (
-            Presence::Value(ReasoningSummary::Concise),
+            Some(ReasoningSummary::Concise),
             json!({"summary":"concise"}),
         ),
         (
-            Presence::Value(ReasoningSummary::Detailed),
+            Some(ReasoningSummary::Detailed),
             json!({"summary":"detailed"}),
         ),
     ] {
@@ -107,14 +101,12 @@ fn standard_summary_presence_and_deprecated_alias_have_independent_wire_expectat
             responses::decode_generation(&json!({"input":"hello","reasoning":wire})).unwrap();
         assert_eq!(decoded.semantic.reasoning().presentation.summary, summary);
         let mut reasoning = ReasoningRequest::present(None);
-        reasoning.presentation.visibility = summary.value().map_or(Presence::Absent, |_| {
-            Presence::Value(ReasoningDisplay::Summary)
-        });
+        reasoning.presentation.visibility = summary.map(|_| ReasoningDisplay::Summary);
         reasoning.presentation.summary = summary;
         let request = GenerationRequest::from_settings(
             vec![],
             GenerationSettings {
-                instructions: Presence::Value(text("hello").into()),
+                instructions: Some(text("hello").into()),
                 reasoning,
                 ..Default::default()
             },
@@ -129,8 +121,10 @@ fn standard_summary_presence_and_deprecated_alias_have_independent_wire_expectat
         )
         .unwrap();
         assert_eq!(
-            responses::encode_generation(&target).unwrap()["reasoning"],
-            if wire == json!({}) { Value::Null } else { wire }
+            responses::encode_generation(&target)
+                .unwrap()
+                .get("reasoning"),
+            summary.map(|_| wire).as_ref()
         );
     }
     for value in [
@@ -151,7 +145,11 @@ fn standard_summary_presence_and_deprecated_alias_have_independent_wire_expectat
         )
         .unwrap();
         let wire = responses::encode_generation(&target).unwrap();
-        assert_eq!(wire["reasoning"], json!({"summary":value}));
+        if value.is_null() {
+            assert!(wire.get("reasoning").is_none());
+        } else {
+            assert_eq!(wire["reasoning"], json!({"summary":value}));
+        }
     }
     assert!(
         responses::decode_generation(&json!({

@@ -3,14 +3,6 @@ use crate::semantic::{context as semantic, value::Presence};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-fn map_presence<'a, T, U>(value: &'a Presence<T>, map: impl FnOnce(&'a T) -> U) -> Presence<U> {
-    match value {
-        Presence::Absent => Presence::Absent,
-        Presence::Null => Presence::Null,
-        Presence::Value(value) => Presence::Value(map(value)),
-    }
-}
-
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum CacheRetention {
@@ -52,8 +44,8 @@ pub struct CacheHints {
     pub prompt_cache_key: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub prompt_cache_retention: Option<CacheRetention>,
-    #[serde(default, skip_serializing_if = "Presence::is_absent")]
-    pub prompt_cache_options: Presence<CacheOptions>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prompt_cache_options: Option<CacheOptions>,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
@@ -90,8 +82,8 @@ pub enum CacheDiagnostics {
     CacheMiss {
         reason: CacheMissReason,
         cache_missed_tokens: u64,
-        #[serde(default, skip_serializing_if = "Presence::is_absent")]
-        comparison_reusable_tokens: Presence<u64>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        comparison_reusable_tokens: Option<u64>,
     },
 }
 
@@ -167,7 +159,7 @@ impl From<&semantic::CacheHints> for CacheHints {
         Self {
             prompt_cache_key: value.prompt_cache_key.clone(),
             prompt_cache_retention: value.prompt_cache_retention.as_ref().map(Into::into),
-            prompt_cache_options: map_presence(&value.prompt_cache_options, Into::into),
+            prompt_cache_options: value.prompt_cache_options.as_ref().map(Into::into),
         }
     }
 }
@@ -209,7 +201,7 @@ impl From<&semantic::CacheDiagnostics> for CacheDiagnostics {
             } => Self::CacheMiss {
                 reason: reason.into(),
                 cache_missed_tokens: *cache_missed_tokens,
-                comparison_reusable_tokens: comparison_reusable_tokens.clone(),
+                comparison_reusable_tokens: *comparison_reusable_tokens,
             },
         }
     }
@@ -273,7 +265,7 @@ impl From<&CacheHints> for semantic::CacheHints {
         Self {
             prompt_cache_key: value.prompt_cache_key.clone(),
             prompt_cache_retention: value.prompt_cache_retention.as_ref().map(Into::into),
-            prompt_cache_options: map_presence(&value.prompt_cache_options, Into::into),
+            prompt_cache_options: value.prompt_cache_options.as_ref().map(Into::into),
         }
     }
 }
@@ -313,7 +305,7 @@ impl From<&CacheDiagnostics> for semantic::CacheDiagnostics {
             } => Self::CacheMiss {
                 reason: reason.into(),
                 cache_missed_tokens: *cache_missed_tokens,
-                comparison_reusable_tokens: comparison_reusable_tokens.clone(),
+                comparison_reusable_tokens: *comparison_reusable_tokens,
             },
         }
     }

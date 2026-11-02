@@ -33,12 +33,12 @@ pub(crate) fn chat_history_fallback<'a>(
     if contract.reasoning_history
         != Some(crate::protocol::reasoning::ReasoningHistory::RequiredWithTools)
         || source.task.semantic.tools().is_empty()
-        || source.task.semantic.reasoning().activation.value()
+        || source.task.semantic.reasoning().activation.as_ref()
             == Some(&ReasoningActivation::Disabled)
     {
         return Ok(output);
     }
-    if source.task.semantic.reasoning().read_history.value() == Some(&true)
+    if source.task.semantic.reasoning().read_history.as_ref() == Some(&true)
         || contract.adaptation.rules.reject_disabled_reasoning
         || !contract.adaptation.rules.thinking_controls
             && !contract.dispositions.native(Feature::Reasoning)
@@ -49,7 +49,7 @@ pub(crate) fn chat_history_fallback<'a>(
     let mut settings = source.task.semantic.settings().clone();
     settings.effort = None;
     settings.reasoning = ReasoningRequest::present(None);
-    settings.reasoning.activation = Presence::Value(ReasoningActivation::Disabled);
+    settings.reasoning.activation = Some(ReasoningActivation::Disabled);
     output.value.to_mut().task.semantic = source
         .task
         .semantic
@@ -243,7 +243,7 @@ impl<'a> Target<'a> {
                     table.set(ReasoningActivation, Disposition::Native);
                 }
                 if self.has_effort()
-                    && source.reasoning().activation.value()
+                    && source.reasoning().activation.as_ref()
                         == Some(&crate::semantic::task::generation::ReasoningActivation::Disabled)
                 {
                     table.set(ReasoningActivation, Disposition::Native);
@@ -308,7 +308,7 @@ impl<'a> Target<'a> {
                 }
                 if rules.bailian_requests {
                     if matches!(model, "glm-5.3" | "glm-5.3-prime")
-                        && source.reasoning().activation.value()
+                        && source.reasoning().activation.as_ref()
                             == Some(
                                 &crate::semantic::task::generation::ReasoningActivation::Disabled,
                             )
@@ -320,7 +320,7 @@ impl<'a> Target<'a> {
                     }
                     if api == GenerationApi::Responses && controls.max_output_tokens.is_some_and(|n|
                         n < 16 || !model.is_empty() && !matches!(model, "qwen3.8-flash" | "qwen3.8-max")
-                            && source.reasoning().activation.value() != Some(&crate::semantic::task::generation::ReasoningActivation::Disabled)
+                            && source.reasoning().activation.as_ref() != Some(&crate::semantic::task::generation::ReasoningActivation::Disabled)
                     ) { omit(&mut table, MaxOutputTokens); }
                     for feature in [Metadata, ServicePolicy, Verbosity] {
                         omit(&mut table, feature);
@@ -328,7 +328,7 @@ impl<'a> Target<'a> {
                     if controls.temperature().is_some_and(|v| {
                         !(0.0..2.0).contains(&v)
                             || matches!(model, "qwen3.8-flash" | "qwen3.8-max")
-                                && source.reasoning().activation.value()
+                                && source.reasoning().activation.as_ref()
                                     != Some(&crate::semantic::task::generation::ReasoningActivation::Disabled)
                                 && v < 0.6
                     }) {
@@ -612,7 +612,7 @@ impl<'a> Target<'a> {
             }
             if !contract.adaptation.rules.thinking_controls
                 && !contract.adaptation.rules.bailian_requests
-                && source.reasoning().activation.value()
+                && source.reasoning().activation.as_ref()
                     == Some(&crate::semantic::task::generation::ReasoningActivation::Enabled)
                 && (!self.has_effort()
                     || source.settings().effort.is_none()
@@ -639,7 +639,7 @@ impl<'a> Target<'a> {
         }
         if (matches!(self, Target::OpenAi(_, contract) if contract.adaptation.rules.reject_disabled_reasoning)
             || matches!(self, Target::GenerateContent(_) | Target::Interactions(_)))
-            && (source.reasoning().activation.value() == Some(&crate::semantic::task::generation::ReasoningActivation::Disabled)
+            && (source.reasoning().activation.as_ref() == Some(&crate::semantic::task::generation::ReasoningActivation::Disabled)
                 || source.items().iter().any(|(_, item)| matches!(item, Item::ConfigurationUpdate(update)
                     if update.activation == Some(crate::semantic::task::generation::ReasoningActivation::Disabled))))
         {
@@ -661,7 +661,7 @@ impl<'a> Target<'a> {
         if streaming
             && settings
                 .audio
-                .value()
+                .as_ref()
                 .is_some_and(|audio| audio.format != AudioFormat::Pcm16)
         {
             table.set(
@@ -736,7 +736,7 @@ impl<'a> Target<'a> {
             let qwen = matches!(model, "qwen3.8-flash" | "qwen3.8-max");
             let glm = matches!(model, "glm-5.3" | "glm-5.3-prime");
             let disabled =
-                settings.reasoning.activation.value() == Some(&ReasoningActivation::Disabled);
+                settings.reasoning.activation.as_ref() == Some(&ReasoningActivation::Disabled);
             if api == GenerationApi::Chat
                 && (glm && !matches!(source.output(), OutputConstraint::Text)
                     || model == "kimi-k3"
@@ -750,7 +750,7 @@ impl<'a> Target<'a> {
                 );
             }
             if !source.reasoning().context.is_absent()
-                || api == GenerationApi::Responses && !source.reasoning().read_history.is_absent()
+                || api == GenerationApi::Responses && !source.reasoning().read_history.is_none()
             {
                 table.set(
                     Feature::ReasoningContext,
@@ -836,7 +836,7 @@ impl<'a> Target<'a> {
     }
     fn presentation_rows(self, settings: &GenerationSettings, table: &mut Dispositions) {
         let presentation = &settings.reasoning.presentation;
-        let auto = presentation.summary.value() == Some(&ReasoningSummary::Auto);
+        let auto = presentation.summary.as_ref() == Some(&ReasoningSummary::Auto);
         let summary_carrier = matches!(self, Self::OpenAi(GenerationApi::Responses, c)
             if !c.adaptation.rules.bailian_requests);
         let native_summary = match self {
@@ -847,7 +847,7 @@ impl<'a> Target<'a> {
         };
         let omission = Disposition::Omit(super::disposition::OMIT_REASONING_SUMMARY);
         let display = if matches!(self, Self::OpenAi(_, _))
-            && presentation.visibility.value() == Some(&ReasoningDisplay::Omitted)
+            && presentation.visibility.as_ref() == Some(&ReasoningDisplay::Omitted)
         {
             Disposition::Reject("the selected carrier cannot guarantee hidden reasoning display")
         } else if summary_carrier || native_summary.is_some() {
@@ -860,20 +860,17 @@ impl<'a> Target<'a> {
         table.set(Feature::ReasoningDisplay, display);
         let summary = if let Some(rule) = native_summary {
             match &presentation.summary {
-                Presence::Null => Disposition::Reject(
-                    "the selected native summary carrier has no explicit null value",
-                ),
-                Presence::Value(ReasoningSummary::Auto) => {
+                Some(ReasoningSummary::Auto) => {
                     if matches!(self, Self::Messages(_))
-                        && presentation.visibility.value() == Some(&ReasoningDisplay::Summary)
+                        && presentation.visibility.as_ref() == Some(&ReasoningDisplay::Summary)
                     {
                         table.set(Feature::ReasoningDisplay, Disposition::Equivalent);
                     }
                     Disposition::Equivalent
                 }
-                Presence::Value(ReasoningSummary::Concise | ReasoningSummary::Detailed) => {
+                Some(ReasoningSummary::Concise | ReasoningSummary::Detailed) => {
                     let no_thinking = matches!(self, Self::Messages(_))
-                        && settings.reasoning.activation.value()
+                        && settings.reasoning.activation.as_ref()
                             != Some(&ReasoningActivation::Enabled)
                         && settings.reasoning.mode.value() != Some(&ReasoningMode::Adaptive)
                         && settings.reasoning.budget_tokens.is_none();
@@ -884,7 +881,7 @@ impl<'a> Target<'a> {
                         Disposition::Approximate(rule)
                     }
                 }
-                Presence::Absent => Disposition::Native,
+                None => Disposition::Native,
             }
         } else if summary_carrier {
             Disposition::Native
@@ -898,7 +895,7 @@ impl<'a> Target<'a> {
             Feature::EncryptedReasoning,
             if summary_carrier {
                 Disposition::Native
-            } else if settings.reasoning.activation.value() == Some(&ReasoningActivation::Disabled)
+            } else if settings.reasoning.activation.as_ref() == Some(&ReasoningActivation::Disabled)
             {
                 Disposition::Equivalent
             } else {
@@ -936,9 +933,6 @@ impl<'a> Target<'a> {
                 ),
             );
         }
-        if source.context.cache.prompt_cache_options == Presence::Null {
-            return Err(CodecError::invalid());
-        }
         table.set(
             Feature::CacheOptions,
             if cache.options {
@@ -947,7 +941,7 @@ impl<'a> Target<'a> {
                 .context
                 .cache
                 .prompt_cache_options
-                .value()
+                .as_ref()
                 .is_none_or(|v| v == &CacheOptions::default())
             {
                 Disposition::Equivalent
@@ -987,6 +981,31 @@ fn omit_option<T>(
     {
         evidence.push(rule.effect(ConversionBoundary::RequestProject));
     }
+}
+fn apply_option<T>(
+    value: &mut Option<T>,
+    feature: Feature,
+    table: &Dispositions,
+    evidence: &mut EvidenceDelta,
+) -> Result<(), ConversionFailure> {
+    if value.is_none() {
+        return Ok(());
+    }
+    match table.get(feature) {
+        Disposition::Omit(rule) => {
+            *value = None;
+            evidence.push(rule.effect(ConversionBoundary::RequestProject));
+        }
+        Disposition::Equivalent => *value = None,
+        Disposition::Reject(_) => {
+            return Err(
+                crate::protocol::conversion::generation::RepresentationError::Admission(feature)
+                    .into(),
+            );
+        }
+        _ => {}
+    }
+    Ok(())
 }
 fn apply_presence<T>(
     value: &mut Presence<T>,
@@ -1088,7 +1107,7 @@ fn project_semantic_with_table<'a>(
             super::disposition::BUDGET_WITH_EFFORT.effect(ConversionBoundary::RequestProject),
         );
     }
-    if initial.reasoning.activation.value() == Some(&ReasoningActivation::Disabled)
+    if initial.reasoning.activation.as_ref() == Some(&ReasoningActivation::Disabled)
         && initial.effort.is_some()
         && target.effort_scope() == EffortScope::Reasoning
     {
@@ -1130,9 +1149,9 @@ fn project_semantic_with_table<'a>(
     }
     let mut settings = semantic.settings().clone();
     if matches!(target, Target::OpenAi(_, contract) if contract.adaptation.rules.bailian_requests)
-        && settings.text.format == Presence::Value(OutputConstraint::Text)
+        && settings.text.format == Some(OutputConstraint::Text)
     {
-        settings.text.format = Presence::Absent;
+        settings.text.format = None;
     }
     if table.get(Feature::ReasoningMode) == Disposition::Equivalent {
         settings.reasoning.mode = Presence::Absent;
@@ -1305,7 +1324,7 @@ fn project_semantic_with_table<'a>(
             }
         }
     }
-    apply_presence(
+    apply_option(
         &mut settings.reasoning.activation,
         Feature::ReasoningActivation,
         table,
@@ -1319,17 +1338,17 @@ fn project_semantic_with_table<'a>(
     )?;
     // Allocation conversion may change whether a native summarizer is active.
     target.presentation_rows(&settings, table);
-    apply_presence(
+    apply_option(
         &mut settings.reasoning.presentation.visibility,
         Feature::ReasoningDisplay,
         table,
         &mut evidence,
     )?;
     if let Disposition::Approximate(rule) = table.get(Feature::ReasoningSummary) {
-        settings.reasoning.presentation.summary = Presence::Absent;
+        settings.reasoning.presentation.summary = None;
         evidence.push(rule.effect(ConversionBoundary::RequestProject));
     } else {
-        apply_presence(
+        apply_option(
             &mut settings.reasoning.presentation.summary,
             Feature::ReasoningSummary,
             table,
@@ -1363,7 +1382,7 @@ fn project_semantic_with_table<'a>(
         if settings.automatic_prefix_cache.is_none()
             && !settings
                 .instructions
-                .value()
+                .as_ref()
                 .is_some_and(|root| root.parts.iter().any(|part| part.cache.is_some()))
             && !semantic
                 .items()
@@ -1413,8 +1432,8 @@ fn project_semantic_with_table<'a>(
             settings.reasoning = reasoning;
         }
     }
-    if settings.text.format.is_absent() && settings.text.verbosity.is_none() {
-        settings.text.presence = Presence::Absent;
+    if settings.text.format.is_none() && settings.text.verbosity.is_none() {
+        settings.text.presence = None;
     }
     let mut items = semantic.items().to_vec();
     for (id, item) in &mut items {
@@ -1702,8 +1721,7 @@ fn project_semantic_with_table<'a>(
         };
         table.set(Feature::SchemaName, Disposition::Omit(rule));
         let mut settings = semantic.settings().clone();
-        if let Presence::Value(OutputConstraint::JsonSchema { name, .. }) =
-            &mut settings.text.format
+        if let Some(OutputConstraint::JsonSchema { name, .. }) = &mut settings.text.format
             && name.take().is_some()
         {
             semantic = Cow::Owned(
@@ -1767,7 +1785,7 @@ fn project_cache(
         }
         _ => {}
     };
-    if let Presence::Value(root) = &mut settings.instructions {
+    if let Some(root) = &mut settings.instructions {
         for part in &mut root.parts {
             boundary(&mut part.cache);
         }
@@ -2108,7 +2126,7 @@ pub(crate) fn project<'a>(
         &table,
         &mut evidence,
     );
-    apply_presence(
+    apply_option(
         &mut context.cache.prompt_cache_options,
         Feature::CacheOptions,
         &table,
@@ -2155,18 +2173,15 @@ fn with_schema_name(
     ),
     CodecError,
 > {
-    use crate::semantic::{
-        task::generation::OutputConstraint,
-        value::{Presence, Text},
-    };
+    use crate::semantic::{task::generation::OutputConstraint, value::Text};
     if !matches!(
         request.settings().text.format,
-        Presence::Value(OutputConstraint::JsonSchema { name: None, .. })
+        Some(OutputConstraint::JsonSchema { name: None, .. })
     ) {
         return Ok((request, false));
     }
     let mut settings = request.settings().clone();
-    let Presence::Value(OutputConstraint::JsonSchema {
+    let Some(OutputConstraint::JsonSchema {
         name: name @ None, ..
     }) = &mut settings.text.format
     else {
@@ -2298,7 +2313,7 @@ mod tests {
         assert_eq!(source, before);
         let mut intent = source.clone();
         let mut settings = intent.task.semantic.settings().clone();
-        settings.reasoning.read_history = Presence::Value(true);
+        settings.reasoning.read_history = Some(true);
         settings.reasoning.presence = ReasoningPresence::Present;
         intent.task.semantic = intent.task.semantic.with_settings(settings).unwrap();
         assert!(

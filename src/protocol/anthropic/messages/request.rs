@@ -122,8 +122,8 @@ impl Profile {
             .map(|s| text(s))
             .collect::<Result<_, _>>()?;
         settings.instructions = match wire.system {
-            Presence::Value(system) => Presence::Value(super::items::root_instructions(system)?),
-            Presence::Absent => Presence::Absent,
+            Presence::Value(system) => Some(super::items::root_instructions(system)?),
+            Presence::Absent => None,
             Presence::Null => return Err(unsupported()),
         };
         if let Presence::Value(tools) = &wire.tools {
@@ -150,13 +150,13 @@ impl Profile {
             settings.reasoning = ReasoningRequest::present(None);
             match thinking {
                 super::Thinking::Disabled => {
-                    settings.reasoning.activation = Presence::Value(ReasoningActivation::Disabled);
+                    settings.reasoning.activation = Some(ReasoningActivation::Disabled);
                 }
                 super::Thinking::Enabled {
                     budget_tokens,
                     display: view,
                 } => {
-                    settings.reasoning.activation = Presence::Value(ReasoningActivation::Enabled);
+                    settings.reasoning.activation = Some(ReasoningActivation::Enabled);
                     settings.reasoning.mode = Presence::Value(ReasoningMode::Budgeted);
                     settings.reasoning.budget_tokens = Some(*budget_tokens);
                     settings.reasoning.presentation.visibility = display(view);
@@ -165,7 +165,7 @@ impl Profile {
                     display: view,
                     block_binding,
                 } => {
-                    settings.reasoning.activation = Presence::Value(ReasoningActivation::Enabled);
+                    settings.reasoning.activation = Some(ReasoningActivation::Enabled);
                     settings.reasoning.mode = Presence::Value(ReasoningMode::Adaptive);
                     settings.reasoning.presentation.visibility = display(view);
                     settings.reasoning.replay_mismatch = block_binding.map(replay_mismatch);
@@ -247,7 +247,7 @@ impl RequestRule {
             Self::SummarizeReasoning => Effect::Summary {
                 rule: self.name().into(),
                 owner: Owner::Root,
-                input: request.reasoning().presentation.summary.clone(),
+                input: request.reasoning().presentation.summary,
                 output: ReasoningDisplay::Summary,
             },
             _ => Effect::new(self.name(), field, B::RequestProject, change),
@@ -428,20 +428,20 @@ pub(in crate::protocol::anthropic::messages) fn project(
         || !matches!(s.controls.logprobs, None | Some(false))
         || s.controls.truncation.is_some()
         || !s.text.verbosity.is_none()
-        || !s.output_modalities.is_absent()
-        || !s.audio.is_absent()
+        || !s.output_modalities.is_none()
+        || !s.audio.is_none()
     {
         return Err(unsupported());
     }
     let mut system = match &s.instructions {
-        Presence::Absent => Presence::Absent,
-        Presence::Value(root) if root.plain_text().is_some() => Presence::Value(WireText::Text(
+        None => Presence::Absent,
+        Some(root) if root.plain_text().is_some() => Presence::Value(WireText::Text(
             root.plain_text()
                 .expect("checked plain root")
                 .as_str()
                 .into(),
         )),
-        Presence::Value(root) => Presence::Value(WireText::Blocks(
+        Some(root) => Presence::Value(WireText::Blocks(
             root.parts
                 .iter()
                 .map(|part| {
@@ -452,7 +452,6 @@ pub(in crate::protocol::anthropic::messages) fn project(
                 })
                 .collect::<Result<_, CodecError>>()?,
         )),
-        Presence::Null => return Err(unsupported()),
     };
     let leading_instructions = request
         .items()
@@ -526,7 +525,7 @@ pub(in crate::protocol::anthropic::messages) fn project(
     if reasoning.encrypted_output() || reasoning.presence == ReasoningPresence::Null {
         return Err(unsupported());
     }
-    if !reasoning.context.is_absent() || !reasoning.read_history.is_absent() {
+    if !reasoning.context.is_absent() || !reasoning.read_history.is_none() {
         return Err(unsupported());
     }
     // Visibility is an explicit guarantee, not an inference from nullable summary
@@ -535,22 +534,21 @@ pub(in crate::protocol::anthropic::messages) fn project(
         &reasoning.presentation.visibility,
         &reasoning.presentation.summary,
     ) {
-        (Presence::Value(ReasoningDisplay::Summary), granularity) => {
+        (Some(ReasoningDisplay::Summary), granularity) => {
             if matches!(
                 granularity,
-                Presence::Value(ReasoningSummary::Concise | ReasoningSummary::Detailed)
+                Some(ReasoningSummary::Concise | ReasoningSummary::Detailed)
             ) {
                 rules.insert(RequestRule::SummarizeReasoning);
             }
             Presence::Value(super::Display::Summarized)
         }
-        (Presence::Value(ReasoningDisplay::Omitted), _) => Presence::Value(super::Display::Omitted),
-        (Presence::Null, _) => Presence::Null,
-        (Presence::Absent, Presence::Absent) => Presence::Absent,
+        (Some(ReasoningDisplay::Omitted), _) => Presence::Value(super::Display::Omitted),
+        (None, None) => Presence::Absent,
         _ => return Err(unsupported()),
     };
     let thinking = if let Some(budget_tokens) = reasoning.budget_tokens {
-        if reasoning.activation == Presence::Value(ReasoningActivation::Disabled)
+        if reasoning.activation == Some(ReasoningActivation::Disabled)
             || !matches!(
                 reasoning.mode,
                 Presence::Absent | Presence::Value(ReasoningMode::Budgeted)
@@ -564,7 +562,7 @@ pub(in crate::protocol::anthropic::messages) fn project(
         })
     } else {
         match (&reasoning.activation, &reasoning.mode) {
-            (Presence::Value(ReasoningActivation::Disabled), Presence::Absent)
+            (Some(ReasoningActivation::Disabled), Presence::Absent)
                 if matches!(
                     display,
                     Presence::Absent | Presence::Value(super::Display::Omitted)
@@ -573,10 +571,10 @@ pub(in crate::protocol::anthropic::messages) fn project(
                 Presence::Value(super::Thinking::Disabled)
             }
             (
-                Presence::Absent | Presence::Value(ReasoningActivation::Enabled),
+                None | Some(ReasoningActivation::Enabled),
                 Presence::Value(ReasoningMode::Adaptive),
             )
-            | (Presence::Value(ReasoningActivation::Enabled), Presence::Absent) => {
+            | (Some(ReasoningActivation::Enabled), Presence::Absent) => {
                 Presence::Value(super::Thinking::Adaptive {
                     display,
                     block_binding: reasoning.replay_mismatch.map(|m| match m {
@@ -585,7 +583,7 @@ pub(in crate::protocol::anthropic::messages) fn project(
                     }),
                 })
             }
-            (Presence::Absent, Presence::Absent) if display.is_absent() => Presence::Absent,
+            (None, Presence::Absent) if display.is_absent() => Presence::Absent,
             _ => return Err(unsupported()),
         }
     };
@@ -609,17 +607,15 @@ pub(in crate::protocol::anthropic::messages) fn project(
         return Err(unsupported());
     }
     let format = match &s.text.format {
-        Presence::Absent | Presence::Null | Presence::Value(OutputConstraint::Text) => {
-            Presence::Absent
-        }
+        None | Some(OutputConstraint::Text) => Presence::Absent,
         // Messages has no JSON-object mode, and a schema description is model-visible.
-        Presence::Value(OutputConstraint::JsonObject)
-        | Presence::Value(OutputConstraint::JsonSchema {
+        Some(OutputConstraint::JsonObject)
+        | Some(OutputConstraint::JsonSchema {
             description: Some(_),
             ..
         }) => return Err(unsupported()),
         // Messages output is always constrained, which satisfies any OpenAI `strict`.
-        Presence::Value(OutputConstraint::JsonSchema { name, schema, .. }) => {
+        Some(OutputConstraint::JsonSchema { name, schema, .. }) => {
             if name.is_some() {
                 rules.insert(RequestRule::OmitSchemaName);
             }
