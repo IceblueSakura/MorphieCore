@@ -112,6 +112,7 @@ Keep dated evidence that is not better owned by a current source guide, accepted
 | [Decision APIs, 2026-10-23](refs/2026-10-23-decision-contracts.md) | OpenAI/TypeSafe and alternative API differences, confidence/grouping/media and discovery/compression gaps |
 | [Downstream OAuth, 2026-10-23](refs/2026-10-23-downstream-oauth.md) | Device Flow, Rust authorization-server comparisons, refresh/revocation and deployment boundaries |
 | [Gateway outcomes, 2026-11-02](refs/2026-10-27-client-and-proxy-sources.md#outcome-and-recovery-recheck-2026-11-02) | Bounded Magpie/LiteLLM/new-api source comparison of terminal evidence, health, affinity and retry exits; evidence for the separately finalized account design, not runtime acceptance |
+| [Account recovery sources, 2026-11-02](refs/2026-11-02-account-recovery-sources.md) | Current stable dependency selection, locked HTTP/TLS failure-chain evidence and verbatim SIWC registration/rotation/error boundaries |
 
 Research is not design approval or a new work queue. Recheck mutable sources before a new protocol claim; keep SDK shape, synthetic evidence, installed-client behavior and live Provider observations distinct.
 

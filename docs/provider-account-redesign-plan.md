@@ -1,10 +1,10 @@
 # Provider account redesign plan
 
-**Status: design finalized on 2026-11-02. The user accepted a fully breaking account-system rewrite and fresh manual credential provisioning; [Roadmap](roadmap.md#account-rewrite-execution-order) owns the execution plan. The current request is planning, not implementation or deployment.**
+**Status: design finalized on 2026-11-02. The user accepted a fully breaking account-system rewrite, fresh manual credential provisioning and subsequent implementation; [Roadmap](roadmap.md#account-rewrite-execution-order) owns current execution status. Production deployment remains separately approved.**
 
 This document owns the finalized account-redesign specification. It supersedes the earlier multi-target retry/fallback draft and interim single-send choice with request-boundary account selection and at most one bounded same-target retry. Final review selected conservative retry eligibility, a 30 s recovery budget, merged health evidence, material-aware OAuth recovery and short advisory `Retry-After` without `x-should-retry`. File/field names and implementation structure remain engineering choices within this contract, not new behavior decisions.
 
-[Architecture](architecture.md#routing-and-security-decisions) records the accepted decisions and links here for their detailed contract. [Roadmap](roadmap.md#account-rewrite-execution-order) owns execution order, dependencies and gates; its [routing boundary](roadmap.md#temporary-routing-freeze) separates this work from unrelated changes. [Usage](usage.md#prepare-credentials) describes the currently implemented configuration, not this unimplemented redesign. Planning does not modify runtime code, private credentials or deployed bindings.
+[Architecture](architecture.md#routing-and-security-decisions) records the accepted decisions and links here for their detailed contract. [Roadmap](roadmap.md#account-rewrite-execution-order) owns execution order, dependencies and gates; its [routing boundary](roadmap.md#temporary-routing-freeze) separates this work from unrelated changes. [Usage](usage.md#prepare-credentials) describes currently implemented configuration. Development uses fresh test-owned state without modifying private credentials or deployed bindings.
 
 ## Contents
 
