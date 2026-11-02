@@ -158,8 +158,11 @@ impl CredentialManager {
             if account.client_id != client && !driver.dynamic_registration() {
                 return Err(Error::IdentityMismatch);
             }
-            if account.pending_renewal.is_some() {
+            if account.pending_renewal.is_some() || account.login_attempt.is_some() {
                 return Err(Error::Busy);
+            }
+            if account.state == AccountState::Active {
+                return Err(Error::AlreadyActive);
             }
             let client = account.client_id.clone();
             let id = random_id()?;
@@ -230,8 +233,10 @@ impl CredentialManager {
         for other in tx.aliases(profile)? {
             if other != alias
                 && let Some(other) = self.load(&tx, profile, &other)?.account
-                && other.client_id == account.client_id
-                && other.identity.as_ref() == Some(&grant.identity)
+                && other
+                    .identity
+                    .as_ref()
+                    .is_some_and(|identity| identity.subject == grant.identity.subject)
             {
                 return Err(Error::IdentityMismatch);
             }

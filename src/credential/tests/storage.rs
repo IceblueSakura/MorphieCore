@@ -184,3 +184,53 @@ fn an_interrupted_first_publication_remains_visible_as_recovery_not_an_empty_sto
     let loaded = tx.load("synthetic", "one").unwrap();
     assert!(loaded.recovery && loaded.account.is_none());
 }
+
+#[test]
+fn first_publication_admits_last_namespace_without_poisoning_capacity() {
+    let dir = Directory::new();
+    let store = Store::open(&dir.path).unwrap();
+    {
+        let tx = store.transaction().unwrap();
+        for index in 0..63 {
+            tx.ensure_namespace(&format!("namespace-{index}")).unwrap();
+        }
+        tx.publish(&active()).unwrap();
+        assert_eq!(tx.namespaces().unwrap().len(), 64);
+        let mut rejected = active();
+        rejected.profile = "overflow".into();
+        assert_eq!(
+            tx.publish(&rejected).unwrap_err(),
+            CredentialError::PoolFull
+        );
+        assert!(tx.load("overflow", "one").unwrap().account.is_none());
+    }
+    assert!(!dir.path.join("overflow.oauth.one.pending").exists());
+    let reopened = Store::open(&dir.path).unwrap();
+    let tx = reopened.transaction().unwrap();
+    assert_eq!(tx.namespaces().unwrap().len(), 64);
+    assert!(!tx.load("synthetic", "one").unwrap().recovery);
+}
+
+#[test]
+fn first_publication_recovers_its_reserved_namespace_at_capacity() {
+    let dir = Directory::new();
+    let store = Store::open(&dir.path).unwrap();
+    {
+        let tx = store.transaction().unwrap();
+        for index in 0..63 {
+            tx.ensure_namespace(&format!("namespace-{index}")).unwrap();
+        }
+        tx.test_marker("synthetic", "one", true);
+        assert_eq!(tx.namespaces().unwrap().len(), 64);
+    }
+    let reopened = Store::open(&dir.path).unwrap();
+    let tx = reopened.transaction().unwrap();
+    tx.publish(&active()).unwrap();
+    let loaded = tx.load("synthetic", "one").unwrap();
+    assert!(!loaded.recovery);
+    assert_eq!(
+        loaded.account.unwrap().credential.unwrap().access.expose(),
+        "old-access"
+    );
+    assert_eq!(tx.namespaces().unwrap().len(), 64);
+}

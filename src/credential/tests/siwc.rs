@@ -219,6 +219,7 @@ async fn registration_returning_login_and_identity_only_access_are_separate() {
         .unwrap()
         .host_id("openai")
         .unwrap();
+    manager.logout("openai", "personal", false).await.unwrap();
     authority.steps.lock().unwrap().extend(login_steps());
     login(&manager, &authority, false, SCOPES, None, false)
         .await
@@ -233,6 +234,7 @@ async fn registration_returning_login_and_identity_only_access_are_separate() {
             .unwrap(),
         host
     );
+    manager.logout("openai", "personal", false).await.unwrap();
     authority.steps.lock().unwrap().extend(login_steps());
     assert_eq!(
         login(&manager, &authority, false, SCOPES, Some(CLIENT), true)
@@ -240,7 +242,10 @@ async fn registration_returning_login_and_identity_only_access_are_separate() {
             .unwrap_err(),
         CredentialError::Protocol
     );
-    assert_eq!(binding.borrow().unwrap().access.expose(), "siwc-access");
+    assert_eq!(
+        binding.borrow().unwrap_err(),
+        CredentialError::LoginRequired
+    );
     authority.done();
 }
 
@@ -278,7 +283,7 @@ async fn invalid_grant_retains_issued_client_and_never_repeats_dynamic_registrat
 }
 
 #[tokio::test]
-async fn login_http_diagnostics_identify_token_exchange_and_preserve_the_active_grant() {
+async fn login_http_diagnostics_identify_token_exchange_and_preserve_registration() {
     let authority = Authority::new(login_steps()).await;
     let dir = Directory::new();
     let manager = authority.pool(&dir);
@@ -286,6 +291,7 @@ async fn login_http_diagnostics_identify_token_exchange_and_preserve_the_active_
         .await
         .unwrap();
     let binding = manager.bind_access("openai", "personal").unwrap();
+    manager.logout("openai", "personal", false).await.unwrap();
     let mut rejected = step(
         "/api/accounts/oauth/token",
         vec![("client_id", CLIENT)],
@@ -306,7 +312,14 @@ async fn login_http_diagnostics_identify_token_exchange_and_preserve_the_active_
         std::error::Error::source(&error).unwrap().to_string(),
         CredentialError::Denied.to_string()
     );
-    assert_eq!(binding.borrow().unwrap().access.expose(), "siwc-access");
+    assert_eq!(
+        binding.borrow().unwrap_err(),
+        CredentialError::LoginRequired
+    );
+    assert_eq!(
+        read_account(&dir.path, "openai", "personal")["client_id"],
+        CLIENT
+    );
     assert!(!manager.list(Some("openai")).unwrap()[0].login_pending);
     authority.done();
 }
@@ -474,6 +487,7 @@ async fn callback_must_issue_a_client_and_cannot_replace_an_existing_registratio
         .await
         .unwrap();
     // The helper checks the last exchange against this attempt; there must be none.
+    manager.logout("openai", "personal", false).await.unwrap();
     authority.forms.lock().unwrap().clear();
     assert_eq!(
         login(
@@ -497,10 +511,8 @@ async fn callback_must_issue_a_client_and_cannot_replace_an_existing_registratio
             .bind_access("openai", "personal")
             .unwrap()
             .borrow()
-            .unwrap()
-            .access
-            .expose(),
-        "siwc-access"
+            .unwrap_err(),
+        CredentialError::LoginRequired
     );
     authority.done();
 }

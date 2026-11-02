@@ -61,11 +61,11 @@ This page owns current scope, priorities, dependencies, and exit gates. [Archite
 
 ## Current status
 
-**Current focus (2026-11-02):** Slices R0–R5 are complete and implementation of the accepted breaking [Provider account redesign](provider-account-redesign-plan.md) is authorized. AR0 established the clean baseline and [cutover ownership](#account-cutover-ownership); AR1 is next. Execute the account rewrite first, then provision new credentials, select models and complete default reasoning/tool/history acceptance across all three client protocols and selected cross-protocol lanes. Stage 4 resumes after that closure.
+**Current focus (2026-11-02):** Slices R0–R5 are complete and implementation of the accepted breaking [Provider account redesign](provider-account-redesign-plan.md) is authorized. AR0 established the clean baseline and [cutover ownership](#account-cutover-ownership); AR1 is in progress. Its credential prerequisites repair namespace-capacity admission, reject Active/concurrent login and reserve verified subjects across issued clients and logout. The account-source/schema and binding cutover remains open. Execute the account rewrite first, then provision new credentials, select models and complete default reasoning/tool/history acceptance across all three client protocols and selected cross-protocol lanes. Stage 4 resumes after that closure.
 
 | Area | State | Next step |
 |---|---|---|
-| Routing | Breaking rewrite authorized; AR0 evidence and deletion boundary established; runtime unchanged | Replace account/storage and binding owners in AR1 |
+| Routing | AR0 closed; AR1 credential prerequisites implemented; pool routing remains unchanged | Replace shared account source/schema and all binding consumers |
 | Generation IR / Codec | R0–R5 complete; shared projections/discovery, qualified intake, history transfer and reviewed null contracts | Maintain these contracts through the installed-Agent exit |
 | Client compatibility | Default native Messages loops pass with installed pi and OpenCode without overrides | Defer full exit loops until account rewrite and new model selection |
 | Integration | R1a/R1b/R2 loops, controlled recovery and production closure passed | Revalidate changed paths against established gates |
@@ -105,6 +105,8 @@ AR1–AR3 are implementation dependencies, not three runtime modes or mandatory 
 ### Account cutover ownership
 
 AR0 closed on **2026-11-02** against clean `9c68a7d`: the full offline baseline passed (950 Rust tests, 39 ignored; 20 pinned assets; nine upstream Python tests), with no existing failures. The [dependency and official-source recheck](refs/2026-11-02-account-recovery-sources.md) requires no pin changes. No private configuration, credentials or real Providers were used.
+
+The AR1 credential prerequisite slice passes the full offline baseline (953 Rust tests, 39 ignored; unchanged asset/Python gates). Capacity and login/subject regressions failed against the old owners before repair; independent-handle concurrent publishers now admit only one verified subject. This is not the account-source/binding cutover or SDK/installed-client acceptance.
 
 | Current owner | Replacement/deletion owner |
 |---|---|

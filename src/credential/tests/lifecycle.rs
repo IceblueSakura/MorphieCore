@@ -202,32 +202,26 @@ async fn rotation_and_omitted_replacement_use_account_bound_refresh() {
 }
 
 #[tokio::test]
-async fn failed_or_cancelled_login_preserves_existing_session_and_logout_supersedes_it() {
-    let mut steps = login_steps("person-a");
-    steps.push(device());
-    let authority = Authority::new(steps).await;
+async fn active_session_rejects_login_without_authority_io() {
+    let authority = Authority::new(login_steps("person-a")).await;
     let dir = Directory::new();
     let pool = authority.pool(&dir);
     login(&pool, "alice").await;
-    let mut future = Box::pin(pool.login_grok("alice", "synthetic-client", |_| {}));
-    tokio::select! { _ = &mut future => panic!("must await device approval"),
-    _ = authority.entered.notified() => {} }
-    // Previous requests can leave one notification; drive until the device step was consumed.
-    while !authority.steps.lock().unwrap().is_empty() {
-        tokio::select! { _ = &mut future => panic!("must await approval"),
-        _ = authority.entered.notified() => {} }
-    }
+    let before = read_account(&dir.path, "grok", "alice");
+    assert_eq!(
+        pool.login_grok("alice", "synthetic-client", |_| panic!("unexpected login"))
+            .await
+            .unwrap_err(),
+        CredentialError::AlreadyActive
+    );
+    assert_eq!(read_account(&dir.path, "grok", "alice"), before);
     assert_eq!(pool.list(None).unwrap()[0].state, AccountState::Active);
-    pool.logout("grok", "alice", false).await.unwrap();
-    drop(future);
-    assert_eq!(pool.list(None).unwrap()[0].state, AccountState::SignedOut);
     authority.done();
 }
 
 #[tokio::test]
 async fn identity_change_and_scope_loss_never_publish_credentials() {
     let mut steps = login_steps("person-a");
-    steps.extend(login_steps("person-b"));
     let mut denied = token("lost-scope", Some("new-refresh"));
     denied["scope"] = json!("openid offline_access");
     steps.push(step(
@@ -235,17 +229,11 @@ async fn identity_change_and_scope_loss_never_publish_credentials() {
         vec![("refresh_token", "synthetic-refresh")],
         denied,
     ));
+    steps.extend(login_steps("person-b"));
     let authority = Authority::new(steps).await;
     let dir = Directory::new();
     let pool = authority.pool(&dir);
-    let before = login(&pool, "alice").await;
-    assert_eq!(
-        pool.login_grok("alice", "synthetic-client", |_| {})
-            .await
-            .unwrap_err(),
-        CredentialError::IdentityMismatch
-    );
-    assert_eq!(pool.list(None).unwrap()[0].expires_at, before.expires_at);
+    login(&pool, "alice").await;
     assert_eq!(
         pool.refresh("grok", "alice").await.unwrap_err(),
         CredentialError::Permission
@@ -257,6 +245,20 @@ async fn identity_change_and_scope_loss_never_publish_credentials() {
     assert_eq!(
         pool.refresh("grok", "alice").await.unwrap_err(),
         CredentialError::LoginRequired
+    );
+    assert_eq!(
+        pool.login_grok("alice", "synthetic-client", |_| {})
+            .await
+            .unwrap_err(),
+        CredentialError::IdentityMismatch
+    );
+    assert_eq!(
+        read_account(&dir.path, "grok", "alice")["identity"]["subject"],
+        "person-a"
+    );
+    assert_eq!(
+        pool.list(None).unwrap()[0].state,
+        AccountState::NeedsReauthorization
     );
     authority.done();
 }
@@ -386,20 +388,32 @@ async fn cancelled_old_ticket_cannot_clear_a_new_login_attempt() {
     let authority = Authority::new(vec![device(), device()]).await;
     let dir = Directory::new();
     let pool = authority.pool(&dir);
+    let reopened = authority.pool(&dir);
     let (sent, received) = tokio::sync::oneshot::channel();
     let mut first = Box::pin(pool.login_grok("alice", "synthetic-client", |_| {
         sent.send(()).unwrap();
     }));
     tokio::select! { _ = &mut first => panic!("must await approval"), result = received => result.unwrap() }
+    assert_eq!(
+        tokio::time::timeout(
+            std::time::Duration::from_millis(100),
+            reopened.login_grok("alice", "synthetic-client", |_| panic!("concurrent login"))
+        )
+        .await
+        .expect("concurrent login must reject without authority I/O")
+        .unwrap_err(),
+        CredentialError::Busy
+    );
+    pool.logout("grok", "alice", false).await.unwrap();
     let (sent, received) = tokio::sync::oneshot::channel();
-    let mut second = Box::pin(pool.login_grok("alice", "synthetic-client", |_| {
+    let mut second = Box::pin(reopened.login_grok("alice", "synthetic-client", |_| {
         sent.send(()).unwrap();
     }));
     tokio::select! { _ = &mut second => panic!("must await approval"), result = received => result.unwrap() }
     drop(first);
     let status = pool.list(None).unwrap().remove(0);
     assert!(status.login_pending);
-    assert_eq!(status.generation, 0);
+    assert_eq!(status.state, AccountState::SignedOut);
     drop(second);
     assert!(!pool.list(None).unwrap()[0].login_pending);
     authority.done();
@@ -536,12 +550,9 @@ async fn expired_device_never_polls_after_its_deadline() {
 
 #[tokio::test]
 async fn complete_old_login_cannot_override_a_logout() {
-    let mut steps = login_steps("person-a");
-    steps.extend(login_steps("person-a"));
-    let authority = Authority::new(steps).await;
+    let authority = Authority::new(login_steps("person-a")).await;
     let dir = Directory::new();
     let pool = authority.pool(&dir);
-    login(&pool, "alice").await;
     let mut future = Box::pin(pool.login_grok("alice", "synthetic-client", |_| {}));
     while authority.steps.lock().unwrap().len() > 2 {
         tokio::select! { _ = &mut future => panic!("approval not received"),

@@ -373,6 +373,7 @@ impl Transaction<'_> {
     ) -> Result<(), Error> {
         record.validate_binding(profile, alias)?;
         let mut document = self.provider(profile)?;
+        self.check_namespace_capacity(&document)?;
         let values = self.records(&mut document);
         if !values.contains_key(alias) && values.len() >= RECORDS {
             return Err(Error::PoolFull);
@@ -428,15 +429,23 @@ impl Transaction<'_> {
     pub fn publish_provider(&self, document: &mut ProviderDocument) -> Result<(), Error> {
         self.publish_provider_with(document, || Ok(()))
     }
+    fn check_namespace_capacity(&self, document: &ProviderDocument) -> Result<(), Error> {
+        if document.revision == 0 {
+            let namespaces = self.namespaces()?;
+            // A pending first publication already reserves this namespace.
+            if namespaces.len() >= RECORDS && !namespaces.contains(&document.provider) {
+                return Err(Error::PoolFull);
+            }
+        }
+        Ok(())
+    }
     fn publish_provider_with(
         &self,
         document: &mut ProviderDocument,
         before_commit: impl FnOnce() -> Result<(), Error>,
     ) -> Result<(), Error> {
         document.validate(&document.provider)?;
-        if document.revision == 0 && self.namespaces()?.len() >= RECORDS {
-            return Err(Error::PoolFull);
-        }
+        self.check_namespace_capacity(document)?;
         document.revision = document.revision.checked_add(1).ok_or(Error::Storage)?;
         let bytes = crate::credential::SecretBytes::new(
             serde_json::to_vec_pretty(document).map_err(|_| Error::Storage)?,

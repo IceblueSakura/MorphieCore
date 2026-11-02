@@ -89,6 +89,8 @@ pub enum CredentialError {
     PoolFull,
     #[error("account is not signed in; login required")]
     LoginRequired,
+    #[error("account is already signed in; refresh it or sign out before logging in again")]
+    AlreadyActive,
     #[error("authorization transaction was superseded")]
     Superseded,
     #[error("authorized identity does not match the account binding")]

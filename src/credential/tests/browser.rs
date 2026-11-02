@@ -327,7 +327,7 @@ async fn browser_exchange_verifies_signed_nonce_and_userinfo_before_publish() {
 }
 
 #[tokio::test]
-async fn bad_nonce_or_mixed_subject_keeps_previous_browser_session() {
+async fn bad_nonce_or_mixed_subject_never_reactivates_ended_browser_session() {
     for bad_nonce in [true, false] {
         let mut steps = browser_steps("person-a");
         if bad_nonce {
@@ -343,16 +343,6 @@ async fn bad_nonce_or_mixed_subject_keeps_previous_browser_session() {
             subject: "person-a".into(),
             scope: None,
         });
-        account
-            .replace_credential(Some(Credential {
-                access: Secret::new("old-access".into()).unwrap(),
-                refresh: Some(Secret::new("old-refresh".into()).unwrap()),
-                scopes: Some(SCOPES.into()),
-                expires_at: Some(4000000000),
-                id_token: None,
-            }))
-            .unwrap();
-        account.state = AccountState::Active;
         pool.store.transaction().unwrap().publish(&account).unwrap();
         let error = run_browser(&pool, &authority, bad_nonce).await.unwrap_err();
         assert_eq!(
@@ -371,10 +361,9 @@ async fn bad_nonce_or_mixed_subject_keeps_previous_browser_session() {
             .unwrap()
             .account
             .unwrap();
-        assert_eq!(
-            account.credential.as_ref().unwrap().access.expose(),
-            "old-access"
-        );
+        assert!(account.credential.is_none() && account.login_attempt.is_none());
+        assert_eq!(account.state, AccountState::SignedOut);
+        assert_eq!(account.identity.unwrap().subject, "person-a");
         authority.done();
     }
 }

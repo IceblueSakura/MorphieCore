@@ -6,6 +6,7 @@ use tokio::sync::Notify;
 struct ThirdDriver {
     entered: Arc<Notify>,
     release: Arc<Notify>,
+    login_barrier: Option<Arc<tokio::sync::Barrier>>,
 }
 impl AuthDriver for ThirdDriver {
     fn profile(&self) -> &'static str {
@@ -36,11 +37,20 @@ impl AuthDriver for ThirdDriver {
     }
     fn login<'a>(
         &'a self,
-        _client: &'a str,
+        client: &'a str,
         _options: &'a LoginOptions,
         _notify: LoginObserver<'a>,
     ) -> DriverFuture<'a, Grant> {
-        Box::pin(async { Ok(grant()) })
+        Box::pin(async move {
+            if let Some(barrier) = &self.login_barrier {
+                barrier.wait().await;
+            }
+            let mut grant = grant();
+            if client == "third-secondary" {
+                grant.identity.subject = "third-secondary-subject".into();
+            }
+            Ok(grant)
+        })
     }
     fn can_refresh(&self) -> bool {
         true
@@ -150,6 +160,7 @@ fn manager(dir: &test_support::Directory) -> (CredentialManager, Arc<Notify>, Ar
         vec![Arc::new(ThirdDriver {
             entered: entered.clone(),
             release: release.clone(),
+            login_barrier: None,
         })],
     )
     .unwrap();
@@ -172,6 +183,7 @@ async fn independent_driver_uses_the_same_lifecycle_and_readable_account_file() 
         vec![Arc::new(ThirdDriver {
             entered: Arc::new(Notify::new()),
             release: Arc::new(Notify::new()),
+            login_barrier: None,
         })],
     )
     .unwrap();
@@ -255,15 +267,87 @@ async fn duplicate_identity_is_not_published_under_another_alias() {
         .login("third", "one", LoginOptions::default(), |_| {})
         .await
         .unwrap();
+    manager.logout("third", "one", false).await.unwrap();
     assert_eq!(
         manager
-            .login("third", "two", LoginOptions::default(), |_| {})
+            .login(
+                "third",
+                "two",
+                LoginOptions {
+                    client_id: Some("third-other-client".into()),
+                    ..LoginOptions::default()
+                },
+                |_| {},
+            )
             .await
             .unwrap_err(),
         CredentialError::IdentityMismatch
     );
-    assert_eq!(manager.list(None).unwrap()[0].state, AccountState::Active);
+    assert_eq!(
+        manager.list(None).unwrap()[0].state,
+        AccountState::SignedOut
+    );
+    assert!(test_support::read_account(&dir.path, "third", "two")["credential"].is_null());
 }
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn concurrent_cross_client_logins_publish_one_subject_only() {
+    let dir = test_support::Directory::new();
+    let barrier = Arc::new(tokio::sync::Barrier::new(2));
+    let mut publishers = Vec::new();
+    for (alias, client) in [("one", "third-first"), ("two", "third-second")] {
+        let manager = CredentialManager::new(
+            &dir.path,
+            vec![Arc::new(ThirdDriver {
+                entered: Arc::new(Notify::new()),
+                release: Arc::new(Notify::new()),
+                login_barrier: Some(barrier.clone()),
+            })],
+        )
+        .unwrap();
+        publishers.push(tokio::spawn(async move {
+            manager
+                .login(
+                    "third",
+                    alias,
+                    LoginOptions {
+                        client_id: Some(client.into()),
+                        ..LoginOptions::default()
+                    },
+                    |_| {},
+                )
+                .await
+        }));
+    }
+    let mut successes = 0;
+    let mut rejections = 0;
+    for publisher in publishers {
+        match publisher.await.unwrap() {
+            Ok(_) => successes += 1,
+            Err(CredentialError::IdentityMismatch) => rejections += 1,
+            Err(error) => panic!("unexpected publication failure: {error}"),
+        }
+    }
+    assert_eq!((successes, rejections), (1, 1));
+    let (reopened, _, _) = manager(&dir);
+    assert_eq!(
+        reopened
+            .list(None)
+            .unwrap()
+            .iter()
+            .filter(|status| status.state == AccountState::Active)
+            .count(),
+        1
+    );
+    for alias in ["one", "two"] {
+        let account = test_support::read_account(&dir.path, "third", alias);
+        assert_eq!(
+            account["state"] == "active",
+            account["credential"].is_object()
+        );
+        assert!(account["login_attempt"].is_null());
+    }
+}
+
 #[tokio::test]
 async fn local_status_queries_do_not_change_credential_generation() {
     let dir = test_support::Directory::new();

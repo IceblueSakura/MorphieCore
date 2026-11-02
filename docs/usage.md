@@ -119,6 +119,8 @@ morphiecore-auth openai logout --account personal
 - `logout --revoke` requests upstream revocation.
 - `login`, `refresh` and `logout` accept `--proxy`.
 
+An Active account rejects another login; use `refresh`, or explicitly sign out before returning sign-in or consent. A pending login rejects concurrent login from another process or handle. Reauthorization after invalidation and login after logout retain the account registration. Another alias cannot publish the same verified subject in that OAuth profile, even with a different issued client; signing out does not release the subject reservation.
+
 Callbacks listen on `127.0.0.1`. Login checks issuer, client and subject. Gateway inference never starts login or refresh.
 
 Automatic renewal runs in the background when running `morphiecore` (`Gateway::serve`):
