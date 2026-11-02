@@ -91,9 +91,7 @@ pub const EMBEDDING_BINDINGS: &[EmbeddingBinding] = &[
 ];
 impl EmbeddingBinding {
     pub fn credential(&self) -> CredentialBindingId {
-        (self.provider)()
-            .credential_pool
-            .expect("catalog credential pool")
+        CredentialBindingId::new((self.provider)().id.as_str()).expect("catalog Provider identity")
     }
     pub fn metadata(&self) -> ModelMetadata {
         ModelMetadata::new(self.released_at, self.developer).expect("static publication")

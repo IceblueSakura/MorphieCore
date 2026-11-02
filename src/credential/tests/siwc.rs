@@ -692,39 +692,7 @@ async fn cancellation_during_pending_verification_is_recoverable_after_restart()
 }
 
 #[test]
-fn siwc_never_forms_a_rotation_pool_or_reuses_product_metadata() {
-    let reference = CredentialRef::OAuth {
-        profile: "openai".into(),
-        alias: "personal".into(),
-    };
-    for (members, fallback, max_attempts, accepted) in [
-        (vec![reference.clone()], false, 1, true),
-        (vec![reference.clone()], true, 1, false),
-        (vec![reference.clone()], false, 2, false),
-        (
-            vec![
-                reference,
-                CredentialRef::OAuth {
-                    profile: "openai".into(),
-                    alias: "other".into(),
-                },
-            ],
-            false,
-            1,
-            false,
-        ),
-    ] {
-        assert_eq!(
-            CredentialPool {
-                members,
-                fallback,
-                max_attempts
-            }
-            .validate()
-            .is_ok(),
-            accepted
-        );
-    }
+fn siwc_inference_headers_do_not_reuse_product_metadata() {
     let grant = AccessGrant {
         access: Secret::new("synthetic".into()).unwrap(),
         identity: VerifiedIdentity {

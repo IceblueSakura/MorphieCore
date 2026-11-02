@@ -162,7 +162,7 @@ impl CredentialManager {
             let tx = self.keys.transaction()?;
             let domains = tx.namespaces()?;
             if !domains.iter().any(|d| d == domain) && domains.len() >= 64 {
-                return Err(Error::PoolFull);
+                return Err(Error::Capacity);
             }
             tx.ensure_namespace(domain)?;
         }
@@ -317,7 +317,11 @@ impl CredentialManager {
         }
         Ok(statuses)
     }
-    pub(super) fn bind_pool_key(&self, domain: &str, alias: &str) -> Result<ApiKeyAccess, Error> {
+    pub(crate) fn bind_key_reference(
+        &self,
+        domain: &str,
+        alias: &str,
+    ) -> Result<ApiKeyAccess, Error> {
         self.key_access(domain, alias, false)
     }
     pub fn bind_api_key(&self, domain: &str, alias: &str) -> Result<ApiKeyAccess, Error> {

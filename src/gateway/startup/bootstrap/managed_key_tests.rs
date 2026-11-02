@@ -1,12 +1,9 @@
 //! File activation and replay epoch rebinding, without inference traffic.
 use super::{
-    test_support::{selected_models, write_configuration},
+    test_support::{selected_models, write_accounts, write_configuration},
     *,
 };
-use crate::{
-    credential::{CredentialPool, CredentialRef},
-    protocol::ClientProtocol,
-};
+use crate::protocol::ClientProtocol;
 fn setup() -> (tempfile::TempDir, CredentialManager) {
     let dir = crate::test_files::private_directory();
     let manager = CredentialManager::new(dir.path().join("credentials"), vec![]).unwrap();
@@ -22,20 +19,12 @@ fn setup() -> (tempfile::TempDir, CredentialManager) {
             Secret::new("synthetic-managed-key".into()).unwrap(),
         )
         .unwrap();
-    manager
-        .set_pool(
-            "deepseek",
-            "deepseek-api-key",
-            0,
-            CredentialPool {
-                members: vec![CredentialRef::ApiKey {
-                    alias: "one".into(),
-                }],
-                fallback: false,
-                max_attempts: 1,
-            },
-        )
-        .unwrap();
+    write_accounts(
+        dir.path(),
+        &serde_json::json!({"version":1,"providers":{"deepseek":{"accounts":[{
+            "name":"primary","enabled":true,"credential":{"kind":"api_key","alias":"one"}
+        }]}}}),
+    );
     (dir, manager)
 }
 

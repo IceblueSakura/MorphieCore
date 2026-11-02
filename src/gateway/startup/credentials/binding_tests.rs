@@ -14,7 +14,7 @@ fn managed_keys_enforce_domain_kind_and_epoch_without_network() {
     let mut credentials = Credentials::new();
     let id = CredentialBindingId::new("alpha-key").unwrap();
     credentials.insert_managed_key(id.clone(), manager.bind_api_key("alpha", "one").unwrap());
-    let source = &credentials.get(&id).unwrap().sources[0];
+    let source = &credentials.get(&id).unwrap().source;
     assert!(source.check(CredentialKind::ApiKey, "alpha").is_ok());
     assert!(source.check(CredentialKind::ApiKey, "beta").is_err());
     assert!(

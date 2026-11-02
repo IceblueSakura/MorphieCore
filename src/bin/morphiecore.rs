@@ -4,6 +4,11 @@ use morphiecore::credential::{CredentialError, default_config_directory};
 use morphiecore::gateway::startup::bootstrap::Bootstrap;
 #[derive(Parser)]
 struct Options {
+    /// Validate through production construction without listening or starting maintenance.
+    #[arg(long)]
+    validate: bool,
+    #[arg(long, requires = "validate")]
+    json: bool,
     /// Override the default ~/.local/share/morphiecore/credentials directory.
     #[arg(long)]
     credentials_dir: Option<std::path::PathBuf>,
@@ -41,6 +46,8 @@ async fn main() -> std::process::ExitCode {
         }
     };
     let proxy = options.proxy.clone();
+    let validate = options.validate;
+    let json = options.json;
     let (directory, config) = match options.paths() {
         Ok(paths) => paths,
         Err(error) => {
@@ -48,6 +55,29 @@ async fn main() -> std::process::ExitCode {
             return std::process::ExitCode::FAILURE;
         }
     };
+    if validate {
+        return match Bootstrap::validate(&config, directory.as_deref(), proxy.as_deref()) {
+            Ok(()) => {
+                if json {
+                    println!("{}", serde_json::json!({"valid":true}));
+                } else {
+                    println!("Gateway configuration and local bindings are valid.");
+                }
+                std::process::ExitCode::SUCCESS
+            }
+            Err(error) => {
+                if json {
+                    println!(
+                        "{}",
+                        serde_json::json!({"error":{"message":error.to_string()}})
+                    );
+                } else {
+                    eprintln!("MorphieCore validation failed: {error}");
+                }
+                std::process::ExitCode::FAILURE
+            }
+        };
+    }
     let bootstrap = match Bootstrap::from_options(&config, directory.as_deref(), proxy.as_deref()) {
         Ok(value) => value,
         Err(error) => {

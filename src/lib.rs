@@ -5,6 +5,7 @@
 //! optional-use binary loads explicit private credential files and listens only
 //! on loopback; pure codec layers never read private configuration.
 
+pub mod account;
 pub mod adapter;
 pub mod credential;
 pub mod execution;

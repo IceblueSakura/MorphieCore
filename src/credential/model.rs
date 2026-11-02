@@ -137,6 +137,7 @@ pub enum AccountState {
     Active,
     SignedOut,
     NeedsReauthorization,
+    Removed,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -174,6 +175,7 @@ pub enum LogoutOutcome {
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct Account {
+    pub record_id: String,
     #[serde(default)]
     pub pending_renewal: Option<PendingRenewal>,
     pub profile: String,
@@ -187,8 +189,9 @@ pub(super) struct Account {
     pub credential: Option<Credential>,
 }
 impl Account {
-    pub fn new(profile: &str, alias: &str, client: &str) -> Self {
-        Self {
+    pub fn new(profile: &str, alias: &str, client: &str) -> Result<Self, Error> {
+        Ok(Self {
+            record_id: random_id()?,
             pending_renewal: None,
             profile: profile.into(),
             alias: alias.into(),
@@ -199,7 +202,7 @@ impl Account {
             login_attempt: None,
             state: AccountState::SignedOut,
             credential: None,
-        }
+        })
     }
     pub fn advance(&mut self) -> Result<(), Error> {
         self.revision = self.revision.checked_add(1).ok_or(Error::Storage)?;
@@ -212,6 +215,8 @@ impl Account {
     }
     pub fn validate(&self, profile: &str, alias: &str) -> Result<(), Error> {
         if self.profile != profile
+            || self.record_id.len() != 32
+            || !self.record_id.bytes().all(|b| b.is_ascii_hexdigit())
             || self.alias != alias
             || valid_profile(profile).is_err()
             || valid_alias(alias).is_err()
@@ -238,6 +243,11 @@ impl Account {
                 Ok(())
             }
             (AccountState::SignedOut | AccountState::NeedsReauthorization, None) => Ok(()),
+            (AccountState::Removed, None)
+                if self.identity.is_none() && self.login_attempt.is_none() =>
+            {
+                Ok(())
+            }
             _ => Err(Error::Storage),
         }
     }
@@ -258,7 +268,7 @@ impl Account {
             plan_usage_enabled: None,
             profile: self.profile.clone(),
             account: self.alias.clone(),
-            state: if recovery_required {
+            state: if recovery_required && self.state != AccountState::Removed {
                 AccountState::NeedsReauthorization
             } else {
                 self.state

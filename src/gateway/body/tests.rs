@@ -166,8 +166,7 @@ async fn observed_response(
         endpoint,
         provider: template.provider.clone(),
         secret: template.secret.clone(),
-        credential_fallback: false,
-        credential_attempts: 1,
+        account: None,
         health: template.health.clone(),
         cache_scope: template.cache_scope.clone(),
     });

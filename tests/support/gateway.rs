@@ -42,6 +42,7 @@ fn bound_gateway(origin: &str, limits: Limits, embeddings: bool, messages: bool)
             (
                 morphiecore::provider::ProviderOperation::ChatCompletions,
                 morphiecore::provider::ProviderEndpoint {
+                    suffix: EndpointPath::new("/chat/completions").unwrap(),
                     path: EndpointPath::new("/chat/completions").unwrap(),
                     auth: None,
                 },
@@ -49,13 +50,13 @@ fn bound_gateway(origin: &str, limits: Limits, embeddings: bool, messages: bool)
             (
                 morphiecore::provider::ProviderOperation::Responses,
                 morphiecore::provider::ProviderEndpoint {
+                    suffix: EndpointPath::new("/responses").unwrap(),
                     path: EndpointPath::new("/responses").unwrap(),
                     auth: None,
                 },
             ),
         ]
         .into(),
-        credential_pool: None,
         auth: AuthScheme::Bearer,
     };
     let (embedding_operation, embedding_route) = embedding_support::binding(&provider);

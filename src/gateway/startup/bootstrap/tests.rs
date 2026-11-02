@@ -394,7 +394,7 @@ fn transcription_model_requires_one_explicit_binding_when_providers_share_identi
         ),
     ] {
         let credentials = [(provider, pool, "synthetic-asr-key")];
-        let selection = serde_json::json!({"binding":binding});
+        let selection = serde_json::json!({"binding":binding,"account":pool});
         let boot = Fixture::new(service(), config(selection.clone()), &credentials).unwrap();
         assert_eq!(boot.gateway.state.transcriptions.len(), 1);
         assert!(boot.gateway.state.transcriptions.contains_key(model));
@@ -430,7 +430,9 @@ fn transcription_model_requires_one_explicit_binding_when_providers_share_identi
     assert!(matches!(
         Fixture::new(
             service(),
-            config(serde_json::json!({"binding":"dashscope-qwen-asr"})),
+            config(
+                serde_json::json!({"binding":"dashscope-qwen-asr","account":"aliyun-tokenplan-cn-api-key"})
+            ),
             &wrong_pool
         ),
         Err(StartupError::Credentials)
@@ -696,7 +698,7 @@ fn codex_history_reaches_the_native_binding_by_named_rules() {
 }
 
 #[test]
-fn configured_failover_orders_and_limits_a_models_providers() {
+fn configured_accounts_preserve_order_targets_limits_and_replay_isolation() {
     let directory = crate::test_files::private_directory();
     let store = directory.path().join("credentials");
     let manager = crate::credential::CredentialManager::new(&store, vec![]).unwrap();
@@ -707,20 +709,11 @@ fn configured_failover_orders_and_limits_a_models_providers() {
             crate::credential::Secret::new("synthetic-configured-key".into()).unwrap(),
         )
         .unwrap();
-    manager
-        .set_pool(
-            "openrouter",
-            "selected-key",
-            0,
-            crate::credential::CredentialPool {
-                members: vec![crate::credential::CredentialRef::ApiKey {
-                    alias: "one".into(),
-                }],
-                fallback: false,
-                max_attempts: 1,
-            },
-        )
-        .unwrap();
+    let mut account_config = serde_json::json!({"version":1,"providers":{"openrouter":{"accounts":[
+        {"name":"primary","enabled":true,"credential":{"kind":"api_key","alias":"one"},"base_url":"https://primary.example/custom/v1"},
+        {"name":"secondary","enabled":true,"credential":{"kind":"api_key","alias":"one"},"base_url":"https://secondary.example/v1"}
+    ]}}});
+    write_accounts(directory.path(), &account_config);
     let binding = catalog::API_KEY_BINDINGS
         .iter()
         .find(|b| b.model == "claude-haiku-5-5" && (b.provider)().id.as_str() == "openrouter")
@@ -731,7 +724,8 @@ fn configured_failover_orders_and_limits_a_models_providers() {
         &directory.path().join("auth.json"),
         br#"{"version":1,"agents":[{"agent_id":"fixture-agent","key":"synthetic-gateway-client-token-0001"}]}"#,
     );
-    let private_write = |path: &std::path::Path, value: serde_json::Value| {
+    let private_write = |path: &std::path::Path, mut value: serde_json::Value| {
+        value["version"] = serde_json::json!(1);
         write_private(path, &serde_json::to_vec(&value).unwrap());
     };
     private_write(
@@ -743,19 +737,10 @@ fn configured_failover_orders_and_limits_a_models_providers() {
         }),
     );
     let model_config = serde_json::json!({"models":{"claude-haiku-5-5":{
-        "max_attempts":2,
         "total_timeout_ms":12000,
         "candidates":[{
             "binding":binding.endpoint_id(crate::topology::GenerationProtocol::OpenAiChat).as_str(),
-            "base_url":"https://primary.example/custom/v1",
-            "upstream_model":"configured-wire-model",
-            "credential":"selected-key",
-            "attempt_timeout_ms":3000
-        },{
-            "binding":binding.endpoint_id(crate::topology::GenerationProtocol::OpenAiChat).as_str(),
-            "base_url":"https://secondary.example/v1",
-            "credential":"selected-key",
-            "attempt_timeout_ms":4000
+            "upstream_model":"configured-wire-model"
         }]
     }}});
     private_write(&models_file, model_config.clone());
@@ -804,7 +789,7 @@ fn configured_failover_orders_and_limits_a_models_providers() {
         crate::protocol::ClientProtocol::Chat,
         "claude-haiku-5-5".into(),
     )];
-    assert_eq!(entry.policy.max_attempts, 2);
+    assert_eq!(entry.policy.max_attempts, 1);
     assert_eq!(entry.policy.total_timeout_ms, Some(12000));
     assert_eq!(entry.candidates.len(), 2);
     assert_eq!(
@@ -815,7 +800,7 @@ fn configured_failover_orders_and_limits_a_models_providers() {
         entry.candidates[0].endpoint.target.path.as_str(),
         "/custom/v1/chat/completions"
     );
-    assert_eq!(entry.candidates[0].endpoint.execution.timeout_ms, 3000);
+    assert_eq!(entry.candidates[0].endpoint.execution.timeout_ms, 3_600_000);
     assert_eq!(
         entry.candidates[0].endpoint.upstream_model,
         "configured-wire-model"
@@ -880,7 +865,7 @@ fn configured_failover_orders_and_limits_a_models_providers() {
             .map(|entry| {
                 assert_eq!(
                     entry.policy.fallback,
-                    crate::topology::FallbackPolicy::BeforeCommit
+                    crate::topology::FallbackPolicy::Disabled
                 );
                 entry
                     .candidates
@@ -920,13 +905,15 @@ fn configured_failover_orders_and_limits_a_models_providers() {
         .find(|b| b.model == "gpt-6-luna" && (b.provider)().id.as_str() == "openrouter")
         .unwrap()
         .endpoint_id(crate::topology::GenerationProtocol::OpenAiResponses);
+    account_config["providers"]["openrouter"]["accounts"][0]["base_url"] =
+        serde_json::json!("https://primary.example/first/v1");
+    account_config["providers"]["openrouter"]["accounts"][1]["base_url"] =
+        serde_json::json!("https://primary.example/second/v1");
+    write_accounts(directory.path(), &account_config);
     private_write(
         &models_file,
         serde_json::json!({"models":{"gpt-6-luna":{
-            "candidates":[
-                {"binding":replay_binding.as_str(),"credential":"selected-key","base_url":"https://primary.example/first/v1"},
-                {"binding":replay_binding.as_str(),"credential":"selected-key","base_url":"https://primary.example/second/v1"}
-            ]
+            "candidates":[{"binding":replay_binding.as_str()}]
         }}}),
     );
     let configured = Bootstrap::from_files(&gateway_file, &store).unwrap();
@@ -989,20 +976,10 @@ fn configured_failover_orders_and_limits_a_models_providers() {
             Secret::new("synthetic-google-key".into()).unwrap(),
         )
         .unwrap();
-    manager
-        .set_pool(
-            provider.id.as_str(),
-            google.credential().as_str(),
-            0,
-            crate::credential::CredentialPool {
-                members: vec![crate::credential::CredentialRef::ApiKey {
-                    alias: "one".into(),
-                }],
-                fallback: false,
-                max_attempts: 1,
-            },
-        )
-        .unwrap();
+    account_config["providers"]["google"] = serde_json::json!({"accounts":[{
+        "name":"primary","enabled":true,"credential":{"kind":"api_key","alias":"one"}
+    }]});
+    write_accounts(directory.path(), &account_config);
     let limits_config = serde_json::json!({"models":{google.model:{"candidates":[
         {"binding":google.endpoint().id.as_str(),
             "allowed_effort":["medium","high"],"maximum_output_tokens":4096,
@@ -1135,7 +1112,17 @@ fn configured_failover_orders_and_limits_a_models_providers() {
         ),
     ] {
         let mut candidate = serde_json::json!({"binding":google.endpoint().id.as_str()});
-        candidate[field] = serde_json::json!(replacement);
+        account_config["providers"]["google"]["accounts"][0]
+            .as_object_mut()
+            .unwrap()
+            .remove("base_url");
+        if field == "base_url" {
+            account_config["providers"]["google"]["accounts"][0]["base_url"] =
+                serde_json::json!(replacement);
+        } else {
+            candidate[field] = serde_json::json!(replacement);
+        }
+        write_accounts(directory.path(), &account_config);
         private_write(
             &models_file,
             serde_json::json!({"models":{google.model:{"candidates":[candidate.clone()]}}}),
@@ -1160,6 +1147,11 @@ fn configured_failover_orders_and_limits_a_models_providers() {
         assert_eq!(limits.context_window_tokens, Some(2_000_000));
         assert_eq!(limits.maximum_input_tokens, Some(1_200_000));
     }
+    account_config["providers"]["google"]["accounts"][0]
+        .as_object_mut()
+        .unwrap()
+        .remove("base_url");
+    write_accounts(directory.path(), &account_config);
     let mut models = serde_json::json!({"models":{google.model:{
         "thinking_tokens":{"minimal":1024,"low":2048,"medium":3072,"high":8192,"xhigh":16384,"max":24576},
         "candidates":[{"binding":google.endpoint().id.as_str(),"thinking_conversion":"effort_to_budget"}]
@@ -1224,12 +1216,10 @@ fn configured_failover_orders_and_limits_a_models_providers() {
 }
 #[test]
 fn committed_configuration_templates_load_with_test_owned_credentials() {
-    use crate::credential::{CredentialPool, CredentialRef};
     let directory = crate::test_files::private_directory();
     let root = directory.path();
     let manager = CredentialManager::new(root.join("credentials"), vec![]).unwrap();
     for id in ["aliyun-tokenplan-cn", "opencode-go", "google", "openrouter"] {
-        let provider = crate::provider::catalog::get(id).unwrap();
         manager
             .add_api_key(
                 id,
@@ -1237,21 +1227,14 @@ fn committed_configuration_templates_load_with_test_owned_credentials() {
                 Secret::new("synthetic-template-upstream".into()).unwrap(),
             )
             .unwrap();
-        manager
-            .set_pool(
-                id,
-                provider.credential_pool.as_ref().unwrap().as_str(),
-                0,
-                CredentialPool {
-                    members: vec![CredentialRef::ApiKey {
-                        alias: "example".into(),
-                    }],
-                    fallback: false,
-                    max_attempts: 1,
-                },
-            )
-            .unwrap();
     }
+    write_private(
+        &root.join("accounts.json"),
+        include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/config/accounts.example.json"
+        )),
+    );
     write_private(
         &root.join("gateway.json"),
         include_bytes!(concat!(

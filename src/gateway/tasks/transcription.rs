@@ -30,7 +30,7 @@ pub(in crate::gateway) fn bind(
             Some(binding) => topology.transcription_binding(&entry.model, binding),
             None => topology.transcription_route(&entry.model),
         },
-        |entry| entry.model,
+        |entry| &entry.model,
     )
 }
 pub(in crate::gateway) async fn handle(

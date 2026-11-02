@@ -30,7 +30,7 @@ async fn binaries_report_cli_identity_without_loading_credentials() {
 
 #[tokio::test]
 async fn binary_bootstraps_default_home_files_and_ignores_environment_keys() {
-    use morphiecore::credential::{CredentialPool, CredentialRef, Secret};
+    use morphiecore::credential::Secret;
     use std::sync::atomic::{AtomicUsize, Ordering};
     // A rejecting loopback proxy makes even an accidental upstream dispatch offline.
     let trap = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -69,40 +69,12 @@ async fn binary_bootstraps_default_home_files_and_ignores_environment_keys() {
             morphiecore::credential::Secret::new("synthetic-file-key".into()).unwrap(),
         )
         .unwrap();
-    manager
-        .set_pool(
-            "deepseek",
-            "deepseek-api-key",
-            0,
-            morphiecore::credential::CredentialPool {
-                members: vec![morphiecore::credential::CredentialRef::ApiKey {
-                    alias: "one".into(),
-                }],
-                fallback: false,
-                max_attempts: 1,
-            },
-        )
-        .unwrap();
     let path = root.parent().unwrap().join("gateway.json");
     manager
         .add_api_key(
             "openrouter",
             "speech",
             Secret::new("synthetic-speech-file-key".into()).unwrap(),
-        )
-        .unwrap();
-    manager
-        .set_pool(
-            "openrouter",
-            "openrouter-api-key",
-            0,
-            CredentialPool {
-                members: vec![CredentialRef::ApiKey {
-                    alias: "speech".into(),
-                }],
-                fallback: false,
-                max_attempts: 1,
-            },
         )
         .unwrap();
     let mut options = std::fs::OpenOptions::new();
@@ -113,12 +85,18 @@ async fn binary_bootstraps_default_home_files_and_ignores_environment_keys() {
         options.mode(0o600);
     }
     use std::io::Write;
+    options.open(root.parent().unwrap().join("accounts.json")).unwrap().write_all(&serde_json::to_vec(&json!({
+        "version":1,"providers":{
+            "deepseek":{"accounts":[{"name":"primary","enabled":true,"credential":{"kind":"api_key","alias":"one"}}]},
+            "openrouter":{"accounts":[{"name":"speech","enabled":true,"credential":{"kind":"api_key","alias":"speech"}}]}
+        }
+    })).unwrap()).unwrap();
     options
         .open(&path)
         .unwrap()
         .write_all(
             &serde_json::to_vec(
-                &json!({"auth_file":"auth.json","bind":"127.0.0.1:0","proxy":"unsupported://invalid"}),
+                &json!({"version":1,"auth_file":"auth.json","bind":"127.0.0.1:0","proxy":"unsupported://invalid"}),
             )
             .unwrap(),
         )
@@ -142,9 +120,9 @@ async fn binary_bootstraps_default_home_files_and_ignores_environment_keys() {
         .open(root.parent().unwrap().join("models.json"))
         .unwrap()
         .write_all(
-            &serde_json::to_vec(&json!({"models":{
+            &serde_json::to_vec(&json!({"version":1,"models":{
                 "deepseek-flash":{"candidates":[{"binding":binding.as_str()}]},
-                "qwen-audio-3.0-tts-flash":{}
+                "qwen-audio-3.0-tts-flash":{"account":"speech"}
             }}))
             .unwrap(),
         )
@@ -252,7 +230,7 @@ async fn binary_bootstraps_default_home_files_and_ignores_environment_keys() {
 #[tokio::test]
 async fn cli_diagnostics_rotate_recover_and_refuse_unowned_files_before_listening() {
     const SECOND_KEY: &str = "synthetic-second-agent-client-key-0001";
-    use morphiecore::credential::{CredentialManager, CredentialPool, CredentialRef, Secret};
+    use morphiecore::credential::{CredentialManager, Secret};
     use std::{
         io::Write,
         os::unix::fs::OpenOptionsExt,
@@ -292,20 +270,9 @@ async fn cli_diagnostics_rotate_recover_and_refuse_unowned_files_before_listenin
             Secret::new("synthetic-rotation-upstream".into()).unwrap(),
         )
         .unwrap();
-    manager
-        .set_pool(
-            "aliyun-dashscope-cn",
-            "aliyun-dashscope-cn-api-key",
-            0,
-            CredentialPool {
-                members: vec![CredentialRef::ApiKey {
-                    alias: "one".into(),
-                }],
-                fallback: false,
-                max_attempts: 1,
-            },
-        )
-        .unwrap();
+    write("accounts.json",&serde_json::to_vec(&json!({"version":1,"providers":{"aliyun-dashscope-cn":{"accounts":[{
+        "name":"primary","enabled":true,"credential":{"kind":"api_key","alias":"one"},"base_url":format!("{origin}/v1")
+    }]}}})).unwrap());
     write(
         "auth.json",
         &serde_json::to_vec(&json!({"version":1,"agents":[
@@ -315,14 +282,13 @@ async fn cli_diagnostics_rotate_recover_and_refuse_unowned_files_before_listenin
         ]}))
         .unwrap(),
     );
-    let mut config = json!({"auth_file":"auth.json","bind":"127.0.0.1:0",
+    let mut config = json!({"version":1,"auth_file":"auth.json","bind":"127.0.0.1:0",
         "models_file":"models.json","diagnostics":"diagnostics.jsonl","exchange_timeout_ms":5000});
     write("gateway.json", &serde_json::to_vec(&config).unwrap());
     write(
         "models.json",
-        &serde_json::to_vec(&json!({"models":{"qwen3.8-flash":{"max_attempts":1,
-        "candidates":[{"binding":"dashscope-flash-chat","base_url":format!("{origin}/v1"),
-            "attempt_timeout_ms":3000}]}}}))
+        &serde_json::to_vec(&json!({"version":1,"models":{"qwen3.8-flash":{
+        "candidates":[{"binding":"dashscope-flash-chat"}]}}}))
         .unwrap(),
     );
     let header = b"{\"kind\":\"morphiecore_diagnostics\",\"version\":1,\"event\":\"file\"}\n";

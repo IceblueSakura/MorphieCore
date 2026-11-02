@@ -12,7 +12,7 @@ async fn native_response_sdk_keeps_changed_tools_effort_and_replay() {
 
 #[tokio::test]
 #[ignore = "requires locked Anthropic SDK; synthetic native credential migration JSON/SSE"]
-async fn native_response_sdk_tool_feedback_sticks_after_primary_recovery() {
+async fn native_response_sdk_tool_feedback_retries_with_one_new_http_request() {
     for stream in [false, true] {
         history_case(Some(stream)).await;
     }
@@ -50,10 +50,7 @@ async fn history_case(recovery_stream: Option<bool>) {
         serde_json::json!({"requests":requests,"http_requests":requests,"tool_changes":true,"ttl":"1h"})
     );
     let seen = fixture.seen.lock().unwrap();
-    assert_eq!(
-        seen.len(),
-        requests + usize::from(recovery_stream.is_some())
-    );
+    assert_eq!(seen.len(), requests);
     if let Some(recovery) = &fixture.recovery {
         recovery.assert_complete(5, true);
     } else {

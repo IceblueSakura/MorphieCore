@@ -301,6 +301,7 @@ pub(in crate::gateway) async fn produce_chain(
         trace.begin_candidate(chain.attempts);
         trace.probe(lease.as_ref().is_some_and(|lease| lease.probing));
         trace.executor(candidate.provider.id.as_str());
+        trace.named_account(candidate.account.as_deref());
         state.waiting_upstream.store(false, Ordering::Release);
         *state.failure_head.lock().expect("failure head") = None;
         let health = HealthAttempt { lease, state };

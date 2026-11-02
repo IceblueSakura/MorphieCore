@@ -1,4 +1,4 @@
-//! Explicit deployment parameters over existing catalog bindings.
+//! Explicit model contracts over account-bound catalog targets.
 use super::{
     entries::{
         ChatProfile, EmbeddingEntry, Entry, ImageEntry, SpeechEntry, TaskEntries,
@@ -7,14 +7,13 @@ use super::{
     error::StartupError,
 };
 use crate::{
-    credential::CredentialManager,
+    account::{AccountCredential, BoundAccounts},
     gateway::Credentials,
     lowering::target::TargetContract,
     protocol::{
         ClientProtocol,
         reasoning::{ReasoningConversion, ReasoningRequestPolicy, SHARED_BUDGETS, ThinkingBudgets},
     },
-    provider::{CredentialBindingId, EndpointPath, ProviderDefinition, TrustedOrigin},
     semantic::task::generation::{EffortLevel, EffortScope},
     topology::{self, CompiledTopology, Endpoint, EndpointId, GenerationProtocol},
 };
@@ -24,6 +23,7 @@ use std::collections::{BTreeMap, BTreeSet};
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct Models {
+    version: u32,
     pub models: BTreeMap<String, Model>,
     #[serde(default = "enabled")]
     pub implicit_cache_affinity: bool,
@@ -36,9 +36,9 @@ fn enabled() -> bool {
 #[serde(deny_unknown_fields)]
 pub(super) struct Model {
     binding: Option<String>,
+    account: Option<String>,
     #[serde(default)]
     candidates: Vec<Candidate>,
-    max_attempts: Option<usize>,
     total_timeout_ms: Option<u64>,
     thinking_tokens: Option<ThinkingTokens>,
     chat_profile: Option<ChatProfile>,
@@ -54,22 +54,17 @@ struct Candidate {
     maximum_output_tokens: Option<u64>,
     #[serde(default)]
     default_output_tokens: crate::semantic::value::Presence<u64>,
-    base_url: Option<String>,
     upstream_model: Option<String>,
-    credential: Option<String>,
-    attempt_timeout_ms: Option<u64>,
     #[serde(default)]
     reasoning_as_text: bool,
     thinking_conversion: Option<ThinkingConversion>,
 }
-
 #[derive(Clone, Copy, Deserialize)]
 #[serde(rename_all = "snake_case")]
 enum ThinkingConversion {
     BudgetToEffort,
     EffortToBudget,
 }
-
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ThinkingTokens {
@@ -95,7 +90,6 @@ impl ThinkingTokens {
         }
     }
 }
-
 pub(super) struct Plan {
     pub topology: CompiledTopology,
     pub entries: TaskEntries,
@@ -104,89 +98,82 @@ pub(super) struct Plan {
 fn invalid() -> StartupError {
     StartupError::Configuration("models")
 }
-fn timeout(ms: u64) -> Result<u64, StartupError> {
-    if (1..=86_400_000).contains(&ms) {
-        Ok(ms)
-    } else {
-        Err(invalid())
-    }
-}
 
 impl Models {
-    pub fn bind(self, manager: &CredentialManager) -> Result<Plan, StartupError> {
-        if self.models.is_empty() || self.models.len() > 64 {
+    pub fn bind(self, accounts: &BoundAccounts) -> Result<Plan, StartupError> {
+        if self.version != 1 || self.models.is_empty() || self.models.len() > 64 {
             return Err(invalid());
         }
         let catalog = topology::catalog::default_topology().map_err(|_| StartupError::Binding)?;
-        let pools: BTreeMap<_, _> = manager
-            .pools()
-            .map_err(|_| StartupError::Credentials)?
-            .into_iter()
-            .map(|(provider, id, status)| ((provider, id), status.config))
-            .collect();
-        let mut credentials = Credentials::new();
+        let mut credentials = Credentials::from(accounts);
         let mut entries = TaskEntries::default();
         let mut endpoints = Vec::new();
         let mut routes = Vec::new();
         let mut public_models = Vec::new();
-        let mut bind_pool = |provider: &str, pool: &str, id: CredentialBindingId| {
-            let config = pools
-                .get(&(provider.to_owned(), pool.to_owned()))
-                .ok_or(StartupError::Credentials)?;
-            credentials.insert_pool(
-                id,
-                manager
-                    .bind_pool(provider, config)
-                    .map_err(|_| StartupError::Credentials)?,
-            )
-        };
         for (model_index, (label, config)) in self.models.into_iter().enumerate() {
-            let transcription = match &config.binding {
-                Some(binding) => Some(
-                    catalog
-                        .transcription_binding(
-                            &label,
-                            &EndpointId::new(binding).map_err(|_| invalid())?,
-                        )
-                        .ok_or(StartupError::Binding)?,
-                ),
-                None => catalog.transcription_route(&label),
-            };
             let Some(public) = catalog.model(&label) else {
-                // Frozen tasks keep their single catalog target and existing pool rules.
                 if !config.candidates.is_empty()
-                    || config.max_attempts.is_some()
                     || config.total_timeout_ms.is_some()
                     || config.thinking_tokens.is_some()
                     || config.chat_profile.is_some()
                 {
                     return Err(invalid());
                 }
-                let (provider, credential) = if let Some(route) = catalog.image_route(&label) {
-                    entries.images.push(ImageEntry { model: label });
-                    (&route.endpoint.provider, &route.endpoint.credential)
+                let name = config.account.as_deref().ok_or_else(invalid)?;
+                let provider = if let Some(route) = catalog.image_route(&label) {
+                    if config.binding.is_some() {
+                        return Err(invalid());
+                    }
+                    entries.images.push(ImageEntry {
+                        model: label.clone(),
+                    });
+                    &route.endpoint.provider
                 } else if let Some(route) = catalog.speech_route(&label) {
-                    entries.speech.push(SpeechEntry { model: label });
-                    (&route.endpoint.provider, &route.endpoint.credential)
-                } else if let Some(route) = transcription {
+                    if config.binding.is_some() {
+                        return Err(invalid());
+                    }
+                    entries.speech.push(SpeechEntry {
+                        model: label.clone(),
+                    });
+                    &route.endpoint.provider
+                } else if catalog.transcription_model(&label).is_some() {
+                    let route = match config.binding.as_deref() {
+                        Some(binding) => catalog.transcription_binding(
+                            &label,
+                            &EndpointId::new(binding).map_err(|_| invalid())?,
+                        ),
+                        None => catalog.transcription_route(&label),
+                    }
+                    .ok_or(StartupError::Binding)?;
                     entries.transcriptions.push(TranscriptionEntry {
-                        model: label,
+                        model: label.clone(),
                         binding: Some(route.endpoint.id.clone()),
                     });
-                    (&route.endpoint.provider, &route.endpoint.credential)
+                    &route.endpoint.provider
                 } else if let Some(route) = catalog.embedding_route(&label) {
-                    entries.embeddings.push(EmbeddingEntry { model: label });
-                    (&route.endpoint.provider, &route.endpoint.credential)
+                    if config.binding.is_some() {
+                        return Err(invalid());
+                    }
+                    entries.embeddings.push(EmbeddingEntry {
+                        model: label.clone(),
+                    });
+                    &route.endpoint.provider
                 } else {
                     return Err(StartupError::Binding);
                 };
-                bind_pool(provider.as_str(), credential.as_str(), credential.clone())?;
+                let account = accounts
+                    .account(provider.as_str(), name)
+                    .ok_or(StartupError::Credentials)?;
+                if !account.enabled || !matches!(account.credential, AccountCredential::ApiKey(_)) {
+                    return Err(StartupError::Credentials);
+                }
+                credentials.select_task(label, account.binding_id());
                 continue;
             };
             if config.binding.is_some()
+                || config.account.is_some()
                 || config.candidates.is_empty()
                 || config.candidates.len() > 64
-                || config.max_attempts.is_some_and(|n| !(1..=64).contains(&n))
                 || config.thinking_tokens.is_some()
                     && config
                         .candidates
@@ -198,152 +185,134 @@ impl Models {
             let template_route = catalog.route(&public.route).ok_or(StartupError::Binding)?;
             let mut route = template_route.clone();
             route.endpoints.clear();
-            if config.candidates.len() > 1 {
-                route.policy.candidates = topology::CandidatePolicy::SkipUnrepresentable;
-                route.policy.fallback = topology::FallbackPolicy::BeforeCommit;
-            }
-            if let Some(attempts) = config.max_attempts {
-                route.policy.max_attempts = attempts;
-            }
-            route.policy.total_timeout_ms = config.total_timeout_ms.map(timeout).transpose()?;
+            route.policy.candidates = topology::CandidatePolicy::SkipUnrepresentable;
+            // The account cutover never dispatches another target after failure.
+            // The bounded same-target recovery executor is integrated separately.
+            route.policy.fallback = topology::FallbackPolicy::Disabled;
+            route.policy.max_attempts = 1;
+            route.policy.total_timeout_ms = config.total_timeout_ms;
             let table = config
                 .thinking_tokens
                 .as_ref()
                 .map_or(SHARED_BUDGETS, ThinkingTokens::table);
             table.validate().map_err(|_| invalid())?;
-            let single = config.candidates.len() == 1;
             let mut deployments = BTreeSet::new();
             for (candidate_index, candidate) in config.candidates.into_iter().enumerate() {
                 let binding = EndpointId::new(&candidate.binding).map_err(|_| invalid())?;
                 if !template_route.endpoints.contains(&binding) {
                     return Err(StartupError::Binding);
                 }
-                let mut endpoint = catalog
-                    .endpoint(&binding)
-                    .ok_or(StartupError::Binding)?
-                    .clone();
-                let mut provider = catalog
-                    .endpoint_provider(&endpoint)
-                    .ok_or(StartupError::Binding)?
-                    .clone();
-                let credential = candidate
-                    .credential
-                    .unwrap_or_else(|| endpoint.credential.as_str().to_owned());
-                let credential_id = CredentialBindingId::new(&format!(
-                    "configured-{model_index}-{candidate_index}"
-                ))
-                .map_err(|_| invalid())?;
-                bind_pool(provider.id.as_str(), &credential, credential_id.clone())?;
-                endpoint.credential = credential_id;
-                endpoint.id =
-                    EndpointId::new(&format!("configured-{model_index}-{candidate_index}"))
-                        .map_err(|_| invalid())?;
-                let original_target = endpoint.target.clone();
-                let original_model = endpoint.upstream_model.clone();
-                if let Some(model) = candidate.upstream_model {
-                    endpoint.upstream_model = model;
+                let template = catalog.endpoint(&binding).ok_or(StartupError::Binding)?;
+                let configured = accounts.provider(template.provider.as_str());
+                if configured.is_empty() {
+                    return Err(StartupError::Credentials);
                 }
-                if let Some(base_url) = candidate.base_url {
-                    deploy(&mut endpoint, &mut provider, &base_url)?;
-                }
-                if endpoint.protocol == GenerationProtocol::GoogleGenerateContent {
-                    if endpoint.upstream_model.is_empty()
-                        || !endpoint
-                            .upstream_model
-                            .bytes()
-                            .all(|b| b.is_ascii_alphanumeric() || b"._-".contains(&b))
-                    {
-                        return Err(invalid());
+                for (account_index, account) in
+                    configured.iter().enumerate().filter(|(_, a)| a.enabled)
+                {
+                    if route.endpoints.len() >= crate::execution::plan::MAX_CANDIDATES {
+                        return Err(StartupError::Binding);
                     }
-                    let entry = provider
+                    let mut endpoint = template.clone();
+                    let provider = account.provider.clone();
+                    let operation = provider
                         .generation_entry(endpoint.protocol.operation())
                         .ok_or(StartupError::Binding)?;
-                    endpoint.target.path =
-                        endpoint.declared_path(entry.path).map_err(|_| invalid())?;
-                }
-                if endpoint.target != original_target || endpoint.upstream_model != original_model {
-                    // A different deployment/model has no inherited capacity evidence.
-                    let limits = endpoint.representation.model_limits_mut();
-                    limits.context_window_tokens = None;
-                    limits.maximum_input_tokens = None;
-                }
-                if let Some(ms) = candidate.attempt_timeout_ms {
-                    endpoint.execution.timeout_ms = timeout(ms)?;
-                }
-                if !deployments.insert((
-                    provider.id.as_str().to_owned(),
-                    endpoint.target.origin.as_str().to_owned(),
-                    endpoint.target.path.as_str().to_owned(),
-                    endpoint.upstream_model.clone(),
-                    credential,
-                )) {
-                    return Err(StartupError::Binding);
-                }
-                if single && endpoint.execution.credential_kind.single_account() {
-                    route.policy.fallback = topology::FallbackPolicy::Disabled;
-                    if config.max_attempts.is_none() {
-                        route.policy.max_attempts = 1;
-                    }
-                }
-                reasoning(
-                    &mut endpoint,
-                    candidate.reasoning_as_text,
-                    candidate.thinking_conversion,
-                    &table,
-                )?;
-                let limits = crate::protocol::model_limits::ModelLimits {
-                    allowed_effort: candidate
-                        .allowed_effort
-                        .map(|levels| {
-                            if levels.is_empty() || levels.len() > 6 {
-                                return Err(invalid());
-                            }
-                            levels
-                                .into_iter()
-                                .map(|level| level.parse().map_err(|_| invalid()))
-                                .collect::<Result<Box<[_]>, _>>()
-                        })
-                        .transpose()?,
-                    context_window_tokens: candidate.context_window_tokens,
-                    maximum_input_tokens: candidate.maximum_input_tokens,
-                    maximum_output_tokens: candidate.maximum_output_tokens,
-                };
-                *endpoint.representation.model_limits_mut() = endpoint
-                    .representation
-                    .model_limits()
-                    .narrowed(limits)
+                    endpoint.credential = account.binding_id();
+                    endpoint.id = EndpointId::new(&format!(
+                        "configured-{model_index}-{candidate_index}-{account_index}"
+                    ))
                     .map_err(|_| invalid())?;
-                match (
-                    &mut endpoint.representation,
-                    candidate.default_output_tokens,
-                ) {
-                    (TargetContract::AnthropicMessages(caps), configured) => {
-                        use crate::semantic::value::Presence;
-                        match configured {
-                            Presence::Absent => {}
-                            Presence::Null => caps.default_output_tokens = None,
-                            Presence::Value(value) => caps.default_output_tokens = Some(value),
-                        }
-                        caps.validate().map_err(|_| invalid())?;
+                    endpoint.target.origin = provider.origin.clone();
+                    if let Some(model) = &candidate.upstream_model {
+                        endpoint.upstream_model = model.clone();
                     }
-                    (_, crate::semantic::value::Presence::Absent) => {}
-                    _ => return Err(invalid()),
+                    endpoint.target.path = endpoint
+                        .declared_path(operation.path)
+                        .map_err(|_| invalid())?;
+                    if endpoint.target != template.target
+                        || endpoint.upstream_model != template.upstream_model
+                    {
+                        let limits = endpoint.representation.model_limits_mut();
+                        limits.context_window_tokens = None;
+                        limits.maximum_input_tokens = None;
+                    }
+                    if !deployments.insert((
+                        provider.id.as_str().to_owned(),
+                        endpoint.target.origin.as_str().to_owned(),
+                        endpoint.target.path.as_str().to_owned(),
+                        endpoint.upstream_model.clone(),
+                        credentials
+                            .get(&endpoint.credential)
+                            .expect("enabled account binding")
+                            .source
+                            .provenance(),
+                    )) {
+                        return Err(StartupError::Binding);
+                    }
+                    reasoning(
+                        &mut endpoint,
+                        candidate.reasoning_as_text,
+                        candidate.thinking_conversion,
+                        &table,
+                    )?;
+                    let limits = crate::protocol::model_limits::ModelLimits {
+                        allowed_effort: candidate
+                            .allowed_effort
+                            .as_ref()
+                            .map(|levels| {
+                                if levels.is_empty() || levels.len() > 6 {
+                                    return Err(invalid());
+                                }
+                                levels
+                                    .iter()
+                                    .map(|level| level.parse().map_err(|_| invalid()))
+                                    .collect::<Result<Box<[_]>, _>>()
+                            })
+                            .transpose()?,
+                        context_window_tokens: candidate.context_window_tokens,
+                        maximum_input_tokens: candidate.maximum_input_tokens,
+                        maximum_output_tokens: candidate.maximum_output_tokens,
+                    };
+                    *endpoint.representation.model_limits_mut() = endpoint
+                        .representation
+                        .model_limits()
+                        .narrowed(limits)
+                        .map_err(|_| invalid())?;
+                    match (
+                        &mut endpoint.representation,
+                        &candidate.default_output_tokens,
+                    ) {
+                        (TargetContract::AnthropicMessages(caps), configured) => {
+                            use crate::semantic::value::Presence;
+                            match configured {
+                                Presence::Absent => {}
+                                Presence::Null => caps.default_output_tokens = None,
+                                Presence::Value(value) => caps.default_output_tokens = Some(*value),
+                            }
+                            caps.validate().map_err(|_| invalid())?;
+                        }
+                        (_, crate::semantic::value::Presence::Absent) => {}
+                        _ => return Err(invalid()),
+                    }
+                    route.endpoints.push(endpoint.id.clone());
+                    entries
+                        .generation
+                        .extend(ClientProtocol::ALL.map(|protocol| Entry {
+                            model: label.clone(),
+                            protocol,
+                            chat_profile: if protocol == ClientProtocol::Chat {
+                                config.chat_profile.unwrap_or_default()
+                            } else {
+                                ChatProfile::Standard
+                            },
+                            endpoint: endpoint.id.clone(),
+                        }));
+                    endpoints.push((endpoint, provider));
                 }
-                route.endpoints.push(endpoint.id.clone());
-                // Every public client protocol exposes the same explicit route.
-                entries
-                    .generation
-                    .extend(ClientProtocol::ALL.map(|protocol| Entry {
-                        model: label.clone(),
-                        protocol,
-                        chat_profile: if protocol == ClientProtocol::Chat {
-                            config.chat_profile.unwrap_or_default()
-                        } else {
-                            ChatProfile::Standard
-                        },
-                        endpoint: endpoint.id.clone(),
-                    }));
-                endpoints.push((endpoint, provider));
+            }
+            if route.endpoints.is_empty() {
+                return Err(StartupError::Credentials);
             }
             routes.push(route);
             public_models.push(public.clone());
@@ -357,49 +326,6 @@ impl Models {
             credentials,
         })
     }
-}
-
-fn deploy(
-    endpoint: &mut Endpoint,
-    provider: &mut ProviderDefinition,
-    base: &str,
-) -> Result<(), StartupError> {
-    let (scheme, authority_path) = base.split_once("://").ok_or_else(invalid)?;
-    let (authority, path) = authority_path
-        .split_once('/')
-        .unwrap_or((authority_path, ""));
-    if path.starts_with('/')
-        || path.contains(['?', '#', '%', '\\'])
-        || path
-            .bytes()
-            .any(|b| b.is_ascii_control() || b.is_ascii_whitespace())
-    {
-        return Err(invalid());
-    }
-    let origin = TrustedOrigin::parse(&format!("{scheme}://{authority}")).map_err(|_| invalid())?;
-    let prefix = path.strip_suffix('/').unwrap_or(path);
-    let suffix = match endpoint.protocol {
-        GenerationProtocol::OpenAiChat => "chat/completions",
-        GenerationProtocol::OpenAiResponses => "responses",
-        GenerationProtocol::AnthropicMessages => "messages",
-        GenerationProtocol::GoogleGenerateContent => "models",
-        GenerationProtocol::GoogleInteractions => "interactions",
-    };
-    let path = EndpointPath::new(&if prefix.is_empty() {
-        format!("/{suffix}")
-    } else {
-        format!("/{prefix}/{suffix}")
-    })
-    .map_err(|_| invalid())?;
-    provider.origin = origin.clone();
-    provider
-        .endpoints
-        .get_mut(&endpoint.protocol.operation().into())
-        .ok_or(StartupError::Binding)?
-        .path = path.clone();
-    endpoint.target.origin = origin;
-    endpoint.target.path = path;
-    Ok(())
 }
 
 fn reasoning(

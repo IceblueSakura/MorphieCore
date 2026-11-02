@@ -45,10 +45,7 @@ async fn history_case(profile: GenerationApi, recovery_stream: Option<bool>) {
     } else {
         assert_eq!(report["http_requests"], requests);
     }
-    assert_eq!(
-        fixture.seen.lock().unwrap().len(),
-        requests + usize::from(recovery_stream.is_some())
-    );
+    assert_eq!(fixture.seen.lock().unwrap().len(), requests);
     if let Some(recovery) = &fixture.recovery {
         recovery.assert_complete(3, false);
     }
@@ -90,7 +87,7 @@ async fn responses_stored_and_stateless_history() {
 
 #[tokio::test]
 #[ignore = "requires pinned OpenAI SDK; synthetic Chat credential migration JSON/SSE"]
-async fn chat_sdk_tool_feedback_sticks_after_primary_recovery() {
+async fn chat_sdk_tool_feedback_retries_with_one_new_http_request() {
     for stream in [false, true] {
         history_case(GenerationApi::Chat, Some(stream)).await;
     }

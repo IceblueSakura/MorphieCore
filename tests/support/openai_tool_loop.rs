@@ -333,11 +333,32 @@ async fn start_with_recovery(
         topology::ModelMetadata::new(1, "Synthetic tool history").unwrap(),
     )];
     let (credentials, store) = if recover {
-        let (credentials, store) = crate::credential_recovery::pool(
+        let prefix = match profile {
+            GenerationApi::Chat => "/compatible-mode/v1",
+            GenerationApi::Responses => "/api/v1",
+        };
+        let (accounts, store) = crate::credential_recovery::accounts(
             provider.id.as_str(),
-            endpoints.last().unwrap().credential.clone(),
+            &format!("{}{prefix}", provider.origin.as_str()),
         );
-        (credentials, Some(store))
+        let primary = endpoints.last_mut().unwrap();
+        primary.credential = accounts.provider(provider.id.as_str())[0].binding_id();
+        let mut secondary = primary.clone();
+        secondary.id = topology::EndpointId::new(&format!("{id}-backup")).unwrap();
+        secondary.credential = accounts.provider(provider.id.as_str())[1].binding_id();
+        route.endpoints.push(secondary.id.clone());
+        entries.push(Entry {
+            chat_profile,
+            model: label.into(),
+            protocol: profile.into(),
+            endpoint: secondary.id.clone(),
+        });
+        endpoints.push(secondary);
+        route.policy.max_attempts = 1;
+        (
+            morphiecore::gateway::Credentials::from(&accounts),
+            Some(store),
+        )
     } else {
         (credentials.into(), None)
     };

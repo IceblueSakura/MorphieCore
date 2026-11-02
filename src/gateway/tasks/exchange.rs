@@ -23,6 +23,7 @@ pub(super) async fn send<R>(
 ) -> Result<reqwest::Response, ApiError> {
     trace.stage(Stage::Prepare);
     trace.executor(entry.provider.id.as_str());
+    trace.named_account(entry.account.as_deref());
     let (secret, grant) = entry.secret.resolve_for_request().await?;
     if grant.is_some() {
         return Err(ApiError::upstream());

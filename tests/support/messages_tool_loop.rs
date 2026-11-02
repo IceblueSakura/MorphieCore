@@ -202,10 +202,24 @@ async fn start_with_recovery(recover: bool) -> Fixture {
     endpoint.target.origin = origin;
     let mut public = binding.public_model();
     public.contract = binding.canonical_model().contract;
+    let mut endpoints = vec![endpoint];
+    let mut route = binding.route();
+    route.policy.max_attempts = 1;
     let (credentials, store) = if recover {
-        let (credentials, store) =
-            crate::credential_recovery::pool(provider.id.as_str(), endpoint.credential.clone());
-        (credentials, Some(store))
+        let (accounts, store) = crate::credential_recovery::accounts(
+            provider.id.as_str(),
+            &format!("{}/zen/go/v1", provider.origin.as_str()),
+        );
+        endpoints[0].credential = accounts.provider(provider.id.as_str())[0].binding_id();
+        let mut secondary = endpoints[0].clone();
+        secondary.id = topology::EndpointId::new("synthetic-messages-secondary").unwrap();
+        secondary.credential = accounts.provider(provider.id.as_str())[1].binding_id();
+        route.endpoints.push(secondary.id.clone());
+        endpoints.push(secondary);
+        (
+            morphiecore::gateway::Credentials::from(&accounts),
+            Some(store),
+        )
     } else {
         (
             BTreeMap::from([(
@@ -216,13 +230,10 @@ async fn start_with_recovery(recover: bool) -> Fixture {
             None,
         )
     };
-    let mut route = binding.route();
-    if recover {
-        route.policy.max_attempts = 2;
-    }
+    let candidate_ids = route.endpoints.clone();
     let topology = topology::compile(
         vec![provider],
-        vec![endpoint],
+        endpoints,
         vec![route],
         vec![public],
         vec![binding.canonical_model()],
@@ -234,13 +245,16 @@ async fn start_with_recovery(recover: bool) -> Fixture {
         topology,
         TaskEntries {
             generation: [ClientProtocol::Chat, ClientProtocol::Messages]
-                .map(|protocol| Entry {
-                    chat_profile: Default::default(),
-                    model: binding.model.into(),
-                    protocol,
-                    endpoint: binding.endpoint().id,
+                .into_iter()
+                .flat_map(|protocol| {
+                    candidate_ids.iter().map(move |endpoint| Entry {
+                        chat_profile: Default::default(),
+                        model: binding.model.into(),
+                        protocol,
+                        endpoint: endpoint.clone(),
+                    })
                 })
-                .into(),
+                .collect(),
             ..Default::default()
         },
         credentials,

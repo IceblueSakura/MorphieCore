@@ -2,9 +2,10 @@
 #[cfg(test)]
 mod binding_tests;
 use crate::{
+    account::{AccountCredential, BoundAccount, BoundAccounts},
     credential::{AccessBinding, AccessGrant, ApiKeyAccess},
     gateway::StartupError,
-    provider::{CredentialBindingId, CredentialKind, SecretMaterial},
+    provider::{CredentialBindingId, CredentialKind, ProviderDefinition, SecretMaterial},
 };
 use std::{collections::BTreeMap, sync::Arc};
 
@@ -15,28 +16,49 @@ pub(in crate::gateway) enum Source {
     Account(AccessBinding),
 }
 #[derive(Default)]
-pub struct Credentials(BTreeMap<CredentialBindingId, Binding>);
+pub struct Credentials {
+    bindings: BTreeMap<CredentialBindingId, Binding>,
+    task_accounts: BTreeMap<String, CredentialBindingId>,
+    pub(in crate::gateway) oauth_accounts: Vec<AccessBinding>,
+}
 pub(in crate::gateway) struct Binding {
-    pub sources: Vec<Source>,
-    pub fallback: bool,
-    pub max_attempts: usize,
+    pub source: Source,
+    pub provider: Option<ProviderDefinition>,
+    pub name: Option<String>,
 }
 impl Binding {
     fn single(source: Source) -> Self {
         Self {
-            sources: vec![source],
-            fallback: false,
-            max_attempts: 1,
+            source,
+            provider: None,
+            name: None,
         }
     }
 }
 impl From<BTreeMap<CredentialBindingId, Arc<SecretMaterial>>> for Credentials {
     fn from(keys: BTreeMap<CredentialBindingId, Arc<SecretMaterial>>) -> Self {
-        Self(
-            keys.into_iter()
+        Self {
+            bindings: keys
+                .into_iter()
                 .map(|(id, key)| (id, Binding::single(Source::ApiKey(key))))
                 .collect(),
-        )
+            task_accounts: BTreeMap::new(),
+            oauth_accounts: vec![],
+        }
+    }
+}
+impl From<&BoundAccounts> for Credentials {
+    fn from(accounts: &BoundAccounts) -> Self {
+        let mut credentials = Self::new();
+        for account in accounts.all() {
+            if let AccountCredential::OAuth(binding) = &account.credential {
+                credentials.retain_oauth(binding);
+            }
+            if account.enabled {
+                credentials.insert_configured(account.binding_id(), account);
+            }
+        }
+        credentials
     }
 }
 impl Credentials {
@@ -44,53 +66,53 @@ impl Credentials {
         Self::default()
     }
     pub fn insert(&mut self, id: CredentialBindingId, secret: Arc<SecretMaterial>) {
-        self.0.insert(id, Binding::single(Source::ApiKey(secret)));
+        self.bindings
+            .insert(id, Binding::single(Source::ApiKey(secret)));
     }
     pub fn insert_managed_key(&mut self, id: CredentialBindingId, binding: ApiKeyAccess) {
-        self.0
+        self.bindings
             .insert(id, Binding::single(Source::ManagedKey(binding)));
     }
     pub fn insert_account(&mut self, id: CredentialBindingId, binding: AccessBinding) {
-        self.0.insert(id, Binding::single(Source::Account(binding)));
+        self.retain_oauth(&binding);
+        self.bindings
+            .insert(id, Binding::single(Source::Account(binding)));
     }
-    pub fn insert_pool(
-        &mut self,
-        id: CredentialBindingId,
-        pool: crate::credential::PoolAccess,
-    ) -> Result<(), StartupError> {
-        if pool.members.is_empty()
-            || pool.members.len() > crate::credential::MAX_POOL_MEMBERS
-            || !(1..=64).contains(&pool.max_attempts)
-            || (pool.members.iter().any(
-                |m| matches!(m, crate::credential::PoolMember::OAuth(a) if crate::provider::auth::single_account_profile(a.profile())),
-            ) && (pool.members.len() != 1 || pool.fallback || pool.max_attempts != 1))
+    fn retain_oauth(&mut self, binding: &AccessBinding) {
+        if !self
+            .oauth_accounts
+            .iter()
+            .any(|other| binding.same_account(other))
         {
-            return Err(StartupError::Credentials);
+            self.oauth_accounts.push(binding.clone());
         }
-        let sources: Vec<_> = pool
-            .members
-            .into_iter()
-            .map(|member| match member {
-                crate::credential::PoolMember::ApiKey(key) => Source::ManagedKey(key),
-                crate::credential::PoolMember::OAuth(account) => Source::Account(account),
-            })
-            .collect();
-        let mut seen = std::collections::BTreeSet::new();
-        if sources.iter().any(|s| !seen.insert(s.provenance())) {
-            return Err(StartupError::Credentials);
-        }
-        self.0.insert(
+    }
+    fn insert_configured(&mut self, id: CredentialBindingId, account: &BoundAccount) {
+        let source = match &account.credential {
+            AccountCredential::ApiKey(binding) => Source::ManagedKey(binding.clone()),
+            AccountCredential::OAuth(binding) => Source::Account(binding.clone()),
+        };
+        self.bindings.insert(
             id,
             Binding {
-                sources,
-                fallback: pool.fallback,
-                max_attempts: pool.max_attempts,
+                source,
+                provider: Some(account.provider.clone()),
+                name: Some(account.name.clone()),
             },
         );
-        Ok(())
     }
     pub(in crate::gateway) fn get(&self, id: &CredentialBindingId) -> Option<&Binding> {
-        self.0.get(id)
+        self.bindings.get(id)
+    }
+    pub(super) fn select_task(&mut self, model: String, id: CredentialBindingId) {
+        self.task_accounts.insert(model, id);
+    }
+    pub(in crate::gateway) fn task(
+        &self,
+        model: &str,
+        default: &CredentialBindingId,
+    ) -> Option<&Binding> {
+        self.get(self.task_accounts.get(model).unwrap_or(default))
     }
 }
 fn unavailable(error: crate::credential::CredentialError) -> crate::gateway::ApiError {

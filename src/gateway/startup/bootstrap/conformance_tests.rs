@@ -436,22 +436,28 @@ async fn observe_intake(
     config["concurrency"] = json!(1);
     config["exchange_timeout_ms"] = json!(3000);
     config["delta_coalescing"] = Value::Null;
-    let mut models = json!({"models":{model:{"max_attempts":1,"candidates":[{
-        "binding":binding,"base_url":origin,"attempt_timeout_ms":2000
+    let mut models = json!({"models":{model:{"candidates":[{
+        "binding":binding
     }]}}});
     if control == Control::ReadableHistory {
         models["models"][model]["chat_profile"] = json!("readable_reasoning");
     }
-    let mut boot = if let Some(profile) = oauth {
-        Fixture::with_oauth(config, models, profile, pool)
+    let mut boot = if oauth.is_some() {
+        Fixture::with_oauth(config, models, provider, pool)
     } else {
-        Fixture::new(
+        Fixture::with_accounts(
             config,
             models,
             &[(provider, pool, "synthetic-upstream-key")],
+            json!({"version":1,"providers":{provider:{"accounts":[{
+                "name":pool,"enabled":true,"credential":{"kind":"api_key","alias":pool},"base_url":origin
+            }]}}}),
         )
     }
     .unwrap();
+    if oauth.is_some() {
+        boot.loopback_authority(origin.strip_suffix("/v1").unwrap());
+    }
     if force_stream {
         assert!(!stream, "experiment preserves JSON client delivery");
         boot.force_upstream_stream();
@@ -780,9 +786,13 @@ async fn grouped_responses_history_agrees_between_managed_and_stateless_continua
         let _server = Server(tokio::spawn(async move {
             axum::serve(listener, router).await.unwrap();
         }));
-        let boot = Fixture::new(service(), json!({"models":{model:{"max_attempts":1,
-            "candidates":[{"binding":"dashscope-flash-responses","base_url":origin,"attempt_timeout_ms":2000}]}}}),
-            &[("aliyun-dashscope-cn","aliyun-dashscope-cn-api-key","synthetic-upstream-key")]).unwrap();
+        let boot = Fixture::with_accounts(service(), json!({"models":{model:{
+            "candidates":[{"binding":"dashscope-flash-responses"}]}}}),
+            &[("aliyun-dashscope-cn","aliyun-dashscope-cn-api-key","synthetic-upstream-key")],
+            json!({"version":1,"providers":{"aliyun-dashscope-cn":{"accounts":[{
+                "name":"aliyun-dashscope-cn-api-key","enabled":true,
+                "credential":{"kind":"api_key","alias":"aliyun-dashscope-cn-api-key"},"base_url":origin
+            }]}}})).unwrap();
         let mut request =
             json!({"model":model,"input":"go","max_output_tokens":64,"stream":stream,"store":true});
         request["tools"] = json!([{"type":"function","name":"lookup","description":"Look up a key.",
@@ -1101,9 +1111,9 @@ async fn catalog_subscription_production_lanes() {
     assert_eq!(
         subscriptions,
         [
-            "openai-responses",
-            "openai-astra-responses",
-            "openai-luna-responses",
+            "chatgpt-responses",
+            "chatgpt-astra-responses",
+            "chatgpt-luna-responses",
             "grok-responses"
         ]
     );
@@ -1297,6 +1307,9 @@ const ACCEPT: &[&str] = &["accepted@1", "accepted@1"];
 const BASIC_EXPECTATIONS: &[(&[&str], [&[&str]; 4])] = &[
     (
         &[
+            "openai-sol-responses",
+            "openai-astra-responses",
+            "openai-luna-responses",
             "xiaomi-ultraspeed-responses",
             "opencode-go-muse-responses",
             "deepseek-responses",

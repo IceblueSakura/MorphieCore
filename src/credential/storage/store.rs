@@ -2,7 +2,6 @@
 use crate::credential::{
     CredentialError as Error,
     model::{Account, valid_alias, valid_profile},
-    pool::PoolStatus,
     storage::fs::{Directory, FileLock},
 };
 use serde::{Deserialize, Serialize};
@@ -28,6 +27,7 @@ impl StoredDocument for Account {
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(in crate::credential) struct ProviderDocument {
+    pub version: u32,
     pub provider: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub host_id: Option<String>,
@@ -37,11 +37,6 @@ pub(in crate::credential) struct ProviderDocument {
     pub oauth: BTreeMap<String, Value>,
     #[serde(default, deserialize_with = "key_records")]
     pub api_keys: BTreeMap<String, Value>,
-    #[serde(
-        default,
-        deserialize_with = "serde_with::rust::maps_duplicate_key_is_error::deserialize"
-    )]
-    pub pools: BTreeMap<String, PoolStatus>,
 }
 // Typed intake rejects duplicate/unknown grant fields before Value is used as a
 // transient serialization container for merging one independently owned record.
@@ -72,21 +67,21 @@ fn key_records<'de, D: serde::Deserializer<'de>>(
 impl ProviderDocument {
     fn empty(provider: &str) -> Self {
         Self {
+            version: 1,
             provider: provider.into(),
             host_id: None,
             revision: 0,
             oauth: BTreeMap::new(),
             api_keys: BTreeMap::new(),
-            pools: BTreeMap::new(),
         }
     }
     fn validate(&self, provider: &str) -> Result<(), Error> {
         valid_profile(provider)?;
-        if self.provider != provider
+        if self.version != 1
+            || self.provider != provider
             || self.host_id.as_ref().is_some_and(|id| !valid_host_id(id))
             || self.oauth.len() > RECORDS
             || self.api_keys.len() > RECORDS
-            || self.pools.len() > RECORDS
         {
             return Err(Error::Storage);
         }
@@ -99,13 +94,6 @@ impl ProviderDocument {
             let key: crate::credential::api_key::KeyRecord =
                 serde_json::from_value(value.clone()).map_err(|_| Error::Storage)?;
             key.validate_binding(provider, alias)?;
-        }
-        for (name, pool) in &self.pools {
-            valid_alias(name)?;
-            if pool.revision == 0 {
-                return Err(Error::Storage);
-            }
-            pool.config.validate()?;
         }
         Ok(())
     }
@@ -267,7 +255,7 @@ impl Transaction<'_> {
             }
         }
         if names.len() > RECORDS {
-            return Err(Error::PoolFull);
+            return Err(Error::Capacity);
         }
         Ok(names.into_iter().collect())
     }
@@ -313,7 +301,7 @@ impl Transaction<'_> {
             }
         }
         if aliases.len() > RECORDS {
-            return Err(Error::PoolFull);
+            return Err(Error::Capacity);
         }
         Ok(aliases.into_iter().collect())
     }
@@ -376,7 +364,7 @@ impl Transaction<'_> {
         self.check_namespace_capacity(&document)?;
         let values = self.records(&mut document);
         if !values.contains_key(alias) && values.len() >= RECORDS {
-            return Err(Error::PoolFull);
+            return Err(Error::Capacity);
         }
         let value = serde_json::to_value(record).map_err(|_| Error::Storage)?;
         if serde_json::to_vec(&value)
@@ -434,7 +422,7 @@ impl Transaction<'_> {
             let namespaces = self.namespaces()?;
             // A pending first publication already reserves this namespace.
             if namespaces.len() >= RECORDS && !namespaces.contains(&document.provider) {
-                return Err(Error::PoolFull);
+                return Err(Error::Capacity);
             }
         }
         Ok(())

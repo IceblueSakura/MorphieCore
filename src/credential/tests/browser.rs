@@ -338,7 +338,7 @@ async fn bad_nonce_or_mixed_subject_never_reactivates_ended_browser_session() {
         let authority = Authority::new(steps).await;
         let dir = Directory::new();
         let pool = authority.pool(&dir);
-        let mut account = model::Account::new("grok", "personal", CLIENT);
+        let mut account = model::Account::new("grok", "personal", CLIENT).unwrap();
         account.identity = Some(VerifiedIdentity {
             subject: "person-a".into(),
             scope: None,

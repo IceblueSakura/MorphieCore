@@ -584,3 +584,102 @@ async fn automatic_refresh_is_exclusive_and_rechecks_new_expiry() {
     // Another process's renewal is observed rather than blindly rotating again.
     assert!(!binding.refresh_if_due(120).await.unwrap());
 }
+#[tokio::test]
+async fn removed_registration_keeps_revisions_monotonic_and_releases_its_subject() {
+    let dir = test_support::Directory::new();
+    let (manager, _, _) = manager(&dir);
+    let first = manager
+        .login("third", "one", LoginOptions::default(), |_| {})
+        .await
+        .unwrap();
+    let old = manager.bind_access("third", "one").unwrap();
+    manager.logout("third", "one", false).await.unwrap();
+    assert_eq!(
+        manager
+            .login("third", "other", LoginOptions::default(), |_| {})
+            .await
+            .unwrap_err(),
+        CredentialError::IdentityMismatch
+    );
+    let signed_out = manager
+        .list(None)
+        .unwrap()
+        .into_iter()
+        .find(|a| a.account == "one")
+        .unwrap();
+    manager
+        .remove_account("third", "one", signed_out.revision)
+        .unwrap();
+    let other = manager
+        .login("third", "other", LoginOptions::default(), |_| {})
+        .await
+        .unwrap();
+    manager
+        .remove_account("third", "other", other.revision)
+        .unwrap();
+    let replacement = manager
+        .login("third", "one", LoginOptions::default(), |_| {})
+        .await
+        .unwrap();
+    assert!(replacement.revision > signed_out.revision);
+    assert_eq!(
+        manager
+            .remove_account("third", "one", first.revision)
+            .unwrap_err(),
+        CredentialError::Superseded
+    );
+    assert_eq!(old.borrow().unwrap_err(), CredentialError::IdentityMismatch);
+    assert_eq!(
+        old.refresh_if_due(0).await.unwrap_err(),
+        CredentialError::IdentityMismatch
+    );
+    let current = manager.bind_access("third", "one").unwrap();
+    assert_ne!(old.provenance(), current.provenance());
+    assert!(current.borrow().is_ok());
+}
+
+#[tokio::test]
+async fn logout_after_removal_cannot_revive_an_old_binding() {
+    let dir = test_support::Directory::new();
+    let (manager, _, _) = manager(&dir);
+    let first = manager
+        .login("third", "one", LoginOptions::default(), |_| {})
+        .await
+        .unwrap();
+    let old = manager.bind_access("third", "one").unwrap();
+    manager
+        .remove_account("third", "one", first.revision)
+        .unwrap();
+    manager.logout("third", "one", false).await.unwrap();
+    assert_eq!(manager.list(None).unwrap()[0].state, AccountState::Removed);
+    manager
+        .login("third", "one", LoginOptions::default(), |_| {})
+        .await
+        .unwrap();
+    assert_eq!(old.borrow().unwrap_err(), CredentialError::IdentityMismatch);
+}
+
+#[tokio::test]
+async fn removed_tombstone_survives_a_durable_publication_quarantine() {
+    let dir = test_support::Directory::new();
+    let (manager, _, _) = manager(&dir);
+    let first = manager
+        .login("third", "one", LoginOptions::default(), |_| {})
+        .await
+        .unwrap();
+    let old = manager.bind_access("third", "one").unwrap();
+    manager.store.fail_at(store::PublishStep::DirectorySync);
+    assert!(
+        manager
+            .remove_account("third", "one", first.revision)
+            .is_err()
+    );
+    let state = manager.list(None).unwrap();
+    assert!(state[0].recovery_required);
+    assert_eq!(state[0].state, AccountState::Removed);
+    manager
+        .login("third", "one", LoginOptions::default(), |_| {})
+        .await
+        .unwrap();
+    assert_eq!(old.borrow().unwrap_err(), CredentialError::IdentityMismatch);
+}

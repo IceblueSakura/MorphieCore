@@ -10,7 +10,15 @@ use std::sync::{
 mod filesystem;
 
 fn command(args: &[&str]) -> Command {
-    Options::try_parse_from(std::iter::once("upstream").chain(args.iter().copied()))
+    let selected: Vec<_> = if args.contains(&"--account") {
+        args.to_vec()
+    } else {
+        args.iter()
+            .copied()
+            .chain(["--account", "primary"])
+            .collect()
+    };
+    Options::try_parse_from(std::iter::once("upstream").chain(selected))
         .unwrap()
         .command
 }
@@ -37,7 +45,7 @@ fn shared_metadata_selects_targets_without_cli_endpoint_overrides() {
     );
     let plan = command(&[
         "probe",
-        "openai",
+        "chatgpt",
         "--protocol",
         "openai-responses",
         "--model",
@@ -61,12 +69,33 @@ fn shared_metadata_selects_targets_without_cli_endpoint_overrides() {
             "--model",
             "x",
         ],
-        vec!["models", "openai", "--api-key", "one"],
-        vec!["models", "deepseek", "--account", "one"],
+        vec![
+            "probe",
+            "chatgpt",
+            "--protocol",
+            "openai-chat",
+            "--model",
+            "new",
+        ],
     ] {
         assert!(command(&args).plan().is_err());
     }
+    let api_key = command(&[
+        "probe",
+        "openai",
+        "--protocol",
+        "openai-responses",
+        "--model",
+        "new",
+    ])
+    .plan()
+    .unwrap();
+    assert_eq!(api_key.oauth, None);
+    assert_eq!(api_key.provider.origin.as_str(), "https://api.openai.com");
+    assert_eq!(api_key.body.unwrap()["stream"], false);
     for args in [
+        vec!["models", "deepseek"],
+        vec!["models", "openai", "--api-key", "one"],
         vec!["models", "deepseek", "--protocol", "openai-chat"],
         vec!["models", "deepseek", "--origin", "https://other.invalid"],
         vec!["models", "deepseek", "--path", "/other"],
@@ -110,7 +139,7 @@ fn native_probe_paths_and_headers_follow_the_shared_entries() {
     }
 }
 #[tokio::test]
-async fn default_pool_uses_only_its_first_member_and_explicit_alias_bypasses_it() {
+async fn diagnostics_select_only_the_configured_named_account_without_alias_bypass() {
     let directory = filesystem::private_directory();
     let manager = CredentialManager::new(directory.path(), vec![]).unwrap();
     let first = manager
@@ -127,33 +156,21 @@ async fn default_pool_uses_only_its_first_member_and_explicit_alias_bypasses_it(
             Secret::new("synthetic-second".into()).unwrap(),
         )
         .unwrap();
-    let selected = command(&["models", "deepseek"]);
-    let plan = selected.plan().unwrap();
-    assert!(matches!(
-        selected_credential(&manager, selected.target(), &plan),
-        Err(Error::Pool)
-    ));
-    manager
-        .set_pool(
-            "deepseek",
-            "deepseek-api-key",
-            0,
-            morphiecore::credential::CredentialPool {
-                members: vec![
-                    CredentialRef::ApiKey {
-                        alias: "one".into(),
-                    },
-                    CredentialRef::ApiKey {
-                        alias: "two".into(),
-                    },
-                ],
-                fallback: true,
-                max_attempts: 2,
-            },
-        )
+    let accounts: Accounts =
+        serde_json::from_value(json!({"version":1,"providers":{"deepseek":{"accounts":[
+            {"name":"primary","enabled":true,"credential":{"kind":"api_key","alias":"one"}},
+            {"name":"backup","enabled":true,"credential":{"kind":"api_key","alias":"two"}}
+        ]}}}))
         .unwrap();
+    accounts.validate().unwrap();
+    assert!(
+        accounts.account("deepseek", "one").is_err(),
+        "a credential locator is not an account name"
+    );
+    let (provider, primary) = accounts.account("deepseek", "primary").unwrap();
+    let pinned = primary.bind(provider, &manager).unwrap();
     assert_eq!(
-        credential(&manager, selected.target(), &plan)
+        credential(&manager, primary, &pinned.credential)
             .await
             .unwrap()
             .0
@@ -164,13 +181,17 @@ async fn default_pool_uses_only_its_first_member_and_explicit_alias_bypasses_it(
         .set_api_key_enabled("deepseek", "one", first.revision, false)
         .unwrap();
     assert!(
-        credential(&manager, selected.target(), &plan)
+        credential(&manager, primary, &pinned.credential)
             .await
             .is_err()
     );
-    let explicit = command(&["models", "deepseek", "--api-key", "two"]);
+    let selected = command(&["models", "deepseek", "--account", "backup"]);
+    let (provider, backup) = accounts
+        .account("deepseek", &selected.target().account)
+        .unwrap();
+    let bound = backup.bind(provider, &manager).unwrap();
     assert_eq!(
-        credential(&manager, explicit.target(), &explicit.plan().unwrap())
+        credential(&manager, backup, &bound.credential)
             .await
             .unwrap()
             .0
@@ -329,36 +350,25 @@ async fn expired_oauth_refreshes_once_through_manager_and_persists_without_rebin
             .login("grok", "one", LoginOptions::default(), |_| {})
             .await
             .unwrap();
-        let pool = morphiecore::credential::CredentialPool {
-            members: vec![CredentialRef::OAuth {
+        let account = Account {
+            name: "primary".into(),
+            enabled: true,
+            base_url: None,
+            credential: CredentialRef::OAuth {
                 profile: "grok".into(),
                 alias: "one".into(),
-            }],
-            fallback: false,
-            max_attempts: 1,
+            },
         };
-        manager
-            .set_pool("grok", "grok-oauth", 0, pool.clone())
+        assert!(
+            account
+                .bind(catalog::get("deepseek").unwrap(), &manager)
+                .is_err()
+        );
+        let bound = account
+            .bind(catalog::get("grok").unwrap(), &manager)
             .unwrap();
-        manager
-            .set_pool("deepseek", "deepseek-api-key", 0, pool)
-            .unwrap();
-        let wrong = command(&["models", "deepseek"]);
-        assert!(matches!(
-            credential(&manager, wrong.target(), &wrong.plan().unwrap()).await,
-            Err(Error::CredentialMismatch)
-        ));
         assert_eq!(refreshes.load(Ordering::SeqCst), 0);
-        let command = command(&[
-            "probe",
-            "grok",
-            "--protocol",
-            "openai-responses",
-            "--model",
-            "new",
-        ]);
-        let plan = command.plan().unwrap();
-        let result = credential(&manager, command.target(), &plan).await;
+        let result = credential(&manager, &account, &bound.credential).await;
         assert_eq!(refreshes.load(Ordering::SeqCst), usize::from(expired));
         if fail {
             assert!(matches!(
@@ -383,7 +393,9 @@ async fn expired_oauth_refreshes_once_through_manager_and_persists_without_rebin
                     "synthetic-old-access"
                 }
             );
-            let (_, again) = credential(&manager, command.target(), &plan).await.unwrap();
+            let (_, again) = credential(&manager, &account, &bound.credential)
+                .await
+                .unwrap();
             assert!(!again);
             assert_eq!(refreshes.load(Ordering::SeqCst), usize::from(expired));
         }

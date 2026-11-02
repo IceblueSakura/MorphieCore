@@ -50,9 +50,7 @@ fn haiku_contract(mut contract: Dispositions) -> Dispositions {
 }
 impl MessagesBinding {
     pub fn credential(&self) -> CredentialBindingId {
-        self.provider()
-            .credential_pool
-            .expect("catalog credential pool")
+        CredentialBindingId::new(self.provider().id.as_str()).expect("catalog Provider identity")
     }
     pub fn provider(&self) -> ProviderDefinition {
         catalog::opencode_go()

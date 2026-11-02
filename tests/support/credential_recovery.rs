@@ -1,10 +1,9 @@
-//! Synthetic managed pool and a single pre-publication failure during tool feedback.
+//! Synthetic named accounts and pre-publication failures during tool feedback.
 use crate::filesystem;
 use axum::{body::Body, http::HeaderMap, response::Response};
 use morphiecore::{
-    credential::{CredentialManager, CredentialPool, CredentialRef, Secret},
-    gateway::Credentials,
-    provider::CredentialBindingId,
+    account::{Accounts, BoundAccounts},
+    credential::{CredentialManager, Secret},
 };
 use std::sync::{
     Mutex,
@@ -46,8 +45,8 @@ impl Recovery {
         fail.then(|| {
             Response::builder()
                 .status(503)
-                // Immediate expiry permits a real foreground recovery without sleeps.
-                .header("retry-after", if cooling { "60" } else { "0" })
+                // This hint exceeds the short recovery budget; the client must retry.
+                .header("retry-after", "60")
                 .body(Body::empty())
                 .unwrap()
         })
@@ -56,7 +55,7 @@ impl Recovery {
     pub fn assert_complete(&self, turns: usize, native_session: bool) {
         assert!(!self.cooling.load(Ordering::SeqCst));
         let attempts = self.attempts.lock().unwrap();
-        let mut expected = vec![(1, true), (2, true), (2, false), (1, true)];
+        let mut expected = vec![(1, true), (2, true), (2, false)];
         expected.extend((3..=turns).map(|turn| (turn, false)));
         assert_eq!(
             attempts
@@ -64,25 +63,17 @@ impl Recovery {
                 .map(|(turn, key, _)| (*turn, *key))
                 .collect::<Vec<_>>(),
             expected,
-            "migration must stick after the primary honestly recovers in another conversation"
+            "a new HTTP request moves accounts; later turns retain that target"
         );
         if native_session {
             let original = attempts[0].2.as_ref().expect("native session carrier");
             assert!(!original.is_empty());
-            for (index, (_, _, session)) in attempts.iter().enumerate() {
-                if index == 3 {
-                    assert_ne!(
-                        session.as_ref(),
-                        Some(original),
-                        "new conversation reused identity"
-                    );
-                } else {
-                    assert_eq!(
-                        session.as_ref(),
-                        Some(original),
-                        "tool round changed identity"
-                    );
-                }
+            for (_, _, session) in attempts.iter() {
+                assert_eq!(
+                    session.as_ref(),
+                    Some(original),
+                    "tool round changed identity"
+                );
             }
         }
     }
@@ -104,7 +95,7 @@ impl Recovery {
             .unwrap();
         let started = std::time::Instant::now();
         let mut unavailable = None;
-        for request in 0..2 {
+        for request in 0..3 {
             let mut outgoing = client
                 .post(url)
                 .bearer_auth(key)
@@ -115,9 +106,9 @@ impl Recovery {
             let response = outgoing.json(input).send().await.unwrap();
             assert_eq!(
                 response.status(),
-                if request == 0 { attempted_status } else { 503 }
+                if request < 2 { attempted_status } else { 503 }
             );
-            if request == 1 {
+            if request == 2 {
                 let delay = response.headers()["retry-after"]
                     .to_str()
                     .unwrap()
@@ -146,8 +137,8 @@ impl Recovery {
                     .iter()
                     .map(|(turn, key, _)| (*turn, *key))
                     .collect::<Vec<_>>(),
-                [(1, true), (1, false)],
-                "cooling must not dispatch another upstream request"
+                [(1, true), (1, false)][..(request + 1).min(2)],
+                "each request dispatches one account; all-cooling dispatches none"
             );
         }
         unavailable.unwrap()
@@ -155,27 +146,32 @@ impl Recovery {
 }
 
 /// Use the application credential manager, never a private user store.
-pub fn pool(domain: &str, binding: CredentialBindingId) -> (Credentials, tempfile::TempDir) {
+pub fn accounts(domain: &str, base_url: &str) -> (BoundAccounts, tempfile::TempDir) {
+    use std::io::Write;
     let directory = filesystem::private_directory();
-    let manager = CredentialManager::new(directory.path(), vec![]).unwrap();
+    let manager = CredentialManager::new(directory.path().join("credentials"), vec![]).unwrap();
     for (alias, secret) in [("primary", PRIMARY), ("secondary", SECONDARY)] {
         manager
             .add_api_key(domain, alias, Secret::new(secret.into()).unwrap())
             .unwrap();
     }
-    let pool = CredentialPool {
-        members: ["primary", "secondary"]
-            .into_iter()
-            .map(|alias| CredentialRef::ApiKey {
-                alias: alias.into(),
-            })
-            .collect(),
-        fallback: true,
-        max_attempts: 2,
-    };
-    let mut credentials = Credentials::new();
-    credentials
-        .insert_pool(binding, manager.bind_pool(domain, &pool).unwrap())
+    let path = directory.path().join("accounts.json");
+    let value = serde_json::json!({"version":1,"providers":{domain:{"accounts":[
+        {"name":"primary","enabled":true,"credential":{"kind":"api_key","alias":"primary"},"base_url":base_url},
+        {"name":"secondary","enabled":true,"credential":{"kind":"api_key","alias":"secondary"},"base_url":base_url}
+    ]}}});
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    options
+        .open(&path)
+        .unwrap()
+        .write_all(&serde_json::to_vec(&value).unwrap())
         .unwrap();
-    (credentials, directory)
+    let bound = Accounts::load(&path).unwrap().bind(&manager).unwrap();
+    (bound, directory)
 }

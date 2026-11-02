@@ -128,15 +128,15 @@ Provider metadata resides in [providers.json](../src/provider/providers.json). P
 
 ### Shared Provider metadata
 
-`src/provider/providers.json` is the authoritative source for Provider origins, paths, authentication schemes, and default credential pools. It is embedded at compile time via `include_bytes!`, validated once, and immutable at runtime.
+`src/provider/providers.json` owns default origins, operation paths, override suffixes and authentication. It is embedded at compile time via `include_bytes!`, validated once, and immutable at runtime. Private `accounts.json` declarations bind named credentials and API-key target overrides through `src/account.rs`; secret material and verified OAuth identities stay in the credential store.
 
 | Field | Contract |
 |---|---|
 | `base_url` | Trusted origin only; no API prefix, query, fragment, or credentials |
 | `auth` | `{ "kind": "bearer" }`, `x_api_key`, `x_goog_api_key`, or `{ "kind": "oauth", "profile": "openai" \| "grok" }` |
-| `credential_pool` | Default local pool name; never a secret or business selector |
 | `endpoints` | Closed map: `models`, `chat_completions`, `responses`, `messages`, `generate_content`, `interactions`, `embeddings`, `images`, `speech`, `transcription` |
 | `path` | Concrete path relative to `base_url`; omitted operations are undeclared |
+| `suffix` | Operation-relative path appended to an account's complete API-root override; never infer version-prefix changes |
 | `auth` (endpoint) | Optional header override; cannot alter credential kind or OAuth profile |
 | `sources` | Reference URLs documenting the upstream interface |
 
@@ -163,7 +163,8 @@ Downstream HTTP intake (authenticate and bound body collection)
 | `topology` | Model routing table: public model → route → endpoints | Endpoints define fixed origins, paths, and credential scopes |
 | `execution` | Candidate attempt planning, lifecycle, and delivery state | No agent loop, tool execution, or prompt planning |
 | `transport` | HTTP client execution and SSE framing | Executes prepared trusted requests only |
-| `credential` | Credential store, API keys, OAuth tokens, and pools | Credentials never enter semantic IR |
+| `account` | Named account declarations and effective target/credential binding | No secret duplication or caller-controlled target selection |
+| `credential` | Credential store, API keys and managed OAuth registrations | Credentials never enter semantic IR |
 | `gateway` | Ingress listener, startup, budgets, routing, and cancellation | Ingress binds loopback only |
 
 #### Domain vocabulary and failure contracts
@@ -769,7 +770,7 @@ Request-wide automatic caching is enabled on native Messages targets with verifi
 
 ### Failover
 
-This section and the following affinity section describe the implemented baseline, retained under the [routing freeze](roadmap.md#temporary-routing-freeze). The accepted replacement is the finalized [account and execution specification](provider-account-redesign-plan.md#execution-policy); its implementation remains separately authorized.
+Shared named-account and target binding is implemented. The remaining [account rewrite gates](roadmap.md#ordered-work-and-exit-gates) replace health/affinity ownership and the attempt chain with the accepted [execution policy](provider-account-redesign-plan.md#execution-policy). This intermediate cutover is not a deployment candidate.
 
 Failover operates on precompiled candidate lists under a cache-affine routing policy.
 
@@ -789,10 +790,9 @@ Preparation still validates the trusted binding, streaming and final body bounds
 
 #### Advancement
 
-Advancement to alternative candidates is governed by [`Transition::may_advance`](file:///home/sakura/development/MorphieCore/src/execution/fallback.rs#L40):
-- **Publication freeze:** Advancement is strictly prohibited once downstream delivery has committed frames.
-- **Fail-closed modes:** Auth failures, context window overflows, and semantic projection failures terminate without retry.
-- **Transitory failover:** Connect failures, timeouts, and quota exhaustion advance across [`Transition`](file:///home/sakura/development/MorphieCore/src/execution/fallback.rs#L19) variants (`Credential`, `SameProvider`, `Provider`) within attempt budgets.
+The production model loader fixes one account target before dispatch and disables request-internal advancement. Configuration exposes no fallback switch, credential-member budget or candidate attempt timeout. The old low-level chain/transition internals remain owned by the bounded-executor rewrite, not a second configuration path.
+
+Publication remains irreversible: no later attempt may replay committed output. The selected same-target retry, conservative failure evidence and short recovery clock are specified in the [execution contract](provider-account-redesign-plan.md#bounded-same-target-retry); their remaining implementation gates are explicit in Roadmap.
 
 #### Health and recovery
 
@@ -959,11 +959,12 @@ Authoritative log of accepted architectural decisions and their systemic consequ
 |---|---|---|
 | Entry path safety | 2026-10-20 | Concrete unescaped ASCII paths; rejects dot segments and encoded separators |
 | Automatic OAuth renewal | 2026-10-26 | Background renewal under account locks for tokens expiring within 120s |
-| Managed OAuth login admission | 2026-11-02 | Active sessions and pending logins reject another login before authority I/O. Publication reserves a verified subject across issued clients under the profile transaction, including signed-out accounts; returning sign-in retains the registration. Provider-scoped configuration validation/removal belongs to the pending account cutover |
+| Managed OAuth login admission | 2026-11-02 | Active sessions and pending logins reject another login before authority I/O. Publication reserves a verified subject across issued clients under the profile transaction, including signed-out accounts. Configuration validation includes disabled accounts; only explicit account removal releases the subject |
+| OAuth registration removal | 2026-11-02 | Logout and recovery loading preserve removal tombstones. Re-registration creates a fresh immutable identity while retaining monotonic revision/generation counters; old bindings and stale revision-checked removal cannot revive or delete the replacement |
 | Stable failover routing | 2026-10-20 | Bounded candidate pools, generation-fenced cooling, and single-attempt defaults |
-| Provider accounts and service identity | 2026-11-02 | Accepted, not implemented: ordered named accounts replace pools; `openai` API-key and `chatgpt` SIWC have separate model/target contracts. All declared route candidates are eligible at request admission. Detailed ownership and identity rules: [account model](provider-account-redesign-plan.md#account-and-configuration-model) |
+| Provider accounts and service identity | 2026-11-02 | Versioned ordered named accounts replace stored pools across startup, auth/upstream CLIs and standalone tasks. API-key `openai` and SIWC `chatgpt` have separate catalog contracts. Stable names identify accounts; credential provenance owns replay/security identity. [Account model](provider-account-redesign-plan.md#account-and-configuration-model); remaining execution gates live in [Roadmap](roadmap.md#ordered-work-and-exit-gates) |
 | Cache-first bounded recovery | 2026-11-02 | Accepted, not implemented: target fixed after first dispatch; at most one serial pre-publication retry from a conservative network/server set within a 30 s recovery budget and unchanged request deadline. Merge health evidence separately from delivery; success-only versioned affinity, atomic scoped probes, and only short credible `Retry-After`, without `x-should-retry`. Full contract/defaults: [execution policy](provider-account-redesign-plan.md#execution-policy) |
-| Account lifecycle and target trust | 2026-11-02 | Accepted, not implemented: routing disablement does not stop Active OAuth maintenance; subject reservations survive logout until account removal. Verified durable token replacement releases only old-material auth waiting into exclusive probing. API-key roots may be overridden under trusted-target validation; OAuth targets may not. Details: [targets](provider-account-redesign-plan.md#targets-and-trust), [OAuth maintenance](provider-account-redesign-plan.md#oauth-maintenance) |
+| Account lifecycle and target trust | 2026-11-02 | Configured OAuth maintenance is independent of routing enablement; subject reservations survive logout until removal. Trusted API-key root overrides compose explicit operation suffixes; OAuth overrides reject. Material-aware auth probe release remains in the health/renewal gate. [Targets](provider-account-redesign-plan.md#targets-and-trust); [maintenance](provider-account-redesign-plan.md#oauth-maintenance) |
 | Breaking account-system cutover | 2026-11-02 | No old configuration/store-format/CLI compatibility, migration or stored-record reuse requirement. The operator provisions fresh keys and managed OAuth sessions; existing private stores are not automatically changed or deleted. Reuse secure mechanisms and official protocol contracts, not legacy pool execution. [Transition contract](provider-account-redesign-plan.md#configuration-transition-and-cli-output); [execution order](roadmap.md#account-rewrite-execution-order) |
 | Request conversion reuse | 2026-10-30 | [Bounded request-local retention](#request-conversion-reuse) preserves each body's bound identity and evidence; cache misses do not alter admission, and credential attachment stays attempt-local |
 | Ingress Agent authentication | 2026-10-25 | Authenticates Agent keys at ingress, binding stable `agent_id` to context |

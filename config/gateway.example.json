@@ -1,4 +1,5 @@
 {
+  "version": 1,
   "auth_file": "auth.json",
   "bind": "127.0.0.1:8080",
   "models_file": "models.json",
@@ -32,5 +33,6 @@
     "max_unit_bytes": 262144,
     "max_exchange_bytes": 4194304,
     "max_total_bytes": 67108864
-  }
+  },
+  "accounts_file": "accounts.json"
 }

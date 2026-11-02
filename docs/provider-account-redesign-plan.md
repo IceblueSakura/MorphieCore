@@ -40,22 +40,22 @@ An account name identifies a configured execution identity. Two keys are not nec
 
 ## Current implementation and rewrite boundary
 
-The current code is evidence of existing mechanisms and protections, not the target design. It separates secret persistence, pool configuration, startup binding and runtime routing:
+The shared account-source cutover separates private declarations, secret persistence, effective target binding and execution. [Roadmap](roadmap.md#ordered-work-and-exit-gates) owns implementation status and remaining gates:
 
 | Owner | Current behavior | Rewrite boundary |
 |---|---|---|
-| [Provider catalog](../src/provider/catalog.rs) and [metadata](../src/provider/providers.json) | Compile-time trusted origin, operation paths, one credential kind/profile per Provider with per-endpoint header placement, and default pool; current `openai` is SIWC OAuth | Keep trusted catalog contracts and named accounts; split target `openai` API-key and `chatgpt` SIWC Providers, with independent model bindings |
-| [Credential pools](../src/credential/pool.rs) | Ordered references plus fallback/attempt policy; separate pool provisioning; SIWC pools limited to one member | Replace with the Provider's ordered accounts; remove the single-member routing restriction without weakening session lifecycle protections |
-| [Startup model assembly](../src/gateway/startup/models.rs) and [binding](../src/gateway/startup/bind.rs) | Expands endpoint/pool combinations into bounded candidates; replay/cache scopes hash provenance, origin, path and model | Bind explicit account identities and effective targets without copying secret state; keep the scope inputs |
-| [Route policy](../src/topology/route.rs) and [model routes](../src/gateway/startup/models.rs) | Declaring more than one route candidate implicitly enables before-commit fallback; a single-account OAuth binding disables it | All eligible route candidates participate in request-boundary selection, without credential-kind or Provider opt-ins |
+| [Provider catalog](../src/provider/catalog.rs) and [metadata](../src/provider/providers.json) | Default trusted origins, full operation paths, override suffixes and per-operation authentication; separate `openai` API-key and `chatgpt` SIWC contracts | Catalog owns protocol/service contracts; account data cannot select dialects |
+| [Account declarations](../src/account.rs) | Versioned ordered named accounts outside secret storage; common local reference, subject and target validation; stored pool metadata and CLI are deleted | Keep one source across startup, diagnostics and task selection |
+| [Startup model assembly](../src/gateway/startup/models.rs) and [binding](../src/gateway/startup/bind.rs) | Expands route bindings and enabled accounts in declaration order; standalone tasks select one explicit account; replay/cache scopes retain provenance/origin/path/model | Preserve these inputs through the health and executor rewrite |
+| [Route policy](../src/topology/route.rs) and [model routes](../src/gateway/startup/models.rs) | Production account cutover disables post-dispatch target advancement; legacy low-level route/chain internals remain pending replacement | All eligible accounts participate before dispatch; remove obsolete policy internals with their executor owner |
 | [Executor health and affinity](../src/gateway/routing/executors.rs) | Conversation affinity, three-scope cooling, generation fencing, single foreground probe, `Retry-After` cooling | Retain these contracts; see [Cache affinity](#cache-affinity) |
-| [Execution chain](../src/gateway/routing/chain.rs) and [fallback](../src/execution/fallback.rs) | One send per candidate, forward-only advancement; pool attempts counted per endpoint | Select the target once; permit at most one serial, bounded same-target retry. Remove within-request candidate advancement and per-target/class retry ledgers |
+| [Execution chain](../src/gateway/routing/chain.rs) and [fallback](../src/execution/fallback.rs) | Old low-level advancement internals remain, without stored pools or credential-member budgets | Select the target once; permit at most one serial, bounded same-target retry; delete obsolete advancement state |
 | [Failure classification](../src/protocol/failure.rs) | One status table plus global quota substrings shared by all Providers | Classify per Provider contract into a finite fact vocabulary |
 | [Credential access](../src/credential/access.rs), [API keys](../src/credential/api_key.rs) and [renewal](../src/gateway/renewal.rs) | Pinned identities, request-time borrowing, automatic OAuth maintenance with fixed 15 s scan, 120 s refresh-ahead and 90 s renewal timeout | Reuse lifecycle protections; make global timing configurable |
 
 Reuse secure storage mechanisms, OAuth drivers, identity verification, atomic publication/recovery, cancellation, trusted target selection and the publication fence where they fit. Existing credential record formats and persisted data are not compatibility requirements. This is a rewrite of account binding and execution policy, not a replacement of the semantic IR, codecs or transport stack.
 
-Current Generation, manual upstream diagnostics and standalone tasks have different pool rules. The selected boundary replaces their shared credential loading and account/target binding together, while the new recovery executor initially serves Generation. Diagnostics retain explicit bounded account requests; standalone tasks retain their existing execution capabilities without new multi-account recovery. This design selection does not activate frozen features or approve implementation slices.
+Generation, manual diagnostics and standalone tasks now bind the same named account source. New recovery initially serves Generation; diagnostics retain explicit bounded account requests and standalone tasks retain fixed-account execution. Frozen features remain inactive; implementation authorization and exit gates live in Roadmap.
 
 ### Review inputs to retain
 
@@ -114,7 +114,7 @@ Provider denotes the configured service access contract, not merely the vendor c
 
 A public model route includes only explicitly declared Provider/model bindings that preserve its public promise. Adding a `chatgpt` account does not automatically make every `openai` model available there, or authorize substituting another upstream model. Route-wide account eligibility remains, but only within those declared bindings.
 
-The current catalog calls its SIWC Provider `openai`. New configuration declares API-key `openai` and SIWC `chatgpt` directly; old references are not reinterpreted or migrated. Internal OAuth profile identifiers remain protocol facts rather than compatibility aliases. Fresh credential provisioning establishes new managed provenance; do not inherit old affinity or private replay identity by name.
+Configuration declares API-key `openai` and SIWC `chatgpt` directly; old references are not reinterpreted or migrated. The internal SIWC OAuth profile remains `openai`, a protocol fact rather than a compatibility alias. Fresh provisioning establishes new managed provenance; do not inherit old affinity or private replay identity by name.
 
 ### Credential kind and header placement
 
@@ -128,7 +128,7 @@ Validate each account's credential kind against the kinds its Provider declares.
 - An API-key account may override `base_url`. The override moves origin trust into operator configuration, so it must pass the same rules as catalog origins (HTTPS, no userinfo, query or fragment). Treat it as the complete API root and append the catalog-declared operation-relative suffix after normalizing the joining slash. For example, `https://relay.example/custom/v1` plus `responses` gives `https://relay.example/custom/v1/responses`; plus `models` gives `https://relay.example/custom/v1/models`. Do not guess or strip version prefixes. Without an override, retain each operation's full catalog target.
 - OAuth accounts reject an override. Their tokens go only to the origin of the profile's authorization-resource contract.
 - Validate targets before borrowing secrets. Business requests cannot change origins, credentials, auth headers or proxies.
-- The override trust decision is recorded in [Architecture](architecture.md#routing-and-security-decisions); it remains unimplemented until the rewrite.
+- The override trust decision is recorded in [Architecture](architecture.md#routing-and-security-decisions) and enforced by the shared account binder.
 
 ### OAuth registration identity
 
@@ -146,7 +146,7 @@ The rewrite is fully breaking. Operators create current-schema configuration and
 
 Remove pool metadata from the new account/store model rather than extracting it from old mixed documents. No upgrade, token import or recovery-state conversion tool is required. All existing entrances use the new account binding rather than retaining a legacy reader; see the [rewrite boundary](#current-implementation-and-rewrite-boundary). Leave existing private stores untouched during development; fresh test-owned storage and synthetic credentials suffice for offline and loopback verification.
 
-Provisioning, validation and explanation commands print concise human-readable output by default: what was checked or changed, each problem with its account or Provider name, and the next step. An explicit JSON option prints one structured document with stable field names and the same redaction. Neither form prints secret values or credential locators, and errors keep a non-zero exit status in both. The current `morphiecore-auth` prints JSON by default; commands the rewrite touches follow the new rule.
+Provisioning, validation and explanation commands print concise human-readable output by default: what was checked or changed, each problem with its account or Provider name, and the next step. `--json` prints one structured document with the same redaction. Neither form prints secret values or credential locators; errors keep a non-zero exit status in both.
 
 ## Execution policy
 

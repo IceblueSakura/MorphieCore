@@ -60,6 +60,15 @@ def run(base, recovery_stream=None):
                           reasoning_effort="low", max_completion_tokens=256,
                           extra_headers={"x-session-affinity": "synthetic-chat-session"})
             for turn in range(1, 4):
+                if recovery_stream is not None and turn == 2:
+                    requests += 1
+                    try:
+                        chat_completion(client, params, stream)
+                    except openai.APIStatusError as failure:
+                        check(failure.status_code == 503)
+                    else:
+                        raise ValueError("failed turn unexpectedly switched targets")
+                    check(len(transmissions) == requests)
                 requests += 1
                 result = chat_completion(client, params, stream, reasoning)
                 check(result["usage"]["total_tokens"] == 18)
@@ -85,12 +94,6 @@ def run(base, recovery_stream=None):
                 else:
                     check(message["content"] == "cedar-71")
                     params["messages"].append({"role": "user", "content": "next"})
-                if recovery_stream is not None and turn == 2:
-                    probe = {**params, "messages": [{"role": "user", "content": "lookup"}],
-                             "extra_headers": {"x-session-affinity": "other-chat-session"}}
-                    requests += 1
-                    recovered = chat_completion(client, probe, stream)
-                    check(recovered["choices"][0]["finish_reason"] == "tool_calls")
     check(len(transmissions) == requests)
     print(json.dumps({"requests": requests, "http_requests": len(transmissions),
                       "protocols": 1, "deliveries": len(deliveries), "three_turn_history": True}))

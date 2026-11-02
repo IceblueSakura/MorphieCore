@@ -1,5 +1,7 @@
 //! Startup-only private service and model configuration. No credential values from env.
 #[cfg(test)]
+mod account_tests;
+#[cfg(test)]
 mod auth_tests;
 #[cfg(test)]
 mod conformance_tests;
@@ -30,6 +32,7 @@ use std::{
 #[derive(serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Configuration {
+    version: u32,
     #[serde(default = "auth_file")]
     auth_file: PathBuf,
     #[serde(default = "listen")]
@@ -37,6 +40,8 @@ struct Configuration {
     credentials_dir: Option<PathBuf>,
     #[serde(default = "models_file")]
     models_file: PathBuf,
+    #[serde(default = "accounts_file")]
+    accounts_file: PathBuf,
     proxy: Option<String>,
     diagnostics: Option<PathBuf>,
     capture: Option<crate::gateway::CaptureConfig>,
@@ -94,6 +99,9 @@ fn listen() -> SocketAddr {
 fn models_file() -> PathBuf {
     "models.json".into()
 }
+fn accounts_file() -> PathBuf {
+    "accounts.json".into()
+}
 fn auth_file() -> PathBuf {
     "auth.json".into()
 }
@@ -134,7 +142,7 @@ impl Bootstrap {
     }
     /// An explicit library store does not opt into environment proxies.
     pub fn from_files(configuration: &Path, directory: &Path) -> Result<Self, StartupError> {
-        Self::load(configuration, Some(directory), None, false)
+        Self::load(configuration, Some(directory), None, false, true)
     }
     /// CLI overrides beat file values. Omitted paths retain independent defaults.
     pub fn from_options(
@@ -142,15 +150,27 @@ impl Bootstrap {
         directory: Option<&Path>,
         proxy: Option<&str>,
     ) -> Result<Self, StartupError> {
-        Self::load(configuration, directory, proxy, true)
+        Self::load(configuration, directory, proxy, true, true)
+    }
+    /// Production construction without listener, capture or diagnostic activation.
+    pub fn validate(
+        configuration: &Path,
+        directory: Option<&Path>,
+        proxy: Option<&str>,
+    ) -> Result<(), StartupError> {
+        Self::load(configuration, directory, proxy, true, false).map(|_| ())
     }
     fn load(
         path: &Path,
         directory: Option<&Path>,
         proxy: Option<&str>,
         environment: bool,
+        activate: bool,
     ) -> Result<Self, StartupError> {
         let configuration: Configuration = read_configuration(path, "gateway")?;
+        if configuration.version != 1 {
+            return Err(StartupError::Configuration("gateway"));
+        }
         if !configuration.bind.ip().is_loopback() {
             return Err(StartupError::Listener);
         }
@@ -169,6 +189,12 @@ impl Bootstrap {
         };
         let models: super::models::Models =
             read_configuration(&relative(parent, &configuration.models_file)?, "models")?;
+        if !activate && !directory.is_dir() {
+            return Err(StartupError::Credentials);
+        }
+        let accounts =
+            crate::account::Accounts::load(&relative(parent, &configuration.accounts_file)?)
+                .map_err(|_| StartupError::Configuration("accounts"))?;
         let defaults = Limits::default();
         let limits = Limits {
             delta_coalescing: configuration.delta_coalescing,
@@ -189,7 +215,10 @@ impl Bootstrap {
             .map_err(|_| StartupError::Credentials)?,
         )
         .map_err(|_| StartupError::Credentials)?;
-        let plan = models.bind(&manager)?;
+        let accounts = accounts
+            .bind(&manager)
+            .map_err(|_| StartupError::Credentials)?;
+        let plan = models.bind(&accounts)?;
         let mut gateway = Gateway::bind(
             plan.topology,
             plan.entries,
@@ -200,11 +229,23 @@ impl Bootstrap {
             environment,
         )?;
         if let Some(path) = configuration.diagnostics {
-            gateway = gateway.with_diagnostics(&relative(parent, &path)?)?;
+            let path = relative(parent, &path)?;
+            crate::gateway::diagnostics::Sink::validate(&path)
+                .map_err(|_| StartupError::Environment)?;
+            if activate {
+                gateway = gateway.with_diagnostics(&path)?;
+            }
         }
         if let Some(mut capture) = configuration.capture {
             capture.path = relative(parent, &capture.path)?;
-            gateway = gateway.with_capture(capture)?;
+            if capture.enabled() {
+                capture
+                    .validate()
+                    .map_err(|_| StartupError::Configuration("capture"))?;
+            }
+            if activate {
+                gateway = gateway.with_capture(capture)?;
+            }
         }
         Ok(Self {
             gateway,

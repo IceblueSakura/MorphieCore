@@ -215,7 +215,6 @@ impl Fixture {
             id: ProviderId::new("fixture").unwrap(),
             origin: TrustedOrigin::parse(&origin).unwrap(),
             endpoints: [].into(),
-            credential_pool: None,
             auth: if google {
                 AuthScheme::ApiKeyHeader("x-goog-api-key")
             } else {

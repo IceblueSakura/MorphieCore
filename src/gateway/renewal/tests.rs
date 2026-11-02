@@ -1,7 +1,7 @@
 //! Synthetic listener maintenance; no Provider credentials or network access.
 use crate::{
     credential::*,
-    gateway::{Gateway, Limits, startup::credentials::Source, tests::support::gateway},
+    gateway::{Gateway, Limits, tests::support::gateway},
 };
 use std::sync::{
     Arc,
@@ -103,13 +103,11 @@ async fn setup(
         .await
         .unwrap();
     let mut gate = gateway(Limits::default());
-    for entry in Arc::get_mut(&mut gate.state).unwrap().entries.values_mut() {
-        for candidate in &mut Arc::get_mut(entry).unwrap().candidates {
-            // Separate bind_access calls, not merely clones, cover deduplication.
-            Arc::get_mut(candidate).unwrap().secret =
-                Source::Account(manager.bind_access("synthetic", "one").unwrap());
-        }
-    }
+    // Registration maintenance is independent of generation candidates.
+    Arc::get_mut(&mut gate.state).unwrap().oauth_accounts = vec![
+        manager.bind_access("synthetic", "one").unwrap(),
+        manager.bind_access("synthetic", "one").unwrap(),
+    ];
     (directory, gate, manager, calls, entered)
 }
 async fn poll_maintenance(future: &mut std::pin::Pin<Box<impl std::future::Future<Output = ()>>>) {

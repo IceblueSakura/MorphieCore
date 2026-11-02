@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "providers": {
+    "aliyun-tokenplan-cn": {
+      "accounts": [
+        { "name": "primary", "enabled": true, "credential": { "kind": "api_key", "alias": "example" } }
+      ]
+    },
+    "opencode-go": {
+      "accounts": [
+        { "name": "primary", "enabled": true, "credential": { "kind": "api_key", "alias": "example" } }
+      ]
+    },
+    "google": {
+      "accounts": [
+        { "name": "primary", "enabled": true, "credential": { "kind": "api_key", "alias": "example" } }
+      ]
+    },
+    "openrouter": {
+      "accounts": [
+        { "name": "primary", "enabled": true, "credential": { "kind": "api_key", "alias": "example" } }
+      ]
+    }
+  }
+}

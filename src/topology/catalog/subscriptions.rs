@@ -14,30 +14,30 @@ pub struct SubscriptionBinding {
 pub const SUBSCRIPTION_BINDINGS: &[SubscriptionBinding] = &[
     SubscriptionBinding {
         profile: "openai",
-        identity: "openai",
+        identity: "chatgpt",
         reasoning_history: Some(crate::protocol::reasoning::ReasoningHistory::Accepted),
         model: "gpt-6.1-sol",
         upstream: "gpt-6.1-sol",
         dialect: Dialect::Siwc,
-        provider: catalog::openai,
+        provider: catalog::chatgpt,
     },
     SubscriptionBinding {
         profile: "openai",
-        identity: "openai-astra",
+        identity: "chatgpt-astra",
         reasoning_history: Some(crate::protocol::reasoning::ReasoningHistory::Accepted),
         model: "gpt-6-astra",
         upstream: "gpt-6-astra",
         dialect: Dialect::Siwc,
-        provider: catalog::openai,
+        provider: catalog::chatgpt,
     },
     SubscriptionBinding {
         profile: "openai",
-        identity: "openai-luna",
+        identity: "chatgpt-luna",
         reasoning_history: Some(crate::protocol::reasoning::ReasoningHistory::Accepted),
         model: "gpt-6-luna",
         upstream: "gpt-6-luna",
         dialect: Dialect::Siwc,
-        provider: catalog::openai,
+        provider: catalog::chatgpt,
     },
     SubscriptionBinding {
         profile: "grok",
@@ -71,9 +71,7 @@ impl SubscriptionBinding {
         contract
     }
     pub fn credential(&self) -> CredentialBindingId {
-        (self.provider)()
-            .credential_pool
-            .expect("catalog credential pool")
+        CredentialBindingId::new((self.provider)().id.as_str()).expect("catalog Provider identity")
     }
     pub fn endpoint_id(&self) -> EndpointId {
         EndpointId::new(&format!("{}-responses", self.identity)).expect("static id")

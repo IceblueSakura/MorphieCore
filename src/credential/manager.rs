@@ -69,7 +69,7 @@ impl CredentialManager {
     ) -> Result<Loaded, Error> {
         let mut loaded = tx.load(profile, alias)?;
         if let Some(account) = &mut loaded.account {
-            if loaded.recovery {
+            if loaded.recovery && account.state != AccountState::Removed {
                 account.credential = None;
                 account.pending_renewal = None;
                 account.state = AccountState::NeedsReauthorization;
@@ -151,10 +151,17 @@ impl CredentialManager {
         let mut ticket = {
             let _account_lock = self.store.account_lock(profile, alias)?;
             let tx = self.store.transaction()?;
-            let mut account = self
-                .load(&tx, profile, alias)?
-                .account
-                .unwrap_or_else(|| Account::new(profile, alias, &client));
+            let mut account = match self.load(&tx, profile, alias)?.account {
+                Some(mut account) => {
+                    if account.state == AccountState::Removed {
+                        account.record_id = random_id()?;
+                        account.client_id = client.clone();
+                        account.state = AccountState::SignedOut;
+                    }
+                    account
+                }
+                None => Account::new(profile, alias, &client)?,
+            };
             if account.client_id != client && !driver.dynamic_registration() {
                 return Err(Error::IdentityMismatch);
             }
@@ -421,6 +428,9 @@ impl CredentialManager {
                 }
                 return Ok(LogoutOutcome::AlreadySignedOut);
             };
+            if account.state == AccountState::Removed {
+                return Ok(LogoutOutcome::AlreadySignedOut);
+            }
             let previous = account
                 .credential
                 .take()
@@ -443,6 +453,30 @@ impl CredentialManager {
         } else {
             LogoutOutcome::RevocationUnconfirmed
         })
+    }
+    /// Local removal releases the subject reservation; it does not revoke remotely.
+    pub fn remove_account(
+        &self,
+        profile: &str,
+        alias: &str,
+        revision: u64,
+    ) -> Result<AccountStatus, Error> {
+        self.driver(profile)?;
+        let _lock = self.store.account_lock(profile, alias)?;
+        let tx = self.store.transaction()?;
+        let loaded = self.load(&tx, profile, alias)?;
+        let mut account = loaded.account.ok_or(Error::LoginRequired)?;
+        if account.revision != revision {
+            return Err(Error::Superseded);
+        }
+        account.replace_credential(None)?;
+        account.pending_renewal = None;
+        account.login_attempt = None;
+        account.identity = None;
+        account.state = AccountState::Removed;
+        account.advance()?;
+        tx.publish(&account)?;
+        self.status(&account, false)
     }
 }
 struct LoginTicket {

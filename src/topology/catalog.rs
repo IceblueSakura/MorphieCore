@@ -70,14 +70,7 @@ pub fn default_topology() -> Result<CompiledTopology, TopologyError> {
         routes.push(Route {
             id: public.route.clone(),
             task: public.task,
-            policy: RoutePolicy {
-                max_attempts: if crate::provider::auth::single_account_profile(binding.profile) {
-                    1
-                } else {
-                    RoutePolicy::default().max_attempts
-                },
-                ..Default::default()
-            },
+            policy: RoutePolicy::default(),
             endpoints: vec![binding.endpoint_id()],
         });
         endpoints.push(binding.endpoint());
@@ -348,10 +341,7 @@ fn transcription_bindings_share_identity_without_implicit_provider_selection() {
         assert_eq!(route.endpoint.upstream_model, model);
         assert_eq!(route.endpoint.provider.as_str(), provider);
         assert_eq!(route.endpoint.target.origin.as_str(), origin);
-        assert_eq!(
-            route.endpoint.credential.as_str(),
-            format!("{provider}-api-key")
-        );
+        assert_eq!(route.endpoint.credential.as_str(), provider);
         assert!(!route.endpoint.execution.retry_before_commit);
         assert!(
             topology
@@ -387,7 +377,7 @@ fn modelbest_vision_versions_use_upstream_ids_and_multimodal_chat_contracts() {
         let endpoint = binding.endpoint(GenerationProtocol::OpenAiChat).unwrap();
         assert_eq!(endpoint.provider.as_str(), "modelbest");
         assert_eq!(endpoint.upstream_model, id);
-        assert_eq!(endpoint.credential.as_str(), "modelbest-api-key");
+        assert_eq!(endpoint.credential.as_str(), "modelbest");
     }
     assert!(topology.model("minicpm-v-4.6").is_none());
     assert!(

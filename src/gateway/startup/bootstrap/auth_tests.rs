@@ -110,7 +110,7 @@ async fn configured_agents_keep_identity_across_rename_and_key_rotation() {
     let root = fixture.directory();
     write_private(
         &root.join("gateway.json"),
-        &serde_json::to_vec(&json!({"auth_file":"agent-keys.json"})).unwrap(),
+        &serde_json::to_vec(&json!({"version":1,"auth_file":"agent-keys.json"})).unwrap(),
     );
     let mut configuration = json!({"version":1,"agents":[
         {"agent_id":"pi","name":"Workstation Pi","key":FIRST,"desc":"Private operator note"},

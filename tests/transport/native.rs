@@ -33,6 +33,7 @@ mod native_bindings {
                 (
                     morphiecore::provider::ProviderOperation::ChatCompletions,
                     morphiecore::provider::ProviderEndpoint {
+                        suffix: EndpointPath::new("/chat/completions").unwrap(),
                         path: EndpointPath::new("/chat/completions").unwrap(),
                         auth: None,
                     },
@@ -40,13 +41,13 @@ mod native_bindings {
                 (
                     morphiecore::provider::ProviderOperation::Messages,
                     morphiecore::provider::ProviderEndpoint {
+                        suffix: EndpointPath::new("/messages").unwrap(),
                         path: EndpointPath::new("/messages").unwrap(),
                         auth: Some(AuthScheme::ApiKeyHeader("x-api-key")),
                     },
                 ),
             ]
             .into(),
-            credential_pool: None,
             auth: AuthScheme::Bearer,
         }
     }

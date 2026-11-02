@@ -438,12 +438,12 @@ fn aliases(count: usize, metadata: bool) -> crate::topology::CompiledTopology {
         endpoints: [(
             crate::provider::ProviderOperation::ChatCompletions,
             crate::provider::ProviderEndpoint {
+                suffix: EndpointPath::new("/chat/completions").unwrap(),
                 path: EndpointPath::new("/chat/completions").unwrap(),
                 auth: None,
             },
         )]
         .into(),
-        credential_pool: None,
         auth: AuthScheme::Bearer,
     };
     let endpoint = Endpoint {

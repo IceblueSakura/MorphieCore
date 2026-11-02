@@ -21,12 +21,12 @@ mod candidates {
             endpoints: [(
                 morphiecore::provider::ProviderOperation::Responses,
                 morphiecore::provider::ProviderEndpoint {
+                    suffix: EndpointPath::new("/responses").unwrap(),
                     path: EndpointPath::new("/responses").unwrap(),
                     auth: None,
                 },
             )]
             .into(),
-            credential_pool: None,
             auth: AuthScheme::Bearer,
         }
     }

@@ -34,6 +34,15 @@ with httpx.Client(trust_env=False, timeout=10,
             body = copy.deepcopy(profile)
             body["stream"] = streamed
             for turn in range(1, 6):
+                if recovery_stream is not None and turn == 2:
+                    requests += 1
+                    try:
+                        send(client, body, streamed, "synthetic-messages-session")
+                    except anthropic.APIStatusError as failure:
+                        assert failure.status_code == 529
+                    else:
+                        raise ValueError("failed turn unexpectedly switched targets")
+                    assert len(transmissions) == requests
                 requests += 1
                 message = send(client, body, streamed, "synthetic-messages-session")
                 result = message.model_dump(exclude_none=True)
@@ -58,10 +67,6 @@ with httpx.Client(trust_env=False, timeout=10,
                                                "name": "lookup", "input": {"key": "B"}}
                 else:
                     assert content == [{"type": "text", "text": "A" if turn == 2 else "B" if turn == 4 else "A B"}]
-                if recovery_stream is not None and turn == 2:
-                    requests += 1
-                    recovered = send(client, copy.deepcopy(profile), streamed, "other-messages-session")
-                    assert recovered.stop_reason == "tool_use"
                 if turn == 5:
                     continue
                 for prior in body["messages"]:

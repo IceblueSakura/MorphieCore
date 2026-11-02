@@ -5,8 +5,9 @@ mod wire;
 
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use morphiecore::{
+    account::{Account, AccountCredential, Accounts, CredentialRef},
     credential::{
-        CredentialError, CredentialManager, CredentialRef, Secret, builtin_drivers,
+        CredentialError, CredentialManager, Secret, builtin_drivers, default_config_directory,
         resolve_store_directory,
     },
     execution::UpstreamRequest,
@@ -44,12 +45,11 @@ enum Command {
 struct Target {
     /// Provider ID from the compiled providers.json catalog.
     provider: String,
-    /// Override the default pool with one local API-key alias, never a key value.
-    #[arg(long, conflicts_with = "account")]
-    api_key: Option<String>,
-    /// Override the default pool with one local OAuth account alias.
-    #[arg(long, conflicts_with = "api_key")]
-    account: Option<String>,
+    /// Explicit configured account name; no credential-locator bypass.
+    #[arg(long)]
+    account: String,
+    #[arg(long)]
+    accounts: Option<PathBuf>,
     #[arg(long)]
     store: Option<PathBuf>,
     /// Override system/environment proxies for credential refresh and upstream HTTP.
@@ -102,8 +102,8 @@ pub(super) enum Error {
     Provider,
     #[error("operation endpoint is not declared in providers.json")]
     Endpoint,
-    #[error("default credential pool is missing; configure it or select an explicit credential")]
-    Pool,
+    #[error("invalid account configuration or local account binding")]
+    Account,
     #[error("credential kind/profile does not match the Provider endpoint")]
     CredentialMismatch,
     #[error("credential operation: {0}")]
@@ -122,7 +122,7 @@ pub(super) enum Error {
     Incomplete,
 }
 struct Plan {
-    provider: &'static ProviderDefinition,
+    provider: ProviderDefinition,
     path: EndpointPath,
     auth: AuthScheme,
     oauth: Option<&'static str>,
@@ -138,9 +138,7 @@ impl Command {
     }
     fn plan(&self) -> Result<Plan, Error> {
         let target = self.target();
-        if target.api_key.is_some() && target.account.is_some()
-            || !(1..=300).contains(&target.timeout_seconds)
-        {
+        if !(1..=300).contains(&target.timeout_seconds) {
             return Err(Error::Invalid);
         }
         let provider = catalog::get(&target.provider).ok_or(Error::Provider)?;
@@ -150,9 +148,8 @@ impl Command {
         };
         let entry = provider.entry(operation).ok_or(Error::Endpoint)?;
         let oauth = match entry.auth.kind() {
-            CredentialKind::OAuth(profile) if target.api_key.is_none() => Some(profile),
-            CredentialKind::ApiKey if target.account.is_none() => None,
-            _ => return Err(Error::CredentialMismatch),
+            CredentialKind::OAuth(profile) => Some(profile),
+            CredentialKind::ApiKey => None,
         };
         let siwc = oauth == Some("openai");
         let (path, body) = match self {
@@ -187,7 +184,7 @@ impl Command {
             }
         };
         Ok(Plan {
-            provider,
+            provider: provider.clone(),
             path,
             auth: entry.auth,
             oauth,
@@ -196,84 +193,90 @@ impl Command {
         })
     }
 }
-fn selected_credential(
-    manager: &CredentialManager,
-    target: &Target,
-    plan: &Plan,
-) -> Result<CredentialRef, Error> {
-    let member = if let Some(alias) = &target.api_key {
-        CredentialRef::ApiKey {
-            alias: alias.clone(),
-        }
-    } else if let Some(alias) = &target.account {
-        CredentialRef::OAuth {
-            profile: plan.oauth.ok_or(Error::CredentialMismatch)?.into(),
-            alias: alias.clone(),
-        }
-    } else {
-        let binding = plan.provider.credential_pool.as_ref().ok_or(Error::Pool)?;
-        let pool = manager
-            .pool(plan.provider.id.as_str(), binding.as_str())?
-            .ok_or(Error::Pool)?;
-        pool.config.validate()?;
-        pool.config.members.into_iter().next().ok_or(Error::Pool)?
-    };
-    match (&member, plan.auth.kind()) {
-        (CredentialRef::ApiKey { .. }, CredentialKind::ApiKey) => {}
-        (CredentialRef::OAuth { profile, .. }, CredentialKind::OAuth(expected))
-            if profile == expected => {}
-        _ => return Err(Error::CredentialMismatch),
-    }
-    Ok(member)
-}
-/// Only the selected member is borrowed. Expiry may refresh it; failure never selects another.
+/// Only the configured account is borrowed. Maintenance never selects another.
 async fn credential(
     manager: &CredentialManager,
-    target: &Target,
-    plan: &Plan,
+    account: &Account,
+    binding: &AccountCredential,
 ) -> Result<(Secret, bool), Error> {
-    match selected_credential(manager, target, plan)? {
-        CredentialRef::ApiKey { alias } => Ok((
-            manager
-                .bind_api_key(plan.provider.id.as_str(), &alias)?
-                .borrow()?,
-            false,
-        )),
-        CredentialRef::OAuth { profile, alias } => {
-            let binding = manager.bind_access(&profile, &alias)?;
+    match (&account.credential, binding) {
+        (CredentialRef::ApiKey { .. }, AccountCredential::ApiKey(key)) => {
+            Ok((key.borrow()?, false))
+        }
+        (CredentialRef::OAuth { profile, alias }, AccountCredential::OAuth(binding)) => {
             let pending = manager
-                .list(Some(&profile))?
+                .list(Some(profile))?
                 .iter()
-                .any(|s| s.account == alias && s.renewal_pending);
+                .any(|s| &s.account == alias && s.renewal_pending);
             if pending {
-                manager.refresh(&profile, &alias).await?;
+                manager.refresh(profile, alias).await?;
                 return Ok((binding.borrow()?.access, true));
             }
             match binding.borrow() {
                 Ok(grant) => Ok((grant.access, false)),
                 Err(CredentialError::Expired) => {
-                    manager.refresh(&profile, &alias).await?;
+                    manager.refresh(profile, alias).await?;
                     Ok((binding.borrow()?.access, true))
                 }
                 Err(error) => Err(error.into()),
             }
         }
+        _ => Err(Error::CredentialMismatch),
     }
 }
 pub async fn execute(options: Options) -> Result<Value, Error> {
-    let plan = options.command.plan()?;
+    let mut plan = options.command.plan()?;
     let target = options.command.target();
     let transport = HttpTransport::new(target.proxy.as_deref()).map_err(|_| Error::Invalid)?;
     let root = resolve_store_directory(target.store.clone())?;
+    let path = match &target.accounts {
+        Some(path) => path.clone(),
+        None => default_config_directory()?.join("accounts.json"),
+    };
+    let accounts = Accounts::load(&path).map_err(|_| Error::Account)?;
+    let (_, account) = accounts
+        .account(&target.provider, &target.account)
+        .map_err(|_| Error::Account)?;
     let drivers = if plan.oauth.is_some() {
         builtin_drivers(target.proxy.as_deref())?
     } else {
         vec![]
     };
     let manager = CredentialManager::new(root, drivers)?;
+    let binding = account
+        .bind(&plan.provider, &manager)
+        .map_err(|_| Error::Account)?;
+    plan.provider = binding.provider;
+    let operation = match &options.command {
+        Command::Models(_) => ProviderOperation::Models,
+        Command::Probe(probe) => probe.protocol.operation().into(),
+    };
+    let entry = plan.provider.entry(operation).ok_or(Error::Endpoint)?;
+    plan.path = match &options.command {
+        Command::Models(_) => entry.path.clone(),
+        Command::Probe(probe) => {
+            let model = if probe.protocol == Protocol::Google {
+                probe.model.strip_prefix("models/").unwrap_or(&probe.model)
+            } else {
+                &probe.model
+            };
+            probe
+                .protocol
+                .operation()
+                .resolve_path(entry.path, model, plan.siwc)
+                .map_err(|_| Error::Invalid)?
+        }
+    };
     tokio::time::timeout(
         Duration::from_secs(target.timeout_seconds),
-        run(&options.command, plan, &manager, &transport),
+        run(
+            &options.command,
+            plan,
+            account,
+            &binding.credential,
+            &manager,
+            &transport,
+        ),
     )
     .await
     .map_err(|_| Error::Timeout)?
@@ -281,12 +284,14 @@ pub async fn execute(options: Options) -> Result<Value, Error> {
 async fn run(
     command: &Command,
     plan: Plan,
+    account: &Account,
+    binding: &AccountCredential,
     manager: &CredentialManager,
     transport: &HttpTransport,
 ) -> Result<Value, Error> {
     let start = Instant::now();
     let target = command.target();
-    let (secret, refreshed) = credential(manager, target, &plan).await?;
+    let (secret, refreshed) = credential(manager, account, binding).await?;
     let material = SecretMaterial::new(secret.expose()).map_err(|_| Error::Invalid)?;
     let mut headers = vec![(
         "accept".into(),

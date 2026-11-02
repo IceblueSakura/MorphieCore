@@ -1,45 +1,30 @@
-//! Frozen media activation needs explicit selection and a single non-fallback source.
-use super::test_support::{selected_models, write_configuration};
-use super::*;
-use crate::credential::{CredentialPool, CredentialRef};
+//! Standalone tasks select one configured account without activating task recovery.
+use super::{
+    test_support::{Fixture, selected_models, service},
+    *,
+};
 use serde_json::json;
 
 #[test]
-fn embeddings_need_explicit_selection_and_a_single_nonfallback_key() {
+fn embeddings_select_one_named_account_and_publish_only_the_selected_task() {
     for binding in catalog::EMBEDDING_BINDINGS {
         let provider = (binding.provider)();
-        let dir = crate::test_files::private_directory();
-        let manager = CredentialManager::new(dir.path().join("credentials"), vec![]).unwrap();
-        manager
-            .add_api_key(
-                provider.id.as_str(),
-                "one",
-                Secret::new("synthetic-embedding-key".into()).unwrap(),
-            )
-            .unwrap();
-        let mut status = manager
-            .set_pool(
-                provider.id.as_str(),
-                binding.credential().as_str(),
-                0,
-                CredentialPool {
-                    members: vec![CredentialRef::ApiKey {
-                        alias: "one".into(),
-                    }],
-                    fallback: false,
-                    max_attempts: 1,
-                },
-            )
-            .unwrap();
-        let service = serde_json::json!({"auth_file":"auth.json"});
-        write_configuration(
-            dir.path(),
-            service.clone(),
-            selected_models(&[binding.model], &[provider.id.as_str()]),
-        );
-        let boot = Bootstrap::from_directory(dir.path()).unwrap();
+        let boot = Fixture::new(
+            service(),
+            json!({"models":{binding.model:{"account":"primary"}}}),
+            &[
+                (provider.id.as_str(), "primary", "synthetic-embedding-key"),
+                (provider.id.as_str(), "standby", "synthetic-other-key"),
+            ],
+        )
+        .unwrap();
         assert!(boot.gateway.state.entries.is_empty());
         assert_eq!(boot.gateway.state.embeddings.len(), 1);
+        let selected = &boot.gateway.state.embeddings[binding.model];
+        assert_eq!(
+            selected.secret.resolve().unwrap().0.expose(),
+            "synthetic-embedding-key"
+        );
         assert!(boot.gateway.state.models.models.contains_key(binding.model));
         let snapshot: serde_json::Value =
             serde_json::from_slice(&boot.gateway.state.capabilities.0).unwrap();
@@ -54,231 +39,177 @@ fn embeddings_need_explicit_selection_and_a_single_nonfallback_key() {
             snapshot["data"][0]["embedding"]["output_encodings"],
             json!(["float", "base64"])
         );
-        let public = snapshot.to_string();
-        assert!(!public.contains(provider.origin.as_str()));
-        assert!(!public.contains(binding.credential().as_str()));
-        if binding.model != "gemini-embedding-2" {
-            assert!(!public.contains("gemini-embedding-2"));
-        }
+        assert!(!snapshot.to_string().contains(provider.origin.as_str()));
+        assert!(!snapshot.to_string().contains("synthetic-embedding-key"));
         if let Some(text) = catalog::API_KEY_BINDINGS.iter().find(|b| {
-            b.credential() == binding.credential()
+            (b.provider)().id == provider.id
                 && !b
                     .public_model()
                     .contract
                     .native(crate::semantic::task::generation::Feature::AudioInput)
         }) {
-            write_configuration(
-                dir.path(),
-                service.clone(),
+            let generation = Fixture::new(
+                service(),
                 selected_models(&[text.model], &[provider.id.as_str()]),
-            );
-            let boot = Bootstrap::from_directory(dir.path()).unwrap();
-            assert!(boot.gateway.state.embeddings.is_empty());
-            assert!(!boot.gateway.state.entries.is_empty());
-            let snapshot: serde_json::Value =
-                serde_json::from_slice(&boot.gateway.state.capabilities.0).unwrap();
+                &[(provider.id.as_str(), "primary", "synthetic-embedding-key")],
+            )
+            .unwrap();
+            assert!(generation.gateway.state.embeddings.is_empty());
+            assert!(!generation.gateway.state.entries.is_empty());
+        }
+        for account in [None, Some("missing")] {
+            let config = account.map_or_else(|| json!({}), |name| json!({"account":name}));
             assert!(
-                snapshot["data"]
-                    .as_array()
-                    .unwrap()
-                    .iter()
-                    .all(|v| v["protocol"] != "embeddings")
+                Fixture::new(
+                    service(),
+                    json!({"models":{binding.model:config}}),
+                    &[(provider.id.as_str(), "primary", "synthetic-embedding-key")]
+                )
+                .is_err()
             );
         }
-        write_configuration(
-            dir.path(),
-            service,
-            selected_models(&[binding.model], &[provider.id.as_str()]),
-        );
-        manager
-            .add_api_key(
-                provider.id.as_str(),
-                "two",
-                Secret::new("synthetic-second-key".into()).unwrap(),
-            )
-            .unwrap();
-        for (aliases, fallback) in [(&["one", "two"][..], false), (&["one"][..], true)] {
-            status = manager
-                .set_pool(
-                    provider.id.as_str(),
-                    binding.credential().as_str(),
-                    status.revision,
-                    CredentialPool {
-                        members: aliases
-                            .iter()
-                            .map(|alias| CredentialRef::ApiKey {
-                                alias: (*alias).into(),
-                            })
-                            .collect(),
-                        fallback,
-                        max_attempts: 1,
-                    },
-                )
-                .unwrap();
-            assert!(matches!(
-                Bootstrap::from_directory(dir.path()),
-                Err(StartupError::Credentials)
-            ));
-        }
     }
 }
 
 #[test]
-fn tokenplan_audio_requires_explicit_selection_and_nonfallback_single_source() {
-    for (models, members, fallback, accepted) in [
-        (None, 1, false, true),
-        (Some(vec!["qwen-audio-3.0-tts-plus"]), 1, false, true),
-        (Some(vec!["qwen-audio-3.0-asr-flash"]), 1, false, true),
-        (
-            Some(vec!["qwen-audio-3.0-tts-plus", "qwen-audio-3.0-asr-flash"]),
-            1,
-            false,
-            true,
+fn task_accounts_share_target_composition_but_not_automatic_account_selection() {
+    let model = "text-embedding-3-small";
+    let keys = [
+        ("openrouter", "primary", "synthetic-first"),
+        ("openrouter", "backup", "synthetic-second"),
+    ];
+    let declarations = json!({"version":1,"providers":{"openrouter":{"accounts":[
+        {"name":"primary","enabled":true,"credential":{"kind":"api_key","alias":"primary"}},
+        {"name":"backup","enabled":true,"credential":{"kind":"api_key","alias":"backup"},"base_url":"https://relay.invalid/custom/v1"}
+    ]}}});
+    let boot = Fixture::with_accounts(
+        service(),
+        json!({"models":{model:{"account":"backup"}}}),
+        &keys,
+        declarations.clone(),
+    )
+    .unwrap();
+    let selected = &boot.gateway.state.embeddings[model];
+    assert_eq!(selected.provider.origin.as_str(), "https://relay.invalid");
+    assert_eq!(
+        selected.route.endpoint.target.path.as_str(),
+        "/custom/v1/embeddings"
+    );
+    assert_eq!(
+        selected.secret.resolve().unwrap().0.expose(),
+        "synthetic-second"
+    );
+    let mut disabled = declarations;
+    disabled["providers"]["openrouter"]["accounts"][1]["enabled"] = json!(false);
+    assert!(matches!(
+        Fixture::with_accounts(
+            service(),
+            json!({"models":{model:{"account":"backup"}}}),
+            &keys,
+            disabled
         ),
-        (Some(vec!["qwen-audio-3.0-asr-flash"]), 2, false, false),
-        (Some(vec!["qwen-audio-3.0-asr-flash"]), 1, true, false),
-        (Some(vec!["qwen-audio-3.0-tts-plus"]), 1, true, false),
-    ] {
-        let directory = crate::test_files::private_directory();
-        let manager = CredentialManager::new(directory.path().join("credentials"), vec![]).unwrap();
-        let text = catalog::API_KEY_BINDINGS
-            .iter()
-            .find(|b| b.credential().as_str() == "aliyun-tokenplan-cn-api-key")
-            .unwrap();
-        write_configuration(
-            directory.path(),
-            json!({"auth_file":"auth.json"}),
-            selected_models(
-                models.as_deref().unwrap_or(&[text.model]),
-                &["aliyun-tokenplan-cn"],
-            ),
-        );
-        let mut sources = vec![];
-        for index in 0..members {
-            let alias = format!("synthetic-{index}");
-            manager
-                .add_api_key(
-                    "aliyun-tokenplan-cn",
-                    &alias,
-                    Secret::new("synthetic-only".into()).unwrap(),
-                )
-                .unwrap();
-            sources.push(CredentialRef::ApiKey { alias });
-        }
-        assert!(Bootstrap::from_directory(directory.path()).is_err());
-        manager
-            .set_pool(
-                "aliyun-tokenplan-cn",
-                "aliyun-tokenplan-cn-api-key",
-                0,
-                CredentialPool {
-                    members: sources,
-                    fallback,
-                    max_attempts: 1,
-                },
-            )
-            .unwrap();
-        let result = Bootstrap::from_directory(directory.path());
-        assert_eq!(result.is_ok(), accepted, "selection {models:?}");
-        if !accepted {
-            assert!(matches!(result, Err(StartupError::Credentials)));
-            continue;
-        }
-        if let Ok(boot) = result {
-            let value: serde_json::Value =
-                serde_json::from_slice(&boot.gateway.state.models.list).unwrap();
-            let labels = value["data"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .map(|v| v["id"].as_str().unwrap())
-                .collect::<Vec<_>>();
-            for model in ["qwen-audio-3.0-tts-plus", "qwen-audio-3.0-asr-flash"] {
-                assert_eq!(
-                    labels.contains(&model),
-                    models.as_ref().is_some_and(|m| m.contains(&model))
-                );
-            }
-        }
-    }
+        Err(StartupError::Credentials)
+    ));
 }
 
 #[test]
-fn openrouter_speech_requires_explicit_selection_and_single_nonfallback_pool() {
-    for (selection, members, fallback, accepted) in [
-        (None, 1, false, true),
-        (Some(vec!["qwen-audio-3.0-tts-flash"]), 1, false, true),
-        (
-            Some(vec!["qwen-audio-3.0-tts-flash", "gpt-image-2.5-flare"]),
-            1,
-            false,
-            true,
-        ),
-        (Some(vec!["qwen-audio-3.0-tts-flash"]), 1, true, false),
-        (Some(vec!["qwen-audio-3.0-tts-flash"]), 2, false, false),
+fn tokenplan_audio_stays_explicit_and_each_task_uses_its_fixed_account() {
+    let keys = [
+        ("aliyun-tokenplan-cn", "primary", "synthetic-first"),
+        ("aliyun-tokenplan-cn", "backup", "synthetic-second"),
+    ];
+    let boot = Fixture::new(
+        service(),
+        json!({"models":{
+            "qwen-audio-3.0-tts-plus":{"account":"primary"},
+            "qwen-audio-3.0-asr-flash":{"binding":"tokenplan-qwen-asr","account":"backup"}
+        }}),
+        &keys,
+    )
+    .unwrap();
+    assert!(boot.gateway.state.entries.is_empty());
+    assert_eq!(boot.gateway.state.speech.len(), 1);
+    assert_eq!(boot.gateway.state.transcriptions.len(), 1);
+    assert_eq!(
+        boot.gateway.state.speech["qwen-audio-3.0-tts-plus"]
+            .secret
+            .resolve()
+            .unwrap()
+            .0
+            .expose(),
+        "synthetic-first"
+    );
+    assert_eq!(
+        boot.gateway.state.transcriptions["qwen-audio-3.0-asr-flash"]
+            .secret
+            .resolve()
+            .unwrap()
+            .0
+            .expose(),
+        "synthetic-second"
+    );
+    let text = catalog::API_KEY_BINDINGS
+        .iter()
+        .find(|b| (b.provider)().id.as_str() == "aliyun-tokenplan-cn")
+        .unwrap();
+    let generation = Fixture::new(
+        service(),
+        selected_models(&[text.model], &["aliyun-tokenplan-cn"]),
+        &keys,
+    )
+    .unwrap();
+    assert!(
+        generation.gateway.state.speech.is_empty()
+            && generation.gateway.state.transcriptions.is_empty()
+    );
+    for invalid in [
+        json!({"binding":"dashscope-qwen-asr","account":"primary"}),
+        json!({"account":"primary"}),
     ] {
-        let dir = crate::test_files::private_directory();
-        let manager = CredentialManager::new(dir.path().join("credentials"), vec![]).unwrap();
-        let text = catalog::API_KEY_BINDINGS
-            .iter()
-            .find(|b| b.credential().as_str() == "openrouter-api-key")
-            .unwrap();
-        write_configuration(
-            dir.path(),
-            json!({"auth_file":"auth.json"}),
-            selected_models(
-                selection.as_deref().unwrap_or(&[text.model]),
-                &["openrouter"],
-            ),
-        );
-        let mut pool_members = Vec::new();
-        for index in 0..members {
-            let alias = format!("source-{index}");
-            manager
-                .add_api_key(
-                    "openrouter",
-                    &alias,
-                    Secret::new(format!("synthetic-key-{index}")).unwrap(),
-                )
-                .unwrap();
-            pool_members.push(CredentialRef::ApiKey { alias });
-        }
         assert!(
-            Bootstrap::from_directory(dir.path()).is_err(),
-            "keys without a pool do not activate inference"
-        );
-        manager
-            .set_pool(
-                "openrouter",
-                "openrouter-api-key",
-                0,
-                CredentialPool {
-                    members: pool_members,
-                    fallback,
-                    max_attempts: 1,
-                },
+            Fixture::new(
+                service(),
+                json!({"models":{"qwen-audio-3.0-asr-flash":invalid}}),
+                &keys
             )
-            .unwrap();
-        let result = Bootstrap::from_directory(dir.path());
-        assert_eq!(result.is_ok(), accepted);
-        if let Ok(boot) = result {
-            if let Some(models) = selection {
-                assert_eq!(boot.gateway.state.speech.len(), 1);
-                assert!(boot.gateway.state.entries.is_empty());
-                assert_eq!(boot.gateway.state.images.len(), models.len() - 1);
-                let view: serde_json::Value =
-                    serde_json::from_slice(&boot.gateway.state.models.list).unwrap();
-                assert!(view["data"].as_array().unwrap().contains(&json!({
-                    "id":"qwen-audio-3.0-tts-flash","object":"model","created":1784592000,"owned_by":"Alibaba"
-                })));
-            } else {
-                assert!(
-                    boot.gateway.state.speech.is_empty(),
-                    "conversation defaults must not enable TTS"
-                );
-                assert!(boot.gateway.state.images.is_empty());
-                assert!(!boot.gateway.state.entries.is_empty());
-            }
-        }
+            .is_err()
+        );
     }
+}
+
+#[test]
+fn openrouter_speech_and_images_do_not_activate_from_generation_accounts() {
+    let keys = [
+        ("openrouter", "primary", "synthetic-first"),
+        ("openrouter", "backup", "synthetic-second"),
+    ];
+    let boot=Fixture::new(service(),json!({"models":{
+        "qwen-audio-3.0-tts-flash":{"account":"primary"},"gpt-image-2.5-flare":{"account":"backup"}
+    }}),&keys).unwrap();
+    assert!(boot.gateway.state.entries.is_empty());
+    assert_eq!(boot.gateway.state.speech.len(), 1);
+    assert_eq!(boot.gateway.state.images.len(), 1);
+    assert_eq!(
+        boot.gateway.state.images["gpt-image-2.5-flare"]
+            .secret
+            .resolve()
+            .unwrap()
+            .0
+            .expose(),
+        "synthetic-second"
+    );
+    let view: serde_json::Value = serde_json::from_slice(&boot.gateway.state.models.list).unwrap();
+    assert!(view["data"].as_array().unwrap().contains(&json!({
+        "id":"qwen-audio-3.0-tts-flash","object":"model","created":1784592000,"owned_by":"Alibaba"
+    })));
+    let generation = Fixture::new(
+        service(),
+        selected_models(&["gpt-6-luna"], &["openrouter"]),
+        &keys,
+    )
+    .unwrap();
+    assert!(
+        generation.gateway.state.images.is_empty() && generation.gateway.state.speech.is_empty()
+    );
+    assert!(!generation.gateway.state.entries.is_empty());
 }

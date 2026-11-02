@@ -242,15 +242,10 @@ fn compile_deployments(
         }
         if route.endpoints.len() > super::route::MAX_ROUTE_CANDIDATES
             || !(1..=super::route::MAX_ROUTE_CANDIDATES).contains(&route.policy.max_attempts)
-            || route
-                .policy
-                .total_timeout_ms
-                .is_some_and(|ms| !(1..=86_400_000).contains(&ms))
         {
             return Err(TopologyError::InvalidRoutePolicy);
         }
         let mut seen = std::collections::BTreeSet::new();
-        let mut siwc_seen = false;
         for candidate in &route.endpoints {
             if !seen.insert(candidate) {
                 return Err(TopologyError::DuplicateCandidate);
@@ -258,18 +253,6 @@ fn compile_deployments(
             let endpoint = endpoint_map
                 .get(candidate.as_str())
                 .ok_or(TopologyError::UnknownEndpoint)?;
-            if endpoint.execution.credential_kind.single_account() {
-                // Another Provider is a legal fallback, not another SIWC account
-                // or endpoint. A standalone subscription still has one attempt.
-                if siwc_seen
-                    || route.endpoints.len() == 1
-                        && (route.policy.max_attempts != 1
-                            || route.policy.fallback != super::FallbackPolicy::Disabled)
-                {
-                    return Err(TopologyError::InvalidRoutePolicy);
-                }
-                siwc_seen = true;
-            }
             if endpoint.task != route.task {
                 return Err(TopologyError::TaskMismatch);
             }
@@ -354,6 +337,7 @@ mod tests {
                 (
                     crate::provider::ProviderOperation::ChatCompletions,
                     crate::provider::ProviderEndpoint {
+                        suffix: EndpointPath::new("/chat/completions").unwrap(),
                         path: EndpointPath::new("/chat/completions").unwrap(),
                         auth: None,
                     },
@@ -361,13 +345,13 @@ mod tests {
                 (
                     crate::provider::ProviderOperation::Responses,
                     crate::provider::ProviderEndpoint {
+                        suffix: EndpointPath::new("/responses").unwrap(),
                         path: EndpointPath::new("/responses").unwrap(),
                         auth: None,
                     },
                 ),
             ]
             .into(),
-            credential_pool: None,
             auth: AuthScheme::Bearer,
         }
     }
@@ -444,50 +428,24 @@ mod tests {
     }
 
     #[test]
-    fn siwc_cross_provider_routes_keep_one_subscription_candidate() {
-        for (attempts, fallback, other_kind, accepted) in [
-            (1, false, None, true),
-            (2, false, None, false),
-            (1, true, None, false),
-            (2, true, Some(CredentialKind::ApiKey), true),
-            (2, true, Some(CredentialKind::OAuth("openai")), false),
-        ] {
-            let mut provider = provider();
-            provider.auth = AuthScheme::OAuthBearer("openai");
-            let mut endpoint = endpoint(GenerationProtocol::OpenAiResponses);
-            endpoint.execution.credential_kind = CredentialKind::OAuth("openai");
-            let mut providers = vec![provider.clone()];
-            let mut endpoints = vec![endpoint.clone()];
-            let mut route = route();
-            route.policy.max_attempts = attempts;
-            if fallback {
-                route.policy.fallback = crate::topology::FallbackPolicy::BeforeCommit;
-            }
-            if let Some(kind) = other_kind {
-                provider.id = ProviderId::new("other").unwrap();
-                if kind == CredentialKind::ApiKey {
-                    provider.auth = AuthScheme::Bearer;
-                }
-                endpoint.provider = provider.id.clone();
-                endpoint.execution.credential_kind = kind;
-                endpoint.id = EndpointId::new("second").unwrap();
-                route.endpoints.push(endpoint.id.clone());
-                endpoints.push(endpoint);
-                providers.push(provider);
-            }
-            assert_eq!(
-                compile(
-                    providers,
-                    endpoints,
-                    vec![route],
-                    vec![model(TargetContract::full())],
-                    vec![canonical()]
-                )
-                .is_ok(),
-                accepted,
-                "attempts={attempts} fallback={fallback} other_kind={other_kind:?}"
-            );
-        }
+    fn oauth_candidates_do_not_impose_a_provider_specific_recovery_policy() {
+        let mut provider = provider();
+        provider.auth = AuthScheme::OAuthBearer("openai");
+        let mut first = endpoint(GenerationProtocol::OpenAiResponses);
+        first.execution.credential_kind = CredentialKind::OAuth("openai");
+        let mut second = first.clone();
+        second.id = EndpointId::new("second").unwrap();
+        second.credential = CredentialBindingId::new("other-account").unwrap();
+        let mut route = route();
+        route.endpoints.push(second.id.clone());
+        compile(
+            vec![provider],
+            vec![first, second],
+            vec![route],
+            vec![model(TargetContract::full())],
+            vec![canonical()],
+        )
+        .unwrap();
     }
 
     #[test]

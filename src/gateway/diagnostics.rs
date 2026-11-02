@@ -76,6 +76,8 @@ struct CandidateRecord {
     /// The executor's catalog Provider ID; never a credential or key fingerprint.
     #[serde(skip_serializing_if = "Option::is_none")]
     provider: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    account: Option<String>,
 }
 #[derive(Default, Serialize)]
 struct ImageAccountingObservation {
@@ -170,6 +172,7 @@ pub(super) struct Trace {
     start: Instant,
     candidate_start: Option<(usize, Instant, u64, u64)>,
     provider: Option<String>,
+    account: Option<String>,
     telemetry: Option<telemetry::Request>,
 }
 impl Trace {
@@ -238,6 +241,7 @@ impl Trace {
             start: Instant::now(),
             candidate_start: None,
             provider: None,
+            account: None,
         }
     }
     pub(super) fn begin_candidate(&mut self, ordinal: usize) {
@@ -318,6 +322,7 @@ impl Trace {
                 error_code,
                 advanced,
                 provider: self.provider.take(),
+                account: self.account.take(),
             });
         }
     }
@@ -352,6 +357,11 @@ impl Trace {
     pub(super) fn executor(&mut self, provider: &str) {
         if self.sink.is_some() {
             self.provider = Some(provider.into());
+        }
+    }
+    pub(super) fn named_account(&mut self, account: Option<&str>) {
+        if self.sink.is_some() {
+            self.account = account.map(str::to_owned);
         }
     }
     pub(super) fn ignored_fields(&mut self, names: Vec<String>) {

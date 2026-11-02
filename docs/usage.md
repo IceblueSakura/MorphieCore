@@ -6,7 +6,7 @@ This guide owns local setup, configuration and client-facing procedures for impl
 
 - [Prepare credentials](#prepare-credentials)
   - [Add an API key](#add-an-api-key)
-  - [Create a pool](#create-a-pool)
+  - [Configure accounts](#configure-accounts)
   - [OAuth](#oauth)
 - [Manual upstream diagnostics](#manual-upstream-diagnostics)
 - [Configure the gateway](#configure-the-gateway)
@@ -49,87 +49,105 @@ Build the CLIs:
 
 ```sh
 cargo build --locked --offline --bins
-install -d -m 700 "$HOME/.local/share/morphiecore" "$HOME/.local/share/morphiecore/credentials"
+ROOT="$HOME/.local/share/morphiecore-next"
 ```
 
-The examples below use `morphiecore-auth` as shorthand for `cargo run --locked --offline --bin morphiecore-auth --`. Replace placeholders with catalog identities. Provider definitions are in [src/provider/catalog.rs](../src/provider/catalog.rs); model and credential bindings are in [src/topology/catalog.rs](../src/topology/catalog.rs) and its modules.
+Choose a new explicit directory for the breaking schema; existing deployments and stores remain operator-owned. Copy the [configuration templates](#configuration-templates) before provisioning. The examples use `morphiecore-auth` as shorthand for `cargo run --locked --offline --bin morphiecore-auth --`.
 
 ### Add an API key
 
-Read the key from a private file, not a command-line value:
+Select a Provider and its configured account name, not a credential alias. The [account declaration](#configure-accounts) resolves the private storage reference. Read the key from a private file, never a command-line value:
 
 ```sh
-morphiecore-auth api-key add --domain "$PROVIDER_ID" --alias "$ALIAS" --secret-file /path/to/private-key
-morphiecore-auth api-key list --domain "$PROVIDER_ID"
+morphiecore-auth --accounts "$ROOT/accounts.json" --store "$ROOT/credentials" \
+  key add --provider "$PROVIDER_ID" --account primary --secret-file /path/to/private-key
+morphiecore-auth --accounts "$ROOT/accounts.json" --store "$ROOT/credentials" \
+  status --provider "$PROVIDER_ID"
 ```
 
-Updates require the current revision:
+Commands print human-readable output by default; `--json` selects one structured document. Status includes unprovisioned accounts without hiding existing accounts' revisions. Updates require the current revision:
 
 ```sh
-morphiecore-auth api-key replace --domain "$PROVIDER_ID" --alias "$ALIAS" --revision "$REV" --secret-file /path/to/private-key
-morphiecore-auth api-key disable --domain "$PROVIDER_ID" --alias "$ALIAS" --revision "$REV"
+morphiecore-auth --accounts "$ROOT/accounts.json" --store "$ROOT/credentials" \
+  key replace --provider "$PROVIDER_ID" --account primary --revision "$REV" --secret-file /path/to/private-key
+morphiecore-auth --accounts "$ROOT/accounts.json" --store "$ROOT/credentials" \
+  key disable --provider "$PROVIDER_ID" --account primary --revision "$REV"
 ```
 
 `enable` and `remove` use the same identity and revision arguments. Re-read the revision after every change. Removing a key deletes the local secret; it does not revoke the upstream key.
 
-A running gateway pins each key's identity at startup. After `replace`, `disable` or `remove`, that key is unavailable until the gateway restarts (the pool advances only when fallback is enabled; otherwise requests fail with `credential_unavailable`); a replaced key never inherits the old key's replay or cache scope.
+A running gateway pins key identity at startup. Replacement, disablement and removal invalidate that binding; restart with the current configuration to bind replacement material. A replaced key never inherits the old key's replay or cache scope.
 
-Every subcommand accepts `--store /path/to/store`.
+### Configure accounts
 
-### Create a pool
-
-Only credentials referenced by a pool are used for inference. A pool file contains references and policy, not secrets:
+`accounts.json` is private configuration outside the credential store. It lists ordered named accounts and credential references, not tokens or verified principal metadata. Start with [`accounts.example.json`](../config/accounts.example.json). A minimal API-key declaration is:
 
 ```json
 {
-  "members": [{"kind": "api_key", "alias": "primary"}],
-  "fallback": false,
-  "max_attempts": 1
+  "version": 1,
+  "providers": {
+    "openai": {
+      "accounts": [
+        {
+          "name": "primary",
+          "enabled": true,
+          "credential": {"kind": "api_key", "alias": "platform-primary"}
+        }
+      ]
+    }
+  }
 }
 ```
 
-Use revision `0` to create a new pool:
+Names are unique within a Provider and stay stable when the list is reordered. Route candidate order precedes account declaration order. `enabled` controls routing only; configured Active OAuth sessions remain maintained when disabled or unreferenced. Stored credentials alone activate no route.
+
+An API-key account may set `base_url` to a complete trusted API root. The catalog appends an explicit operation-relative suffix: `https://relay.example/custom/v1` plus `responses` becomes `/custom/v1/responses`. Omission retains each operation's original catalog target. HTTPS is required except for literal loopback HTTP; userinfo, queries, fragments and unsafe paths reject. OAuth overrides reject before credential borrowing.
+
+`openai` means OpenAI API-key access. SIWC is the separate `chatgpt` Provider, whose declaration uses `{"kind":"oauth","profile":"openai","alias":"personal"}`. Grok uses Provider/profile `grok`. Model availability and fixed request controls belong to each Provider's catalog bindings, not the account file.
+
+Inspect declarations without opening the credential store, or validate all local references without login, refresh or probes:
 
 ```sh
-morphiecore-auth pool set --provider "$PROVIDER_ID" --binding "$BINDING_ID" --revision 0 --file /path/to/pool.json
-morphiecore-auth pool list
+morphiecore-auth --accounts "$ROOT/accounts.json" explain
+morphiecore-auth --accounts "$ROOT/accounts.json" --store "$ROOT/credentials" validate
+morphiecore --config "$ROOT/gateway.json" --validate --json
 ```
 
-Members are ordered. Set `fallback: true` and configure `max_attempts` to enable fallback across pool members on retryable upstream failures (transport errors, timeouts, 5xx). Authentication errors (401) and unknown rate limits do not rotate keys. See [Failover](architecture.md#failover).
-
-OpenAI SIWC pools require a single member with `fallback: false` and `max_attempts: 1`; other OAuth profiles have no such restriction. Cross-Provider fallback remains supported at the model route level.
+Gateway validation also uses the real model/task loader and Agent authentication configuration, without a listener or observation-sink activation. Unsupported schema versions, old fields, duplicate names/subjects, incompatible references and unsafe storage fail closed. Provision every referenced account first; there is no migration, import or credential-alias bypass.
 
 ### OAuth
 
-Login and revocation remain explicit operator actions. A running gateway
-automatically renews its bound OAuth accounts; manual refresh remains available:
+Declare the named OAuth account before login. Login and revocation remain explicit operator actions; ordinary inference borrowing is network-free:
 
 ```sh
-morphiecore-auth grok login --account personal
-morphiecore-auth openai login --account personal
-morphiecore-auth list
-morphiecore-auth openai refresh --account personal
-morphiecore-auth openai logout --account personal
+morphiecore-auth --accounts "$ROOT/accounts.json" --store "$ROOT/credentials" \
+  login --provider chatgpt --account personal
+morphiecore-auth --accounts "$ROOT/accounts.json" --store "$ROOT/credentials" status
+morphiecore-auth --accounts "$ROOT/accounts.json" --store "$ROOT/credentials" \
+  refresh --provider chatgpt --account personal
+morphiecore-auth --accounts "$ROOT/accounts.json" --store "$ROOT/credentials" \
+  logout --provider chatgpt --account personal
 ```
 
-- `openai` is the ChatGPT subscription profile (SIWC), not an OpenAI Platform API key.
-- Grok defaults to device login; `--method browser` selects browser login. SIWC supports browser login only.
+- Use `--provider grok` for Grok. It defaults to device login; `--method browser` selects browser login. SIWC defaults to browser login.
 - `--consent` explicitly requests ChatGPT plan consent during login.
 - `--callback-port` sets the loopback callback port. Grok also accepts `--client-id`.
 - `logout --revoke` requests upstream revocation.
 - `login`, `refresh` and `logout` accept `--proxy`.
 
-An Active account rejects another login; use `refresh`, or explicitly sign out before returning sign-in or consent. A pending login rejects concurrent login from another process or handle. Reauthorization after invalidation and login after logout retain the account registration. Another alias cannot publish the same verified subject in that OAuth profile, even with a different issued client; signing out does not release the subject reservation.
+An Active account rejects another login; use `refresh`, or explicitly sign out before returning sign-in or consent. Pending login rejects concurrent login. Reauthorization and login after logout retain registration identity. Another alias cannot publish the same verified subject, even with another issued client; disablement, logout and reauthorization-required states retain that reservation.
+
+`remove --provider chatgpt --account personal --revision "$REV"` clears the local session and releases its subject reservation without requesting remote revocation. Use it before deleting the configuration declaration. Re-registration gets a fresh immutable identity with a monotonic revision; old running bindings remain invalid. Removing configuration alone does not revoke an upstream session.
 
 Callbacks listen on `127.0.0.1`. Login checks issuer, client and subject. Gateway inference never starts login or refresh.
 
 Automatic renewal runs in the background when running `morphiecore` (`Gateway::serve`):
-- Checks bound OAuth accounts on startup and every 15 seconds.
+- Checks configured OAuth accounts independently of routes and enablement on startup and every 15 seconds.
 - Renews credentials expiring within 120 seconds.
 - Imposes a 90-second timeout per renewal and a 60-second minimum interval per account.
 - Persists rotated tokens in the private credential store.
 
-Use `morphiecore-auth list` to check status, or `morphiecore-auth <provider> refresh` for manual renewal.
+Use `status --provider ID` for redacted state and `refresh --provider ID --account NAME` for manual renewal, with the same explicit account/store paths.
 
 ## Manual upstream diagnostics
 
@@ -140,9 +158,8 @@ Build with `cargo build --locked --offline --bin morphiecore-upstream`. Provider
 ### List upstream models
 
 ```sh
-morphiecore-upstream models deepseek
-morphiecore-upstream models google
-morphiecore-upstream models openai
+morphiecore-upstream models deepseek --account primary \
+  --accounts "$ROOT/accounts.json" --store "$ROOT/credentials"
 ```
 
 No protocol argument is required or accepted. The Provider's `models` endpoint supplies its path and authentication. The command prints the complete upstream JSON response, preserving all fields rather than extracting IDs or wrapping it in a report. Pagination fields remain untouched; no further page is fetched. There is no `--cursor` option. A complete response does not necessarily contain the entire Provider catalog or prove model entitlement.
@@ -153,16 +170,20 @@ If the Provider has no declared `models` endpoint, the command fails before cred
 
 ```sh
 morphiecore-upstream probe deepseek \
-  --model deepseek-flash --protocol openai-chat
+  --model deepseek-flash --protocol openai-chat --account primary \
+  --accounts "$ROOT/accounts.json" --store "$ROOT/credentials"
 
 morphiecore-upstream probe opencode-go \
-  --model claude-haiku-5-5 --protocol anthropic
+  --model claude-haiku-5-5 --protocol anthropic --account primary \
+  --accounts "$ROOT/accounts.json" --store "$ROOT/credentials"
 
 morphiecore-upstream probe google \
-  --model gemini-3.8-flash --protocol google
+  --model gemini-3.8-flash --protocol google --account primary \
+  --accounts "$ROOT/accounts.json" --store "$ROOT/credentials"
 
 morphiecore-upstream probe openai \
-  --model gpt-6-astra --protocol openai-responses
+  --model gpt-6-astra --protocol openai-responses --account primary \
+  --accounts "$ROOT/accounts.json" --store "$ROOT/credentials"
 ```
 
 The protocol choices are `openai-chat`, `openai-responses`, `anthropic` and `google` (generateContent). The operation must be declared by the Provider, but the model name is an ordinary upstream string: it need not appear in the local catalog or a previous model list. The fixed prompt is `Reply with the single word OK.`; no user payload, tools or history are accepted.
@@ -173,33 +194,27 @@ Success requires nonempty text plus an ordinary completion (`stop`, `completed`,
 
 ### Credential selection and optional controls
 
-Without an explicit alias, the tool loads the Provider's `credential_pool` from the project credential manager and selects **the first configured member only**. It ignores the pool's runtime fallback policy: a disabled, missing or unusable first member fails rather than selecting another. Missing pools must be created with `morphiecore-auth pool set`; the tool does not create pools, scan keys or choose an account by availability.
-
-For example, `deepseek` defaults to `deepseek-api-key` and `openai` to `openai-oauth`. All default names are maintained in `providers.json`, not a second CLI table. The gateway uses these same binding defaults but retains its own routing/fallback policy.
+`--account NAME` is required. The tool loads that named declaration from the shared account file, composes its effective target through the same catalog binder, and borrows only its credential. It never scans accounts or selects another by availability. A credential alias is not an account selector.
 
 | Option | Meaning |
 |---|---|
-| `--api-key ALIAS` | Bypass the default pool with one API-key alias in this Provider's domain; never a key value |
-| `--account ALIAS` | Bypass the default pool with one OAuth account in the Provider's declared profile |
+| `--account NAME` | Required configured account name within the positional Provider |
+| `--accounts PATH` | Shared private account configuration; default `accounts.json` in the home-relative application directory |
 | `--store PATH` | Select another project credential store |
 | `--proxy URL` | Override system/environment proxies for upstream HTTP and OAuth operations |
 | `--timeout-seconds N` | Whole refresh/request deadline, default 60, range 1–300 |
 
-The two credential overrides are mutually exclusive and must match the endpoint's credential kind/profile. They cannot change the destination or authentication scheme. To inspect a different API-key member without changing the pool:
-
-```sh
-morphiecore-upstream models deepseek --api-key secondary
-```
+Targets and authentication come from the Provider/account binder, not command-line endpoint or credential-locator overrides. Use `chatgpt` for SIWC and `openai` for Platform API keys.
 
 OAuth pins the selected identity, refreshes locally expired access once or completes a pending renewal, and persists through the existing manager. There is no login, permission escalation, refresh after HTTP 401, account replacement or inference replay. Failed/interrupted refresh may require recovery with `morphiecore-auth`. Gateway inference still never refreshes credentials.
 
-To add a Provider for manual diagnostics, edit `src/provider/providers.json` with its trusted origin, auth, default pool and confirmed endpoints, then rebuild. Provision its credentials/pool separately through `morphiecore-auth`. No gateway model binding is required for a probe. There is **no runtime Provider file or hot reload**. Existing gateway deployment overrides remain gateway configuration, not tool flags.
+To add a Provider for manual diagnostics, edit `src/provider/providers.json` with its trusted origin, authentication, confirmed operation paths and override suffixes, then rebuild. Declare and provision its named account separately. No gateway model binding is required for a probe. There is **no runtime Provider file or hot reload**.
 
 The HTTP response ceiling is 4 MiB; JSON keeps shared structural limits, and SIWC limits events to 1 MiB each/10,000 total. Responses are buffered; oversized responses fail rather than print a truncated result. Echoed authentication material is rejected before output. Like the gateway and auth CLI, upstream HTTP follows system/environment proxy settings by default; an explicit proxy overrides them without direct fallback. Ctrl-C cancels local work; socket release does not prove remote computation stopped.
 
 ## Configure the gateway
 
-Create private `gateway.json`, `auth.json` and `models.json` files in `$HOME/.local/share/morphiecore` (use `%USERPROFILE%` on Windows), or select a different service file with `--config`. Their parent directories must also be private on Unix; use directory mode `0700` and file mode `0600`. Keep configuration outside the credential store. Each file is bounded to 64 KiB and rejects unknown fields and duplicate JSON keys. Changes take effect at startup; there is no hot reload.
+Create private `gateway.json`, `auth.json`, `accounts.json` and `models.json` files. The default application directory is `$HOME/.local/share/morphiecore` (`%USERPROFILE%` on Windows); use `--config` for a fresh explicit setup. Parent directories must be private on Unix: directory mode `0700`, file mode `0600`. Keep configuration outside credential storage. Each file is bounded to 64 KiB and rejects unsupported versions, unknown fields and duplicate JSON keys. Changes take effect at startup; there is no hot reload.
 
 ### Configuration templates
 
@@ -209,33 +224,34 @@ The repository's [`config/`](../config/) directory contains public templates, no
 |---|---|
 | [`gateway.example.json`](../config/gateway.example.json) | All current service fields, default 50 ms / 16 KiB coalescing, disabled diagnostics and all capture selections off |
 | [`auth.example.json`](../config/auth.example.json) | Two independent Agent identities with deliberately too-short key placeholders; the unchanged file cannot start a gateway |
-| [`models.example.json`](../config/models.example.json) | Narrow starting point: Qwen 3.8 Flash through the existing Token Plan Chat binding, readable Chat reasoning and one attempt |
-| [`models.advanced.example.json`](../config/models.advanced.example.json) | Optional Generation controls: ordered native Messages candidates, deployment/pool overrides, output limits, inherited-default clearing and both numeric thinking conversions |
+| [`accounts.example.json`](../config/accounts.example.json) | Ordered named API-key accounts referencing protected credential aliases, independently of model activation |
+| [`models.example.json`](../config/models.example.json) | Narrow starting point: Qwen 3.8 Flash through the Token Plan Chat binding with readable Chat reasoning |
+| [`models.advanced.example.json`](../config/models.advanced.example.json) | Optional Generation controls: Messages/Google bindings, output limits, inherited-default clearing and both numeric thinking conversions |
 | [`models.tasks.example.json`](../config/models.tasks.example.json) | Optional existing Embedding, Images, Speech and explicit Transcription binding selection, without Generation overrides |
 | [`nginx.example.conf`](../config/nginx.example.conf) | Optional TLS virtual host, gzip SSE, proxy safety controls and example pre-authentication connection/upload limits; include from `http {}` |
 
-Choose one model template as `models.json`, or deliberately combine selected entries under one `models` object. The loader does not merge files, expand placeholders or discover templates. The advanced template's `.invalid` origins must be replaced with trusted deployments compatible with the selected binding; it is not a ready-to-use failover or cross-account replay claim. Its second Messages candidate clears the output default, so an uncapped request is not automatically compatible with that candidate.
+Choose one model template as `models.json`, or deliberately combine selected entries under one `models` object. The loader does not merge files, expand placeholders or discover templates. The advanced Messages candidate clears its output default, so uncapped requests require an explicit cap. Account targets remain independently configured.
 
 For a **new** Unix installation, run from the repository root. This refuses to overwrite existing files or symlinks:
 
 ```sh
 (
     set -eu
-    config="$HOME/.local/share/morphiecore"
-    for name in gateway auth models; do
+    config="$ROOT"
+    for name in gateway auth accounts models; do
         if [ -e "$config/$name.json" ] || [ -L "$config/$name.json" ]; then
             printf 'Refusing to overwrite an existing configuration.\n' >&2
             exit 1
         fi
     done
     install -d -m 0700 "$config"
-    for name in gateway auth models; do
+    for name in gateway auth accounts models; do
         install -m 0600 "config/$name.example.json" "$config/$name.json"
     done
 )
 ```
 
-Replace **each** Agent-key placeholder with an independently generated high-entropy key of at least 32 printable non-space ASCII characters; keep those values out of source and shell output. Provision Provider credentials and pools using `morphiecore-auth`, with `--store "$HOME/.local/share/morphiecore/credentials"` to match this service template. The basic model needs the `aliyun-tokenplan-cn-api-key` pool in `aliyun-tokenplan-cn`; advanced examples use `opencode-go-api-key` and `google-api-key` in their respective domains. Task examples use `openrouter-api-key` and the Token Plan pool, with one member and fallback disabled. Activation still requires actual account access; templates are not live acceptance evidence.
+Replace **each** Agent-key placeholder with an independently generated high-entropy key of at least 32 printable non-space ASCII characters; keep values out of source and shell output. Provision every referenced account with `--accounts "$ROOT/accounts.json" --store "$ROOT/credentials"`. The shipped account template declares `primary` for `aliyun-tokenplan-cn`, `opencode-go`, `google` and `openrouter`; each references its Provider-local `example` alias. Remove unused Provider declarations before validation if those accounts will not be provisioned. Task models explicitly select `primary`. Templates are configuration examples, not live acceptance evidence.
 
 `proxy: null` leaves the documented environment-proxy fallback in effect; it does not force direct connections. To enable diagnostics, replace `null` with a private path whose parent already exists. Capture remains disabled until a header/body switch is explicitly enabled; then create its private parent and choose a fresh filename. Upstream credential stores are managed formats, not hand-edited templates. Provider metadata remains compiled into the program; there is no runtime `providers.json` template.
 
@@ -245,8 +261,10 @@ Keep edited copies, credentials, certificates and captures outside the repositor
 
 ```json
 {
+  "version": 1,
   "auth_file": "auth.json",
   "bind": "127.0.0.1:8080",
+  "accounts_file": "accounts.json",
   "models_file": "models.json",
   "credentials_dir": "credentials"
 }
@@ -254,9 +272,11 @@ Keep edited copies, credentials, certificates and captures outside the repositor
 
 | Field | Meaning |
 |---|---|
+| `version` | Required current schema version, `1` |
 | `auth_file` | Required private Agent-key file; default `auth.json` beside this file |
 | `bind` | Loopback listener; default `127.0.0.1:8080` |
 | `models_file` | Model configuration path; default `models.json` beside this file |
+| `accounts_file` | Shared account configuration; default `accounts.json` beside this file |
 | `credentials_dir` | Optional credential-store path; omission retains the independent home-relative default |
 | `proxy` | Outbound proxy |
 | `concurrency` | Concurrent exchanges; default 16, range 1–256 |
@@ -310,21 +330,19 @@ After the old process exits, reuse the same path. Valid records remain; a recogn
 
 `models.json` owns explicit public-model selection and ordered upstream candidates. Start with [`models.example.json`](../config/models.example.json); the separate [advanced](../config/models.advanced.example.json) and [standalone-task](../config/models.tasks.example.json) templates demonstrate optional configuration shapes without expanding the default activation.
 
-Replace the placeholders with a registered public label, one of its catalog endpoint IDs and a pool in that endpoint's Provider domain. Binding definitions are in [the catalog](../src/topology/catalog.rs). `credential` is a pool reference, never an inline key; manage its key/account members through the existing credential CLI. Omitted deployment fields retain the selected binding's values.
+Select a registered public label and its catalog endpoint IDs. Each candidate expands that Provider's enabled accounts in declaration order; account names, targets and credential references belong only in [accounts.json](#configure-accounts). Binding definitions are in [the catalog](../src/topology/catalog.rs). Omitted model controls inherit the binding's values.
 
 | Scope | Field | Meaning |
 |---|---|---|
+| File | `version` | Required current schema version, `1` |
 | File | `implicit_cache_affinity` | Best-effort prefix affinity; default `true` |
 | Model | `candidates` | Nonempty ordered array of existing bindings for this public model |
 | Model | `chat_profile` | `standard` (default) or `readable_reasoning`; selects the downstream Chat contract for all candidates, never an upstream dialect. Responses/Messages remain unchanged; invalid on frozen tasks |
-| Model | `max_attempts` | Optional total attempt ceiling, including the first attempt; range 1–64, otherwise the route default |
-| Model | `total_timeout_ms` | Optional exchange deadline after request intake; bounded by the service ceiling |
+| Model | `total_timeout_ms` | Optional model-local exchange deadline, bounded by the service ceiling |
+| Standalone task | `account` | Required enabled API-key account name in the selected binding's Provider |
 | Model | `thinking_tokens` | Optional six-level numeric table shared by this model's candidates |
 | Candidate | `binding` | Required catalog endpoint ID; fixes protocol, dialect, canonical model and authentication kind |
-| Candidate | `base_url` | Trusted origin plus API prefix, without the operation suffix |
 | Candidate | `upstream_model` | Wire spelling only; does not change canonical identity or model capabilities |
-| Candidate | `credential` | Pool reference; defaults to the binding's catalog pool |
-| Candidate | `attempt_timeout_ms` | One upstream attempt's timeout, further bounded by the remaining exchange deadline |
 | Candidate | `reasoning_as_text` | Permit the existing named history conversion; default `false` |
 | Candidate | `thinking_conversion` | `budget_to_effort` or `effort_to_budget` fallback; exact model-supported controls take precedence. Omission performs no numeric conversion |
 | Candidate | `allowed_effort` | Optional nonempty array of distinct `minimal`, `low`, `medium`, `high`, `xhigh`, `max` levels; narrows the catalog declaration when present |
@@ -337,7 +355,7 @@ Omitted model-value fields inherit the binding's declaration. Effort/output limi
 
 The Go/Haiku Messages binding declares a `32000` default; generic Messages targets do not. `default_output_tokens` is independent of `maximum_output_tokens`: it may be raised or lowered, but a resolved default above the effective maximum rejects startup. For example, narrowing the maximum to `8192` requires overriding the inherited `32000` with a value at most `8192`, or clearing it with `null`. Zero, malformed values and this field on a non-Messages candidate (including `null`) reject. Defaults fill absence only; explicit request caps still take the model-maximum clamp above. An uncapped Messages candidate with no effective default rejects locally. Defaults are neither a promise to generate that amount nor a model-limit guarantee. See [missing output ceilings](architecture.md#missing-output-ceilings).
 
-Timeout values accept 1–86400000 milliseconds. Attempt ceilings span endpoint and credential candidates without multiplying or retrying an exhausted list. Beginning credential resolution counts as an attempt; skipped candidates do not. See [Advancement](architecture.md#advancement) for candidate ordering, failure restrictions and the publication boundary.
+Account selection happens before dispatch. The account cutover currently sends once; the next [execution gate](roadmap.md#ordered-work-and-exit-gates) adds bounded same-target recovery. A returned failure never causes another account or Provider to be dispatched in that request. Model `max_attempts` and candidate `credential`, `base_url` and `attempt_timeout_ms` are unsupported fields, not dormant settings.
 
 Cooling targets are never tried early. If every otherwise-legal target is cooling or probing, the gateway returns `503 upstream_unavailable` with `Retry-After`. [Health and recovery](architecture.md#health-and-recovery) defines cooldown scopes, delay bounds, foreground probes and cancellation.
 
@@ -347,7 +365,7 @@ For `claude-haiku-5-5`, `opencode-go-haiku-messages` candidates natively carry M
 
 On an admitted Messages route, request-wide automatic caching uses root `"cache_control":{"type":"ephemeral","ttl":"1h"}` or `"ttl":"5m"`; omitting `ttl` means 5m. Missing root policy retains the binding's marker-free default, not a client disable instruction. Explicit owner markers, four-marker limits and TTL conflicts retain their [existing rules](architecture.md#caller-selected-automatic-cache-admission).
 
-`base_url` includes the API prefix: `/v1` plus a Chat binding produces `/v1/chat/completions`; a Messages binding produces `/v1/messages`. Google generateContent appends `/models/{upstream_model}:streamGenerateContent`, while Interactions appends `/interactions`. HTTPS is required except for literal loopback HTTP. Userinfo, query strings, fragments and ambiguous path escapes are rejected. Business requests cannot override these trusted targets.
+Account-level API roots apply consistently to Generation, model-list diagnostics and standalone task operations. Google generateContent resolves its model/action suffix from the selected operation; no caller-controlled path or API-version guessing is introduced. See [target composition](#configure-accounts).
 
 Replay fingerprints include the normalized deployment origin/path. Changing either makes existing opaque replay foreign; the URL itself never reaches clients. This also replaces the former Provider/model-only fingerprints. Required compacted history cannot migrate across that boundary.
 
@@ -376,23 +394,25 @@ Those reviewed Google bindings omit temperature/top-p/top-k that the model ignor
 
 `reasoning_as_text` controls the explicit conversion of unattributed readable history reasoning into assistant text, not visibility of new reasoning output. With the default `false`, a candidate needing that conversion rejects. Separately, complete reasoning demonstrably belonging to another target is omitted under the named visible-history transfer policy, never promoted to an assistant answer. Visible messages and real call/results remain; partial reasoning, damaged compatible replay and required compacted/cached context cannot be repaired by omission. Valid native carriers remain available.
 
-Only listed models are activated. Frozen Images, Speech and Embeddings entries use an empty object (`"configured-frozen-model": {}`); they retain their existing single catalog target and pool constraints, without Generation overrides.
+Only listed models are activated. Images, Speech and Embeddings select one account explicitly, for example `"text-embedding-3-small":{"account":"primary"}`. They retain single-target task execution without Generation overrides or multi-account recovery.
 
-Transcription also accepts an empty object when the model has exactly one catalog binding. Shared models require an explicit model-level `binding`, not a Generation `candidates` list:
+Transcription also requires `account`. A shared model requires an explicit model-level `binding`, not a Generation `candidates` list:
 
 ```json
 {
+  "version": 1,
   "models": {
     "qwen-audio-3.0-asr-flash": {
-      "binding": "dashscope-qwen-asr"
+      "binding": "dashscope-qwen-asr",
+      "account": "primary"
     }
   }
 }
 ```
 
-Select `dashscope-qwen-asr` for the metered DashScope pool or `tokenplan-qwen-asr` for the Token Plan pool. Both expose the same `qwen-audio-3.0-asr-flash` model; their trusted origins and credential domains remain separate. The former `qwen-audio-3.0-asr-flash-dashscope` alias is removed. Missing or mismatched selections reject at startup. Execution uses one binding and one credential source, without automatic Provider selection, failover or Generation overrides.
+Select `dashscope-qwen-asr` for metered DashScope or `tokenplan-qwen-asr` for Token Plan. Both expose `qwen-audio-3.0-asr-flash`; trusted origins and account namespaces remain separate. Missing, disabled or mismatched selections reject at startup. Execution uses exactly the selected binding/account, even when other accounts are enabled.
 
-The file supports at most 64 models and 64 candidates per model; expanded credential candidates retain the existing runtime bound. Unknown bindings, mismatched model identities, duplicate deployments, missing pools and invalid bounds fail startup. See [service loading](../src/gateway/startup/bootstrap.rs) and [model assembly](../src/gateway/startup/models.rs).
+The file supports at most 64 models and 64 candidates per model, with at most 64 expanded account targets per public-model/client entry. Unknown bindings, mismatched model identities, duplicate deployments and invalid account references fail startup. See [service loading](../src/gateway/startup/bootstrap.rs) and [model assembly](../src/gateway/startup/models.rs).
 
 ### Delta coalescing
 
@@ -460,7 +480,7 @@ Authenticated client boundaries and Generation upstream I/O are instrumented. Fr
 ## Start the gateway
 
 ```sh
-cargo run --locked --offline --bin morphiecore
+cargo run --locked --offline --bin morphiecore -- --config "$ROOT/gateway.json"
 ```
 
 Override paths or proxy when needed:
@@ -709,7 +729,7 @@ The [OpenAPI summary](openapi.json) describes envelopes and selected constraints
 
 ### Embeddings
 
-Explicitly list `"gemini-embedding-2": {}` or `"text-embedding-3-small": {}` in the models configuration and bind the corresponding Google or OpenRouter single-member, nonfallback API-key pool. This does not activate either model automatically or change credentials. OpenAI's model currently uses OpenRouter; no direct OpenAI API binding is implied.
+Explicitly list `"gemini-embedding-2":{"account":"primary"}` or `"text-embedding-3-small":{"account":"primary"}` and provision that named Google or OpenRouter API-key account. Other enabled accounts are not task fallback targets. OpenAI's embedding model currently uses OpenRouter; no direct OpenAI embedding binding is implied.
 
 Send the ordinary OpenAI request envelope to `/v1/embeddings`, for example `{"model":"gemini-embedding-2","input":["first","second"],"dimensions":128,"encoding_format":"base64"}`. Google uses native synchronous requests internally, with explicit no-truncation. The downstream path is not Google's native REST interface.
 

@@ -9,6 +9,7 @@ pub struct AccessBinding {
     manager: CredentialManager,
     profile: String,
     alias: String,
+    record_id: String,
     client: String,
     identity: VerifiedIdentity,
 }
@@ -35,6 +36,7 @@ impl CredentialManager {
             manager: self.clone(),
             profile: profile.into(),
             alias: alias.into(),
+            record_id: account.record_id,
             client: account.client_id,
             identity: account.identity.ok_or(Error::LoginRequired)?,
         })
@@ -47,11 +49,15 @@ impl AccessBinding {
         std::sync::Arc::ptr_eq(&self.manager.store, &other.manager.store)
             && self.profile == other.profile
             && self.alias == other.alias
+            && self.record_id == other.record_id
             && self.client == other.client
             && self.identity == other.identity
     }
     pub(super) fn check_identity(&self, account: &model::Account) -> Result<(), Error> {
-        if account.client_id != self.client || account.identity.as_ref() != Some(&self.identity) {
+        if account.record_id != self.record_id
+            || account.client_id != self.client
+            || account.identity.as_ref() != Some(&self.identity)
+        {
             return Err(Error::IdentityMismatch);
         }
         Ok(())
@@ -67,12 +73,16 @@ impl AccessBinding {
     pub fn profile(&self) -> &str {
         &self.profile
     }
+    pub(crate) fn subject(&self) -> &str {
+        &self.identity.subject
+    }
     /// Private provenance input for the gateway's keyed replay scope. Token
     /// rotation preserves it; changing principal, profile or client does not.
     pub(crate) fn provenance(&self) -> String {
         let mut hash = Sha256::new();
         for value in [
             self.profile.as_str(),
+            &self.record_id,
             &self.client,
             &self.identity.subject,
             self.identity.scope.as_deref().unwrap_or(""),

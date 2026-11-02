@@ -846,27 +846,27 @@ fn router_request_policy_is_fixed_and_luna_controls_are_not_silently_ignored() {
         .endpoints
         .iter()
         .map(|id| topology.endpoint(id).unwrap())
-        .find(|endpoint| endpoint.provider.as_str() == "openai")
+        .find(|endpoint| endpoint.provider.as_str() == "chatgpt")
         .unwrap();
-    assert_eq!(endpoint.credential.as_str(), "openai-oauth");
+    assert_eq!(endpoint.credential.as_str(), "chatgpt");
     let client = standard(GenerationApi::Responses);
     let request = client
         .decode_request(br#"{"model":"gpt-6-luna","input":"hello"}"#)
         .unwrap();
-    let prepared = prepare(endpoint, &providers::openai(), &secret, &request).unwrap();
+    let prepared = prepare(endpoint, &providers::chatgpt(), &secret, &request).unwrap();
     let wire: Value = serde_json::from_slice(&prepared.body).unwrap();
     assert_eq!(wire["model"], "gpt-6-luna");
     assert_eq!(prepared.origin, "https://api.openai.com");
     assert_eq!(prepared.path, "/v1/responses");
     let plan = morphiecore::execution::ExecutionPlan::for_request(&topology, &request).unwrap();
     assert!(plan.candidates.iter().any(|c| c.endpoint_id == endpoint.id));
-    assert_eq!(plan.candidates.len(), 3);
+    assert_eq!(plan.candidates.len(), 4);
     let capped = client
         .decode_request(br#"{"model":"gpt-6-luna","input":"hello","max_output_tokens":64}"#)
         .unwrap();
     let original = capped.clone();
     admit(public, &capped).unwrap();
-    let prepared = prepare(endpoint, &providers::openai(), &secret, &capped).unwrap();
+    let prepared = prepare(endpoint, &providers::chatgpt(), &secret, &capped).unwrap();
     assert!(
         serde_json::from_slice::<Value>(&prepared.body)
             .unwrap()
@@ -878,6 +878,18 @@ fn router_request_policy_is_fixed_and_luna_controls_are_not_silently_ignored() {
     let plan = morphiecore::execution::ExecutionPlan::for_request(&topology, &capped).unwrap();
     assert!(plan.candidates.iter().any(|c| c.endpoint_id == endpoint.id));
     assert!(plan.rejections.iter().all(|r| r.endpoint_id != endpoint.id));
-    assert_eq!(plan.candidates.len(), 3);
+    assert_eq!(plan.candidates.len(), 4);
     assert_eq!(capped, original);
+    let platform = route
+        .endpoints
+        .iter()
+        .map(|id| topology.endpoint(id).unwrap())
+        .find(|endpoint| endpoint.provider.as_str() == "openai")
+        .unwrap();
+    let prepared = prepare(platform, &providers::openai(), &secret, &capped).unwrap();
+    let wire: Value = serde_json::from_slice(&prepared.body).unwrap();
+    assert_eq!(
+        wire["max_output_tokens"], 64,
+        "API-key access does not inherit SIWC controls"
+    );
 }

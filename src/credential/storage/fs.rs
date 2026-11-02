@@ -179,7 +179,7 @@ impl Directory {
         let mut names = Vec::new();
         for (index, entry) in entries.enumerate() {
             if index >= 16384 {
-                return Err(Error::PoolFull);
+                return Err(Error::Capacity);
             }
             let entry = entry.map_err(|_| Error::Storage)?;
             let name = entry

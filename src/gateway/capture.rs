@@ -86,6 +86,39 @@ impl Boundary {
     }
 }
 impl CaptureConfig {
+    pub(super) fn validate(&self) -> std::io::Result<()> {
+        if !(1024..=1 << 20).contains(&self.max_unit_bytes)
+            || self.max_exchange_bytes < self.max_unit_bytes
+            || self.max_exchange_bytes > 64 << 20
+            || self.max_total_bytes < self.max_exchange_bytes
+            || self.max_total_bytes > 1 << 30
+        {
+            return Err(std::io::Error::other("invalid capture bounds"));
+        }
+        let parent = self
+            .path
+            .parent()
+            .ok_or_else(|| std::io::Error::other("private capture directory required"))?;
+        let mut builder = fs_mistrust::Mistrust::builder();
+        builder.ignore_environment();
+        #[cfg(unix)]
+        builder.trust_no_group_id();
+        builder
+            .build()
+            .map_err(|_| std::io::Error::other("capture directory"))?
+            .verifier()
+            .require_directory()
+            .check(parent)
+            .map_err(|_| std::io::Error::other("capture directory must be private"))?;
+        match self.path.symlink_metadata() {
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Ok(_) => Err(std::io::Error::new(
+                std::io::ErrorKind::AlreadyExists,
+                "capture file must be new",
+            )),
+            Err(error) => Err(error),
+        }
+    }
     pub(super) fn enabled(&self) -> bool {
         [
             self.client_request,
@@ -131,29 +164,7 @@ struct Writer {
 pub(super) struct Sink(Arc<Writer>);
 impl Sink {
     pub(super) fn open(config: CaptureConfig) -> std::io::Result<Self> {
-        if !(1024..=1 << 20).contains(&config.max_unit_bytes)
-            || config.max_exchange_bytes < config.max_unit_bytes
-            || config.max_exchange_bytes > 64 << 20
-            || config.max_total_bytes < config.max_exchange_bytes
-            || config.max_total_bytes > 1 << 30
-        {
-            return Err(std::io::Error::other("invalid capture bounds"));
-        }
-        let parent = config
-            .path
-            .parent()
-            .ok_or_else(|| std::io::Error::other("private capture directory required"))?;
-        let mut builder = fs_mistrust::Mistrust::builder();
-        builder.ignore_environment();
-        #[cfg(unix)]
-        builder.trust_no_group_id();
-        builder
-            .build()
-            .map_err(|_| std::io::Error::other("capture directory"))?
-            .verifier()
-            .require_directory()
-            .check(parent)
-            .map_err(|_| std::io::Error::other("capture directory must be private"))?;
+        config.validate()?;
         let mut options = OpenOptions::new();
         options.write(true).create_new(true);
         #[cfg(unix)]

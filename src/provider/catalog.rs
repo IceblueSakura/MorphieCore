@@ -2,8 +2,8 @@
 //! Edit providers.json and rebuild; no runtime files, overrides or hot reload.
 use crate::{
     provider::{
-        AuthScheme, CredentialBindingId, EndpointPath, ProviderDefinition, ProviderEndpoint,
-        ProviderError, ProviderId, ProviderOperation, TrustedOrigin,
+        AuthScheme, EndpointPath, ProviderDefinition, ProviderEndpoint, ProviderError, ProviderId,
+        ProviderOperation, TrustedOrigin,
     },
     semantic::value::{JsonLimits, parse_json},
 };
@@ -47,7 +47,6 @@ impl Authentication {
 struct Definition {
     base_url: String,
     auth: Authentication,
-    credential_pool: String,
     endpoints: BTreeMap<ProviderOperation, Entry>,
     sources: Vec<String>,
 }
@@ -55,6 +54,7 @@ struct Definition {
 #[serde(deny_unknown_fields)]
 struct Entry {
     path: String,
+    suffix: String,
     auth: Option<Authentication>,
 }
 fn parse(bytes: &[u8]) -> Result<BTreeMap<String, ProviderDefinition>, ProviderError> {
@@ -73,7 +73,6 @@ fn parse(bytes: &[u8]) -> Result<BTreeMap<String, ProviderDefinition>, ProviderE
                     .sources
                     .iter()
                     .any(|s| !s.starts_with("https://") || s.chars().any(char::is_control))
-                || matches!(auth, AuthScheme::OAuthBearer(profile) if profile != name)
             {
                 return Err(invalid());
             }
@@ -89,6 +88,7 @@ fn parse(bytes: &[u8]) -> Result<BTreeMap<String, ProviderDefinition>, ProviderE
                         operation,
                         ProviderEndpoint {
                             path: EndpointPath::new(&entry.path)?,
+                            suffix: EndpointPath::new(&entry.suffix)?,
                             auth: override_auth,
                         },
                     ))
@@ -98,7 +98,6 @@ fn parse(bytes: &[u8]) -> Result<BTreeMap<String, ProviderDefinition>, ProviderE
                 id: ProviderId::new(&name)?,
                 origin: TrustedOrigin::parse(&definition.base_url)?,
                 endpoints,
-                credential_pool: Some(CredentialBindingId::new(&definition.credential_pool)?),
                 auth,
             };
             Ok((name, provider))
@@ -125,7 +124,7 @@ macro_rules! providers {
     )* };
 }
 providers! {
-    openai => "openai", grok => "grok", deepseek => "deepseek", xiaomi => "xiaomi",
+    openai => "openai", chatgpt => "chatgpt", grok => "grok", deepseek => "deepseek", xiaomi => "xiaomi",
     modelbest => "modelbest", openrouter => "openrouter", opencode_go => "opencode-go",
     nvidia => "nvidia", aliyun_dashscope_cn => "aliyun-dashscope-cn",
     aliyun_tokenplan_cn => "aliyun-tokenplan-cn", zhipu => "zhipu", google => "google",
@@ -136,8 +135,8 @@ mod tests {
     use super::*;
     use crate::provider::GenerationOperation;
     #[test]
-    fn metadata_preserves_trusted_targets_authentication_and_default_pools() {
-        assert_eq!(all().len(), 12);
+    fn metadata_preserves_trusted_targets_and_separate_service_authentication() {
+        assert_eq!(all().len(), 13);
         let go = opencode_go();
         assert_eq!(
             go.entry(ProviderOperation::Messages).unwrap().auth,
@@ -166,7 +165,8 @@ mod tests {
                 .as_str(),
             "/models"
         );
-        assert_eq!(openai().credential_pool.unwrap().as_str(), "openai-oauth");
+        assert_eq!(openai().auth, AuthScheme::Bearer);
+        assert_eq!(chatgpt().auth, AuthScheme::OAuthBearer("openai"));
         let google = google();
         let collection = google
             .entry(ProviderOperation::GenerateContent)

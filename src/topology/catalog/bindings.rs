@@ -107,9 +107,7 @@ use crate::{
 };
 impl ApiKeyBinding {
     pub fn credential(&self) -> CredentialBindingId {
-        (self.provider)()
-            .credential_pool
-            .expect("catalog credential pool")
+        CredentialBindingId::new((self.provider)().id.as_str()).expect("catalog Provider identity")
     }
     pub fn public_model(&self) -> PublicModel {
         PublicModel {
@@ -322,6 +320,54 @@ const ZHIPU_GLM_FLASH_EFFORT: ReasoningEffortMapping = ReasoningEffortMapping {
 };
 /// Only declared protocol members are activated by the environment bootstrap.
 pub const API_KEY_BINDINGS: &[ApiKeyBinding] = &[
+    // Official API-key contracts are independent of SIWC. Responses is selected
+    // for tool/reasoning execution; Chat has model-specific tool restrictions.
+    // https://developers.openai.com/api/docs/models/gpt-6.1-sol
+    ApiKeyBinding {
+        provider: catalog::openai,
+        dialect: Dialect::Standard,
+        endpoint_prefix: "openai-sol",
+        effort_mappings: &[],
+        model: "gpt-6.1-sol",
+        canonical_model: "gpt-6.1-sol",
+        upstream: "gpt-6.1-sol",
+        protocols: RESPONSES,
+        reasoning_history: ACCEPTED_HISTORY,
+        replay_responses: true,
+        replay_chat: false,
+        public_slice: RequestSlice::Canonical,
+        endpoint_slice: RequestSlice::Canonical,
+    },
+    ApiKeyBinding {
+        provider: catalog::openai,
+        dialect: Dialect::Standard,
+        endpoint_prefix: "openai-astra",
+        effort_mappings: &[],
+        model: "gpt-6-astra",
+        canonical_model: "gpt-6-astra",
+        upstream: "gpt-6-astra",
+        protocols: RESPONSES,
+        reasoning_history: ACCEPTED_HISTORY,
+        replay_responses: true,
+        replay_chat: false,
+        public_slice: RequestSlice::Canonical,
+        endpoint_slice: RequestSlice::Canonical,
+    },
+    ApiKeyBinding {
+        provider: catalog::openai,
+        dialect: Dialect::Standard,
+        endpoint_prefix: "openai-luna",
+        effort_mappings: &[],
+        model: "gpt-6-luna",
+        canonical_model: "gpt-6-luna",
+        upstream: "gpt-6-luna",
+        protocols: RESPONSES,
+        reasoning_history: ACCEPTED_HISTORY,
+        replay_responses: true,
+        replay_chat: false,
+        public_slice: RequestSlice::RestrictedLuna,
+        endpoint_slice: RequestSlice::Canonical,
+    },
     ApiKeyBinding {
         provider: catalog::xiaomi,
         dialect: Dialect::Xiaomi,

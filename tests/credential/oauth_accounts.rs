@@ -8,7 +8,59 @@ use tokio::{
 
 use crate::test_files::Directory;
 async fn command(args: &[&std::ffi::OsStr]) -> std::process::Output {
-    command_with_home(args, None, None).await
+    let store = args
+        .windows(2)
+        .find(|args| args[0] == "--store")
+        .expect("explicit test-owned store");
+    let source = Path::new(store[1]).parent().unwrap().join("accounts.json");
+    let mut selected = args.to_vec();
+    selected.extend(["--accounts".as_ref(), source.as_os_str()]);
+    command_with_home(&selected, None, None).await
+}
+fn fixture() -> Directory {
+    use std::os::unix::fs::PermissionsExt;
+    let mut directory = Directory::existing();
+    directory.path = directory.path.join("credentials");
+    std::fs::create_dir(&directory.path).unwrap();
+    std::fs::set_permissions(&directory.path, std::fs::Permissions::from_mode(0o700)).unwrap();
+    directory
+}
+fn declare(root: &Path, profile: &str, alias: &str) {
+    use std::os::unix::fs::PermissionsExt;
+    let path = root.parent().unwrap().join("accounts.json");
+    std::fs::set_permissions(
+        path.parent().unwrap(),
+        std::fs::Permissions::from_mode(0o700),
+    )
+    .unwrap();
+    let mut value: Value = if path.exists() {
+        serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap()
+    } else {
+        json!({"version":1,"providers":{}})
+    };
+    let provider = if profile == "openai" {
+        "chatgpt"
+    } else {
+        profile
+    };
+    if value["providers"].get(provider).is_none() {
+        value["providers"][provider] = json!({"accounts":[]});
+    }
+    let accounts = value["providers"][provider]["accounts"]
+        .as_array_mut()
+        .unwrap();
+    if !accounts.iter().any(|account| account["name"] == alias) {
+        accounts.push(json!({"name":alias,"enabled":true,"credential":{"kind":"oauth","profile":profile,"alias":alias}}));
+    }
+    OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .mode(0o600)
+        .open(path)
+        .unwrap()
+        .write_all(&serde_json::to_vec(&value).unwrap())
+        .unwrap();
 }
 async fn command_with_home(
     args: &[&std::ffi::OsStr],
@@ -32,11 +84,12 @@ async fn command_with_home(
         .expect("bounded CLI operation")
 }
 fn save(root: &Path, profile: &str, alias: &str, value: &Value) {
+    declare(root, profile, alias);
     let path = root.join(format!("{profile}.json"));
     let mut document: Value = if path.exists() {
         serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap()
     } else {
-        json!({"provider":profile,"revision":1,"oauth":{},"api_keys":{},"pools":{}})
+        json!({"version":1,"provider":profile,"revision":1,"oauth":{},"api_keys":{}})
     };
     document["oauth"][alias] = value.clone();
     let mut file = OpenOptions::new()
@@ -52,7 +105,7 @@ fn save(root: &Path, profile: &str, alias: &str, value: &Value) {
 fn account(profile: &str, alias: &str, subject: &str) -> Value {
     let siwc = profile == "openai";
     json!({
-        "profile":profile,"alias":alias,
+        "record_id":"0123456789abcdef0123456789abcdef","profile":profile,"alias":alias,
         "client_id":if siwc { "oaiapp_synthetic" } else { "synthetic-client" },
         "identity":{"subject":subject,"scope":null},
         "revision":2,"generation":1,"login_attempt":null,"state":"active",
@@ -70,8 +123,8 @@ fn read(root: &Path, profile: &str, alias: &str) -> Value {
 #[tokio::test]
 async fn default_directory_reads_only_the_selected_home_and_explicit_store_wins() {
     use std::os::unix::fs::PermissionsExt;
-    let home = Directory::existing();
-    let cwd = Directory::existing();
+    let home = fixture();
+    let cwd = fixture();
     let root = home.path.join(".local/share/morphiecore/credentials");
     std::fs::create_dir_all(&root).unwrap();
     std::fs::set_permissions(&root, std::fs::Permissions::from_mode(0o700)).unwrap();
@@ -87,7 +140,7 @@ async fn default_directory_reads_only_the_selected_home_and_explicit_store_wins(
         "override",
         &account("grok", "override", "synthetic-override-person"),
     );
-    let args = ["list".as_ref()];
+    let args = ["status".as_ref(), "--json".as_ref()];
     let output = command_with_home(&args, Some(home.path.as_os_str()), Some(&cwd.path)).await;
     assert!(
         output.status.success(),
@@ -95,24 +148,32 @@ async fn default_directory_reads_only_the_selected_home_and_explicit_store_wins(
         String::from_utf8_lossy(&output.stderr)
     );
     let statuses: Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(statuses.as_array().unwrap().len(), 1);
-    assert_eq!(statuses[0]["account"], "home");
-    assert_eq!(statuses[0]["access"], "valid");
+    assert_eq!(statuses["accounts"].as_array().unwrap().len(), 1);
+    assert_eq!(statuses["accounts"][0]["account"], "home");
+    assert_eq!(statuses["accounts"][0]["access"], "valid");
     assert!(!String::from_utf8_lossy(&output.stdout).contains("synthetic-"));
 
-    let args = ["list".as_ref(), "--store".as_ref(), cwd.path.as_os_str()];
+    let source = cwd.path.parent().unwrap().join("accounts.json");
+    let args = [
+        "status".as_ref(),
+        "--json".as_ref(),
+        "--store".as_ref(),
+        cwd.path.as_os_str(),
+        "--accounts".as_ref(),
+        source.as_os_str(),
+    ];
     for selected_home in [Some(home.path.as_os_str()), None] {
         let output = command_with_home(&args, selected_home, Some(&cwd.path)).await;
         assert!(output.status.success());
         let statuses: Value = serde_json::from_slice(&output.stdout).unwrap();
-        assert_eq!(statuses.as_array().unwrap().len(), 1);
-        assert_eq!(statuses[0]["account"], "override");
+        assert_eq!(statuses["accounts"].as_array().unwrap().len(), 1);
+        assert_eq!(statuses["accounts"][0]["account"], "override");
     }
 }
 #[tokio::test]
 async fn default_directory_rejects_missing_invalid_home_and_unsafe_store_without_fallback() {
     use std::os::unix::fs::{PermissionsExt, symlink};
-    let cwd = Directory::existing();
+    let cwd = fixture();
     save(
         &cwd.path,
         "grok",
@@ -120,23 +181,34 @@ async fn default_directory_rejects_missing_invalid_home_and_unsafe_store_without
         &account("grok", "decoy", "synthetic-decoy"),
     );
     for home in [None, Some("".as_ref()), Some("relative-home".as_ref())] {
-        let output = command_with_home(&["list".as_ref()], home, Some(&cwd.path)).await;
+        let output = command_with_home(
+            &["status".as_ref(), "--json".as_ref()],
+            home,
+            Some(&cwd.path),
+        )
+        .await;
         assert!(!output.status.success());
-        assert!(output.stdout.is_empty());
-        assert!(String::from_utf8_lossy(&output.stderr).contains("default application directory"));
+        let error: Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert!(
+            error["error"]["message"]
+                .as_str()
+                .unwrap()
+                .contains("default application directory")
+        );
     }
-    let home = Directory::existing();
+    let home = fixture();
     let root = home.path.join(".local/share/morphiecore/credentials");
     std::fs::create_dir_all(root.parent().unwrap()).unwrap();
+    declare(&root, "grok", "private");
     symlink(&cwd.path, &root).unwrap();
     let output = command_with_home(
-        &["list".as_ref()],
+        &["status".as_ref(), "--json".as_ref()],
         Some(home.path.as_os_str()),
         Some(&cwd.path),
     )
     .await;
     assert!(!output.status.success());
-    assert!(output.stdout.is_empty());
+    assert!(serde_json::from_slice::<Value>(&output.stdout).unwrap()["error"].is_object());
     std::fs::remove_file(&root).unwrap();
     std::fs::create_dir(&root).unwrap();
     std::fs::set_permissions(&root, std::fs::Permissions::from_mode(0o700)).unwrap();
@@ -152,18 +224,18 @@ async fn default_directory_rejects_missing_invalid_home_and_unsafe_store_without
     )
     .unwrap();
     let output = command_with_home(
-        &["list".as_ref()],
+        &["status".as_ref(), "--json".as_ref()],
         Some(home.path.as_os_str()),
         Some(&cwd.path),
     )
     .await;
     assert!(!output.status.success());
-    assert!(output.stdout.is_empty());
+    assert!(serde_json::from_slice::<Value>(&output.stdout).unwrap()["error"].is_object());
     assert!(!String::from_utf8_lossy(&output.stderr).contains("synthetic-"));
 }
 #[tokio::test]
 async fn binary_uses_account_files_and_account_locks_without_cross_profile_effects() {
-    let dir = Directory::existing();
+    let dir = fixture();
     save(
         &dir.path,
         "grok",
@@ -183,10 +255,16 @@ async fn binary_uses_account_files_and_account_locks_without_cross_profile_effec
         &account("openai", "one", "synthetic-person-one"),
     );
     let path = dir.path.as_os_str();
-    let all = command(&["list".as_ref(), "--store".as_ref(), path]).await;
+    let all = command(&[
+        "status".as_ref(),
+        "--json".as_ref(),
+        "--store".as_ref(),
+        path,
+    ])
+    .await;
     assert!(all.status.success());
     let statuses: Value = serde_json::from_slice(&all.stdout).unwrap();
-    assert_eq!(statuses.as_array().unwrap().len(), 3);
+    assert_eq!(statuses["accounts"].as_array().unwrap().len(), 3);
     for secret in [
         "synthetic-person",
         "synthetic-access",
@@ -207,8 +285,9 @@ async fn binary_uses_account_files_and_account_locks_without_cross_profile_effec
         .unwrap();
     lock.lock().unwrap();
     let busy = command(&[
-        "grok".as_ref(),
         "logout".as_ref(),
+        "--provider".as_ref(),
+        "grok".as_ref(),
         "--store".as_ref(),
         path,
         "--account".as_ref(),
@@ -217,11 +296,20 @@ async fn binary_uses_account_files_and_account_locks_without_cross_profile_effec
     .await;
     assert!(!busy.status.success());
     assert!(String::from_utf8_lossy(&busy.stderr).contains("store is busy"));
-    let list = command(&["grok".as_ref(), "list".as_ref(), "--store".as_ref(), path]).await;
+    let list = command(&[
+        "status".as_ref(),
+        "--provider".as_ref(),
+        "grok".as_ref(),
+        "--json".as_ref(),
+        "--store".as_ref(),
+        path,
+    ])
+    .await;
     assert!(list.status.success());
     let unrelated = command(&[
-        "grok".as_ref(),
         "logout".as_ref(),
+        "--provider".as_ref(),
+        "grok".as_ref(),
         "--store".as_ref(),
         path,
         "--account".as_ref(),
@@ -240,8 +328,9 @@ async fn binary_uses_account_files_and_account_locks_without_cross_profile_effec
     );
     drop(lock);
     let logout = command(&[
-        "grok".as_ref(),
         "logout".as_ref(),
+        "--provider".as_ref(),
+        "grok".as_ref(),
         "--store".as_ref(),
         path,
         "--account".as_ref(),
@@ -254,8 +343,9 @@ async fn binary_uses_account_files_and_account_locks_without_cross_profile_effec
     assert!(snapshot["credential"].is_null());
     assert_eq!(snapshot["identity"]["subject"], "synthetic-person-one");
     let refresh = command(&[
-        "grok".as_ref(),
         "refresh".as_ref(),
+        "--provider".as_ref(),
+        "grok".as_ref(),
         "--store".as_ref(),
         path,
         "--account".as_ref(),
@@ -270,22 +360,35 @@ async fn binary_uses_account_files_and_account_locks_without_cross_profile_effec
         .open(dir.path.join("store.lock"))
         .unwrap();
     store_lock.lock().unwrap();
-    let busy = command(&["list".as_ref(), "--store".as_ref(), path]).await;
+    let busy = command(&[
+        "status".as_ref(),
+        "--json".as_ref(),
+        "--store".as_ref(),
+        path,
+    ])
+    .await;
     assert!(!busy.status.success());
 }
 #[tokio::test]
 async fn binary_refuses_old_format_and_reports_quarantine_without_exposing_tokens() {
-    let legacy = Directory::existing();
+    let legacy = fixture();
+    declare(&legacy.path, "grok", "one");
     std::fs::write(legacy.path.join("accounts.json"), "synthetic obsolete data").unwrap();
-    let output = command(&["list".as_ref(), "--store".as_ref(), legacy.path.as_os_str()]).await;
+    let output = command(&[
+        "status".as_ref(),
+        "--json".as_ref(),
+        "--store".as_ref(),
+        legacy.path.as_os_str(),
+    ])
+    .await;
     assert!(!output.status.success());
-    assert!(String::from_utf8_lossy(&output.stderr).contains("legacy"));
+    assert!(String::from_utf8_lossy(&output.stdout).contains("legacy"));
     assert_eq!(
         std::fs::read_to_string(legacy.path.join("accounts.json")).unwrap(),
         "synthetic obsolete data"
     );
 
-    let dir = Directory::existing();
+    let dir = fixture();
     save(
         &dir.path,
         "openai",
@@ -300,15 +403,22 @@ async fn binary_refuses_old_format_and_reports_quarantine_without_exposing_token
         .unwrap()
         .write_all(b"true")
         .unwrap();
-    let output = command(&["list".as_ref(), "--store".as_ref(), dir.path.as_os_str()]).await;
+    let output = command(&[
+        "status".as_ref(),
+        "--json".as_ref(),
+        "--store".as_ref(),
+        dir.path.as_os_str(),
+    ])
+    .await;
     assert!(output.status.success());
     let statuses: Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(statuses[0]["state"], "needs_reauthorization");
-    assert_eq!(statuses[0]["access"], "unavailable");
-    assert_eq!(statuses[0]["recovery_required"], true);
+    assert_eq!(statuses["accounts"][0]["state"], "needs_reauthorization");
+    assert_eq!(statuses["accounts"][0]["access"], "unavailable");
+    assert_eq!(statuses["accounts"][0]["recovery_required"], true);
     let logout = command(&[
-        "openai".as_ref(),
         "logout".as_ref(),
+        "--provider".as_ref(),
+        "chatgpt".as_ref(),
         "--store".as_ref(),
         dir.path.as_os_str(),
         "--account".as_ref(),
@@ -317,7 +427,7 @@ async fn binary_refuses_old_format_and_reports_quarantine_without_exposing_token
     ])
     .await;
     assert!(!logout.status.success());
-    assert!(String::from_utf8_lossy(&logout.stdout).contains("NOT confirmed"));
+    assert!(String::from_utf8_lossy(&logout.stderr).contains("NOT confirmed"));
     assert!(read(&dir.path, "openai", "one")["credential"].is_null());
     assert_eq!(
         std::fs::read(dir.path.join("openai.oauth.one.pending")).unwrap(),
@@ -327,21 +437,24 @@ async fn binary_refuses_old_format_and_reports_quarantine_without_exposing_token
 
 #[tokio::test]
 async fn invalid_profiles_and_login_options_are_rejected_before_store_creation() {
-    let dir = Directory::existing();
+    let dir = fixture();
     let store = dir.path.join("not-created");
+    declare(&store, "openai", "personal");
+    declare(&store, "grok", "personal");
     for (flags, expected) in [
         (
-            vec!["siwc", "login", "--method", "browser"],
-            "unknown authorization profile",
+            vec!["login", "--provider", "siwc", "--method", "browser"],
+            "unknown Provider: siwc",
         ),
         (
-            vec!["openai", "login", "--method", "device"],
+            vec!["login", "--provider", "chatgpt", "--method", "device"],
             "invalid account or client identifier",
         ),
         (
             vec![
-                "openai",
                 "login",
+                "--provider",
+                "chatgpt",
                 "--method",
                 "browser",
                 "--client-id",
@@ -351,8 +464,9 @@ async fn invalid_profiles_and_login_options_are_rejected_before_store_creation()
         ),
         (
             vec![
-                "grok",
                 "login",
+                "--provider",
+                "grok",
                 "--method",
                 "browser",
                 "--client-id",
@@ -387,16 +501,26 @@ async fn siwc_cli_defaults_to_browser_and_reuses_host_without_authority_traffic(
         io::{AsyncBufReadExt, AsyncReadExt, BufReader},
         net::TcpListener,
     };
-    let dir = Directory::existing();
+    let dir = fixture();
     let store = dir.path.join("sessions");
+    declare(&store, "openai", "personal");
     let egress = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let proxy = format!("http://{}", egress.local_addr().unwrap());
     let mut original_host = None;
     for consent in [false, true] {
         let mut command = Command::new(env!("CARGO_BIN_EXE_morphiecore-auth"));
         command
-            .args(["openai", "login", "--account", "personal", "--store"])
+            .args([
+                "login",
+                "--provider",
+                "chatgpt",
+                "--account",
+                "personal",
+                "--store",
+            ])
             .arg(&store)
+            .arg("--accounts")
+            .arg(store.parent().unwrap().join("accounts.json"))
             .args(["--proxy", &proxy]);
         if consent {
             command.arg("--consent");
@@ -483,14 +607,16 @@ async fn binary_browser_callback_and_ctrl_c_are_owned_without_authority_traffic(
         io::{AsyncBufReadExt, AsyncReadExt, BufReader},
         net::TcpListener,
     };
-    let dir = Directory::existing();
+    let dir = fixture();
     let store = dir.path.join("sessions");
+    declare(&store, "grok", "personal");
     let egress = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let proxy = format!("http://{}", egress.local_addr().unwrap());
     let mut child = Command::new(env!("CARGO_BIN_EXE_morphiecore-auth"))
         .args([
-            "grok",
             "login",
+            "--provider",
+            "grok",
             "--account",
             "personal",
             "--method",
@@ -500,6 +626,8 @@ async fn binary_browser_callback_and_ctrl_c_are_owned_without_authority_traffic(
             "--store",
         ])
         .arg(&store)
+        .arg("--accounts")
+        .arg(store.parent().unwrap().join("accounts.json"))
         .args(["--proxy", &proxy])
         .env_clear()
         .stdin(Stdio::null())

@@ -1,7 +1,7 @@
 //! Listener-owned credential maintenance, independent of inference and routing.
 #[cfg(test)]
 mod tests;
-use super::{Gateway, startup::credentials::Source};
+use super::Gateway;
 use crate::credential::AccessBinding;
 use std::time::Duration;
 use tokio::time::{Instant, MissedTickBehavior};
@@ -14,16 +14,10 @@ const RENEWAL_TIMEOUT: Duration = Duration::from_secs(90);
 impl Gateway {
     pub(super) async fn renew_credentials(&self) {
         let mut accounts: Vec<(AccessBinding, Instant)> = Vec::new();
-        for candidate in self
-            .state
-            .entries
-            .values()
-            .flat_map(|entry| &entry.candidates)
-        {
-            if let Source::Account(binding) = &candidate.secret
-                && !accounts
-                    .iter()
-                    .any(|(other, _)| binding.same_account(other))
+        for binding in &self.state.oauth_accounts {
+            if !accounts
+                .iter()
+                .any(|(other, _)| binding.same_account(other))
             {
                 accounts.push((binding.clone(), Instant::now()));
             }

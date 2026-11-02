@@ -4,7 +4,7 @@
 mod child_process;
 #[path = "support/filesystem.rs"]
 mod filesystem;
-use morphiecore::credential::{CredentialManager, CredentialPool, CredentialRef, Secret};
+use morphiecore::credential::{CredentialManager, Secret};
 use std::{path::PathBuf, time::Duration};
 
 async fn installed_case(
@@ -20,10 +20,10 @@ async fn installed_case(
     let directory = filesystem::private_directory();
     let root = directory.path();
     let native = case.contains("messages");
-    let (domain, binding) = if native {
-        ("opencode-go", "opencode-go-api-key")
+    let domain = if native {
+        "opencode-go"
     } else {
-        ("aliyun-tokenplan-cn", "aliyun-tokenplan-cn-api-key")
+        "aliyun-tokenplan-cn"
     };
     let manager = CredentialManager::new(root.join("credentials"), vec![]).unwrap();
     for alias in ["primary", "secondary"] {
@@ -35,23 +35,12 @@ async fn installed_case(
             )
             .unwrap();
     }
-    manager
-        .set_pool(
-            domain,
-            binding,
-            0,
-            CredentialPool {
-                members: ["primary", "secondary"]
-                    .into_iter()
-                    .map(|alias| CredentialRef::ApiKey {
-                        alias: alias.into(),
-                    })
-                    .collect(),
-                fallback: true,
-                max_attempts: 2,
-            },
-        )
-        .unwrap();
+    use std::{io::Write, os::unix::fs::OpenOptionsExt};
+    std::fs::OpenOptions::new().write(true).create_new(true).mode(0o600).open(root.join("accounts.json")).unwrap()
+        .write_all(&serde_json::to_vec(&serde_json::json!({"version":1,"providers":{domain:{"accounts":[
+            {"name":"primary","enabled":true,"credential":{"kind":"api_key","alias":"primary"}},
+            {"name":"secondary","enabled":true,"credential":{"kind":"api_key","alias":"secondary"}}
+        ]}}})).unwrap()).unwrap();
     let mut command = tokio::process::Command::new(
         std::env::var_os("MORPHIECORE_CLIENT_PYTHON").unwrap_or_else(|| "python3".into()),
     );

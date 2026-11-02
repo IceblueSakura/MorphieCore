@@ -6,7 +6,7 @@ use crate::credential::{
     *,
 };
 fn active() -> Account {
-    let mut account = Account::new("synthetic", "one", "synthetic-client");
+    let mut account = Account::new("synthetic", "one", "synthetic-client").unwrap();
     account.identity = Some(VerifiedIdentity {
         subject: "synthetic-person".into(),
         scope: None,
@@ -46,7 +46,7 @@ fn provider_document_merges_independent_records_without_losing_other_credentials
     assert_eq!(doc["provider"], "synthetic");
     assert_eq!(doc["oauth"]["one"]["credential"]["access"], "old-access");
     assert_eq!(doc["api_keys"]["backup"]["secret"], "synthetic-key");
-    assert!(doc["pools"].as_object().unwrap().is_empty());
+    assert!(doc.get("pools").is_none());
 }
 #[test]
 fn publication_faults_distinguish_unchanged_data_from_uncertain_replacement() {
@@ -200,7 +200,7 @@ fn first_publication_admits_last_namespace_without_poisoning_capacity() {
         rejected.profile = "overflow".into();
         assert_eq!(
             tx.publish(&rejected).unwrap_err(),
-            CredentialError::PoolFull
+            CredentialError::Capacity
         );
         assert!(tx.load("overflow", "one").unwrap().account.is_none());
     }

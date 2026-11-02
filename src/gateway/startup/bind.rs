@@ -100,6 +100,7 @@ impl Gateway {
         )?;
         Ok(Self {
             state: Arc::new(Runtime {
+                oauth_accounts: credentials.oauth_accounts.clone(),
                 diagnostics: None,
                 request_ids: crate::gateway::ingress::correlation::RequestIds::new()
                     .map_err(|_| StartupError::Environment)?,
@@ -129,7 +130,7 @@ impl Gateway {
 }
 
 /// Group Generation entries by client protocol and public model. Each group's
-/// candidates follow the route order, one per endpoint and pool member.
+/// candidates follow the route order, one per account-bound endpoint.
 fn bind_generation(
     topology: &CompiledTopology,
     entries: Vec<Entry>,
@@ -177,12 +178,12 @@ fn bind_generation(
         {
             return Err(StartupError::Binding);
         }
-        for candidate in bind_candidates(public, endpoint, provider, binding, namespace)? {
-            if group.candidates.len() >= crate::execution::plan::MAX_CANDIDATES {
-                return Err(StartupError::Binding);
-            }
-            group.candidates.push(Arc::new(candidate));
+        if group.candidates.len() >= crate::execution::plan::MAX_CANDIDATES {
+            return Err(StartupError::Binding);
         }
+        group.candidates.push(Arc::new(bind_candidate(
+            public, endpoint, provider, binding, namespace,
+        )?));
     }
     groups
         .into_iter()
@@ -221,54 +222,40 @@ fn client_adapter(protocol: ClientProtocol, chat_profile: ChatProfile) -> Client
     ClientAdapter::openai(client, downstream)
 }
 
-/// One candidate per credential source of the endpoint's binding.
-fn bind_candidates(
+/// Bind one trusted account source to one effective target.
+fn bind_candidate(
     public: &PublicModel,
     endpoint: &Endpoint,
     provider: &ProviderDefinition,
     binding: &Binding,
     namespace: &[u8; 32],
-) -> Result<Vec<BoundCandidate>, StartupError> {
-    for source in &binding.sources {
-        source.check(endpoint.execution.credential_kind, provider.id.as_str())?;
+) -> Result<BoundCandidate, StartupError> {
+    let secret = &binding.source;
+    secret.check(endpoint.execution.credential_kind, provider.id.as_str())?;
+    let provenance = secret.provenance();
+    let mut endpoint = endpoint.clone();
+    let health = crate::gateway::routing::executors::Scopes::bind(
+        namespace,
+        &endpoint,
+        &provenance,
+        std::slice::from_ref(&provenance),
+    );
+    let cache_scope = cache_scope(namespace, &provenance, public, provider, &endpoint)?;
+    let scope = endpoint.replay_origin();
+    if let Some(caps) = endpoint.representation.openai_mut() {
+        caps.adaptation.scope = Some(scope.clone());
+        if caps.replay_origin.is_some() {
+            caps.replay_origin = Some(scope);
+        }
     }
-    let credential_attempts = if binding.fallback {
-        binding.max_attempts
-    } else {
-        1
-    };
-    let pool: Vec<_> = binding.sources.iter().map(|s| s.provenance()).collect();
-    binding
-        .sources
-        .iter()
-        .map(|secret| {
-            let provenance = secret.provenance();
-            let mut endpoint = endpoint.clone();
-            let health = crate::gateway::routing::executors::Scopes::bind(
-                namespace,
-                &endpoint,
-                &provenance,
-                &pool,
-            );
-            let cache_scope = cache_scope(namespace, &provenance, public, provider, &endpoint)?;
-            let scope = endpoint.replay_origin();
-            if let Some(caps) = endpoint.representation.openai_mut() {
-                caps.adaptation.scope = Some(scope.clone());
-                if caps.replay_origin.is_some() {
-                    caps.replay_origin = Some(scope);
-                }
-            }
-            Ok(BoundCandidate {
-                endpoint,
-                provider: provider.clone(),
-                secret: secret.clone(),
-                credential_fallback: binding.fallback,
-                credential_attempts,
-                health,
-                cache_scope,
-            })
-        })
-        .collect()
+    Ok(BoundCandidate {
+        endpoint,
+        provider: provider.clone(),
+        secret: secret.clone(),
+        account: binding.name.clone(),
+        health,
+        cache_scope,
+    })
 }
 
 /// Private replay/cache scope of one candidate. Length prefixes avoid ambiguous

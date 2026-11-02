@@ -16,7 +16,6 @@ fn provider(origin: &str, id: &str) -> ProviderDefinition {
         id: ProviderId::new(id).unwrap(),
         origin: TrustedOrigin::parse(origin).unwrap(),
         endpoints: [].into(),
-        credential_pool: None,
         auth: AuthScheme::Bearer,
     }
 }

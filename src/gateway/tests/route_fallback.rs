@@ -147,8 +147,6 @@ async fn ordered_route_only_falls_back_before_visible_delivery() {
         let mut providers = vec![];
         let mut endpoints = vec![];
         let mut credentials = Credentials::new();
-        let directory = crate::test_files::private_directory();
-        let manager = crate::credential::CredentialManager::new(directory.path(), vec![]).unwrap();
         for id in ["a", "b"] {
             let provider = ProviderDefinition {
                 id: ProviderId::new(id).unwrap(),
@@ -157,6 +155,7 @@ async fn ordered_route_only_falls_back_before_visible_delivery() {
                     (
                         crate::provider::ProviderOperation::ChatCompletions,
                         crate::provider::ProviderEndpoint {
+                            suffix: EndpointPath::new(&format!("/{id}")).unwrap(),
                             path: EndpointPath::new(&format!("/{id}")).unwrap(),
                             auth: None,
                         },
@@ -164,13 +163,13 @@ async fn ordered_route_only_falls_back_before_visible_delivery() {
                     (
                         crate::provider::ProviderOperation::Responses,
                         crate::provider::ProviderEndpoint {
+                            suffix: EndpointPath::new(&format!("/{id}")).unwrap(),
                             path: EndpointPath::new(&format!("/{id}")).unwrap(),
                             auth: None,
                         },
                     ),
                 ]
                 .into(),
-                credential_pool: None,
                 auth: AuthScheme::Bearer,
             };
             let credential = CredentialBindingId::new(&format!("{id}-key")).unwrap();
@@ -178,39 +177,6 @@ async fn ordered_route_only_falls_back_before_visible_delivery() {
                 credential.clone(),
                 Arc::new(SecretMaterial::new(&format!("synthetic-{id}-credential")).unwrap()),
             );
-            if id == "a" && status == 429 {
-                for (alias, material) in [
-                    ("primary", "synthetic-a-credential"),
-                    ("spare", "synthetic-a-spare"),
-                ] {
-                    manager
-                        .add_api_key(
-                            "a",
-                            alias,
-                            crate::credential::Secret::new(material.into()).unwrap(),
-                        )
-                        .unwrap();
-                }
-                credentials
-                    .insert_pool(
-                        credential.clone(),
-                        manager
-                            .bind_pool(
-                                "a",
-                                &crate::credential::CredentialPool {
-                                    members: ["primary", "spare"]
-                                        .map(|alias| crate::credential::CredentialRef::ApiKey {
-                                            alias: alias.into(),
-                                        })
-                                        .into(),
-                                    fallback: true,
-                                    max_attempts: 2,
-                                },
-                            )
-                            .unwrap(),
-                    )
-                    .unwrap();
-            }
             endpoints.push(Endpoint {
                 id: EndpointId::new(id).unwrap(),
                 canonical_model: ModelId::new("canonical").unwrap(),

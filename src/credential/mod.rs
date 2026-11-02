@@ -11,10 +11,7 @@ pub use access::{AccessBinding, AccessGrant};
 pub use storage::directory::{default_config_directory, resolve_store_directory};
 mod manager;
 mod model;
-mod pool;
-pub use pool::{
-    CredentialPool, CredentialRef, MAX_POOL_MEMBERS, PoolAccess, PoolMember, PoolStatus,
-};
+pub(crate) use model::valid_alias;
 
 pub use drivers::builtin_drivers;
 pub use drivers::driver::{
@@ -85,8 +82,8 @@ pub enum CredentialError {
     DefaultStoreUnavailable,
     #[error("credential store is busy")]
     Busy,
-    #[error("credential pool limit reached")]
-    PoolFull,
+    #[error("credential store capacity reached")]
+    Capacity,
     #[error("account is not signed in; login required")]
     LoginRequired,
     #[error("account is already signed in; refresh it or sign out before logging in again")]

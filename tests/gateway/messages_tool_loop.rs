@@ -8,12 +8,12 @@ async fn native_response_keep_changed_tools_effort_and_final_history() {
 }
 
 #[tokio::test]
-async fn native_tool_feedback_migrates_credentials_and_sticks_after_primary_recovery() {
+async fn native_tool_feedback_retries_as_a_new_request_without_rotating_in_request() {
     history_case(true).await;
 }
 
 #[tokio::test]
-async fn cooling_native_pool_returns_retry_after_without_dispatch() {
+async fn cooling_native_accounts_return_retry_after_without_dispatch() {
     let fixture = fixture::start_recovery().await;
     let unavailable = fixture
         .recovery
@@ -67,6 +67,24 @@ async fn history_case(recover: bool) {
         };
         let mut input = fixture::input(stream);
         for turn in 1..=5 {
+            if recover && turn == 2 {
+                let failed = client
+                    .post(format!("{}/v1/messages", fixture.base))
+                    .header("x-api-key", fixture::KEY)
+                    .header("anthropic-version", "2026-10-21")
+                    .header("x-session-affinity", "synthetic-messages-session")
+                    .json(&input)
+                    .send()
+                    .await
+                    .unwrap();
+                assert_eq!(failed.status(), 529);
+                failed.bytes().await.unwrap();
+                assert_eq!(
+                    fixture.seen.lock().unwrap().len(),
+                    2,
+                    "no hidden target switch"
+                );
+            }
             let body = request(&client, &fixture.base, &input, "synthetic-messages-session").await;
             assert_eq!(
                 body["usage"],
@@ -112,23 +130,13 @@ async fn history_case(recover: bool) {
             } else {
                 assert_eq!(body["content"], snapshot["content"]);
             }
-            if recover && turn == 2 {
-                let recovered = request(
-                    &client,
-                    &fixture.base,
-                    &fixture::input(stream),
-                    "other-messages-session",
-                )
-                .await;
-                assert_eq!(recovered["stop_reason"], "tool_use");
-            }
             if turn < 5 {
                 advance(&mut input, body["content"].clone(), turn);
             }
         }
         assert_eq!(
             fixture.seen.lock().unwrap().len(),
-            if recover { 7 } else { 5 }
+            if recover { 6 } else { 5 }
         );
         if let Some(recovery) = &fixture.recovery {
             recovery.assert_complete(5, true);

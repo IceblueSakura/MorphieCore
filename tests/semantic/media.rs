@@ -421,7 +421,6 @@ mod image_binding {
             id: ProviderId::new("fixture").unwrap(),
             origin: TrustedOrigin::parse(ORIGIN).unwrap(),
             endpoints: [].into(),
-            credential_pool: None,
             auth: AuthScheme::Bearer,
         }
     }
@@ -885,10 +884,7 @@ mod tokenplan_speech {
             wire.safe_headers
                 .contains(&("accept".into(), "text/event-stream".into()))
         );
-        assert_eq!(
-            route.endpoint.credential.as_str(),
-            "aliyun-tokenplan-cn-api-key"
-        );
+        assert_eq!(route.endpoint.credential.as_str(), "aliyun-tokenplan-cn");
         assert!(route.endpoint.execution.streaming);
         assert!(!route.endpoint.execution.retry_before_commit);
         assert!(topology.model("qwen-audio-3.0-tts-plus").is_none());

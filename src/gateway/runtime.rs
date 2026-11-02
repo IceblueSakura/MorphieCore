@@ -21,8 +21,7 @@ pub(super) struct BoundCandidate {
     pub(super) endpoint: Endpoint,
     pub(super) provider: ProviderDefinition,
     pub(super) secret: credentials::Source,
-    pub(super) credential_fallback: bool,
-    pub(super) credential_attempts: usize,
+    pub(super) account: Option<String>,
     pub(super) health: executors::Scopes,
     pub(super) cache_scope: crate::semantic::value::ReplayOrigin,
 }
@@ -123,6 +122,7 @@ impl BoundEntry {
     }
 }
 pub(super) struct Runtime {
+    pub(super) oauth_accounts: Vec<crate::credential::AccessBinding>,
     pub(super) history: Arc<crate::gateway::generation::history::Store>,
     pub(super) diagnostics: Option<diagnostics::Sink>,
     pub(super) capture: Option<super::capture::Sink>,

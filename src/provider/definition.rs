@@ -168,6 +168,8 @@ impl From<GenerationOperation> for ProviderOperation {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ProviderEndpoint {
     pub path: EndpointPath,
+    /// Operation-relative suffix appended to an operator-selected API root.
+    pub suffix: EndpointPath,
     pub auth: Option<AuthScheme>,
 }
 /// A borrowed operation declaration; endpoints cannot override its path or auth.
@@ -183,11 +185,32 @@ pub struct ProviderDefinition {
     pub origin: TrustedOrigin,
     /// Operation declarations do not activate models or establish account access.
     pub endpoints: std::collections::BTreeMap<ProviderOperation, ProviderEndpoint>,
-    /// Catalog defaults are absent for programmatically constructed definitions.
-    pub credential_pool: Option<crate::provider::CredentialBindingId>,
     pub auth: AuthScheme,
 }
 impl ProviderDefinition {
+    /// Account overrides replace the complete API root, never an OAuth resource.
+    pub fn with_api_root(&self, root: &str) -> Result<Self, ProviderError> {
+        if self.auth.kind() != crate::provider::CredentialKind::ApiKey {
+            return Err(ProviderError::InvalidOrigin);
+        }
+        let (scheme, remainder) = root.split_once("://").ok_or(ProviderError::InvalidOrigin)?;
+        let (authority, prefix) = remainder.split_once('/').unwrap_or((remainder, ""));
+        if prefix.starts_with('/') {
+            return Err(ProviderError::InvalidPath);
+        }
+        let origin = TrustedOrigin::parse(&format!("{scheme}://{authority}"))?;
+        let prefix = prefix.strip_suffix('/').unwrap_or(prefix);
+        let mut provider = self.clone();
+        provider.origin = origin;
+        for endpoint in provider.endpoints.values_mut() {
+            endpoint.path = EndpointPath::new(&if prefix.is_empty() {
+                endpoint.suffix.as_str().to_owned()
+            } else {
+                format!("/{prefix}{}", endpoint.suffix.as_str())
+            })?;
+        }
+        Ok(provider)
+    }
     pub fn entry(&self, operation: ProviderOperation) -> Option<OperationEntry<'_>> {
         let endpoint = self.endpoints.get(&operation)?;
         Some(OperationEntry {

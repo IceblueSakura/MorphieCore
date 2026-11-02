@@ -1,138 +1,341 @@
 {
   "deepseek": {
     "base_url": "https://api.deepseek.com",
-    "auth": { "kind": "bearer" },
-    "credential_pool": "deepseek-api-key",
-    "endpoints": {
-      "models": { "path": "/models" },
-      "chat_completions": { "path": "/chat/completions" },
-      "responses": { "path": "/responses" }
+    "auth": {
+      "kind": "bearer"
     },
-    "sources": ["https://api-docs.deepseek.com/api/list-models/", "https://api-docs.deepseek.com/guides/responses_api/"]
+    "endpoints": {
+      "models": {
+        "path": "/models",
+        "suffix": "/models"
+      },
+      "chat_completions": {
+        "path": "/chat/completions",
+        "suffix": "/chat/completions"
+      },
+      "responses": {
+        "path": "/responses",
+        "suffix": "/responses"
+      }
+    },
+    "sources": [
+      "https://api-docs.deepseek.com/api/list-models/",
+      "https://api-docs.deepseek.com/guides/responses_api/"
+    ]
   },
   "xiaomi": {
     "base_url": "https://api.xiaomimimo.com",
-    "auth": { "kind": "bearer" },
-    "credential_pool": "xiaomi-api-key",
-    "endpoints": {
-      "models": { "path": "/v1/models" },
-      "chat_completions": { "path": "/v1/chat/completions" },
-      "responses": { "path": "/v1/responses" },
-      "speech": { "path": "/v1/chat/completions" },
-      "transcription": { "path": "/v1/chat/completions" }
+    "auth": {
+      "kind": "bearer"
     },
-    "sources": ["https://mimo.mi.com/docs/zh-CN/api/chat/responses", "https://mimo.mi.com/docs/updates/model", "https://mimo.mi.com/docs/en-US/api/model/list-models"]
+    "endpoints": {
+      "models": {
+        "path": "/v1/models",
+        "suffix": "/models"
+      },
+      "chat_completions": {
+        "path": "/v1/chat/completions",
+        "suffix": "/chat/completions"
+      },
+      "responses": {
+        "path": "/v1/responses",
+        "suffix": "/responses"
+      },
+      "speech": {
+        "path": "/v1/chat/completions",
+        "suffix": "/chat/completions"
+      },
+      "transcription": {
+        "path": "/v1/chat/completions",
+        "suffix": "/chat/completions"
+      }
+    },
+    "sources": [
+      "https://mimo.mi.com/docs/zh-CN/api/chat/responses",
+      "https://mimo.mi.com/docs/updates/model",
+      "https://mimo.mi.com/docs/en-US/api/model/list-models"
+    ]
   },
   "opencode-go": {
     "base_url": "https://opencode.ai",
-    "auth": { "kind": "bearer" },
-    "credential_pool": "opencode-go-api-key",
-    "endpoints": {
-      "models": { "path": "/inference/go/v1/models" },
-      "chat_completions": { "path": "/zen/go/v1/chat/completions" },
-      "responses": { "path": "/zen/go/v1/responses" },
-      "messages": { "path": "/zen/go/v1/messages", "auth": { "kind": "x_api_key" } }
+    "auth": {
+      "kind": "bearer"
     },
-    "sources": ["https://opencode.ai/docs/go/#endpoints", "https://opencode.ai/v2/docs/console/go"]
+    "endpoints": {
+      "models": {
+        "path": "/inference/go/v1/models",
+        "suffix": "/models"
+      },
+      "chat_completions": {
+        "path": "/zen/go/v1/chat/completions",
+        "suffix": "/chat/completions"
+      },
+      "responses": {
+        "path": "/zen/go/v1/responses",
+        "suffix": "/responses"
+      },
+      "messages": {
+        "path": "/zen/go/v1/messages",
+        "auth": {
+          "kind": "x_api_key"
+        },
+        "suffix": "/messages"
+      }
+    },
+    "sources": [
+      "https://opencode.ai/docs/go/#endpoints",
+      "https://opencode.ai/v2/docs/console/go"
+    ]
   },
   "openrouter": {
     "base_url": "https://openrouter.ai",
-    "auth": { "kind": "bearer" },
-    "credential_pool": "openrouter-api-key",
-    "endpoints": {
-      "models": { "path": "/api/v1/models" },
-      "chat_completions": { "path": "/api/v1/chat/completions" },
-      "responses": { "path": "/api/v1/responses" },
-      "embeddings": { "path": "/api/v1/embeddings" },
-      "images": { "path": "/api/v1/images" },
-      "speech": { "path": "/api/v1/audio/speech" }
+    "auth": {
+      "kind": "bearer"
     },
-    "sources": ["https://openrouter.ai/docs/api/api-reference/models/list-all-models-and-their-properties", "https://openrouter.ai/docs/api/reference/responses/overview", "https://openrouter.ai/docs/api/api-reference/embeddings/create-embeddings", "https://openrouter.ai/api/v1/images/models/openai/gpt-image-2.5-flare/endpoints", "https://openrouter.ai/docs/api/api-reference/tts/create-speech.md"]
+    "endpoints": {
+      "models": {
+        "path": "/api/v1/models",
+        "suffix": "/models"
+      },
+      "chat_completions": {
+        "path": "/api/v1/chat/completions",
+        "suffix": "/chat/completions"
+      },
+      "responses": {
+        "path": "/api/v1/responses",
+        "suffix": "/responses"
+      },
+      "embeddings": {
+        "path": "/api/v1/embeddings",
+        "suffix": "/embeddings"
+      },
+      "images": {
+        "path": "/api/v1/images",
+        "suffix": "/images"
+      },
+      "speech": {
+        "path": "/api/v1/audio/speech",
+        "suffix": "/audio/speech"
+      }
+    },
+    "sources": [
+      "https://openrouter.ai/docs/api/api-reference/models/list-all-models-and-their-properties",
+      "https://openrouter.ai/docs/api/reference/responses/overview",
+      "https://openrouter.ai/docs/api/api-reference/embeddings/create-embeddings",
+      "https://openrouter.ai/api/v1/images/models/openai/gpt-image-2.5-flare/endpoints",
+      "https://openrouter.ai/docs/api/api-reference/tts/create-speech.md"
+    ]
   },
   "modelbest": {
     "base_url": "https://api.modelbest.cn",
-    "auth": { "kind": "bearer" },
-    "credential_pool": "modelbest-api-key",
-    "endpoints": {
-      "chat_completions": { "path": "/v1/chat/completions" }
+    "auth": {
+      "kind": "bearer"
     },
-    "sources": ["https://github.com/OpenBMB/MiniCPM-V/blob/main/docs/api.md"]
+    "endpoints": {
+      "chat_completions": {
+        "path": "/v1/chat/completions",
+        "suffix": "/chat/completions"
+      }
+    },
+    "sources": [
+      "https://github.com/OpenBMB/MiniCPM-V/blob/main/docs/api.md"
+    ]
   },
   "nvidia": {
     "base_url": "https://integrate.api.nvidia.com",
-    "auth": { "kind": "bearer" },
-    "credential_pool": "nvidia-api-key",
-    "endpoints": {
-      "models": { "path": "/v1/models" },
-      "chat_completions": { "path": "/v1/chat/completions" },
-      "responses": { "path": "/v1/responses" }
+    "auth": {
+      "kind": "bearer"
     },
-    "sources": ["https://docs.nvidia.com/nim/large-language-models/latest/api-reference.html", "https://integrate.api.nvidia.com/v1/models"]
+    "endpoints": {
+      "models": {
+        "path": "/v1/models",
+        "suffix": "/models"
+      },
+      "chat_completions": {
+        "path": "/v1/chat/completions",
+        "suffix": "/chat/completions"
+      },
+      "responses": {
+        "path": "/v1/responses",
+        "suffix": "/responses"
+      }
+    },
+    "sources": [
+      "https://docs.nvidia.com/nim/large-language-models/latest/api-reference.html",
+      "https://integrate.api.nvidia.com/v1/models"
+    ]
   },
   "aliyun-dashscope-cn": {
     "base_url": "https://dashscope.aliyuncs.com",
-    "auth": { "kind": "bearer" },
-    "credential_pool": "aliyun-dashscope-cn-api-key",
-    "endpoints": {
-      "chat_completions": { "path": "/compatible-mode/v1/chat/completions" },
-      "responses": { "path": "/compatible-mode/v1/responses" },
-      "embeddings": { "path": "/compatible-mode/v1/embeddings" },
-      "transcription": { "path": "/api/v1/services/aigc/multimodal-generation/generation" }
+    "auth": {
+      "kind": "bearer"
     },
-    "sources": ["https://help.aliyun.com/zh/model-studio/qwen-api-via-openai-chat-completions", "https://help.aliyun.com/zh/model-studio/qwen-api-via-openai-responses", "https://help.aliyun.com/en/model-studio/text-embedding-synchronous-api", "https://help.aliyun.com/en/model-studio/fun-asr-flash-recorded-speech-recognition-http-api"]
+    "endpoints": {
+      "chat_completions": {
+        "path": "/compatible-mode/v1/chat/completions",
+        "suffix": "/chat/completions"
+      },
+      "responses": {
+        "path": "/compatible-mode/v1/responses",
+        "suffix": "/responses"
+      },
+      "embeddings": {
+        "path": "/compatible-mode/v1/embeddings",
+        "suffix": "/embeddings"
+      },
+      "transcription": {
+        "path": "/api/v1/services/aigc/multimodal-generation/generation",
+        "suffix": "/services/aigc/multimodal-generation/generation"
+      }
+    },
+    "sources": [
+      "https://help.aliyun.com/zh/model-studio/qwen-api-via-openai-chat-completions",
+      "https://help.aliyun.com/zh/model-studio/qwen-api-via-openai-responses",
+      "https://help.aliyun.com/en/model-studio/text-embedding-synchronous-api",
+      "https://help.aliyun.com/en/model-studio/fun-asr-flash-recorded-speech-recognition-http-api"
+    ]
   },
   "aliyun-tokenplan-cn": {
     "base_url": "https://token-plan.cn-beijing.maas.aliyuncs.com",
-    "auth": { "kind": "bearer" },
-    "credential_pool": "aliyun-tokenplan-cn-api-key",
-    "endpoints": {
-      "chat_completions": { "path": "/compatible-mode/v1/chat/completions" },
-      "responses": { "path": "/compatible-mode/v1/responses" },
-      "speech": { "path": "/api/v1/services/audio/tts/SpeechSynthesizer" },
-      "transcription": { "path": "/api/v1/services/aigc/multimodal-generation/generation" }
+    "auth": {
+      "kind": "bearer"
     },
-    "sources": ["https://help.aliyun.com/zh/model-studio/base-url", "https://help.aliyun.com/zh/model-studio/codex", "https://help.aliyun.com/en/model-studio/qwen-audio-tts-voice-list", "https://help.aliyun.com/en/model-studio/fun-asr-flash-recorded-speech-recognition-http-api"]
+    "endpoints": {
+      "chat_completions": {
+        "path": "/compatible-mode/v1/chat/completions",
+        "suffix": "/chat/completions"
+      },
+      "responses": {
+        "path": "/compatible-mode/v1/responses",
+        "suffix": "/responses"
+      },
+      "speech": {
+        "path": "/api/v1/services/audio/tts/SpeechSynthesizer",
+        "suffix": "/services/audio/tts/SpeechSynthesizer"
+      },
+      "transcription": {
+        "path": "/api/v1/services/aigc/multimodal-generation/generation",
+        "suffix": "/services/aigc/multimodal-generation/generation"
+      }
+    },
+    "sources": [
+      "https://help.aliyun.com/zh/model-studio/base-url",
+      "https://help.aliyun.com/zh/model-studio/codex",
+      "https://help.aliyun.com/en/model-studio/qwen-audio-tts-voice-list",
+      "https://help.aliyun.com/en/model-studio/fun-asr-flash-recorded-speech-recognition-http-api"
+    ]
   },
   "zhipu": {
     "base_url": "https://open.bigmodel.cn",
-    "auth": { "kind": "bearer" },
-    "credential_pool": "zhipu-api-key",
-    "endpoints": {
-      "chat_completions": { "path": "/api/paas/v4/chat/completions" },
-      "responses": { "path": "/api/v1/responses" }
+    "auth": {
+      "kind": "bearer"
     },
-    "sources": ["https://docs.bigmodel.cn/cn/guide/develop/openai/introduction", "https://docs.bigmodel.cn/cn/guide/develop/responses/introduction"]
+    "endpoints": {
+      "chat_completions": {
+        "path": "/api/paas/v4/chat/completions",
+        "suffix": "/chat/completions"
+      },
+      "responses": {
+        "path": "/api/v1/responses",
+        "suffix": "/responses"
+      }
+    },
+    "sources": [
+      "https://docs.bigmodel.cn/cn/guide/develop/openai/introduction",
+      "https://docs.bigmodel.cn/cn/guide/develop/responses/introduction"
+    ]
   },
   "openai": {
     "base_url": "https://api.openai.com",
-    "auth": { "kind": "oauth", "profile": "openai" },
-    "credential_pool": "openai-oauth",
-    "endpoints": {
-      "models": { "path": "/v1/models" },
-      "responses": { "path": "/v1/responses" }
+    "auth": {
+      "kind": "bearer"
     },
-    "sources": ["https://developers.openai.com/siwc/token-sharing-open-source/models-and-inference"]
+    "endpoints": {
+      "models": {
+        "path": "/v1/models",
+        "suffix": "/models"
+      },
+      "responses": {
+        "path": "/v1/responses",
+        "suffix": "/responses"
+      }
+    },
+    "sources": [
+      "https://developers.openai.com/api/reference/resources/responses/methods/create",
+      "https://developers.openai.com/api/docs/models/gpt-6.1-sol",
+      "https://developers.openai.com/api/docs/models/gpt-6-astra",
+      "https://developers.openai.com/api/docs/models/gpt-6-luna"
+    ]
   },
   "grok": {
     "base_url": "https://api.x.ai",
-    "auth": { "kind": "oauth", "profile": "grok" },
-    "credential_pool": "grok-oauth",
-    "endpoints": {
-      "models": { "path": "/v1/models" },
-      "responses": { "path": "/v1/responses" }
+    "auth": {
+      "kind": "oauth",
+      "profile": "grok"
     },
-    "sources": ["https://docs.x.ai/developers/rest-api-reference/inference/models", "https://docs.x.ai/developers/model-capabilities/text/generate-text"]
+    "endpoints": {
+      "models": {
+        "path": "/v1/models",
+        "suffix": "/models"
+      },
+      "responses": {
+        "path": "/v1/responses",
+        "suffix": "/responses"
+      }
+    },
+    "sources": [
+      "https://docs.x.ai/developers/rest-api-reference/inference/models",
+      "https://docs.x.ai/developers/model-capabilities/text/generate-text"
+    ]
   },
   "google": {
     "base_url": "https://generativelanguage.googleapis.com",
-    "auth": { "kind": "x_goog_api_key" },
-    "credential_pool": "google-api-key",
-    "endpoints": {
-      "models": { "path": "/v1beta/models" },
-      "generate_content": { "path": "/v1beta/models" },
-      "interactions": { "path": "/v1/interactions" },
-      "embeddings": { "path": "/v1beta/models/gemini-embedding-2:batchEmbedContents" }
+    "auth": {
+      "kind": "x_goog_api_key"
     },
-    "sources": ["https://ai.google.dev/api/models", "https://ai.google.dev/api/generate-content", "https://ai.google.dev/api/interactions-api-v1", "https://ai.google.dev/api/embeddings"]
+    "endpoints": {
+      "models": {
+        "path": "/v1beta/models",
+        "suffix": "/models"
+      },
+      "generate_content": {
+        "path": "/v1beta/models",
+        "suffix": "/models"
+      },
+      "interactions": {
+        "path": "/v1/interactions",
+        "suffix": "/interactions"
+      },
+      "embeddings": {
+        "path": "/v1beta/models/gemini-embedding-2:batchEmbedContents",
+        "suffix": "/models/gemini-embedding-2:batchEmbedContents"
+      }
+    },
+    "sources": [
+      "https://ai.google.dev/api/models",
+      "https://ai.google.dev/api/generate-content",
+      "https://ai.google.dev/api/interactions-api-v1",
+      "https://ai.google.dev/api/embeddings"
+    ]
+  },
+  "chatgpt": {
+    "base_url": "https://api.openai.com",
+    "auth": {
+      "kind": "oauth",
+      "profile": "openai"
+    },
+    "endpoints": {
+      "models": {
+        "path": "/v1/models",
+        "suffix": "/models"
+      },
+      "responses": {
+        "path": "/v1/responses",
+        "suffix": "/responses"
+      }
+    },
+    "sources": [
+      "https://developers.openai.com/siwc/token-sharing-open-source/models-and-inference"
+    ]
   }
 }

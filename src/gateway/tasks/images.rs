@@ -27,7 +27,7 @@ pub(in crate::gateway) fn bind(
         entries,
         credentials,
         |entry: &ImageEntry| topology.image_route(&entry.model),
-        |entry| entry.model,
+        |entry| &entry.model,
     )
 }
 pub(in crate::gateway) async fn handle(

@@ -47,6 +47,8 @@ impl TransportError {
 #[derive(Clone)]
 pub struct HttpTransport {
     client: Client,
+    #[cfg(test)]
+    loopback_authority: Option<crate::provider::TrustedOrigin>,
 }
 impl HttpTransport {
     pub fn new(proxy: Option<&str>) -> Result<Self, TransportError> {
@@ -69,7 +71,17 @@ impl HttpTransport {
         }
         Ok(Self {
             client: builder.build().map_err(|_| TransportError::Configuration)?,
+            #[cfg(test)]
+            loopback_authority: None,
         })
+    }
+    /// Test-owned wire authority; production account/target validation is unchanged.
+    #[cfg(test)]
+    pub(crate) fn with_loopback_authority(mut self, origin: &str) -> Self {
+        let origin = crate::provider::TrustedOrigin::parse(origin).expect("test authority");
+        assert!(origin.as_str().starts_with("http://"));
+        self.loopback_authority = Some(origin);
+        self
     }
     pub async fn send(
         &self,
@@ -78,9 +90,16 @@ impl HttpTransport {
     ) -> Result<Response, TransportError> {
         let method = reqwest::Method::from_bytes(prepared.method.as_bytes())
             .map_err(|_| TransportError::RequestConstruction)?;
+        #[cfg(test)]
+        let origin = self
+            .loopback_authority
+            .as_ref()
+            .map_or(prepared.origin.as_str(), |origin| origin.as_str());
+        #[cfg(not(test))]
+        let origin = prepared.origin.as_str();
         let mut request = self
             .client
-            .request(method, format!("{}{}", prepared.origin, prepared.path))
+            .request(method, format!("{}{}", origin, prepared.path))
             .timeout(timeout);
         for (name, value) in prepared.safe_headers {
             let mut value =

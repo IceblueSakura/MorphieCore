@@ -17,7 +17,6 @@ pub fn provider(origin: &str) -> ProviderDefinition {
         id: ProviderId::new("speech-fixture").unwrap(),
         origin: TrustedOrigin::parse(origin).unwrap(),
         endpoints: [].into(),
-        credential_pool: None,
         auth: AuthScheme::Bearer,
     }
 }

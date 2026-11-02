@@ -1,57 +1,75 @@
-//! API-key CLI input and on-disk shape are checked independently of its encoder.
+//! Named-account API-key CLI input, redaction and storage are independently checked.
 use crate::test_files::Directory;
-use serde_json::Value;
-use std::time::Duration;
+use serde_json::{Value, json};
+use std::{io::Write, os::unix::fs::OpenOptionsExt, time::Duration};
 use tokio::process::Command;
 
-async fn command(dir: &Directory, args: &[&str], input: Option<&[u8]>) -> std::process::Output {
-    use std::os::unix::fs::PermissionsExt;
-    let input_dir = tempfile::Builder::new()
-        .permissions(std::fs::Permissions::from_mode(0o700))
-        .tempdir()
+fn private_write(path: &std::path::Path, bytes: &[u8]) {
+    std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .open(path)
+        .unwrap()
+        .write_all(bytes)
         .unwrap();
-    let input_file = input_dir.path().join("input.key");
-    if let Some(bytes) = input {
-        use std::io::Write;
-        let mut options = std::fs::OpenOptions::new();
-        options.write(true).create_new(true);
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::OpenOptionsExt;
-            options.mode(0o600);
-        }
-        options.open(&input_file).unwrap().write_all(bytes).unwrap();
+}
+async fn command(dir: &Directory, args: &[&str], input: Option<&[u8]>) -> std::process::Output {
+    let files = crate::test_files::private_directory();
+    let input_file = files.path().join("input.key");
+    if let Some(input) = input {
+        private_write(&input_file, input);
     }
+    let accounts = files.path().join("accounts.json");
+    private_write(
+        &accounts,
+        &serde_json::to_vec(&json!({"version":1,"providers":{"openai":{"accounts":[
+            {"name":"primary","enabled":true,"credential":{"kind":"api_key","alias":"one"}},
+            {"name":"backup","enabled":true,"credential":{"kind":"api_key","alias":"two"}}
+        ]}}}))
+        .unwrap(),
+    );
     let args: Vec<_> = args
         .iter()
-        .map(|v| {
-            if *v == "INPUT_FILE" {
+        .map(|value| {
+            if *value == "INPUT_FILE" {
                 input_file.to_str().unwrap()
             } else {
-                v
+                value
             }
         })
         .collect();
     let mut command = Command::new(env!("CARGO_BIN_EXE_morphiecore-auth"));
-    command.args(args).arg("--store").arg(&dir.path).env_clear();
+    command
+        .args(args)
+        .arg("--store")
+        .arg(&dir.path)
+        .arg("--accounts")
+        .arg(accounts)
+        .env_clear();
     crate::child_process::run(&mut command, b"", Duration::from_secs(10), 64 << 10)
         .await
-        .expect("bounded API-key CLI operation")
+        .expect("bounded key CLI operation")
 }
 #[tokio::test]
-async fn api_key_cli_uses_explicit_file_and_never_reports_material() {
+async fn api_key_cli_uses_configured_account_names_and_never_reports_material() {
     let dir = Directory::new();
-    let args = [
-        "api-key",
-        "add",
-        "--domain",
-        "synthetic",
-        "--alias",
-        "one",
-        "--secret-file",
-        "INPUT_FILE",
-    ];
-    let added = command(&dir, &args, Some(b"synthetic-private-value\n")).await;
+    let added = command(
+        &dir,
+        &[
+            "key",
+            "add",
+            "--provider",
+            "openai",
+            "--account",
+            "primary",
+            "--secret-file",
+            "INPUT_FILE",
+            "--json",
+        ],
+        Some(b"synthetic-private-value\n"),
+    )
+    .await;
     assert!(
         added.status.success(),
         "{}",
@@ -60,35 +78,47 @@ async fn api_key_cli_uses_explicit_file_and_never_reports_material() {
     let status: Value = serde_json::from_slice(&added.stdout).unwrap();
     assert_eq!(status["revision"], 1);
     assert_eq!(status["state"], "enabled");
-    let record: Value =
-        serde_json::from_slice::<Value>(&std::fs::read(dir.path.join("synthetic.json")).unwrap())
-            .unwrap()["api_keys"]["one"]
-            .take();
+    assert_eq!(status["account"], "primary");
+    let doc: Value =
+        serde_json::from_slice(&std::fs::read(dir.path.join("openai.json")).unwrap()).unwrap();
+    assert_eq!(doc["version"], 1);
+    assert!(doc.get("pools").is_none());
+    let record = &doc["api_keys"]["one"];
     assert_eq!(record["kind"], "api_key");
     assert_eq!(record["secret"], "synthetic-private-value");
     assert!(record.get("client_id").is_none());
-    let listed = command(&dir, &["list"], None).await;
+    let listed = command(&dir, &["status", "--provider", "openai", "--json"], None).await;
     assert!(listed.status.success());
     let inventory: Value = serde_json::from_slice(&listed.stdout).unwrap();
-    assert_eq!(inventory[0]["kind"], "api_key");
-    assert_eq!(inventory[0]["domain"], "synthetic");
-    for output in [&added, &listed] {
+    assert_eq!(inventory["accounts"][0]["revision"], 1);
+    assert_eq!(inventory["accounts"][1]["state"], "unprovisioned");
+    let human = command(&dir, &["status", "--provider", "openai"], None).await;
+    assert!(human.status.success());
+    let text = String::from_utf8_lossy(&human.stdout);
+    assert!(text.contains("openai/primary:") && text.contains("revision=1"));
+    assert!(text.contains("openai/backup:") && text.contains("unprovisioned"));
+    for output in [&added, &listed, &human] {
         for bytes in [&output.stdout, &output.stderr] {
             let text = String::from_utf8_lossy(bytes);
-            assert!(!text.contains("private-value"));
-            assert!(!text.contains(record["record_id"].as_str().unwrap()));
-            assert!(!text.contains(record["epoch"].as_str().unwrap()));
+            for private in [
+                "private-value",
+                record["record_id"].as_str().unwrap(),
+                record["epoch"].as_str().unwrap(),
+                "\"alias\"",
+            ] {
+                assert!(!text.contains(private));
+            }
         }
     }
     let stale = command(
         &dir,
         &[
-            "api-key",
+            "key",
             "remove",
-            "--domain",
-            "synthetic",
-            "--alias",
-            "one",
+            "--provider",
+            "openai",
+            "--account",
+            "primary",
             "--revision",
             "0",
         ],
@@ -99,12 +129,12 @@ async fn api_key_cli_uses_explicit_file_and_never_reports_material() {
     let removed = command(
         &dir,
         &[
-            "api-key",
+            "key",
             "remove",
-            "--domain",
-            "synthetic",
-            "--alias",
-            "one",
+            "--provider",
+            "openai",
+            "--account",
+            "primary",
             "--revision",
             "1",
         ],
@@ -113,31 +143,31 @@ async fn api_key_cli_uses_explicit_file_and_never_reports_material() {
     .await;
     assert!(removed.status.success());
     let record: Value =
-        serde_json::from_slice::<Value>(&std::fs::read(dir.path.join("synthetic.json")).unwrap())
+        serde_json::from_slice::<Value>(&std::fs::read(dir.path.join("openai.json")).unwrap())
             .unwrap()["api_keys"]["one"]
             .take();
     assert!(record["secret"].is_null());
 }
 #[tokio::test]
-async fn api_key_cli_rejects_argv_secrets_and_invalid_input_without_creating_store() {
+async fn api_key_cli_rejects_argv_secrets_and_invalid_input_before_creating_store() {
     for args in [
         vec![
-            "api-key",
+            "key",
             "add",
-            "--domain",
-            "synthetic",
-            "--alias",
-            "one",
+            "--provider",
+            "openai",
+            "--account",
+            "primary",
             "--key",
             "never-print-this",
         ],
-        vec!["api-key", "add", "--domain", "synthetic", "--alias", "one"],
+        vec!["key", "add", "--provider", "openai", "--account", "primary"],
         vec!["api-key", "list", "--secret-fd", "0"],
     ] {
         let dir = Directory::new();
-        let result = command(&dir, &args, None).await;
-        assert!(!result.status.success());
-        assert!(!String::from_utf8_lossy(&result.stderr).contains("never-print-this"));
+        let output = command(&dir, &args, None).await;
+        assert!(!output.status.success());
+        assert!(!String::from_utf8_lossy(&output.stderr).contains("never-print-this"));
         assert!(!dir.path.exists());
     }
     for input in [
@@ -146,34 +176,34 @@ async fn api_key_cli_rejects_argv_secrets_and_invalid_input_without_creating_sto
         b"synthetic space",
     ] {
         let dir = Directory::new();
-        let result = command(
+        let output = command(
             &dir,
             &[
-                "api-key",
+                "key",
                 "add",
-                "--domain",
-                "synthetic",
-                "--alias",
-                "one",
+                "--provider",
+                "openai",
+                "--account",
+                "primary",
                 "--secret-file",
                 "INPUT_FILE",
             ],
             Some(input),
         )
         .await;
-        assert!(!result.status.success());
+        assert!(!output.status.success());
         assert!(!dir.path.exists());
     }
     let dir = Directory::new();
-    let result = command(
+    let output = command(
         &dir,
         &[
-            "api-key",
+            "key",
             "replace",
-            "--domain",
-            "synthetic",
-            "--alias",
-            "one",
+            "--provider",
+            "openai",
+            "--account",
+            "primary",
             "--revision",
             "1",
             "--secret-file",
@@ -182,41 +212,32 @@ async fn api_key_cli_rejects_argv_secrets_and_invalid_input_without_creating_sto
         Some(b""),
     )
     .await;
-    assert!(!result.status.success());
-    assert!(result.stdout.is_empty());
+    assert!(!output.status.success());
+    assert!(output.stdout.is_empty());
     assert!(!dir.path.exists());
 }
-
 #[tokio::test]
-async fn api_key_cli_rejects_domain_traversal_after_parsing() {
-    let dir = Directory::new();
-    let result = command(
-        &dir,
-        &[
-            "api-key",
-            "add",
-            "--domain",
-            "../escape",
-            "--alias",
-            "one",
-            "--secret-file",
-            "INPUT_FILE",
-        ],
-        Some(b"synthetic-private-value"),
-    )
-    .await;
-    assert!(!result.status.success());
-    assert!(result.stdout.is_empty());
-    assert_eq!(
-        String::from_utf8(result.stderr).unwrap(),
-        "Credential operation failed: invalid account or client identifier\n"
-    );
-    assert!(!dir.path.parent().unwrap().join("escape.json").exists());
-    assert_eq!(
-        std::fs::read_dir(&dir.path)
-            .unwrap()
-            .map(|entry| entry.unwrap().file_name())
-            .collect::<Vec<_>>(),
-        ["store.lock"]
-    );
+async fn unknown_provider_and_credential_alias_do_not_bypass_account_configuration() {
+    for (provider, account) in [("../escape", "primary"), ("openai", "one")] {
+        let dir = Directory::new();
+        let output = command(
+            &dir,
+            &[
+                "key",
+                "add",
+                "--provider",
+                provider,
+                "--account",
+                account,
+                "--secret-file",
+                "INPUT_FILE",
+            ],
+            Some(b"synthetic-private-value"),
+        )
+        .await;
+        assert!(!output.status.success());
+        assert!(output.stdout.is_empty());
+        assert!(!dir.path.exists());
+        assert!(!dir.path.parent().unwrap().join("escape.json").exists());
+    }
 }

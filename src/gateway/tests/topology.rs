@@ -24,6 +24,7 @@ pub(crate) fn topology_at(origin: &str) -> CompiledTopology {
             (
                 crate::provider::ProviderOperation::ChatCompletions,
                 crate::provider::ProviderEndpoint {
+                    suffix: EndpointPath::new("/chat/completions").unwrap(),
                     path: EndpointPath::new("/chat/completions").unwrap(),
                     auth: None,
                 },
@@ -31,13 +32,13 @@ pub(crate) fn topology_at(origin: &str) -> CompiledTopology {
             (
                 crate::provider::ProviderOperation::Responses,
                 crate::provider::ProviderEndpoint {
+                    suffix: EndpointPath::new("/responses").unwrap(),
                     path: EndpointPath::new("/responses").unwrap(),
                     auth: None,
                 },
             ),
         ]
         .into(),
-        credential_pool: None,
         auth: AuthScheme::Bearer,
     };
     let canonical = ModelId::new("fixture-canonical").unwrap();

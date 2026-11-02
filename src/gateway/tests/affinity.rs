@@ -116,6 +116,7 @@ fn gateway(origin: &str, profile: GenerationApi, dialect: Dialect) -> Gateway {
             (
                 crate::provider::ProviderOperation::ChatCompletions,
                 crate::provider::ProviderEndpoint {
+                    suffix: EndpointPath::new("/upstream").unwrap(),
                     path: EndpointPath::new("/upstream").unwrap(),
                     auth: None,
                 },
@@ -123,13 +124,13 @@ fn gateway(origin: &str, profile: GenerationApi, dialect: Dialect) -> Gateway {
             (
                 crate::provider::ProviderOperation::Responses,
                 crate::provider::ProviderEndpoint {
+                    suffix: EndpointPath::new("/upstream").unwrap(),
                     path: EndpointPath::new("/upstream").unwrap(),
                     auth: None,
                 },
             ),
         ]
         .into(),
-        credential_pool: None,
         auth: AuthScheme::Bearer,
     };
     let endpoint = Endpoint {

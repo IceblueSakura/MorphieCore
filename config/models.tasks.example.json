@@ -1,11 +1,19 @@
 {
+  "version": 1,
   "implicit_cache_affinity": false,
   "models": {
-    "text-embedding-3-small": {},
-    "gpt-image-2.5-flare": {},
-    "qwen-audio-3.0-tts-plus": {},
+    "text-embedding-3-small": {
+      "account": "primary"
+    },
+    "gpt-image-2.5-flare": {
+      "account": "primary"
+    },
+    "qwen-audio-3.0-tts-plus": {
+      "account": "primary"
+    },
     "qwen-audio-3.0-asr-flash": {
-      "binding": "tokenplan-qwen-asr"
+      "binding": "tokenplan-qwen-asr",
+      "account": "primary"
     }
   }
 }

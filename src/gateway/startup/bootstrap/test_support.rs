@@ -16,8 +16,10 @@ pub(super) fn write_private(path: &std::path::Path, bytes: &[u8]) {
 pub(super) fn write_configuration(
     directory: &std::path::Path,
     mut service: serde_json::Value,
-    models: serde_json::Value,
+    mut models: serde_json::Value,
 ) {
+    service["version"] = serde_json::json!(1);
+    models["version"] = serde_json::json!(1);
     service["models_file"] = serde_json::json!("models.json");
     write_private(
         &directory.join("auth.json"),
@@ -30,6 +32,13 @@ pub(super) fn write_configuration(
     write_private(
         &directory.join("models.json"),
         &serde_json::to_vec(&models).unwrap(),
+    );
+}
+
+pub(super) fn write_accounts(directory: &Path, accounts: &serde_json::Value) {
+    write_private(
+        &directory.join("accounts.json"),
+        &serde_json::to_vec(accounts).unwrap(),
     );
 }
 
@@ -54,9 +63,15 @@ pub(super) fn selected_models(labels: &[&str], providers: &[&str]) -> serde_json
                 });
             let binding = bindings.next().expect("selected transcription provider");
             assert!(bindings.next().is_none(), "select exactly one ASR binding");
-            serde_json::json!({"binding":binding.endpoint_id})
+            serde_json::json!({"binding":binding.endpoint_id,"account":format!("{}-api-key",binding.provider().id.as_str())})
         } else {
-            serde_json::json!({})
+            let provider = catalog
+                .image_route(label)
+                .map(|r| &r.endpoint.provider)
+                .or_else(|| catalog.speech_route(label).map(|r| &r.endpoint.provider))
+                .or_else(|| catalog.embedding_route(label).map(|r| &r.endpoint.provider))
+                .expect("selected task model");
+            serde_json::json!({"account":format!("{}-api-key",provider.as_str())})
         };
         models.insert((*label).into(), model);
     }
@@ -74,6 +89,11 @@ impl std::ops::Deref for Fixture {
     }
 }
 impl Fixture {
+    pub(super) fn loopback_authority(&mut self, origin: &str) {
+        let runtime = std::sync::Arc::get_mut(&mut self.boot.gateway.state)
+            .expect("unshared fixture runtime");
+        runtime.transport = runtime.transport.clone().with_loopback_authority(origin);
+    }
     pub(super) fn force_upstream_stream(&mut self) {
         std::sync::Arc::get_mut(&mut self.boot.gateway.state)
             .expect("unshared fixture runtime")
@@ -102,44 +122,61 @@ impl Fixture {
         Self::with_credentials(service, models, &[], &[(provider, pool)])
     }
 
+    pub(super) fn with_accounts(
+        service: serde_json::Value,
+        models: serde_json::Value,
+        credentials: &[(&str, &str, &str)],
+        accounts: serde_json::Value,
+    ) -> Result<Self, StartupError> {
+        Self::build(service, models, credentials, &[], Some(accounts))
+    }
     fn with_credentials(
         service: serde_json::Value,
         models: serde_json::Value,
         credentials: &[(&str, &str, &str)],
         oauth: &[(&str, &str)],
     ) -> Result<Self, StartupError> {
+        Self::build(service, models, credentials, oauth, None)
+    }
+    fn build(
+        service: serde_json::Value,
+        models: serde_json::Value,
+        credentials: &[(&str, &str, &str)],
+        oauth: &[(&str, &str)],
+        configured: Option<serde_json::Value>,
+    ) -> Result<Self, StartupError> {
         let directory = crate::test_files::private_directory();
         let root = directory.path().join("credentials");
         let drivers =
             crate::credential::drivers::builtin_drivers_with_environment(None, false).unwrap();
         let manager = crate::credential::CredentialManager::new(&root, drivers).unwrap();
-        for &(provider, pool, key) in credentials {
+        let mut providers = serde_json::Map::new();
+        for &(provider, name, key) in credentials {
             manager
                 .add_api_key(
                     provider,
-                    "one",
+                    name,
                     crate::credential::Secret::new(key.into()).unwrap(),
                 )
                 .unwrap();
-            manager
-                .set_pool(
-                    provider,
-                    pool,
-                    0,
-                    crate::credential::CredentialPool {
-                        members: vec![crate::credential::CredentialRef::ApiKey {
-                            alias: "one".into(),
-                        }],
-                        fallback: false,
-                        max_attempts: 1,
-                    },
-                )
-                .unwrap();
+            let entry = providers
+                .entry(provider)
+                .or_insert_with(|| serde_json::json!({"accounts":[]}));
+            entry["accounts"]
+                .as_array_mut()
+                .unwrap()
+                .push(serde_json::json!({
+                    "name":name,"enabled":true,"credential":{"kind":"api_key","alias":name}
+                }));
         }
-        for &(profile, pool) in oauth {
+        for &(provider, name) in oauth {
+            let definition = crate::provider::catalog::get(provider).expect("registered Provider");
+            let crate::provider::CredentialKind::OAuth(profile) = definition.auth.kind() else {
+                panic!("OAuth Provider");
+            };
             let siwc = profile == "openai";
             let account = serde_json::json!({
-                "profile":profile,"alias":"one",
+                "record_id":"0123456789abcdef0123456789abcdef","profile":profile,"alias":name,
                 "client_id":if siwc {"oaiapp_synthetic"} else {"synthetic-client"},
                 "identity":{"subject":"synthetic-subject","scope":null},
                 "revision":2,"generation":1,"login_attempt":null,"state":"active",
@@ -157,27 +194,18 @@ impl Fixture {
             write_private(
                 &root.join(format!("{profile}.json")),
                 &serde_json::to_vec(&serde_json::json!({
-                    "provider":profile,"revision":1,"oauth":{"one":account},
-                    "api_keys":{},"pools":{}
+                    "version":1,"provider":profile,"revision":1,"oauth":{name:account},"api_keys":{}
                 }))
                 .unwrap(),
             );
-            manager
-                .set_pool(
-                    profile,
-                    pool,
-                    0,
-                    crate::credential::CredentialPool {
-                        members: vec![crate::credential::CredentialRef::OAuth {
-                            profile: profile.into(),
-                            alias: "one".into(),
-                        }],
-                        fallback: false,
-                        max_attempts: 1,
-                    },
-                )
-                .unwrap();
+            providers.insert(provider.into(),serde_json::json!({"accounts":[{
+                "name":name,"enabled":true,"credential":{"kind":"oauth","profile":profile,"alias":name}
+            }]}));
         }
+        write_accounts(
+            directory.path(),
+            &configured.unwrap_or_else(|| serde_json::json!({"version":1,"providers":providers})),
+        );
         write_configuration(directory.path(), service, models);
         let boot = Bootstrap::from_directory(directory.path())?;
         Ok(Self {

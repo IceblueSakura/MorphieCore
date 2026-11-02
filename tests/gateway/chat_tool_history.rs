@@ -90,12 +90,12 @@ async fn tool_result_and_final_history_survive_json_and_sse() {
 }
 
 #[tokio::test]
-async fn tool_feedback_migrates_credentials_and_sticks_after_primary_recovery() {
+async fn tool_feedback_retries_as_a_new_request_without_rotating_in_request() {
     history_case(true).await;
 }
 
 #[tokio::test]
-async fn cooling_chat_pool_returns_retry_after_without_dispatch() {
+async fn cooling_chat_accounts_return_retry_after_without_dispatch() {
     let fixture = fixture::start_recovery().await;
     let unavailable = fixture
         .recovery
@@ -223,8 +223,24 @@ async fn history_case(recover: bool) {
             fixture::start(GenerationApi::Chat, false).await
         };
         let mut body = input(stream);
-        let initial = body.clone();
         for turn in 1..=3 {
+            if recover && turn == 2 {
+                let failed = client
+                    .post(format!("{}/chat/completions", fixture.base))
+                    .bearer_auth(fixture::CLIENT_KEY)
+                    .header("x-session-affinity", "synthetic-chat-session")
+                    .json(&body)
+                    .send()
+                    .await
+                    .unwrap();
+                assert_eq!(failed.status(), 503);
+                failed.bytes().await.unwrap();
+                assert_eq!(
+                    fixture.seen.lock().unwrap().len(),
+                    2,
+                    "no hidden target switch"
+                );
+            }
             let response = request(&client, &fixture.base, &body, "synthetic-chat-session").await;
             assert_eq!(
                 response["usage"]["total_tokens"], 18,
@@ -251,11 +267,6 @@ async fn history_case(recover: bool) {
                 ]);
             } else {
                 assert_eq!(message["content"], "cedar-71");
-                if recover && turn == 2 {
-                    let recovered =
-                        request(&client, &fixture.base, &initial, "other-chat-session").await;
-                    assert_eq!(recovered["choices"][0]["finish_reason"], "tool_calls");
-                }
                 body["messages"]
                     .as_array_mut()
                     .unwrap()
@@ -264,7 +275,7 @@ async fn history_case(recover: bool) {
         }
         assert_eq!(
             fixture.seen.lock().unwrap().len(),
-            if recover { 5 } else { 3 }
+            if recover { 4 } else { 3 }
         );
         if let Some(recovery) = &fixture.recovery {
             recovery.assert_complete(3, false);

@@ -98,6 +98,18 @@ fn warn(health: Health) {
     );
 }
 impl Sink {
+    /// Check destinations without creating files, owning locks or repairing tails.
+    pub(in crate::gateway) fn validate(path: &Path) -> io::Result<()> {
+        let mistrust = trusted_directory(path)?;
+        let archive = sibling(path, ".1")?;
+        for slot in [path, archive.as_path()] {
+            existing(slot, &mistrust)?;
+            if check(&sibling(slot, ".lock")?, &mistrust)?.is_some_and(|size| size != 0) {
+                return Err(io::Error::other("diagnostics lock format"));
+            }
+        }
+        Ok(())
+    }
     pub(in crate::gateway) fn open(path: &Path) -> io::Result<Self> {
         let counts = Arc::new(Counters::default());
         let (tx, rx) = mpsc::sync_channel(64);
@@ -347,25 +359,29 @@ fn lock(path: &Path, mistrust: &fs_mistrust::Mistrust) -> io::Result<File> {
         .map_err(|_| io::Error::other("diagnostics writer unavailable"))?;
     Ok(file)
 }
+fn trusted_directory(path: &Path) -> io::Result<fs_mistrust::Mistrust> {
+    let parent = path
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or(Path::new("."));
+    let mut builder = fs_mistrust::Mistrust::builder();
+    builder.ignore_environment();
+    #[cfg(unix)]
+    builder.trust_no_group_id();
+    let mistrust = builder
+        .build()
+        .map_err(|_| io::Error::other("diagnostics directory"))?;
+    mistrust
+        .verifier()
+        .permit_readable()
+        .require_directory()
+        .check(parent)
+        .map_err(|_| io::Error::other("diagnostics directory must be private"))?;
+    Ok(mistrust)
+}
 impl Rolling {
     fn open(path: &Path, counts: Arc<Counters>) -> io::Result<Self> {
-        let parent = path
-            .parent()
-            .filter(|p| !p.as_os_str().is_empty())
-            .unwrap_or(Path::new("."));
-        let mut builder = fs_mistrust::Mistrust::builder();
-        builder.ignore_environment();
-        #[cfg(unix)]
-        builder.trust_no_group_id();
-        let mistrust = builder
-            .build()
-            .map_err(|_| io::Error::other("diagnostics directory"))?;
-        mistrust
-            .verifier()
-            .permit_readable()
-            .require_directory()
-            .check(parent)
-            .map_err(|_| io::Error::other("diagnostics directory must be private"))?;
+        let mistrust = trusted_directory(path)?;
         let archive = sibling(path, ".1")?;
         // Lock both data slots: another base path may otherwise name our archive.
         let locks = [lock(path, &mistrust)?, lock(&archive, &mistrust)?];

@@ -25,9 +25,7 @@ pub const GOOGLE_BINDINGS: &[GoogleBinding] = &[GoogleBinding {
 }];
 impl GoogleBinding {
     pub fn credential(&self) -> CredentialBindingId {
-        self.provider()
-            .credential_pool
-            .expect("catalog credential pool")
+        CredentialBindingId::new(self.provider().id.as_str()).expect("catalog Provider identity")
     }
     fn reasoning_policy(&self) -> Option<ReasoningRequestPolicy> {
         use crate::semantic::task::generation::{EffortLevel::*, EffortScope};

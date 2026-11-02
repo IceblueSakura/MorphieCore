@@ -1,7 +1,6 @@
 //! Synthetic cross-module gateway contracts.
 mod affinity;
 mod conversation;
-mod credential_fallback;
 mod embedding;
 mod ingress;
 mod models;
