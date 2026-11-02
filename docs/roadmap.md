@@ -58,37 +58,35 @@ This page owns current scope, priorities, dependencies, and exit gates. [Archite
 
 ## Current status
 
-**Current focus (2026-11-02):** request/delivery conversion-ladder owners and Messages intake are complete. Remaining Client/IR work is unknown facts/history delegation (R4) and cleanup/discovery (R5), followed by the remaining default-profile installed-Agent acceptance. Remaining blockers appear in [agent-default production findings](#agent-default-production-findings). Stage 4 resumes after the [closure boundary](#closure-boundary). Budget formulas stay deferred; no new binding activation, Google expansion or Stage-5 scheduling follows.
-
-**Completed baseline:** Generation Text correctness/lifecycle reviews, domain evidence, telemetry and standard request boundary repairs preceded the 2026-10-27 parsing/stream corrections. Implemented stabilization slices include the order-0 production-construction gate, phased binding-history ownership and discovery, Standard Chat readable-reasoning omission, Bailian Responses presentation/continuity and summary-only history, conditional strictness for OpenAI and Messages targets, grouped call-ID association and the first semantic-equivalence applications. Their offline, SDK and installed-client evidence is separate from live acceptance; see [verification gates](development.md#verification-gates). Stage 4 retains equal priority across its API families.
+**Current focus (2026-11-02):** Slices R0–R3 are complete. Active focus is **R4 (Unknown facts and history)**, followed by R5 (Cleanup and discovery) and installed-Agent default-profile acceptance. Stage 4 resumes once R4–R5 exit gates pass.
 
 | Area | State | Next step |
 |---|---|---|
-| Routing | Stable routing baseline frozen; controlled synthetic recovery verified across Router, SDK, and installed clients | Real-failover production evidence required for multi-credential routes; no routing feature additions |
-| Generation IR / Codec | R0–R3 complete; shared request/delivery owners, qualified non-Chat streaming intake and revised Messages admission | Remaining history/delegation, then cleanup/discovery |
-| Client compatibility | Default native Messages reasoning/tool/history loops pass with current installed pi and OpenCode, without header/compat opt-outs | Remaining default-profile three-protocol and selected cross-protocol exit loops after R4–R5 |
-| Integration | R1a/R1b/R2 loops, controlled recovery and bounded production-profile closure passed | Revalidate changed paths; retain real-failover exclusions without reopening a blanket model/client matrix |
-| Cross-protocol conversion | Stage 3 closed for selected projections; `count_tokens` deferred | Preserve verified evidence; Google API remains paused except text-report and Stage-4 Embedding paths |
-| Decision APIs | Dual standard-SDK direction selected; initial TypeSafe/OpenAI protocol research complete | Contract selection and Stage-4 implementation at equal priority with other modalities |
-| Embedding & Media | Text Embedding operational (Google native, OpenAI via OpenRouter, DashScope); Grok static image codec implemented | Stage-4 contract selection for Images Generate/Edit, Audio, Files/Uploads, and Video |
-| Downstream integration | Agent API key authentication and minimal diagnostic attribution implemented | Design per-Agent JSONL session storage; OAuth/managed registration remain deferred |
-| Test baseline | Pinned upstream test baseline closed; strict SDK accumulators and transport safety verified | Maintain offline baseline; evaluate candidate updates separately |
+| Routing | Stable routing baseline frozen; controlled synthetic recovery verified across Router, SDK, and installed clients | Real-failover production evidence required for multi-credential routes |
+| Generation IR / Codec | R0–R3 complete; shared request/delivery owners, qualified streaming intake, Messages version admission | R4: history delegation and visible-history transfer; then R5 |
+| Client compatibility | Default native Messages loops pass with installed pi and OpenCode without overrides | Complete three-protocol and cross-protocol exit loops after R4–R5 |
+| Integration | R1a/R1b/R2 loops, controlled recovery and production closure passed | Revalidate changed paths against established gates |
+| Cross-protocol conversion | Stage 3 closed for selected projections; `count_tokens` deferred | Stage-4 Embedding paths active; Google API paused |
+| Decision APIs | Dual standard-SDK direction selected (TypeSafe/OpenAI) | Contract selection and Stage-4 implementation |
+| Embedding & Media | Operational (Google native, OpenAI via OpenRouter, DashScope); Grok image codec implemented | Stage-4 contract selection for Images, Audio, Files, and Video |
+| Downstream integration | Agent API key authentication and diagnostic attribution implemented | Per-Agent JSONL session storage design |
+| Test baseline | Pinned upstream test baseline closed; strict SDK accumulators verified | Maintain offline baseline (`cargo test --locked --offline`) |
 
 ## Standard request boundary repair
 
-The five-slice request correction was completed on 2026-10-26. [Architecture](architecture.md#standard-request-boundary) defines the standard-priority contracts, and [dated findings](refs/2026-10-26-standard-request-boundaries.md#repair-disposition) detail specific resolutions and exclusions. Further protocol-boundary work proceeds through the [conversion-ladder migration](#conversion-ladder-migration).
+Completed on 2026-10-26. [Architecture](architecture.md#standard-request-boundary) defines standard-priority contracts; see [dated findings](refs/2026-10-26-standard-request-boundaries.md#repair-disposition) for specific resolutions.
 
 ## Three-protocol fidelity repair
 
-Selected on 2026-10-27, this workstream repairs semantic fidelity across standard Chat Completions, Responses, and Messages. Since 2026-10-30 it executes as the [conversion-ladder migration](#conversion-ladder-migration). Authoritative contracts: [conversion ladder](architecture.md#conversion-ladder), [field handling](architecture.md#field-handling), [projection principles](architecture.md#clientir-projection-principles) and [stream normalization](architecture.md#semantic-stream-normalization). Supporting research and the [rejection-site inventory](refs/2026-10-27-client-ir-boundaries.md#conversion-ladder-inventory-2026-10-30) live in the Client/IR notes; [Development](development.md#sdk-loopback-gate) separates offline/consumer verification from live acceptance.
+This workstream repairs semantic fidelity across standard Chat Completions, Responses, and Messages via the [conversion-ladder migration](#conversion-ladder-migration). Authoritative contracts: [conversion ladder](architecture.md#conversion-ladder), [field handling](architecture.md#field-handling), [projection principles](architecture.md#clientir-projection-principles), and [stream normalization](architecture.md#semantic-stream-normalization).
 
 ### Scope and boundaries
 
-- **Protocols:** Covers all three same-protocol paths and the six cross-protocol directions across request decoding, IR ownership, target request encoding, upstream decoding, delivery and history replay.
+- **Protocols:** Covers all three same-protocol paths and six cross-protocol directions across request decoding, IR ownership, target request encoding, upstream decoding, delivery, and history replay.
 - **Domain:** Generation Text (instructions/roles, text/refusal, function tools/results, structured output, reasoning/replay, presence/settings, usage, errors, and terminal events).
-- **Extension properties:** Unknown protocol extension fields are accepted and discarded at legal object positions, never forwarded or given semantic execution meaning. Known fields follow the conversion ladder; unscheduled capabilities keep their [retained rejections](#retained-rejections).
+- **Extension properties:** Unknown extension fields are accepted and discarded at legal positions; known fields follow the conversion ladder; unscheduled capabilities keep [retained rejections](#retained-rejections).
 - **Precedence:** Plain-text token-cap output may omit item status under named rules; Responses metadata echoes the admitted request only when upstream metadata is omitted.
-- **Budget direction:** Bounded relaxation may preserve functionality when gateway-derived budgets conflict. The [accepted boundary](architecture.md#bounded-token-budget-adaptation) selects only the model-maximum clamp; no formula, source-grammar relaxation or raised model limit is selected.
+- **Budget direction:** Bounded relaxation allows only the model-maximum clamp ([Architecture](architecture.md#bounded-token-budget-adaptation)).
 
 ### Reference strategy
 
@@ -102,36 +100,37 @@ Selected on 2026-10-27, this workstream repairs semantic fidelity across standar
 
 ### Agent-default production findings
 
-The permanent [production-construction gate](development.md#sdk-loopback-gate) drives captured pi 1.4.0 shapes through production startup over catalog bindings. R1's reviewed request lanes and R2's reasoning/report/prefix delivery lanes now accept under their selected dispositions. The table below retains unresolved lanes only. [R0 findings](refs/2026-10-27-client-ir-boundaries.md#production-corpus-and-intake-experiment-2026-10-30) and the [2026-10-28 probe](refs/2026-10-27-client-ir-boundaries.md#agent-default-production-probe-2026-10-28) retain their source dates.
+Captured pi 1.4.0 shapes run through the permanent [production-construction gate](development.md#sdk-loopback-gate). R1 and R2 resolved earlier lanes; unresolved lanes are listed below:
 
 | Lane | Current gate disposition | Ladder resolution | Slice |
 |---|---|---|---|
 | Chat client → DeepSeek/Zhipu Chat tools and reasoning | `admission.client_representation` from `required_with_tools` | Deployer `readable_reasoning`; otherwise thinking-off fallback (L3) | R4 |
 | Chat client → TokenPlan Chat, all profiles | `admission.client_representation` from unassessed history | Delegation | R4 |
-| Responses client → OpenAI subscriptions, flat tools | Text defaults dispatch after ceiling omission; flat tools reject because the selected native contract requires namespace definitions and qualified direct calls | Retain the selected tool contract until endpoint evidence qualifies another carrier | Endpoint qualification |
-| Chat upstream usage | U: duplicate nonnull final reports | Qualify at the actual emitter; no generic relaxation | Outside slices |
+| Responses client → OpenAI subscriptions, flat tools | Flat tools reject (requires namespace definitions and qualified calls) | Retain selected tool contract until endpoint evidence qualifies carrier | Endpoint qualification |
+| Chat upstream usage | Duplicate nonnull final reports | Qualify at emitter | Outside slices |
 
 ### Conversion-ladder migration
 
-Each slice moves existing rejection sites onto the ladder through existing owners where possible; the only new structure is the two disposition owners in [Architecture](architecture.md#conversion-ladder). The accepted [IR/codec simplifications](architecture.md#delivery-and-evidence-decisions) ride on the same slices: each slice deletes the representations its owner replaces, so the migration shrinks the codec layer instead of adding a layer beside it. Mapping correctness keeps independent wire→IR and IR→wire expectations; the production gate classifies reachability only. Every slice runs the [offline baseline](development.md#offline-baseline), affected [SDK consumers](development.md#sdk-loopback-gate) and applicable installed-agent checks, and updates the gate's expected dispositions toward acceptance. Every remaining non-accepted lane must cite an L5 reason or an invariant.
+Each slice migrates rejection sites onto the conversion ladder through unified request and delivery owners ([Architecture](architecture.md#conversion-ladder)).
 
-**R0 baseline completed (2026-10-30):** the permanent gate preserves resolved Go/Haiku adaptive metadata beside bare controls, uses non-null upstream echoes and reports current blockers toward acceptance. Its [intake experiment](refs/2026-10-27-client-ir-boundaries.md#production-corpus-and-intake-experiment-2026-10-30) compares every existing JSON-client observation across 45 JSON-capable catalog bindings; two Google bindings are already streaming-only. Chat metadata/annotations require a named JSON exception; R0 itself changed no production behavior.
+#### Completed slices (R0–R3)
 
-**R1 completed (2026-10-31):** the [request disposition owner](architecture.md#conversion-ladder) replaces the separate feature gates, Messages carrier policy and request rejection inventory; migrated scalar fields use `Option`, reject-only hints are deleted, and receipts contain only losses/estimates. Review follow-up preserves declared parallel omission independently of serial guarantees, moves presentation admission and losses into candidate rows, and prevents conditional strict inference from closed schemas containing unknown keywords. The required Messages report/hint and uncarried-reasoning omissions landed with cache omission, including candidate-local manual-thinking history validation. Explicit strict/media/output constraints, trust, bounds and terminal negatives remain. [Verification](development.md#sdk-loopback-gate) owns closure evidence for the full offline baseline, all 18 SDK and 12 current installed-client scenarios. [Bounded execution reuse](architecture.md#request-conversion-reuse) remains intact. Remaining migration work is listed below; final default-profile Agent acceptance remains pending.
+| Slice | Completed | Key Deliverables & Verified Behavior |
+|---|---|---|
+| **R0 Intake & Reachability** | 2026-10-30 | Permanent construction gate; qualified non-Chat streaming intake with named Chat JSON exception; Go/Haiku metadata preservation. |
+| **R1 Request Disposition** | 2026-10-31 | Unified request disposition owner ([`lowering/disposition.rs`](../src/lowering/disposition.rs)); scalar `Option` migrations; conditional strictness; cache and report omissions. |
+| **R2 Delivery Projection** | 2026-11-01 | Single delivery projection owner ([`ClientAdapter`](../src/adapter/downstream.rs)); unified event stream projection across JSON and SSE views. |
+| **R3 Messages Intake** | 2026-11-02 | Version header admission; legacy sampling/block-binding omission; verified default native tool/history loops for installed pi and OpenCode. |
 
-**R2 completed (2026-11-01):** the [delivery projection owner](architecture.md#delivery-projection-ownership) replaces the independent view checks and qualified non-Chat JSON dispatch. [Development](development.md#sdk-loopback-gate) owns the full offline, SDK and current installed-client closure evidence.
-
-**R3 completed (2026-11-02):** Messages admits both selected version headers over current grammar, ignores beta headers, applies named sampling/block-binding omissions and accepts ordered tool changes through existing candidate dispositions. Installed pi and OpenCode default native Messages tool/history loops pass without header or compatibility overrides; [Development](development.md#installed-client-synthetic-recovery) owns the separate synthetic acceptance evidence.
+#### Active and pending slices (R4–R5)
 
 | Slice | Work | Exit gate |
 |---|---|---|
-| **R4 Unknown facts and history** | Delegation for unassessed binding facts; `required_with_tools` fallback; visible-history transfer for every request consumer, including unsealed or foreign reasoning, foreign citations and obsolete markers | TokenPlan Chat, DeepSeek/Zhipu Chat tools and two-turn Bailian Responses lanes accept; replay trust checks unchanged |
-| **R5 Cleanup and discovery** | Remove the test-only strict-complete reporting policy, obsolete `mca1.` marker handling, unreachable delivery guards and leftover empty module directories. Run the `FidelityRecords` probe: move response item wire IDs into IR item identity, drop spelling-only records (`input_text_forms`, response and routing extras) under L2/L4, and keep only replay trust bindings outside IR; if the probe removes the history remapping it targets, migrate the remaining records, otherwise record why the side table stays. Convert remaining `Presence` fields; derive `/capabilities` and discovery, including the preferred interface (S10), from the disposition tables; narrow delivery settings to tools/choice/parallel permission and settle checkpoint/final usage ownership; report unsupported `conversation`/`prompt` as unsupported rather than invalid | Discovery publishes the same facts the gate observes; `Presence` remains only on contract-defined null fields; the `FidelityRecords` outcome is recorded |
-| **Exit** | Current-client characterization, then default reasoning/tool/history gateway loops with installed pi on all three client protocols and selected cross-protocol lanes; OpenCode afterwards | Actual execution and replay pass. Preserve resolved built-in model metadata; only test origin/key, operational bounds and documented header opt-ins may differ |
+| **R4 Unknown facts and history** *(Active)* | **1. Delegation**: Send carriable history for unassessed binding facts (`ReasoningHistory::None`), letting upstream validate; discovery publishes `not_assessed`.<br>**2. `required_with_tools` fallback**: For Standard Chat + tools + thinking, allow deployer `readable_reasoning` or fallback to disabling thinking under L3 loss `chat.fallback-thinking-off.v1`; reject at planning only if thinking cannot be disabled.<br>**3. Generalized visible-history transfer**: Omit uncarried/foreign reasoning, citations, and obsolete markers under L3 while preserving visible text and tool links. | TokenPlan Chat, DeepSeek/Zhipu Chat tools, and two-turn Bailian Responses lanes accept; replay trust checks unchanged. |
+| **R5 Cleanup and discovery** | Remove test-only strict-complete reporting policy, obsolete `mca1.` marker handling, and unreachable delivery guards. Run the `FidelityRecords` probe. Convert remaining `Presence` fields. Derive `/capabilities` and discovery (S10) from disposition tables. | Discovery publishes gate-observed facts; `Presence` remains only on contract-defined null fields; `FidelityRecords` outcome recorded. |
+| **Exit** | Current-client characterization, then default reasoning/tool/history gateway loops with installed pi and OpenCode across all three client protocols and selected cross-protocol lanes. | Gateway execution and replay pass within documented profiles. |
 
-Dependencies: R0–R3 are complete; qualified non-Chat streaming intake retains R0's named Chat JSON exception. R4 uses the completed planning owner and must requalify paths previously unreachable before dispatch. R5 can now run its `FidelityRecords` probe against the single delivery projection. U stays an endpoint qualification and does not justify a generic duplicate-final relaxation.
-
-Stream-header status cleanup remains an optional ownership review that preserves opening validation. Bailian long-context defaults remain a qualification question: catalog context windows are planning metadata, not input-token admission, and no truncation ceiling or budget formula is selected.
+Dependencies: R0–R3 are complete. R4 resolves delegation and fallback in planning, and visible-history transfer in request lowering. R5 runs the `FidelityRecords` probe against the single delivery projection.
 
 ### Retained rejections
 
@@ -165,18 +164,13 @@ The [2026-10-28 source and feasibility recheck](refs/2026-10-27-client-ir-bounda
 
 ### Closure boundary
 
-Reclose Client/IR stabilization when the corrected R0 gate is permanent; every same-protocol lane and each selected cross-protocol lane accepts or cites a [retained rejection](#retained-rejections) or invariant; R1–R5 each have verified completion; discovery publishes the same facts; and the exit loops pass. A lane cannot close by keeping an old expected rejection that the ladder resolves.
+Reclose Client/IR stabilization when the corrected R0 gate is permanent; every same-protocol lane and each selected cross-protocol lane accepts or cites a [retained rejection](#retained-rejections) or invariant; R1–R5 each have verified completion; discovery publishes the same facts; and the exit loops pass.
 
-On 2026-10-29 the user retained the requirement for default reasoning/tool/history gateway success on **all three client protocols**. Retained-rejection controls and explicitly nondefault profiles remain separate evidence, not closure substitutes. Actual resolved model metadata, not version or model ID alone, defines the client default. Deployer-selected public model profiles such as `readable_reasoning` are configuration, not client overrides. Resource APIs, persistent sessions, real multi-account failover and budget formulas retain their separate boundaries. The former field-by-field equivalence review is not a separate Stage-4 gate; L2 applications are found during R1 and R2.
+Default reasoning/tool/history gateway success on all three client protocols is required for closure. Deployer-selected public model profiles (e.g. `readable_reasoning`) are configuration, not client overrides.
 
 ## Standards reset and redesign
 
-Accepted on 2026-10-23, this redesign reset protocol dependencies and upstream references to current stable baselines. [Architecture](architecture.md#protocols) owns the resulting contracts; [Development](development.md#upstream-test-sources) owns procedures.
-
-- **Baseline:** Pinned upstream release sources, reviewed fixtures, and local extraction recipes. Standard delivery uses public protocol dialects, native-only replay, and typed Responses history.
-- **Scoped closure (2026-10-24):** Offline baseline, 16 SDK scenarios, and 12 current-host synthetic Agent scenarios pass. Real `pi` 1.4.0 and `opencode` 2.0.32 verified across 3 consecutive tool/reasoning attempts.
-- **Diagnostic-extension deferral:** Safe-to-ignore diagnostic extensions (such as routing and loss receipts) are permitted without dedicated extension tests. Organization, schema finalization, and testing are deferred to deployer production packaging.
-- **Instruction mapping (2026-10-25):** Canonical IR maps standard and deprecated roles to native target carriers, verified across offline, SDK, and current-host gates.
+Accepted on 2026-10-23 and closed on 2026-10-24. Pinned upstream release sources, standard delivery dialects, and canonical IR instruction mapping are settled in [Architecture](architecture.md#protocols) and verified in [Development](development.md#upstream-test-sources). Safe-to-ignore diagnostic extensions are permitted without dedicated extension tests pending final production packaging.
 
 ## Planned order
 
