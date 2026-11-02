@@ -770,7 +770,7 @@ Request-wide automatic caching is enabled on native Messages targets with verifi
 
 ### Failover
 
-Shared named-account and target binding is implemented. The remaining [account rewrite gates](roadmap.md#ordered-work-and-exit-gates) replace health/affinity ownership and the attempt chain with the accepted [execution policy](provider-account-redesign-plan.md#execution-policy). This intermediate cutover is not a deployment candidate.
+Shared named-account binding, scoped health, material-aware auth probes and success-owned affinity are implemented. The remaining [account rewrite gates](roadmap.md#ordered-work-and-exit-gates) replace the attempt chain and failure classifier with the accepted [execution policy](provider-account-redesign-plan.md#execution-policy). This intermediate cutover is not a deployment candidate.
 
 Failover operates on precompiled candidate lists under a cache-affine routing policy.
 
@@ -796,20 +796,22 @@ Publication remains irreversible: no later attempt may replay committed output. 
 
 #### Health and recovery
 
-- **Scoping:** Health cooldowns are tracked by credential, provider, deployment origin, and model.
-- **Probe ownership:** When cooldown expires, exactly one foreground request acquires probe ownership. Background probing is not used.
-- **Backoff:** Transient failures back off from 1s to 60s; rate/quota failures back off from 60s to 1800s.
+- **Scoping:** Auth/quota constrain an account; transient, rate-limit and permission failures constrain its exact model/operation/origin/path target. Independent constraints retain their own deadlines.
+- **Probe ownership:** Acquisition is atomic across account and target scopes. Account probes exclude sibling-model probes in either acquisition order; target probes alone do not exclude healthy sibling traffic. Cancellation releases ownership without declaring recovery.
+- **Recovery:** Only validated successful work can clear health, subject to generation fencing. Failed terminal evidence survives cancellation before EOF. Malformed output has no health penalty. Provider-owned timing and narrowly scoped material replacement follow the [selected contract](provider-account-redesign-plan.md#cooldown-and-recovery).
 
 #### Routing unit
 
-The declared conversation (`X-MorphieCore-Conversation-Id`) is the routing unit. Successful completions establish affinity to the serving executor.
+An explicit conversation/session carrier is the routing unit, scoped by authenticated Agent and public model. Only a valid binding earns one bounded cooldown wait; after waiting, lifecycle and probe ownership are rechecked before dispatch. Successful final delivery conditionally establishes affinity to the serving target.
 
 ### Conversation and cache affinity
 
 Affinity keys and advisory cache policies are defined in [`protocol::cache`](file:///home/sakura/development/MorphieCore/src/protocol/cache.rs):
 - `X-MorphieCore-Conversation-Id` establishes route affinity across multi-turn exchanges via hashed SHA-256 grouping keys.
-- Fallback prefix cache indexing provides best-effort routing affinity when conversation IDs are omitted.
+- Prefix-cache indexing supplies advisory request hints, never an implicit conversation or account-routing key.
 - Target cache capabilities are enforced via [`CacheTargetPolicy`](file:///home/sakura/development/MorphieCore/src/protocol/cache.rs#L48), omitting unsupported advisory hints under declared loss rules.
+
+Bound replay issuers include configuration namespace, credential provenance and the exact public-model/target/operation identity. API-key replacement invalidates old private replay; normal OAuth material renewal preserves provenance. Codecs use the bound issuer for OpenAI, Messages and Google replay, not only prefix-cache keys.
 
 ### Streaming and delivery
 
@@ -961,10 +963,11 @@ Authoritative log of accepted architectural decisions and their systemic consequ
 | Automatic OAuth renewal | 2026-10-26 | Background renewal under account locks for tokens expiring within 120s |
 | Managed OAuth login admission | 2026-11-02 | Active sessions and pending logins reject another login before authority I/O. Publication reserves a verified subject across issued clients under the profile transaction, including signed-out accounts. Configuration validation includes disabled accounts; only explicit account removal releases the subject |
 | OAuth registration removal | 2026-11-02 | Logout and recovery loading preserve removal tombstones. Re-registration creates a fresh immutable identity while retaining monotonic revision/generation counters; old bindings and stale revision-checked removal cannot revive or delete the replacement |
-| Stable failover routing | 2026-10-20 | Bounded candidate pools, generation-fenced cooling, and single-attempt defaults |
+| Stable failover routing | 2026-11-02 | Ordered precompiled account targets, generation-fenced scoped health and cache-affine request-boundary selection; no balancing or implicit content-derived conversations |
 | Provider accounts and service identity | 2026-11-02 | Versioned ordered named accounts replace stored pools across startup, auth/upstream CLIs and standalone tasks. API-key `openai` and SIWC `chatgpt` have separate catalog contracts. Stable names identify accounts; credential provenance owns replay/security identity. [Account model](provider-account-redesign-plan.md#account-and-configuration-model); remaining execution gates live in [Roadmap](roadmap.md#ordered-work-and-exit-gates) |
-| Cache-first bounded recovery | 2026-11-02 | Accepted, not implemented: target fixed after first dispatch; at most one serial pre-publication retry from a conservative network/server set within a 30 s recovery budget and unchanged request deadline. Merge health evidence separately from delivery; success-only versioned affinity, atomic scoped probes, and only short credible `Retry-After`, without `x-should-retry`. Full contract/defaults: [execution policy](provider-account-redesign-plan.md#execution-policy) |
-| Account lifecycle and target trust | 2026-11-02 | Configured OAuth maintenance is independent of routing enablement; subject reservations survive logout until removal. Trusted API-key root overrides compose explicit operation suffixes; OAuth overrides reject. Material-aware auth probe release remains in the health/renewal gate. [Targets](provider-account-redesign-plan.md#targets-and-trust); [maintenance](provider-account-redesign-plan.md#oauth-maintenance) |
+| Cache-first bounded recovery | 2026-11-02 | Target fixed after first dispatch; scoped health, success-only versioned affinity, atomic probes and a short bound-target wait are implemented. One serial pre-publication retry from a conservative network/server set within a 30 s recovery budget and unchanged request deadline remains AR3. Merge health separately from delivery and emit only short credible `Retry-After`, without `x-should-retry`. Full contract/defaults: [execution policy](provider-account-redesign-plan.md#execution-policy); remaining gates: [Roadmap](roadmap.md#ordered-work-and-exit-gates) |
+| Account lifecycle and target trust | 2026-11-02 | Configured OAuth maintenance is independent of routing enablement; subject reservations survive logout until removal. Trusted API-key root overrides compose explicit operation suffixes; OAuth overrides reject. Durable verified replacement releases only old-material auth for an exclusive probe; stale 401s cannot penalize the replacement. [Targets](provider-account-redesign-plan.md#targets-and-trust); [maintenance](provider-account-redesign-plan.md#oauth-maintenance) |
+| Scoped health and replay ownership | 2026-11-02 | Account/target constraints retain independent deadlines and atomic probe exclusion; validated failures survive pre-EOF cancellation without certifying completion. Bound codec replay uses namespace, credential provenance and exact target/operation identity, invalidating replaced keys while preserving ordinary OAuth rotation. A valid conversation binding alone earns one deadline-clipped cooldown wait |
 | Breaking account-system cutover | 2026-11-02 | No old configuration/store-format/CLI compatibility, migration or stored-record reuse requirement. The operator provisions fresh keys and managed OAuth sessions; existing private stores are not automatically changed or deleted. Reuse secure mechanisms and official protocol contracts, not legacy pool execution. [Transition contract](provider-account-redesign-plan.md#configuration-transition-and-cli-output); [execution order](roadmap.md#account-rewrite-execution-order) |
 | Request conversion reuse | 2026-10-30 | [Bounded request-local retention](#request-conversion-reuse) preserves each body's bound identity and evidence; cache misses do not alter admission, and credential attachment stays attempt-local |
 | Ingress Agent authentication | 2026-10-25 | Authenticates Agent keys at ingress, binding stable `agent_id` to context |

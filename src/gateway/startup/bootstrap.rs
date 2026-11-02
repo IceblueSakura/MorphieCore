@@ -49,6 +49,8 @@ struct Configuration {
     exchange_timeout_ms: Option<u64>,
     affinity_ttl_ms: Option<u64>,
     affinity_capacity: Option<usize>,
+    max_wait_ms: Option<u64>,
+    retry_hint_horizon_ms: Option<u64>,
     oauth_scan_interval_ms: Option<u64>,
     oauth_refresh_ahead_seconds: Option<u64>,
     oauth_renewal_timeout_ms: Option<u64>,
@@ -204,6 +206,19 @@ impl Bootstrap {
                 .map_err(|_| StartupError::Configuration("accounts"))?;
         let defaults = Limits::default();
         let limits = Limits {
+            max_wait: configuration
+                .max_wait_ms
+                .map(Duration::from_millis)
+                .unwrap_or(defaults.max_wait),
+            retry_hint_horizon: configuration
+                .retry_hint_horizon_ms
+                .map(Duration::from_millis)
+                .unwrap_or(defaults.retry_hint_horizon),
+            provider_recovery: accounts
+                .providers
+                .iter()
+                .map(|(id, provider)| (id.clone(), provider.recovery.clone()))
+                .collect(),
             delta_coalescing: configuration.delta_coalescing,
             implicit_cache_affinity: models.implicit_cache_affinity,
             concurrency: configuration.concurrency.unwrap_or(defaults.concurrency),

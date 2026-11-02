@@ -5,7 +5,7 @@ use std::sync::Arc;
 #[test]
 fn evicted_and_recreated_absence_cannot_restore_an_old_binding() {
     let (a, b) = candidates();
-    let state = Executors::new(Duration::from_secs(10), 1);
+    let state = Executors::new(Duration::from_secs(10), 1, Default::default());
     let now = Instant::now();
     let older = state
         .observe(Some("agent"), "model", Some("session"), now)
@@ -54,7 +54,7 @@ fn evicted_and_recreated_absence_cannot_restore_an_old_binding() {
 #[test]
 fn in_flight_expiry_revokes_commit_without_requiring_a_lookup() {
     let (a, _) = candidates();
-    let state = Executors::new(Duration::from_secs(10), 1);
+    let state = Executors::new(Duration::from_secs(10), 1, Default::default());
     let now = Instant::now();
     let initial = state
         .observe(Some("agent"), "model", Some("session"), now)
@@ -83,7 +83,7 @@ fn in_flight_expiry_revokes_commit_without_requiring_a_lookup() {
 #[test]
 fn stale_same_target_completion_and_lookups_do_not_renew_idle_ttl() {
     let (a, b) = candidates();
-    let state = Executors::new(Duration::from_secs(10), 4);
+    let state = Executors::new(Duration::from_secs(10), 4, Default::default());
     let now = Instant::now();
     let initial = state
         .observe(Some("agent"), "model", Some("session"), now)
@@ -185,8 +185,8 @@ fn absent_observation_slots_are_reclaimed_and_zero_retention_stores_nothing() {
         assert_eq!(state.state.lock().unwrap().affinity.len(), 0);
     }
     for state in [
-        Executors::new(Duration::ZERO, 10),
-        Executors::new(Duration::from_secs(10), 0),
+        Executors::new(Duration::ZERO, 10, Default::default()),
+        Executors::new(Duration::from_secs(10), 0, Default::default()),
     ] {
         assert!(
             state
@@ -237,168 +237,144 @@ fn candidates() -> (BoundCandidate, BoundCandidate) {
         .candidates[0]
         .as_ref()
         .clone();
-    let pool = vec!["synthetic-a".into(), "synthetic-b".into()];
-    a.health = Scopes::bind(&[0; 32], &a.endpoint, "synthetic-a", &pool);
+    a.health = Scopes::bind(&[0; 32], &a.endpoint, "synthetic-a");
     let mut b = a.clone();
     b.cache_scope = crate::semantic::value::ReplayOrigin::new("synthetic-b").unwrap();
-    b.health = Scopes::bind(&[0; 32], &b.endpoint, "synthetic-b", &pool);
+    b.health = Scopes::bind(&[0; 32], &b.endpoint, "synthetic-b");
     (a, b)
+}
+fn other_model(a: &BoundCandidate) -> BoundCandidate {
+    let mut candidate = a.clone();
+    candidate.endpoint.upstream_model = "other-model".into();
+    candidate.health = Scopes::bind(&[0; 32], &candidate.endpoint, "synthetic-a");
+    candidate
 }
 
 #[test]
-fn cooling_is_exclusive_generation_fenced_and_cancel_safe() {
+fn health_domains_follow_account_identity_and_exact_target_not_pools() {
     let (a, b) = candidates();
+    let sibling = other_model(&a);
+    let now = Instant::now();
+    let mut origin = a.clone();
+    origin.endpoint.target.origin =
+        crate::provider::TrustedOrigin::parse("https://other.example").unwrap();
+    origin.health = Scopes::bind(&[0; 32], &origin.endpoint, "synthetic-a");
+    let mut operation = a.clone();
+    operation.endpoint.protocol = crate::topology::GenerationProtocol::OpenAiResponses;
+    operation.health = Scopes::bind(&[0; 32], &operation.endpoint, "synthetic-a");
+    for (status, whole_account) in [
+        (401, true),
+        (402, true),
+        (403, false),
+        (429, false),
+        (503, false),
+    ] {
+        let state = Executors::default();
+        state
+            .acquire(&a, now)
+            .unwrap()
+            .failed(ApiError::failure(status, b"", None), now, None)
+            .unwrap();
+        assert!(state.unavailable(&a.health, now).is_some());
+        for candidate in [&sibling, &origin, &operation] {
+            assert_eq!(
+                state.unavailable(&candidate.health, now).is_some(),
+                whole_account,
+                "status {status}"
+            );
+        }
+        assert!(state.unavailable(&b.health, now).is_none());
+    }
+}
+#[test]
+fn account_and_target_probes_are_atomic_generation_fenced_and_cancel_safe() {
+    let (a, b) = candidates();
+    let sibling = other_model(&a);
     let state = Executors::default();
     let now = Instant::now();
-    let old = state.acquire(&a, now).unwrap();
-    let concurrent = state.acquire(&a, now).unwrap();
-    old.failed(ApiError::failure(429, b"", Some(600)), now)
+    let older = state.acquire(&a, now).unwrap();
+    let failure = state.acquire(&a, now).unwrap();
+    failure
+        .failed(ApiError::failure(401, b"", None), now, None)
         .unwrap();
-    concurrent
-        .failed(ApiError::failure(429, b"", Some(0)), now)
+    failure
+        .failed(ApiError::failure(429, b"", None), now, None)
         .unwrap();
-    assert_eq!(
-        state
-            .unavailable(&b.health, now)
-            .unwrap()
-            .retry_after_seconds,
-        600
-    );
-    assert!(!old.completed(None, now).0);
-    drop(old);
-    drop(concurrent);
-    assert!(state.acquire(&a, now + Duration::from_secs(599)).is_err());
-    let later = now + Duration::from_secs(600);
+    assert!(!older.completed(None, now).0);
+    drop(older);
+    drop(failure);
+    assert!(state.acquire(&a, now + Duration::from_secs(59)).is_err());
+    // An expired target scope cannot reserve the still-cooling account.
+    let partial = now + Duration::from_secs(60);
+    assert!(state.acquire(&a, partial).is_err());
+    assert!(state.acquire(&b, partial).is_ok());
+    let later = now + Duration::from_secs(1800);
     let probe = state.acquire(&a, later).unwrap();
     assert!(probe.probing);
-    assert_eq!(state.acquire(&b, later).err().unwrap().reason, "probing");
-    // Cancellation/drop releases ownership, not the need for recovery.
+    assert_eq!(
+        state.acquire(&sibling, later).err().unwrap().reason,
+        "probing"
+    );
+    assert!(
+        state
+            .acquire(&sibling, later)
+            .err()
+            .unwrap()
+            .retry_after_seconds
+            .is_none()
+    );
     drop(probe);
-    let probe = state.acquire(&b, later).unwrap();
+    let probe = state.acquire(&sibling, later).unwrap();
     assert!(probe.probing);
     assert!(probe.completed(None, later).0);
     drop(probe);
-    assert!(state.unavailable(&a.health, later).is_none());
+    let target_probe = state.acquire(&a, later).unwrap();
+    assert!(target_probe.probing);
+    assert!(state.acquire(&sibling, later).is_ok());
+    assert!(target_probe.completed(None, later).0);
+    drop(target_probe);
     assert!(!state.acquire(&a, later).unwrap().probing);
-
-    // Check-and-acquire is atomic across scopes, not just for one rate limit.
-    let state = Executors::default();
-    let old = state.acquire(&a, now).unwrap();
-    let concurrent = state.acquire(&a, now).unwrap();
-    let old_sibling = state.acquire(&b, now).unwrap();
-    old.failed(ApiError::failure(401, b"", Some(1)), now)
-        .unwrap();
-    concurrent
-        .failed(ApiError::failure(429, b"", Some(2)), now)
-        .unwrap();
-    drop(old);
-    drop(concurrent);
-    let mut other_model = a.clone();
-    other_model.endpoint.upstream_model = "other-model".into();
-    other_model.health = Scopes::bind(
-        &[0; 32],
-        &other_model.endpoint,
-        "synthetic-a",
-        &["synthetic-a".into(), "synthetic-b".into()],
-    );
-    let partial = now + Duration::from_secs(1);
-    assert!(state.acquire(&a, partial).is_err());
-    // Failed acquisition must not reserve the already-expired credential.
-    drop(state.acquire(&other_model, partial).unwrap());
-    let both = now + Duration::from_secs(2);
-    let probe = state.acquire(&a, both).unwrap();
-    assert!(state.acquire(&other_model, both).is_err());
-    assert!(state.acquire(&b, both).is_err());
-    old_sibling
-        .failed(ApiError::failure(429, b"", Some(100)), both)
-        .unwrap();
-    assert!(!probe.completed(None, both).0);
-    drop(probe);
-    drop(old_sibling);
-    assert_eq!(
-        state
-            .unavailable(&b.health, both)
-            .unwrap()
-            .retry_after_seconds,
-        100
-    );
-    drop(state.acquire(&other_model, both).unwrap());
 }
-
 #[test]
-fn health_domains_preserve_credential_target_and_pool_boundaries() {
-    let (a, b) = candidates();
-    let now = Instant::now();
-    let mut other_model = a.clone();
-    other_model.endpoint.upstream_model = "other-model".into();
-    other_model.health = Scopes::bind(
-        &[0; 32],
-        &other_model.endpoint,
-        "synthetic-a",
-        &["synthetic-a".into(), "synthetic-b".into()],
-    );
-    let mut other_pool = b.clone();
-    other_pool.health = Scopes::bind(
-        &[0; 32],
-        &b.endpoint,
-        "synthetic-c",
-        &["synthetic-c".into()],
-    );
-    for (status, blocks_sibling, blocks_other_model) in [
-        (401, false, true),
-        (403, false, false),
-        (402, false, false),
-        (429, true, false),
-        (503, false, false),
-    ] {
+fn account_probe_waits_for_sibling_target_probe_in_either_material_state() {
+    let (a, _) = candidates();
+    let sibling = other_model(&a);
+    for replacement in [false, true] {
         let state = Executors::default();
-        let lease = state.acquire(&a, now).unwrap();
-        lease
-            .failed(
-                ApiError::failure(
-                    status,
-                    if matches!(status, 401 | 403) {
-                        br#"{"error":{"message":"billing required"}}"#
-                    } else {
-                        b""
-                    },
-                    Some(7200),
-                ),
-                now,
-            )
-            .unwrap();
-        assert_eq!(
-            state.unavailable(&b.health, now).is_some(),
-            blocks_sibling,
-            "status {status}"
+        let now = Instant::now();
+        let in_flight = state.acquire(&sibling, now).unwrap();
+        state
+            .acquire(&a, now)
+            .unwrap()
+            .failed(ApiError::failure(503, b"", None), now, None);
+        let later = now + Duration::from_secs(1);
+        let target_probe = state.acquire(&a, later).unwrap();
+        assert!(target_probe.probing);
+        // Target probes alone do not exclude healthy sibling-model traffic.
+        assert!(state.acquire(&sibling, later).is_ok());
+        in_flight.failed(
+            ApiError::failure(401, b"", None),
+            later,
+            replacement.then_some(1),
         );
+        drop(in_flight);
+        let eligible = if replacement {
+            state.verified_material(&sibling.health, 2);
+            later
+        } else {
+            later + Duration::from_secs(1800)
+        };
         assert_eq!(
-            state.unavailable(&other_model.health, now).is_some(),
-            blocks_other_model,
-            "status {status}"
+            state.acquire(&sibling, eligible).err().unwrap().reason,
+            "probing"
         );
-        assert!(state.unavailable(&other_pool.health, now).is_none());
-        assert_eq!(
-            state
-                .unavailable(&a.health, now)
-                .unwrap()
-                .retry_after_seconds,
-            7200
-        );
+        drop(target_probe);
+        let account_probe = state.acquire(&sibling, eligible).unwrap();
+        assert!(account_probe.probing);
+        assert!(state.acquire(&a, eligible).is_err());
+        drop(account_probe);
+        assert!(state.acquire(&sibling, eligible).is_ok());
     }
-    let mut body = crate::gateway::body::Status::default();
-    // Local handoff deadlines keep their client error but cannot poison health.
-    let state = Executors::default();
-    let lease = state.acquire(&a, now).unwrap();
-    assert!(lease.failed(body.timeout_error(), now).is_none());
-    body.waiting_upstream
-        .store(true, std::sync::atomic::Ordering::Release);
-    assert!(lease.failed(body.timeout_error(), now).is_some());
-    *body.failure_head.get_mut().unwrap() = Some(ApiError::failure(429, b"", Some(9)));
-    assert!(matches!(
-        body.timeout_error().recovery.class,
-        Some(RecoveryClass::RateLimit)
-    ));
 }
 
 #[test]
@@ -408,24 +384,249 @@ fn recovery_backoff_is_bounded_and_success_resets_it() {
     let mut now = Instant::now();
     for seconds in [1, 2, 4, 8, 16, 32, 60, 60] {
         let lease = state.acquire(&a, now).unwrap();
-        let observation = lease
-            .failed(ApiError::transport(RecoveryClass::Upstream), now)
-            .unwrap();
-        assert_eq!(observation.retry_after_seconds, seconds);
+        assert_eq!(
+            lease
+                .failed(ApiError::transport(RecoveryClass::Upstream), now, None)
+                .unwrap()
+                .retry_after_seconds,
+            Some(seconds)
+        );
         drop(lease);
         assert!(state.acquire(&a, now).is_err());
         now += Duration::from_secs(seconds);
     }
-    let recovered = state.acquire(&a, now).unwrap();
-    assert!(recovered.completed(None, now).0);
-    drop(recovered);
-    let next = state.acquire(&a, now).unwrap();
+    state.acquire(&a, now).unwrap().completed(None, now);
     assert_eq!(
-        next.failed(ApiError::transport(RecoveryClass::Server), now)
+        state
+            .acquire(&a, now)
+            .unwrap()
+            .failed(ApiError::transport(RecoveryClass::Server), now, None)
             .unwrap()
             .retry_after_seconds,
-        1
+        Some(1)
     );
+}
+#[test]
+fn merged_failures_keep_each_scope_and_advance_target_backoff_once() {
+    let (a, b) = candidates();
+    let now = Instant::now();
+    let state = Executors::default();
+    let lease = state.acquire(&a, now).unwrap();
+    lease
+        .resolve_failures(
+            &[
+                FailureObservation {
+                    error: ApiError::failure(503, b"", None),
+                    at: now,
+                    material_revision: None,
+                },
+                FailureObservation {
+                    error: ApiError::failure(402, b"", None),
+                    at: now + Duration::from_secs(10),
+                    material_revision: None,
+                },
+            ],
+            now + Duration::from_secs(20),
+        )
+        .unwrap();
+    drop(lease);
+    assert_eq!(
+        state
+            .unavailable(&other_model(&a).health, now + Duration::from_secs(20))
+            .unwrap()
+            .retry_after_seconds,
+        Some(1790)
+    );
+    assert!(state.unavailable(&b.health, now).is_none());
+    let probe = state.acquire(&a, now + Duration::from_secs(1810)).unwrap();
+    assert!(probe.probing);
+    probe.completed(None, now + Duration::from_secs(1810));
+    drop(probe);
+
+    let state = Executors::default();
+    let lease = state.acquire(&a, now).unwrap();
+    lease.resolve_failures(
+        &[
+            FailureObservation {
+                error: ApiError::failure(503, b"", None),
+                at: now,
+                material_revision: None,
+            },
+            FailureObservation {
+                error: ApiError::failure(429, b"", None),
+                at: now + Duration::from_secs(1),
+                material_revision: None,
+            },
+        ],
+        now + Duration::from_secs(1),
+    );
+    drop(lease);
+    let next = now + Duration::from_secs(61);
+    assert_eq!(
+        state
+            .acquire(&a, next)
+            .unwrap()
+            .failed(ApiError::failure(503, b"", None), next, None)
+            .unwrap()
+            .retry_after_seconds,
+        Some(2)
+    );
+}
+#[test]
+fn delayed_cleanup_uses_observation_time_and_open_cooldowns_do_not_escalate() {
+    let (a, _) = candidates();
+    let state = Executors::default();
+    let now = Instant::now();
+    let first = state.acquire(&a, now).unwrap();
+    let concurrent = state.acquire(&a, now).unwrap();
+    first.failed(ApiError::failure(503, b"", None), now, None);
+    concurrent.failed(
+        ApiError::failure(503, b"", None),
+        now + Duration::from_millis(500),
+        None,
+    );
+    drop(first);
+    drop(concurrent);
+    let later = now + Duration::from_millis(1500);
+    assert_eq!(
+        state
+            .acquire(&a, later)
+            .unwrap()
+            .failed(ApiError::failure(503, b"", None), later, None)
+            .unwrap()
+            .retry_after_seconds,
+        Some(2)
+    );
+    let state = Executors::default();
+    let lease = state.acquire(&a, now).unwrap();
+    lease.resolve_failures(
+        &[FailureObservation {
+            error: ApiError::failure(503, b"", None),
+            at: now,
+            material_revision: None,
+        }],
+        now + Duration::from_secs(20),
+    );
+    drop(lease);
+    let probe = state.acquire(&a, now + Duration::from_secs(20)).unwrap();
+    assert!(probe.probing);
+}
+#[test]
+fn verified_material_only_releases_old_auth_for_a_probe_and_fences_stale_401() {
+    let (a, _) = candidates();
+    let sibling = other_model(&a);
+    let state = Executors::default();
+    let now = Instant::now();
+    state.verified_material(&a.health, 1);
+    let older = state.acquire(&a, now).unwrap();
+    older.sent_material(Some(1));
+    state
+        .acquire(&a, now)
+        .unwrap()
+        .failed(ApiError::failure(401, b"", None), now, Some(1));
+    assert!(state.acquire(&a, now).is_err());
+    state.verified_material(&a.health, 2);
+    let probe = state.acquire(&a, now).unwrap();
+    assert!(probe.probing);
+    probe.sent_material(Some(2));
+    assert!(state.acquire(&sibling, now).is_err());
+    assert!(
+        older
+            .failed(
+                ApiError::failure(401, b"", None),
+                now + Duration::from_secs(1),
+                Some(1)
+            )
+            .is_none()
+    );
+    assert!(probe.completed(None, now).0);
+    drop(probe);
+    drop(older);
+    assert!(!state.acquire(&sibling, now).unwrap().probing);
+
+    state.acquire(&a, now).unwrap().resolve_failures(
+        &[
+            FailureObservation {
+                error: ApiError::failure(401, b"", None),
+                at: now,
+                material_revision: Some(2),
+            },
+            FailureObservation {
+                error: ApiError::failure(402, b"", None),
+                at: now,
+                material_revision: Some(2),
+            },
+        ],
+        now,
+    );
+    state.verified_material(&a.health, 3);
+    assert!(
+        state.acquire(&a, now).is_err(),
+        "replacement does not clear quota"
+    );
+}
+#[test]
+fn old_material_success_cannot_certify_replacement_auth_health() {
+    let (a, _) = candidates();
+    let state = Executors::default();
+    let now = Instant::now();
+    state.verified_material(&a.health, 1);
+    state
+        .acquire(&a, now)
+        .unwrap()
+        .failed(ApiError::failure(401, b"", None), now, Some(1));
+    let later = now + Duration::from_secs(1800);
+    let old_probe = state.acquire(&a, later).unwrap();
+    old_probe.sent_material(Some(1));
+    state.verified_material(&a.health, 2);
+    assert!(old_probe.completed(None, later).0);
+    drop(old_probe);
+    let replacement = state.acquire(&a, later).unwrap();
+    assert!(replacement.probing);
+    replacement.sent_material(Some(2));
+    replacement.completed(None, later);
+    drop(replacement);
+    assert!(!state.acquire(&a, later).unwrap().probing);
+}
+#[test]
+fn provider_policy_caps_hints_and_lifecycle_vetoes_do_not_create_health() {
+    let (a, _) = candidates();
+    let now = Instant::now();
+    let policy = RecoveryPolicy {
+        rate_limit_reset_max_ms: 7_000,
+        quota_reset_max_ms: 9_000,
+        auth_cooldown_ms: 11_000,
+        ..RecoveryPolicy::default()
+    };
+    for (status, expected) in [(429, 7), (402, 9), (401, 11)] {
+        let state = Executors::new(
+            Duration::from_secs(10),
+            1,
+            BTreeMap::from([(a.provider.id.as_str().into(), policy.clone())]),
+        );
+        assert_eq!(
+            state
+                .acquire(&a, now)
+                .unwrap()
+                .failed(ApiError::failure(status, b"", Some(99_999)), now, None)
+                .unwrap()
+                .retry_after_seconds,
+            Some(expected)
+        );
+    }
+    let state = Executors::default();
+    let lease = state.acquire(&a, now).unwrap();
+    assert!(
+        lease
+            .failed(
+                ApiError::transport(RecoveryClass::CredentialUnavailable),
+                now,
+                None
+            )
+            .is_none()
+    );
+    assert!(lease.failed(ApiError::upstream(), now, None).is_none());
+    assert!(lease.failed(ApiError::timeout(), now, None).is_none());
 }
 
 #[test]
@@ -443,7 +644,7 @@ fn successful_failover_sticks_and_older_completion_cannot_restore_failure() {
     );
     let failing = state.acquire(&a, now).unwrap();
     failing
-        .failed(ApiError::transport(RecoveryClass::Upstream), now)
+        .failed(ApiError::transport(RecoveryClass::Upstream), now, None)
         .unwrap();
     drop(failing);
     let good_binding = state

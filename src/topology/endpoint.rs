@@ -33,6 +33,8 @@ pub struct ExecutionContract {
 /// business requests cannot create or modify them.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Endpoint {
+    /// Set after account/target binding; clear before retargeting an owned copy.
+    pub bound_replay_scope: Option<crate::semantic::value::ReplayOrigin>,
     pub id: EndpointId,
     pub provider: ProviderId,
     pub target: EndpointTarget,
@@ -50,11 +52,15 @@ pub struct Endpoint {
 
 impl Endpoint {
     pub fn replay_origin(&self) -> crate::semantic::value::ReplayOrigin {
+        if let Some(scope) = &self.bound_replay_scope {
+            return scope.clone();
+        }
         crate::protocol::replay_envelope::deployment_issuer(
             self.provider.as_str(),
             &self.upstream_model,
             self.target.origin.as_str(),
             self.target.path.as_str(),
+            self.protocol.identity_tag(),
         )
     }
 

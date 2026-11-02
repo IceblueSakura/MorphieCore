@@ -307,6 +307,9 @@ fn ingress_unwraps_only_the_candidate_compatible_opaque_and_never_selects_a_targ
             .clone();
         issuer.provider = crate::provider::ProviderId::new(provider).unwrap();
         issuer.upstream_model = model.into();
+        if !matches {
+            issuer.bound_replay_scope = None;
+        }
         let token = replay_envelope::seal(
             &issuer.replay_origin(),
             ReplayFormat::ResponsesEncrypted,

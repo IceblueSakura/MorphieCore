@@ -242,6 +242,7 @@ impl Models {
                         endpoint.target.origin.as_str().to_owned(),
                         endpoint.target.path.as_str().to_owned(),
                         endpoint.upstream_model.clone(),
+                        endpoint.protocol.identity_tag(),
                         credentials
                             .get(&endpoint.credential)
                             .expect("enabled account binding")

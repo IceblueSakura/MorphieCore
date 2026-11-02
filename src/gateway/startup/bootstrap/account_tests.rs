@@ -91,6 +91,64 @@ async fn loader_binds_named_accounts_without_switching_after_dispatch() {
 }
 
 #[test]
+fn provider_recovery_configuration_reaches_bound_health_and_keeps_schema_strict() {
+    use std::time::Duration;
+    let mut settings = service();
+    settings["max_wait_ms"] = json!(0);
+    let models =
+        json!({"models":{"deepseek-flash":{"candidates":[{"binding":"deepseek-responses"}]}}});
+    let keys = [("deepseek", "primary", "synthetic-key")];
+    let mut accounts = json!({"version":1,"providers":{"deepseek":{
+        "accounts":[{"name":"primary","enabled":true,"credential":{"kind":"api_key","alias":"primary"}}],
+        "recovery":{"transient_cooldown_ms":7,"transient_multiplier":0}
+    }}});
+    let boot =
+        Fixture::with_accounts(settings.clone(), models.clone(), &keys, accounts.clone()).unwrap();
+    assert!(boot.gateway.state.limits.max_wait.is_zero());
+    let candidate = &boot
+        .gateway
+        .state
+        .entries
+        .values()
+        .next()
+        .unwrap()
+        .candidates[0];
+    let now = tokio::time::Instant::now();
+    boot.gateway
+        .state
+        .executors
+        .acquire(candidate, now)
+        .unwrap()
+        .failed(crate::gateway::ApiError::failure(503, b"", None), now, None);
+    assert!(
+        boot.gateway
+            .state
+            .executors
+            .acquire(candidate, now + Duration::from_millis(6))
+            .is_err()
+    );
+    assert!(
+        boot.gateway
+            .state
+            .executors
+            .acquire(candidate, now + Duration::from_millis(7))
+            .unwrap()
+            .probing
+    );
+    for invalid in [
+        json!({"transient_cooldown_ms":"7"}),
+        json!({"transient_cooldown_ms":-1}),
+        json!({"unknown_policy":1}),
+    ] {
+        accounts["providers"]["deepseek"]["recovery"] = invalid;
+        assert!(
+            Fixture::with_accounts(settings.clone(), models.clone(), &keys, accounts.clone())
+                .is_err()
+        );
+    }
+}
+
+#[test]
 fn enabled_account_expansion_has_one_request_bound_independent_of_candidate_count() {
     let names: Vec<_> = (0..64).map(|n| format!("account-{n}")).collect();
     let keys: Vec<_> = names

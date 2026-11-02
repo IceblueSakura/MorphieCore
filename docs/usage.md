@@ -105,6 +105,10 @@ Account affinity groups trusted Agent identity, public model and an explicit con
 
 `gateway.json` sets `affinity_ttl_ms` (default 3600000) and `affinity_capacity` (default 4096). TTL slides only on an authorized successful commit, not on lookups or failures; expiry and eviction revoke in-flight commit rights. Zero capacity or TTL retains no bindings. Prompt-prefix hints remain independent.
 
+`max_wait_ms` (default 10000) bounds one pre-dispatch wait for a conversation's cooling bound target. Zero disables waiting. New conversations never wait for an unbound candidate; after waiting, lifecycle and probe ownership are checked again within the original request deadline.
+
+Each Provider declaration accepts an optional `recovery` object with the timing fields in [`RecoveryPolicy`](../src/provider/recovery.rs). Omitted fields use the [selected defaults](provider-account-redesign-plan.md#configuration-surface). Settings do not change failure classes, health scopes or send permissions; the same-target retry remains an open [execution gate](roadmap.md#ordered-work-and-exit-gates).
+
 An API-key account may set `base_url` to a complete trusted API root. The catalog appends an explicit operation-relative suffix: `https://relay.example/custom/v1` plus `responses` becomes `/custom/v1/responses`. Omission retains each operation's original catalog target. HTTPS is required except for literal loopback HTTP; userinfo, queries, fragments and unsafe paths reject. OAuth overrides reject before credential borrowing.
 
 `openai` means OpenAI API-key access. SIWC is the separate `chatgpt` Provider, whose declaration uses `{"kind":"oauth","profile":"openai","alias":"personal"}`. Grok uses Provider/profile `grok`. Model availability and fixed request controls belong to each Provider's catalog bindings, not the account file.

@@ -126,7 +126,6 @@ fn unavailable(error: crate::credential::CredentialError) -> crate::gateway::Api
         Error::KeyUnavailable | Error::LoginRequired | Error::Expired
     ) {
         response.recovery.class = Some(crate::provider::RecoveryClass::CredentialUnavailable);
-        response.recovery.affects_health = true;
     }
     response
 }
@@ -153,6 +152,22 @@ fn credential_kind_and_authorization_profile_must_both_match() {
 }
 
 impl Source {
+    /// Lifecycle eligibility is a local veto, not an upstream health observation.
+    pub(in crate::gateway) async fn availability_for_request(
+        &self,
+    ) -> Result<Option<u64>, crate::gateway::ApiError> {
+        if matches!(self, Self::ApiKey(_)) {
+            return Ok(None);
+        }
+        let source = self.clone();
+        tokio::task::spawn_blocking(move || match source {
+            Self::ApiKey(_) => Ok(None),
+            Self::ManagedKey(binding) => binding.borrow().map(|_| None).map_err(unavailable),
+            Self::Account(binding) => binding.material_revision().map(Some).map_err(unavailable),
+        })
+        .await
+        .map_err(|_| crate::gateway::ApiError::upstream())?
+    }
     pub(in crate::gateway) fn check(
         &self,
         kind: CredentialKind,

@@ -84,7 +84,7 @@ async fn consume(
     let earlier = tokio::time::Instant::now() - Duration::from_secs(2);
     let prior = gate.state.executors.acquire(&candidate, earlier).unwrap();
     prior
-        .failed(ApiError::failure(503, b"", Some(1)), earlier)
+        .failed(ApiError::failure(503, b"", Some(1)), earlier, None)
         .unwrap();
     drop(prior);
     let mut builder = axum::http::Response::builder().status(200);

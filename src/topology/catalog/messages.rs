@@ -92,6 +92,7 @@ impl MessagesBinding {
             .path
             .clone();
         Endpoint {
+            bound_replay_scope: None,
             id: EndpointId::new("opencode-go-haiku-messages").expect("static id"),
             provider: provider.id,
             target: EndpointTarget {

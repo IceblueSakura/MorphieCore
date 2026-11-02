@@ -43,15 +43,23 @@ pub fn issuer(provider: &str, model: &str) -> ReplayOrigin {
 
 /// Computes a strict runtime deployment identity fingerprint.
 ///
-/// Binds provider, model, host origin, and endpoint path. Only the digest
+/// Binds provider, model, host origin, endpoint path and wire operation. Only the digest
 /// crosses the client boundary.
 pub(crate) fn deployment_issuer(
     provider: &str,
     model: &str,
     origin: &str,
     path: &str,
+    operation: u8,
 ) -> ReplayOrigin {
-    fingerprint(&["deployment-v1", provider, model, origin, path])
+    fingerprint(&[
+        "deployment-v2",
+        provider,
+        model,
+        origin,
+        path,
+        &operation.to_string(),
+    ])
 }
 
 fn fingerprint(parts: &[&str]) -> ReplayOrigin {

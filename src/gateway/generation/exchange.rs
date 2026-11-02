@@ -27,25 +27,29 @@ struct HealthAttempt<'a> {
 }
 impl HealthAttempt<'_> {
     fn failed(&self, error: ApiError) -> Option<crate::gateway::routing::executors::Observation> {
+        let now = Instant::now();
         let observed = self
             .state
             .failure_head
             .lock()
             .expect("upstream failure")
             .take();
-        self.lease.as_ref()?.failed(
-            if error.recovery.affects_health {
-                error
-            } else {
-                observed.unwrap_or(error)
-            },
-            Instant::now(),
-        )
+        let observation =
+            observed.unwrap_or(crate::gateway::routing::executors::FailureObservation {
+                error,
+                at: now,
+                material_revision: *self
+                    .state
+                    .material_revision
+                    .lock()
+                    .expect("material revision"),
+            });
+        self.lease.as_ref()?.resolve_failures(&[observation], now)
     }
 }
 impl Drop for HealthAttempt<'_> {
     fn drop(&mut self) {
-        if let Some(error) = self
+        if let Some(observation) = self
             .state
             .failure_head
             .lock()
@@ -53,7 +57,7 @@ impl Drop for HealthAttempt<'_> {
             .take()
             && let Some(lease) = &self.lease
         {
-            lease.failed(error, Instant::now());
+            lease.resolve_failures(&[observation], Instant::now());
         }
     }
 }
@@ -101,6 +105,7 @@ struct Sent<'r> {
 #[allow(clippy::too_many_arguments)]
 async fn send_attempt<'r>(
     runtime: &Runtime,
+    lease: Option<&crate::gateway::routing::executors::Lease<'_>>,
     client: &crate::adapter::ClientAdapter,
     planned: crate::gateway::runtime::PlannedCandidate,
     request: &'r Request,
@@ -112,6 +117,11 @@ async fn send_attempt<'r>(
     trace.stage(Stage::Prepare);
     let candidate = planned.candidate.clone();
     let (secret, grant) = candidate.secret.resolve_for_request().await?;
+    let revision = grant.as_ref().map(|grant| grant.material_revision);
+    *state.material_revision.lock().expect("material revision") = revision;
+    if let Some(lease) = lease {
+        lease.sent_material(revision);
+    }
     let report = trace.report.clone();
     let failed = |error: crate::execution::AttemptError| {
         report.failure(
@@ -224,6 +234,63 @@ async fn send_attempt<'r>(
         affinity,
     })
 }
+async fn usable_candidates(
+    runtime: &Runtime,
+    candidates: Vec<crate::gateway::runtime::PlannedCandidate>,
+    trace: &mut Trace,
+) -> Result<Vec<crate::gateway::runtime::PlannedCandidate>, ApiError> {
+    let mut usable = Vec::with_capacity(candidates.len());
+    let mut unavailable = None;
+    for planned in candidates {
+        match planned.candidate.secret.availability_for_request().await {
+            Ok(revision) => {
+                if let Some(revision) = revision {
+                    runtime
+                        .executors
+                        .verified_material(&planned.candidate.health, revision);
+                }
+                usable.push(planned);
+            }
+            Err(error) => {
+                trace.selection_skip("lifecycle");
+                unavailable = Some(error);
+            }
+        }
+    }
+    if usable.is_empty() {
+        Err(unavailable.unwrap_or_else(ApiError::upstream))
+    } else {
+        Ok(usable)
+    }
+}
+async fn select_candidates(
+    runtime: &Runtime,
+    candidates: Vec<crate::gateway::runtime::PlannedCandidate>,
+    binding: Option<&BindingObservation>,
+    deadline: Instant,
+    trace: &mut Trace,
+) -> Result<Vec<crate::gateway::runtime::PlannedCandidate>, ApiError> {
+    let mut candidates = usable_candidates(runtime, candidates, trace).await?;
+    if let Some(until) = runtime.executors.preferred_wait(
+        binding,
+        &candidates,
+        Instant::now(),
+        runtime.limits.max_wait,
+    ) {
+        tokio::time::sleep_until(until.min(deadline)).await;
+        // Re-read lifecycle and material, then recheck health/probe ownership.
+        // This request never waits through a second cooldown.
+        candidates = usable_candidates(runtime, candidates, trace).await?;
+    }
+    if Instant::now() >= deadline {
+        return Err(ApiError::timeout());
+    }
+    let order = runtime
+        .executors
+        .order(binding, &mut candidates, Instant::now());
+    trace.executor_order(order);
+    Ok(candidates)
+}
 #[allow(clippy::too_many_arguments)]
 pub(in crate::gateway) async fn produce_chain(
     source: Upstreams,
@@ -239,14 +306,12 @@ pub(in crate::gateway) async fn produce_chain(
     let (runtime, candidates, mut observed, history, binding) = match source {
         Upstreams::Http {
             runtime,
-            mut candidates,
+            candidates,
             history,
             binding,
         } => {
-            let order = runtime
-                .executors
-                .order(binding.as_ref(), &mut candidates, Instant::now());
-            trace.executor_order(order);
+            let candidates =
+                select_candidates(&runtime, candidates, binding.as_ref(), deadline, trace).await?;
             (Some(runtime), candidates, None, history, binding)
         }
         #[cfg(test)]
@@ -278,6 +343,8 @@ pub(in crate::gateway) async fn produce_chain(
         .collect();
     let mut chain = Chain::new(&bound, &entry.policy);
     let mut blocked_delay: Option<u64> = None;
+    let mut any_blocked = false;
+    let mut rate_only = true;
     let mut blocked_health = None;
     let mut pending_error = None;
     for (index, planned) in candidates.into_iter().enumerate() {
@@ -296,11 +363,12 @@ pub(in crate::gateway) async fn produce_chain(
             match runtime.executors.acquire(candidate, Instant::now()) {
                 Ok(lease) => Some(lease),
                 Err(observation) => {
-                    blocked_delay = Some(
-                        blocked_delay.map_or(observation.retry_after_seconds, |delay| {
-                            delay.min(observation.retry_after_seconds)
-                        }),
-                    );
+                    any_blocked = true;
+                    rate_only &= observation.rate_or_quota_only;
+                    if let Some(seconds) = observation.retry_after_seconds {
+                        blocked_delay =
+                            Some(blocked_delay.map_or(seconds, |delay| delay.min(seconds)));
+                    }
                     if pending_error.is_some() {
                         blocked_health = Some(observation);
                     } else {
@@ -325,6 +393,7 @@ pub(in crate::gateway) async fn produce_chain(
         trace.named_account(candidate.account.as_deref());
         state.waiting_upstream.store(false, Ordering::Release);
         *state.failure_head.lock().expect("failure head") = None;
+        *state.material_revision.lock().expect("material revision") = None;
         let health = HealthAttempt { lease, state };
         let attempt_deadline = deadline
             .min(Instant::now() + Duration::from_millis(candidate.endpoint.execution.timeout_ms));
@@ -337,6 +406,7 @@ pub(in crate::gateway) async fn produce_chain(
                 let runtime = runtime.as_ref().ok_or(ApiError::upstream())?;
                 let sent = send_attempt(
                     runtime,
+                    health.lease.as_ref(),
                     &entry.client,
                     planned,
                     request,
@@ -430,6 +500,11 @@ pub(in crate::gateway) async fn produce_chain(
                     a.health_failure = error.recovery.affects_health;
                 });
                 if let Some(observation) = health.failed(error) {
+                    rate_only &= observation.rate_or_quota_only;
+                    if let Some(seconds) = observation.retry_after_seconds {
+                        blocked_delay =
+                            Some(blocked_delay.map_or(seconds, |delay| delay.min(seconds)));
+                    }
                     trace.health(observation);
                 }
                 drop(health);
@@ -467,12 +542,31 @@ pub(in crate::gateway) async fn produce_chain(
     if let Some(observation) = blocked_health {
         trace.health(observation);
     }
-    trace.selection_stop(if blocked_delay.is_some() {
+    trace.selection_stop(if any_blocked {
         "unavailable"
     } else {
         "no_successor"
     });
-    Err(blocked_delay.map_or_else(ApiError::upstream, ApiError::unavailable))
+    if any_blocked {
+        let mut error = ApiError::new(
+            if rate_only {
+                axum::http::StatusCode::TOO_MANY_REQUESTS
+            } else {
+                axum::http::StatusCode::SERVICE_UNAVAILABLE
+            },
+            if rate_only {
+                crate::gateway::error::ErrorKind::RateLimit
+            } else {
+                crate::gateway::error::ErrorKind::Unavailable
+            },
+        );
+        error.retry_after = blocked_delay.filter(|seconds| {
+            *seconds > 0 && Duration::from_secs(*seconds) <= limits.retry_hint_horizon
+        });
+        Err(error)
+    } else {
+        Err(ApiError::upstream())
+    }
 }
 /// Generation's fixed attempt chain behind one response body.
 struct GenerationExchange {
@@ -574,6 +668,123 @@ pub(in crate::gateway) async fn run(
 }
 
 #[cfg(test)]
+#[tokio::test(start_paused = true)]
+async fn bound_cooldown_wait_is_single_cancellable_and_deadline_clipped() {
+    use crate::gateway::{routing::executors::Scopes, runtime::PlannedCandidate};
+    use std::task::Poll;
+    for mode in [
+        "ready",
+        "unbound",
+        "disabled",
+        "long",
+        "wait",
+        "probe_race",
+        "extended",
+        "cancel",
+        "deadline",
+    ] {
+        let gate = crate::gateway::tests::support::gateway(Limits {
+            max_wait: if mode == "disabled" {
+                Duration::ZERO
+            } else {
+                Duration::from_secs(10)
+            },
+            ..Default::default()
+        });
+        let runtime = &gate.state;
+        let a = runtime.entries.values().next().unwrap().candidates[0].clone();
+        let mut b = a.as_ref().clone();
+        b.health = Scopes::bind(&[0; 32], &b.endpoint, "synthetic-secondary");
+        b.cache_scope = crate::semantic::value::ReplayOrigin::new("synthetic-secondary").unwrap();
+        let b = Arc::new(b);
+        let now = Instant::now();
+        let initial = runtime
+            .executors
+            .observe(Some("agent"), "model", Some("session"), now)
+            .unwrap();
+        runtime
+            .executors
+            .acquire(&a, now)
+            .unwrap()
+            .completed(Some(&initial), now);
+        let late = runtime.executors.acquire(&a, now).unwrap();
+        if mode != "ready" {
+            runtime.executors.acquire(&a, now).unwrap().failed(
+                ApiError::failure(503, b"", Some(if mode == "long" { 11 } else { 5 })),
+                now,
+                None,
+            );
+        }
+        let binding = (mode != "unbound").then(|| {
+            runtime
+                .executors
+                .observe(Some("agent"), "model", Some("session"), now)
+                .unwrap()
+        });
+        let candidates = [b.clone(), a.clone()]
+            .into_iter()
+            .map(|candidate| PlannedCandidate {
+                candidate,
+                projection: None,
+            })
+            .collect();
+        let deadline = now + Duration::from_secs(if mode == "deadline" { 2 } else { 20 });
+        let mut trace = Trace::for_request(
+            None,
+            &axum::extract::Request::new(axum::body::Body::empty()),
+        );
+        {
+            let selection =
+                select_candidates(runtime, candidates, binding.as_ref(), deadline, &mut trace);
+            tokio::pin!(selection);
+            let polled = futures_util::poll!(&mut selection);
+            if matches!(mode, "ready" | "unbound" | "disabled" | "long") {
+                let Poll::Ready(Ok(selected)) = polled else {
+                    panic!("{mode}: unexpected wait")
+                };
+                assert_eq!(
+                    selected[0].candidate.cache_scope,
+                    if mode == "ready" {
+                        a.cache_scope.clone()
+                    } else {
+                        b.cache_scope.clone()
+                    }
+                );
+                assert_eq!(Instant::now(), now);
+                continue;
+            }
+            assert!(polled.is_pending(), "{mode}");
+            if mode == "cancel" {
+                continue;
+            }
+            tokio::time::advance(Duration::from_secs(if mode == "deadline" { 2 } else { 5 })).await;
+            let competing = (mode == "probe_race")
+                .then(|| runtime.executors.acquire(&a, Instant::now()).unwrap());
+            if mode == "extended" {
+                late.failed(ApiError::failure(503, b"", Some(5)), Instant::now(), None);
+            }
+            let result = selection.await;
+            if mode == "deadline" {
+                assert_eq!(result.err().unwrap().diagnostic_code(), "gateway.timeout");
+            } else {
+                let selected = result.unwrap();
+                assert_eq!(
+                    selected[0].candidate.cache_scope,
+                    if matches!(mode, "probe_race" | "extended") {
+                        b.cache_scope.clone()
+                    } else {
+                        a.cache_scope.clone()
+                    }
+                );
+                assert_eq!(Instant::now() - now, Duration::from_secs(5));
+            }
+            drop(competing);
+        }
+        drop(late);
+    }
+}
+
+#[cfg(test)]
 #[test]
 fn interrupted_error_delivery_keeps_only_observed_upstream_failure() {
     let gate = crate::gateway::tests::support::gateway(Limits::default());
@@ -606,8 +817,7 @@ fn interrupted_error_delivery_keeps_only_observed_upstream_failure() {
         lease: Some(lease),
         state: &state,
     };
-    *state.failure_head.lock().unwrap() =
-        Some(ApiError::transport(crate::provider::RecoveryClass::Server));
+    state.observe_failure(ApiError::transport(crate::provider::RecoveryClass::Server));
     // A downstream cancellation after the error was observed must not erase it.
     drop(attempt);
     assert!(

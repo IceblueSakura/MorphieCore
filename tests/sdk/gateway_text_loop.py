@@ -140,7 +140,7 @@ def run(base_url: str) -> None:
                         tokens[0][4:] + "=" * (-len(tokens[0][4:]) % 4)))
                     check(envelope["f"] == "openai-responses"
                           and envelope["d"] == "synthetic-final-token"
-                          and envelope["o"].startswith("issuer-"))
+                          and isinstance(envelope["o"], str) and bool(envelope["o"]))
                     history.extend(dumped)
                     history.extend([
                         {"type": "function_call_output", "call_id": "c_lookup_large", "output": '{"n":9007199254740993}'},

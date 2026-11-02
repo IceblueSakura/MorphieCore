@@ -664,15 +664,19 @@ async fn json_and_stream_clients_replay_native_thinking_and_tools() {
                 let token = &body["output"][0]["encrypted_content"];
                 let (issuer, format, payload) =
                     replay_envelope::open(token.as_str().unwrap()).unwrap();
-                assert_eq!(issuer, replay_origin);
+                assert_ne!(
+                    issuer, replay_origin,
+                    "gateway replay must include the bound credential scope"
+                );
                 assert_eq!(
                 format,
                 morphiecore::semantic::task::generation::ReplayFormat::AnthropicMessagesThinking
             );
                 assert_eq!(payload.as_str(), "synthetic-native-signature");
                 let redacted = &body["output"][1]["encrypted_content"];
-                let (_, format, payload) =
+                let (redacted_issuer, format, payload) =
                     replay_envelope::open(redacted.as_str().unwrap()).unwrap();
+                assert_eq!(redacted_issuer, issuer);
                 assert_eq!(format,morphiecore::semantic::task::generation::ReplayFormat::AnthropicMessagesRedactedThinking);
                 assert_eq!(payload.as_str(), "synthetic-redacted");
             }
@@ -769,13 +773,8 @@ async fn json_and_stream_clients_replay_native_thinking_and_tools() {
                 assert_eq!(status, expected, "{profile:?} {prompt}: {body}");
                 assert_eq!(
                     seen.lock().unwrap().len(),
-                    // An unusable reply fails over like a server error.
-                    count
-                        + if matches!(prompt, "upstream-error" | "malformed" | "bad-signature") {
-                            2
-                        } else {
-                            1
-                        }
+                    // Malformed output never cools or rotates credentials.
+                    count + if prompt == "upstream-error" { 2 } else { 1 }
                 );
                 assert!(!body.to_string().contains("synthetic-private"));
                 if expected == 200 {
@@ -891,7 +890,7 @@ async fn json_and_stream_clients_replay_native_thinking_and_tools() {
                 "cache_control":{"type":"ephemeral"}}]}));
         }
     }
-    assert_eq!(seen.lock().unwrap().len(), 26);
+    assert_eq!(seen.lock().unwrap().len(), 22);
     // Error classes in Anthropic's shapes: an HTTP envelope, or an `error` event
     // after content.
     for (prompt, stream) in [("overflow", false), ("overloaded", true)] {
@@ -944,7 +943,7 @@ async fn json_and_stream_clients_replay_native_thinking_and_tools() {
             );
         }
     }
-    assert_eq!(seen.lock().unwrap().len(), 28);
+    assert_eq!(seen.lock().unwrap().len(), 24);
     // Standard error events preserve classes without inventing a failed Response.
     for profile in [GenerationApi::Responses, GenerationApi::Chat] {
         let responses = profile == GenerationApi::Responses;
@@ -1049,7 +1048,7 @@ async fn json_and_stream_clients_replay_native_thinking_and_tools() {
             }
         }
     }
-    assert_eq!(seen.lock().unwrap().len(), 46);
+    assert_eq!(seen.lock().unwrap().len(), 42);
     diagnostic_owner.flush_diagnostics().await;
     let records = std::fs::read_to_string(diagnostics).unwrap();
     let reports: Vec<Value> = records

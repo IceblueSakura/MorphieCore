@@ -55,6 +55,8 @@ pub struct Account {
 #[serde(deny_unknown_fields)]
 pub struct ProviderAccounts {
     pub accounts: Vec<Account>,
+    #[serde(default)]
+    pub recovery: crate::provider::RecoveryPolicy,
 }
 
 #[derive(Deserialize, Serialize)]

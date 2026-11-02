@@ -214,6 +214,7 @@ impl ApiKeyBinding {
             ..TargetContract::full()
         };
         Ok(Endpoint {
+            bound_replay_scope: None,
             id: self.endpoint_id(protocol),
             canonical_model: ModelId::new(self.canonical_model).expect("static id"),
             provider: provider.id.clone(),

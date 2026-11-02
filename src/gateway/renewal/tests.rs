@@ -215,6 +215,20 @@ async fn duplicate_bindings_renew_without_requests_and_short_grants_are_rate_bou
     let binding = manager.bind_access("synthetic", "one").unwrap();
     let provenance = binding.provenance();
     let original_material = binding.borrow().unwrap().material_revision;
+    let mut candidate = gate.state.entries.values().next().unwrap().candidates[0]
+        .as_ref()
+        .clone();
+    candidate.secret = crate::gateway::startup::credentials::Source::Account(binding.clone());
+    let now = tokio::time::Instant::now();
+    let stale = gate.state.executors.acquire(&candidate, now).unwrap();
+    let failure = gate.state.executors.acquire(&candidate, now).unwrap();
+    failure.failed(
+        crate::gateway::ApiError::failure(401, b"", None),
+        now,
+        Some(original_material),
+    );
+    drop(failure);
+    assert!(gate.state.executors.acquire(&candidate, now).is_err());
     let mut maintenance = Box::pin(gate.renew_credentials());
     poll_maintenance(&mut maintenance).await;
     assert_eq!(calls.load(Ordering::SeqCst), 1);
@@ -229,12 +243,70 @@ async fn duplicate_bindings_renew_without_requests_and_short_grants_are_rate_bou
         renewed.material_revision
     );
     assert_eq!(binding.provenance(), provenance);
+    let revision = candidate
+        .secret
+        .availability_for_request()
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(revision, renewed.material_revision);
+    gate.state
+        .executors
+        .verified_material(&candidate.health, revision);
+    let probe = gate
+        .state
+        .executors
+        .acquire(&candidate, tokio::time::Instant::now())
+        .unwrap();
+    assert!(probe.probing);
+    assert!(
+        gate.state
+            .executors
+            .acquire(&candidate, tokio::time::Instant::now())
+            .is_err()
+    );
+    drop(probe);
+    stale.failed(
+        crate::gateway::ApiError::failure(401, b"", None),
+        tokio::time::Instant::now(),
+        Some(original_material),
+    );
+    drop(stale);
+    let probe = gate
+        .state
+        .executors
+        .acquire(&candidate, tokio::time::Instant::now())
+        .unwrap();
+    probe.failed(
+        crate::gateway::ApiError::failure(402, b"", None),
+        tokio::time::Instant::now(),
+        Some(revision),
+    );
+    drop(probe);
+    // Another durable rotation cannot release independent account quota.
+    manager.refresh("synthetic", "one").await.unwrap();
+    let revision = candidate
+        .secret
+        .availability_for_request()
+        .await
+        .unwrap()
+        .unwrap();
+    gate.state
+        .executors
+        .verified_material(&candidate.health, revision);
+    assert!(
+        gate.state
+            .executors
+            .acquire(&candidate, tokio::time::Instant::now())
+            .is_err()
+    );
+    assert_eq!(calls.load(Ordering::SeqCst), 2);
     tokio::time::advance(std::time::Duration::from_secs(45)).await;
     poll_maintenance(&mut maintenance).await;
-    assert_eq!(calls.load(Ordering::SeqCst), 1);
+    assert_eq!(calls.load(Ordering::SeqCst), 2);
     tokio::time::advance(std::time::Duration::from_secs(15)).await;
     poll_maintenance(&mut maintenance).await;
-    assert_eq!(calls.load(Ordering::SeqCst), 2);
+    assert_eq!(calls.load(Ordering::SeqCst), 3);
     gate.shutdown();
     maintenance.await;
 }

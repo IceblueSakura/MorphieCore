@@ -50,6 +50,30 @@ fn bootstrap_loads_selected_key_and_requires_reactivation_after_rotation() {
         crate::execution::prepare(&candidate.endpoint, &candidate.provider, &key, &request)
             .unwrap();
     assert_eq!(prepared.auth_header.1, "Bearer synthetic-managed-key");
+    let sealed = crate::protocol::replay_envelope::seal(
+        &candidate.endpoint.replay_origin(),
+        crate::semantic::task::generation::ReplayFormat::ResponsesCompaction,
+        "synthetic-old-key-compaction",
+    )
+    .unwrap();
+    let mut replay=entry.client.as_openai().unwrap().0.decode_request(
+        &serde_json::to_vec(&serde_json::json!({
+            "model":"deepseek-flash","input":[{"type":"compaction","id":"cmp","encrypted_content":sealed.as_str()}]
+        })).unwrap()
+    ).unwrap();
+    crate::execution::replay::open_from_client(&mut replay).unwrap();
+    // Enable only the synthetic carrier, independently of catalog admission.
+    let mut replay_endpoint = candidate.endpoint.clone();
+    replay_endpoint
+        .representation
+        .openai_mut()
+        .unwrap()
+        .dispositions
+        .set_native(crate::semantic::task::generation::Feature::Compaction, true);
+    assert_eq!(
+        replay_endpoint.encode_request(&replay).unwrap()["input"][0]["encrypted_content"],
+        "synthetic-old-key-compaction"
+    );
     manager
         .replace_api_key(
             "deepseek",
@@ -69,7 +93,18 @@ fn bootstrap_loads_selected_key_and_requires_reactivation_after_rotation() {
         next.client.as_openai().unwrap().1.replay_origin
     );
     assert_ne!(candidate.cache_scope, next.candidates[0].cache_scope);
-    assert_eq!(
+    let mut replacement = next.candidates[0].endpoint.clone();
+    replacement
+        .representation
+        .openai_mut()
+        .unwrap()
+        .dispositions
+        .set_native(crate::semantic::task::generation::Feature::Compaction, true);
+    assert!(
+        replacement.encode_request(&replay).is_err(),
+        "a fresh key binding cannot forward the former key's opaque state"
+    );
+    assert_ne!(
         candidate
             .endpoint
             .representation

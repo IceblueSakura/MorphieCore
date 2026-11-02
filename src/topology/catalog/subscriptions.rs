@@ -127,6 +127,7 @@ impl SubscriptionBinding {
             .path
             .clone();
         Endpoint {
+            bound_replay_scope: None,
             id: self.endpoint_id(),
             canonical_model: ModelId::new(self.model).unwrap(),
             provider: provider.id,

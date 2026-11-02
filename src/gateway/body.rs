@@ -59,12 +59,23 @@ pub(super) struct Status {
     /// Explicit wait attribution; the last trace stage is not a wait state.
     pub(super) waiting_upstream: AtomicBool,
     /// Failed HTTP heads or stream failures survive interrupted error delivery.
-    pub(super) failure_head: Mutex<Option<ApiError>>,
+    pub(super) failure_head: Mutex<Option<crate::gateway::routing::executors::FailureObservation>>,
+    pub(super) material_revision: Mutex<Option<u64>>,
 }
 impl Status {
+    pub(super) fn observe_failure(&self, error: ApiError) {
+        let mut head = self.failure_head.lock().expect("failure head");
+        let observation =
+            head.get_or_insert_with(|| crate::gateway::routing::executors::FailureObservation {
+                error,
+                at: Instant::now(),
+                material_revision: *self.material_revision.lock().expect("material revision"),
+            });
+        observation.error = error;
+    }
     pub(super) fn timeout_error(&self) -> ApiError {
         if let Some(failure) = *self.failure_head.lock().expect("failure head") {
-            failure
+            failure.error
         } else if self.waiting_upstream.load(Ordering::Acquire) {
             ApiError::transport(crate::provider::RecoveryClass::Timeout)
         } else {

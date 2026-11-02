@@ -9,6 +9,7 @@ pub mod auth;
 pub mod catalog;
 pub mod definition;
 pub mod errors;
+pub mod recovery;
 pub(crate) mod subscription;
 
 pub use auth::{AuthScheme, CredentialBindingId, CredentialKind, SecretMaterial};
@@ -19,6 +20,7 @@ pub use definition::{
 pub use errors::{
     ProviderError, RecoveryClass, SourceFailureKind, StatusClass, classify_failure, classify_status,
 };
+pub use recovery::RecoveryPolicy;
 
 /// Shared identity grammar for provider, endpoint and route labels.
 pub(crate) fn ident_ok(s: &str) -> bool {

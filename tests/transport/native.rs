@@ -55,6 +55,7 @@ mod native_bindings {
         let p = provider();
         let chat = protocol == GenerationProtocol::OpenAiChat;
         Endpoint {
+            bound_replay_scope: None,
             id: EndpointId::new(if chat { "chat" } else { "messages" }).unwrap(),
             provider: p.id.clone(),
             target: EndpointTarget {

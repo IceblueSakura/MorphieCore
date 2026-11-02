@@ -99,7 +99,7 @@ impl AccessBinding {
     }
     /// Local logout/refresh affects subsequent borrows, not an already dispatched
     /// request. No filesystem lock survives this bounded read or spans network I/O.
-    pub fn borrow(&self) -> Result<AccessGrant, Error> {
+    fn usable_account(&self) -> Result<model::Account, Error> {
         let tx = self.manager.store.transaction()?;
         let account = self
             .manager
@@ -107,16 +107,27 @@ impl AccessBinding {
             .account
             .ok_or(Error::LoginRequired)?;
         self.check_identity(&account)?;
-        let material_revision = account.generation;
-        let credential = account.credential.ok_or(Error::LoginRequired)?;
+        let credential = account.credential.as_ref().ok_or(Error::LoginRequired)?;
         self.manager
             .driver(&self.profile)?
-            .check_access(&credential)?;
+            .check_access(credential)?;
         let now = model::now()?;
         if credential.expires_at.is_some_and(|expiry| expiry <= now) {
             return Err(Error::Expired);
         }
         // Unknown expiry remains unknown; the authority owns final validity.
+        Ok(account)
+    }
+    pub(crate) fn material_revision(&self) -> Result<u64, Error> {
+        self.usable_account().map(|account| account.generation)
+    }
+    pub fn borrow(&self) -> Result<AccessGrant, Error> {
+        let mut account = self.usable_account()?;
+        let material_revision = account.generation;
+        let credential = account
+            .credential
+            .take()
+            .expect("usable account credential");
         Ok(AccessGrant {
             access: credential.access,
             identity: self.identity.clone(),

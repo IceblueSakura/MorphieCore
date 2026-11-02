@@ -364,6 +364,7 @@ mod tests {
             .path
             .clone();
         Endpoint {
+            bound_replay_scope: None,
             id: EndpointId::new("fixture-endpoint").unwrap(),
             provider: ProviderId::new("fixture").unwrap(),
             target: EndpointTarget {

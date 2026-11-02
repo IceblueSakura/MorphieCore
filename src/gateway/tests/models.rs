@@ -447,6 +447,7 @@ fn aliases(count: usize, metadata: bool) -> crate::topology::CompiledTopology {
         auth: AuthScheme::Bearer,
     };
     let endpoint = Endpoint {
+        bound_replay_scope: None,
         id: EndpointId::new("synthetic-chat").unwrap(),
         canonical_model: canonical.clone(),
         provider: provider.id.clone(),

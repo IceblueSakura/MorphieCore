@@ -66,6 +66,7 @@ fn bound_gateway(origin: &str, limits: Limits, embeddings: bool, messages: bool)
     ]
     .into_iter()
     .map(|(id, protocol)| Endpoint {
+        bound_replay_scope: None,
         id: EndpointId::new(id).unwrap(),
         provider: provider.id.clone(),
         target: EndpointTarget {

@@ -183,12 +183,6 @@ impl ApiError {
         error.retry_after = retry_after;
         error
     }
-    pub fn unavailable(seconds: u64) -> Self {
-        Self {
-            retry_after: Some(seconds),
-            ..Self::new(StatusCode::SERVICE_UNAVAILABLE, ErrorKind::Unavailable)
-        }
-    }
 }
 impl ApiError {
     /// Classified request failures returned as standard Responses error events.

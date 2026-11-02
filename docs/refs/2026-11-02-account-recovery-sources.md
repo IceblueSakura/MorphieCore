@@ -40,3 +40,14 @@ Read the verbatim official [accounts and sessions](https://developers.openai.com
 Provider-scoped subject uniqueness and a single managed login are MorphieCore's accepted account rules; the service allows separate registrations with the same email. Do not infer security identity from email or equate an internal OAuth profile name with a configured Provider ID.
 
 The existing pinned official Responses fixtures and SDK consumers remain the independent wire/consumer expectations. A successfully delivered `response.failed` is still a failed upstream task: it cannot recover health or commit conversation affinity.
+
+## Provider-specific failure evidence
+
+Rechecked on **2026-11-02** before replacing global substring classification:
+
+- Alibaba [Model Studio error codes](https://help.aliyun.com/en/model-studio/error-code) define 429 `Throttling.AllocationQuota` / `insufficient_quota` as TPS/TPM throttling. The [Token Plan FAQ](https://help.aliyun.com/en/model-studio/token-plan-personal-faq) instead defines 429 `insufficient_quota` as exhausted monthly plan allowance. Provider identity must precede interpreting that exact code; neither message text nor “OpenAI-compatible” identifies the billing domain.
+- Pinned OpenCode [error serialization](https://github.com/anomalyco/opencode/blob/148842ef7cb1bc34192b3fff57d0f9721ab9c801/packages/console/app/src/routes/zen/util/handler.ts#L482-L532) returns HTTP 401 for `CreditsError`, `MonthlyLimitError` and `UserLimitError`, alongside auth/model errors. Its exact `error.type` overrides generic status meaning. `GoUsageLimitError`, `FreeUsageLimitError` and `BlackUsageLimitError` use 429 and optional `Retry-After`; `RateLimitError` is a separate throughput class.
+- OpenRouter [typed errors](https://openrouter.ai/docs/api/reference/errors-and-debugging) expose canonical `error_type` across API skins, including mid-stream errors. Native protocol spelling can be lossy; interpret confirmed canonical fields at the Provider boundary, before generic status fallback.
+- The inspected primary references establish no configured Provider's special 419 contract. Do not invent a global auth mapping. Unknown structured codes retain actual status fallback; an unknown in-band error cannot gain resend permission merely from a synthetic HTTP-like hint.
+
+These facts support Provider-owned finite classification, not operator-defined rules or probing private accounts. SIWC quota codes imply no reset deadline. Anthropic subscription-unified headers require a confirmed owning service contract; a Messages wire binding alone does not activate them.

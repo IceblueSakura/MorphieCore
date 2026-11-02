@@ -112,6 +112,7 @@ impl Gateway {
                 executors: crate::gateway::routing::executors::Executors::new(
                     limits.affinity_ttl,
                     limits.affinity_capacity,
+                    limits.provider_recovery.clone(),
                 ),
                 auth,
                 entries,
@@ -237,13 +238,10 @@ fn bind_candidate(
     secret.check(endpoint.execution.credential_kind, provider.id.as_str())?;
     let provenance = secret.provenance();
     let mut endpoint = endpoint.clone();
-    let health = crate::gateway::routing::executors::Scopes::bind(
-        namespace,
-        &endpoint,
-        &provenance,
-        std::slice::from_ref(&provenance),
-    );
+    let health =
+        crate::gateway::routing::executors::Scopes::bind(namespace, &endpoint, &provenance);
     let cache_scope = cache_scope(namespace, &provenance, public, provider, &endpoint)?;
+    endpoint.bound_replay_scope = Some(cache_scope.clone());
     let scope = endpoint.replay_origin();
     if let Some(caps) = endpoint.representation.openai_mut() {
         caps.adaptation.scope = Some(scope.clone());
@@ -273,6 +271,7 @@ fn cache_scope(
 ) -> Result<ReplayOrigin, StartupError> {
     let mut hash = Sha256::new();
     hash.update(namespace);
+    hash.update([endpoint.protocol.identity_tag()]);
     for value in [
         provenance,
         public.id.as_str(),

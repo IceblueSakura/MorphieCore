@@ -71,6 +71,16 @@ pub enum GenerationProtocol {
     GoogleInteractions,
 }
 impl GenerationProtocol {
+    /// Stable private target identity, independent of enum declaration order.
+    pub(crate) fn identity_tag(self) -> u8 {
+        match self {
+            Self::OpenAiChat => 0,
+            Self::OpenAiResponses => 1,
+            Self::AnthropicMessages => 2,
+            Self::GoogleGenerateContent => 3,
+            Self::GoogleInteractions => 4,
+        }
+    }
     /// Qualified non-Chat intake always uses the event stream. Chat JSON is the
     /// selected exception for reports without an official chunk carrier.
     pub fn requires_streaming_intake(self) -> bool {

@@ -82,6 +82,7 @@ impl GoogleBinding {
             .resolve_path(collection, self.upstream, true)
             .expect("static path");
         Endpoint {
+            bound_replay_scope: None,
             id: EndpointId::new(&format!("google-{}-generate-content", self.model))
                 .expect("static id"),
             provider: provider.id,

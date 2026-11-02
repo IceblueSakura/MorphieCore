@@ -659,12 +659,25 @@ impl Attempt {
             )),
         }
     }
-    /// An upstream-reported failed Responses outcome, classified from its error.
+    /// A validated failed Responses terminal is evidence even before transport EOF.
+    /// It does not establish successful completion or permit terminal publication.
     pub(crate) fn reported_failure(&self) -> Option<SourceFailureEvidence> {
         if !self.is_responses() {
             return None;
         }
-        crate::protocol::openai::terminal::failed_response(&self.response().ok()?.semantic)
+        match &self.intake {
+            Intake::Stream {
+                terminal:
+                    Some(StreamEvent::Terminal {
+                        terminal: crate::semantic::task::generation::StreamTerminal::Failed,
+                        details,
+                    }),
+                ..
+            } => Some(crate::protocol::openai::terminal::failed_terminal(details)),
+            _ => {
+                crate::protocol::openai::terminal::failed_response(&self.response().ok()?.semantic)
+            }
+        }
     }
     pub fn cancel(&mut self) {
         self.reject();

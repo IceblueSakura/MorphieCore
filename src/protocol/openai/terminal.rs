@@ -236,15 +236,18 @@ pub fn failed_response(response: &GenerationResponse) -> Option<SourceFailureEvi
     if response.outcome() != Outcome::Failed {
         return None;
     }
-    let error = response.details().error.as_ref();
-    Some(reported_failure(
+    Some(failed_terminal(response.details()))
+}
+pub(crate) fn failed_terminal(details: &TerminalDetails) -> SourceFailureEvidence {
+    let error = details.error.as_ref();
+    reported_failure(
         None,
         error.and_then(|e| e.code.as_ref()).map(|c| c.as_str()),
         error
             .and_then(|e| e.original_type.as_ref())
             .map(|t| t.as_str()),
         error.map(|e| e.message.as_str()),
-    ))
+    )
 }
 pub(super) fn encode_error(error: Option<&ResponseError>) -> Value {
     error

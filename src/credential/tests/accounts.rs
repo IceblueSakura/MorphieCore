@@ -45,6 +45,7 @@ fn named_oauth_accounts_keep_distinct_principals_and_network_free_borrowing() {
         providers: [(
             "grok".into(),
             ProviderAccounts {
+                recovery: Default::default(),
                 accounts: ["first", "second"]
                     .into_iter()
                     .map(|alias| Declaration {
@@ -85,6 +86,7 @@ fn named_oauth_accounts_keep_distinct_principals_and_network_free_borrowing() {
         providers: [(
             "grok".into(),
             ProviderAccounts {
+                recovery: Default::default(),
                 accounts: vec![
                     Declaration {
                         name: "one".into(),

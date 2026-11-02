@@ -42,6 +42,7 @@ mod candidates {
                     .contract(&Representation::full());
             representation.images.inline_formats = formats;
             endpoints.push(Endpoint {
+                bound_replay_scope: None,
                 id: EndpointId::new(id).unwrap(),
                 provider: provider.id.clone(),
                 target: EndpointTarget {

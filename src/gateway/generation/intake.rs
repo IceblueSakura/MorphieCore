@@ -88,7 +88,7 @@ async fn fail_classified(
     failure: ApiError,
     trace: &mut Trace,
 ) -> Result<Completion, ApiError> {
-    *lane.state.failure_head.lock().expect("upstream failure") = Some(failure);
+    lane.state.observe_failure(failure);
     let published = lane
         .state
         .published
@@ -195,16 +195,19 @@ async fn produce(
                 Ok(pushed) => pushed,
                 Err(error) => {
                     trace.decode_error(&error);
-                    // An invalid or truncated upstream reply may fail over while unpublished.
                     let Some(failure) = error.source_failure().and_then(ApiError::source_failure)
                     else {
-                        return Err(ApiError::transport(
-                            crate::provider::RecoveryClass::Upstream,
-                        ));
+                        return Err(ApiError::upstream());
                     };
                     return fail_classified(lane, delivery, stream, failure, trace).await;
                 }
             };
+            if let Some(source) = attempt.reported_failure() {
+                trace.report.source_failure(source);
+                if let Some(failure) = ApiError::source_failure(source) {
+                    lane.state.observe_failure(failure);
+                }
+            }
             let evidence = attempt.take_evidence();
             trace.events(&events, &evidence);
             if let Some(report) = attempt.pending_source_usage_report() {
@@ -275,7 +278,7 @@ async fn produce(
     trace.stage(Stage::Terminal);
     attempt.finish().map_err(|error| {
         trace.decode_error(&error);
-        ApiError::transport(crate::provider::RecoveryClass::Upstream)
+        ApiError::upstream()
     })?;
     let evidence = attempt.take_evidence();
     // Stream reports were observed with their source-unit provenance. Re-reading
@@ -304,7 +307,7 @@ async fn produce(
         trace.report.source_failure(source);
         failure = ApiError::source_failure(source);
         if let Some(failure) = failure {
-            *lane.state.failure_head.lock().expect("upstream failure") = Some(failure);
+            lane.state.observe_failure(failure);
             if !delivery.carries_failed_responses() {
                 return fail_classified(lane, delivery, stream, failure, trace).await;
             }
@@ -458,8 +461,8 @@ pub(in crate::gateway) async fn produce_candidate(
             return Err(ApiError::status(status));
         }
         let retry_after = crate::gateway::error::retry_after(upstream.headers());
-        *lane.state.failure_head.lock().expect("failure head") =
-            Some(ApiError::failure(status, b"", retry_after));
+        lane.state
+            .observe_failure(ApiError::failure(status, b"", retry_after));
         // These statuses are authoritative. Reading an optional error body must
         // not turn an auth refusal into quota or timeout retry permission.
         if matches!(status, 401 | 403) {
@@ -479,10 +482,11 @@ pub(in crate::gateway) async fn produce_candidate(
         lane.state
             .waiting_upstream
             .store(false, std::sync::atomic::Ordering::Release);
-        return Err(ApiError::classified(status, source.kind, retry_after));
+        let failure = ApiError::classified(status, source.kind, retry_after);
+        lane.state.observe_failure(failure);
+        return Err(failure);
     }
-    // A 2xx that is not an API reply (an HTML page, a missing or foreign type)
-    // fails over like a 5xx.
+    // Malformed successful replies do not become upstream health evidence.
     let report = trace.report.clone();
     let not_api = || {
         report.failure(
@@ -491,7 +495,7 @@ pub(in crate::gateway) async fn produce_candidate(
                 crate::execution::attempt::ProtocolReason::UnexpectedResponseMediaType,
             ),
         );
-        ApiError::transport(crate::provider::RecoveryClass::Upstream)
+        ApiError::upstream()
     };
     let mut content_types = upstream.headers().get_all("content-type").iter();
     let content_type = match (content_types.next(), content_types.next()) {
@@ -582,10 +586,16 @@ pub(in crate::gateway) async fn produce_candidate(
     .await;
     if let Err(error) = result
         && error.recovery.affects_health
+        && lane
+            .state
+            .failure_head
+            .lock()
+            .expect("failure head")
+            .is_none()
     {
         // Error delivery can itself stall or be cancelled. Preserve the failure
         // before flushing pending output, not only when this future returns.
-        *lane.state.failure_head.lock().expect("upstream failure") = Some(error);
+        lane.state.observe_failure(error);
     }
     trace.coalescing_peak(delivery.coalescing_peak_bytes());
 
@@ -612,4 +622,110 @@ pub(in crate::gateway) async fn produce_candidate(
         completion,
         successor,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::protocol::openai::{Dialect, GenerationApi, GenerationCodec, TargetContract};
+    use futures_util::StreamExt;
+
+    #[tokio::test]
+    async fn validated_failed_terminal_is_observed_before_eof_or_trailing_rejection() {
+        for malformed in [false, true] {
+            let mut response = crate::gateway::tests::responses_wire::subscription_response(true);
+            let mut events =
+                crate::gateway::tests::responses_wire::response_events(response.clone());
+            response["status"] = serde_json::json!("failed");
+            response["error"] = serde_json::json!({
+                "code":"rate_limit_exceeded","message":"synthetic limit"
+            });
+            let last = events.last_mut().unwrap();
+            last["type"] = serde_json::json!("response.failed");
+            last["response"] = response;
+            let mut wire = events
+                .iter()
+                .map(|event| {
+                    format!(
+                        "event: {}\ndata: {event}\n\n",
+                        event["type"].as_str().unwrap()
+                    )
+                })
+                .collect::<String>();
+            if malformed {
+                wire.push_str("data: {invalid}\n\n");
+            }
+            let chunks = futures_util::stream::once(std::future::ready(Ok::<_, std::io::Error>(
+                Bytes::from(wire),
+            )))
+            .chain(futures_util::stream::pending());
+            let upstream = reqwest::Response::from(
+                axum::http::Response::builder()
+                    .status(200)
+                    .header("content-type", "text/event-stream")
+                    .body(reqwest::Body::wrap_stream(chunks))
+                    .unwrap(),
+            );
+            let client = crate::adapter::ClientAdapter::openai(
+                GenerationCodec::new(GenerationApi::Responses, Dialect::MorphieCore, None),
+                TargetContract::full(),
+            );
+            let mut attempt = Attempt::new(
+                GenerationCodec::new(GenerationApi::Responses, Dialect::Siwc, None),
+                1 << 20,
+                SseLimits::default(),
+            );
+            attempt.begin(200, "text/event-stream").unwrap();
+            let mut delivery = ResponseDelivery::new(
+                client,
+                "fixture-model",
+                SseLimits::default(),
+                Default::default(),
+                Obfuscation::Disabled,
+            );
+            let state = crate::gateway::body::Status::default();
+            let (tx, _rx) = tokio::sync::mpsc::channel(1);
+            let lane = Lane {
+                tx: &tx,
+                state: &state,
+            };
+            let mut trace = Trace::for_request(
+                None,
+                &axum::extract::Request::new(axum::body::Body::empty()),
+            );
+            {
+                let producer = produce(
+                    upstream,
+                    &mut attempt,
+                    &mut delivery,
+                    &lane,
+                    false,
+                    false,
+                    1 << 20,
+                    None,
+                    &mut trace,
+                );
+                tokio::pin!(producer);
+                let polled = futures_util::poll!(&mut producer);
+                if malformed {
+                    assert!(matches!(polled, std::task::Poll::Ready(Err(_))));
+                } else {
+                    assert!(polled.is_pending());
+                }
+                let failure = state
+                    .failure_head
+                    .lock()
+                    .unwrap()
+                    .expect("validated upstream failure");
+                assert_eq!(
+                    failure.error.recovery.class,
+                    Some(crate::provider::RecoveryClass::RateLimit)
+                );
+            }
+            assert!(
+                attempt.response().is_err(),
+                "failure evidence cannot certify EOF"
+            );
+        }
+    }
 }

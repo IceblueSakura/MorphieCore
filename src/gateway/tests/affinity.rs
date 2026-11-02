@@ -134,6 +134,7 @@ fn gateway(origin: &str, profile: GenerationApi, dialect: Dialect) -> Gateway {
         auth: AuthScheme::Bearer,
     };
     let endpoint = Endpoint {
+        bound_replay_scope: None,
         id: EndpointId::new("endpoint").unwrap(),
         provider: provider.id.clone(),
         target: EndpointTarget {

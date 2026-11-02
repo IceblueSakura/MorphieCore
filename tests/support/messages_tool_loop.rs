@@ -95,13 +95,21 @@ async fn answer(
     ]);
     let messages = expected.as_array_mut().unwrap();
     if turn >= 2 {
+        let mut content = Vec::new();
+        if recovery.is_none() || headers["x-api-key"] == crate::credential_recovery::PRIMARY {
+            content.extend([
+                json!({"type":"thinking","thinking":"plan lookup","signature":"native-lookup-signature"}),
+                json!({"type":"redacted_thinking","data":"native-redacted"}),
+            ]);
+        }
+        // Account switching cannot forward the first account's opaque owners.
+        // Tool identity, input and results remain independently required.
+        content.extend([
+            json!({"type":"tool_use","id":"call-lookup","name":"lookup","input":{"key":"A"}}),
+            json!({"type":"tool_use","id":"call-second","name":"lookup","input":{"key":"B"}}),
+        ]);
         messages.extend([
-            json!({"role":"assistant","content":[
-                {"type":"thinking","thinking":"plan lookup","signature":"native-lookup-signature"},
-                {"type":"redacted_thinking","data":"native-redacted"},
-                {"type":"tool_use","id":"call-lookup","name":"lookup","input":{"key":"A"}},
-                {"type":"tool_use","id":"call-second","name":"lookup","input":{"key":"B"}}
-            ]}),
+            json!({"role":"assistant","content":content}),
             json!({"role":"user","content":[
                 {"type":"tool_result","tool_use_id":"call-second","content":"second-result","is_error":true},
                 {"type":"tool_result","tool_use_id":"call-lookup","content":"A","is_error":false}]}),

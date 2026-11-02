@@ -84,6 +84,7 @@ pub(crate) fn topology_at(origin: &str) -> CompiledTopology {
             !limited,
         );
         Endpoint {
+            bound_replay_scope: None,
             id: EndpointId::new(id).unwrap(),
             provider: provider.id.clone(),
             target: EndpointTarget {
