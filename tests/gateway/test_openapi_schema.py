@@ -1,5 +1,6 @@
 """Independent public OpenAPI structure and operation-specific value expectations."""
 import copy
+from decimal import Decimal
 import json
 from pathlib import Path
 import unittest
@@ -37,6 +38,12 @@ class OpenApiSchemaTests(unittest.TestCase):
             for value in (None, 0, 1):
                 request.validate({**body, field: value})
             for value in (-1, True, "invalid"):
+                self.assertFalse(request.is_valid({**body, field: value}))
+        for value in (1.0, 1e0, 10e-1):
+            request.validate({**body, "top_k": value})
+        for field in ("temperature", "top_p"):
+            request.validate({**body, field: Decimal("1e-1000")})
+            for value in (Decimal("1.0000000000000001"), Decimal("-1e-1000")):
                 self.assertFalse(request.is_valid({**body, field: value}))
         for field, value in (("temperature", 1.1), ("top_p", 2), ("top_k", 0.5),
                              ("top_k", 18446744073709551616)):

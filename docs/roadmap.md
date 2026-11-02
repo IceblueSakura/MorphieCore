@@ -382,10 +382,9 @@ The user accepted principles P1–P5 and selections S1–S11 on 2026-10-28, gene
 
 | Id | Accepted rule | Owner | Slice |
 |---|---|---|---|
-| L | Conversion ladder and its 2026-10-30 applications | [Conversion ladder](architecture.md#conversion-ladder) | R3–R5 |
+| L | Conversion ladder and its 2026-10-30 applications | [Conversion ladder](architecture.md#conversion-ladder) | R4–R5 |
 | C | Remaining IR/codec simplification and experiment-gated `FidelityRecords` folding | [Delivery and evidence decisions](architecture.md#delivery-and-evidence-decisions) | R5 |
 | S5 | Generalized visible-history transfer | [Reasoning replay](architecture.md#reasoning-replay) | R4 |
-| S8 | Messages baseline, superseded by the revised version policy | [Protocols](architecture.md#protocols) | R3 |
 | S10 | Agent-facing discovery | [Generation Text model discovery](architecture.md#generation-text-model-discovery) | R5 |
 | S11 | Binding reasoning-history contract, with delegation for unassessed facts | [Binding reasoning-history contract](architecture.md#binding-reasoning-history-contract) | R4 |
 

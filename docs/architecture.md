@@ -405,7 +405,7 @@ The request implementation lives in [`lowering/request.rs`](../src/lowering/requ
 
 **Evidence.** Receipts record only L3 approximations, L4 omissions and schema-completion estimates; L2 normalizations, derivations, defaults and request inferences produce none. Target encoders carry whole evidence deltas so coverage and truncation counts survive merging; Messages retains its directional preference for detailed receipts over matching field summaries. Rule IDs live in the disposition tables rather than a separate projection-rule enum and scattered string literals. Migration order is owned by the [roadmap](roadmap.md#conversion-ladder-migration).
 
-Applications selected on 2026-10-30: request strictness, effort, ceilings, Messages omission and delivery projection are implemented; the remaining intake, history and discovery migrations follow the [roadmap](roadmap.md#conversion-ladder-migration).
+Applications selected on 2026-10-30: request strictness, effort, ceilings, Messages intake/omission and delivery projection are implemented; the remaining history and discovery migrations follow the [roadmap](roadmap.md#conversion-ladder-migration).
 
 | Area | Level and rule |
 |---|---|
@@ -420,7 +420,7 @@ Applications selected on 2026-10-30: request strictness, effort, ceilings, Messa
 | Messages `stop_sequences` on a non-Messages target with an ambiguous natural/stop-sequence cause | `end_turn` under a named approximation (L3) |
 | Unknown finish or incomplete reasons | Evidence-backed per-dialect maps; Responses carries an unspecified reason as `incomplete_details:{}`; otherwise L5 on Chat and Messages, so no outcome is misreported as a token limit |
 | Messages `thinking.block_binding` | Public adaptive-thinking intake normalizes `null`/`{}` under L2; `drop_block` takes `messages.omit-block-binding.v1` (L3) without relaxing gateway replay checks; `"error"` is L5. Trusted native target carriers remain independent |
-| Legacy Messages sampling | Valid `temperature`/`top_p` in `[0,1]` and nonnegative integer `top_k` take `messages.omit-removed-sampling.v1` (L4) at public intake; malformed known values reject |
+| Legacy Messages sampling | Exact `temperature`/`top_p` in `[0,1]` and mathematically integral `top_k` in `[0,18446744073709551615]` take `messages.omit-removed-sampling.v1` (L4) at public intake; equivalent decimal/exponent spellings are accepted without rounding; malformed known values reject |
 | Messages version and beta headers | See the [version policy](#protocols) |
 | Unscheduled capabilities | Moderation, background, context management and compaction requests, hosted tools and items, `between_tools`, per-message configuration, `clear_at`, nonempty `logit_bias`, legacy function carriers, `inference_geo` and upstream-reported storage keep their current rejection until scheduled |
 

@@ -2218,6 +2218,78 @@ fn client_messages_controls_validate_before_named_omission() {
 }
 
 #[test]
+fn client_messages_sampling_uses_exact_numeric_bounds() {
+    let request = |field: &str, value: &str| {
+        format!(
+            r#"{{"model":"m","max_tokens":64,"messages":[{{"role":"user","content":"hi"}}],"{field}":{value}}}"#
+        )
+    };
+    for field in ["temperature", "top_p"] {
+        for value in [
+            "1.0000000000000001",
+            "10000000000000001e-16",
+            "-1e-1000",
+            "1e999999999999999999999999",
+        ] {
+            assert!(
+                matches!(
+                    decode_client_request(request(field, value).as_bytes()),
+                    Err(CodecError::Invalid(_))
+                ),
+                "{field}={value}"
+            );
+        }
+        for value in [
+            "0",
+            "-0.0",
+            "1.0000000000000000",
+            "100e-2",
+            "1e-1000",
+            "1e-999999999999999999999999",
+            "0e999999999999999999999999",
+        ] {
+            let decoded = decode_client_request(request(field, value).as_bytes())
+                .unwrap_or_else(|error| panic!("{field}={value}: {error:?}"));
+            assert!(
+                decoded
+                    .task
+                    .evidence
+                    .contains_rule("messages.omit-removed-sampling.v1")
+            );
+        }
+    }
+    for value in [
+        "1",
+        "1.0",
+        "1e0",
+        "10e-1",
+        "-0e999999999999999999999999",
+        "18446744073709551615",
+        "1844674407370955161500e-2",
+    ] {
+        decode_client_request(request("top_k", value).as_bytes())
+            .unwrap_or_else(|error| panic!("top_k={value}: {error:?}"));
+    }
+    for value in [
+        "1.0000000000000001",
+        "1e-1000",
+        "-1e-1000",
+        "18446744073709551616",
+        "18446744073709551616.0",
+        "184467440737095516151e-1",
+        "1e999999999999999999999999",
+    ] {
+        assert!(
+            matches!(
+                decode_client_request(request("top_k", value).as_bytes()),
+                Err(CodecError::Invalid(_))
+            ),
+            "top_k={value}"
+        );
+    }
+}
+
+#[test]
 fn client_tool_changes_keep_order_and_candidate_carriers() {
     use morphiecore::protocol::{anthropic, native::ReplayTarget};
     let definition = json!({"name":"write","input_schema":{"type":"object","properties":{

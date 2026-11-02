@@ -115,6 +115,19 @@ class ClientRecoveryOracles(unittest.TestCase):
                     {"role": "user", "content": [{"type": "tool_result", "tool_use_id": recovery.CALL,
                                                    "content": recovery.TEXT}]}]}
 
+    def native_defaults(self, pi):
+        body = self.native()
+        tool = body["tools"][0]
+        tool.pop("strict")
+        tool["input_schema"].update(type="object", required=["path"])
+        if pi:
+            body["thinking"]["display"] = "summarized"
+            body["output_config"]["effort"] = "medium"
+        else:
+            body.pop("output_config")
+            tool.pop("eager_input_streaming")
+        return body
+
     def test_history_failures_reach_the_intended_oracle(self):
         wrong_root = self.native()
         wrong_root["output_config"]["effort"] = "high"
@@ -149,20 +162,51 @@ class ClientRecoveryOracles(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "^chat_final_history$"):
             recovery.assert_history(final, 3, False, self.path)
 
+    def test_default_messages_profiles_reject_wire_loss_or_invented_controls(self):
+        for pi in (True, False):
+            original = self.native_defaults(pi)
+            original["messages"] = original["messages"][:1]
+            cases = [
+                (("tools",), [], "default_read_tool_declaration"),
+                (("tools",), original["tools"] * 2, "default_read_tool_declaration"),
+                (("tools", 0, "input_schema", "properties"), {}, "default_read_path_schema"),
+                (("tools", 0, "input_schema", "properties", "path", "type"), "number",
+                 "default_read_path_schema"),
+                (("tools", 0, "input_schema", "required"), [], "default_read_path_schema"),
+                (("tools", 0, "strict"), True, "default_read_strict"),
+                (("tools", 0, "eager_input_streaming"), not pi, "default_read_eager_input"),
+                (("output_config",), {} if pi else {"effort": "medium"}, "default_effort"),
+                (("thinking", "display"), None if pi else "summarized", "default_thinking_display"),
+            ]
+            for method in ("incoming", "upstream"):
+                headers = Message()
+                headers["x-api-key"] = "synthetic-client-primary"
+                headers["anthropic-version"] = "2023-06-01" if method == "incoming" else "2026-10-21"
+                getattr(messages_defaults.State(self.path, pi=pi), method)(headers, original)
+                for keys, value, error in cases:
+                    body = copy.deepcopy(original)
+                    owner = body
+                    for key in keys[:-1]:
+                        owner = owner[key]
+                    owner[keys[-1]] = value
+                    with self.subTest(pi=pi, method=method, error=error), self.assertRaisesRegex(
+                            RuntimeError, f"^{error}$"):
+                        getattr(messages_defaults.State(self.path, pi=pi), method)(headers, body)
+
     def test_duplicate_client_transmission_and_missing_identity_reject(self):
         headers = Message()
         headers["anthropic-version"] = "2023-06-01"
         headers["anthropic-beta"] = "interleaved-thinking-2025-05-14"
-        initial = self.native()
+        initial = self.native_defaults(True)
         initial["messages"] = initial["messages"][:1]
-        state = messages_defaults.State(self.path)
+        state = messages_defaults.State(self.path, pi=True)
         state.incoming(headers, initial)
         self.assertTrue(state.beta_seen)
         with self.assertRaisesRegex(RuntimeError, "^default_extra_or_reordered_client_request$"):
             state.incoming(headers, initial)
         headers.replace_header("anthropic-version", "2026-10-21")
         with self.assertRaisesRegex(RuntimeError, "^default_messages_version$"):
-            messages_defaults.State(self.path).incoming(headers, initial)
+            messages_defaults.State(self.path, pi=True).incoming(headers, initial)
         state.ingress = state.attempts = [1, 2, 3]
         state.errors.append("late_worker_failure")
         with self.assertRaisesRegex(RuntimeError, "^default_authority_errors:late_worker_failure$"):

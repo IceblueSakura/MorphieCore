@@ -164,6 +164,49 @@ fn tool_fields(t: &mut Value, ignored: &mut BTreeSet<String>) -> Result<(), Code
     Ok(())
 }
 
+/// Check exact JSON digits without rounding or expanding untrusted exponents.
+fn sampling_number(value: &Value, integral: bool) -> bool {
+    let Some(number) = value.as_number() else {
+        return false;
+    };
+    let raw = number.as_str();
+    let unsigned = raw.strip_prefix('-').unwrap_or(raw);
+    let (mantissa, exponent) = unsigned.split_once(['e', 'E']).unwrap_or((unsigned, "0"));
+    let point = mantissa.find('.').unwrap_or(mantissa.len());
+    let digits = mantissa.replace('.', "");
+    let significant = digits.trim_start_matches('0');
+    let leading = digits.len() - significant.len();
+    let significant = significant.trim_end_matches('0');
+    if significant.is_empty() {
+        return true;
+    }
+    if raw.starts_with('-') {
+        return false;
+    }
+    let sign = if exponent.starts_with('-') { -1 } else { 1 };
+    // Saturation retains exact comparisons with these small bounds even when
+    // a valid JSON exponent exceeds the machine integer range.
+    let exponent = exponent
+        .trim_start_matches(['-', '+'])
+        .bytes()
+        .fold(0_i64, |n, digit| {
+            n.saturating_mul(10)
+                .saturating_add(i64::from(digit - b'0') * sign)
+        });
+    let order = (point as i64 - leading as i64).saturating_add(exponent);
+    if integral && significant.len() as i64 > order {
+        return false;
+    }
+    let maximum = if integral {
+        "18446744073709551615"
+    } else {
+        "1"
+    };
+    // Both significands have no trailing zeros, so lexical order is exact
+    // when their decimal orders agree.
+    order < maximum.len() as i64 || order == maximum.len() as i64 && significant <= maximum
+}
+
 /// Decode a client request; the model is a public label, never an upstream name.
 pub fn decode_client_request(bytes: &[u8]) -> Result<Request, CodecError> {
     let mut v = parse(bytes)?;
@@ -172,12 +215,7 @@ pub fn decode_client_request(bytes: &[u8]) -> Result<Request, CodecError> {
     let mut removed_sampling = false;
     for name in ["temperature", "top_p", "top_k"] {
         if let Some(value) = v.get(name).filter(|v| !v.is_null()) {
-            let valid = if name == "top_k" {
-                value.as_u64().is_some()
-            } else {
-                value.as_f64().is_some_and(|v| (0.0..=1.0).contains(&v))
-            };
-            if !valid {
+            if !sampling_number(value, name == "top_k") {
                 return Err(CodecError::invalid());
             }
             removed_sampling = true;

@@ -16,18 +16,39 @@ MODEL = "claude-haiku-5-5"
 PROVIDER = "opencode-go"
 
 
+def assert_default_profile(body, pi):
+    check(body["model"] == MODEL and body["stream"] is True, "default_messages_model")
+    thinking = body.get("thinking", {})
+    check(thinking.get("type") == "adaptive", "default_adaptive_thinking")
+    check(body["max_tokens"] == 2048, "default_operational_output_cap")
+    read = [tool for tool in body.get("tools", []) if tool.get("name") == "read"]
+    check(len(read) == 1, "default_read_tool_declaration")
+    tool = read[0]
+    schema = tool.get("input_schema", {})
+    check(schema.get("type") == "object"
+          and schema.get("properties", {}).get("path", {}).get("type") == "string"
+          and "path" in schema.get("required", []), "default_read_path_schema")
+    check("strict" not in tool, "default_read_strict")
+    check(tool.get("eager_input_streaming") is True if pi
+          else "eager_input_streaming" not in tool, "default_read_eager_input")
+    effort = body.get("output_config", {})
+    check(effort.get("effort") == "medium" if pi else "effort" not in effort,
+          "default_effort")
+    check(thinking.get("display") == "summarized" if pi else "display" not in thinking,
+          "default_thinking_display")
+
+
 class State(RecoveryState):
-    def __init__(self, path):
+    def __init__(self, path, *, pi):
         super().__init__(True, path)
+        self.pi = pi
         self.beta_seen = False
         self.block_binding_seen = False
 
     def incoming(self, headers, body):
         phase = stage(body)
         check(headers.get_all("anthropic-version") == ["2023-06-01"], "default_messages_version")
-        check(body["model"] == MODEL and body["stream"] is True, "default_messages_model")
-        check(body.get("thinking", {}).get("type") == "adaptive", "default_adaptive_thinking")
-        check(body["max_tokens"] == 2048, "default_operational_output_cap")
+        assert_default_profile(body, self.pi)
         with self.lock:
             self.beta_seen |= bool(headers.get("anthropic-beta"))
             self.block_binding_seen |= "block_binding" in body.get("thinking", {})
@@ -39,8 +60,7 @@ class State(RecoveryState):
         phase = stage(body)
         check(headers.get("x-api-key") == "synthetic-client-primary", "default_upstream_credential")
         check(headers.get("anthropic-version") == "2026-10-21", "trusted_upstream_version")
-        check(body["max_tokens"] == 2048 and body["thinking"]["type"] == "adaptive",
-              "default_upstream_controls")
+        assert_default_profile(body, self.pi)
         check("block_binding" not in body["thinking"], "client_binding_not_omitted")
         assert_history(body, phase, True, self.path, profile=False)
         with self.lock:
@@ -118,7 +138,7 @@ def main():
     work.mkdir(mode=0o700)
     path = work / "sample.txt"
     path.write_text(TEXT + "\n", encoding="utf-8")
-    state = State(path)
+    state = State(path, pi=case.startswith("pi-"))
     env = environment(root)
     with Child([binary, "--version"], env, work) as client:
         version = client.wait(timeout=5).decode().strip()
