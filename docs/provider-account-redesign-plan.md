@@ -1,10 +1,10 @@
 # Provider account redesign plan
 
-**Status: design finalized on 2026-11-02. Rewrite scope, implementation slices and rollout require separate approval; this document does not authorize code changes or deployment.**
+**Status: design finalized on 2026-11-02. The user accepted a fully breaking account-system rewrite and fresh manual credential provisioning; [Roadmap](roadmap.md#account-rewrite-execution-order) owns the execution plan. The current request is planning, not implementation or deployment.**
 
 This document owns the finalized account-redesign specification. It supersedes the earlier multi-target retry/fallback draft and interim single-send choice with request-boundary account selection and at most one bounded same-target retry. Final review selected conservative retry eligibility, a 30 s recovery budget, merged health evidence, material-aware OAuth recovery and short advisory `Retry-After` without `x-should-retry`. File/field names and implementation structure remain engineering choices within this contract, not new behavior decisions.
 
-[Architecture](architecture.md#routing-and-security-decisions) records the accepted decisions and links here for their detailed contract. [Roadmap](roadmap.md#temporary-routing-freeze) owns scheduling and the routing freeze until rewrite scope and implementation authorization are selected. [Usage](usage.md#prepare-credentials) describes the currently implemented configuration, not this unimplemented redesign. Do not implement the design, change credentials or activate bindings as part of documentation finalization.
+[Architecture](architecture.md#routing-and-security-decisions) records the accepted decisions and links here for their detailed contract. [Roadmap](roadmap.md#account-rewrite-execution-order) owns execution order, dependencies and gates; its [routing boundary](roadmap.md#temporary-routing-freeze) separates this work from unrelated changes. [Usage](usage.md#prepare-credentials) describes the currently implemented configuration, not this unimplemented redesign. Planning does not modify runtime code, private credentials or deployed bindings.
 
 ## Contents
 
@@ -34,6 +34,7 @@ This document owns the finalized account-redesign specification. It supersedes t
 11. **Configurable policy parameters.** Wait, recovery-time and timeout budgets, cooldown backoff, reset-hint bounds, affinity cache lifetime and capacity, downstream retry-hint horizon and OAuth maintenance timing must be configurable at their authoritative owner. One additional inference attempt is the selected structural ceiling, not a generic retry-count matrix. Configuration cannot relax identity, publication, terminal-honesty or credential-lifecycle safety rules (2026-10-30 decision refined on 2026-11-02).
 12. **Defaults and operator responsibility.** Retain the stated defaults for settings that remain in the selected design; removed retry allowances and send ceilings are not dormant configuration. Do not add policy-value range or cross-parameter relationship validation at this stage; the operator selects suitable values. Retain schema/type parsing and credential, identity and target security checks (2026-10-30 decision refined on 2026-11-02).
 13. **Shared account binding, Generation-first recovery.** Replace credential loading, account references and trusted target binding across existing entrances together; initially integrate the new recovery execution policy in Generation. Existing diagnostics retain bounded named-account requests, and standalone tasks retain their existing execution capabilities without gaining multi-account recovery. Frozen features remain inactive; no parallel legacy pool path remains (user decision, 2026-11-02, refining the 2026-10-30 replacement scope).
+14. **Fully breaking replacement.** No old application/credential schema, CLI spelling, account binding or pool execution compatibility is required. Do not add migrations, importers, aliases, compatibility facades or dual runtime paths. The user will provision fresh API keys manually; OAuth access uses a fresh managed login where needed. Preserve security and official protocol contracts, not historical configuration or stored-record formats. This does not authorize deleting or changing existing private credential stores (user decision, 2026-11-02).
 
 An account name identifies a configured execution identity. Two keys are not necessarily independent billing accounts or rate-limit domains. Equal model capabilities also do not establish shared caches, interchangeable OAuth grants or portable private replay state.
 
@@ -52,7 +53,7 @@ The current code is evidence of existing mechanisms and protections, not the tar
 | [Failure classification](../src/protocol/failure.rs) | One status table plus global quota substrings shared by all Providers | Classify per Provider contract into a finite fact vocabulary |
 | [Credential access](../src/credential/access.rs), [API keys](../src/credential/api_key.rs) and [renewal](../src/gateway/renewal.rs) | Pinned identities, request-time borrowing, automatic OAuth maintenance with fixed 15 s scan, 120 s refresh-ahead and 90 s renewal timeout | Reuse lifecycle protections; make global timing configurable |
 
-Preserve the existing secure store, OAuth drivers, verified identities, atomic publication/recovery, cancellation, trusted target selection and publication freeze where they fit. This is a rewrite of account binding and execution policy, not a replacement of the semantic IR, codecs or transport stack.
+Reuse secure storage mechanisms, OAuth drivers, identity verification, atomic publication/recovery, cancellation, trusted target selection and the publication fence where they fit. Existing credential record formats and persisted data are not compatibility requirements. This is a rewrite of account binding and execution policy, not a replacement of the semantic IR, codecs or transport stack.
 
 Current Generation, manual upstream diagnostics and standalone tasks have different pool rules. The selected boundary replaces their shared credential loading and account/target binding together, while the new recovery executor initially serves Generation. Diagnostics retain explicit bounded account requests; standalone tasks retain their existing execution capabilities without new multi-account recovery. This design selection does not activate frozen features or approve implementation slices.
 
@@ -113,7 +114,7 @@ Provider denotes the configured service access contract, not merely the vendor c
 
 A public model route includes only explicitly declared Provider/model bindings that preserve its public promise. Adding a `chatgpt` account does not automatically make every `openai` model available there, or authorize substituting another upstream model. Route-wide account eligibility remains, but only within those declared bindings.
 
-The current catalog calls its SIWC Provider `openai`. The target naming therefore requires explicit configuration rebinding, not merely adding a second Provider or silently reinterpreting old references. Provider naming does not itself rename OAuth registrations, issued clients or verified subjects. The breaking transition must preserve compatible credential records without historical Provider aliases or automatic configuration migration; revalidate affinity and private replay identity rather than inheriting them by name.
+The current catalog calls its SIWC Provider `openai`. New configuration declares API-key `openai` and SIWC `chatgpt` directly; old references are not reinterpreted or migrated. Internal OAuth profile identifiers remain protocol facts rather than compatibility aliases. Fresh credential provisioning establishes new managed provenance; do not inherit old affinity or private replay identity by name.
 
 ### Credential kind and header placement
 
@@ -137,13 +138,13 @@ Each configured OAuth account has one managed login session. Do not support dupl
 
 Enforce verified-subject uniqueness atomically when publishing a login, including concurrent publishers, as well as during offline configuration validation. Issued-client provenance must not bypass subject uniqueness. Disabled, signed-out and reauthorization-required accounts retain the subject reservation; explicit account removal releases it. Reauthorization uses the existing account rather than creating another alias.
 
-Exact file and field names are chosen with the rewrite. Replacing the pool schema follows the project's current-schema-only rule: no silent migration, historical aliases or parallel legacy execution path. Reuse existing credential records where compatible.
+Exact file and field names are chosen with the rewrite. Replacing the pool schema follows the project's current-schema-only rule: no migration, historical aliases or parallel legacy execution path. Fresh provisioning replaces the earlier requirement to reuse compatible stored credential records.
 
 ### Configuration transition and CLI output
 
-The rewrite is a breaking configuration change. Operators re-provision accounts through the CLI following a documented procedure; startup rejects the old pool schema with an error that names the procedure.
+The rewrite is fully breaking. Operators create current-schema configuration and provision new accounts through the documented CLI. The user will enter new API keys later; OAuth accounts require the managed login flow. Startup fails closed on unsupported configuration/credential documents and directs the operator to fresh setup, without retaining a special old-schema parser.
 
-Separate obsolete pool configuration from reusable credential records, issued clients, verified identities and recovery states, even where the current store puts them in one document. The explicit transition procedure must preserve compatible credential state while removing obsolete pool metadata; it must not silently migrate application configuration. All existing entrances use the new account binding rather than retaining a legacy pool reader; see the [rewrite boundary](#current-implementation-and-rewrite-boundary).
+Remove pool metadata from the new account/store model rather than extracting it from old mixed documents. No upgrade, token import or recovery-state conversion tool is required. All existing entrances use the new account binding rather than retaining a legacy reader; see the [rewrite boundary](#current-implementation-and-rewrite-boundary). Leave existing private stores untouched during development; fresh test-owned storage and synthetic credentials suffice for offline and loopback verification.
 
 Provisioning, validation and explanation commands print concise human-readable output by default: what was checked or changed, each problem with its account or Provider name, and the next step. An explicit JSON option prints one structured document with stable field names and the same redaction. Neither form prints secret values or credential locators, and errors keep a non-zero exit status in both. The current `morphiecore-auth` prints JSON by default; commands the rewrite touches follow the new rule.
 
@@ -430,7 +431,8 @@ Deferred items do not need placeholder interfaces or configuration fields.
 | Decision | Date | Outcome |
 |---|---|---|
 | Sequencing | 2026-10-30 | Complete requirements first; rewrite account binding and execution policy afterwards |
-| Design finalization | 2026-11-02 | Finalize this specification with the four final-review selections below. Rewrite implementation scope and rollout remain separately authorized; design approval is not implementation or deployment |
+| Design finalization | 2026-11-02 | Finalize this specification with the four final-review selections below. The subsequent breaking-rewrite scope and plan are recorded separately; design/planning does not execute code changes or deployment |
+| Fully breaking rewrite and fresh setup | 2026-11-02 | User accepts removal of old configuration/credential formats, CLI/pool compatibility and stored-record reuse requirements. No migration/import/dual path; user manually provisions new keys and uses managed OAuth login where needed. Existing private data is not automatically modified or deleted |
 | OpenAI service separation | 2026-11-02 | `openai` is API-key access; `chatgpt` is SIWC OAuth access, with independent model bindings and service contracts. Shared vendor/origin does not imply identical model availability; current SIWC `openai` references require explicit rebinding |
 | Operational priority | 2026-11-02 | Cache affinity and simple code take precedence over transparent recovery of every request; normally no more than three accounts are expected. One bounded same-target retry absorbs brief network/server failures without restoring multi-target recovery |
 | Route-wide eligibility | 2026-11-02 | Replaces the 2026-10-30 switching defaults and opt-in granularity: all enabled, validly bound accounts in the current model route may serve a new request, across credential kinds and Providers. Remove all three fallback switches and switch domains; route/account configuration authorizes destinations and billing paths, not target changes after dispatch. Usage counts tokens only |
@@ -439,7 +441,7 @@ Deferred items do not need placeholder interfaces or configuration fields.
 | Endpoint override | 2026-10-30 | API-key accounts may override `base_url`; OAuth accounts may not |
 | Account configuration | 2026-10-30 | Ordered named accounts per Provider reference the credential store by alias; explicit pools are removed; credentials stay under `$HOME/.local/share/morphiecore/credentials` and account/policy configuration stays outside the store |
 | OAuth subject uniqueness | 2026-10-30 | Reject duplicate verified subjects under one Provider |
-| Configuration transition | 2026-10-30 | Breaking change with documented CLI re-provisioning and no automatic migration; CLI output is human-readable by default with an optional JSON form |
+| Configuration transition | 2026-10-30, revised 2026-11-02 | Fresh current-schema setup, no migration or stored-record compatibility requirement. CLI output is human-readable by default with an optional JSON form; provisioning remains secret-safe |
 | Execution policy | 2026-10-30, finalized 2026-11-02 | Retain cache-first selection, failure classes, cooldowns and success-only affinity. One bounded same-target retry replaces the original multi-target retry/fallback and interim single-send designs; the blanket downstream stop-retrying signal remains superseded |
 | Conservative retry eligibility | 2026-11-02 | Retry selected HTTP 408/500/502/503/504, Provider-confirmed overload equivalents and positively identified transient connection/I/O interruption before publication. Exclude ambiguous post-dispatch timeout, unclassified transport errors, TLS/configuration/malformed faults and the other non-transient classes |
 | Timeout after response head | 2026-10-30, finalized 2026-11-02 | Keep pre-content upstream timeout as transient health evidence, without automatically retrying ambiguous post-dispatch timeouts. Gateway/client retries can still duplicate upstream work; no billing or exactly-once promise |
@@ -450,7 +452,7 @@ Deferred items do not need placeholder interfaces or configuration fields.
 | Request-boundary selection | 2026-11-02 | New conversations select the first ready route candidate; only valid bindings receive short cooldown waits. After dispatch, recovery stays on that target; only a later request can choose another. Recovered higher-priority targets do not displace a successful binding |
 | Account guidance | 2026-10-30 | Drop pool-wide rate-limit cooling in the proposed rewrite; retain the draft's one-account-per-independent-organization/workspace guidance |
 | Parameter ownership | 2026-10-30, revised 2026-11-02 | Retained cooldowns, cache lifetime and related bounds remain configurable at their listed owners; the short recovery-time budget belongs to Provider policy. One additional attempt is the structural ceiling, without per-class counters or a route send-limit setting |
-| Implementation boundary | 2026-10-30, clarified 2026-11-02 | Design is finalized; select rewrite scope and implementation authorization separately. Do not treat documentation finalization as permission to change routing code, credentials or deployed bindings |
+| Implementation boundary | 2026-11-02 | Fully breaking account-system scope is accepted and execution order is documented in Roadmap. This turn plans the work; code execution requires the subsequent implementation request. Deployment and credential lifecycle operations retain their separate authorization boundary |
 | Defaults and validation | 2026-10-30, revised 2026-11-02 | Keep defaults for retained settings; removed retry/send-limit settings do not survive as inactive fields. Defer policy-value range and relationship checks to operator judgment, preserving schema/type and security checks |
 | Pre-dispatch candidate admission | 2026-11-02 | Replaces the 2026-10-30 Provider boundary: candidate-local representation failure permits checking later route candidates across Providers; invalid client input rejects, and trust, replay and explicit guarantees remain mandatory |
 | Replacement scope | 2026-11-02 | Refines the 2026-10-30 scope: replace shared credential/account/target binding across existing entrances together; new recovery execution starts with Generation. Diagnostics and standalone tasks retain existing execution capabilities; no legacy pool path or frozen-feature activation |
@@ -468,16 +470,16 @@ These do not reopen the finalized account/execution contract or block its design
 
 | Decision | Boundary |
 |---|---|
-| Rewrite scope and authorization | Shared binding across existing entrances and Generation-first recovery are selected. Detailed implementation scope, sequencing, verification plan and authorization are the next separate decision; no slices or rollout schedule are added here |
+| Implementation start and deployment | The [execution plan](roadmap.md#account-rewrite-execution-order) covers the accepted breaking scope. Start implementation on the user's execution request. Real acceptance waits for fresh credentials and selected models; production activation remains separately approved |
 | Optional restart continuity | Persistence remains excluded from the first rewrite. If later selected, decide opt-in, corruption handling, privacy, stale identities and shutdown behavior under [Optional restart continuity](#optional-restart-continuity) |
 
-Keep this document as the detailed redesign specification, linked from Architecture's accepted decisions. Only separately selected rewrite scope adds work and gates to Roadmap. Update Usage when behavior is implemented.
+Keep this document as the detailed redesign specification, linked from Architecture's accepted decisions. Roadmap owns the accepted-scope execution plan and its gates; do not duplicate that sequence here. Update Usage when behavior is implemented.
 
 ## Design acceptance criteria
 
 The design must explain deterministic request-boundary selection, at most one bounded same-target retry, configurable wait/recovery/time bounds, cooldown and affinity lifetimes, and honest behavior before and after publication. Identity, trusted targets, replay isolation, cancellation and credential lifecycle protections remain mandatory.
 
-The final review has settled the policy choices without prescribing modules, implementation slices or a test matrix. Detailed rewrite sequencing and concrete verification plans are selected separately within the shared-binding and Generation-first boundary. The project's existing [verification requirements](development.md#verification-gates) remain applicable; design finalization supplies no runtime acceptance evidence.
+The final review has settled the policy choices. Roadmap now owns [rewrite sequencing and exit conditions](roadmap.md#account-rewrite-execution-order) within the shared-binding and Generation-first boundary. The project's existing [verification requirements](development.md#verification-gates) remain applicable; design and planning supply no runtime acceptance evidence.
 
 ## Reference observations
 

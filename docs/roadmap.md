@@ -5,6 +5,10 @@ This page owns current scope, priorities, dependencies, and exit gates. [Archite
 ## Contents
 
 - [Current status](#current-status)
+- [Account rewrite execution order](#account-rewrite-execution-order)
+  - [Scope and cutover](#scope-and-cutover)
+  - [Ordered work and exit gates](#ordered-work-and-exit-gates)
+  - [Verification and operator handoff](#verification-and-operator-handoff)
 - [Standard request boundary repair](#standard-request-boundary-repair)
 - [Three-protocol fidelity repair](#three-protocol-fidelity-repair)
   - [Agent-default production findings](#agent-default-production-findings)
@@ -57,11 +61,11 @@ This page owns current scope, priorities, dependencies, and exit gates. [Archite
 
 ## Current status
 
-**Current focus (2026-11-02):** Slices R0–R5 are complete and the [Provider account redesign](provider-account-redesign-plan.md) is finalized. The user deferred the full installed-Agent exit until after credential/account routing is rewritten and new models are selected. Next, confirm rewrite scope and implementation authorization; then implement the rewrite, select models and complete default reasoning/tool/history acceptance across all three client protocols and selected cross-protocol lanes. Stage 4 resumes after that closure.
+**Current focus (2026-11-02):** Slices R0–R5 are complete and the [Provider account redesign](provider-account-redesign-plan.md) is finalized. The user accepted a fully breaking account-system rewrite, fresh manual key provisioning and the preparation of the execution plan below. This request plans rather than starts implementation. Execute the account rewrite first, then provision new credentials, select models and complete default reasoning/tool/history acceptance across all three client protocols and selected cross-protocol lanes. Stage 4 resumes after that closure.
 
 | Area | State | Next step |
 |---|---|---|
-| Routing | Account design finalized; existing runtime baseline retained | Confirm rewrite scope and implementation authorization before changing the baseline |
+| Routing | Fully breaking account scope accepted; execution order documented; runtime unchanged | Start AR0 on the user's implementation request |
 | Generation IR / Codec | R0–R5 complete; shared projections/discovery, qualified intake, history transfer and reviewed null contracts | Maintain these contracts through the installed-Agent exit |
 | Client compatibility | Default native Messages loops pass with installed pi and OpenCode without overrides | Defer full exit loops until account rewrite and new model selection |
 | Integration | R1a/R1b/R2 loops, controlled recovery and production closure passed | Revalidate changed paths against established gates |
@@ -70,6 +74,46 @@ This page owns current scope, priorities, dependencies, and exit gates. [Archite
 | Embedding & Media | Operational (Google native, OpenAI via OpenRouter, DashScope); Grok image codec implemented | Stage-4 contract selection for Images, Audio, Files, and Video |
 | Downstream integration | Agent API key authentication and diagnostic attribution implemented | Per-Agent JSONL session storage design |
 | Test baseline | Pinned upstream test baseline closed; strict SDK accumulators verified | Maintain offline baseline (`cargo test --locked --offline`) |
+
+## Account rewrite execution order
+
+Plan prepared on **2026-11-02** for the accepted [account specification](provider-account-redesign-plan.md). The sequence follows ownership dependencies: replace the shared account source before routing health, establish health/lifecycle ownership before retrying attempts, then validate consumers before requesting real credentials. No migration phase or compatibility mode is included.
+
+### Scope and cutover
+
+- Replace account configuration, stored-record shapes where needed, provisioning/inspection CLI, Provider/model binding, startup wiring and Generation recovery. Bind existing diagnostic and standalone-task entrances to the same account source without adding their own multi-account retry machinery or activating frozen features.
+- Remove pools, historical aliases, legacy readers, per-pool attempt policy and request-internal target advancement. Do not retain old schemas merely to reuse credentials. The user will provide fresh keys; OAuth accounts use managed login where needed.
+- Reuse the current semantic IR, protocol codecs, pure lowering, secure-store primitives, OAuth drivers and transport/client libraries unless an account-boundary defect requires a scoped change. Keep official protocol, replay, publication, cancellation and credential-security contracts; “fully breaking” does not discard these invariants.
+- Use the existing Nix toolchain, Tokio timers/cancellation, reqwest with implicit retries disabled, serde/schema parsing, clap, `fs-mistrust`/atomic storage helpers and `httpdate`. No new scheduler, persistence service or test framework is planned.
+- Work on `main` in coherent verified slices. A cutover may touch all consumers of one account contract in one slice; do not create a compatibility adapter just to preserve smaller commits. Intermediate slices are development checkpoints, not deployment candidates. Remove superseded helpers/tests with their owners, while preserving safety assertions.
+- No private credentials are needed for AR0–AR4. Use fresh test-owned storage, synthetic identities and local upstream authorities. Do not inspect, migrate, erase or revoke existing private credentials.
+
+### Ordered work and exit gates
+
+The identifiers below belong only to planning and acceptance documentation, not production modules or test names.
+
+| Order | Work | Completion evidence |
+|---|---|---|
+| **AR0 — Establish evidence and the deletion boundary** | Record the current baseline; enumerate pool/config consumers across catalog, credential store, startup, auth/upstream CLI, Generation and task entrances. Recheck current stable releases and locked sources for the dependencies directly affected by the rewrite; pin any selected changes before building on them, without unrelated upgrades. Trace reqwest/TLS error information and existing fixtures so conservative retry facts are not reconstructed from a lossy global error class. | Baseline checks are recorded with existing failures separated from new work. Every legacy consumer has a replacement/deletion owner. Relevant official protocol/SDK sources and existing test helpers are identified; no private configuration or real Provider calls. |
+| **AR1 — Replace the account source and all binding consumers** | Define the current schema and stable account/security identities; separate policy from secret material; remove stored pool metadata and compatibility paths. Split API-key `openai` from SIWC `chatgpt` with explicit model contracts. Rework provisioning/login/status/validation and switch startup, diagnostics and standalone-task bindings together. Get one synthetic account through the real loader and a Generation request end to end before expanding account cases. | Fresh API-key and synthetic OAuth setup works through production construction. Invalid references, duplicate names/subjects, concurrent login, target overrides and unsafe storage fail at their owners. All existing entrances load only the new account source; old formats fail closed without import. Focused process/credential/bootstrap checks pass; existing protocol projections remain intact. |
+| **AR2 — Establish health, affinity and OAuth ownership** | Implement ordered request-boundary selection, account/target cooldowns and atomic scoped probes. Add success-only binding commits with version/expiry/eviction protection; remove implicit content-derived conversation selection without conflating it with protocol cache hints. Connect coordinated OAuth maintenance, verified material revisions, old-auth probe release and stale-401 fencing. Keep configured disabled Active accounts in maintenance. Reproduce the retained failed-Responses health issue before fixing it. | Deterministic tests cover bound-target preference, short waits, next-request switching, mixed failure scopes, probe contention/cancellation, late results and affinity eviction. Failed native outcomes never recover health or commit affinity. New verified OAuth material releases only its old auth restriction; quota and lifecycle vetoes survive. |
+| **AR3 — Connect the bounded same-target executor** | Remove the old candidate chain and advancement state. Carry precise sanitized transport facts into the conservative classifier. Add at most one serial retry on the already selected target, the 30 s recovery clock, unchanged request deadline and attempt-local reset. Resolve final health/usage separately from downstream delivery; provide only credible short route-level `Retry-After`. | Synthetic wire failures prove the retry allow/deny set, two-send ceiling, no account change after dispatch, no overlapping upstream attempts, no replay after publication and no inference refresh-and-resend. Time-controlled checks cover hint waiting, recovery-to-content, long generation after recovery, original-deadline exhaustion and cancellation. First-attempt frames/IDs do not leak; usage and mixed health facts remain attributable. |
+| **AR4 — Close offline integration and hand over fresh setup** | Exercise every affected entrance through production construction, update shipped configuration templates and current Usage/CLI documentation, and remove remaining pool/legacy references. Run the applicable SDK consumers and installed-client synthetic recovery scenarios against the completed path. Verify credential-free validation/explanation and fresh setup instructions. | Full offline baseline and applicable Python/SDK gates pass on the final code. Installed pi/OpenCode synthetic checks establish actual transmission counts, retry-hint behavior and cancellation without personal config changes. Existing task/diagnostic binding still works without new task recovery. No migration command, legacy runtime path or real credential requirement remains. |
+| **AR5 — Fresh credentials, model selection and real acceptance** | The user provisions new API keys and any required OAuth sessions through the new loader/CLI. Validate configured accounts and select actual Provider/model bindings. Then run bounded serial Provider checks and the deferred full installed-Agent exit on the rewritten path. | Actual credential kinds and selected models are verified separately from synthetic recovery. Current installed pi/OpenCode complete default reasoning/tool/history loops across the three client protocols and selected cross-protocol lanes. Unavailable account combinations are reported as unverified, not inferred from mocks. Production activation remains separately approved. |
+
+AR1–AR3 are implementation dependencies, not three runtime modes or mandatory separate commits. Internal steps may be split for review only when the resulting slice remains coherent and does not introduce old/new compatibility execution. If the account cutover needs all three to form a coherent runtime, keep them in one implementation slice instead of manufacturing compatibility shims. Delete obsolete code as soon as its owner is replaced. A failure in protocol evidence, trusted-target binding or cancellation blocks dependent work; the retry ceiling and publication rules are not relaxed to make a check pass.
+
+### Verification and operator handoff
+
+- Add focused assertions at the responsible owner while rewriting, using `tests/{credential,process,gateway,transport}` and existing unit helpers. Integrate independent source-derived wire expectations when binding/classification changes; do not use old pool mappings or round trips as the oracle.
+- Before publishing each completed implementation slice, run the [full offline baseline](development.md#offline-baseline). Run applicable [Python checks](development.md#python-checks) and [SDK loopback](development.md#sdk-loopback-gate) for changed surfaces; reuse still-valid evidence instead of rerunning unchanged suites after documentation edits. Keep tests enabled and preserve strict JSON, bounds, auth, origin, replay, lifecycle and terminal assertions.
+- AR4's [installed-client synthetic recovery](development.md#installed-client-synthetic-recovery) is distinct from AR5's real Provider/default-Agent exit. Use currently installed Agents with isolated state, never downgrade them to source pins or alter their personal credentials.
+- Finish AR0–AR4 before asking the user for keys. Deliver current configuration examples, human-readable validation/status and explicit setup commands; secret values do not appear in source, command logs or reports. OAuth provisioning is an interactive managed login, not token copying.
+- For AR5, fix target, request count, output cap and timeout before each real run, use the project loader and redacted reporting, and run serially without hidden harness retries. New model selection follows the rewrite; only correctly bound existing models serve as intermediate reference cases.
+- Do not stop/restart deployed services, overwrite old credential stores, revoke sessions or activate new bindings as a side effect of code acceptance. Deployment and any destructive private-data operation remain separately approved. A new credential format does not require automatic deletion of the old files.
+- Likely blockers are loss of transport failure-stage information, Provider/profile-specific model restrictions and credential-publication races. Resolve them with pinned source inspection and synthetic reproductions within the affected slice; do not add compatibility layers or broaden semantic admission as a workaround.
+
+Completed rows are removed as slices land; meaningful contract changes belong in Architecture and the account specification. AR5 closure resumes the existing Stage-4 sequence, not a new API expansion.
 
 ## Standard request boundary repair
 
@@ -308,9 +352,9 @@ The standards-reset architecture baseline was accepted on 2026-10-23. Implemente
 
 ### Temporary routing freeze
 
-The separately requested [Provider account redesign plan](provider-account-redesign-plan.md) was **finalized on 2026-11-02**; Architecture records its [accepted decisions](architecture.md#routing-and-security-decisions). The selected order remains: confirm rewrite scope and implementation authorization, rewrite credential/account routing, select new models, complete the full installed-Agent exit, then resume Stage 4. Shared account binding across existing entrances and Generation-first recovery are the accepted boundary; detailed slices, verification plans and rollout are not yet selected. Design finalization does not authorize changes to code or deployed credentials.
+The separately requested [Provider account redesign plan](provider-account-redesign-plan.md) was **finalized on 2026-11-02**; Architecture records its [accepted decisions](architecture.md#routing-and-security-decisions). The user subsequently accepted the fully breaking scope and fresh manual provisioning. The [execution plan](#account-rewrite-execution-order) now owns dependencies and gates: replace the account system, provision fresh credentials and select models, complete the installed-Agent exit, then resume Stage 4. The current planning request does not itself start implementation or alter deployed credentials.
 
-The [stable routing baseline](architecture.md#failover) remains frozen until rewrite scope and implementation authorization are confirmed. Unrelated codec and protocol work must not alter:
+Until implementation is requested, the [stable routing baseline](architecture.md#failover) remains unchanged. During the account rewrite, only in-scope work may replace that baseline; unrelated codec and protocol work must not alter:
 - Pool membership, health probes, or target ordering.
 - Conversation cache affinity or cooldown thresholds.
 - Route selection based on projected loss or codec capability.
@@ -326,8 +370,8 @@ The [stable routing baseline](architecture.md#failover) remains frozen until rew
 
 | Milestone | Requirements | Permitted actions |
 |---|---|---|
-| Development slice | Focused unit and codec tests pass; regressions isolated | Continue local edits under routing freeze |
-| Commit and push | Full offline baseline passes (`cargo test --locked --offline`) | Commit and push to `origin/main` |
+| Development slice | Focused owner/codec tests pass; regressions isolated | Continue authorized implementation within its scope; unrelated work stays under the routing freeze |
+| Commit and push | Full [offline baseline](development.md#offline-baseline) passes for implementation; [documentation checks](development.md#documentation-checks) for docs only | Commit completed slices; publication follows project authorization |
 | Integration acceptance | Connected SDK scenarios and client loops pass | Declare client/protocol compatibility |
 
 ## Integration handoff
