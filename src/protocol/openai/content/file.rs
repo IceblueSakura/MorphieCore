@@ -73,7 +73,7 @@ pub(in crate::protocol::openai) fn read(
         description: ResourceDescription::File(FileDescription {
             filename,
             detail,
-            context: crate::semantic::value::Presence::Absent,
+            context: None,
         }),
     };
     resource.validate()?;

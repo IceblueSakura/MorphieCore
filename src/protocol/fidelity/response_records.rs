@@ -277,10 +277,9 @@ fn creator_dependency(item: &Item, resources: &ResourceTable) -> [u8; 32] {
                         }
                     }
                     match &file.context {
-                        crate::semantic::value::Presence::Absent => hash.update([0]),
-                        crate::semantic::value::Presence::Null => hash.update([1]),
-                        crate::semantic::value::Presence::Value(context) => {
-                            hash.update([2]);
+                        None => hash.update([0]),
+                        Some(context) => {
+                            hash.update([1]);
                             hash.update((context.as_str().len() as u64).to_le_bytes());
                             hash.update(context.as_str().as_bytes());
                         }

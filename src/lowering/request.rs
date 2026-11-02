@@ -20,6 +20,48 @@ pub(crate) enum Target<'a> {
     GenerateContent(&'a crate::protocol::google::generate_content::TargetContract),
     Interactions(&'a crate::protocol::google::interactions::TargetContract),
 }
+/// Standard Chat cannot return required readable tool-cycle history. Resolve
+/// that known next-turn failure on the candidate copy, before target encoding.
+pub(crate) fn chat_history_fallback<'a>(
+    source: &'a Request,
+    contract: &OpenAiContract,
+) -> Result<Conversion<Cow<'a, Request>>, ConversionFailure> {
+    let mut output = Conversion {
+        value: Cow::Borrowed(source),
+        evidence: EvidenceDelta::default(),
+    };
+    if contract.reasoning_history
+        != Some(crate::protocol::reasoning::ReasoningHistory::RequiredWithTools)
+        || source.task.semantic.tools().is_empty()
+        || source.task.semantic.reasoning().activation.value()
+            == Some(&ReasoningActivation::Disabled)
+    {
+        return Ok(output);
+    }
+    if source.task.semantic.reasoning().read_history.value() == Some(&true)
+        || contract.adaptation.rules.reject_disabled_reasoning
+        || !contract.adaptation.rules.thinking_controls
+            && !contract.dispositions.native(Feature::Reasoning)
+    {
+        return Err(CodecError::Unsupported(CarrierReason::Reasoning).into());
+    }
+    admit_source(source)?;
+    let mut settings = source.task.semantic.settings().clone();
+    settings.effort = None;
+    settings.reasoning = ReasoningRequest::present(None);
+    settings.reasoning.activation = Presence::Value(ReasoningActivation::Disabled);
+    output.value.to_mut().task.semantic = source
+        .task
+        .semantic
+        .clone()
+        .with_settings(settings)
+        .map_err(CodecError::from)?;
+    output.evidence.push(
+        super::disposition::Rule::CHAT_FALLBACK_THINKING_OFF
+            .effect(ConversionBoundary::RequestProject),
+    );
+    Ok(output)
+}
 pub(crate) fn admit_source(source: &Request) -> Result<(), ConversionFailure> {
     source.check_grouping()?;
     source.task.semantic.validate().map_err(CodecError::from)?;
@@ -1803,33 +1845,126 @@ pub(crate) fn project<'a>(
     source.task.semantic.validate().map_err(CodecError::from)?;
     // Existing trust-qualified transfer precedes target field admission. A
     // foreign owner can disappear without making the retained history unsupported.
-    let mut stripped = if let Target::OpenAi(api, contract) = target {
-        let issuer = contract
+    let native_origin = native_target.map(|native| native.origin());
+    let issuer = match target {
+        Target::OpenAi(_, contract) => contract
             .replay_origin
             .as_ref()
-            .or(contract.adaptation.scope.as_ref());
-        if api == GenerationApi::Responses
-            && contract.adaptation.rules.bailian_requests
-            && contract.reasoning_history
-                == Some(crate::protocol::reasoning::ReasoningHistory::Accepted)
-        {
-            source.without_uncarried_reasoning(issuer, |reasoning| {
-                let omit = !crate::protocol::openai::dialect::bailian::responses_reasoning_carrier(
-                    reasoning,
-                );
-                if omit && source.task.semantic.reasoning().read_history.value() == Some(&true) {
-                    return Err(CodecError::Unsupported(CarrierReason::Reasoning));
-                }
-                Ok(omit)
-            })?
-        } else {
-            source.without_foreign_reasoning(issuer)?
-        }
-    } else {
-        let native = native_target.ok_or_else(CodecError::invalid)?;
-        source.without_foreign_reasoning(Some(&native.origin()))?
+            .or(contract.adaptation.scope.as_ref()),
+        _ => Some(native_origin.as_ref().ok_or_else(CodecError::invalid)?),
     };
+    let mut stripped = source.without_uncarried_reasoning(issuer, |reasoning| {
+        let carries =
+            match target {
+                Target::OpenAi(GenerationApi::Responses, contract) => {
+                    if contract.adaptation.rules.bailian_requests {
+                        crate::protocol::openai::dialect::bailian::responses_reasoning_carrier(
+                            reasoning,
+                        )
+                    } else {
+                        reasoning
+                            .replay
+                            .as_ref()
+                            .is_none_or(|value| value.format() == ReplayFormat::ResponsesEncrypted)
+                    }
+                }
+                Target::OpenAi(GenerationApi::Chat, contract) => {
+                    if reasoning.replay.is_some() {
+                        contract.adaptation.rules.structured_chat_reasoning
+                            && !contract.adaptation.rules.readable_reasoning_text_only
+                            && reasoning.replay.as_ref().is_some_and(|value| {
+                                value.format() == ReplayFormat::ResponsesEncrypted
+                            })
+                    } else {
+                        (contract.adaptation.rules.readable_reasoning
+                            || contract.adaptation.rules.structured_chat_reasoning)
+                            && (!contract.adaptation.rules.readable_reasoning_text_only
+                                || reasoning
+                                    .parts
+                                    .iter()
+                                    .all(|(_, part)| matches!(part, ReasoningContent::Text(_))))
+                    }
+                }
+                Target::Messages(_) => reasoning.replay.as_ref().is_some_and(|value| {
+                    reasoning.status == ItemLifecycle::Completed
+                        && match value.format() {
+                            ReplayFormat::AnthropicMessagesThinking => {
+                                reasoning.parts.len() <= 1
+                                    && reasoning.parts.iter().all(|(_, part)| {
+                                        matches!(part, ReasoningContent::Summary(_))
+                                    })
+                            }
+                            ReplayFormat::AnthropicMessagesRedactedThinking => {
+                                reasoning.parts.is_empty()
+                            }
+                            _ => false,
+                        }
+                }),
+                Target::GenerateContent(_) | Target::Interactions(_) => reasoning.replay.is_some(),
+            };
+        Ok(!carries)
+    })?;
     let mut transferred = stripped.is_some();
+    // Citation syntax is protocol-owned. Keep carriable annotations; discard only
+    // uncarriable historical annotations without changing their visible text.
+    let input = stripped.as_ref().unwrap_or(source);
+    let mut items = Cow::Borrowed(input.task.semantic.items());
+    let mut citations_changed = false;
+    for (index, (_, item)) in input.task.semantic.items().iter().enumerate() {
+        if let Item::Message(message) = item {
+            for (ordinal, part) in message.parts.iter().enumerate() {
+                if let ContentPart::Text(text) = &part.content {
+                    let annotations: Vec<_> = text
+                        .annotations()
+                        .iter()
+                        .filter(|annotation| match target {
+                            Target::OpenAi(api @ GenerationApi::Responses, _)
+                                if message.role == MessageRole::Assistant =>
+                            {
+                                crate::protocol::openai::content::citations::check(
+                                    annotation,
+                                    input.task.semantic.resources(),
+                                    api,
+                                )
+                                .is_ok()
+                            }
+                            _ => false,
+                        })
+                        .cloned()
+                        .collect();
+                    if annotations.len() != text.annotations().len() {
+                        let projected = TextContent::new(
+                            crate::semantic::value::Text::allowing_empty(
+                                text.as_str(),
+                                "history text",
+                                MAX_TEXT_BYTES,
+                            )
+                            .map_err(|_| CodecError::Limit)?,
+                            annotations,
+                            text.logprobs().clone(),
+                        )
+                        .map_err(CodecError::from)?;
+                        let Item::Message(message) = &mut items.to_mut()[index].1 else {
+                            unreachable!("the copied owner is a message");
+                        };
+                        message.parts[ordinal].content = ContentPart::Text(projected);
+                        citations_changed = true;
+                    }
+                }
+            }
+        }
+    }
+    if citations_changed {
+        let items = items.into_owned();
+        let input = stripped.get_or_insert_with(|| source.clone());
+        input.task.semantic = input
+            .task
+            .semantic
+            .clone()
+            .with_items(items)
+            .map_err(CodecError::from)?;
+        transferred = true;
+    }
     if let Some(native) = native_target {
         let formats: &[ReplayFormat] = match target {
             Target::Messages(_) => &[
@@ -2108,6 +2243,99 @@ mod tests {
         crate::adapter::ClientAdapter::Messages
             .decode_client_request(body.to_string().as_bytes())
             .unwrap()
+    }
+
+    #[test]
+    fn visible_history_transfer_preserves_text_and_tool_links_without_forging_thinking() {
+        use crate::protocol::{
+            anthropic::messages::{Dialect as MessagesDialect, Profile, TargetContract},
+            native::ReplayTarget,
+            openai::{Dialect, GenerationCodec},
+        };
+        let codec = GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None);
+        let source = codec.decode_client_request(json!({"model":"m","max_output_tokens":64,"input":[
+            {"role":"user","content":"go"},
+            {"type":"reasoning","id":"rs_1","summary":[{"type":"summary_text","text":"private plan"}]},
+            {"type":"message","id":"msg_1","status":"completed","role":"assistant","content":[{"type":"output_text","text":"visible",
+                "annotations":[{"type":"url_citation","start_index":0,"end_index":7,
+                    "url":"https://example.invalid/source","title":"Source"}]}]},
+            {"type":"function_call","call_id":"call_1","name":"lookup","arguments":"{}"},
+            {"type":"function_call_output","call_id":"call_1","output":"feedback"}
+        ]}).to_string().as_bytes()).unwrap();
+        let before = source.clone();
+        let chat = GenerationCodec::new(GenerationApi::Chat, Dialect::Standard, None)
+            .encode_request_with_evidence(&source, "m", &OpenAiContract::full())
+            .unwrap();
+        assert!(
+            chat.evidence
+                .contains_rule("chat.transfer-visible-history.v1")
+        );
+        assert_eq!(chat.value["messages"][1]["content"], "visible");
+        assert_eq!(chat.value["messages"][1]["tool_calls"][0]["id"], "call_1");
+        assert_eq!(chat.value["messages"][2]["tool_call_id"], "call_1");
+        assert!(!chat.value.to_string().contains("private plan"));
+        let messages = TargetContract::new(Profile::AdaptiveTextTools, MessagesDialect::Standard)
+            .encode_request(&source, &ReplayTarget::new("synthetic", "m").unwrap())
+            .unwrap();
+        assert!(
+            messages
+                .evidence
+                .contains_rule("messages.transfer-visible-history.v1")
+        );
+        assert_eq!(
+            messages.value["messages"][1]["content"],
+            json!([
+                {"type":"text","text":"visible"},
+                {"type":"tool_use","id":"call_1","name":"lookup","input":{}}
+            ])
+        );
+        assert_eq!(
+            messages.value["messages"][2]["content"][0]["tool_use_id"],
+            "call_1"
+        );
+        assert!(!messages.value.to_string().contains("private plan"));
+        assert!(!messages.value.to_string().contains("example.invalid"));
+        assert_eq!(source, before);
+        let mut intent = source.clone();
+        let mut settings = intent.task.semantic.settings().clone();
+        settings.reasoning.read_history = Presence::Value(true);
+        settings.reasoning.presence = ReasoningPresence::Present;
+        intent.task.semantic = intent.task.semantic.with_settings(settings).unwrap();
+        assert!(
+            TargetContract::new(Profile::AdaptiveTextTools, MessagesDialect::Standard)
+                .encode_request(&intent, &ReplayTarget::new("synthetic", "m").unwrap())
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn structured_chat_history_retains_unsigned_summary_when_a_carrier_exists() {
+        use crate::protocol::openai::{Dialect, GenerationCodec};
+        let source = GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None)
+            .decode_client_request(br#"{"model":"m","input":[
+                {"type":"reasoning","id":"rs_1","summary":[{"type":"summary_text","text":"retained summary"}]},
+                {"type":"message","id":"msg_1","role":"assistant","status":"completed",
+                    "content":[{"type":"output_text","text":"visible","annotations":[]}]}
+            ]}"#).unwrap();
+        let before = source.clone();
+        let target = GenerationCodec::new(GenerationApi::Chat, Dialect::OpenRouter, None);
+        let result = target
+            .encode_request_with_evidence(&source, "m", &OpenAiContract::full())
+            .unwrap();
+        assert_eq!(
+            result.value["messages"][0]["reasoning_details"][0]["type"],
+            "reasoning.summary"
+        );
+        assert_eq!(
+            result.value["messages"][0]["reasoning_details"][0]["summary"],
+            "retained summary"
+        );
+        assert!(
+            !result
+                .evidence
+                .contains_rule("chat.transfer-visible-history.v1")
+        );
+        assert_eq!(source, before);
     }
 
     #[test]

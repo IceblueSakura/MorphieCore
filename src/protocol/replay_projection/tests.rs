@@ -221,7 +221,10 @@ fn foreign_signed_text_drops_only_replay_and_affected_call_aliases() {
     )
     .unwrap();
     let copied = request
-        .without_foreign_reasoning(Some(&ReplayTarget::new("other", "other").unwrap().origin()))
+        .without_uncarried_reasoning(
+            Some(&ReplayTarget::new("other", "other").unwrap().origin()),
+            |_| Ok(false),
+        )
         .unwrap()
         .unwrap();
     assert_eq!(copied.task.semantic.items().len(), 3);
@@ -367,28 +370,39 @@ fn native_history_validates_deleted_anchors_before_partial_attachments() {
     )
     .unwrap();
     assert!(matches!(
-        request.without_foreign_reasoning(Some(&ReplayTarget::new("other", "other").unwrap().origin())),
+        request.without_uncarried_reasoning(
+            Some(&ReplayTarget::new("other", "other").unwrap().origin()), |_| Ok(false),
+        ),
         Err(CodecError::Unsupported(reason)) if reason == CarrierReason::Replay
     ));
 }
 
 #[test]
-fn ordinary_reasoning_cannot_hide_an_unrestored_carrier() {
+fn unsealed_reasoning_is_omitted_but_malformed_recognized_envelopes_reject() {
     let client = client(ClientProtocol::Responses);
     let input = json!({"model":"public","input":[{"type":"reasoning","id":"legacy","summary":[],
-        "encrypted_content":"mca1.synthetic"}]});
-    assert!(
-        matches!(client.decode_client_request(input.to_string().as_bytes()),
-        Err(CodecError::Unsupported(reason)) if reason == CarrierReason::Replay)
-    );
+        "encrypted_content":"mca1.synthetic"},{"role":"user","content":"visible"}]});
+    client
+        .decode_client_request(input.to_string().as_bytes())
+        .unwrap();
     let raw = GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None);
     let mut request = raw.decode_request(input.to_string().as_bytes()).unwrap();
-    assert!(matches!(
-        open_from_client(&mut request),
-        Err(CodecError::Invalid(
-            crate::protocol::failure::ShapeReason::InvalidValue
-        ))
-    ));
+    open_from_client(&mut request).unwrap();
+    let (body, rules) = raw
+        .encode_request_with_rules(&request, "public", &TargetContract::full())
+        .unwrap();
+    assert_eq!(
+        body["input"],
+        json!([{"type":"message","role":"user",
+        "content":[{"type":"input_text","text":"visible"}]}])
+    );
+    assert_eq!(rules, ["responses.transfer-visible-history.v1"]);
+    let mut malformed = input;
+    malformed["input"][0]["encrypted_content"] = json!("mc1.invalid");
+    let mut request = raw
+        .decode_client_request(malformed.to_string().as_bytes())
+        .unwrap();
+    assert!(open_from_client(&mut request).is_err());
 }
 
 #[test]

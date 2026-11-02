@@ -117,26 +117,8 @@ impl EventEncoder {
         self.target_locked = true;
         let checked_projection = self.projection.len();
         let result = (|| {
-            if self.contract.reported_facts
-                == crate::protocol::conversion::generation::ReportedFactPolicy::StrictComplete
-                && self.metadata.context.reports.iter().any(|report| {
-                    projection::service_class_view(&report.service_class, self.profile)
-                        != report.service_class
-                })
-            {
-                return Err(CodecError::Representation {
-                    boundary:
-                        crate::protocol::conversion::generation::ConversionBoundary::EventProject,
-                    cause:
-                        crate::protocol::conversion::generation::RepresentationError::ReportedFacts,
-                });
-            }
             let metadata_echo = if self.profile == GenerationApi::Responses {
-                projection::request_metadata_echo(&self.metadata, self.contract.reported_facts)
-                    .map_err(|cause| CodecError::Representation {
-                        boundary: crate::protocol::conversion::generation::ConversionBoundary::EventProject,
-                        cause,
-                    })?
+                projection::request_metadata_echo(&self.metadata)
             } else {
                 None
             };
@@ -144,11 +126,6 @@ impl EventEncoder {
                 && (self.metadata.context.settings().is_some()
                     || self.metadata.context.instruction_messages.is_some())
             {
-                if self.contract.reported_facts
-                    == crate::protocol::conversion::generation::ReportedFactPolicy::StrictComplete
-                {
-                    return Err(CodecError::Unsupported(CarrierReason::Unavailable));
-                }
                 self.record_loss(Rule::OMIT_CHAT_REPORTED_SETTINGS);
             }
             crate::protocol::openai::lowering::events::check_event(

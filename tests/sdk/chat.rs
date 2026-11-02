@@ -278,7 +278,7 @@ pub(super) async fn handle(
     let options = request
         .delivery
         .options
-        .value()
+        .as_ref()
         .cloned()
         .unwrap_or_default();
     // This fixture opts out of padding; no production entropy source is exercised.

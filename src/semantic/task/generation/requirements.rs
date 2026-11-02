@@ -41,7 +41,7 @@ fn input(facts: &mut BTreeMap<Feature, usize>, resource: &ResourceUse, r: &Gener
         if let crate::semantic::task::generation::ResourceDescription::File(file) =
             resource.description
         {
-            mark(facts, Feature::DocumentContext, !file.context.is_absent());
+            mark(facts, Feature::DocumentContext, file.context.is_some());
         }
         if let ResourceLocation::Inline { media_type, .. } = resource.location {
             let kind = match media_type

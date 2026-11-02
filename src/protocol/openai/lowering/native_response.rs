@@ -406,7 +406,7 @@ mod tests {
                 "public",
                 Default::default(),
                 crate::semantic::context::StreamOptions {
-                    include_obfuscation: crate::semantic::value::Presence::Value(false),
+                    include_obfuscation: Some(false),
                     ..Default::default()
                 },
                 crate::protocol::openai::obfuscation::Obfuscation::Disabled,
@@ -487,7 +487,7 @@ mod tests {
                     metadata.clone(),
                     Default::default(),
                     crate::semantic::context::StreamOptions {
-                        include_obfuscation: crate::semantic::value::Presence::Value(false),
+                        include_obfuscation: Some(false),
                         ..Default::default()
                     },
                     crate::protocol::openai::obfuscation::Obfuscation::Disabled,
@@ -636,6 +636,23 @@ mod tests {
             .latest_mut()
             .expect("report")
             .settings = Some(safety_settings);
+        for client in [
+            crate::adapter::ClientAdapter::Messages,
+            crate::adapter::ClientAdapter::openai(
+                crate::protocol::openai::GenerationCodec::new(
+                    GenerationApi::Chat,
+                    crate::protocol::openai::Dialect::Standard,
+                    None,
+                ),
+                crate::protocol::openai::TargetContract::full(),
+            ),
+        ] {
+            let mut projection = crate::adapter::ClientProjection::new(client, false, true);
+            assert!(
+                projection.metadata(&metadata).is_err(),
+                "the common owner must reject safety before incidental settings omission"
+            );
+        }
         assert!(messages.update_metadata(metadata).is_err());
         assert!(messages.encode(&terminal, &source.fidelity).is_err());
         assert!(messages.finish().is_err());

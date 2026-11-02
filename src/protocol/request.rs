@@ -56,16 +56,6 @@ impl GenerationRequestEnvelope {
     }
 }
 impl GenerationRequestEnvelope {
-    /// Transfer visible history, not another model's internal reasoning state.
-    /// Demonstrably incompatible reasoning is omitted regardless of item lifecycle;
-    /// its opaque value must still be finalized. Unattributed readable reasoning is
-    /// not inferred to be foreign. Required context remains.
-    pub(crate) fn without_foreign_reasoning(
-        &self,
-        target: Option<&crate::semantic::value::ReplayOrigin>,
-    ) -> Result<Option<GenerationRequestEnvelope>, CodecError> {
-        self.without_uncarried_reasoning(target, |_| Ok(false))
-    }
     /// Extend visible-history transfer with the selected codec's carrier policy.
     /// Dependency checks and alias pruning apply equally to same-issuer omissions.
     pub(crate) fn without_uncarried_reasoning(
@@ -137,6 +127,10 @@ impl GenerationRequestEnvelope {
         }
         if omitted.is_empty() && foreign_parts.is_empty() && foreign_calls.is_empty() {
             return Ok(None);
+        }
+        if !omitted.is_empty() && self.task.semantic.reasoning().read_history.value() == Some(&true)
+        {
+            return Err(CodecError::Unsupported(CarrierReason::Reasoning));
         }
         if self.task.semantic.items().iter().any(|(id, item)| {
             omitted.contains(id)

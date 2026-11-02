@@ -1,9 +1,8 @@
 //! Partial gateway-boundary declarations, not model-effectiveness or full-loop promises.
 use crate::lowering::disposition::Rule;
 use crate::{
-    adapter::ClientAdapter,
     gateway::{ApiError, BoundEntry, Runtime, StartupError},
-    protocol::{ClientProtocol, conversion::generation::ReportedFactPolicy},
+    protocol::ClientProtocol,
 };
 use axum::{body::Body, extract::State, http::HeaderValue, response::Response};
 use bytes::Bytes;
@@ -19,6 +18,8 @@ enum Treatment {
     Faithful,
     ApprovedAdaptation,
     Rejected,
+    NonUniform,
+    NotAssessed,
 }
 #[derive(Serialize)]
 struct Case {
@@ -29,6 +30,26 @@ struct Case {
     rules: Vec<&'static str>,
 }
 impl Case {
+    fn from_capability(
+        feature: &'static str,
+        domain: &'static str,
+        capability: &super::discovery::contract::Capability,
+    ) -> Self {
+        use super::discovery::contract::State;
+        let treatment = match capability.state() {
+            State::Faithful => Treatment::Faithful,
+            State::ApprovedAdaptation => Treatment::ApprovedAdaptation,
+            State::Unavailable => Treatment::Rejected,
+            State::NonUniform => Treatment::NonUniform,
+            State::NotAssessed => Treatment::NotAssessed,
+        };
+        Self {
+            feature,
+            domain,
+            treatment,
+            rules: capability.rules().collect(),
+        }
+    }
     fn new(feature: &'static str, domain: &'static str, treatment: Treatment) -> Self {
         Self {
             feature,
@@ -43,6 +64,8 @@ struct Entry<'a> {
     model: &'a str,
     protocol: &'static str,
     delivery_modes: Vec<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    agent_defaults: Option<&'a super::discovery::contract::DefaultRequests>,
     #[serde(skip_serializing_if = "Option::is_none")]
     embedding: Option<EmbeddingContract<'a>>,
     request: Vec<Case>,
@@ -125,6 +148,7 @@ impl<'a> Entry<'a> {
             model,
             protocol: "embeddings",
             delivery_modes: vec!["json"],
+            agent_defaults: None,
             embedding: Some(EmbeddingContract {
                 input_kinds: if contract.tokenizer.is_some() {
                     vec!["text", "token_ids"]
@@ -162,42 +186,17 @@ impl<'a> Entry<'a> {
             history: vec![],
         }
     }
-    fn from_bound(entry: &'a BoundEntry) -> Self {
+    fn from_bound(
+        entry: &'a BoundEntry,
+        contract: &'a super::discovery::contract::Interface,
+    ) -> Self {
         let protocol = entry.client.protocol();
-        let request = vec![];
-        let (settings_domain, settings_rule, settings_admitted) = match &entry.client {
-            ClientAdapter::Messages => (
-                "incidental_settings_without_safety",
-                "messages.omit-incidental-settings.v1",
-                true,
-            ),
-            ClientAdapter::OpenAi { adapter, contract } => (
-                if protocol == ClientProtocol::Chat {
-                    "incidental_settings_without_safety"
-                } else {
-                    "independent_reasoning_controls_without_carrier"
-                },
-                if protocol == ClientProtocol::Chat {
-                    Rule::OMIT_CHAT_REPORTED_SETTINGS
-                } else {
-                    Rule::OMIT_REPORTED_REASONING_CONTROLS
-                }
-                .name(),
-                adapter.contract(contract).reported_facts != ReportedFactPolicy::StrictComplete,
-            ),
-        };
-        let mut settings = Case::new(
-            "response.reported.settings",
-            settings_domain,
-            if settings_admitted {
-                Treatment::ApprovedAdaptation
-            } else {
-                Treatment::Rejected
-            },
-        );
-        if settings_admitted {
-            settings.rules.push(settings_rule);
-        }
+        let request = contract
+            .request_cases()
+            .map(|(name, capability)| {
+                Case::from_capability(name, "simple_source_domain", capability)
+            })
+            .collect();
         let mut assessments = Case::new(
             "generation.safety",
             "assessment_only_reports",
@@ -207,7 +206,6 @@ impl<'a> Entry<'a> {
             .rules
             .push(crate::adapter::SAFETY_ASSESSMENT_RULE);
         let mut delivery = vec![
-            settings,
             assessments,
             Case::new(
                 "generation.safety",
@@ -215,6 +213,17 @@ impl<'a> Entry<'a> {
                 Treatment::Rejected,
             ),
         ];
+        if protocol == ClientProtocol::Responses {
+            let mut settings = Case::new(
+                "response.reported.settings",
+                "independent_reasoning_controls_without_carrier",
+                Treatment::ApprovedAdaptation,
+            );
+            settings
+                .rules
+                .push(Rule::OMIT_REPORTED_REASONING_CONTROLS.name());
+            delivery.push(settings);
+        }
         let mut usage = Case::new(
             "response.delivery.usage",
             "reported_then_derived_then_estimated",
@@ -311,21 +320,7 @@ impl<'a> Entry<'a> {
         } else {
             vec![]
         };
-        let native_phase = protocol == ClientProtocol::Responses;
-        if !native_phase {
-            let mut case = Case::new(
-                "generation.message.phase",
-                "assistant_commentary_or_final_answer",
-                Treatment::ApprovedAdaptation,
-            );
-            case.rules.push("generation.omit-delivery-message-phase.v1");
-            delivery.push(case);
-            history.push(Case::new(
-                "generation.message.phase",
-                "returned_assistant_phase",
-                Treatment::Rejected,
-            ));
-        } else {
+        if protocol == ClientProtocol::Responses {
             delivery.push(Case::new(
                 "generation.message.phase",
                 "assistant_commentary_or_final_answer",
@@ -337,6 +332,11 @@ impl<'a> Entry<'a> {
                 Treatment::Faithful,
             ));
         }
+        delivery.extend(
+            contract
+                .delivery_adaptations()
+                .map(|(mode, fact, capability)| Case::from_capability(fact, mode, capability)),
+        );
         Self {
             model: entry.public.id.as_str(),
             protocol: match protocol {
@@ -344,7 +344,8 @@ impl<'a> Entry<'a> {
                 ClientProtocol::Responses => "responses",
                 ClientProtocol::Messages => "messages",
             },
-            delivery_modes: vec!["json", "sse"],
+            delivery_modes: contract.delivery_modes().to_vec(),
+            agent_defaults: Some(contract.defaults()),
             embedding: None,
             request,
             delivery,
@@ -366,17 +367,39 @@ struct Snapshot<'a> {
 }
 pub(in crate::gateway) struct CapabilityView(pub(in crate::gateway) Bytes);
 impl CapabilityView {
+    #[cfg(test)]
     pub(in crate::gateway) fn bind(
         entries: &BTreeMap<(ClientProtocol, String), Arc<BoundEntry>>,
         embeddings: &BTreeMap<String, Arc<crate::gateway::tasks::embeddings::BoundEmbedding>>,
+        response_bytes: usize,
+    ) -> Result<Self, StartupError> {
+        Self::from_contracts(
+            entries,
+            embeddings,
+            &super::discovery::compile(entries)?,
+            response_bytes,
+        )
+    }
+    pub(in crate::gateway) fn from_contracts(
+        entries: &BTreeMap<(ClientProtocol, String), Arc<BoundEntry>>,
+        embeddings: &BTreeMap<String, Arc<crate::gateway::tasks::embeddings::BoundEmbedding>>,
+        contracts: &super::discovery::Contracts,
         response_bytes: usize,
     ) -> Result<Self, StartupError> {
         if entries.len() > 64 * ClientProtocol::ALL.len() || embeddings.len() > 64 {
             return Err(StartupError::Binding);
         }
         let data = entries
-            .values()
-            .map(|entry| Entry::from_bound(entry))
+            .iter()
+            .map(|(key, entry)| {
+                contracts
+                    .interfaces
+                    .get(key)
+                    .map(|contract| Entry::from_bound(entry, contract))
+                    .ok_or(StartupError::Binding)
+            })
+            .collect::<Result<Vec<_>, _>>()?
+            .into_iter()
             .chain(
                 embeddings
                     .iter()

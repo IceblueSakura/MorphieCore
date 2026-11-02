@@ -199,12 +199,11 @@ fn tool_turn_transfer_keeps_real_results_and_forgets_paired_wire_ids_only() {
         reasoning_history: Some(morphiecore::protocol::reasoning::ReasoningHistory::Accepted),
         ..Contract::full()
     };
-    assert!(
-        summary_target
-            .encode_request(&request, "qwen3.8-flash", &Contract::full())
-            .is_err(),
-        "unassessed same-issuer behavior remains unchanged"
-    );
+    let delegated = summary_target
+        .encode_request_with_rules(&request, "qwen3.8-flash", &Contract::full())
+        .unwrap();
+    assert_eq!(delegated.0["input"], wire["input"]);
+    assert_eq!(delegated.1, ["responses.transfer-visible-history.v1"]);
     let (transferred, losses) = summary_target
         .encode_request_with_rules(&request, "qwen3.8-flash", &assessed)
         .unwrap();
@@ -317,14 +316,26 @@ fn tool_turn_transfer_keeps_real_results_and_forgets_paired_wire_ids_only() {
 }
 
 #[test]
-fn values_without_a_known_origin_reject_without_mutation() {
+fn unsealed_values_transfer_visible_history_without_issuer_authority_or_mutation() {
     let mut body = client_round_trip("openai/model-a");
     body["input"][1]["encrypted_content"] = json!("raw-token-from-elsewhere");
     let mut request = client()
         .decode_request(body.to_string().as_bytes())
         .unwrap();
     let saved = request.clone();
-    assert!(open_from_client(&mut request).is_err());
+    open_from_client(&mut request).unwrap();
+    assert_eq!(request, saved);
+    let (wire, rules) = upstream("openai/model-a")
+        .encode_request_with_rules(&request, "model-a", &contract("openai/model-a"))
+        .unwrap();
+    assert_eq!(
+        wire["input"],
+        json!([
+            {"type":"message","role":"user","content":[{"type":"input_text","text":"first"}]},
+            {"type":"message","role":"user","content":[{"type":"input_text","text":"next"}]}
+        ])
+    );
+    assert_eq!(rules, ["responses.transfer-visible-history.v1"]);
     assert_eq!(request, saved);
 }
 
@@ -381,7 +392,7 @@ fn foreign_replay_remains_bound_and_malformed_replay_rejects() {
             .decode_request(body.to_string().as_bytes())
             .unwrap();
         let original = request.clone();
-        if !token.starts_with("mc1.") || replay_envelope::open(&token).is_none() {
+        if token.starts_with("mc1.") && replay_envelope::open(&token).is_none() {
             assert!(open_from_client(&mut request).is_err());
             assert_eq!(request, original);
             continue;

@@ -36,17 +36,10 @@ pub(crate) fn reported_service_class(
     changed.then_some(Rule::OMIT_UNREPRESENTABLE_SERVICE_CLASS)
 }
 
-pub(crate) fn request_metadata_echo(
-    metadata: &crate::protocol::ResponseMetadata,
-    policy: super::ReportedFactPolicy,
-) -> Result<Option<Rule>, RepresentationError> {
-    if metadata.request_metadata_echo().is_none() {
-        return Ok(None);
-    }
-    if policy == super::ReportedFactPolicy::StrictComplete {
-        return Err(RepresentationError::ReportedFacts);
-    }
-    Ok(Some(Rule::ECHO_REQUEST_METADATA))
+pub(crate) fn request_metadata_echo(metadata: &crate::protocol::ResponseMetadata) -> Option<Rule> {
+    metadata
+        .request_metadata_echo()
+        .map(|_| Rule::ECHO_REQUEST_METADATA)
 }
 
 /// This changes reported echoes only, never request admission or generated items.
@@ -191,8 +184,7 @@ mod tests {
     use crate::semantic::{task::generation::*, value::Presence};
 
     #[test]
-    fn text_status_omission_is_token_cap_only_and_strict_complete_rejects_it() {
-        use super::super::ReportedFactPolicy::StrictComplete;
+    fn text_status_omission_is_token_cap_only() {
         use crate::protocol::openai::{Dialect, GenerationCodec, TargetContract};
         use serde_json::json;
         // Independent Responses shape: an item can complete before the response
@@ -222,20 +214,6 @@ mod tests {
                     source.items()[0].0,
                 )),
         ];
-        let mut strict = TargetContract::full();
-        strict.reported_facts = StrictComplete;
-        assert_eq!(
-            super::super::lower_response(
-                source,
-                &decoded.fidelity,
-                &decoded.metadata,
-                GenerationApi::Chat,
-                strict
-            )
-            .err()
-            .map(|error| error.cause),
-            Some(RepresentationError::ReportedFacts.into())
-        );
         let target = super::super::lower_response(
             source,
             &decoded.fidelity,
@@ -408,34 +386,6 @@ mod tests {
                     ServiceClass::PriorityCapacity
                 });
                 assert!(encoder.update_metadata(changed).is_err());
-                if profile == GenerationApi::Responses {
-                    let mut strict = TargetContract::full();
-                    strict.reported_facts = super::super::ReportedFactPolicy::StrictComplete;
-                    let result = super::super::lower_response(
-                        &decoded.semantic,
-                        &decoded.fidelity,
-                        &metadata,
-                        profile,
-                        strict.clone(),
-                    );
-                    if omitted {
-                        assert_eq!(
-                            result.err().map(|error| error.cause),
-                            Some(RepresentationError::ReportedFacts.into())
-                        );
-                    } else {
-                        assert!(result.is_ok());
-                    }
-                    let mut encoder = EventEncoder::new(profile, metadata)
-                        .unwrap()
-                        .with_contract(strict);
-                    assert_eq!(
-                        encoder
-                            .encode(&StreamEvent::Started, &decoded.fidelity)
-                            .is_err(),
-                        omitted
-                    );
-                }
             }
         }
     }

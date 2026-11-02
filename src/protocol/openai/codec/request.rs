@@ -129,8 +129,8 @@ impl GenerationCodec {
                     },
                     service_policy: decoded.context.service_policy,
                     delivery: DeliveryIntent {
-                        stream: decoded.context.stream,
-                        options: decoded.context.stream_options,
+                        stream: decoded.context.stream.value().copied(),
+                        options: decoded.context.stream_options.value().cloned(),
                     },
                     source: Some(self.protocol.into()),
                     conversation: None,
@@ -148,9 +148,8 @@ impl GenerationCodec {
                     self.adaptation.rules.responses_input_video,
                 )?;
                 let options = match decoded.context.delivery.options {
-                    Presence::Absent => Presence::Absent,
-                    Presence::Null => Presence::Null,
-                    Presence::Value(value) => Presence::Value(StreamOptions {
+                    Presence::Absent | Presence::Null => None,
+                    Presence::Value(value) => Some(StreamOptions {
                         include_obfuscation: value.include_obfuscation,
                         ..Default::default()
                     }),
@@ -161,7 +160,7 @@ impl GenerationCodec {
                     context: decoded.context.execution,
                     service_policy: decoded.context.service_policy,
                     delivery: DeliveryIntent {
-                        stream: decoded.context.delivery.stream,
+                        stream: decoded.context.delivery.stream.value().copied(),
                         options,
                     },
                     source: Some(self.protocol.into()),

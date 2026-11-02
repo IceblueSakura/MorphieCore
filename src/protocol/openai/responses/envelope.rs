@@ -21,17 +21,18 @@ use serde_json::{Map, Value, json};
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct StreamOptions {
-    #[serde(default, skip_serializing_if = "Presence::is_absent")]
-    pub include_obfuscation: Presence<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub include_obfuscation: Option<bool>,
 }
 impl StreamOptions {
     fn read(v: &Value, direction: DecodeDirection<'_>) -> Result<Self, CodecError> {
         let o = object(v)?;
         direction.fields(o, &["include_obfuscation"])?;
         Ok(Self {
-            include_obfuscation: read_presence(o, "include_obfuscation", |v| {
-                v.as_bool().ok_or(CodecError::invalid())
-            })?,
+            include_obfuscation: o
+                .get("include_obfuscation")
+                .map(|v| v.as_bool().ok_or(CodecError::invalid()))
+                .transpose()?,
         })
     }
 }
@@ -531,11 +532,9 @@ pub(in crate::protocol::openai) fn write_metadata(
 mod tests {
     use super::*;
     #[test]
-    fn request_metadata_echo_respects_explicit_reports_and_strict_policy() {
+    fn request_metadata_echo_respects_explicit_reports() {
         use crate::protocol::{
-            GenerationDelivery,
-            conversion::generation::{Change, ReportedFactPolicy, RepresentationError},
-            openai::lowering::projection,
+            GenerationDelivery, conversion::generation::Change, openai::lowering::projection,
         };
         let request_map = Presence::Value(std::collections::BTreeMap::from([(
             "ticket".into(),
@@ -589,49 +588,12 @@ mod tests {
                 assert_eq!(wire["metadata"], expected);
             }
             assert_eq!(source.metadata.context.execution.metadata, report);
-            let rule =
-                projection::request_metadata_echo(&source.metadata, ReportedFactPolicy::Faithful)
-                    .unwrap();
+            let rule = projection::request_metadata_echo(&source.metadata);
             assert_eq!(rule.is_some(), echoed);
             if let Some(rule) = rule {
                 assert_eq!(
                     rule.effect("response.project".into()).change(),
                     Change::InferFromRequest
-                );
-                assert_eq!(
-                    projection::request_metadata_echo(
-                        &source.metadata,
-                        ReportedFactPolicy::StrictComplete
-                    ),
-                    Err(RepresentationError::ReportedFacts)
-                );
-                let mut contract = crate::protocol::openai::TargetContract::full();
-                contract.reported_facts = ReportedFactPolicy::StrictComplete;
-                let mut encoder = crate::protocol::openai::events::EventEncoder::new(
-                    GenerationApi::Responses,
-                    source.metadata.clone(),
-                )
-                .unwrap()
-                .with_contract(contract);
-                assert!(matches!(
-                    encoder.encode(
-                        &StreamEvent::Usage(Usage::operation(1, 1, 2)),
-                        &source.fidelity
-                    ),
-                    Err(CodecError::Representation {
-                        cause: RepresentationError::ReportedFacts,
-                        ..
-                    })
-                ));
-                assert!(encoder.finish().is_err());
-            } else {
-                assert!(
-                    projection::request_metadata_echo(
-                        &source.metadata,
-                        ReportedFactPolicy::StrictComplete
-                    )
-                    .unwrap()
-                    .is_none()
                 );
             }
         }

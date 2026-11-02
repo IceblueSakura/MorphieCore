@@ -334,7 +334,6 @@ fn context_reason_code(e: &ContextReason) -> &'static str {
         ContextReason::SystemFingerprint => "context.invalid.system_fingerprint",
         ContextReason::InstructionEchoes => "context.invalid.instruction_echoes",
         ContextReason::CompletionTimestamp => "context.invalid.completion_timestamp",
-        ContextReason::StreamOptions => "context.invalid.stream_options",
         ContextReason::StreamOptionsWithoutStreaming => {
             "context.invalid.stream_options_without_streaming"
         }

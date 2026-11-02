@@ -9,10 +9,7 @@ use morphiecore::{
         },
         stream::SseLimits,
     },
-    semantic::{
-        context::StreamOptions,
-        value::{Presence, ReplayOrigin},
-    },
+    semantic::{context::StreamOptions, value::ReplayOrigin},
 };
 use serde_json::{Value, json};
 
@@ -208,8 +205,8 @@ fn router_repeated_finish_usage_is_content_free_and_matches_static() {
             source.contract(&Contract::full()),
             SseLimits::default(),
             StreamOptions {
-                include_usage: Presence::Value(include_usage),
-                include_obfuscation: Presence::Value(false),
+                include_usage: Some(include_usage),
+                include_obfuscation: Some(false),
             },
             Obfuscation::Disabled,
         )

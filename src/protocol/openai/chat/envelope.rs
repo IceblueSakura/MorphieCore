@@ -20,21 +20,19 @@ impl StreamOptions {
         direction.fields(o, &["include_usage", "include_obfuscation"])?;
         let boolean = |v: &Value| v.as_bool().ok_or(CodecError::invalid());
         let s = Self {
-            include_usage: read_presence(o, "include_usage", boolean)?,
-            include_obfuscation: read_presence(o, "include_obfuscation", boolean)?,
+            include_usage: o.get("include_usage").map(boolean).transpose()?,
+            include_obfuscation: o.get("include_obfuscation").map(boolean).transpose()?,
         };
-        s.validate()?;
         Ok(s)
     }
     fn write(&self) -> Value {
         let mut o = Map::new();
-        put_presence(&mut o, "include_usage", &self.include_usage, |v| json!(v));
-        put_presence(
-            &mut o,
-            "include_obfuscation",
-            &self.include_obfuscation,
-            |v| json!(v),
-        );
+        if let Some(value) = self.include_usage {
+            o.insert("include_usage".into(), json!(value));
+        }
+        if let Some(value) = self.include_obfuscation {
+            o.insert("include_obfuscation".into(), json!(value));
+        }
         Value::Object(o)
     }
 }
@@ -59,11 +57,8 @@ impl RequestContext {
         if self.n.value().is_some_and(|n| *n != 1) {
             return Err(CodecError::Unsupported(CarrierReason::Unavailable));
         }
-        if let Some(options) = self.stream_options.value() {
-            if !self.streaming() {
-                return Err(CodecError::invalid());
-            }
-            options.validate()?;
+        if self.stream_options.value().is_some() && !self.streaming() {
+            return Err(CodecError::invalid());
         }
         if let Some(policy) = self.service_policy.as_ref() {
             super::super::service::policy_wire(
@@ -220,12 +215,10 @@ pub fn encode_request(
     }
     if target.adaptation.rules.bailian_requests {
         if let Some(options) = context.stream_options.value()
-            && !options.include_usage.is_absent()
+            && let Some(include_usage) = options.include_usage
         {
             let mut native = Map::new();
-            put_presence(&mut native, "include_usage", &options.include_usage, |v| {
-                json!(v)
-            });
+            native.insert("include_usage".into(), json!(include_usage));
             o.insert("stream_options".into(), Value::Object(native));
         }
     } else {

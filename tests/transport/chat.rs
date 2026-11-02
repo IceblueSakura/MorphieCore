@@ -14,7 +14,7 @@ use morphiecore::{
         },
         stream::SseLimits,
     },
-    semantic::{context::StreamOptions, task::generation::*, value::Presence},
+    semantic::{context::StreamOptions, task::generation::*},
 };
 use serde_json::{Value, json};
 fn frame(value: &Value) -> Vec<u8> {
@@ -43,8 +43,8 @@ fn consume(d: &mut ChatSseDecoder, bytes: &[u8], size: usize) -> Vec<StreamEvent
 }
 fn options(usage: bool) -> StreamOptions {
     StreamOptions {
-        include_usage: Presence::Value(usage),
-        include_obfuscation: Presence::Value(false),
+        include_usage: Some(usage),
+        include_obfuscation: Some(false),
     }
 }
 
@@ -439,8 +439,8 @@ fn chat_encoder_padding_limits_do_not_emit_done() {
     d.finish().unwrap();
     let r = d.materialize().unwrap();
     let padded = StreamOptions {
-        include_usage: Presence::Value(true),
-        include_obfuscation: Presence::Value(true),
+        include_usage: Some(true),
+        include_obfuscation: Some(true),
     };
     assert!(
         ChatSseEncoder::new(

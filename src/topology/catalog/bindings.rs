@@ -98,10 +98,7 @@ pub struct ApiKeyBinding {
 }
 use super::{GENERATION_REQUEST_BYTES, GENERATION_RESPONSE_BYTES, GENERATION_TIMEOUT_MS, models};
 use crate::{
-    protocol::{
-        conversion::generation::ReportedFactPolicy,
-        openai::{GenerationCodec, TargetContract},
-    },
+    protocol::openai::{GenerationCodec, TargetContract},
     provider::{CredentialBindingId, CredentialKind},
     topology::{
         Endpoint, EndpointId, EndpointTarget, ExecutionContract, ModelId, PublicModel, RouteId,
@@ -124,7 +121,6 @@ impl ApiKeyBinding {
             contract: self
                 .public_slice
                 .apply(models::contract(self.canonical_model)),
-            reported_facts: ReportedFactPolicy::Faithful,
         }
     }
     pub fn endpoint(&self, protocol: GenerationProtocol) -> Result<Endpoint, TopologyError> {
@@ -197,11 +193,6 @@ impl ApiKeyBinding {
         }
         let contract = TargetContract {
             reasoning_history,
-            // Keep unassessed TokenPlan admission unchanged during phased migration.
-            chat_thinking_output: reasoning_history.is_none()
-                && family == crate::protocol::openai::GenerationApi::Chat
-                && self.dialect == Dialect::Bailian
-                && matches!(self.canonical_model, "qwen3.8-flash" | "qwen3.8-max"),
             dispositions: self
                 .endpoint_slice
                 .apply(models::contract(self.canonical_model))

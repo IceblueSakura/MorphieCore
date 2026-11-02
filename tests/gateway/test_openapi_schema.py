@@ -382,6 +382,9 @@ class TextModelsSchemaTests(unittest.TestCase):
             },
         }
         model = {"id": "example-model", "name": "example-model",
+                 "preferred_interface": {
+                     "state": "not_assessed", "protocol": None, "uniform": None,
+                     "basis": "primary_candidate_native_protocol_and_agent_default_preflight"},
                  "owned_by": "Example Lab", "interfaces": [interface]}
         envelope = {"object": "morphiecore.model_list", "scope": "generation_text",
                     "coverage": "partial", "unlisted": "not_assessed",

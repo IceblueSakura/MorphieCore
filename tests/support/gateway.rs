@@ -132,8 +132,6 @@ fn bound_gateway(origin: &str, limits: Limits, embeddings: bool, messages: bool)
                 morphiecore::semantic::task::generation::Feature::FileInput,
                 label != "no-files-model",
             ),
-            reported_facts:
-                morphiecore::protocol::conversion::generation::ReportedFactPolicy::Faithful,
         })
         .collect();
     let canonical = CanonicalModel {

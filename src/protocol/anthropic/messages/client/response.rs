@@ -11,6 +11,7 @@ pub fn encode_client_response(
     model: &str,
 ) -> Result<Value, CodecError> {
     response.metadata.validate()?;
+    // This public low-level renderer also accepts direct codec callers.
     if response.metadata.context.execution != crate::semantic::context::ExecutionHints::default() {
         return Err(CodecError::Unsupported(CarrierReason::Unavailable));
     }
@@ -60,20 +61,15 @@ pub fn encode_client_response(
                 for part in &m.parts {
                     match &part.content {
                         ContentPart::Text(t) => {
-                            if !t.logprobs().is_none()
-                                && !matches!(t.logprobs(), Some(probs) if probs.is_empty())
+                            if t.logprobs().as_ref().is_some_and(|probs| !probs.is_empty())
+                                || !t.annotations().is_empty()
                             {
-                                return Err(CodecError::Unsupported(CarrierReason::Unavailable));
-                            }
-                            if !t.annotations().is_empty() {
                                 return Err(CodecError::Unsupported(CarrierReason::Unavailable));
                             }
                             content.push(json!({"type":"text","text":t.as_str()}))
                         }
                         ContentPart::Refusal(t) => {
-                            if !t.logprobs().is_none()
-                                && !matches!(t.logprobs(), Some(probs) if probs.is_empty())
-                            {
+                            if t.logprobs().as_ref().is_some_and(|probs| !probs.is_empty()) {
                                 return Err(CodecError::Unsupported(CarrierReason::Unavailable));
                             }
                             content.push(json!({"type":"text","text":t.as_str()}))

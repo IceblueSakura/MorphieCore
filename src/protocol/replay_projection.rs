@@ -2,10 +2,6 @@
 use crate::protocol::{CodecError, DecodedResponse, fidelity::FidelityRecords};
 use crate::semantic::task::generation::*;
 
-pub(crate) fn is_marker(value: &str) -> bool {
-    value.starts_with("mca1.")
-}
-
 pub(crate) fn strip(
     response: &DecodedResponse,
     strip_phase: bool,

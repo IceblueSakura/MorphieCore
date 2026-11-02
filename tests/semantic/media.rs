@@ -610,6 +610,7 @@ mod image_generation {
                 .unwrap()
                 .extend(fields.as_object().unwrap().clone());
             let request = images::decode_request(&serde_json::to_vec(&v).unwrap()).unwrap();
+            v.as_object_mut().unwrap().remove("stream");
             assert_eq!(images::encode_request(&request, "public-image").unwrap(), v);
         }
     }

@@ -358,19 +358,6 @@ fn independently_constructed_reports_use_phase_carriers_and_terminal_snapshots()
             .any(|s| { s.rule() == "responses.terminal-report-snapshot.v1" })
     );
     assert_eq!(original.context.reports, lifecycle());
-    let mut strict = TargetContract::full();
-    strict.reported_facts =
-        morphiecore::protocol::conversion::generation::ReportedFactPolicy::StrictComplete;
-    assert!(
-        lower_response(
-            &response,
-            &fidelity,
-            &original,
-            GenerationApi::Responses,
-            strict
-        )
-        .is_err()
-    );
     assert!(
         EventEncoder::new(GenerationApi::Chat, original).is_err(),
         "no cross-protocol tier drift"

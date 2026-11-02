@@ -1,5 +1,6 @@
 //! Independent Models wire expectations over synthetic credentials, with no upstream I/O.
 use crate::gateway::*;
+use crate::protocol::ClientProtocol;
 use axum::{
     body::{Body, to_bytes},
     http::{Request, StatusCode},
@@ -8,6 +9,48 @@ use serde_json::{Value, json};
 use tower::ServiceExt;
 
 mod text;
+
+#[test]
+fn admitted_omitted_control_is_not_published_as_rejected_input() {
+    let gate = crate::gateway::tests::support::gateway(Limits::default());
+    let topology = crate::gateway::tests::topology::topology();
+    let mut entry = gate.state.entries[&(ClientProtocol::Chat, "fixture-model".into())]
+        .as_ref()
+        .clone();
+    let mut candidate = entry.candidates[0].as_ref().clone();
+    candidate.endpoint = topology
+        .endpoint(&crate::topology::EndpointId::new("fixture-responses").unwrap())
+        .unwrap()
+        .clone();
+    candidate
+        .endpoint
+        .representation
+        .openai_mut()
+        .unwrap()
+        .adaptation
+        .rules
+        .responses_siwc = true;
+    entry.candidates = vec![Arc::new(candidate)];
+    let entries = [(
+        (ClientProtocol::Chat, "fixture-model".into()),
+        Arc::new(entry),
+    )]
+    .into();
+    let view =
+        ingress::capabilities::CapabilityView::bind(&entries, &Default::default(), 256 << 10)
+            .unwrap();
+    let capabilities: Value = serde_json::from_slice(&view.0).unwrap();
+    let cases = capabilities["data"][0]["request"].as_array().unwrap();
+    let maximum = cases
+        .iter()
+        .find(|case| case["feature"] == "max_output_tokens")
+        .unwrap();
+    assert_eq!(maximum["treatment"], "approved_adaptation");
+    assert_eq!(
+        maximum["rules"],
+        json!(["generation.omit-max-output-tokens.v1"])
+    );
+}
 
 async fn request(gate: &Gateway, method: &str, path: &str) -> (StatusCode, Value) {
     let response = gate
@@ -49,71 +92,67 @@ async fn models_list_and_retrieve_use_the_same_standard_public_object() {
     assert_eq!(model, expected);
     let (status, capabilities) = request(&gate, "GET", "/v1/morphiecore/capabilities").await;
     assert_eq!(status, StatusCode::OK);
-    let settings = json!({
-        "feature":"response.reported.settings",
-        "domain":"incidental_settings_without_safety",
-        "treatment":"approved_adaptation",
-        "rules":["chat.omit-incidental-settings.v1"]
-    });
-    let assessments = json!({
-        "feature":"generation.safety","domain":"assessment_only_reports",
-        "treatment":"approved_adaptation","rules":["generation.omit-safety-assessment.v1"]
-    });
-    let safety = json!({
-        "feature":"generation.safety","domain":"blocking_reports_or_settings_echoes",
-        "treatment":"rejected"
-    });
-    let natural = json!({
-        "feature":"generation.completion_cause",
-        "domain":"natural_or_matched_stop_without_tool_continuation",
-        "treatment":"approved_adaptation","rules":["chat.coarsen-completion-cause.v1"]
-    });
-    let ambiguous = json!({
-        "feature":"generation.completion_cause",
-        "domain":"ambiguous_stop_without_tool_continuation","treatment":"faithful"
-    });
-    let phase = json!({"feature":"generation.message.phase",
-        "domain":"assistant_commentary_or_final_answer","treatment":"approved_adaptation",
-        "rules":["generation.omit-delivery-message-phase.v1"]});
-    let phase_history = json!({"feature":"generation.message.phase",
-        "domain":"returned_assistant_phase","treatment":"rejected"});
-    let usage = json!({"feature":"response.delivery.usage",
-        "domain":"reported_then_derived_then_estimated","treatment":"approved_adaptation",
-        "rules":["generation.complete-delivery-usage.v1"]});
-    assert_eq!(
-        capabilities,
-        json!({
-            "object":"morphiecore.capabilities", "version":1,
-            "scope":"gateway_contract", "coverage":"partial", "unlisted":"not_assessed",
-            "provider_effectiveness":"not_asserted", "full_loop":"not_asserted",
-            "data":[
-                {"model":"fixture-model","protocol":"chat_completions",
-                    "delivery_modes":["json","sse"],"request":[],
-                    "delivery":[settings,assessments.clone(),safety.clone(),usage.clone(),natural,ambiguous,phase.clone()],
-                    "history":[phase_history.clone()]},
-                {"model":"fixture-model","protocol":"messages",
-                    "delivery_modes":["json","sse"],"request":[],
-                    "delivery":[
-                        {"feature":"response.reported.settings",
-                            "domain":"incidental_settings_without_safety",
-                            "treatment":"approved_adaptation",
-                            "rules":["messages.omit-incidental-settings.v1"]},
-                        assessments,
-                        safety,
-                        usage,
-                        {"feature":"generation.completion_cause",
-                            "domain":"natural_or_matched_stop_without_tool_continuation",
-                            "treatment":"faithful"},
-                        {"feature":"generation.completion_cause",
-                            "domain":"ambiguous_stop_without_tool_continuation",
-                            "treatment":"rejected"},
-                        {"feature":"generation.message.phase","domain":"assistant_commentary_or_final_answer",
-                            "treatment":"approved_adaptation","rules":["generation.omit-delivery-message-phase.v1"]}
-                    ],"history":[{"feature":"generation.message.phase","domain":"returned_assistant_phase",
-                        "treatment":"rejected"}]}
-            ]
-        })
-    );
+    let (_, descriptor) = request(&gate, "GET", "/v1/morphiecore/models/fixture-model").await;
+    assert_eq!(capabilities["provider_effectiveness"], "not_asserted");
+    assert_eq!(capabilities["full_loop"], "not_asserted");
+    let interfaces = descriptor["data"]["interfaces"].as_array().unwrap();
+    let entries = capabilities["data"].as_array().unwrap();
+    assert_eq!(entries.len(), interfaces.len());
+    for entry in entries {
+        let interface = interfaces
+            .iter()
+            .find(|interface| interface["protocol"] == entry["protocol"])
+            .unwrap();
+        assert_eq!(
+            entry["agent_defaults"],
+            interface["generation"]["agent_defaults"]
+        );
+        let request_cases = entry["request"].as_array().unwrap();
+        for (feature, assessment) in interface["generation"]["features"].as_object().unwrap() {
+            let case = request_cases
+                .iter()
+                .find(|case| case["feature"] == *feature)
+                .unwrap();
+            if assessment["state"] != "unavailable" {
+                assert_eq!(case["treatment"], assessment["state"]);
+            }
+        }
+        let delivery = entry["delivery"].as_array().unwrap();
+        assert!(
+            delivery
+                .iter()
+                .any(|case| case["feature"] == "generation.safety"
+                    && case["domain"] == "blocking_reports_or_settings_echoes"
+                    && case["treatment"] == "rejected")
+        );
+        assert!(
+            delivery
+                .iter()
+                .any(|case| case["feature"] == "response.delivery.usage"
+                    && case["rules"] == json!(["generation.complete-delivery-usage.v1"]))
+        );
+        let expected = if entry["protocol"] == "chat_completions" {
+            "chat.omit-reported-settings.v1"
+        } else {
+            "messages.omit-incidental-settings.v1"
+        };
+        assert!(
+            delivery
+                .iter()
+                .any(|case| case["feature"] == "reported_settings"
+                    && case["treatment"] == "approved_adaptation"
+                    && case["rules"] == json!([expected]))
+        );
+        for mode in ["json", "sse"] {
+            assert!(
+                delivery
+                    .iter()
+                    .any(|case| case["feature"] == "message_phase"
+                        && case["domain"] == mode
+                        && case["rules"] == json!(["generation.omit-delivery-message-phase.v1"]))
+            );
+        }
+    }
 }
 
 #[tokio::test]
@@ -171,7 +210,13 @@ async fn activated_protocols_are_deduplicated_and_images_share_the_directory() {
     let responses = &capabilities["data"][1];
     assert_eq!(responses["protocol"], "responses");
     assert_eq!(
-        responses["delivery"][0],
+        responses["delivery"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|case| case["feature"] == "response.reported.settings")
+            .unwrap()
+            .clone(),
         json!({
             "feature":"response.reported.settings",
             "domain":"independent_reasoning_controls_without_carrier",
@@ -550,11 +595,6 @@ fn local_directory_encodes_empty_and_alias_views_with_inclusive_resource_limits(
         crate::semantic::task::generation::Feature::ConditionalToolStrictness,
         false,
     );
-    let crate::adapter::ClientAdapter::OpenAi { contract, .. } = &mut entry.client else {
-        panic!("OpenAI entry")
-    };
-    contract.reported_facts =
-        crate::protocol::conversion::generation::ReportedFactPolicy::StrictComplete;
     let entries = BTreeMap::from([(
         (
             crate::protocol::ClientProtocol::Chat,
@@ -564,12 +604,26 @@ fn local_directory_encodes_empty_and_alias_views_with_inclusive_resource_limits(
     )]);
     let view = CapabilityView::bind(&entries, &BTreeMap::new(), 256 << 10).unwrap();
     let snapshot: Value = serde_json::from_slice(&view.0).unwrap();
-    assert_eq!(snapshot["data"][0]["request"], json!([]));
     assert_eq!(
-        snapshot["data"][0]["delivery"][0],
+        snapshot["data"][0]["request"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|case| case["feature"] == "function_tools")
+            .unwrap()["treatment"],
+        "faithful",
+    );
+    assert_eq!(
+        snapshot["data"][0]["delivery"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|case| case["feature"] == "reported_settings" && case["domain"] == "json")
+            .unwrap()
+            .clone(),
         json!({
-            "feature":"response.reported.settings","domain":"incidental_settings_without_safety",
-            "treatment":"rejected"
+            "feature":"reported_settings","domain":"json",
+            "treatment":"approved_adaptation","rules":["chat.omit-reported-settings.v1"]
         })
     );
 }

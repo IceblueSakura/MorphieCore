@@ -511,7 +511,7 @@ pub(in crate::gateway) async fn produce_candidate(
     let options = request
         .delivery
         .options
-        .value()
+        .as_ref()
         .cloned()
         .unwrap_or_default();
     let padding = if stream && options.obfuscation() {

@@ -21,6 +21,34 @@ pub(crate) enum Fact {
     Refusal,
     OpeningService,
 }
+impl Fact {
+    pub(crate) const ALL: [Self; 10] = [
+        Self::Reasoning,
+        Self::Phase,
+        Self::ExecutionHints,
+        Self::Settings,
+        Self::Fingerprint,
+        Self::Annotations,
+        Self::Probabilities,
+        Self::TerminalExplanation,
+        Self::Refusal,
+        Self::OpeningService,
+    ];
+    pub(crate) fn name(self) -> &'static str {
+        match self {
+            Self::Reasoning => "reasoning",
+            Self::Phase => "message_phase",
+            Self::ExecutionHints => "execution_hints",
+            Self::Settings => "reported_settings",
+            Self::Fingerprint => "system_fingerprint",
+            Self::Annotations => "annotations",
+            Self::Probabilities => "probabilities",
+            Self::TerminalExplanation => "terminal_explanation",
+            Self::Refusal => "refusal",
+            Self::OpeningService => "opening_service_report",
+        }
+    }
+}
 #[derive(Clone, Copy)]
 pub(crate) enum Disposition {
     Native,
@@ -194,20 +222,10 @@ impl ClientProjection {
             self.state.as_ref().ok_or(CodecError::invalid())?,
         )?)
     }
-    fn reported_loss(&mut self, effect: Effect) -> Result<(), CodecError> {
-        if let ClientAdapter::OpenAi { contract, .. } = &self.client
-            && contract.reported_facts
-                == crate::protocol::openai::lowering::ReportedFactPolicy::StrictComplete
-        {
-            return Err(CodecError::Representation {
-                boundary: ConversionBoundary::EventProject,
-                cause: crate::protocol::openai::lowering::RepresentationError::ReportedFacts,
-            });
-        }
+    fn reported_loss(&mut self, effect: Effect) {
         if !self.losses.contains(&effect) {
             self.losses.push(effect);
         }
-        Ok(())
     }
     pub(crate) fn metadata(
         &mut self,
@@ -215,6 +233,14 @@ impl ClientProjection {
     ) -> Result<ResponseMetadata, CodecError> {
         source.validate()?;
         crate::protocol::reports::relation(&source.context.reports, true)?;
+        if source.context.reports.iter().any(|report| {
+            report
+                .settings
+                .as_ref()
+                .is_some_and(|settings| !settings.safety.is_empty())
+        }) {
+            return Err(CodecError::Unsupported(CarrierReason::Safety));
+        }
         let mut metadata = source.clone();
         if let Disposition::Omit(rule) = self.client.disposition(Fact::Settings, self.streaming) {
             if metadata
@@ -229,7 +255,7 @@ impl ClientProjection {
                     ("response.reported.settings").into(),
                     ConversionBoundary::EventProject,
                     Change::Omit,
-                ))?;
+                ));
             }
             for report in metadata.context.reports.iter_mut() {
                 report.settings = None;
@@ -283,7 +309,7 @@ impl ClientProjection {
                     Field::OpeningReport,
                     ConversionBoundary::EventProject,
                     Change::Omit,
-                ))?;
+                ));
             }
             metadata.context.reports = crate::semantic::context::ResponseReports::Single(Box::new(
                 crate::semantic::context::ResponseReport {
@@ -302,18 +328,13 @@ impl ClientProjection {
                 }
                 crate::protocol::anthropic::messages::client::project_metadata(&mut metadata)?;
             }
-            ClientAdapter::OpenAi { adapter, contract } => {
+            ClientAdapter::OpenAi { adapter, .. } => {
                 let profile = adapter.protocol;
-                let policy = contract.reported_facts;
                 if profile == GenerationApi::Responses
                     && let Some(rule) =
                         crate::protocol::openai::lowering::projection::request_metadata_echo(
-                            &metadata, policy,
+                            &metadata,
                         )
-                        .map_err(|cause| CodecError::Representation {
-                            boundary: ConversionBoundary::EventProject,
-                            cause,
-                        })?
                 {
                     self.losses
                         .push(rule.effect(ConversionBoundary::EventProject));
@@ -328,7 +349,7 @@ impl ClientProjection {
                         cause,
                     })?
                 {
-                    self.reported_loss(rule.effect(ConversionBoundary::EventProject))?;
+                    self.reported_loss(rule.effect(ConversionBoundary::EventProject));
                 }
                 if let Some(rule) =
                     crate::protocol::openai::lowering::projection::reported_service_class(
@@ -336,7 +357,7 @@ impl ClientProjection {
                         profile,
                     )
                 {
-                    self.reported_loss(rule.effect(ConversionBoundary::EventProject))?;
+                    self.reported_loss(rule.effect(ConversionBoundary::EventProject));
                 }
             }
         }
@@ -354,7 +375,7 @@ impl ClientProjection {
             self.reported_loss(
                 crate::lowering::disposition::Rule::OMIT_OPENING_REPORT
                     .effect(ConversionBoundary::ResponseProject),
-            )?;
+            );
         }
         Ok(metadata)
     }
@@ -568,7 +589,7 @@ impl ClientProjection {
                         if report.has_unrepresented_details() {
                             self.reported_loss(crate::protocol::usage::report_loss(
                                 "event.project",
-                            ))?;
+                            ));
                         }
                         if report.scope != UsageScope::Operation
                             || report.stage != UsageStage::Final
@@ -753,7 +774,7 @@ impl ClientProjection {
                                     return Err(CodecError::Representation { boundary: ConversionBoundary::EventProject, cause: crate::protocol::openai::lowering::RepresentationError::Terminal });
                                 }
                                 for (item, _) in changed {
-                                    self.reported_loss(crate::lowering::disposition::Rule::OMIT_CHAT_TEXT_ITEM_STATUS.effect(ConversionBoundary::EventProject).at(Owner::item(item)))?;
+                                    self.reported_loss(crate::lowering::disposition::Rule::OMIT_CHAT_TEXT_ITEM_STATUS.effect(ConversionBoundary::EventProject).at(Owner::item(item)));
                                 }
                             }
                         }

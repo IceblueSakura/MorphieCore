@@ -109,8 +109,25 @@ pub(crate) fn project_candidate(
     {
         return Err(RejectionReason::Streaming);
     }
-    let projection = endpoint
-        .encode_request_with_evidence(request)
+    let fallback = if let Some(crate::adapter::ClientAdapter::OpenAi { adapter, .. }) = client
+        && adapter.protocol == crate::protocol::openai::GenerationApi::Chat
+        && !adapter.adaptation.rules.readable_reasoning
+        && endpoint.protocol == crate::topology::GenerationProtocol::OpenAiChat
+    {
+        endpoint
+            .representation
+            .openai()
+            .map(|contract| crate::lowering::request::chat_history_fallback(request, contract))
+            .transpose()
+            .map_err(|_| RejectionReason::Representation)?
+    } else {
+        None
+    };
+    let input = fallback
+        .as_ref()
+        .map_or(request, |projection| projection.value.as_ref());
+    let mut projection = endpoint
+        .encode_request_with_evidence(input)
         .map_err(|error| {
             use crate::protocol::{ConversionFailure, conversion::generation::RepresentationError};
             match error {
@@ -138,31 +155,8 @@ pub(crate) fn project_candidate(
                 error => RejectionReason::Conversion(Box::new(error)),
             }
         })?;
-    let value = &projection.value;
-    if let Some(crate::adapter::ClientAdapter::OpenAi { adapter, .. }) = client
-        && adapter.protocol == crate::protocol::openai::GenerationApi::Chat
-        && !adapter.adaptation.rules.readable_reasoning
-        && endpoint.protocol == crate::topology::GenerationProtocol::OpenAiChat
-    {
-        let unassessed_output = endpoint.representation.reasoning_history().is_none()
-            && endpoint
-                .representation
-                .openai()
-                .is_some_and(|caps| caps.chat_thinking_output);
-        let thinking = value.get("enable_thinking") != Some(&serde_json::Value::Bool(false));
-        let required = endpoint.representation.reasoning_history()
-            == Some(crate::protocol::reasoning::ReasoningHistory::RequiredWithTools)
-            && value
-                .get("tools")
-                .and_then(serde_json::Value::as_array)
-                .is_some_and(|tools| !tools.is_empty())
-            && value
-                .get("reasoning_effort")
-                .and_then(serde_json::Value::as_str)
-                != Some("none");
-        if thinking && (unassessed_output || required) {
-            return Err(RejectionReason::Representation);
-        }
+    if let Some(fallback) = fallback {
+        projection.evidence.extend(fallback.evidence);
     }
     crate::execution::attempt::RequestProjection::new(
         projection,
@@ -302,7 +296,7 @@ mod tests {
     use crate::topology::catalog::default_topology;
 
     #[test]
-    fn downstream_reasoning_requirements_filter_without_disabling_or_reordering() {
+    fn downstream_reasoning_requirements_fallback_or_delegate_without_reordering() {
         use crate::{
             adapter::ClientAdapter,
             protocol::openai::{Dialect, GenerationApi, GenerationCodec, TargetContract},
@@ -344,8 +338,30 @@ mod tests {
                 .unwrap()
                 .is_empty()
         );
+        let projected = project_candidate(endpoint, &request, Some(&plain)).unwrap();
+        assert_eq!(projected.value()["reasoning_effort"], "none");
+        assert!(
+            projected
+                .evidence()
+                .contains_rule("chat.fallback-thinking-off.v1")
+        );
+        let projected = project_candidate(endpoint, &request, Some(&readable)).unwrap();
+        assert_eq!(projected.value()["reasoning_effort"], "low");
+        assert!(
+            !projected
+                .evidence()
+                .contains_rule("chat.fallback-thinking-off.v1")
+        );
+        let mut always_thinking = endpoint.clone();
+        always_thinking
+            .representation
+            .openai_mut()
+            .unwrap()
+            .adaptation
+            .rules
+            .reject_disabled_reasoning = true;
         assert_eq!(
-            representable_for_client(endpoint, &request, Some(&plain)),
+            representable_for_client(&always_thinking, &request, Some(&plain)),
             Err(RejectionReason::Representation)
         );
         let selected = select_candidates_for_client(
@@ -355,16 +371,20 @@ mod tests {
             Some(&plain),
         )
         .unwrap();
-        assert_eq!(selected.candidates[0].ordinal, 1);
-        assert_eq!(selected.rejections[0].endpoint_id, endpoint.id);
-        assert!(
+        assert_eq!(selected.candidates[0].ordinal, 0);
+        assert_eq!(selected.candidates[1].ordinal, 1);
+        assert!(selected.rejections.is_empty());
+        assert_eq!(
             select_candidates_for_client(
                 &request,
                 CandidatePolicy::RequireAll,
                 [endpoint, &unknown],
                 Some(&plain),
             )
-            .is_err()
+            .unwrap()
+            .candidates
+            .len(),
+            2
         );
         assert_eq!(
             select_candidates_for_client(
@@ -385,6 +405,12 @@ mod tests {
             "none"
         );
         representable_for_client(endpoint, &off, Some(&plain)).unwrap();
+        assert!(
+            !project_candidate(endpoint, &off, Some(&plain))
+                .unwrap()
+                .evidence()
+                .contains_rule("chat.fallback-thinking-off.v1")
+        );
         let mut settings = request.task.semantic.settings().clone();
         settings.tools = None;
         let mut text = request.clone();
@@ -398,10 +424,7 @@ mod tests {
             .endpoint(&EndpointId::new("aliyun-tokenplan-cn-chat").unwrap())
             .unwrap();
         assert!(unassessed.encode_request(&text).is_ok());
-        assert_eq!(
-            representable_for_client(unassessed, &text, Some(&plain)),
-            Err(RejectionReason::Representation)
-        );
+        representable_for_client(unassessed, &text, Some(&plain)).unwrap();
     }
 
     #[test]

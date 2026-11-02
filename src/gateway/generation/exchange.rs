@@ -79,8 +79,10 @@ struct Sent<'r> {
 /// Resolve the bound credential, apply an affinity projection when it fits,
 /// encode for this candidate and send. Each candidate starts from the original
 /// immutable input; affinity never chooses or advances the credential.
+#[allow(clippy::too_many_arguments)]
 async fn send_attempt<'r>(
     runtime: &Runtime,
+    client: &crate::adapter::ClientAdapter,
     planned: crate::gateway::runtime::PlannedCandidate,
     request: &'r Request,
     ordinal: usize,
@@ -100,7 +102,7 @@ async fn send_attempt<'r>(
         ApiError::invalid()
     };
     let mut projection = planned
-        .into_projection(request, &runtime.affinity)
+        .into_projection(request, &runtime.affinity, client)
         .map_err(failed)?;
     let mut local = Cow::Borrowed(request);
     let mut affinity = crate::gateway::routing::prefix_cache::choose(
@@ -111,7 +113,7 @@ async fn send_attempt<'r>(
         trace,
     );
     if let Some(selection) = &affinity {
-        match selection.project(&candidate, request) {
+        match selection.project(&candidate, request, client) {
             Some((request, converted)) => {
                 local = Cow::Owned(request);
                 projection = converted;
@@ -128,16 +130,19 @@ async fn send_attempt<'r>(
     let intake_request = {
         let mut intake = local.clone();
         if runtime.limits.force_upstream_stream {
-            use crate::semantic::{context::StreamOptions, value::Presence};
+            use crate::semantic::context::StreamOptions;
             let delivery = &mut intake.to_mut().delivery;
-            delivery.stream = Presence::Value(true);
-            delivery.options = Presence::Value(StreamOptions {
-                include_usage: Presence::Value(true),
+            delivery.stream = Some(true);
+            delivery.options = Some(StreamOptions {
+                include_usage: Some(true),
                 ..Default::default()
             });
-            let converted =
-                crate::execution::attempt::RequestProjection::encode(&candidate.endpoint, &intake)
-                    .map_err(failed)?;
+            let converted = crate::execution::attempt::RequestProjection::for_client(
+                &candidate.endpoint,
+                &intake,
+                client,
+            )
+            .map_err(failed)?;
             projection = crate::execution::attempt::encode_projection(
                 &candidate.endpoint,
                 &intake,
@@ -310,6 +315,7 @@ pub(in crate::gateway) async fn produce_chain(
                 let runtime = runtime.as_ref().ok_or(ApiError::upstream())?;
                 let sent = send_attempt(
                     runtime,
+                    &entry.client,
                     planned,
                     request,
                     chain.attempts,
@@ -348,7 +354,12 @@ pub(in crate::gateway) async fn produce_chain(
             if let (Some(selection), Some(successor), Some(runtime)) =
                 (affinity, successor, &runtime)
             {
-                selection.publish(&runtime.affinity, candidate, Some(&successor));
+                selection.publish(
+                    &runtime.affinity,
+                    candidate,
+                    Some(&successor),
+                    &entry.client,
+                );
             }
             Ok(())
         })

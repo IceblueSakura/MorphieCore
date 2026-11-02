@@ -324,7 +324,7 @@ pub(super) fn text_items(
                         return true;
                     };
                     if matches!(resource.description, ResourceDescription::File(file)
-                        if !file.context.is_absent())
+                        if file.context.is_some())
                     {
                         return true;
                     }
@@ -493,7 +493,7 @@ fn result_representable(
             if r.media(resources).is_ok_and(|r| {
                 matches!(r.kind(), ResourceKind::Audio | ResourceKind::Video)
                     || matches!(r.description, ResourceDescription::File(file)
-                        if !file.context.is_absent())
+                        if file.context.is_some())
             }))
         }),
         _ => false,

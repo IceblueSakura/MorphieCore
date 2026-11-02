@@ -201,7 +201,6 @@ impl ChatSseEncoder {
         padding: Obfuscation,
     ) -> Result<Self, SseError> {
         limits.validate()?;
-        options.validate().map_err(CodecError::from)?;
         if options.obfuscation() != matches!(padding, Obfuscation::Seeded(_)) {
             return Err(SseError::Codec(CodecError::invalid()));
         }

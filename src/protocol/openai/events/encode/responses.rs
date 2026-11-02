@@ -66,12 +66,6 @@ impl EventEncoder {
         let service = projection::reported_service_class(&mut delivered, self.profile);
         let loss = projection::reported_settings(&mut delivered, self.profile)
             .map_err(|_| CodecError::Unsupported(CarrierReason::Unavailable))?;
-        if loss.is_some()
-            && self.contract.reported_facts
-                == crate::protocol::conversion::generation::ReportedFactPolicy::StrictComplete
-        {
-            return Err(CodecError::Unsupported(CarrierReason::Unavailable));
-        }
         let fingerprint = delivered
             .context
             .system_fingerprint

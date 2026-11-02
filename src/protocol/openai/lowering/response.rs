@@ -1,6 +1,6 @@
 //! Response fact requirements and projection before static or event delivery.
 use super::{
-    ReportedFactPolicy, RepresentationError, TargetContract,
+    RepresentationError, TargetContract,
     checks::{
         check_tool_selection, check_usage, represent_reasoning, text_items, validate_wire_ids,
     },
@@ -13,36 +13,6 @@ use crate::{
     },
     semantic::task::generation::*,
 };
-
-/// A strict-complete target cannot deliver a response whose reported facts are
-/// absent: the settings echo and, when usage is reported, its sub-details.
-pub fn require_reported_facts(
-    r: &GenerationResponse,
-    metadata: &ResponseMetadata,
-    c: &TargetContract,
-) -> Result<(), RepresentationError> {
-    if c.reported_facts != ReportedFactPolicy::StrictComplete {
-        return Ok(());
-    }
-    let echo_complete = metadata.context.settings().is_some_and(|settings| {
-        settings.tools.is_some()
-            && settings.tool_choice.is_some()
-            && settings.parallel_tool_calls.is_some()
-    });
-    let usage_complete = match r.usage() {
-        None => true,
-        Some(usage) => {
-            usage.cached_input_tokens.is_some()
-                && usage.input_cache_write_tokens.is_some()
-                && usage.reasoning_tokens.is_some()
-        }
-    };
-    if echo_complete && usage_complete {
-        Ok(())
-    } else {
-        Err(RepresentationError::ReportedFacts)
-    }
-}
 
 pub fn lower_response<'a>(
     r: &'a GenerationResponse,
@@ -100,7 +70,6 @@ pub(crate) fn validate_response(
     {
         return Err(RepresentationError::UnmigratedSemantic);
     }
-    require_reported_facts(r, metadata, c)?;
     if profile == GenerationApi::Responses
         && metadata.context.settings().is_some_and(|s| {
             s.reasoning.presentation.visibility.value() == Some(&ReasoningDisplay::Omitted)

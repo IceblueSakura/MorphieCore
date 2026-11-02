@@ -268,6 +268,21 @@ impl RequestProjection {
         )
         .map_err(|_| AttemptError::Limit)
     }
+    pub(crate) fn for_client(
+        endpoint: &Endpoint,
+        request: &Request,
+        client: &crate::adapter::ClientAdapter,
+    ) -> Result<Self, AttemptError> {
+        crate::execution::plan::project_candidate(endpoint, request, Some(client)).map_err(
+            |reason| match reason {
+                crate::execution::plan::RejectionReason::Conversion(cause) => {
+                    AttemptError::Conversion(*cause)
+                }
+                crate::execution::plan::RejectionReason::BodyLimit => AttemptError::Limit,
+                _ => AttemptError::Protocol(ProtocolReason::RejectedAttempt),
+            },
+        )
+    }
     pub(crate) fn value(&self) -> &serde_json::Value {
         &self.value
     }

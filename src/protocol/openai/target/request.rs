@@ -111,9 +111,9 @@ impl GenerationCodec {
                     // its wire report rather than synthesizing any counters.
                     if request.source != Some(self.protocol.into()) && request.delivery.streaming()
                     {
-                        let mut common = options.value().cloned().unwrap_or_default();
-                        common.include_usage = Presence::Value(true);
-                        options = Presence::Value(common);
+                        let mut common = options.unwrap_or_default();
+                        common.include_usage = Some(true);
+                        options = Some(common);
                     }
                     chat_envelope::encode_request(
                         &target,
@@ -124,8 +124,11 @@ impl GenerationCodec {
                             } else {
                                 Presence::Absent
                             },
-                            stream: request.delivery.stream.clone(),
-                            stream_options: options,
+                            stream: request
+                                .delivery
+                                .stream
+                                .map_or(Presence::Absent, Presence::Value),
+                            stream_options: options.map_or(Presence::Absent, Presence::Value),
                             store: context.store,
                             cache: context.cache,
                             identity: context.identity,
@@ -136,10 +139,9 @@ impl GenerationCodec {
                 }
                 GenerationApi::Responses => {
                     let options = match &request.delivery.options {
-                        Presence::Absent => Presence::Absent,
-                        Presence::Null => Presence::Null,
-                        Presence::Value(value) => Presence::Value(envelope::StreamOptions {
-                            include_obfuscation: value.include_obfuscation.clone(),
+                        None => Presence::Absent,
+                        Some(value) => Presence::Value(envelope::StreamOptions {
+                            include_obfuscation: value.include_obfuscation,
                         }),
                     };
                     envelope::encode_request(
@@ -149,7 +151,10 @@ impl GenerationCodec {
                             execution: context,
                             service_policy: request.service_policy,
                             delivery: envelope::Delivery {
-                                stream: request.delivery.stream.clone(),
+                                stream: request
+                                    .delivery
+                                    .stream
+                                    .map_or(Presence::Absent, Presence::Value),
                                 options,
                             },
                         },

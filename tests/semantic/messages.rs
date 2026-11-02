@@ -514,9 +514,7 @@ mod phase {
                         "public",
                         SseLimits::default(),
                         morphiecore::semantic::context::StreamOptions {
-                            include_obfuscation: morphiecore::semantic::value::Presence::Value(
-                                false,
-                            ),
+                            include_obfuscation: Some(false),
                             ..Default::default()
                         },
                         Obfuscation::Disabled,

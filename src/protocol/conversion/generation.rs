@@ -1,19 +1,8 @@
-//! Shared generation representation failures and reported-fact policy.
+//! Shared generation representation failures.
 use crate::semantic::task::generation::*;
 
 mod evidence;
 pub use evidence::*;
-/// Delivery policy for reported response facts (ADR 0008). Absence is a
-/// reported fact; a target that demands the SDK-strict complete form fails
-/// lowering instead of omitting the fact.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum ReportedFactPolicy {
-    /// Absent facts stay absent and are never filled or synthesized.
-    Faithful,
-    /// The target requires complete reported facts; absence is a
-    /// representability failure, not an omission.
-    StrictComplete,
-}
 #[derive(Clone, Debug, Eq, thiserror::Error, PartialEq)]
 pub enum RepresentationError {
     #[error("projection stage budget exceeded")]

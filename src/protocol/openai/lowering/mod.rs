@@ -10,9 +10,9 @@ mod request;
 mod response;
 pub(crate) mod strictness;
 
-pub use crate::protocol::conversion::generation::{ReportedFactPolicy, RepresentationError};
+pub use crate::protocol::conversion::generation::RepresentationError;
 pub use crate::protocol::openai::TargetContract;
 pub use request::lower_request;
 pub(crate) use request::render_request;
+pub use response::lower_response;
 pub(crate) use response::validate_response;
-pub use response::{lower_response, require_reported_facts};

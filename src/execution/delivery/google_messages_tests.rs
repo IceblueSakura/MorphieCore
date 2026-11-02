@@ -168,7 +168,7 @@ fn stateless_clients_reject_hidden_signatures_without_fabricated_reasoning() {
                         "public",
                         Default::default(),
                         crate::semantic::context::StreamOptions {
-                            include_obfuscation: crate::semantic::value::Presence::Value(false),
+                            include_obfuscation: Some(false),
                             ..Default::default()
                         },
                         Obfuscation::Disabled,
@@ -218,13 +218,19 @@ fn stateless_clients_reject_hidden_signatures_without_fabricated_reasoning() {
         json!({"type":"thinking","thinking":"","signature":"mca1.synthetic"}),
         json!({"type":"redacted_thinking","data":"mca1.synthetic"}),
     ] {
-        let error = ClientAdapter::Messages.decode_client_request(
-            json!({"model":"public","max_tokens":32,"messages":[{"role":"assistant","content":[content]}]})
-                .to_string().as_bytes()).unwrap_err();
-        assert_eq!(
-            error,
-            crate::protocol::CodecError::Unsupported(CarrierReason::Replay)
-        );
+        let mut request = ClientAdapter::Messages
+            .decode_client_request(
+                json!({"model":"public","max_tokens":32,"messages":[
+                {"role":"user","content":"visible"},{"role":"assistant","content":[content]}]})
+                .to_string()
+                .as_bytes(),
+            )
+            .unwrap();
+        super::super::replay::open_from_client(&mut request).unwrap();
+        let (endpoint, _, _) = fixture(false, false);
+        let encoded = endpoint.encode_request(&request).unwrap();
+        assert!(encoded.to_string().contains("visible"));
+        assert!(!encoded.to_string().contains("mca1."));
     }
 }
 
@@ -364,8 +370,8 @@ fn google_finish_explanation_omission_keeps_incomplete_source_and_requires_recei
                 "public",
                 Default::default(),
                 StreamOptions {
-                    include_usage: Presence::Value(true),
-                    include_obfuscation: Presence::Value(false),
+                    include_usage: Some(true),
+                    include_obfuscation: Some(false),
                 },
                 Obfuscation::Disabled,
             )
@@ -473,8 +479,8 @@ fn google_service_reports_keep_processing_meaning_and_omit_uncarried_capacity_re
                     "public",
                     Default::default(),
                     StreamOptions {
-                        include_usage: Presence::Value(true),
-                        include_obfuscation: Presence::Value(false),
+                        include_usage: Some(true),
+                        include_obfuscation: Some(false),
                     },
                     Obfuscation::Disabled,
                 )

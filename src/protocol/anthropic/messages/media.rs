@@ -218,9 +218,8 @@ impl Media {
                         .transpose()?,
                     detail: None,
                     context: match context {
-                        Presence::Absent => Presence::Absent,
-                        Presence::Null => Presence::Null,
-                        Presence::Value(c) => Presence::Value(
+                        Presence::Absent | Presence::Null => None,
+                        Presence::Value(c) => Some(
                             Text::allowing_empty(c, "document context", MAX_TEXT_BYTES)
                                 .map_err(|_| CodecError::Limit)?,
                         ),
@@ -298,9 +297,8 @@ impl Media {
                 source,
                 context: match resource.description {
                     ResourceDescription::File(file) => match &file.context {
-                        Presence::Absent => Presence::Absent,
-                        Presence::Null => Presence::Null,
-                        Presence::Value(c) => Presence::Value(c.as_str().into()),
+                        None => Presence::Absent,
+                        Some(c) => Presence::Value(c.as_str().into()),
                     },
                     _ => Presence::Absent,
                 },

@@ -1,7 +1,6 @@
 //! Canonical identities and public aliases. Semantic vocabulary has no topology dependency.
 use super::{ModelId, TaskKind};
 pub use crate::lowering::disposition::Dispositions;
-use crate::protocol::conversion::generation::ReportedFactPolicy;
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CanonicalModel {
     pub id: ModelId,
@@ -22,7 +21,6 @@ impl super::PublicModel {
             task,
             route,
             contract,
-            reported_facts: ReportedFactPolicy::Faithful,
         }
     }
 }

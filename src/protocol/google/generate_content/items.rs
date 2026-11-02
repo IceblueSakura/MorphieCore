@@ -225,7 +225,7 @@ fn media(resource: ResourceView<'_>) -> Result<Value, CodecError> {
             size_policy,
         } => detail.is_some() || *size_policy == ImageSizePolicy::RejectOversized,
         ResourceDescription::File(file) => {
-            file.filename.is_some() || file.detail.is_some() || !file.context.is_absent()
+            file.filename.is_some() || file.detail.is_some() || file.context.is_some()
         }
         _ => false,
     } {

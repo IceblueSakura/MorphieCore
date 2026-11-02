@@ -22,6 +22,11 @@ impl Rule {
     }
 }
 impl Rule {
+    pub const CHAT_FALLBACK_THINKING_OFF: Self = Self::new(
+        "chat.fallback-thinking-off.v1",
+        Field::ReasoningAllocation,
+        Change::Approximate,
+    );
     pub const OMIT_MESSAGES_REMOVED_SAMPLING: Self = Self::new(
         "messages.omit-removed-sampling.v1",
         Field::Sampling,

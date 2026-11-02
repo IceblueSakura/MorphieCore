@@ -1,5 +1,6 @@
 //! Startup-only Generation Text discovery. Pure contract projection, never Provider probing.
-mod contract;
+pub(super) mod contract;
+pub(crate) mod defaults;
 mod media;
 
 use super::models::{response, running};
@@ -19,6 +20,100 @@ use std::{collections::BTreeMap, sync::Arc};
 
 const MAX_MODELS: usize = 64;
 const MAX_BYTES: usize = 256 << 10;
+
+pub(in crate::gateway) struct Contracts {
+    pub(in crate::gateway) interfaces: BTreeMap<(ClientProtocol, String), contract::Interface>,
+    preferences: BTreeMap<String, Preference>,
+}
+
+#[derive(Serialize)]
+struct Preference {
+    state: &'static str,
+    protocol: Option<&'static str>,
+    basis: &'static str,
+    uniform: Option<bool>,
+}
+impl Preference {
+    fn from_bound(
+        entry: &BoundEntry,
+        entries: &BTreeMap<(ClientProtocol, String), Arc<BoundEntry>>,
+        contracts: &Contracts,
+    ) -> Self {
+        let mut preference = Self {
+            state: "not_assessed",
+            protocol: None,
+            basis: "primary_candidate_native_protocol_and_agent_default_preflight",
+            uniform: None,
+        };
+        use crate::topology::GenerationProtocol;
+        let primary = entry.candidates[0].endpoint.protocol;
+        let (protocol, name) = match primary {
+            GenerationProtocol::OpenAiChat => (ClientProtocol::Chat, "chat_completions"),
+            GenerationProtocol::OpenAiResponses => (ClientProtocol::Responses, "responses"),
+            GenerationProtocol::AnthropicMessages => (ClientProtocol::Messages, "messages"),
+            _ => return preference,
+        };
+        let key = (protocol, entry.public.id.as_str().into());
+        let Some(native) = entries.get(&key) else {
+            return preference;
+        };
+        let same = |a: &crate::gateway::runtime::BoundCandidate,
+                    b: &crate::gateway::runtime::BoundCandidate| {
+            a.endpoint.id == b.endpoint.id && a.cache_scope == b.cache_scope
+        };
+        if !same(&entry.candidates[0], &native.candidates[0]) {
+            return preference;
+        }
+        let interface = &contracts.interfaces[&key];
+        let qualified = interface.qualified_candidates();
+        if qualified.first() != Some(&true) {
+            return preference;
+        }
+        preference.state = "assessed";
+        preference.protocol = Some(name);
+        preference.uniform = Some(
+            qualified.iter().all(|qualified| *qualified)
+                && entry.candidates.len() == native.candidates.len()
+                && entry
+                    .candidates
+                    .iter()
+                    .zip(&native.candidates)
+                    .all(|(a, b)| same(a, b))
+                && entry
+                    .candidates
+                    .iter()
+                    .all(|candidate| candidate.endpoint.protocol == primary),
+        );
+        preference
+    }
+}
+
+pub(in crate::gateway) fn compile(
+    entries: &BTreeMap<(ClientProtocol, String), Arc<BoundEntry>>,
+) -> Result<Contracts, StartupError> {
+    if entries.len() > MAX_MODELS * ClientProtocol::ALL.len()
+        || entries.values().any(|entry| {
+            entry.candidates.is_empty()
+                || entry.candidates.len() > crate::execution::plan::MAX_CANDIDATES
+        })
+    {
+        return Err(StartupError::Binding);
+    }
+    let mut contracts = Contracts {
+        interfaces: entries
+            .iter()
+            .map(|(key, entry)| (key.clone(), contract::Interface::from_bound(entry)))
+            .collect(),
+        preferences: BTreeMap::new(),
+    };
+    for ((_, label), entry) in entries {
+        if !contracts.preferences.contains_key(label) {
+            let preference = Preference::from_bound(entry, entries, &contracts);
+            contracts.preferences.insert(label.clone(), preference);
+        }
+    }
+    Ok(contracts)
+}
 
 #[derive(Serialize)]
 struct Envelope<T> {
@@ -48,7 +143,8 @@ struct Model<'a> {
     id: &'a str,
     name: &'a str,
     owned_by: &'a str,
-    interfaces: Vec<contract::Interface>,
+    preferred_interface: &'a Preference,
+    interfaces: Vec<&'a contract::Interface>,
 }
 
 pub(in crate::gateway) struct TextModelView {
@@ -56,21 +152,22 @@ pub(in crate::gateway) struct TextModelView {
     pub(in crate::gateway) models: BTreeMap<String, Bytes>,
 }
 impl TextModelView {
+    #[cfg(test)]
     pub(in crate::gateway) fn bind(
         topology: &CompiledTopology,
         entries: &BTreeMap<(ClientProtocol, String), Arc<BoundEntry>>,
         response_bytes: usize,
     ) -> Result<Self, StartupError> {
-        if entries.len() > MAX_MODELS * ClientProtocol::ALL.len() {
-            return Err(StartupError::Binding);
-        }
+        Self::from_contracts(topology, entries, &compile(entries)?, response_bytes)
+    }
+    pub(in crate::gateway) fn from_contracts(
+        topology: &CompiledTopology,
+        entries: &BTreeMap<(ClientProtocol, String), Arc<BoundEntry>>,
+        contracts: &Contracts,
+        response_bytes: usize,
+    ) -> Result<Self, StartupError> {
         let mut descriptors = BTreeMap::new();
-        for ((_, label), entry) in entries {
-            if entry.candidates.is_empty()
-                || entry.candidates.len() > crate::execution::plan::MAX_CANDIDATES
-            {
-                return Err(StartupError::Binding);
-            }
+        for (key @ (_, label), entry) in entries {
             let metadata = topology
                 .model_metadata(&entry.public.canonical_model)
                 .ok_or(StartupError::Binding)?;
@@ -78,11 +175,12 @@ impl TextModelView {
                 id: label.as_str(),
                 name: label.as_str(),
                 owned_by: metadata.developer(),
+                preferred_interface: &contracts.preferences[label],
                 interfaces: vec![],
             });
             descriptor
                 .interfaces
-                .push(contract::Interface::from_bound(entry));
+                .push(contracts.interfaces.get(key).ok_or(StartupError::Binding)?);
             if descriptors.len() > MAX_MODELS {
                 return Err(StartupError::Binding);
             }

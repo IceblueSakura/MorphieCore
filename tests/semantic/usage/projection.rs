@@ -333,11 +333,8 @@ fn a_stream_cannot_switch_target_policy_after_publication() {
 }
 
 #[test]
-fn chat_stream_null_metadata_is_lossless_even_under_strict_reporting() {
-    use morphiecore::{
-        protocol::{conversion::generation::ReportedFactPolicy, openai::events::EventEncoder},
-        semantic::value::Presence,
-    };
+fn chat_stream_null_metadata_is_lossless() {
+    use morphiecore::{protocol::openai::events::EventEncoder, semantic::value::Presence};
     let fidelity = FidelityRecords::default();
     let mut meta = metadata();
     meta.context.execution.metadata = Presence::Null;
@@ -366,11 +363,9 @@ fn chat_stream_null_metadata_is_lossless_even_under_strict_reporting() {
         Some(&serde_json::Value::Null)
     );
 
-    let mut strict = Contract::full();
-    strict.reported_facts = ReportedFactPolicy::StrictComplete;
     let mut encoder = EventEncoder::new(GenerationApi::Chat, meta.clone())
         .unwrap()
-        .with_contract(strict.clone());
+        .with_contract(Contract::full());
     for event in text_events() {
         encoder.encode(&event, &fidelity).unwrap();
     }
@@ -382,7 +377,7 @@ fn chat_stream_null_metadata_is_lossless_even_under_strict_reporting() {
     );
     let mut encoder = EventEncoder::new(GenerationApi::Chat, metadata())
         .unwrap()
-        .with_contract(strict);
+        .with_contract(Contract::full());
     encoder.encode(&StreamEvent::Started, &fidelity).unwrap();
     encoder.update_metadata(meta.clone()).unwrap();
     for event in text_events().into_iter().skip(1) {
@@ -500,13 +495,7 @@ fn accounting_projection_preserves_admitted_text_and_rejects_invalid_resources()
 
 #[test]
 fn detailed_usage_loss_is_checked_before_scalar_projection() {
-    use morphiecore::{
-        protocol::{
-            ConversionCause,
-            conversion::generation::{ReportedFactPolicy, RepresentationError},
-        },
-        semantic::context::{ResponseReport, ResponseReports},
-    };
+    use morphiecore::semantic::context::{ResponseReport, ResponseReports};
     let mut meta = metadata();
     meta.context.reports = ResponseReports::Single(Box::new(ResponseReport {
         settings: Some(GenerationSettings {
@@ -527,14 +516,12 @@ fn detailed_usage_loss_is_checked_before_scalar_projection() {
     let mut reports = UsageReports::default();
     reports.replace(report.clone()).unwrap();
     let control = response().with_usage_reports(reports).unwrap();
-    let mut strict = Contract::full();
-    strict.reported_facts = ReportedFactPolicy::StrictComplete;
     lower_response(
         &control,
         &fidelity,
         &meta,
         GenerationApi::Responses,
-        strict.clone(),
+        Contract::full(),
     )
     .unwrap();
     report.details.tool_requests.push(ToolUseCount {
@@ -557,14 +544,6 @@ fn detailed_usage_loss_is_checked_before_scalar_projection() {
             .projection()
             .iter()
             .any(|effect| effect.rule() == "generation.usage-report-view.v1")
-    );
-    let error = match lower_response(&source, &fidelity, &meta, GenerationApi::Responses, strict) {
-        Ok(_) => panic!("strict-complete must reject the lost report detail"),
-        Err(error) => error,
-    };
-    assert_eq!(
-        error.cause,
-        ConversionCause::Representation(RepresentationError::ReportedFacts)
     );
     assert_eq!(
         source

@@ -157,18 +157,26 @@ async fn readable_reasoning_survives_tool_feedback_and_next_turn() {
 }
 
 #[tokio::test]
-async fn standard_chat_rejects_required_tool_history_before_dispatch() {
-    let fixture = fixture::start_required_history().await;
+async fn standard_chat_disables_thinking_for_required_tool_history_before_dispatch() {
     let client = reqwest::Client::builder().no_proxy().build().unwrap();
-    let response = client
-        .post(format!("{}/chat/completions", fixture.base))
-        .bearer_auth(fixture::CLIENT_KEY)
-        .json(&input(false))
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(response.status(), 400);
-    assert!(fixture.seen.lock().unwrap().is_empty());
+    for stream in [false, true] {
+        let fixture = fixture::start_required_history().await;
+        let mut body = input(stream);
+        let result = request(&client, &fixture.base, &body, "thinking-off").await;
+        assert_eq!(result["choices"][0]["finish_reason"], "tool_calls");
+        let message = result["choices"][0]["message"].clone();
+        let history = body["messages"].as_array_mut().unwrap();
+        history.push(message);
+        history.extend([
+            json!({"role":"tool","tool_call_id":"call-second","content":"second-result"}),
+            json!({"role":"tool","tool_call_id":"call-lookup","content":fixture::RESULT}),
+        ]);
+        let result = request(&client, &fixture.base, &body, "thinking-off").await;
+        assert_eq!(result["choices"][0]["message"]["content"], "cedar-71");
+        let seen = fixture.seen.lock().unwrap();
+        assert_eq!(seen.len(), 2);
+        assert!(seen.iter().all(|body| body["enable_thinking"] == false));
+    }
 }
 
 #[tokio::test]

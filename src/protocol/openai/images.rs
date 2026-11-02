@@ -141,8 +141,10 @@ pub fn decode_request(bytes: &[u8]) -> Result<Request, CodecError> {
         delivery: DeliveryIntent {
             stream: optional(map, "stream", |v| {
                 v.as_bool().ok_or_else(CodecError::invalid)
-            })?,
-            options: Presence::Absent,
+            })?
+            .value()
+            .copied(),
+            options: None,
         },
         identity: ClientIdentityHints {
             user: {
@@ -166,7 +168,7 @@ pub fn validate_request(request: &Request) -> Result<(), CodecError> {
         .map_err(|_| CodecError::invalid())?;
     if !valid_model(&request.model)
         || request.delivery.streaming()
-        || !request.delivery.options.is_absent()
+        || request.delivery.options.is_some()
         || !request.identity.safety_identifier.is_none()
         // This profile defaults to PNG, unlike the protocol-neutral request.
         || request.task.compression.value().is_some()
@@ -185,7 +187,9 @@ pub fn encode_request(request: &Request, model: &str) -> Result<Value, CodecErro
     map.insert("model".into(), json!(model));
     map.insert("prompt".into(), json!(request.task.prompt()));
     put(&mut map, "n", &request.task.count, |n| json!(n));
-    put(&mut map, "stream", &request.delivery.stream, |v| json!(v));
+    if let Some(stream) = request.delivery.stream {
+        map.insert("stream".into(), json!(stream));
+    }
     put(
         &mut map,
         "output_format",

@@ -15,10 +15,7 @@ mod transcription;
 pub use transcription::{TRANSCRIPTION_BINDINGS, TranscriptionBinding};
 mod subscriptions;
 use crate::{
-    protocol::{
-        conversion::generation::ReportedFactPolicy,
-        openai::{GenerationCodec, TargetContract},
-    },
+    protocol::openai::{GenerationCodec, TargetContract},
     provider::{CredentialBindingId, CredentialKind, catalog},
     topology::*,
 };
@@ -107,7 +104,6 @@ pub fn default_topology() -> Result<CompiledTopology, TopologyError> {
         if let Some(existing) = merged.iter().find(|p| p.id == public.id) {
             if existing.canonical_model != public.canonical_model
                 || existing.contract != public.contract
-                || existing.reported_facts != public.reported_facts
             {
                 return Err(TopologyError::SemanticUnsatisfiable);
             }

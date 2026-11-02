@@ -137,7 +137,6 @@ fn input_parts(
             "input_text" => {
                 direction.fields(o, &["type", "text", "prompt_cache_breakpoint"])?;
                 let id = b.part_id()?;
-                b.fidelity.record_input_text(id)?;
                 (
                     id,
                     InputPart::Text(
@@ -172,14 +171,6 @@ fn input_parts(
         p.push(part);
     }
     Ok(p)
-}
-fn record_input_form(
-    b: &mut Items,
-    id: PartId,
-    o: &Map<String, Value>,
-) -> Result<Option<PrefixCacheBoundary>, CodecError> {
-    b.fidelity.record_input_text(id)?;
-    read_breakpoint(o, false)
 }
 fn read_breakpoint(
     o: &Map<String, Value>,
@@ -303,15 +294,6 @@ pub(in crate::protocol::openai) fn decode_items(
     let direction = b.direction;
     for value in input {
         let o = object(value)?;
-        if !response
-            && matches!(direction, DecodeDirection::Client(_))
-            && o.get("type").and_then(Value::as_str) == Some("reasoning")
-            && o.get("encrypted_content")
-                .and_then(Value::as_str)
-                .is_some_and(crate::protocol::replay_projection::is_marker)
-        {
-            return Err(CodecError::Unsupported(CarrierReason::Replay));
-        }
         let id = b.id()?;
         let typ = o
             .get("type")
@@ -503,7 +485,7 @@ pub(in crate::protocol::openai) fn decode_items(
                         }
                         direction.fields(part, &["type", "text", "prompt_cache_breakpoint"])?;
                         let id = b.part_id()?;
-                        let cache = record_input_form(b, id, part)?;
+                        let cache = read_breakpoint(part, false)?;
                         let mut part = Part::new(
                             id,
                             Text::allowing_empty(
@@ -601,7 +583,7 @@ pub(in crate::protocol::openai) fn decode_items(
                                 }
                                 None
                             }
-                            "input_text" => record_input_form(b, part_id, p)?,
+                            "input_text" => read_breakpoint(p, false)?,
                             "input_image" | "input_file" => read_breakpoint(p, false)?,
                             _ => None,
                         };

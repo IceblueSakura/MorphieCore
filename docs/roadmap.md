@@ -58,12 +58,12 @@ This page owns current scope, priorities, dependencies, and exit gates. [Archite
 
 ## Current status
 
-**Current focus (2026-11-02):** Slices R0–R3 are complete. Active focus is **R4 (Unknown facts and history)**, followed by R5 (Cleanup and discovery) and installed-Agent default-profile acceptance. Stage 4 resumes once R4–R5 exit gates pass.
+**Current focus (2026-11-02):** Slices R0–R4 are complete. Active focus is **R5 (Cleanup and discovery)**: finish remaining null-contract migration, then installed-Agent default-profile acceptance. Stage 4 resumes after stabilization closure.
 
 | Area | State | Next step |
 |---|---|---|
 | Routing | Stable routing baseline frozen; controlled synthetic recovery verified across Router, SDK, and installed clients | Real-failover production evidence required for multi-credential routes |
-| Generation IR / Codec | R0–R3 complete; shared request/delivery owners, qualified streaming intake, Messages version admission | R4: history delegation and visible-history transfer; then R5 |
+| Generation IR / Codec | R0–R4 complete; shared projection owners, qualified intake, history delegation/fallback/transfer | R5: remaining null-contract migration |
 | Client compatibility | Default native Messages loops pass with installed pi and OpenCode without overrides | Complete three-protocol and cross-protocol exit loops after R4–R5 |
 | Integration | R1a/R1b/R2 loops, controlled recovery and production closure passed | Revalidate changed paths against established gates |
 | Cross-protocol conversion | Stage 3 closed for selected projections; `count_tokens` deferred | Stage-4 Embedding paths active; Google API paused |
@@ -100,12 +100,10 @@ This workstream repairs semantic fidelity across standard Chat Completions, Resp
 
 ### Agent-default production findings
 
-Captured pi 1.4.0 shapes run through the permanent [production-construction gate](development.md#sdk-loopback-gate). R1 and R2 resolved earlier lanes; unresolved lanes are listed below:
+Captured pi 1.4.0 shapes run through the permanent [production-construction gate](development.md#sdk-loopback-gate). R1–R4 resolved earlier lanes; unresolved lanes are listed below:
 
 | Lane | Current gate disposition | Ladder resolution | Slice |
 |---|---|---|---|
-| Chat client → DeepSeek/Zhipu Chat tools and reasoning | `admission.client_representation` from `required_with_tools` | Deployer `readable_reasoning`; otherwise thinking-off fallback (L3) | R4 |
-| Chat client → TokenPlan Chat, all profiles | `admission.client_representation` from unassessed history | Delegation | R4 |
 | Responses client → OpenAI subscriptions, flat tools | Flat tools reject (requires namespace definitions and qualified calls) | Retain selected tool contract until endpoint evidence qualifies carrier | Endpoint qualification |
 | Chat upstream usage | Duplicate nonnull final reports | Qualify at emitter | Outside slices |
 
@@ -113,7 +111,7 @@ Captured pi 1.4.0 shapes run through the permanent [production-construction gate
 
 Each slice migrates rejection sites onto the conversion ladder through unified request and delivery owners ([Architecture](architecture.md#conversion-ladder)).
 
-#### Completed slices (R0–R3)
+#### Completed slices (R0–R4)
 
 | Slice | Completed | Key Deliverables & Verified Behavior |
 |---|---|---|
@@ -121,16 +119,16 @@ Each slice migrates rejection sites onto the conversion ladder through unified r
 | **R1 Request Disposition** | 2026-10-31 | Unified request disposition owner ([`lowering/disposition.rs`](../src/lowering/disposition.rs)); scalar `Option` migrations; conditional strictness; cache and report omissions. |
 | **R2 Delivery Projection** | 2026-11-01 | Single delivery projection owner ([`ClientAdapter`](../src/adapter/downstream.rs)); unified event stream projection across JSON and SSE views. |
 | **R3 Messages Intake** | 2026-11-02 | Version header admission; legacy sampling/block-binding omission; verified default native tool/history loops for installed pi and OpenCode. |
+| **R4 Unknown facts and history** | 2026-11-02 | Unassessed bindings delegate; Standard Chat required-history tools use the selected thinking-off fallback; target-local visible-history transfer preserves text/tool links and explicit history-read guards. Production-construction lanes cover TokenPlan, DeepSeek/Zhipu tools and two-turn Bailian Responses; replay trust remains independently checked. |
 
-#### Active and pending slices (R4–R5)
+#### Active and pending slices (R5 and exit)
 
 | Slice | Work | Exit gate |
 |---|---|---|
-| **R4 Unknown facts and history** *(Active)* | **1. Delegation**: Send carriable history for unassessed binding facts (`ReasoningHistory::None`), letting upstream validate; discovery publishes `not_assessed`.<br>**2. `required_with_tools` fallback**: For Standard Chat + tools + thinking, allow deployer `readable_reasoning` or fallback to disabling thinking under L3 loss `chat.fallback-thinking-off.v1`; reject at planning only if thinking cannot be disabled.<br>**3. Generalized visible-history transfer**: Omit uncarried/foreign reasoning, citations, and obsolete markers under L3 while preserving visible text and tool links. | TokenPlan Chat, DeepSeek/Zhipu Chat tools, and two-turn Bailian Responses lanes accept; replay trust checks unchanged. |
-| **R5 Cleanup and discovery** | Remove test-only strict-complete reporting policy, obsolete `mca1.` marker handling, and unreachable delivery guards. Run the `FidelityRecords` probe. Convert remaining `Presence` fields. Derive `/capabilities` and discovery (S10) from disposition tables. | Discovery publishes gate-observed facts; `Presence` remains only on contract-defined null fields; `FidelityRecords` outcome recorded. |
+| **R5 Cleanup and discovery** *(Active)* | Finish field-specific null-contract review and conversion of remaining Generation `Presence` controls. Strict-complete policy, obsolete marker handling, redundant delivery guards and input-text-form records are removed; stream intent/document context use `Option`; the [identity probe and shared discovery decision](architecture.md#delivery-and-evidence-decisions) are recorded. | Discovery publishes gate-observed facts; `Presence` remains only on contract-defined null fields. |
 | **Exit** | Current-client characterization, then default reasoning/tool/history gateway loops with installed pi and OpenCode across all three client protocols and selected cross-protocol lanes. | Gateway execution and replay pass within documented profiles. |
 
-Dependencies: R0–R3 are complete. R4 resolves delegation and fallback in planning, and visible-history transfer in request lowering. R5 runs the `FidelityRecords` probe against the single delivery projection.
+Dependencies: R0–R4 are complete. R5 retains local representation identities after the probe; remaining null-contract review precedes the final current-client exit gate. Routing and credential redesign remain frozen.
 
 ### Retained rejections
 
@@ -376,11 +374,7 @@ The user accepted principles P1–P5 and selections S1–S11 on 2026-10-28, gene
 
 | Id | Accepted rule | Owner | Slice |
 |---|---|---|---|
-| L | Conversion ladder and its 2026-10-30 applications | [Conversion ladder](architecture.md#conversion-ladder) | R4–R5 |
-| C | Remaining IR/codec simplification and experiment-gated `FidelityRecords` folding | [Delivery and evidence decisions](architecture.md#delivery-and-evidence-decisions) | R5 |
-| S5 | Generalized visible-history transfer | [Reasoning replay](architecture.md#reasoning-replay) | R4 |
-| S10 | Agent-facing discovery | [Generation Text model discovery](architecture.md#generation-text-model-discovery) | R5 |
-| S11 | Binding reasoning-history contract, with delegation for unassessed facts | [Binding reasoning-history contract](architecture.md#binding-reasoning-history-contract) | R4 |
+| C | Remaining field-specific `Presence` migration; representation identity probe concluded | [Delivery and evidence decisions](architecture.md#delivery-and-evidence-decisions) | R5 |
 
 ### Ownership and projection decisions
 
@@ -421,7 +415,7 @@ Dynamic tool discovery and native Provider web search remain unscheduled Stage 5
 `POST /v1/messages/count_tokens` is deferred. The gateway returns 404 rather than generating synthetic or estimated counts. Reopening requires defining upstream reliability criteria and coarse estimation provenance.
 
 ### Models discovery interfaces
-Generation Text model discovery is operational, including route-common binding-history declarations from the first S11 migration. Its broader agent-facing extension (preferred interface, adaptation rules, agent-default probe forms) is slice R5 of the [conversion-ladder migration](#conversion-ladder-migration), with S10 pending. Discovery for other task families (Embeddings, Media, Decision) remains schema-only until those operations are publicly activated.
+Generation Text model discovery, shared capability derivation and qualified native-interface preference are operational; [Architecture](architecture.md#generation-text-model-discovery) owns the published domains. Discovery for other task families (Embeddings, Media, Decision) remains schema-only until those operations are publicly activated.
 
 ### Messages citations
 Unified citation delivery ([1C proposal](api-expansion-design.md#1c-design-messages-citations)) remains unscheduled. Requests requiring citation output are rejected.

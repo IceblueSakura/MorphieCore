@@ -84,6 +84,7 @@ pub(super) fn resolved_messages_headers(profile: Profile) -> Value {
 }
 
 pub(super) fn request(api: Api, profile: Profile, model: &str, stream: bool) -> Value {
+    // Keep this thin source adapter independent of production discovery selection.
     let corpus: Value = serde_json::from_str(include_str!(
         "../../../../../testdata/repair-and-recall/agent-defaults.json"
     ))
@@ -102,7 +103,6 @@ pub(super) fn request(api: Api, profile: Profile, model: &str, stream: bool) -> 
     assert!(body.is_object());
     body["model"] = json!(model);
     body["stream"] = json!(stream);
-    // pi is streaming-only. JSON controls change only transport-required fields.
     if !stream {
         body.as_object_mut().unwrap().remove("stream_options");
     }

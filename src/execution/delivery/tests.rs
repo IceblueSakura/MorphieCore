@@ -175,7 +175,7 @@ fn late_chat_reasoning_identity_keeps_published_and_retained_aliases() {
         "public",
         Default::default(),
         StreamOptions {
-            include_obfuscation: Presence::Value(false),
+            include_obfuscation: Some(false),
             ..Default::default()
         },
         Obfuscation::Disabled,
@@ -299,7 +299,7 @@ fn native_tool_argument_views(api: GenerationApi, arguments: &str, incomplete: b
             "public",
             Default::default(),
             StreamOptions {
-                include_obfuscation: Presence::Value(false),
+                include_obfuscation: Some(false),
                 ..Default::default()
             },
             Obfuscation::Disabled,
@@ -1122,7 +1122,7 @@ fn original_request_metadata_is_attempt_local_and_matches_responses_snapshots() 
             "public",
             Default::default(),
             StreamOptions {
-                include_obfuscation: Presence::Value(false),
+                include_obfuscation: Some(false),
                 ..Default::default()
             },
             Obfuscation::Disabled,
@@ -1259,7 +1259,7 @@ fn prepared_batches_keep_the_metadata_snapshot_from_their_intake() {
         "public",
         Default::default(),
         StreamOptions {
-            include_obfuscation: Presence::Value(false),
+            include_obfuscation: Some(false),
             ..Default::default()
         },
         Obfuscation::Disabled,
@@ -1324,7 +1324,7 @@ fn lifecycle_reports_freeze_opening_batches_and_charge_both_observations() {
         "public",
         Default::default(),
         StreamOptions {
-            include_obfuscation: Presence::Value(false),
+            include_obfuscation: Some(false),
             ..Default::default()
         },
         Obfuscation::Disabled,
@@ -1604,7 +1604,7 @@ fn coalescing_preserves_first_content_barriers_and_attempt_isolation() {
             "public",
             Default::default(),
             StreamOptions {
-                include_obfuscation: Presence::Value(false),
+                include_obfuscation: Some(false),
                 ..Default::default()
             },
             Obfuscation::Disabled,
@@ -1759,7 +1759,7 @@ fn paced_text_windows_preserve_content_and_bound_intentional_delay() {
                 "public",
                 Default::default(),
                 StreamOptions {
-                    include_obfuscation: Presence::Value(false),
+                    include_obfuscation: Some(false),
                     ..Default::default()
                 },
                 Obfuscation::Disabled,
@@ -1975,7 +1975,7 @@ fn assessment_only_safety_reports_are_omitted_and_blocking_reports_reject() {
             "public",
             Default::default(),
             StreamOptions {
-                include_obfuscation: Presence::Value(false),
+                include_obfuscation: Some(false),
                 ..Default::default()
             },
             Obfuscation::Disabled,
@@ -2122,7 +2122,7 @@ fn chat_delivery_uses_terminal_service_reports_without_rewriting_opening_facts()
             "public",
             Default::default(),
             StreamOptions {
-                include_obfuscation: Presence::Value(false),
+                include_obfuscation: Some(false),
                 ..Default::default()
             },
             Obfuscation::Disabled,

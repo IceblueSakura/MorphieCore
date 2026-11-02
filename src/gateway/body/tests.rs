@@ -179,11 +179,10 @@ async fn observed_response(
                 .as_bytes(),
         )
         .unwrap();
-    request.delivery.options =
-        crate::semantic::value::Presence::Value(crate::semantic::context::StreamOptions {
-            include_obfuscation: crate::semantic::value::Presence::Value(false),
-            ..Default::default()
-        });
+    request.delivery.options = Some(crate::semantic::context::StreamOptions {
+        include_obfuscation: Some(false),
+        ..Default::default()
+    });
     respond(
         entry,
         candidate,
@@ -1515,12 +1514,12 @@ async fn invalid_heads_and_static_overflow_fail_without_exposing_provider_data()
     }
     let gate = gateway(Limits {
         // Allow both startup discovery views while keeping the upstream body over budget.
-        response_bytes: 4096,
+        response_bytes: 16384,
         ..Limits::default()
     });
     let (tx, upstream, _, _) = upstream(200, "application/json");
     tx.send(Ok(Bytes::from(
-        "synthetic-private-upstream-detail".repeat(256),
+        "synthetic-private-upstream-detail".repeat(1024),
     )))
     .await
     .unwrap();

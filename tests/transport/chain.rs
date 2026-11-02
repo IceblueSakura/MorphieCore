@@ -3,7 +3,6 @@ use crate::{chat_wire, wire};
 use morphiecore::{
     execution::{Attempt, AttemptError, ResponseDelivery, admit, prepare},
     protocol::{
-        conversion::generation::ReportedFactPolicy,
         openai::{
             Dialect, GenerationApi, GenerationCodec, TargetContract as Contract,
             chat::sse::ChatSseDecoder, obfuscation::Obfuscation,
@@ -12,11 +11,7 @@ use morphiecore::{
         stream::SseLimits,
     },
     provider::{RecoveryClass, SecretMaterial, catalog as providers},
-    semantic::{
-        context::StreamOptions,
-        task::generation::*,
-        value::{Presence, ReplayOrigin},
-    },
+    semantic::{context::StreamOptions, task::generation::*, value::ReplayOrigin},
     topology::{EndpointId, catalog},
 };
 use serde_json::{Value, json};
@@ -26,8 +21,8 @@ fn standard(protocol: GenerationApi) -> GenerationCodec {
 }
 fn options() -> StreamOptions {
     StreamOptions {
-        include_usage: Presence::Value(true),
-        include_obfuscation: Presence::Value(false),
+        include_usage: Some(true),
+        include_obfuscation: Some(false),
     }
 }
 fn delivery(adapter: GenerationCodec, contract: Contract) -> ResponseDelivery {
@@ -297,46 +292,7 @@ fn terminal_is_withheld_on_truncated_eof_or_trailing_invalid_data() {
     }
 }
 #[test]
-fn strict_completeness_can_fail_late_without_fabricating_a_terminal() {
-    let adapter = GenerationCodec::new(GenerationApi::Responses, Dialect::Xiaomi, None);
-    let mut intake = Attempt::new(adapter, 4096, SseLimits::default());
-    let mut output = delivery(
-        standard(GenerationApi::Responses),
-        Contract {
-            reported_facts: ReportedFactPolicy::StrictComplete,
-            ..Contract::full()
-        },
-    );
-    intake.begin(200, "text/event-stream").unwrap();
-    let mut frames = wire::events(2);
-    for frame in &mut frames {
-        if let Some(response) = frame.get_mut("response").and_then(Value::as_object_mut) {
-            for key in ["tools", "tool_choice", "parallel_tool_calls"] {
-                response.remove(key);
-            }
-        }
-    }
-    let body: Vec<u8> = frames
-        .iter()
-        .flat_map(|v| {
-            morphiecore::protocol::openai::responses::sse::encode_frame(
-                v,
-                SseLimits::default().max_event_bytes,
-            )
-            .unwrap()
-        })
-        .collect();
-    let encoded = consume(&mut intake, &mut output, &body).unwrap();
-    assert!(!encoded.is_empty());
-    output.commit().unwrap();
-    intake.finish().unwrap();
-    assert!(
-        output
-            .finish_stream(&intake)
-            .map(|batch| batch.into_bytes())
-            .is_err()
-    );
-    assert!(!output.lifecycle().may_retry_or_fallback());
+fn malformed_tool_input_can_fail_late_without_fabricating_a_terminal() {
     let mut intake = Attempt::new(standard(GenerationApi::Chat), 4096, SseLimits::default());
     let mut output = ResponseDelivery::new(
         morphiecore::adapter::ClientAdapter::Messages,
@@ -759,7 +715,7 @@ fn opencode_go_projects_neutral_conversations_independently_of_cache_groups() {
         assert_eq!(plan.candidates.len(), 1);
         assert_eq!(plan.candidates[0].endpoint_id, endpoint.id);
         let mut streaming = request.clone();
-        streaming.delivery.stream = Presence::Value(true);
+        streaming.delivery.stream = Some(true);
         let streamed = prepare(endpoint, &provider, &secret, &streaming).unwrap();
         assert!(
             streamed

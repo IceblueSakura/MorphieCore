@@ -44,13 +44,6 @@ impl FidelityRecords {
         }
         // Creator and response-wide reports are output observations, not request
         // history. In particular, sealing may invalidate an old creator receipt.
-        let old_parts: Vec<_> = old.part_ids().collect();
-        let new_parts: Vec<_> = new.part_ids().collect();
-        for (a, b) in old_parts.into_iter().zip(new_parts) {
-            if source.input_text_form(a) {
-                self.record_input_text(b)?;
-            }
-        }
         if let (Item::Message(old), Item::Message(new)) = (old, new) {
             for (ordinal, (a, b)) in old.parts.iter().zip(&new.parts).enumerate() {
                 if let Some(binding) = source.part_replay.get(&(old_id, a.id)) {

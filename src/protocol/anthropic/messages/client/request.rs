@@ -475,14 +475,6 @@ pub fn decode_client_request(bytes: &[u8]) -> Result<Request, CodecError> {
         if !wire::request::input_block_bytes(role, &parsed)?.1 {
             return Err(CodecError::invalid());
         }
-        if parsed.iter().any(|block| match &block.content {
-            Block::Thinking { signature, .. } | Block::RedactedThinking(signature) => {
-                crate::protocol::replay_projection::is_marker(signature)
-            }
-            _ => false,
-        }) {
-            return Err(CodecError::Unsupported(CarrierReason::Replay));
-        }
         intake.request_message(role, &parsed)?;
         parsed_messages.push(wire::request::InputMessage {
             role,
@@ -534,7 +526,7 @@ pub fn decode_client_request(bytes: &[u8]) -> Result<Request, CodecError> {
     request.service_policy = service::read_policy(&o)?;
     request.source = Some(crate::protocol::ClientProtocol::Messages);
     if let Some(stream) = o.get("stream") {
-        request.delivery.stream = Presence::Value(stream.as_bool().ok_or(CodecError::invalid())?);
+        request.delivery.stream = Some(stream.as_bool().ok_or(CodecError::invalid())?);
     }
     request.ignored_fields = ignored.into_iter().collect();
     Ok(request)

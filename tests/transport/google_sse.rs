@@ -12,7 +12,7 @@ use morphiecore::{
     semantic::{
         context::StreamOptions,
         task::generation::{ContentPart, Item},
-        value::{Presence, Text},
+        value::Text,
     },
 };
 use serde_json::{Value, json};
@@ -63,8 +63,8 @@ fn deliver(
         "public",
         SseLimits::default(),
         StreamOptions {
-            include_usage: Presence::Value(true),
-            include_obfuscation: Presence::Value(false),
+            include_usage: Some(true),
+            include_obfuscation: Some(false),
         },
         Obfuscation::Disabled,
     );

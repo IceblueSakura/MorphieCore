@@ -84,14 +84,17 @@ impl Gateway {
                 .chain(embeddings.keys().map(String::as_str)),
             limits.response_bytes,
         )?;
-        let capabilities = crate::gateway::ingress::capabilities::CapabilityView::bind(
+        let contracts = crate::gateway::ingress::discovery::compile(&entries)?;
+        let capabilities = crate::gateway::ingress::capabilities::CapabilityView::from_contracts(
             &entries,
             &embeddings,
+            &contracts,
             limits.response_bytes,
         )?;
-        let text_models = crate::gateway::ingress::discovery::TextModelView::bind(
+        let text_models = crate::gateway::ingress::discovery::TextModelView::from_contracts(
             &topology,
             &entries,
+            &contracts,
             limits.response_bytes,
         )?;
         Ok(Self {
@@ -158,7 +161,7 @@ fn bind_generation(
                     entry.chat_profile,
                     BoundEntry {
                         public: public.clone(),
-                        client: client_adapter(entry.protocol, entry.chat_profile, public),
+                        client: client_adapter(entry.protocol, entry.chat_profile),
                         policy: route.policy.clone(),
                         candidates: vec![],
                     },
@@ -200,11 +203,7 @@ fn bind_generation(
 
 /// The client-side codec for one public protocol. Provider dialects never
 /// authorize private public-API carriers.
-fn client_adapter(
-    protocol: ClientProtocol,
-    chat_profile: ChatProfile,
-    public: &PublicModel,
-) -> ClientAdapter {
+fn client_adapter(protocol: ClientProtocol, chat_profile: ChatProfile) -> ClientAdapter {
     let profile = match protocol {
         ClientProtocol::Messages => return ClientAdapter::Messages,
         ClientProtocol::Chat => GenerationApi::Chat,
@@ -216,7 +215,6 @@ fn client_adapter(
     // (e.g. empty logprobs or defaults a model cannot accept as controls).
     let downstream = TargetContract {
         replay_origin: Some(client_scope),
-        reported_facts: public.reported_facts,
         ..TargetContract::full()
     };
     ClientAdapter::openai(client, downstream)

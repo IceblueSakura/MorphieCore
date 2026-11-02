@@ -149,15 +149,6 @@ impl EventEncoder {
     }
     fn chat_terminal(&mut self) -> Result<Vec<Value>, CodecError> {
         let response = materialize(self.state()?)?;
-        crate::protocol::openai::lowering::require_reported_facts(
-            &response,
-            &self.metadata,
-            &self.contract,
-        )
-        .map_err(|cause| CodecError::Representation {
-            boundary: crate::protocol::conversion::generation::ConversionBoundary::EventProject,
-            cause,
-        })?;
         let finish = crate::protocol::openai::terminal::chat_finish(&response)?;
         let mut chunks = vec![];
         chunks.push(self.chunk(json!({}), json!(finish)));

@@ -45,6 +45,7 @@ impl Drop for DropSignal {
 #[derive(Clone)]
 struct StateData {
     profile: GenerationApi,
+    thinking_off: bool,
     seen: Arc<Mutex<Vec<Value>>>,
     control: Arc<Control>,
     recovery: Option<Arc<crate::credential_recovery::Recovery>>,
@@ -71,6 +72,7 @@ fn events(profile: GenerationApi, turn: usize, reasoning: bool) -> Vec<Value> {
 async fn answer(
     State(StateData {
         profile,
+        thinking_off,
         seen,
         control,
         recovery,
@@ -98,7 +100,7 @@ async fn answer(
         assert!(body.get(field).is_none(), "unexpected {field}");
     }
     let turn = match profile {
-        GenerationApi::Chat => chat::assert_request(&body),
+        GenerationApi::Chat => chat::assert_request(&body, thinking_off),
         GenerationApi::Responses => responses::assert_request(&body),
     };
     let chat = profile == GenerationApi::Chat;
@@ -224,7 +226,7 @@ pub async fn start_readable() -> Fixture {
     .await
 }
 
-#[allow(dead_code)] // Only the Router target exercises pre-dispatch rejection.
+#[allow(dead_code)] // Only the Router target exercises thinking-off fallback.
 pub async fn start_required_history() -> Fixture {
     start_with_recovery(
         GenerationApi::Chat,
@@ -254,6 +256,7 @@ async fn start_with_recovery(
         .route("/api/v1/responses", post(answer))
         .with_state(StateData {
             profile,
+            thinking_off: required_history && chat_profile == ChatProfile::Standard,
             seen: seen.clone(),
             control: control.clone(),
             recovery: recovery.clone(),

@@ -660,13 +660,14 @@ fn codex_history_reaches_the_native_binding_by_named_rules() {
         .messages_mut()
         .unwrap()
         .reasoning_as_text = false;
-    assert!(disabled.encode_request(&rejected).is_err());
+    let uncarried = disabled.encode_request(&rejected).unwrap();
+    assert!(!uncarried.to_string().contains("Plan B"));
     let (wire, rules) = prepare(serde_json::Value::Null, &history).unwrap();
     assert_eq!(
         wire["messages"],
         serde_json::json!([
             {"role":"user","content":[{"type":"text","text":"go"}]},
-            {"role":"assistant","content":[{"type":"text","text":"Plan B"},
+            {"role":"assistant","content":[
                 {"type":"tool_use","id":"call_2","name":"lookup","input":{}}]},
             {"role":"user","content":[{"type":"tool_result","tool_use_id":"call_2","content":"again"}]}
         ])
@@ -676,7 +677,6 @@ fn codex_history_reaches_the_native_binding_by_named_rules() {
         [
             "generation.omit-encrypted-reasoning-include.v1",
             "generation.omit-temperature.v1",
-            "messages.reasoning-as-text.v1",
             "messages.transfer-visible-history.v1",
         ]
     );

@@ -374,7 +374,7 @@ mod native_bindings {
 
         native.execution.streaming = false;
         for stream in [false, true] {
-            request.delivery.stream = Presence::Value(stream);
+            request.delivery.stream = Some(stream);
             assert!(representable(&native, &request).is_err());
             assert!(prepare(&native, &p, &secret(), &request).is_err());
         }
@@ -383,8 +383,6 @@ mod native_bindings {
         let streaming = prepare(&native, &p, &secret(), &request).unwrap();
         assert_eq!(body(&streaming)["stream"], true);
         assert_eq!(header(&streaming, "accept"), Some("text/event-stream"));
-        request.delivery.stream = Presence::Null;
-        assert!(representable(&native, &request).is_err());
 
         let mut restricted = standard_native();
         restricted
@@ -637,7 +635,7 @@ mod native_catalog {
             morphiecore::semantic::context::ConversationContext::conversation("synthetic").unwrap(),
         );
         for stream in [false, true] {
-            request.delivery.stream = Presence::Value(stream);
+            request.delivery.stream = Some(stream);
             admit(topology.model(binding.model).unwrap(), &request).unwrap();
             representable(&endpoint, &request).unwrap();
             let original = request.clone();

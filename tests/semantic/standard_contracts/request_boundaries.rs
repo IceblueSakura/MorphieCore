@@ -201,7 +201,7 @@ fn standard_content_discriminators_do_not_admit_provider_video() {
 }
 
 #[test]
-fn damaged_or_unbound_continuation_never_becomes_successful_deletion() {
+fn damaged_recognized_continuation_rejects_while_unsealed_history_transfers_visible_content() {
     for summary in [json!([]), json!([{"type":"summary_text","text":"plan"}])] {
         for token in ["bare-token", "mc1.broken", "mc2.future"] {
             let body = json!({"model":"m","input":[{"type":"reasoning","id":"r","summary":summary,"encrypted_content":token},{"role":"user","content":"x"}]});
@@ -209,8 +209,26 @@ fn damaged_or_unbound_continuation_never_becomes_successful_deletion() {
                 .decode_client_request(body.to_string().as_bytes())
                 .unwrap();
             let before = request.clone();
-            assert!(open_from_client(&mut request).is_err());
-            assert_eq!(request, before);
+            if token.starts_with("mc1.") {
+                assert!(open_from_client(&mut request).is_err());
+                assert_eq!(request, before);
+            } else {
+                open_from_client(&mut request).unwrap();
+                let wire = adapter(GenerationApi::Responses)
+                    .encode_request(
+                        &request,
+                        "m",
+                        &morphiecore::protocol::openai::TargetContract::full(),
+                    )
+                    .unwrap();
+                assert_eq!(
+                    wire["input"],
+                    json!([
+                        {"type":"message","role":"user","content":[{"type":"input_text","text":"x"}]}
+                    ])
+                );
+                assert_eq!(request, before);
+            }
         }
     }
     for block in [
@@ -220,7 +238,20 @@ fn damaged_or_unbound_continuation_never_becomes_successful_deletion() {
         let body = json!({"model":"m","max_tokens":8,"messages":[{"role":"user","content":"x"},{"role":"assistant","content":[block]},{"role":"user","content":"next"}]});
         let mut request = decode_client_request(body.to_string().as_bytes()).unwrap();
         let before = request.clone();
-        assert!(open_from_client(&mut request).is_err());
+        if block["type"] == "redacted_thinking" {
+            assert!(open_from_client(&mut request).is_err());
+        } else {
+            open_from_client(&mut request).unwrap();
+            let encoded =
+                native::TargetContract::new(Profile::AdaptiveTextTools, native::Dialect::Standard)
+                    .encode_request(&request, &ReplayTarget::new("synthetic", "m").unwrap())
+                    .unwrap();
+            assert!(!encoded.value.to_string().contains("plan"));
+            assert_eq!(
+                encoded.evidence.rule_names(),
+                ["messages.transfer-visible-history.v1"]
+            );
+        }
         assert_eq!(request, before);
     }
 }

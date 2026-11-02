@@ -94,7 +94,7 @@ fn view<'a>(request: &'a GenerationRequest, resource: &'a ResourceUse) -> Resour
 }
 
 #[test]
-fn document_context_preserves_per_use_presence_in_messages_and_tool_history() {
+fn document_context_normalizes_null_and_preserves_per_use_values_in_messages_and_tool_history() {
     use morphiecore::semantic::value::{Presence, Text};
     let text = |s: &str| Text::allowing_empty(s, "fixture", MAX_TOTAL_BYTES).unwrap();
     let p = Profile::AdaptiveTextTools;
@@ -122,12 +122,19 @@ fn document_context_preserves_per_use_presence_in_messages_and_tool_history() {
         }
         let second = json!({"type":"document","source":{"type":"text","media_type":"text/plain","data":"notes"},
             "context":"different use"});
-        let expected = json!([
+        let mut expected = json!([
             {"role":"user","content":[first]},
             {"role":"assistant","content":[{"type":"tool_use","id":"call","name":"lookup","input":{}}]},
             {"role":"user","content":[{"type":"tool_result","tool_use_id":"call","content":[second]}]}
         ]);
         let wire = json!({"model":"synthetic-model","max_tokens":32,"messages":expected});
+        let context = context.value().cloned();
+        if context.is_none() {
+            expected[0]["content"][0]
+                .as_object_mut()
+                .unwrap()
+                .remove("context");
+        }
         let decoded = p
             .decode_generation_request(wire.to_string().as_bytes(), LocalScope::ROOT, &target())
             .unwrap();
@@ -153,7 +160,7 @@ fn document_context_preserves_per_use_presence_in_messages_and_tool_history() {
         let ResourceDescription::File(file) = &resource.description else {
             panic!("file")
         };
-        assert_eq!(file.context, Presence::Value(text("different use")));
+        assert_eq!(file.context, Some(text("different use")));
 
         // Build the reverse direction independently, reusing one source identity
         // with distinct per-use context rather than duplicating the document.
@@ -203,7 +210,7 @@ fn document_context_preserves_per_use_presence_in_messages_and_tool_history() {
                         name: None,
                         output: ToolOutput::Parts(vec![Part::new(
                             PartId::new(2),
-                            InputPart::Resource(use_with(Presence::Value(text("different use")))),
+                            InputPart::Resource(use_with(Some(text("different use")))),
                         )]),
                         is_error: None,
                         execution: None,
@@ -298,14 +305,14 @@ fn document_context_preserves_per_use_presence_in_messages_and_tool_history() {
         description: ResourceDescription::File(FileDescription {
             filename: None,
             detail: None,
-            context: Presence::Value(text(&"x".repeat(MAX_TEXT_BYTES + 1))),
+            context: Some(text(&"x".repeat(MAX_TEXT_BYTES + 1))),
         }),
     };
     assert_eq!(too_large.validate(), Err(GenerationError::Limit));
     let ResourceDescription::File(file) = &mut too_large.description else {
         unreachable!()
     };
-    file.context = Presence::Value(text("private context"));
+    file.context = Some(text("private context"));
     assert!(!format!("{too_large:?}").contains("private context"));
 }
 
@@ -380,7 +387,7 @@ fn images_and_documents_map_to_inert_resources_and_back() {
     // A document title is the model-visible file name.
     assert!(
         matches!(inputs[2].description, ResourceDescription::File(FileDescription {
-            filename: Some(name), detail: None, context: morphiecore::semantic::value::Presence::Absent }) if name.as_str() == "Report")
+            filename: Some(name), detail: None, context: None }) if name.as_str() == "Report")
     );
     assert!(inline("application/pdf", "BAUG"));
     // A text document is an inline text/plain file: base64("notes").

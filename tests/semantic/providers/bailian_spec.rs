@@ -556,11 +556,11 @@ fn responses_history_keeps_summary_and_transfers_uncarried_readable_reasoning() 
     );
     assert_eq!(rules, ["responses.transfer-visible-history.v1"]);
     assert_eq!(input, original);
-    assert!(
-        endpoint("aliyun-tokenplan-cn", GenerationProtocol::OpenAiResponses)
-            .encode_request(&input)
-            .is_err()
-    );
+    let delegated = endpoint("aliyun-tokenplan-cn", GenerationProtocol::OpenAiResponses)
+        .encode_request_with_rules(&input)
+        .unwrap();
+    assert_eq!(delegated.0["input"], wire["input"]);
+    assert_eq!(delegated.1, ["responses.transfer-visible-history.v1"]);
     let mut explicit = input.clone();
     let mut settings = explicit.task.semantic.settings().clone();
     settings.reasoning.presence = ReasoningPresence::Present;

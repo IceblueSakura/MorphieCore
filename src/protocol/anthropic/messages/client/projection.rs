@@ -171,8 +171,8 @@ pub(super) fn reasoning_omission(
         .at(crate::protocol::conversion::generation::Owner::item(item))
 }
 
-pub(crate) fn project_metadata(
-    metadata: &mut crate::protocol::ResponseMetadata,
+pub(crate) fn validate_metadata(
+    metadata: &crate::protocol::ResponseMetadata,
 ) -> Result<(), CodecError> {
     metadata.context.validate()?;
     if metadata
@@ -183,6 +183,12 @@ pub(crate) fn project_metadata(
     {
         return Err(CodecError::Unsupported(CarrierReason::Safety));
     }
+    Ok(())
+}
+pub(crate) fn project_metadata(
+    metadata: &mut crate::protocol::ResponseMetadata,
+) -> Result<(), CodecError> {
+    validate_metadata(metadata)?;
     for report in metadata.context.reports.iter_mut() {
         if report
             .service_class

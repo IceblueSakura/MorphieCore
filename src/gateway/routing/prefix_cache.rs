@@ -142,10 +142,13 @@ pub(in crate::gateway) struct Selection {
 fn target_prefixes(
     candidate: &crate::gateway::BoundCandidate,
     request: &crate::protocol::GenerationRequestEnvelope,
+    client: &crate::adapter::ClientAdapter,
 ) -> Option<Vec<Digest>> {
     let profile = candidate.endpoint.adapter().ok()?.openai().ok()?.protocol;
-    let wire = candidate.endpoint.encode_request(request).ok()?;
-    crate::protocol::openai::cache_affinity::prefixes(&wire, profile)
+    let projection =
+        crate::execution::plan::project_candidate(&candidate.endpoint, request, Some(client))
+            .ok()?;
+    crate::protocol::openai::cache_affinity::prefixes(projection.value(), profile)
 }
 // Missing identity and non-OpenAI bindings are silent skips; other skips retain
 // their existing diagnostic reason. Materialization and lookup share this policy.
@@ -234,6 +237,7 @@ impl Selection {
         &self,
         candidate: &crate::gateway::BoundCandidate,
         source: &crate::protocol::GenerationRequestEnvelope,
+        client: &crate::adapter::ClientAdapter,
     ) -> Option<(
         crate::protocol::GenerationRequestEnvelope,
         crate::protocol::conversion::generation::Conversion<
@@ -243,7 +247,8 @@ impl Selection {
         let mut local = source.clone();
         local.inferred_affinity = Some(self.hint);
         let projection =
-            crate::execution::plan::project_candidate(&candidate.endpoint, &local, None).ok()?;
+            crate::execution::plan::project_candidate(&candidate.endpoint, &local, Some(client))
+                .ok()?;
         let projection =
             crate::execution::attempt::encode_projection(&candidate.endpoint, &local, projection)
                 .ok()?;
@@ -254,10 +259,11 @@ impl Selection {
         index: &Index,
         candidate: &crate::gateway::BoundCandidate,
         successor: Option<&crate::protocol::GenerationRequestEnvelope>,
+        client: &crate::adapter::ClientAdapter,
     ) {
         let mut prefixes = vec![self.prefix];
         if let Some(prefix) = successor
-            .and_then(|r| target_prefixes(candidate, r))
+            .and_then(|r| target_prefixes(candidate, r, client))
             .and_then(|p| p.last().copied())
         {
             prefixes.push(prefix);
@@ -350,7 +356,9 @@ mod tests {
             &mut trace(),
         )
         .unwrap();
-        let (hinted, projected) = selection.project(candidate, &source).unwrap();
+        let (hinted, projected) = selection
+            .project(candidate, &source, &entry.client)
+            .unwrap();
         assert!(projected.value.prefixes.is_none());
         assert!(
             materialize(&gate.state.affinity, &hinted)
@@ -409,8 +417,12 @@ mod tests {
         let first = request(entry, "one");
         let saved = first.clone();
         let selection = choose(&gate.state.affinity, candidate, &first, &mut trace()).unwrap();
-        assert!(selection.project(candidate, &first).is_some());
-        selection.publish(&gate.state.affinity, candidate, None);
+        assert!(
+            selection
+                .project(candidate, &first, &entry.client)
+                .is_some()
+        );
+        selection.publish(&gate.state.affinity, candidate, None, &entry.client);
         let second = request(entry, "two");
         assert_eq!(
             choose(&gate.state.affinity, candidate, &second, &mut trace())
@@ -452,7 +464,7 @@ mod tests {
         other.endpoint.execution.request_body_limit =
             crate::semantic::value::json_size(&original, 256 << 10).unwrap();
         assert!(crate::execution::plan::representable(&other.endpoint, &first).is_ok());
-        assert!(selection.project(&other, &first).is_none());
+        assert!(selection.project(&other, &first, &entry.client).is_none());
         other.endpoint = candidate.endpoint.clone();
         other.cache_scope =
             crate::semantic::value::ReplayOrigin::new("other-principal-or-key-epoch").unwrap();

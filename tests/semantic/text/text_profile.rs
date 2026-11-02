@@ -565,7 +565,7 @@ fn custom_tools_and_text_array_results_are_not_function_arguments() {
             .is_err()
     );
     let mut json_request = request.clone();
-    json_request.delivery.stream = Presence::Value(false);
+    json_request.delivery.stream = Some(false);
     let (json_encoded, _) = adapter
         .encode_request_with_rules(&json_request, "m", &contract())
         .unwrap();

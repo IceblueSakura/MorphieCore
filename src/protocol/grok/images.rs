@@ -27,7 +27,7 @@ pub fn encode_request(request: &Request, model: &str) -> Result<Value, CodecErro
             .chars()
             .any(|c| c.is_control() || c.is_whitespace())
         || request.delivery.streaming()
-        || !request.delivery.options.is_absent()
+        || request.delivery.options.is_some()
         || !request.identity.safety_identifier.is_none()
         || request.task.format.value().is_some()
         || request.task.size.value().is_some()

@@ -90,7 +90,7 @@ fn explicit_unrepresentable_controls_are_not_approximated() {
     r.task.moderation = Presence::Value(ImageModeration::Low);
     cases.push(r);
     let mut r = base.clone();
-    r.delivery.stream = Presence::Value(true);
+    r.delivery.stream = Some(true);
     cases.push(r);
     for r in cases {
         r.task.validate().unwrap();

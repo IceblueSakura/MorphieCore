@@ -75,10 +75,15 @@ pub fn events(turn: usize, reasoning: bool) -> Vec<Value> {
     events
 }
 
-pub fn assert_request(body: &Value) -> usize {
+pub fn assert_request(body: &Value, thinking_off: bool) -> usize {
     assert_eq!(body["model"], "qwen3.8-flash");
     assert_eq!(body["max_completion_tokens"], 256);
-    assert_eq!(body["reasoning_effort"], "low");
+    if thinking_off {
+        assert_eq!(body["enable_thinking"], false);
+        assert!(body.get("reasoning_effort").is_none());
+    } else {
+        assert_eq!(body["reasoning_effort"], "low");
+    }
     let tool = &body["tools"][0]["function"];
     assert_eq!(tool["name"], "lookup");
     assert!(tool.get("strict").is_none_or(|v| v == false));

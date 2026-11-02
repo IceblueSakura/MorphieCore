@@ -8,7 +8,7 @@ use crate::{
         failure::CarrierReason,
         native::{ReplayTarget, normalize_stateless_defaults},
     },
-    semantic::{context::ExecutionHints, value::Presence},
+    semantic::context::ExecutionHints,
 };
 
 pub fn semantic_contract() -> Dispositions {
@@ -88,7 +88,6 @@ impl TargetContract {
         context.identity = Default::default();
         if context != ExecutionHints::default()
             || !request.service_policy.is_none()
-            || request.delivery.stream == Presence::Null
             || request.n.value().is_some_and(|n| *n != 1)
         {
             return Err(CodecError::Unsupported(CarrierReason::Unavailable));

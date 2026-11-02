@@ -8,7 +8,7 @@ use crate::{
         failure::CarrierReason,
         native::{ReplayTarget, normalize_stateless_defaults},
     },
-    semantic::{context::ExecutionHints, value::Presence},
+    semantic::context::ExecutionHints,
 };
 
 /// Beta names for the carriers present in an encoded request.
@@ -109,10 +109,7 @@ impl TargetContract {
                 request.inferred_affinity,
             )?;
         }
-        if context != ExecutionHints::default()
-            || request.delivery.stream == Presence::Null
-            || request.n.value().is_some_and(|n| *n != 1)
-        {
+        if context != ExecutionHints::default() || request.n.value().is_some_and(|n| *n != 1) {
             return Err(CodecError::Unsupported(CarrierReason::Unavailable));
         }
         Ok(())

@@ -327,6 +327,11 @@ async fn observe_intake(
     });
     let calls = Arc::new(Mutex::new(Vec::<Value>::new()));
     let captured = calls.clone();
+    let thinking_fallback = provider == "deepseek"
+        && upstream == Api::Chat
+        && client == Api::Chat
+        && profile != Profile::Text
+        && control == Control::Default;
     let router = Router::new().route(
         upstream.path(),
         post(move |headers: HeaderMap, Json(body): Json<Value>| {
@@ -350,6 +355,9 @@ async fn observe_intake(
                 if oauth == Some("openai") {
                     assert_eq!(body["stream"], true, "SIWC always streams upstream");
                     assert_eq!(body["store"], false, "upstream stays stateless");
+                }
+                if thinking_fallback {
+                    assert_eq!(body["reasoning_effort"], "none");
                 }
                 if force_stream {
                     assert_eq!(body["stream"], true, "experiment must reach SSE intake");
@@ -659,6 +667,47 @@ async fn observe_intake(
             assert_eq!(retained, delivered, "retained/delivered agreement");
         }
         wire::append(client, profile, turn, &mut request, value);
+    }
+    if control == Control::Default {
+        let descriptor: Value =
+            serde_json::from_slice(&boot.gateway.state.text_models.models[model]).unwrap();
+        let protocol = match client {
+            Api::Chat => "chat_completions",
+            Api::Responses => "responses",
+            Api::Messages => "messages",
+        };
+        let interface = descriptor["data"]["interfaces"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|interface| interface["protocol"] == protocol)
+            .unwrap();
+        let profile = match profile {
+            Profile::Text => "text",
+            Profile::Tools => "tools",
+            Profile::Reasoning => "reasoning",
+        };
+        let mode = if stream { "sse" } else { "json" };
+        let defaults = &interface["generation"]["agent_defaults"];
+        assert_eq!(defaults["scope"], "request_preflight");
+        assert_eq!(defaults["history_loop"], "not_asserted");
+        assert_eq!(
+            matches!(
+                defaults["profiles"][profile][mode]["state"].as_str(),
+                Some("faithful" | "approved_adaptation")
+            ),
+            !calls.lock().unwrap().is_empty(),
+            "{binding}/{protocol}/{profile}/{mode}: published default admission must reach dispatch"
+        );
+        let capabilities: Value =
+            serde_json::from_slice(&boot.gateway.state.capabilities.0).unwrap();
+        let capability = capabilities["data"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|entry| entry["model"] == model && entry["protocol"] == protocol)
+            .unwrap();
+        assert_eq!(&capability["agent_defaults"], defaults);
     }
     boot.gateway.shutdown();
     (outcomes, views, reports)
@@ -1062,6 +1111,34 @@ async fn catalog_subscription_production_lanes() {
 
 #[tokio::test]
 async fn native_reasoning_history_contracts_are_distinct() {
+    for entry in crate::topology::catalog::API_KEY_BINDINGS
+        .iter()
+        .filter(|entry| (entry.provider)().id.as_str() == "zhipu")
+    {
+        let endpoint = entry
+            .endpoint(crate::topology::GenerationProtocol::OpenAiChat)
+            .unwrap();
+        let provider = (entry.provider)();
+        let credential = entry.credential();
+        let binding = (
+            entry.model,
+            endpoint.id.as_str(),
+            provider.id.as_str(),
+            credential.as_str(),
+            Api::Chat,
+        );
+        assert_eq!(
+            transports(
+                &binding,
+                Api::Chat,
+                Profile::Reasoning,
+                Control::ReadableHistory
+            )
+            .await,
+            ACCEPT,
+            "Zhipu's always-thinking tool loop needs the selected readable profile"
+        );
+    }
     for (id, profile, control) in [
         (
             "dashscope-flash-responses",
@@ -1253,7 +1330,7 @@ const BASIC_EXPECTATIONS: &[(&[&str], [&[&str]; 4])] = &[
         [ACCEPT, ACCEPT, ACCEPT, ACCEPT],
     ),
     (
-        &["deepseek-chat", "zhipu-chat", "zhipu-flash-chat"],
+        &["zhipu-chat", "zhipu-flash-chat"],
         [
             ACCEPT,
             &["planning:[\"admission.client_representation\"]@0"],
@@ -1261,6 +1338,7 @@ const BASIC_EXPECTATIONS: &[(&[&str], [&[&str]; 4])] = &[
             ACCEPT,
         ],
     ),
+    (&["deepseek-chat"], [ACCEPT, ACCEPT, ACCEPT, ACCEPT]),
     (
         &[
             "dashscope-flash-responses",
@@ -1272,12 +1350,7 @@ const BASIC_EXPECTATIONS: &[(&[&str], [&[&str]; 4])] = &[
     ),
     (
         &["tokenplan-max-chat", "aliyun-tokenplan-cn-chat"],
-        [
-            &["planning:[\"admission.client_representation\"]@0"],
-            &["planning:[\"admission.client_representation\"]@0"],
-            ACCEPT,
-            ACCEPT,
-        ],
+        [ACCEPT, ACCEPT, ACCEPT, ACCEPT],
     ),
     (
         &["dashscope-flash-chat", "aliyun-dashscope-cn-chat"],
@@ -1323,7 +1396,7 @@ fn expected(binding: &str, client: Api, profile: Profile) -> &'static [&'static 
         ("dashscope-glm-chat" | "deepseek-chat", Messages, Reasoning) => ACCEPT,
         ("openrouter-responses", Messages, Reasoning) => ACCEPT,
         ("dashscope-flash-responses", Messages, Reasoning) => ACCEPT,
-        ("deepseek-chat", Chat, Reasoning) => &["planning:[\"admission.client_representation\"]@0"],
+        ("deepseek-chat", Chat, Reasoning) => ACCEPT,
         ("deepseek-chat", Responses, Reasoning) => ACCEPT,
         ("openrouter-responses", Responses, Reasoning) => ACCEPT,
         ("openrouter-responses" | "dashscope-flash-responses", Chat, Reasoning) => ACCEPT,

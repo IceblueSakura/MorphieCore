@@ -91,7 +91,6 @@ impl SubscriptionBinding {
                 .find(|binding| binding.model == self.model)
                 .map(|binding| binding.public_model().contract)
                 .unwrap_or_else(|| self.contract()),
-            reported_facts: ReportedFactPolicy::Faithful,
         }
     }
     pub fn endpoint(&self) -> Endpoint {

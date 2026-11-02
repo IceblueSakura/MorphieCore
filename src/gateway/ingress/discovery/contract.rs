@@ -14,7 +14,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
-enum State {
+pub(in crate::gateway) enum State {
     Faithful,
     ApprovedAdaptation,
     Unavailable,
@@ -22,12 +22,18 @@ enum State {
     NotAssessed,
 }
 #[derive(Clone, Eq, PartialEq, Serialize)]
-pub(super) struct Capability {
+pub(in crate::gateway) struct Capability {
     state: State,
     #[serde(skip_serializing_if = "BTreeSet::is_empty")]
     rules: BTreeSet<&'static str>,
 }
 impl Capability {
+    pub(in crate::gateway) fn state(&self) -> State {
+        self.state
+    }
+    pub(in crate::gateway) fn rules(&self) -> impl Iterator<Item = &'static str> + '_ {
+        self.rules.iter().copied()
+    }
     fn new(state: State) -> Self {
         Self {
             state,
@@ -88,21 +94,112 @@ impl Choices {
     }
 }
 #[derive(Serialize)]
-pub(super) struct Interface {
+pub(in crate::gateway) struct Interface {
     task: &'static str,
     protocol: &'static str,
     delivery_modes: Vec<&'static str>,
+    #[serde(skip)]
+    request_cases: BTreeMap<&'static str, Capability>,
     generation: Generation,
 }
 #[derive(Serialize)]
 struct Generation {
     scope: &'static str,
     composition: &'static str,
+    agent_defaults: DefaultRequests,
+    delivery_adaptations: BTreeMap<&'static str, BTreeMap<&'static str, Capability>>,
     input: super::media::Input,
     output: super::media::Output,
     token_limits: TokenLimits,
     features: BTreeMap<&'static str, Capability>,
     reasoning: Reasoning,
+}
+#[derive(Serialize)]
+pub(in crate::gateway) struct DefaultRequests {
+    scope: &'static str,
+    source: &'static str,
+    history_loop: &'static str,
+    profiles: BTreeMap<&'static str, BTreeMap<&'static str, Capability>>,
+    #[serde(skip)]
+    qualified_candidates: Vec<bool>,
+}
+impl DefaultRequests {
+    fn from_bound(entry: &BoundEntry, modes: &[&'static str]) -> Self {
+        let mut profiles = BTreeMap::new();
+        let mut qualified_candidates = vec![true; entry.candidates.len()];
+        for profile in ["text", "tools", "reasoning"] {
+            let mut assessments = BTreeMap::new();
+            for mode in ["json", "sse"] {
+                let body = super::defaults::request(
+                    entry.client.protocol(),
+                    profile,
+                    entry.public.id.as_str(),
+                    mode == "sse",
+                );
+                let request = entry
+                    .client
+                    .decode_client_request(body.to_string().as_bytes())
+                    .map(|mut request| {
+                        request.conversation = Some(
+                            crate::semantic::context::ConversationContext::independent_request(
+                                "text-discovery",
+                            )
+                            .expect("static request identity"),
+                        );
+                        request
+                    });
+                let capability = Capability::common(entry.candidates.iter().enumerate().map(
+                    |(index, candidate)| {
+                        let assessment = (|| {
+                            if mode == "sse" && !candidate.endpoint.execution.streaming {
+                                return Capability::new(State::Unavailable);
+                            }
+                            let Ok(request) = &request else {
+                                return Capability::new(State::Unavailable);
+                            };
+                            if execution::admit(&entry.public, request).is_err() {
+                                return Capability::new(State::Unavailable);
+                            }
+                            let Ok(projection) = execution::plan::project_candidate(
+                                &candidate.endpoint,
+                                request,
+                                Some(&entry.client),
+                            ) else {
+                                return Capability::new(State::Unavailable);
+                            };
+                            let rules = projection
+                                .evidence()
+                                .iter()
+                                .filter(|effect| effect.change().is_loss())
+                                .map(|effect| effect.rule())
+                                .collect::<BTreeSet<_>>();
+                            Capability {
+                                state: if rules.is_empty() {
+                                    State::Faithful
+                                } else {
+                                    State::ApprovedAdaptation
+                                },
+                                rules,
+                            }
+                        })();
+                        qualified_candidates[index] &= assessment.positive();
+                        assessment
+                    },
+                ));
+                if modes.contains(&mode) {
+                    assessments.insert(mode, capability);
+                }
+            }
+            profiles.insert(profile, assessments);
+        }
+        Self {
+            scope: "request_preflight",
+            source: super::defaults::source(),
+            history_loop: "not_asserted",
+            profiles,
+            qualified_candidates,
+        }
+    }
 }
 #[derive(Serialize)]
 struct TokenLimits {
@@ -119,6 +216,34 @@ struct Reasoning {
     effort: BTreeMap<&'static str, Choices>,
 }
 impl Interface {
+    pub(super) fn qualified_candidates(&self) -> &[bool] {
+        &self.generation.agent_defaults.qualified_candidates
+    }
+    pub(in crate::gateway) fn delivery_modes(&self) -> &[&'static str] {
+        &self.delivery_modes
+    }
+    pub(in crate::gateway) fn request_cases(
+        &self,
+    ) -> impl Iterator<Item = (&'static str, &Capability)> {
+        self.request_cases
+            .iter()
+            .map(|(name, capability)| (*name, capability))
+    }
+    pub(in crate::gateway) fn defaults(&self) -> &DefaultRequests {
+        &self.generation.agent_defaults
+    }
+    pub(in crate::gateway) fn delivery_adaptations(
+        &self,
+    ) -> impl Iterator<Item = (&'static str, &'static str, &Capability)> {
+        self.generation
+            .delivery_adaptations
+            .iter()
+            .flat_map(|(mode, facts)| {
+                facts
+                    .iter()
+                    .map(move |(fact, capability)| (*mode, *fact, capability))
+            })
+    }
     pub(super) fn from_bound(entry: &BoundEntry) -> Self {
         let streaming = entry
             .candidates
@@ -131,6 +256,7 @@ impl Interface {
         };
         let assess = |case| assess(entry, &delivery_modes, case);
         let mut features = BTreeMap::new();
+        let mut request_cases = BTreeMap::new();
         for (name, case) in [
             ("function_tools", Case::Tools(false)),
             ("strict_tool_schema", Case::Tools(true)),
@@ -139,7 +265,9 @@ impl Interface {
             ("json_schema_output", Case::JsonSchema),
             ("max_output_tokens", Case::MaximumOutput),
         ] {
-            features.insert(name, assess(case));
+            let (effective, admission) = assess_case(entry, &delivery_modes, case);
+            features.insert(name, effective);
+            request_cases.insert(name, admission);
         }
         let effort_scope = if entry.client.protocol() == ClientProtocol::Messages {
             "response"
@@ -200,6 +328,33 @@ impl Interface {
         let output = super::media::Output {
             text: assess(Case::Text),
         };
+        let agent_defaults = DefaultRequests::from_bound(entry, &delivery_modes);
+        let delivery_adaptations = delivery_modes
+            .iter()
+            .map(|mode| {
+                (
+                    *mode,
+                    crate::adapter::DeliveryFact::ALL
+                        .into_iter()
+                        .filter_map(|fact| {
+                            use crate::adapter::DeliveryDisposition;
+                            let rule = match entry.client.disposition(fact, *mode == "sse") {
+                                DeliveryDisposition::Native => return None,
+                                DeliveryDisposition::Omit(rule)
+                                | DeliveryDisposition::Approximate(rule) => rule,
+                            };
+                            Some((
+                                fact.name(),
+                                Capability {
+                                    state: State::ApprovedAdaptation,
+                                    rules: BTreeSet::from([rule]),
+                                },
+                            ))
+                        })
+                        .collect(),
+                )
+            })
+            .collect();
         Self {
             task: "generation",
             protocol: match entry.client.protocol() {
@@ -208,9 +363,12 @@ impl Interface {
                 ClientProtocol::Messages => "messages",
             },
             delivery_modes,
+            request_cases,
             generation: Generation {
                 scope: "route_common",
                 composition: "not_asserted",
+                agent_defaults,
+                delivery_adaptations,
                 input,
                 output,
                 token_limits,
@@ -365,66 +523,80 @@ impl Case {
 }
 
 pub(super) fn assess(entry: &BoundEntry, modes: &[&str], case: Case) -> Capability {
-    Capability::common(modes.iter().flat_map(|mode| {
-        let stream = *mode == "sse";
-        let base = Case::Text.request(entry, stream);
-        let request = case.request(entry, stream);
-        entry.candidates.iter().map(move |candidate| {
-            let Some(base) = &base else {
-                return Capability::new(State::NotAssessed);
-            };
-            // A blocked plain request must not make every unrelated feature look unavailable.
-            if execution::admit(&entry.public, base).is_err() {
-                return Capability::new(State::NotAssessed);
-            }
-            let Ok(baseline) =
-                execution::plan::project_candidate(&candidate.endpoint, base, Some(&entry.client))
-            else {
-                return Capability::new(State::NotAssessed);
-            };
-            let Some(request) = &request else {
-                return Capability::new(State::Unavailable);
-            };
-            if execution::admit(&entry.public, request).is_err() {
-                return Capability::new(State::Unavailable);
-            }
-            let Ok(projection) = execution::plan::project_candidate(
-                &candidate.endpoint,
-                request,
-                Some(&entry.client),
-            ) else {
-                return Capability::new(State::Unavailable);
-            };
-            if matches!(case, Case::Activation(_) | Case::Effort(_))
-                && baseline.value() == projection.value()
-            {
-                return Capability::new(State::Unavailable);
-            }
-            let mut rules = BTreeSet::new();
-            for effect in projection
-                .evidence()
-                .iter()
-                .filter(|e| e.change().is_loss())
-            {
-                // Dropped control intent is not effective control support. Parallel permission
-                // is different: the existing named omission preserves always-enabled permission.
-                if effect.change() == Change::Omit
-                    && (Some(effect.semantic_field()) == case.protected_field()
-                        || matches!(case, Case::Activation(_) | Case::Effort(_))
-                            && effect.semantic_field() == Field::ReasoningAllocation)
-                {
-                    return Capability::new(State::Unavailable);
+    assess_case(entry, modes, case).0
+}
+/// Derive effective support and request admission from the same projection.
+fn assess_case(entry: &BoundEntry, modes: &[&str], case: Case) -> (Capability, Capability) {
+    let negative = |state| (Capability::new(state), Capability::new(state));
+    let (effective, admission): (Vec<_>, Vec<_>) = modes
+        .iter()
+        .flat_map(|mode| {
+            let stream = *mode == "sse";
+            let base = Case::Text.request(entry, stream);
+            let request = case.request(entry, stream);
+            entry.candidates.iter().map(move |candidate| {
+                let Some(base) = &base else {
+                    return negative(State::NotAssessed);
+                };
+                // A blocked plain request must not make every unrelated feature look unavailable.
+                if execution::admit(&entry.public, base).is_err() {
+                    return negative(State::NotAssessed);
                 }
-                rules.insert(effect.rule());
-            }
-            Capability {
-                state: if rules.is_empty() {
-                    State::Faithful
+                let Ok(baseline) = execution::plan::project_candidate(
+                    &candidate.endpoint,
+                    base,
+                    Some(&entry.client),
+                ) else {
+                    return negative(State::NotAssessed);
+                };
+                let Some(request) = &request else {
+                    return negative(State::Unavailable);
+                };
+                if execution::admit(&entry.public, request).is_err() {
+                    return negative(State::Unavailable);
+                }
+                let Ok(projection) = execution::plan::project_candidate(
+                    &candidate.endpoint,
+                    request,
+                    Some(&entry.client),
+                ) else {
+                    return negative(State::Unavailable);
+                };
+                let mut ineffective = matches!(case, Case::Activation(_) | Case::Effort(_))
+                    && baseline.value() == projection.value();
+                let mut rules = BTreeSet::new();
+                for effect in projection
+                    .evidence()
+                    .iter()
+                    .filter(|e| e.change().is_loss())
+                {
+                    // Dropped control intent is not effective control support. Parallel permission
+                    // is different: the existing named omission preserves always-enabled permission.
+                    if effect.change() == Change::Omit
+                        && (Some(effect.semantic_field()) == case.protected_field()
+                            || matches!(case, Case::Activation(_) | Case::Effort(_))
+                                && effect.semantic_field() == Field::ReasoningAllocation)
+                    {
+                        ineffective = true;
+                    }
+                    rules.insert(effect.rule());
+                }
+                let admission = Capability {
+                    state: if rules.is_empty() {
+                        State::Faithful
+                    } else {
+                        State::ApprovedAdaptation
+                    },
+                    rules,
+                };
+                let effective = if ineffective {
+                    Capability::new(State::Unavailable)
                 } else {
-                    State::ApprovedAdaptation
-                },
-                rules,
-            }
+                    admission.clone()
+                };
+                (effective, admission)
+            })
         })
-    }))
+        .unzip();
+    (Capability::common(effective), Capability::common(admission))
 }

@@ -23,7 +23,6 @@ pub enum ContextReason {
     SystemFingerprint,
     InstructionEchoes,
     CompletionTimestamp,
-    StreamOptions,
     StreamOptionsWithoutStreaming,
 }
 impl std::fmt::Display for ContextReason {
@@ -324,40 +323,31 @@ impl ResponseContext {
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct StreamOptions {
-    pub include_usage: Presence<bool>,
-    pub include_obfuscation: Presence<bool>,
+    pub include_usage: Option<bool>,
+    pub include_obfuscation: Option<bool>,
 }
 impl StreamOptions {
     pub fn usage(&self) -> bool {
-        self.include_usage == Presence::Value(true)
+        self.include_usage == Some(true)
     }
     pub fn obfuscation(&self) -> bool {
-        self.include_obfuscation != Presence::Value(false)
-    }
-    pub fn validate(&self) -> Result<(), ContextError> {
-        if self.include_usage == Presence::Null || self.include_obfuscation == Presence::Null {
-            return Err(ContextError::Invalid(ContextReason::StreamOptions));
-        }
-        Ok(())
+        self.include_obfuscation != Some(false)
     }
 }
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct DeliveryIntent {
-    pub stream: Presence<bool>,
-    pub options: Presence<StreamOptions>,
+    pub stream: Option<bool>,
+    pub options: Option<StreamOptions>,
 }
 impl DeliveryIntent {
     pub fn streaming(&self) -> bool {
-        self.stream == Presence::Value(true)
+        self.stream == Some(true)
     }
     pub fn validate(&self) -> Result<(), ContextError> {
-        if let Some(options) = self.options.value() {
-            if !self.streaming() {
-                return Err(ContextError::Invalid(
-                    ContextReason::StreamOptionsWithoutStreaming,
-                ));
-            }
-            options.validate()?;
+        if self.options.is_some() && !self.streaming() {
+            return Err(ContextError::Invalid(
+                ContextReason::StreamOptionsWithoutStreaming,
+            ));
         }
         Ok(())
     }

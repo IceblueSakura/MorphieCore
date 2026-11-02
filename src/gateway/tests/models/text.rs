@@ -3,6 +3,104 @@ use super::*;
 use crate::{gateway::ingress::discovery::TextModelView, protocol::ClientProtocol};
 use bytes::Bytes;
 
+#[test]
+fn interface_preference_uses_qualified_primary_native_contract_without_loss_ranking() {
+    use crate::protocol::openai::{Dialect, GenerationApi, GenerationCodec, TargetContract};
+    let gate = crate::gateway::tests::support::gateway(Limits::default());
+    let topology = crate::gateway::tests::topology::topology();
+    let mut entry = gate.state.entries[&(ClientProtocol::Chat, "fixture-model".into())]
+        .as_ref()
+        .clone();
+    let inspect = |entries: Vec<(ClientProtocol, BoundEntry)>| {
+        let entries = entries
+            .into_iter()
+            .map(|(protocol, entry)| ((protocol, "fixture-model".into()), Arc::new(entry)))
+            .collect();
+        let view = TextModelView::bind(&topology, &entries, 256 << 10).unwrap();
+        let list: Value = serde_json::from_slice(&view.list).unwrap();
+        list["data"][0]["preferred_interface"].clone()
+    };
+    let preferred = inspect(vec![(ClientProtocol::Chat, entry.clone())]);
+    assert_eq!(preferred["protocol"], "chat_completions");
+    assert_eq!(preferred["state"], "assessed");
+    assert_eq!(preferred["uniform"], true);
+    let mut nonstreaming = entry.candidates[0].as_ref().clone();
+    nonstreaming.endpoint.id = crate::topology::EndpointId::new("nonstreaming-chat").unwrap();
+    nonstreaming.endpoint.execution.streaming = false;
+    let mut mixed = entry.clone();
+    mixed.policy.candidates = crate::topology::CandidatePolicy::SkipUnrepresentable;
+    mixed.candidates.push(Arc::new(nonstreaming));
+    let preferred = inspect(vec![(ClientProtocol::Chat, mixed)]);
+    assert_eq!(preferred["protocol"], "chat_completions");
+    assert_eq!(preferred["uniform"], false);
+    let mut second = entry.candidates[0].as_ref().clone();
+    second.endpoint = topology
+        .endpoint(&crate::topology::EndpointId::new("fixture-responses").unwrap())
+        .unwrap()
+        .clone();
+    entry.candidates.push(Arc::new(second));
+    let preferred = inspect(vec![(ClientProtocol::Chat, entry.clone())]);
+    assert_eq!(preferred["protocol"], "chat_completions");
+    assert_eq!(preferred["uniform"], false);
+    entry.candidates.swap(0, 1);
+    let unassessed = inspect(vec![(ClientProtocol::Chat, entry.clone())]);
+    assert_eq!(unassessed["state"], "not_assessed");
+    assert!(
+        unassessed["protocol"].is_null(),
+        "never recommend an inactive native interface"
+    );
+    let mut responses = entry.clone();
+    responses.client = crate::adapter::ClientAdapter::openai(
+        GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None),
+        TargetContract::full(),
+    );
+    let preferred = inspect(vec![
+        (ClientProtocol::Chat, entry.clone()),
+        (ClientProtocol::Responses, responses),
+    ]);
+    assert_eq!(preferred["protocol"], "responses");
+    assert_eq!(preferred["uniform"], false);
+    let mut unrelated = entry.clone();
+    unrelated.candidates.remove(0);
+    unrelated.client = crate::adapter::ClientAdapter::openai(
+        GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None),
+        TargetContract::full(),
+    );
+    assert_eq!(
+        inspect(vec![
+            (ClientProtocol::Chat, entry.clone()),
+            (ClientProtocol::Responses, unrelated)
+        ])["state"],
+        "not_assessed",
+        "another interface's candidate cannot qualify this primary"
+    );
+    entry.candidates.truncate(1);
+    let mut candidate = entry.candidates[0].as_ref().clone();
+    candidate.endpoint = crate::topology::catalog::GOOGLE_BINDINGS[0].endpoint();
+    entry.candidates = vec![Arc::new(candidate)];
+    assert_eq!(
+        inspect(vec![(ClientProtocol::Chat, entry)])["state"],
+        "not_assessed"
+    );
+    let mut entry = gate.state.entries[&(ClientProtocol::Chat, "fixture-model".into())]
+        .as_ref()
+        .clone();
+    let mut candidate = entry.candidates[0].as_ref().clone();
+    candidate
+        .endpoint
+        .representation
+        .openai_mut()
+        .unwrap()
+        .dispositions
+        .set_native(crate::semantic::task::generation::Feature::Tools, false);
+    entry.candidates = vec![Arc::new(candidate)];
+    assert_eq!(
+        inspect(vec![(ClientProtocol::Chat, entry)])["state"],
+        "not_assessed",
+        "a native protocol alone does not qualify its default tool request"
+    );
+}
+
 #[tokio::test]
 async fn text_directory_is_interface_scoped_and_leaves_standard_discovery_unchanged() {
     let gate = crate::gateway::tests::support::gateway(Limits::default());
@@ -331,7 +429,7 @@ fn text_contract_uses_actual_dialect_checks_and_does_not_advertise_omitted_contr
     entry.candidates = vec![Arc::new(candidate)];
     assert_eq!(
         descriptor(entry)["features"]["function_tools"],
-        json!({"state":"unavailable"})
+        json!({"state":"approved_adaptation","rules":["chat.fallback-thinking-off.v1"]})
     );
 }
 

@@ -1,7 +1,6 @@
 //! Fixed route ordering and the public model contract.
 
 use crate::{
-    protocol::conversion::generation::ReportedFactPolicy,
     topology::Dispositions,
     topology::{EndpointId, ModelId, RouteId, TaskKind},
 };
@@ -76,6 +75,4 @@ pub struct PublicModel {
     pub task: TaskKind,
     pub route: RouteId,
     pub contract: Dispositions,
-    /// Public context admission is not a property of model intelligence.
-    pub reported_facts: ReportedFactPolicy,
 }

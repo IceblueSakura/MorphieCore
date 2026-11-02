@@ -335,30 +335,19 @@ impl ClientEncoder {
         }
     }
 
-    pub(crate) fn update_metadata(
-        &mut self,
-        mut metadata: ResponseMetadata,
-    ) -> Result<(), SseError> {
+    pub(crate) fn update_metadata(&mut self, metadata: ResponseMetadata) -> Result<(), SseError> {
         match &mut self.encoder {
             Encoder::Chat(e) => e.update_metadata(metadata),
             Encoder::Responses(e) => e.update_metadata(metadata),
             Encoder::Messages(e) => {
-                let losses =
-                    crate::protocol::anthropic::messages::client::metadata_losses(&metadata);
                 if let Err(error) =
-                    crate::protocol::anthropic::messages::client::project_metadata(&mut metadata)
+                    crate::protocol::anthropic::messages::client::validate_metadata(&metadata)
                 {
                     e.reject();
                     return Err(error.into());
                 }
                 e.update_service_class(*metadata.context.service_class())?;
                 e.update_delivery(metadata.delivery.as_deref());
-                for mut loss in losses {
-                    loss = loss.with_boundary(("event.encode").into());
-                    if !self.losses.contains(&loss) {
-                        self.losses.push(loss);
-                    }
-                }
                 Ok(())
             }
         }
@@ -368,26 +357,6 @@ impl ClientEncoder {
         event: &StreamEvent,
         fidelity: &FidelityRecords,
     ) -> Result<Vec<Bytes>, SseError> {
-        if let StreamEvent::ItemStarted {
-            item,
-            kind: crate::semantic::task::generation::ItemKind::Message { phase: Some(_) },
-            replay,
-        } = event
-            && !matches!(self.encoder, Encoder::Responses(_))
-        {
-            let wire = StreamEvent::ItemStarted {
-                item: *item,
-                kind: crate::semantic::task::generation::ItemKind::Message { phase: None },
-                replay: replay.clone(),
-            };
-            let frames = self.encode(&wire, fidelity)?;
-            let loss = crate::protocol::phase::delivery_omission("event.encode")
-                .at(crate::protocol::conversion::generation::Owner::item(*item));
-            if !self.losses.contains(&loss) {
-                self.losses.push(loss);
-            }
-            return Ok(frames);
-        }
         if let StreamEvent::SafetyReport(report) = event
             && report.is_assessment_only()
         {

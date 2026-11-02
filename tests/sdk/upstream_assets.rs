@@ -23,7 +23,7 @@ use morphiecore::{
         },
         stream::SseLimits,
     },
-    semantic::{context::StreamOptions, task::generation::Item, value::Presence},
+    semantic::{context::StreamOptions, task::generation::Item},
 };
 use serde_json::Value;
 use std::{
@@ -114,8 +114,8 @@ async fn handle(
         model,
         SseLimits::default(),
         StreamOptions {
-            include_usage: Presence::Value(true),
-            include_obfuscation: Presence::Value(false),
+            include_usage: Some(true),
+            include_obfuscation: Some(false),
         },
         Obfuscation::Disabled,
     );

@@ -83,7 +83,6 @@ struct CreatorBinding {
 pub struct FidelityRecords {
     response_item_ids: BTreeMap<ItemId, Text>,
     reported_creators: BTreeMap<ItemId, CreatorBinding>,
-    input_text_forms: std::collections::BTreeSet<PartId>,
     item_replay: BTreeMap<ItemId, ReplayBinding>,
     part_replay: BTreeMap<(ItemId, PartId), ReplayBinding>,
     audio: BTreeMap<PartId, AudioBinding>,
@@ -105,7 +104,6 @@ impl FidelityRecords {
                 .values()
                 .map(|id| 1024 + id.as_str().len())
                 .sum::<usize>()
-            + self.input_text_forms.len() * 512
             + (self.item_replay.len() + self.part_replay.len() + self.audio.len()) * 2048
             + self
                 .cached_context
@@ -206,16 +204,6 @@ impl FidelityRecords {
         }
         Ok(())
     }
-    pub fn record_input_text(&mut self, owner: PartId) -> Result<(), CodecError> {
-        if self.input_text_forms.len() >= MAX_ITEMS {
-            return Err(CodecError::Limit);
-        }
-        self.input_text_forms.insert(owner);
-        Ok(())
-    }
-    pub fn input_text_form(&self, owner: PartId) -> bool {
-        self.input_text_forms.contains(&owner)
-    }
     pub fn record_response_item_id(
         &mut self,
         owner: ItemId,
@@ -289,7 +277,6 @@ impl FidelityRecords {
                 parts.extend(values.iter().map(|p| p.id));
             }
         }
-        self.input_text_forms.retain(|owner| parts.contains(owner));
         self.audio.retain(|owner, _| parts.contains(owner));
         self.response_item_ids
             .retain(|id, _| owners.contains_key(id));

@@ -40,6 +40,7 @@ impl PlannedCandidate {
         self,
         request: &crate::protocol::GenerationRequestEnvelope,
         affinity: &affinity::Index,
+        client: &ClientAdapter,
     ) -> Result<
         crate::protocol::conversion::generation::Conversion<
             crate::execution::attempt::EncodedRequest,
@@ -51,9 +52,10 @@ impl PlannedCandidate {
             None => affinity.materialize(
                 &self.candidate.endpoint,
                 request,
-                crate::execution::attempt::RequestProjection::encode(
+                crate::execution::attempt::RequestProjection::for_client(
                     &self.candidate.endpoint,
                     request,
+                    client,
                 )?,
             ),
         }
@@ -154,7 +156,18 @@ mod tests {
     #[test]
     fn retained_preflight_preserves_reserved_schema_keys() {
         let gate = crate::gateway::tests::support::gateway(Limits::default());
-        let entry = &gate.state.entries[&(ClientProtocol::Chat, "fixture-model".into())];
+        let mut entry = gate.state.entries[&(ClientProtocol::Chat, "fixture-model".into())]
+            .as_ref()
+            .clone();
+        let mut candidate = entry.candidates[0].as_ref().clone();
+        candidate
+            .endpoint
+            .representation
+            .openai_mut()
+            .unwrap()
+            .reasoning_history =
+            Some(crate::protocol::reasoning::ReasoningHistory::RequiredWithTools);
+        entry.candidates[0] = Arc::new(candidate);
         for annotation in [
             json!({"$serde_json::private::Number": "not-a-number"}),
             json!({"$serde_json::private::Number": "1"}),
@@ -162,7 +175,8 @@ mod tests {
             let request = entry
                 .client
                 .decode_client_request(
-                    json!({"model":"fixture-model","messages":[{"role":"user","content":"hello"}],
+                    json!({"model":"fixture-model","reasoning_effort":"low",
+                    "messages":[{"role":"user","content":"hello"}],
                     "tools":[{"type":"function","function":{"name":"lookup","strict":false,
                         "parameters":{"type":"object","properties":{},"default":annotation}}}]})
                     .to_string()
@@ -180,8 +194,13 @@ mod tests {
                 }
                 let candidate = planned.candidate.clone();
                 let conversion = planned
-                    .into_projection(&request, &gate.state.affinity)
+                    .into_projection(&request, &gate.state.affinity, &entry.client)
                     .unwrap();
+                assert!(
+                    conversion
+                        .evidence
+                        .contains_rule("chat.fallback-thinking-off.v1")
+                );
                 let secret = candidate.secret.resolve().unwrap().0;
                 let prepared = crate::execution::attempt::prepare_retained(
                     &candidate.endpoint,
@@ -192,6 +211,7 @@ mod tests {
                 )
                 .unwrap();
                 let wire = crate::protocol::json::decode(&prepared.value.body).unwrap();
+                assert_eq!(wire["enable_thinking"], false);
                 assert_eq!(
                     wire["tools"][0]["function"]["parameters"]["default"],
                     annotation
@@ -292,7 +312,7 @@ mod tests {
                 &secret,
                 &request,
                 planned
-                    .into_projection(&request, &gate.state.affinity)
+                    .into_projection(&request, &gate.state.affinity, &entry.client)
                     .unwrap(),
             )
             .unwrap()
@@ -366,7 +386,7 @@ mod tests {
                 &secret,
                 &request,
                 planned
-                    .into_projection(&request, &gate.state.affinity)
+                    .into_projection(&request, &gate.state.affinity, &entry.client)
                     .unwrap(),
             )
             .unwrap();

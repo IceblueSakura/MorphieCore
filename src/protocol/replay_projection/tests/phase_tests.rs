@@ -184,7 +184,7 @@ fn phase_stream_preserves_return_carrier_at_eof_without_changing_terminal_policy
                 "public",
                 SseLimits::default(),
                 crate::semantic::context::StreamOptions {
-                    include_obfuscation: crate::semantic::value::Presence::Value(false),
+                    include_obfuscation: Some(false),
                     ..Default::default()
                 },
                 Obfuscation::Disabled,
@@ -440,7 +440,7 @@ fn unphased_plain_text_uses_the_same_selected_chat_grouping() {
             "public",
             Default::default(),
             crate::semantic::context::StreamOptions {
-                include_obfuscation: crate::semantic::value::Presence::Value(false),
+                include_obfuscation: Some(false),
                 ..Default::default()
             },
             Obfuscation::Disabled,
@@ -603,7 +603,7 @@ fn unselected_item_status_loss_rejects_before_chat_stream_terminal() {
         "public",
         Default::default(),
         crate::semantic::context::StreamOptions {
-            include_obfuscation: crate::semantic::value::Presence::Value(false),
+            include_obfuscation: Some(false),
             ..Default::default()
         },
         Obfuscation::Disabled,

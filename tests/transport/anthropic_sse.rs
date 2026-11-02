@@ -809,8 +809,8 @@ fn native_events_deliver_both_clients_and_keep_terminal_behind_eof() {
                 "public",
                 SseLimits::default(),
                 morphiecore::semantic::context::StreamOptions {
-                    include_usage: morphiecore::semantic::value::Presence::Value(true),
-                    include_obfuscation: morphiecore::semantic::value::Presence::Value(false),
+                    include_usage: Some(true),
+                    include_obfuscation: Some(false),
                 },
                 Obfuscation::Disabled,
             );

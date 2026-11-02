@@ -85,7 +85,7 @@ fn request(grouped: bool, stream: bool) -> Request {
         "client-model",
     )
     .unwrap();
-    request.delivery.stream = Presence::Value(stream);
+    request.delivery.stream = Some(stream);
     request.context.cache.prompt_cache_key = Some("affinity".into());
     request
 }
@@ -114,7 +114,7 @@ fn native_request_directions_use_actual_subscription_bindings() {
                 source.context.cache.prompt_cache_key,
                 Some("affinity".into())
             );
-            assert_eq!(source.delivery.stream, Presence::Value(stream));
+            assert_eq!(source.delivery.stream, Some(stream));
             for input in [source, independent] {
                 let before = input.clone();
                 let (actual, rules) = binding

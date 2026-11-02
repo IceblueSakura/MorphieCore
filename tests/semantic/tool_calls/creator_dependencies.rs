@@ -9,7 +9,6 @@ use morphiecore::{
 use serde_json::json;
 #[test]
 fn context_edits_invalidate_creator_reports_even_when_debug_is_redacted() {
-    use morphiecore::semantic::value::Presence;
     let parsed = responses::decode_response(&envelope(
         "completed",
         json!([
@@ -32,7 +31,7 @@ fn context_edits_invalidate_creator_reports_even_when_debug_is_redacted() {
         let ResourceDescription::File(file) = &mut resource.description else {
             unreachable!()
         };
-        file.context = Presence::Value(text(value));
+        file.context = Some(text(value));
     };
     context(&mut item, "before");
     let mut records = FidelityRecords::default();

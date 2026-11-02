@@ -15,7 +15,7 @@ use morphiecore::{
         },
         stream::SseLimits,
     },
-    semantic::value::{Presence, ReplayOrigin},
+    semantic::value::ReplayOrigin,
 };
 use serde_json::{Value, json};
 use std::{
@@ -113,7 +113,7 @@ async fn handle(State(context): State<Context>, headers: HeaderMap, body: Bytes)
                         contract(),
                         SseLimits::default(),
                         morphiecore::semantic::context::StreamOptions {
-                            include_obfuscation: Presence::Value(false),
+                            include_obfuscation: Some(false),
                             ..Default::default()
                         },
                         Obfuscation::Disabled,

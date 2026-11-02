@@ -507,6 +507,13 @@ mod tests {
                 {"type":"output_text","text":"OK","annotations":[{"type":"url_citation","start_index":0,"end_index":2,
                     "url":"https://example.invalid/source","title":"source"}]}
             ]}]}"#).unwrap();
+        let output_owner = output.semantic.items()[0].0;
+        let output_resource = output.semantic.resources().iter().next().unwrap().0;
+        assert_eq!(old.semantic.items()[0].0, output_owner);
+        assert_eq!(
+            old.semantic.resources().iter().next().unwrap().0,
+            output_resource
+        );
         output.semantic = output
             .semantic
             .clone()
@@ -545,6 +552,14 @@ mod tests {
             panic!("text")
         };
         let citation = &text.annotations()[0];
+        // Wire aliases stay stable while local owners and annotation sources
+        // must move together across colliding response-local namespaces.
+        assert_ne!(items[1].0, output_owner);
+        assert_eq!(
+            next.task.fidelity.response_item_id(items[1].0),
+            Some("text")
+        );
+        assert_ne!(citation.value().source, output_resource);
         citation.check_source(resources).unwrap();
         assert_eq!(
             resources.get(citation.value().source),

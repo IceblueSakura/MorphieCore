@@ -233,8 +233,13 @@ pub fn open_from_client(request: &mut Request) -> Result<(), CodecError> {
             }
             Item::Reasoning(reasoning) => {
                 if let Some(value) = &reasoning.replay {
-                    if crate::protocol::replay_projection::is_marker(value.as_str()) {
+                    if value.replay_token().is_none() {
                         return Err(CodecError::invalid());
+                    }
+                    // Raw client signatures are untrusted history, never issuer
+                    // evidence. Candidate projection omits their reasoning owner.
+                    if !value.as_str().starts_with("mc1.") {
+                        continue;
                     }
                     let (origin, format, payload) = replay_envelope::open(value.as_str())
                         .filter(|_| value.replay_token().is_some())
