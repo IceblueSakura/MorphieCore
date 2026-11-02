@@ -30,6 +30,7 @@ async fn consume(
     media: &[&[u8]],
     bytes: Vec<u8>,
     stream: bool,
+    eligible: bool,
 ) -> Option<Vec<u8>> {
     use futures_util::StreamExt;
     let gate = crate::gateway::tests::support::gateway(Limits::default());
@@ -66,7 +67,26 @@ async fn consume(
         policy: original.policy.clone(),
         candidates: vec![candidate.clone()],
     });
-    let request = entry.client.as_openai().unwrap().0.decode_request(json!({"model":"fixture-model","input":"hello","stream":stream,"stream_options":if stream {json!({"include_obfuscation":false})} else {serde_json::Value::Null}}).to_string().as_bytes()).unwrap();
+    let mut request = entry.client.as_openai().unwrap().0.decode_request(json!({"model":"fixture-model","input":"hello","stream":stream,"stream_options":if stream {json!({"include_obfuscation":false})} else {serde_json::Value::Null}}).to_string().as_bytes()).unwrap();
+    request.conversation = Some(
+        crate::semantic::context::ConversationContext::conversation("synthetic-subscription")
+            .unwrap(),
+    );
+    let mut headers = axum::http::HeaderMap::new();
+    headers.insert(
+        "authorization",
+        format!("Bearer {}", super::support::KEY).parse().unwrap(),
+    );
+    let agent = gate.state.auth.authenticate(&headers).unwrap();
+    let mut http = axum::extract::Request::new(axum::body::Body::empty());
+    http.extensions_mut().insert(agent);
+    let trace = diagnostics::Trace::for_request(None, &http);
+    let earlier = tokio::time::Instant::now() - Duration::from_secs(2);
+    let prior = gate.state.executors.acquire(&candidate, earlier).unwrap();
+    prior
+        .failed(ApiError::failure(503, b"", Some(1)), earlier)
+        .unwrap();
+    drop(prior);
     let mut builder = axum::http::Response::builder().status(200);
     for media in media {
         builder = builder.header(
@@ -75,19 +95,20 @@ async fn consume(
         );
     }
     let upstream = reqwest::Response::from(builder.body(reqwest::Body::from(bytes)).unwrap());
-    tokio::time::timeout(Duration::from_secs(4), async {
+    let delivered = tokio::time::timeout(Duration::from_secs(4), async {
         let result = exchange::respond_source(
             entry,
             request,
             exchange::Upstreams::Observed {
-                candidate,
+                runtime: Some(gate.state.clone()),
+                candidate: candidate.clone(),
                 response: upstream,
             },
             gate.state.limits.clone(),
             tokio::time::Instant::now() + Duration::from_secs(3),
             gate.state.shutdown.clone(),
             gate.state.permits.clone().acquire_owned().await.unwrap(),
-            diagnostics::Trace::new(None),
+            trace,
         )
         .await;
         let response = result.ok()?;
@@ -122,7 +143,35 @@ async fn consume(
         Some(delivered)
     })
     .await
-    .expect("bounded synthetic response consumption")
+    .expect("bounded synthetic response consumption");
+    if delivered.is_some() {
+        let later = tokio::time::Instant::now() + Duration::from_secs(3600);
+        let next = gate.state.executors.acquire(&candidate, later).unwrap();
+        assert_eq!(
+            next.probing, !eligible,
+            "only validated successful tasks recover health"
+        );
+        assert!(next.completed(None, later).0);
+        drop(next);
+        let mut choices = [candidate];
+        let now = tokio::time::Instant::now();
+        let binding = gate.state.executors.observe(
+            Some("fixture-agent"),
+            "fixture-model",
+            Some("synthetic-subscription"),
+            now,
+        );
+        let order = gate
+            .state
+            .executors
+            .order(binding.as_ref(), &mut choices, now);
+        assert_eq!(
+            order == "affinity",
+            eligible,
+            "failed and non-limit incomplete tasks never commit affinity"
+        );
+    }
+    delivered
 }
 
 #[tokio::test]
@@ -149,7 +198,9 @@ async fn missing_media_does_not_relax_sse_terminal_or_eof_validation() {
     for (index, bytes) in cases.iter().enumerate() {
         for stream in [false, true] {
             assert!(
-                consume(dialect, &[], bytes.clone(), stream).await.is_none(),
+                consume(dialect, &[], bytes.clone(), stream, false)
+                    .await
+                    .is_none(),
                 "{dialect:?} case={index} stream={stream}"
             );
         }
@@ -161,7 +212,12 @@ async fn subscription_sse_materializes_json_or_sse_without_losing_calls_or_fakin
     use crate::protocol::openai::Dialect;
     for dialect in [Dialect::Grok, Dialect::Siwc] {
         for stream in [false, true] {
-            for outcome in ["completed", "incomplete", "failed"] {
+            for (outcome, incomplete, eligible) in [
+                ("completed", None, true),
+                ("incomplete", Some("max_output_tokens"), true),
+                ("failed", None, false),
+                ("incomplete", Some("content_filter"), false),
+            ] {
                 let mut response = wire::subscription_response(dialect == Dialect::Siwc);
                 let mut events = wire::response_events(response.clone());
                 response["status"] = json!(outcome);
@@ -170,29 +226,25 @@ async fn subscription_sse_materializes_json_or_sse_without_losing_calls_or_fakin
                         json!({"code":"rate_limit_exceeded","message":"synthetic limit"});
                 }
                 if outcome == "incomplete" {
-                    response["incomplete_details"] = json!({"reason":"max_output_tokens"});
+                    response["incomplete_details"] = json!({"reason":incomplete.unwrap()});
                 }
                 let last = events.last_mut().unwrap();
                 last["type"] = json!(format!("response.{outcome}"));
                 last["response"] = response.clone();
-                let upstream_sse = true;
-                let bytes = if upstream_sse {
-                    events
-                        .iter()
-                        .map(|e| format!("event: {}\ndata: {e}\n\n", e["type"].as_str().unwrap()))
-                        .collect::<String>()
-                        .into_bytes()
-                } else {
-                    serde_json::to_vec(&response).unwrap()
-                };
-                let media: &[u8] = if upstream_sse {
-                    b"text/event-stream"
-                } else {
-                    b"application/json"
-                };
-                let delivered = consume(dialect, &[media], bytes.clone(), stream)
-                    .await
-                    .unwrap_or_else(|| panic!("{dialect:?} stream={stream} outcome={outcome}"));
+                let bytes = events
+                    .iter()
+                    .map(|e| format!("event: {}\ndata: {e}\n\n", e["type"].as_str().unwrap()))
+                    .collect::<String>()
+                    .into_bytes();
+                let delivered = consume(
+                    dialect,
+                    &[b"text/event-stream"],
+                    bytes.clone(),
+                    stream,
+                    eligible,
+                )
+                .await
+                .unwrap_or_else(|| panic!("{dialect:?} stream={stream} outcome={outcome}"));
                 let terminal = if stream {
                     let frames = String::from_utf8(delivered).unwrap();
                     let values = frames
@@ -219,7 +271,11 @@ async fn subscription_sse_materializes_json_or_sse_without_losing_calls_or_fakin
                 );
                 assert_eq!(terminal["output"][2]["phase"], "commentary");
                 if dialect == Dialect::Siwc {
-                    assert!(consume(dialect, &[], bytes, stream).await.is_some());
+                    assert!(
+                        consume(dialect, &[], bytes, stream, eligible)
+                            .await
+                            .is_some()
+                    );
                 }
             }
         }
@@ -234,10 +290,14 @@ async fn missing_media_is_not_enabled_for_standard_or_other_responses_profiles()
         crate::protocol::openai::Dialect::Grok,
     ] {
         for stream in [false, true] {
-            assert!(consume(dialect, &[], sse(true), stream).await.is_none());
+            assert!(
+                consume(dialect, &[], sse(true), stream, false)
+                    .await
+                    .is_none()
+            );
         }
         assert!(
-            consume(dialect, &[b"text/event-stream"], sse(true), true)
+            consume(dialect, &[b"text/event-stream"], sse(true), true, true)
                 .await
                 .is_some()
         );

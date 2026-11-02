@@ -26,6 +26,7 @@ async fn respond(
         entry,
         request,
         Upstreams::Observed {
+            runtime: None,
             candidate,
             response: upstream,
         },
@@ -1359,6 +1360,7 @@ async fn attempt_wait_attribution_and_hold_deadline_are_explicit() {
         tokio::time::pause();
         let work = produce_chain(
             Upstreams::Observed {
+                runtime: None,
                 candidate: Arc::new(candidate),
                 response: source,
             },

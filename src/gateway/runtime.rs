@@ -363,17 +363,23 @@ mod tests {
         let mut selected = entry.eligible(&request, &gate.state.affinity).unwrap();
         assert!(selected.iter().all(|planned| planned.projection.is_some()));
         let now = tokio::time::Instant::now();
+        let binding = gate.state.executors.observe(
+            Some("fixture-agent"),
+            "fixture-model",
+            Some("session"),
+            now,
+        );
         let lease = gate
             .state
             .executors
             .acquire(&selected[1].candidate, now)
             .unwrap();
-        assert!(lease.completed("fixture-model", Some("session"), now));
+        assert!(lease.completed(binding.as_ref(), now).0);
         drop(lease);
         assert_eq!(
             gate.state
                 .executors
-                .order("fixture-model", Some("session"), &mut selected),
+                .order(binding.as_ref(), &mut selected, now),
             "affinity"
         );
         assert!(Arc::ptr_eq(&selected[0].candidate, &entry.candidates[1]));

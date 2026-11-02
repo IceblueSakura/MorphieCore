@@ -109,7 +109,10 @@ impl Gateway {
                 affinity: crate::gateway::routing::prefix_cache::Index::new(
                     limits.implicit_cache_affinity,
                 ),
-                executors: Default::default(),
+                executors: crate::gateway::routing::executors::Executors::new(
+                    limits.affinity_ttl,
+                    limits.affinity_capacity,
+                ),
                 auth,
                 entries,
                 images,

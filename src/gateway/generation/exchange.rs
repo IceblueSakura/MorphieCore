@@ -5,7 +5,7 @@ use crate::{
         body::{self, Lane, Message, Status},
         diagnostics::{Stage, Trace},
         generation::intake,
-        routing::chain::Chain,
+        routing::{chain::Chain, executors::BindingObservation},
     },
     protocol::GenerationRequestEnvelope as Request,
 };
@@ -63,12 +63,31 @@ pub(in crate::gateway) enum Upstreams {
         runtime: Arc<Runtime>,
         candidates: Vec<crate::gateway::runtime::PlannedCandidate>,
         history: Option<Box<super::history::Pending>>,
+        binding: Option<BindingObservation>,
     },
     #[cfg(test)]
     Observed {
+        runtime: Option<Arc<Runtime>>,
         candidate: Arc<crate::gateway::BoundCandidate>,
         response: reqwest::Response,
     },
+}
+fn observe_binding(
+    runtime: &Runtime,
+    entry: &BoundEntry,
+    request: &Request,
+    trace: &Trace,
+) -> Option<BindingObservation> {
+    runtime.executors.observe(
+        trace.agent_id(),
+        entry.public.id.as_str(),
+        request
+            .conversation
+            .as_ref()
+            .filter(|conversation| conversation.is_conversation_scoped())
+            .map(|conversation| conversation.id()),
+        Instant::now(),
+    )
 }
 /// One candidate's prepared request on the wire, with the affinity projection it used.
 struct Sent<'r> {
@@ -217,37 +236,39 @@ pub(in crate::gateway) async fn produce_chain(
     trace: &mut Trace,
 ) -> Result<(), ApiError> {
     let lane = Lane { tx, state };
-    let model = entry.public.id.as_str();
-    let conversation = request
-        .conversation
-        .as_ref()
-        .filter(|c| c.is_conversation_scoped())
-        .map(|c| c.id());
-    let (runtime, candidates, mut observed, history) = match source {
+    let (runtime, candidates, mut observed, history, binding) = match source {
         Upstreams::Http {
             runtime,
             mut candidates,
             history,
+            binding,
         } => {
             let order = runtime
                 .executors
-                .order(model, conversation, &mut candidates);
+                .order(binding.as_ref(), &mut candidates, Instant::now());
             trace.executor_order(order);
-            (Some(runtime), candidates, None, history)
+            (Some(runtime), candidates, None, history, binding)
         }
         #[cfg(test)]
         Upstreams::Observed {
+            runtime,
             candidate,
             response,
-        } => (
-            None,
-            vec![crate::gateway::runtime::PlannedCandidate {
-                candidate,
-                projection: None,
-            }],
-            Some(response),
-            None,
-        ),
+        } => {
+            let binding = runtime
+                .as_ref()
+                .and_then(|runtime| observe_binding(runtime, entry, request, trace));
+            (
+                runtime,
+                vec![crate::gateway::runtime::PlannedCandidate {
+                    candidate,
+                    projection: None,
+                }],
+                Some(response),
+                None,
+                binding,
+            )
+        }
     };
     // Routing sees the same bound identities; bodies remain attached to the
     // records that were ordered above and are consumed once by the attempt.
@@ -339,7 +360,7 @@ pub(in crate::gateway) async fn produce_chain(
                             .is_none()
                     })
             });
-            let successor = intake::produce_candidate(
+            let produced = intake::produce_candidate(
                 entry,
                 candidate,
                 &local,
@@ -353,7 +374,7 @@ pub(in crate::gateway) async fn produce_chain(
             )
             .await?;
             if let (Some(selection), Some(successor), Some(runtime)) =
-                (affinity, successor, &runtime)
+                (affinity, produced.successor, &runtime)
             {
                 selection.publish(
                     &runtime.affinity,
@@ -362,7 +383,7 @@ pub(in crate::gateway) async fn produce_chain(
                     &entry.client,
                 );
             }
-            Ok(())
+            Ok(produced.completion)
         })
         .await
         .unwrap_or_else(|_| {
@@ -375,12 +396,30 @@ pub(in crate::gateway) async fn produce_chain(
             Err(state.timeout_error())
         });
         match result {
-            Ok(()) => {
-                if let Some(lease) = &health.lease {
-                    let fresh = lease.completed(model, conversation, Instant::now());
-                    trace.affinity_commit(fresh);
-                }
-                trace.end_candidate(None, false);
+            Ok(completion) => {
+                let failure = match completion {
+                    intake::Completion::Eligible => {
+                        if let Some(lease) = &health.lease {
+                            let (_, commit) = lease.completed(binding.as_ref(), Instant::now());
+                            trace.affinity_commit(commit);
+                        }
+                        None
+                    }
+                    intake::Completion::Failed(error) => {
+                        trace.report.update(|a| {
+                            a.failure_code = Some(error.diagnostic_code());
+                            a.failure_status_hint = Some(error.status.as_u16());
+                            a.policy_class = error.recovery.class;
+                            a.health_failure = error.recovery.affects_health;
+                        });
+                        if let Some(observation) = health.failed(error) {
+                            trace.health(observation);
+                        }
+                        Some(error.diagnostic_code())
+                    }
+                    intake::Completion::Neutral => None,
+                };
+                trace.end_candidate(failure, false);
                 return Ok(());
             }
             Err(error) => {
@@ -502,6 +541,7 @@ pub(in crate::gateway) async fn run(
     permit: OwnedSemaphorePermit,
     mut trace: Trace,
 ) -> Result<Response, ApiError> {
+    let binding = observe_binding(&runtime, &entry, &request, &trace);
     let candidates = entry
         .eligible(&request, &runtime.affinity)
         .map_err(|cause| {
@@ -522,6 +562,7 @@ pub(in crate::gateway) async fn run(
             runtime,
             candidates,
             history,
+            binding,
         },
         limits,
         deadline,

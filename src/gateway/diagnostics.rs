@@ -348,8 +348,19 @@ impl Trace {
     pub(super) fn probe(&mut self, probing: bool) {
         self.record.routing.recovery_probe = probing.then_some(true);
     }
-    pub(super) fn affinity_commit(&mut self, fresh: bool) {
-        self.record.routing.completion_state = Some(if fresh { "committed" } else { "stale" });
+    pub(super) fn agent_id(&self) -> Option<&str> {
+        self.record.agent_id.as_deref()
+    }
+    pub(super) fn affinity_commit(
+        &mut self,
+        commit: crate::gateway::routing::executors::AffinityCommit,
+    ) {
+        use crate::gateway::routing::executors::AffinityCommit;
+        self.record.routing.completion_state = Some(match commit {
+            AffinityCommit::Committed => "committed",
+            AffinityCommit::Stale => "stale",
+            AffinityCommit::NotApplicable => "not_applicable",
+        });
     }
     pub(super) fn selection_stop(&mut self, reason: &'static str) {
         self.record.routing.stop_reason = Some(reason);

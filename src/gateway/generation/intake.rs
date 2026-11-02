@@ -15,6 +15,17 @@ use crate::{
     },
 };
 use bytes::Bytes;
+/// Delivery can finish honestly without establishing successful upstream work.
+#[derive(Clone, Copy)]
+pub(in crate::gateway) enum Completion {
+    Eligible,
+    Failed(ApiError),
+    Neutral,
+}
+pub(in crate::gateway) struct Produced {
+    pub completion: Completion,
+    pub successor: Option<Request>,
+}
 /// While another candidate could still answer, lifecycle-only frames wait for the
 /// first content so a pre-content upstream failure can fail over unseen.
 const HOLD_BYTES: usize = 64 << 10;
@@ -76,7 +87,7 @@ async fn fail_classified(
     stream: bool,
     failure: ApiError,
     trace: &mut Trace,
-) -> Result<(), ApiError> {
+) -> Result<Completion, ApiError> {
     *lane.state.failure_head.lock().expect("upstream failure") = Some(failure);
     let published = lane
         .state
@@ -108,7 +119,7 @@ async fn produce(
     limit: usize,
     history: Option<&super::history::Pending>,
     trace: &mut Trace,
-) -> Result<(), ApiError> {
+) -> Result<Completion, ApiError> {
     let json = attempt.static_body().is_some();
     let mut capture = trace.capture.as_ref().and_then(|capture| {
         capture.body(
@@ -288,14 +299,32 @@ async fn produce(
     );
     // A valid failed task still established source facts and EOF. Client error
     // presentation must not erase them or become the authoritative source cause.
+    let mut failure = None;
     if let Some(source) = attempt.reported_failure() {
         trace.report.source_failure(source);
-        if !delivery.carries_failed_responses()
-            && let Some(failure) = ApiError::source_failure(source)
-        {
-            return fail_classified(lane, delivery, stream, failure, trace).await;
+        failure = ApiError::source_failure(source);
+        if let Some(failure) = failure {
+            *lane.state.failure_head.lock().expect("upstream failure") = Some(failure);
+            if !delivery.carries_failed_responses() {
+                return fail_classified(lane, delivery, stream, failure, trace).await;
+            }
         }
     }
+    let completion = {
+        use crate::semantic::task::generation::{IncompleteReason, Outcome};
+        let response = attempt.response().map_err(|_| ApiError::upstream())?;
+        if let Some(failure) = failure {
+            Completion::Failed(failure)
+        } else if response.semantic.outcome() == Outcome::Completed
+            || (response.semantic.outcome() == Outcome::Incomplete
+                && response.semantic.details().incomplete
+                    == Some(IncompleteReason::MaxOutputTokens))
+        {
+            Completion::Eligible
+        } else {
+            Completion::Neutral
+        }
+    };
     trace.stage(Stage::Projection);
     if stream {
         flush_pending(lane, delivery, trace).await?;
@@ -341,7 +370,7 @@ async fn produce(
     delivery
         .complete(attempt)
         .map_err(|_| ApiError::upstream())?;
-    Ok(())
+    Ok(completion)
 }
 /// Error bodies are read for classification only, within the attempt deadline.
 async fn error_body(mut upstream: reqwest::Response, trace: &Trace) -> (Vec<u8>, Observation) {
@@ -399,7 +428,7 @@ pub(in crate::gateway) async fn produce_candidate(
     hold: bool,
     history: Option<&super::history::Pending>,
     trace: &mut Trace,
-) -> Result<Option<Request>, ApiError> {
+) -> Result<Produced, ApiError> {
     trace.stage(Stage::ResponseHead);
     let status = upstream.status().as_u16();
     trace.head(status, upstream.headers());
@@ -574,10 +603,13 @@ pub(in crate::gateway) async fn produce_candidate(
         attempt.cancel();
         delivery.cancel();
     }
-    result?;
-    Ok(request
-        .inferred_affinity
-        .is_some()
-        .then(|| delivery.cache_successor(&attempt, request))
-        .flatten())
+    let completion = result?;
+    let successor = (matches!(completion, Completion::Eligible)
+        && request.inferred_affinity.is_some())
+    .then(|| delivery.cache_successor(&attempt, request))
+    .flatten();
+    Ok(Produced {
+        completion,
+        successor,
+    })
 }

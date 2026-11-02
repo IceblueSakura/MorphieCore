@@ -2,6 +2,232 @@ use super::*;
 use crate::gateway::Limits;
 use std::sync::Arc;
 
+#[test]
+fn evicted_and_recreated_absence_cannot_restore_an_old_binding() {
+    let (a, b) = candidates();
+    let state = Executors::new(Duration::from_secs(10), 1);
+    let now = Instant::now();
+    let older = state
+        .observe(Some("agent"), "model", Some("session"), now)
+        .unwrap();
+    let winner = state
+        .observe(Some("agent"), "model", Some("session"), now)
+        .unwrap();
+    assert_eq!(
+        state
+            .acquire(&a, now)
+            .unwrap()
+            .completed(Some(&winner), now)
+            .1,
+        AffinityCommit::Committed
+    );
+    let other = state
+        .observe(Some("agent"), "model", Some("other"), now)
+        .unwrap();
+    assert_eq!(
+        state
+            .acquire(&b, now)
+            .unwrap()
+            .completed(Some(&other), now + Duration::from_secs(1))
+            .1,
+        AffinityCommit::Committed
+    );
+    let recreated = state
+        .observe(
+            Some("agent"),
+            "model",
+            Some("session"),
+            now + Duration::from_secs(2),
+        )
+        .unwrap();
+    let result = state
+        .acquire(&a, now)
+        .unwrap()
+        .completed(Some(&older), now + Duration::from_secs(3));
+    assert!(result.0);
+    assert_eq!(result.1, AffinityCommit::Stale);
+    assert_eq!(state.state.lock().unwrap().affinity.len(), 2);
+    drop((older, winner, recreated, other));
+    assert_eq!(state.state.lock().unwrap().affinity.len(), 1);
+}
+
+#[test]
+fn in_flight_expiry_revokes_commit_without_requiring_a_lookup() {
+    let (a, _) = candidates();
+    let state = Executors::new(Duration::from_secs(10), 1);
+    let now = Instant::now();
+    let initial = state
+        .observe(Some("agent"), "model", Some("session"), now)
+        .unwrap();
+    state
+        .acquire(&a, now)
+        .unwrap()
+        .completed(Some(&initial), now);
+    let observed = state
+        .observe(
+            Some("agent"),
+            "model",
+            Some("session"),
+            now + Duration::from_secs(1),
+        )
+        .unwrap();
+    let result = state
+        .acquire(&a, now)
+        .unwrap()
+        .completed(Some(&observed), now + Duration::from_secs(10));
+    assert!(result.0);
+    assert_eq!(result.1, AffinityCommit::Stale);
+    assert_eq!(state.state.lock().unwrap().affinity.len(), 0);
+}
+
+#[test]
+fn stale_same_target_completion_and_lookups_do_not_renew_idle_ttl() {
+    let (a, b) = candidates();
+    let state = Executors::new(Duration::from_secs(10), 4);
+    let now = Instant::now();
+    let initial = state
+        .observe(Some("agent"), "model", Some("session"), now)
+        .unwrap();
+    state
+        .acquire(&a, now)
+        .unwrap()
+        .completed(Some(&initial), now);
+    let first = state
+        .observe(
+            Some("agent"),
+            "model",
+            Some("session"),
+            now + Duration::from_secs(3),
+        )
+        .unwrap();
+    let stale = state
+        .observe(
+            Some("agent"),
+            "model",
+            Some("session"),
+            now + Duration::from_secs(3),
+        )
+        .unwrap();
+    assert_eq!(
+        state
+            .acquire(&a, now)
+            .unwrap()
+            .completed(Some(&first), now + Duration::from_secs(4))
+            .1,
+        AffinityCommit::Committed
+    );
+    assert_eq!(
+        state
+            .acquire(&a, now)
+            .unwrap()
+            .completed(Some(&stale), now + Duration::from_secs(9))
+            .1,
+        AffinityCommit::Stale
+    );
+    let mut choices = [Arc::new(b.clone()), Arc::new(a.clone())];
+    assert_eq!(
+        state.order(Some(&stale), &mut choices, now + Duration::from_secs(13)),
+        "affinity"
+    );
+    assert_eq!(choices[0].cache_scope, a.cache_scope);
+    let mut choices = [Arc::new(b), Arc::new(a)];
+    assert_eq!(
+        state.order(Some(&stale), &mut choices, now + Duration::from_secs(14)),
+        "compiled"
+    );
+    assert_eq!(choices[0].cache_scope.as_str(), "synthetic-b");
+}
+
+#[test]
+fn account_affinity_is_agent_model_and_explicit_carrier_scoped() {
+    let (a, b) = candidates();
+    let state = Executors::default();
+    let now = Instant::now();
+    let initial = state
+        .observe(Some("agent"), "model", Some("session"), now)
+        .unwrap();
+    state
+        .acquire(&a, now)
+        .unwrap()
+        .completed(Some(&initial), now);
+    for (agent, model, conversation) in [
+        (Some("other-agent"), "model", Some("session")),
+        (Some("agent"), "other-model", Some("session")),
+        (Some("agent"), "model", Some("other-session")),
+        (None, "model", Some("session")),
+        (Some("agent"), "model", None),
+    ] {
+        let observed = state.observe(agent, model, conversation, now);
+        let mut choices = [Arc::new(b.clone()), Arc::new(a.clone())];
+        assert_eq!(
+            state.order(observed.as_ref(), &mut choices, now),
+            "compiled"
+        );
+        assert_eq!(choices[0].cache_scope, b.cache_scope);
+    }
+}
+
+#[test]
+fn absent_observation_slots_are_reclaimed_and_zero_retention_stores_nothing() {
+    let state = Executors::default();
+    let now = Instant::now();
+    for i in 0..1000 {
+        let id = format!("synthetic-{i}");
+        let first = state
+            .observe(Some("agent"), "model", Some(&id), now)
+            .unwrap();
+        let second = state
+            .observe(Some("agent"), "model", Some(&id), now)
+            .unwrap();
+        drop(first);
+        assert_eq!(state.state.lock().unwrap().affinity.len(), 1);
+        drop(second);
+        assert_eq!(state.state.lock().unwrap().affinity.len(), 0);
+    }
+    for state in [
+        Executors::new(Duration::ZERO, 10),
+        Executors::new(Duration::from_secs(10), 0),
+    ] {
+        assert!(
+            state
+                .observe(Some("agent"), "model", Some("session"), now)
+                .is_none()
+        );
+        assert_eq!(state.state.lock().unwrap().affinity.len(), 0);
+    }
+}
+
+#[test]
+fn concurrent_absent_observers_cannot_overwrite_the_first_successful_binding() {
+    let (a, b) = candidates();
+    let state = Executors::default();
+    let now = Instant::now();
+    let older_binding = state
+        .observe(Some("agent"), "model", Some("session"), now)
+        .unwrap();
+    let winner_binding = state
+        .observe(Some("agent"), "model", Some("session"), now)
+        .unwrap();
+    let older = state.acquire(&a, now).unwrap();
+    let winner = state.acquire(&b, now).unwrap();
+    assert_eq!(
+        winner.completed(Some(&winner_binding), now).1,
+        AffinityCommit::Committed
+    );
+    let result = older.completed(Some(&older_binding), now + Duration::from_secs(1));
+    assert!(result.0);
+    assert_eq!(result.1, AffinityCommit::Stale);
+    drop(older);
+    drop(winner);
+    let mut ordered = [Arc::new(a), Arc::new(b)];
+    state.order(
+        Some(&older_binding),
+        &mut ordered,
+        now + Duration::from_secs(1),
+    );
+    assert_eq!(ordered[0].cache_scope.as_str(), "synthetic-b");
+}
+
 fn candidates() -> (BoundCandidate, BoundCandidate) {
     let gate = crate::gateway::tests::support::gateway(Limits::default());
     let mut a = gate.state.entries[&(
@@ -38,7 +264,7 @@ fn cooling_is_exclusive_generation_fenced_and_cancel_safe() {
             .retry_after_seconds,
         600
     );
-    assert!(!old.completed("model", Some("session"), now));
+    assert!(!old.completed(None, now).0);
     drop(old);
     drop(concurrent);
     assert!(state.acquire(&a, now + Duration::from_secs(599)).is_err());
@@ -50,7 +276,7 @@ fn cooling_is_exclusive_generation_fenced_and_cancel_safe() {
     drop(probe);
     let probe = state.acquire(&b, later).unwrap();
     assert!(probe.probing);
-    assert!(probe.completed("model", None, later));
+    assert!(probe.completed(None, later).0);
     drop(probe);
     assert!(state.unavailable(&a.health, later).is_none());
     assert!(!state.acquire(&a, later).unwrap().probing);
@@ -86,7 +312,7 @@ fn cooling_is_exclusive_generation_fenced_and_cancel_safe() {
     old_sibling
         .failed(ApiError::failure(429, b"", Some(100)), both)
         .unwrap();
-    assert!(!probe.completed("model", Some("session"), both));
+    assert!(!probe.completed(None, both).0);
     drop(probe);
     drop(old_sibling);
     assert_eq!(
@@ -191,7 +417,7 @@ fn recovery_backoff_is_bounded_and_success_resets_it() {
         now += Duration::from_secs(seconds);
     }
     let recovered = state.acquire(&a, now).unwrap();
-    assert!(recovered.completed("model", None, now));
+    assert!(recovered.completed(None, now).0);
     drop(recovered);
     let next = state.acquire(&a, now).unwrap();
     assert_eq!(
@@ -208,24 +434,40 @@ fn successful_failover_sticks_and_older_completion_cannot_restore_failure() {
     let state = Executors::default();
     let now = Instant::now();
     let old = state.acquire(&a, now).unwrap();
-    old.completed("model", Some("session"), now);
+    let old_binding = state
+        .observe(Some("agent"), "model", Some("session"), now)
+        .unwrap();
+    assert_eq!(
+        old.completed(Some(&old_binding), now).1,
+        AffinityCommit::Committed
+    );
     let failing = state.acquire(&a, now).unwrap();
     failing
         .failed(ApiError::transport(RecoveryClass::Upstream), now)
         .unwrap();
     drop(failing);
+    let good_binding = state
+        .observe(Some("agent"), "model", Some("session"), now)
+        .unwrap();
     let good = state.acquire(&b, now).unwrap();
-    assert!(good.completed("model", Some("session"), now));
+    assert_eq!(
+        good.completed(Some(&good_binding), now).1,
+        AffinityCommit::Committed
+    );
     drop(good);
-    assert!(!old.completed("model", Some("session"), now));
+    assert!(!old.completed(Some(&old_binding), now).0);
     drop(old);
     // Recover A on an independent request; the established session stays on B.
     let recovered = state.acquire(&a, now + Duration::from_secs(1)).unwrap();
-    assert!(recovered.completed("model", None, now + Duration::from_secs(1)));
+    assert!(recovered.completed(None, now + Duration::from_secs(1)).0);
     drop(recovered);
     let mut ordered = vec![Arc::new(a), Arc::new(b)];
-    state.order("model", Some("session"), &mut ordered);
+    state.order(
+        Some(&good_binding),
+        &mut ordered,
+        now + Duration::from_secs(1),
+    );
     assert_eq!(ordered[0].cache_scope.as_str(), "synthetic-b");
-    state.order("model", None, &mut ordered); // stable input order when no preference
+    state.order(None, &mut ordered, now + Duration::from_secs(1)); // stable input order when no preference
     assert_eq!(ordered[0].cache_scope.as_str(), "synthetic-b");
 }

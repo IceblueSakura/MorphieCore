@@ -5,11 +5,15 @@ use crate::{
     provider::RecoveryClass,
 };
 use sha2::{Digest, Sha256};
-use std::{collections::HashMap, sync::Mutex, time::Duration};
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex},
+    time::Duration,
+};
 use tokio::time::Instant;
 
-const MAX_CONVERSATIONS: usize = 4096;
-const AFFINITY_TTL: Duration = Duration::from_secs(3600);
+mod bindings;
+pub(in crate::gateway) use bindings::Commit as AffinityCommit;
 const FORGET_FAILURES: Duration = Duration::from_secs(1800);
 type Key = [u8; 32];
 
@@ -73,17 +77,34 @@ struct Health {
     cooling: Option<Cooling>,
     probe: Option<u64>,
 }
-#[derive(Default)]
 struct State {
     // Keys come only from bound candidates. Keep generations after recovery so
     // old in-flight attempts cannot regain authority through delete/reinsert.
     health: HashMap<Key, Health>,
     next_ticket: u64,
-    affinity: HashMap<(String, String), (String, Instant)>,
+    affinity: bindings::Bindings,
 }
-#[derive(Default)]
 pub(in crate::gateway) struct Executors {
-    state: Mutex<State>,
+    state: Arc<Mutex<State>>,
+}
+pub(in crate::gateway) struct BindingObservation {
+    state: Arc<Mutex<State>>,
+    observed: bindings::Observed,
+}
+impl Drop for BindingObservation {
+    fn drop(&mut self) {
+        self.state
+            .lock()
+            .expect("executor state")
+            .affinity
+            .release(&self.observed);
+    }
+}
+impl Default for Executors {
+    fn default() -> Self {
+        let limits = crate::gateway::Limits::default();
+        Self::new(limits.affinity_ttl, limits.affinity_capacity)
+    }
 }
 fn remaining(until: Instant, now: Instant) -> u64 {
     let duration = until.saturating_duration_since(now);
@@ -114,18 +135,51 @@ fn blocked(state: &State, scopes: &Scopes, now: Instant) -> Option<Observation> 
         .max_by_key(|observation| observation.retry_after_seconds)
 }
 impl Executors {
-    pub(in crate::gateway) fn order<T: AsRef<BoundCandidate>>(
+    pub(in crate::gateway) fn new(ttl: Duration, capacity: usize) -> Self {
+        Self {
+            state: Arc::new(Mutex::new(State {
+                health: HashMap::new(),
+                next_ticket: 0,
+                affinity: bindings::Bindings::new(ttl, capacity),
+            })),
+        }
+    }
+    /// Capture absence as well as existing bindings before request preflight.
+    pub(in crate::gateway) fn observe(
         &self,
+        agent: Option<&str>,
         model: &str,
         conversation: Option<&str>,
+        now: Instant,
+    ) -> Option<BindingObservation> {
+        let (agent, conversation) = (agent?, conversation?);
+        let mut hash = Sha256::new();
+        hash.update(b"affinity.binding.v1");
+        for value in [agent, model, conversation] {
+            hash.update((value.len() as u64).to_le_bytes());
+            hash.update(value.as_bytes());
+        }
+        let observed = self
+            .state
+            .lock()
+            .expect("executor state")
+            .affinity
+            .observe(hash.finalize().into(), now)?;
+        Some(BindingObservation {
+            state: self.state.clone(),
+            observed,
+        })
+    }
+    pub(in crate::gateway) fn order<T: AsRef<BoundCandidate>>(
+        &self,
+        observation: Option<&BindingObservation>,
         candidates: &mut [T],
+        now: Instant,
     ) -> &'static str {
-        let now = Instant::now();
         let state = self.state.lock().expect("executor state");
-        let preferred = conversation
-            .and_then(|c| state.affinity.get(&(model.to_owned(), c.to_owned())))
-            .filter(|(_, at)| now.duration_since(*at) < AFFINITY_TTL)
-            .map(|(id, _)| id.as_str());
+        let preferred = observation
+            .filter(|observation| Arc::ptr_eq(&observation.state, &self.state))
+            .and_then(|observation| state.affinity.preferred(&observation.observed, now));
         let cooling = |c: &T| blocked(&state, &c.as_ref().health, now).is_some();
         let affine = candidates
             .iter()
@@ -196,10 +250,9 @@ pub(in crate::gateway) struct Lease<'a> {
 impl Lease<'_> {
     pub(in crate::gateway) fn completed(
         &self,
-        model: &str,
-        conversation: Option<&str>,
+        binding: Option<&BindingObservation>,
         now: Instant,
-    ) -> bool {
+    ) -> (bool, AffinityCommit) {
         let mut state = self.owner.state.lock().expect("executor state");
         let fresh = self
             .candidate
@@ -214,7 +267,14 @@ impl Lease<'_> {
                     .is_some_and(|h| h.generation == self.generations[index])
             });
         if !fresh {
-            return false;
+            return (
+                false,
+                if binding.is_some() {
+                    AffinityCommit::Stale
+                } else {
+                    AffinityCommit::NotApplicable
+                },
+            );
         }
         for key in &self.candidate.health.0 {
             let health = state.health.get_mut(key).expect("acquired scope");
@@ -226,29 +286,14 @@ impl Lease<'_> {
                 health.probe = None;
             }
         }
-        let Some(conversation) = conversation else {
-            return true;
+        let affinity = match binding {
+            None => AffinityCommit::NotApplicable,
+            Some(binding) if Arc::ptr_eq(&binding.state, &self.owner.state) => state
+                .affinity
+                .commit(&binding.observed, self.candidate.cache_scope.as_str(), now),
+            Some(_) => AffinityCommit::Stale,
         };
-        if state.affinity.len() >= MAX_CONVERSATIONS {
-            state
-                .affinity
-                .retain(|_, (_, at)| now.duration_since(*at) < AFFINITY_TTL);
-        }
-        let key = (model.to_owned(), conversation.to_owned());
-        if state.affinity.len() >= MAX_CONVERSATIONS
-            && !state.affinity.contains_key(&key)
-            && let Some(oldest) = state
-                .affinity
-                .iter()
-                .min_by_key(|(_, (_, at))| *at)
-                .map(|(key, _)| key.clone())
-        {
-            state.affinity.remove(&oldest);
-        }
-        state
-            .affinity
-            .insert(key, (self.candidate.cache_scope.as_str().to_owned(), now));
-        true
+        (true, affinity)
     }
     pub(in crate::gateway) fn failed(&self, error: ApiError, now: Instant) -> Option<Observation> {
         if !error.recovery.affects_health {

@@ -47,6 +47,8 @@ struct Configuration {
     capture: Option<crate::gateway::CaptureConfig>,
     concurrency: Option<usize>,
     exchange_timeout_ms: Option<u64>,
+    affinity_ttl_ms: Option<u64>,
+    affinity_capacity: Option<usize>,
     #[serde(default = "Limits::default_delta_coalescing")]
     delta_coalescing: Option<crate::execution::delivery::DeltaCoalescing>,
 }
@@ -204,6 +206,13 @@ impl Bootstrap {
                 .exchange_timeout_ms
                 .map(Duration::from_millis)
                 .unwrap_or(defaults.exchange_timeout),
+            affinity_ttl: configuration
+                .affinity_ttl_ms
+                .map(Duration::from_millis)
+                .unwrap_or(defaults.affinity_ttl),
+            affinity_capacity: configuration
+                .affinity_capacity
+                .unwrap_or(defaults.affinity_capacity),
             ..defaults
         };
         let manager = CredentialManager::new(

@@ -9,6 +9,9 @@ pub struct Limits {
     pub delta_coalescing: Option<crate::execution::delivery::DeltaCoalescing>,
     /// Disposable implicit affinity only; explicit grouping remains available when disabled.
     pub implicit_cache_affinity: bool,
+    /// Success-only account binding retention, independent of prefix hints.
+    pub affinity_ttl: Duration,
+    pub affinity_capacity: usize,
     pub request_bytes: usize,
     pub response_bytes: usize,
     /// Decoded output bytes per image; cannot enlarge response or endpoint ceilings.
@@ -36,6 +39,8 @@ impl Default for Limits {
             force_upstream_stream: false,
             delta_coalescing: Self::default_delta_coalescing(),
             implicit_cache_affinity: true,
+            affinity_ttl: Duration::from_secs(3600),
+            affinity_capacity: 4096,
             request_bytes: 32 << 20,
             response_bytes: 64 << 20,
             image_bytes: 2 << 20,

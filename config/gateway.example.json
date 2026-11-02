@@ -7,6 +7,8 @@
   "proxy": null,
   "concurrency": 16,
   "exchange_timeout_ms": 3600000,
+  "affinity_ttl_ms": 3600000,
+  "affinity_capacity": 4096,
   "delta_coalescing": {
     "max_delay_ms": 50,
     "max_pending_bytes": 16384

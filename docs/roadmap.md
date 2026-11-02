@@ -61,11 +61,11 @@ This page owns current scope, priorities, dependencies, and exit gates. [Archite
 
 ## Current status
 
-**Current focus (2026-11-02):** Slices R0–R5 and account rewrite gates AR0–AR1 are complete. The shared named-account source, current schemas, Provider separation, CLI and task/diagnostic bindings have passed offline and SDK checks. Next establish AR2 health, affinity and OAuth ownership, then connect the bounded same-target executor. Fresh credential provisioning, model selection and full three-protocol installed-Agent acceptance follow the rewrite; Stage 4 remains paused.
+**Current focus (2026-11-02):** Slices R0–R5 and account rewrite gates AR0–AR1 are complete. AR2 now has success-only completion and Agent/model/carrier-scoped conditional affinity; account/target health constraints and material-aware OAuth ownership remain next, before the bounded same-target executor. Fresh credential provisioning, model selection and full three-protocol installed-Agent acceptance follow the rewrite; Stage 4 remains paused.
 
 | Area | State | Next step |
 |---|---|---|
-| Routing | AR1 shared account/target cutover closed; configured requests dispatch one account target | AR2 health/affinity/OAuth ownership, then AR3 bounded same-target recovery |
+| Routing | AR1 closed; success-only conditional affinity implemented; configured requests dispatch one account target | Finish AR2 health/OAuth ownership, then AR3 bounded same-target recovery |
 | Generation IR / Codec | R0–R5 complete; shared projections/discovery, qualified intake, history transfer and reviewed null contracts | Maintain these contracts through the installed-Agent exit |
 | Client compatibility | Earlier installed native Messages loops passed; rewritten account path has offline/SDK evidence | Revalidate installed-client configuration/recovery in AR4; full exit follows fresh model selection |
 | Integration | R1a/R1b/R2 loops, controlled recovery and production closure passed | Revalidate changed paths against established gates |
@@ -107,11 +107,13 @@ AR0 closed on **2026-11-02** against clean `9c68a7d`: the full offline baseline 
 
 AR1 closed on **2026-11-02**: the full offline baseline passes (962 Rust tests, 39 ignored; Clippy, formatting, library/binary compilation, 20 pinned assets and nine upstream Python checks). The other Python suites pass (19 SDK-oracle, 33 client-driver, 24 gateway/schema tests), as do all 18 pinned SDK loopback consumers. Production-loader checks cover named account ordering, independent API-key/SIWC contracts, task targets, duplicate security targets, network-free validation and single-target dispatch. Regressions first reproduced removal-tombstone/revision failures and observation-validation gaps, then passed after repair. Installed-client fixture/configuration acceptance remains AR4; no private state, real Provider or deployment was used.
 
+The AR2 success-only completion and conditional-affinity slice passes the full offline baseline (968 Rust tests, 39 ignored), the same 20-asset and 9/19/33/24 Python gates, and all 18 SDK loopbacks. Native failed Responses first reproduced false health recovery; concurrent absent observers first reproduced stale affinity overwrite. Both now pass alongside expiry/eviction ABA, Agent/model/carrier isolation, same-target stale renewal, final-handoff ownership and bounded observation reclamation. The remaining AR2 owners are below; the whole gate is still open.
+
 | Current owner | Replacement/deletion owner |
 |---|---|
 | `gateway/{runtime,renewal}.rs`, credential lifecycle owner | AR2: maintain all configured Active OAuth sessions independently of routing enablement; carry verified material revisions without changing replay identity |
-| `gateway/routing/executors.rs` | AR2: replace pool health with account/target constraints, Agent-scoped version-fenced affinity and bounded bound-target waits |
-| `gateway/generation/{exchange,intake}.rs`, `transport/http.rs`, `protocol/failure.rs` | AR2/AR3: separate task outcome/delivery/health; preserve precise safe transport facts and Provider classification; implement the same-target executor |
+| `gateway/routing/executors.rs` | AR2: replace pool health with account/target constraints and bounded bound-target waits |
+| `gateway/generation/{exchange,intake}.rs`, `transport/http.rs`, `protocol/failure.rs` | AR2/AR3: carry material/versioned failure facts, preserve precise safe transport facts and Provider classification, and implement the same-target executor |
 | `gateway/routing/chain.rs`, `execution/fallback.rs`, route/pool attempt policies | AR3: delete candidate advancement, per-pool ledgers and successor-dependent resend permission |
 | Installed-client configuration/driver fixtures, final operational explanations and setup handoff | AR4: move remaining installed-client writers to current schema, count actual transmissions on the completed executor, and recheck fresh setup without private state |
 

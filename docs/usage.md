@@ -101,6 +101,10 @@ A running gateway pins key identity at startup. Replacement, disablement and rem
 
 Names are unique within a Provider and stay stable when the list is reordered. Route candidate order precedes account declaration order. `enabled` controls routing only; configured Active OAuth sessions remain maintained when disabled or unreferenced. Stored credentials alone activate no route.
 
+Account affinity groups trusted Agent identity, public model and an explicit conversation/session carrier. Only validated completed work, including tool calls and requested output-limit completion, can commit after final delivery. Failed, cancelled and other incomplete outcomes do not recover health or change the binding. Concurrent stale completions cannot overwrite or renew another request's binding.
+
+`gateway.json` sets `affinity_ttl_ms` (default 3600000) and `affinity_capacity` (default 4096). TTL slides only on an authorized successful commit, not on lookups or failures; expiry and eviction revoke in-flight commit rights. Zero capacity or TTL retains no bindings. Prompt-prefix hints remain independent.
+
 An API-key account may set `base_url` to a complete trusted API root. The catalog appends an explicit operation-relative suffix: `https://relay.example/custom/v1` plus `responses` becomes `/custom/v1/responses`. Omission retains each operation's original catalog target. HTTPS is required except for literal loopback HTTP; userinfo, queries, fragments and unsafe paths reject. OAuth overrides reject before credential borrowing.
 
 `openai` means OpenAI API-key access. SIWC is the separate `chatgpt` Provider, whose declaration uses `{"kind":"oauth","profile":"openai","alias":"personal"}`. Grok uses Provider/profile `grok`. Model availability and fixed request controls belong to each Provider's catalog bindings, not the account file.
