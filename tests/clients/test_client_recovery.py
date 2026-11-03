@@ -8,6 +8,7 @@ from pathlib import Path
 import socket
 import sqlite3
 import queue
+import sys
 import tempfile
 import threading
 import time
@@ -23,6 +24,41 @@ import recovery_boundary
 
 class ClientRecoveryOracles(unittest.TestCase):
     path = Path("/synthetic/sample.txt")
+
+    def test_rpc_wait_honors_the_command_deadline_after_a_long_silence(self):
+        child = object.__new__(drivers.Child)
+        child.failure = None
+        child.records = MagicMock()
+
+        def delayed_record(*, timeout):
+            if timeout < 16:
+                raise queue.Empty
+            return {"type": "agent_settled"}
+
+        child.records.get.side_effect = delayed_record
+        with patch.object(drivers.time, "monotonic", return_value=100):
+            self.assertEqual(child.record(125), {"type": "agent_settled"})
+            with self.assertRaisesRegex(RuntimeError, "^rpc_deadline$"):
+                child.record(100)
+            child.records.get.side_effect = queue.Empty
+            with self.assertRaisesRegex(RuntimeError, "^rpc_deadline$"):
+                child.record(125)
+        child.failure = "child_pipe_or_record_failure"
+        with self.assertRaisesRegex(RuntimeError, "^child_pipe_failure$"):
+            child.record(125)
+
+    def test_rpc_eof_and_invalid_records_wake_the_waiter(self):
+        for source, error in [
+            ("print('{\"type\":\"response\"}', flush=True)", "rpc_no_record"),
+            ("print('invalid-json', flush=True)", "child_pipe_failure"),
+        ]:
+            with self.subTest(source=source), drivers.Child(
+                [sys.executable, "-c", source], {}, Path.cwd(), rpc=True
+            ) as child:
+                if error == "rpc_no_record":
+                    self.assertEqual(child.record(time.monotonic() + 3), {"type": "response"})
+                with self.assertRaisesRegex(RuntimeError, "^" + error + "$"):
+                    child.record(time.monotonic() + 3)
 
     def test_main_cannot_publish_success_before_authority_teardown_verdict(self):
         states = []

@@ -33,6 +33,11 @@ def check_client_version(case, version):
           is not None, "invalid_client_version")
 
 
+def check_pi_output(content):
+    check(any(block.get("type") == "text" and block.get("text") == TEXT
+              for block in content), "pi_final_answer")
+
+
 def private_json(path, value):
     with open(path, "x", encoding="utf-8", opener=lambda p, f: os.open(p, f, 0o600)) as file:
         json.dump(value, file)
@@ -107,15 +112,26 @@ class Child:
             self.process.kill()
         finally:
             pipe.close()
+            if rpc:
+                # Wake the command waiter on EOF or reader failure, without an
+                # idle timeout shorter than the command's actual deadline.
+                try:
+                    self.records.put_nowait(None)
+                except queue.Full:
+                    self.failure = "child_pipe_or_record_failure"
 
     def record(self, deadline):
         check(self.failure is None, "child_pipe_failure")
         remaining = deadline - time.monotonic()
         check(remaining > 0, "rpc_deadline")
         try:
-            return self.records.get(timeout=min(remaining, 15))
+            record = self.records.get(timeout=remaining)
         except queue.Empty:
-            raise RuntimeError("rpc_no_record") from None
+            check(self.failure is None, "child_pipe_failure")
+            raise RuntimeError("rpc_deadline") from None
+        check(self.failure is None, "child_pipe_failure")
+        check(record is not None, "rpc_no_record")
+        return record
 
     def wait(self, timeout=30, expected_status=0):
         try:
@@ -198,7 +214,7 @@ class Pi(Child):
                 settled = True
         return data, events
 
-    def prompt(self, message, expected, *, timeout=20):
+    def prompt(self, message, expected, *, timeout=20, check_output=check_pi_output):
         _, events = self.command("prompt", message=message, timeout=timeout)
         check(not any(e["type"].startswith(("auto_retry", "compaction", "summarization_retry"))
                       for e in events), "pi_automatic_retry_or_compaction")
@@ -211,8 +227,7 @@ class Pi(Child):
             check(tools[0]["toolName"] == "read" and tools[0]["isError"] is False,
                   "pi_read_outcome")
             check(TEXT in json.dumps(tools[0]["result"]), "pi_read_result")
-        check(any(b.get("type") == "text" and b.get("text") == TEXT
-                  for b in finished[-1]["content"]), "pi_final_answer")
+        check_output(finished[-1]["content"])
 
 
 def environment(root):

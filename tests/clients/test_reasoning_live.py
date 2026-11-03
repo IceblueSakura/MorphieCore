@@ -1,17 +1,84 @@
 """Offline failure oracles for the bounded real-Agent runner; no Provider access."""
 import copy
+from contextlib import closing
 import http.client
 import json
 from pathlib import Path
+import sqlite3
 import tempfile
 from types import SimpleNamespace
 import unittest
+from unittest.mock import patch
 from urllib.parse import urlsplit
 
 import reasoning_live as live
 
 
 class ReasoningLiveOracles(unittest.TestCase):
+    def test_live_pi_accepts_file_newline_without_relaxing_synthetic_answers_or_replay(self):
+        def command(*_, message, **__):
+            events = []
+            if "exactly once" in message:
+                events += [{"type": "message_end", "message": {
+                    "role": "assistant", "stopReason": "toolUse", "content": []}},
+                    {"type": "tool_execution_end", "toolName": "read",
+                     "isError": False, "result": live.TEXT + "\n"}]
+            return None, [*events, {"type": "message_end", "message": {
+                "role": "assistant", "stopReason": "stop",
+                "content": [{"type": "text", "text": live.TEXT + "\n"}]}}]
+
+        client = object.__new__(live.Pi)
+        client.command = command
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            env = live.environment(root)
+            with patch.object(live, "Pi") as constructor:
+                constructor.return_value.__enter__.return_value = client
+                live.run_client("pi-chat", "/pi", env, root, root,
+                                "http://127.0.0.1:1", root / "sample.txt")
+        with self.assertRaisesRegex(RuntimeError, "^pi_final_answer$"):
+            client.prompt("synthetic", ["stop"])
+        for content in ([], [{"type": "text", "text": "wrong"}],
+                        [{"type": "text", "text": live.TEXT},
+                         {"type": "text", "text": "extra"}]):
+            with self.assertRaisesRegex(RuntimeError, "^live_client_final_answer$"):
+                live.pi_final_output(content)
+        observed = {"content": live.TEXT + "\n", "reasoning_content": "Check", "tool_calls": []}
+        with self.assertRaisesRegex(RuntimeError, "^answer_changed$"):
+            live.same_message({"role": "assistant", "content": live.TEXT,
+                               "reasoning_content": "Check"}, observed)
+
+    def test_live_opencode_requires_the_scratch_consumer_terminal_outcome(self):
+        for finishes, idle, error in [
+            (["tool-calls", "stop", "stop"], "succeeded", None),
+            (["tool-calls", "stop", "stop"], "failed", "opencode_idle_outcome"),
+            (["tool-calls", "stop"], "succeeded", "opencode_assistant_termination"),
+            (["tool-calls", "stop", "stop", "stop"], "succeeded", "opencode_assistant_termination"),
+        ]:
+            with self.subTest(finishes=finishes, idle=idle), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                env = live.environment(root)
+                database_path = Path(env["XDG_DATA_HOME"]) / "opencode.db"
+                with closing(sqlite3.connect(database_path)) as database:
+                    database.execute("CREATE TABLE session_message "
+                                     "(session_id TEXT, type TEXT, time_created INTEGER, id INTEGER, data TEXT)")
+                    database.execute("CREATE TABLE session_v2 (id TEXT, idle_outcome TEXT)")
+                    database.executemany("INSERT INTO session_message VALUES (?, ?, ?, ?, ?)",
+                        [("live-session", "assistant", index, index, json.dumps({"finish": finish}))
+                         for index, finish in enumerate(finishes)])
+                    database.execute("INSERT INTO session_v2 VALUES (?, ?)", ("live-session", idle))
+                    database.commit()
+                events = [{"type": "tool_use", "part": {"tool": "read", "state": {"status": "completed"}}},
+                          {"type": "text", "part": {"text": live.TEXT + "\n"}}]
+                with patch.object(live, "opencode_prompt", return_value=("live-session", events)):
+                    if error:
+                        with self.assertRaisesRegex(RuntimeError, "^" + error + "$"):
+                            live.run_client("opencode-chat", "/opencode", env, root, root,
+                                            "http://127.0.0.1:1", root / "sample.txt")
+                    else:
+                        live.run_client("opencode-chat", "/opencode", env, root, root,
+                                        "http://127.0.0.1:1", root / "sample.txt")
+
     def test_live_final_answer_is_distinct_from_pretool_text_and_preserves_replay_bytes(self):
         events = [{"type": "text", "part": {"text": "I will read the fixture."}},
                   {"type": "text", "part": {"text": live.TEXT + "\n"}}]
