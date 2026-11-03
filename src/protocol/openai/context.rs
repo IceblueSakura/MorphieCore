@@ -100,6 +100,7 @@ pub(super) fn metadata(
         crate::protocol::openai::chat::envelope::validate_context(&context.execution)?;
     }
     Ok(ResponseMetadata {
+        source_failure: None,
         delivery: None,
         storage: if profile == GenerationApi::Responses {
             crate::protocol::openai::responses::managed::read_storage(o)?

@@ -80,13 +80,11 @@ impl Class {
             return None;
         }
         Some(match error.recovery.class? {
-            RecoveryClass::Authentication => Self::Auth,
+            RecoveryClass::Auth => Self::Auth,
             RecoveryClass::Quota => Self::Quota,
-            RecoveryClass::Server | RecoveryClass::Timeout | RecoveryClass::Upstream => {
-                Self::Transient
-            }
+            RecoveryClass::Transient => Self::Transient,
             RecoveryClass::RateLimit => Self::RateLimit,
-            RecoveryClass::PermissionDenied => Self::Permission,
+            RecoveryClass::Permission => Self::Permission,
             _ => return None,
         })
     }
@@ -283,7 +281,7 @@ impl Executors {
             defaults: RecoveryPolicy::default(),
         }
     }
-    fn policy(&self, candidate: &BoundCandidate) -> &RecoveryPolicy {
+    pub(in crate::gateway) fn policy(&self, candidate: &BoundCandidate) -> &RecoveryPolicy {
         self.policies
             .get(candidate.provider.id.as_str())
             .unwrap_or(&self.defaults)

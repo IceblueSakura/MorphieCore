@@ -23,7 +23,7 @@ async fn loader_binds_named_accounts_without_switching_after_dispatch() {
                 assert_eq!(body["model"],"deepseek-flash");
                 let first=headers["authorization"]=="Bearer synthetic-primary";
                 calls.lock().unwrap().push(if first {"primary"}else{"backup"});
-                if first {return StatusCode::SERVICE_UNAVAILABLE.into_response();}
+                if first {return (StatusCode::SERVICE_UNAVAILABLE, [("retry-after","60")]).into_response();}
                 assert_eq!(headers["authorization"],"Bearer synthetic-backup");
                 ([ ("content-type","text/event-stream") ],crate::test_responses_wire::response_stream(json!({
                     "object":"response","id":"synthetic-response","model":"deepseek-flash","created_at":1,
@@ -62,6 +62,12 @@ async fn loader_binds_named_accounts_without_switching_after_dispatch() {
             .unwrap();
         let response = boot.gateway.router().oneshot(request).await.unwrap();
         assert_eq!(response.status(), expected);
+        if expected == StatusCode::SERVICE_UNAVAILABLE {
+            assert!(
+                !response.headers().contains_key("retry-after"),
+                "a ready backup prevents a route-wide delay"
+            );
+        }
         let bytes = axum::body::to_bytes(response.into_body(), 65536)
             .await
             .unwrap();
@@ -72,7 +78,7 @@ async fn loader_binds_named_accounts_without_switching_after_dispatch() {
             assert_eq!(
                 *calls.lock().unwrap(),
                 ["primary"],
-                "one dispatched target per request"
+                "a hint beyond the recovery budget prevents a second send"
             );
         }
         let permit = tokio::time::timeout(

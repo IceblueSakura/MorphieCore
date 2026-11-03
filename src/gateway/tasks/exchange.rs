@@ -46,7 +46,7 @@ pub(super) async fn send<R>(
         .await
         .map_err(|error| {
             trace.report.failure(None, &AttemptError::Transport(error));
-            ApiError::transport(error.recovery_class())
+            ApiError::transport_fact(error)
         })
 }
 

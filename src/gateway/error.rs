@@ -112,6 +112,7 @@ impl ApiError {
             recovery: RecoveryDecision {
                 class: None,
                 affects_health: false,
+                retryable: false,
             },
             retry_after: None,
         }
@@ -122,11 +123,22 @@ impl ApiError {
     pub const fn upstream() -> Self {
         Self::new(StatusCode::BAD_GATEWAY, ErrorKind::Upstream)
     }
+    pub const fn malformed() -> Self {
+        Self {
+            recovery: RecoveryDecision {
+                class: Some(crate::provider::RecoveryClass::Malformed),
+                affects_health: false,
+                retryable: false,
+            },
+            ..Self::upstream()
+        }
+    }
     pub const fn timeout() -> Self {
         Self {
             recovery: RecoveryDecision {
-                class: Some(crate::provider::RecoveryClass::Timeout),
+                class: None,
                 affects_health: false,
+                retryable: false,
             },
             ..Self::new(StatusCode::GATEWAY_TIMEOUT, ErrorKind::Timeout)
         }
@@ -134,14 +146,37 @@ impl ApiError {
     pub const fn shutdown() -> Self {
         Self::new(StatusCode::SERVICE_UNAVAILABLE, ErrorKind::Shutdown)
     }
-    pub fn transport(class: crate::provider::RecoveryClass) -> Self {
-        let mut error = if class == crate::provider::RecoveryClass::Timeout {
+    pub fn transport_fact(fact: crate::transport::http::TransportError) -> Self {
+        use crate::transport::http::TransportError;
+        let mut error = if matches!(
+            fact,
+            TransportError::Timeout | TransportError::ConnectTimeout
+        ) {
             Self::timeout()
         } else {
             Self::upstream()
         };
-        error.recovery = RecoveryDecision::transport(class);
+        error.recovery = RecoveryDecision {
+            class: fact
+                .affects_health()
+                .then_some(crate::provider::RecoveryClass::Transient),
+            affects_health: fact.affects_health(),
+            retryable: fact.retryable(),
+        };
         error
+    }
+    pub fn interpret_source(
+        provider: &str,
+        status: u16,
+        source: SourceFailureEvidence,
+        retry_after: Option<u64>,
+        observed_http: bool,
+    ) -> (Self, SourceFailureEvidence) {
+        let (recovery, source) =
+            crate::provider::errors::classify_source(provider, status, source, observed_http);
+        let mut error = Self::classified(status, source.kind, retry_after);
+        error.recovery = recovery;
+        (error, source)
     }
     pub fn status(status: u16) -> Self {
         Self::failure(status, b"", None)
@@ -153,11 +188,6 @@ impl ApiError {
             crate::provider::classify_failure(status, body),
             retry_after,
         )
-    }
-    /// An in-band stream failure the codec already classified from its envelope.
-    pub fn source_failure(source: SourceFailureEvidence) -> Option<Self> {
-        let status = source.status_hint?.get();
-        Some(Self::classified(status, source.kind, None))
     }
     pub(super) fn classified(
         status: u16,
@@ -459,7 +489,7 @@ fn recovery_is_independent_of_native_error_presentation() {
         (
             503,
             SourceFailureKind::Overloaded,
-            RecoveryClass::Server,
+            RecoveryClass::Transient,
             529,
             "overloaded_error",
         ),
@@ -473,10 +503,7 @@ fn recovery_is_independent_of_native_error_presentation() {
         assert_eq!(error.recovery, before);
         assert_eq!(error.retry_after, Some(7));
     }
-    for (status, class) in [
-        (401, RecoveryClass::Authentication),
-        (403, RecoveryClass::PermissionDenied),
-    ] {
+    for (status, class) in [(401, RecoveryClass::Auth), (403, RecoveryClass::Permission)] {
         let error = ApiError::failure(status, br#"{"error":{"code":"insufficient_quota"}}"#, None);
         assert_eq!(error.recovery.class, Some(class));
         assert!(!error.streams_as_failed());

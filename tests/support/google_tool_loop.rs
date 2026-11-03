@@ -162,7 +162,6 @@ async fn start_with(profile: GenerationApi, api: Api, messages: bool) -> Fixture
     let mut route = binding.route();
     // The other Google protocol cannot mask a failed conversion.
     route.endpoints = vec![endpoint.id.clone()];
-    route.policy.max_attempts = 1;
     let app = match api {
         Api::GenerateContent => Router::new().route(endpoint.target.path.as_str(), post(answer)),
         Api::Interactions => {

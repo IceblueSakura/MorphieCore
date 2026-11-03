@@ -31,20 +31,20 @@ pub(in crate::gateway) struct Produced {
 const HOLD_BYTES: usize = 64 << 10;
 const HOLD_TIME: std::time::Duration = std::time::Duration::from_secs(20);
 fn lifecycle_only(event: &crate::semantic::task::generation::StreamEvent) -> bool {
-    use crate::semantic::task::generation::{ItemKind, StreamEvent, UsageStage};
-    match event {
-        StreamEvent::Started
-        | StreamEvent::Queued
-        | StreamEvent::PartStarted { .. }
-        | StreamEvent::MessageEnvelope(_) => true,
-        // Opening accounting is not generated content and must not end the existing hold.
-        StreamEvent::UsageReport(report) if report.stage == UsageStage::Checkpoint => true,
-        // A started tool call already names its tool: that is content.
-        StreamEvent::ItemStarted { kind, .. } => {
-            matches!(kind, ItemKind::Message { .. } | ItemKind::Reasoning)
-        }
-        _ => false,
-    }
+    !crate::execution::delivery::content_event(event)
+}
+fn source_failure(
+    provider: &str,
+    status: u16,
+    source: SourceFailureEvidence,
+    retry_after: Option<u64>,
+    observed_http: bool,
+    trace: &Trace,
+) -> ApiError {
+    let (failure, source) =
+        ApiError::interpret_source(provider, status, source, retry_after, observed_http);
+    trace.report.source_failure(source);
+    failure
 }
 /// Record a failed delivery projection at `boundary`; the client sees an upstream error.
 fn projection_failed(
@@ -111,6 +111,7 @@ async fn fail_classified(
 #[allow(clippy::too_many_arguments)]
 async fn produce(
     mut upstream: reqwest::Response,
+    provider: &str,
     attempt: &mut Attempt,
     delivery: &mut ResponseDelivery,
     lane: &Lane<'_>,
@@ -159,9 +160,9 @@ async fn produce(
                 continue;
             }
             chunk = upstream.chunk() => chunk.map_err(|e| {
-                let class=if e.is_timeout(){crate::transport::http::TransportError::Timeout}else{crate::transport::http::TransportError::Read};
+                let class=crate::transport::http::TransportError::from_reqwest(&e);
                 trace.report.failure(None,&crate::execution::AttemptError::Transport(class));
-                let failure = ApiError::transport(class.recovery_class());
+                let failure = ApiError::transport_fact(class);
                 lane.state.observe_interruption(failure);
                 failure
             })?,
@@ -197,17 +198,40 @@ async fn produce(
                 Ok(pushed) => pushed,
                 Err(error) => {
                     trace.decode_error(&error);
-                    let Some(failure) = error.source_failure().and_then(ApiError::source_failure)
-                    else {
-                        return Err(ApiError::upstream());
+                    let Some(failure) = error.source_failure().map(|source| {
+                        source_failure(
+                            provider,
+                            source.status_hint.map_or(500, |s| s.get()),
+                            source,
+                            None,
+                            false,
+                            trace,
+                        )
+                    }) else {
+                        return Err(ApiError::malformed());
                     };
                     return fail_classified(lane, delivery, stream, failure, trace).await;
                 }
             };
+            let mut retry_failure = None;
             if let Some(source) = attempt.reported_failure() {
-                trace.report.source_failure(source);
-                if let Some(failure) = ApiError::source_failure(source) {
-                    lane.state.observe_failure(failure);
+                let failure = source_failure(
+                    provider,
+                    source.status_hint.map_or(500, |s| s.get()),
+                    source,
+                    None,
+                    false,
+                    trace,
+                );
+                lane.state.observe_failure(failure);
+                if hold
+                    && failure.recovery.retryable
+                    && !lane
+                        .state
+                        .published
+                        .load(std::sync::atomic::Ordering::Acquire)
+                {
+                    retry_failure = Some(failure);
                 }
             }
             let evidence = attempt.take_evidence();
@@ -224,6 +248,12 @@ async fn produce(
                     .metadata()
                     .and_then(|metadata| metadata.context.settings()),
             );
+            if let Some(failure) = retry_failure {
+                return Err(failure);
+            }
+            if attempt.recovery_ready_terminal() {
+                lane.state.ready();
+            }
             if used == 0 {
                 return Err(ApiError::upstream());
             }
@@ -237,6 +267,9 @@ async fn produce(
 
                 let batches =
                     batches.map_err(projection_failed(trace, ConversionBoundary::EventProject))?;
+                if delivery.content_ready() {
+                    lane.state.ready();
+                }
                 // Handoff each drained run before encoding a following barrier:
                 // a later target error must not erase validated pending content.
                 for batch in batches {
@@ -268,6 +301,9 @@ async fn produce(
                 delivery
                     .observe_events(attempt, &events)
                     .map_err(projection_failed(trace, ConversionBoundary::EventProject))?;
+                if delivery.content_ready() {
+                    lane.state.ready();
+                }
             }
         }
     }
@@ -278,26 +314,21 @@ async fn produce(
         capture.finish();
     }
     trace.stage(Stage::Terminal);
-    attempt.finish().map_err(|error| {
+    if let Err(error) = attempt.finish() {
         trace.decode_error(&error);
-        if matches!(
-            error.codec(),
-            Some(crate::protocol::CodecError::Event(
-                crate::semantic::task::generation::EventError::EofBeforeTerminal
-            ))
-        ) || matches!(
-            error,
-            crate::execution::AttemptError::Sse(crate::protocol::stream::SseError::Framing(
-                crate::transport::sse::SseDecodeError::UnexpectedEof
-            ))
-        ) {
-            // Missing terminals affect health without granting resend permission.
-            lane.state.observe_interruption(ApiError::transport(
-                crate::provider::RecoveryClass::Upstream,
-            ));
+        if let Some(source) = error.source_failure() {
+            let failure = source_failure(
+                provider,
+                source.status_hint.map_or(500, |s| s.get()),
+                source,
+                None,
+                false,
+                trace,
+            );
+            return fail_classified(lane, delivery, stream, failure, trace).await;
         }
-        ApiError::upstream()
-    })?;
+        return Err(ApiError::malformed());
+    }
     let evidence = attempt.take_evidence();
     // Stream reports were observed with their source-unit provenance. Re-reading
     // the materialized response after draining those deltas would lose that basis.
@@ -322,10 +353,25 @@ async fn produce(
     // presentation must not erase them or become the authoritative source cause.
     let mut failure = None;
     if let Some(source) = attempt.reported_failure() {
-        trace.report.source_failure(source);
-        failure = ApiError::source_failure(source);
+        failure = Some(source_failure(
+            provider,
+            source.status_hint.map_or(500, |s| s.get()),
+            source,
+            None,
+            false,
+            trace,
+        ));
         if let Some(failure) = failure {
             lane.state.observe_failure(failure);
+            if hold
+                && failure.recovery.retryable
+                && !lane
+                    .state
+                    .published
+                    .load(std::sync::atomic::Ordering::Acquire)
+            {
+                return Err(failure);
+            }
             if !delivery.carries_failed_responses() {
                 return fail_classified(lane, delivery, stream, failure, trace).await;
             }
@@ -346,6 +392,9 @@ async fn produce(
             Completion::Neutral
         }
     };
+    if matches!(completion, Completion::Eligible) {
+        lane.state.ready();
+    }
     trace.stage(Stage::Projection);
     if stream {
         flush_pending(lane, delivery, trace).await?;
@@ -394,7 +443,11 @@ async fn produce(
     Ok(completion)
 }
 /// Error bodies are read for classification only, within the attempt deadline.
-async fn error_body(mut upstream: reqwest::Response, trace: &Trace) -> (Vec<u8>, Observation) {
+async fn error_body(
+    mut upstream: reqwest::Response,
+    lane: &Lane<'_>,
+    trace: &Trace,
+) -> (Vec<u8>, Observation) {
     const LIMIT: usize = 16 << 10;
     let content_type = upstream
         .headers()
@@ -414,7 +467,10 @@ async fn error_body(mut upstream: reqwest::Response, trace: &Trace) -> (Vec<u8>,
         let chunk = match upstream.chunk().await {
             Ok(Some(chunk)) => chunk,
             Ok(None) => break,
-            Err(_) => {
+            Err(error) => {
+                lane.state.observe_interruption(ApiError::transport_fact(
+                    crate::transport::http::TransportError::from_reqwest(&error),
+                ));
                 if json && let Some(capture) = &mut capture {
                     capture.feed(&body);
                 }
@@ -479,13 +535,14 @@ pub(in crate::gateway) async fn produce_candidate(
             return Err(ApiError::status(status));
         }
         let retry_after = crate::gateway::error::retry_after(upstream.headers());
-        lane.state
-            .observe_failure(ApiError::failure(status, b"", retry_after));
-        // These statuses are authoritative. Reading an optional error body must
-        // not turn an auth refusal into quota or timeout retry permission.
-        if matches!(status, 401 | 403) {
-            return Err(ApiError::failure(status, b"", retry_after));
-        }
+        lane.state.observe_failure(source_failure(
+            candidate.provider.id.as_str(),
+            status,
+            SourceFailureEvidence::http(status, b"", Observation::Pending),
+            retry_after,
+            true,
+            trace,
+        ));
         lane.state
             .waiting_upstream
             .store(true, std::sync::atomic::Ordering::Release);
@@ -494,13 +551,36 @@ pub(in crate::gateway) async fn produce_candidate(
             b"",
             Observation::Pending,
         ));
-        let (body, observation) = error_body(upstream, trace).await;
+        let budget = limits
+            .provider_recovery
+            .get(candidate.provider.id.as_str())
+            .cloned()
+            .unwrap_or_default()
+            .recovery_timeout_ms;
+        let cleanup_deadline = {
+            let head = lane.state.failure_head.lock().expect("failure head");
+            head.as_ref()
+                .filter(|failure| failure.error.recovery.retryable && budget > 0)
+                .map(|failure| failure.at + std::time::Duration::from_millis(budget))
+        };
+        let (body, observation) = match cleanup_deadline {
+            Some(until) => tokio::time::timeout_at(until, error_body(upstream, lane, trace))
+                .await
+                .unwrap_or((vec![], Observation::Interrupted)),
+            None => error_body(upstream, lane, trace).await,
+        };
         let source = SourceFailureEvidence::http(status, &body, observation);
-        trace.report.source_failure(source);
         lane.state
             .waiting_upstream
             .store(false, std::sync::atomic::Ordering::Release);
-        let failure = ApiError::classified(status, source.kind, retry_after);
+        let failure = source_failure(
+            candidate.provider.id.as_str(),
+            status,
+            source,
+            retry_after,
+            true,
+            trace,
+        );
         lane.state.observe_failure(failure);
         return Err(failure);
     }
@@ -513,7 +593,7 @@ pub(in crate::gateway) async fn produce_candidate(
                 crate::execution::attempt::ProtocolReason::UnexpectedResponseMediaType,
             ),
         );
-        ApiError::upstream()
+        ApiError::malformed()
     };
     let mut content_types = upstream.headers().get_all("content-type").iter();
     let content_type = match (content_types.next(), content_types.next()) {
@@ -557,7 +637,7 @@ pub(in crate::gateway) async fn produce_candidate(
     let mut attempt = Attempt::new(adapter, limit, sse);
     attempt.begin(status, content_type).map_err(|error| {
         trace.decode_error(&error);
-        ApiError::upstream()
+        ApiError::malformed()
     })?;
     let options = request
         .delivery
@@ -592,6 +672,7 @@ pub(in crate::gateway) async fn produce_candidate(
     }
     let result = produce(
         upstream,
+        candidate.provider.id.as_str(),
         &mut attempt,
         &mut delivery,
         lane,
@@ -634,6 +715,191 @@ mod tests {
     use super::*;
     use crate::protocol::openai::{Dialect, GenerationApi, GenerationCodec, TargetContract};
     use futures_util::StreamExt;
+
+    #[tokio::test]
+    async fn retryable_failed_terminal_records_its_usage_before_discarding_output() {
+        let response = serde_json::json!({"id":"failed-attempt","object":"response","created_at":1,
+            "model":"fixture-model","status":"failed","output":[],
+            "error":{"code":"server_error","message":"synthetic failure"},
+            "usage":{"input_tokens":7,"output_tokens":3,"total_tokens":10}});
+        let events = crate::gateway::tests::responses_wire::response_events(response);
+        let wire = events
+            .iter()
+            .map(|event| format!("data: {event}\n\n"))
+            .collect::<String>();
+        let chunks =
+            futures_util::stream::once(async move { Ok::<_, std::io::Error>(Bytes::from(wire)) })
+                .chain(futures_util::stream::pending());
+        let upstream = reqwest::Response::from(
+            axum::http::Response::builder()
+                .header("content-type", "text/event-stream")
+                .body(reqwest::Body::wrap_stream(chunks))
+                .unwrap(),
+        );
+        let codec = GenerationCodec::new(GenerationApi::Responses, Dialect::Siwc, None);
+        let mut attempt = Attempt::new(codec, 1 << 20, SseLimits::default());
+        attempt.begin(200, "text/event-stream").unwrap();
+        let client = crate::adapter::ClientAdapter::openai(
+            GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None),
+            TargetContract::full(),
+        );
+        let mut delivery = ResponseDelivery::new(
+            client,
+            "fixture-model",
+            SseLimits::default(),
+            Default::default(),
+            Obfuscation::Disabled,
+        );
+        let state = crate::gateway::body::Status::default();
+        let (tx, _rx) = tokio::sync::mpsc::channel(1);
+        let lane = Lane {
+            tx: &tx,
+            state: &state,
+        };
+        let mut trace = Trace::for_request(
+            None,
+            &axum::extract::Request::new(axum::body::Body::empty()),
+        );
+        trace.report.begin(1);
+        let error = produce(
+            upstream,
+            "chatgpt",
+            &mut attempt,
+            &mut delivery,
+            &lane,
+            false,
+            true,
+            1 << 20,
+            None,
+            &mut trace,
+        )
+        .await
+        .err()
+        .unwrap();
+        assert!(error.recovery.retryable);
+        let usage = serde_json::to_value(trace.report.attempt().source_usage).unwrap();
+        assert_eq!(usage["reports"][0]["counts"]["input_tokens"], 7);
+        assert_eq!(usage["reports"][0]["counts"]["output_tokens"], 3);
+        assert!(!state.published.load(std::sync::atomic::Ordering::Acquire));
+    }
+
+    #[test]
+    fn chat_error_evidence_agrees_across_json_and_sse_and_rejects_malformed_known_values() {
+        for malformed in [
+            None,
+            Some("code"),
+            Some("type"),
+            Some("message"),
+            Some("error_type"),
+            Some("metadata"),
+        ] {
+            let mut value = serde_json::json!({"error":{"code":500,"message":"synthetic"},"error_type":"authentication"});
+            if let Some(field) = malformed {
+                if field == "metadata" {
+                    value["error"]["metadata"] = serde_json::json!({"error_type":42});
+                } else {
+                    value["error"][field] = serde_json::json!(false);
+                }
+            }
+            for stream in [false, true] {
+                let codec = GenerationCodec::new(GenerationApi::Chat, Dialect::OpenRouter, None);
+                let error = if stream {
+                    let mut attempt = Attempt::new(codec, 1 << 20, SseLimits::default());
+                    attempt.begin(200, "text/event-stream").unwrap();
+                    attempt
+                        .push(format!("data: {value}\n\n").as_bytes())
+                        .unwrap_err()
+                } else {
+                    crate::execution::AttemptError::Codec(
+                        codec
+                            .decode_response(&serde_json::to_vec(&value).unwrap())
+                            .unwrap_err(),
+                    )
+                };
+                if malformed.is_some() {
+                    assert!(error.source_failure().is_none(), "{stream}: {malformed:?}");
+                } else {
+                    let source = error.source_failure().unwrap();
+                    let (error, _) =
+                        ApiError::interpret_source("openrouter", 500, source, None, false);
+                    assert_eq!(
+                        error.recovery.class,
+                        Some(crate::provider::RecoveryClass::Auth)
+                    );
+                    assert!(!error.recovery.retryable);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn native_failed_envelopes_keep_provider_evidence_and_standard_error_carriers() {
+        for (dialect, code, canonical, expected, class) in [
+            (
+                Dialect::Siwc,
+                "subscription_sharing_usage_limit_exceeded",
+                None,
+                "rate_limit_exceeded",
+                crate::provider::RecoveryClass::Quota,
+            ),
+            (
+                Dialect::OpenRouter,
+                "server_error",
+                Some("authentication"),
+                "server_error",
+                crate::provider::RecoveryClass::Auth,
+            ),
+        ] {
+            let mut wire = crate::gateway::tests::responses_wire::subscription_response(true);
+            wire["status"] = serde_json::json!("failed");
+            wire["output"] = serde_json::json!([]);
+            wire["error"] = serde_json::json!({"code":code,"message":"synthetic failure"});
+            if let Some(canonical) = canonical {
+                wire["error_type"] = serde_json::json!(canonical);
+            }
+            let codec = GenerationCodec::new(GenerationApi::Responses, dialect, None);
+            let source = codec
+                .decode_response(&serde_json::to_vec(&wire).unwrap())
+                .unwrap();
+            assert_eq!(
+                source.semantic.outcome(),
+                crate::semantic::task::generation::Outcome::Failed
+            );
+            let evidence = source.metadata.source_failure.unwrap();
+            let (failure, _) = ApiError::interpret_source(
+                if canonical.is_some() {
+                    "openrouter"
+                } else {
+                    "chatgpt"
+                },
+                500,
+                evidence,
+                None,
+                false,
+            );
+            assert_eq!(failure.recovery.class, Some(class));
+            assert!(!failure.recovery.retryable);
+            let standard = GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None);
+            let output = standard
+                .encode_response(&source, &TargetContract::full())
+                .unwrap();
+            assert_eq!(output["status"], "failed");
+            assert_eq!(output["error"]["code"], expected);
+            assert_eq!(
+                source
+                    .semantic
+                    .details()
+                    .error
+                    .as_ref()
+                    .unwrap()
+                    .code
+                    .as_ref()
+                    .unwrap()
+                    .as_str(),
+                code
+            );
+        }
+    }
 
     #[tokio::test]
     async fn validated_failed_terminal_is_observed_before_eof_or_trailing_rejection() {
@@ -701,6 +967,7 @@ mod tests {
             {
                 let producer = produce(
                     upstream,
+                    "chatgpt",
                     &mut attempt,
                     &mut delivery,
                     &lane,

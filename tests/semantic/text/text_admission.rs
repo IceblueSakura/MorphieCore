@@ -47,6 +47,7 @@ fn known_unrepresentable_event_fields_and_changed_bound_metadata_fail_early() {
         semantic::{context::ServiceClass, task::generation::*, value::Text},
     };
     let metadata = ResponseMetadata {
+        source_failure: None,
         delivery: None,
         storage: None,
         id: Some("c".into()),

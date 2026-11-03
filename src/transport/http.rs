@@ -3,7 +3,7 @@
 #[cfg(test)]
 #[path = "http_tests.rs"]
 mod tests;
-use crate::{execution::UpstreamRequest, provider::RecoveryClass};
+use crate::execution::UpstreamRequest;
 use reqwest::{
     Client, Response,
     header::{HeaderName, HeaderValue},
@@ -18,6 +18,14 @@ pub enum TransportError {
     RequestConstruction,
     #[error("upstream connection failed")]
     Connect,
+    #[error("upstream connection timed out")]
+    ConnectTimeout,
+    #[error("upstream connection interrupted")]
+    Interrupted,
+    #[error("upstream HTTP message ended prematurely")]
+    Incomplete,
+    #[error("upstream TLS failed")]
+    Tls,
     #[error("upstream request timed out")]
     Timeout,
     #[error("upstream request failed")]
@@ -31,17 +39,85 @@ impl TransportError {
             Self::Configuration => "transport.configuration",
             Self::RequestConstruction => "transport.request_construction",
             Self::Connect => "transport.connect_failed",
+            Self::ConnectTimeout => "transport.connect_timeout",
+            Self::Interrupted => "transport.interrupted",
+            Self::Incomplete => "transport.incomplete",
+            Self::Tls => "transport.tls",
             Self::Timeout => "transport.timeout",
             Self::Send => "transport.send_failed",
             Self::Read => "transport.read_failed",
         }
     }
-    /// Preserve recovery policy while retaining a more precise cause.
-    pub const fn recovery_class(self) -> RecoveryClass {
-        match self {
-            Self::Timeout => RecoveryClass::Timeout,
-            _ => RecoveryClass::Upstream,
+    pub const fn retryable(self) -> bool {
+        matches!(
+            self,
+            Self::ConnectTimeout | Self::Interrupted | Self::Incomplete
+        )
+    }
+    pub const fn affects_health(self) -> bool {
+        matches!(
+            self,
+            Self::Timeout | Self::ConnectTimeout | Self::Interrupted | Self::Incomplete
+        )
+    }
+    /// Inspect typed causes only. Neither messages nor URLs enter policy.
+    pub fn from_reqwest(error: &reqwest::Error) -> Self {
+        fn inspect(
+            error: &(dyn std::error::Error + 'static),
+            depth: usize,
+        ) -> Option<TransportError> {
+            if depth == 32 {
+                return None;
+            }
+            if error.is::<rustls::Error>() {
+                return Some(TransportError::Tls);
+            }
+            if let Some(io) = error.downcast_ref::<std::io::Error>() {
+                if let Some(inner) = io.get_ref()
+                    && let Some(fact) = inspect(inner, depth + 1)
+                {
+                    return Some(fact);
+                }
+                use std::io::ErrorKind;
+                return Some(match io.kind() {
+                    ErrorKind::ConnectionRefused
+                    | ErrorKind::ConnectionReset
+                    | ErrorKind::ConnectionAborted
+                    | ErrorKind::BrokenPipe
+                    | ErrorKind::UnexpectedEof => TransportError::Interrupted,
+                    _ => TransportError::Read,
+                });
+            }
+            if let Some(hyper) = error.downcast_ref::<hyper::Error>()
+                && hyper.is_incomplete_message()
+            {
+                return Some(TransportError::Incomplete);
+            }
+            error.source().and_then(|source| inspect(source, depth + 1))
         }
+        if error.is_builder() {
+            return Self::RequestConstruction;
+        }
+        let cause = inspect(error, 0);
+        if cause == Some(Self::Tls) {
+            return Self::Tls;
+        }
+        if error.is_timeout() {
+            return if error.is_connect() {
+                Self::ConnectTimeout
+            } else {
+                Self::Timeout
+            };
+        }
+        cause.unwrap_or_else(|| {
+            if error.is_connect() {
+                Self::Connect
+            } else if error.is_body() || error.is_decode() {
+                Self::Read
+            } else {
+                Self::Send
+            }
+        })
     }
 }
 #[derive(Clone)]
@@ -121,16 +197,6 @@ impl HttpTransport {
             .body(prepared.body)
             .send()
             .await
-            .map_err(|e| {
-                if e.is_timeout() {
-                    TransportError::Timeout
-                } else if e.is_connect() {
-                    TransportError::Connect
-                } else if e.is_builder() {
-                    TransportError::RequestConstruction
-                } else {
-                    TransportError::Send
-                }
-            })
+            .map_err(|e| TransportError::from_reqwest(&e))
     }
 }

@@ -59,6 +59,7 @@ fn response() -> DecodedResponse {
         .unwrap(),
         fidelity: Default::default(),
         metadata: morphiecore::protocol::ResponseMetadata {
+            source_failure: None,
             delivery: None,
             id: Some("r".into()),
             model: "synthetic".into(),

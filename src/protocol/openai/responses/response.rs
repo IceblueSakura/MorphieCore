@@ -25,6 +25,15 @@ pub(crate) fn decode_with(
     v: &Value,
     adaptation: &crate::protocol::openai::dialect::adaptation::Adaptation,
 ) -> Result<DecodedResponse, CodecError> {
+    let source_failure = if v.get("status").and_then(Value::as_str) == Some("failed") {
+        Some(if v.get("error").is_some_and(|error| !error.is_null()) {
+            crate::protocol::openai::terminal::reported_value(v)?
+        } else {
+            crate::protocol::openai::terminal::reported_failure(None, None, None, None)
+        })
+    } else {
+        None
+    };
     let (v, extras) = crate::protocol::openai::dialect::adapter_shapes::decode(
         v,
         GenerationApi::Responses,
@@ -73,6 +82,13 @@ pub(crate) fn decode_with(
         .with_usage(usage)?
         .with_details(decode_details(o)?)?;
     check_response_details(semantic.details())?;
+    if let Some(error) = &semantic.details().error
+        && let Some(code) = &error.code
+        && !response_error_code(code.as_str())
+        && !(adaptation.rules.responses_siwc && coarsened_error_code(code.as_str()).is_some())
+    {
+        return Err(CodecError::Unsupported(CarrierReason::Terminal));
+    }
     crate::protocol::openai::responses::envelope::record_vendor_shapes(
         GenerationApi::Responses,
         adaptation,
@@ -80,7 +96,7 @@ pub(crate) fn decode_with(
         &mut b.fidelity,
         Some(&semantic),
     )?;
-    let metadata = context::metadata(
+    let mut metadata = context::metadata(
         o,
         GenerationApi::Responses,
         adaptation,
@@ -94,6 +110,7 @@ pub(crate) fn decode_with(
         &semantic,
         metadata.required_id()?,
     )?;
+    metadata.source_failure = source_failure;
     Ok(DecodedResponse {
         evidence: b.evidence,
         semantic,

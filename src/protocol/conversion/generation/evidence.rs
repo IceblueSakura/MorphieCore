@@ -21,6 +21,8 @@ impl From<&'static str> for RuleId {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize)]
 pub enum Field {
+    #[serde(rename = "response.terminal.error")]
+    ResponseError,
     #[serde(rename = "generation.service_class")]
     ServiceClass,
     #[serde(rename = "generation.identity.bucketing")]
@@ -159,6 +161,7 @@ pub enum Field {
 impl Field {
     pub const fn as_str(self) -> &'static str {
         match self {
+            Self::ResponseError => "response.terminal.error",
             Self::ServiceClass => "generation.service_class",
             Self::IdentityBucket => "generation.identity.bucketing",
             Self::CacheRetention => "generation.cache.retention",

@@ -311,7 +311,12 @@ async fn abandoned_stored_stream_is_not_retrievable_and_auth_precedes_lookup() {
     let upstream = Router::new().route(
         "/responses",
         post(|| async {
-            let opening = frame("response.created", 0, "response", created());
+            let opening = [
+                frame("response.created", 0, "response", created()),
+                "data: {\"type\":\"response.output_item.added\",\"sequence_number\":1,\"output_index\":0,\"item\":{\"type\":\"message\",\"id\":\"msg\",\"role\":\"assistant\",\"status\":\"in_progress\",\"content\":[]}}\n\n".into(),
+                "data: {\"type\":\"response.content_part.added\",\"sequence_number\":2,\"output_index\":0,\"item_id\":\"msg\",\"content_index\":0,\"part\":{\"type\":\"output_text\",\"text\":\"\",\"annotations\":[]}}\n\n".into(),
+                "data: {\"type\":\"response.output_text.delta\",\"sequence_number\":3,\"output_index\":0,\"item_id\":\"msg\",\"content_index\":0,\"delta\":\"visible\",\"logprobs\":[]}\n\n".into()
+            ].concat();
             let stream = futures_util::stream::once(async {
                 Ok::<_, std::io::Error>(bytes::Bytes::from(opening))
             })

@@ -140,6 +140,12 @@ pub(crate) enum GenerationDecoder {
     Interactions(crate::protocol::google::interactions::GenerationSseDecoder),
 }
 impl GenerationDecoder {
+    pub(crate) fn event_failure(&self) -> Option<crate::protocol::failure::SourceFailureEvidence> {
+        match self {
+            Self::Responses(d) => d.event_failure(),
+            _ => None,
+        }
+    }
     pub(crate) fn take_evidence(
         &mut self,
     ) -> crate::protocol::conversion::generation::EvidenceDelta {
@@ -196,6 +202,9 @@ impl GenerationDecoder {
         match self {
             Self::Responses(d) => {
                 d.finish()?;
+                if let Some(source) = d.event_failure() {
+                    return Err(crate::protocol::CodecError::StreamFailure(source).into());
+                }
                 d.materialize()
             }
             Self::Chat(d) => {

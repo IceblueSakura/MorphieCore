@@ -186,10 +186,6 @@ impl Models {
             let mut route = template_route.clone();
             route.endpoints.clear();
             route.policy.candidates = topology::CandidatePolicy::SkipUnrepresentable;
-            // The account cutover never dispatches another target after failure.
-            // The bounded same-target recovery executor is integrated separately.
-            route.policy.fallback = topology::FallbackPolicy::Disabled;
-            route.policy.max_attempts = 1;
             route.policy.total_timeout_ms = config.total_timeout_ms;
             let table = config
                 .thinking_tokens

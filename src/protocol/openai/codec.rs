@@ -37,6 +37,26 @@ impl GenerationCodec {
         let value = crate::protocol::json::decode(bytes)?;
         let mut decoded = match self.protocol {
             GenerationApi::Chat => {
+                let error = value
+                    .get("error")
+                    .filter(|v| !v.is_null())
+                    .cloned()
+                    .or_else(|| {
+                        value
+                            .get("choices")
+                            .and_then(Value::as_array)
+                            .filter(|choices| choices.len() == 1)
+                            .and_then(|choices| choices[0].get("error"))
+                            .filter(|v| !v.is_null())
+                            .cloned()
+                    });
+                if let Some(error) = error {
+                    let mut envelope = value.clone();
+                    envelope["error"] = error;
+                    return Err(CodecError::StreamFailure(openai::terminal::reported_value(
+                        &envelope,
+                    )?));
+                }
                 openai::chat::envelope::validate_response(&value)?;
                 openai::chat::response::decode_with(&value, &self.adaptation)?
             }

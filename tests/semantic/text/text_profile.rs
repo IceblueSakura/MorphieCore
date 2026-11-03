@@ -622,6 +622,7 @@ fn reported_text_container_presence_is_not_request_intent() {
 
         // Independently constructed IR supplies both JSON and SSE expectations.
         let metadata = ResponseMetadata {
+            source_failure: None,
             delivery: None,
             id: Some("r".into()),
             model: "m".into(),

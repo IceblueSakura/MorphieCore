@@ -20,6 +20,8 @@ pub struct DecodedResponse {
 /// Envelope identity is not a task instruction or a routing input.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ResponseMetadata {
+    /// Finite failure-envelope facts, independent of task semantics and presentation.
+    pub source_failure: Option<crate::protocol::failure::SourceFailureEvidence>,
     /// Explicit downstream presentation only; source decoders never populate it.
     pub delivery: Option<std::sync::Arc<GenerationDelivery>>,
     /// API storage facts, separate from task settings and upstream execution hints.

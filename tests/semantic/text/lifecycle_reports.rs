@@ -51,6 +51,7 @@ fn report(terminal: bool) -> ResponseReport {
 }
 fn metadata(reports: ResponseReports) -> ResponseMetadata {
     ResponseMetadata {
+        source_failure: None,
         delivery: None,
         id: Some("report-response".into()),
         model: "m".into(),

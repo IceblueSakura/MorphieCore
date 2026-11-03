@@ -88,6 +88,9 @@ impl EventDecoder {
                     &serde_json::from_value(json!({"error":e}))
                         .map_err(|_| CodecError::invalid())?,
                 )?;
+                self.event_failure = Some(crate::protocol::openai::terminal::reported_value(
+                    &Value::Object(o.clone()),
+                )?);
                 self.emit(
                     StreamEvent::Terminal {
                         terminal: StreamTerminal::Error,
@@ -1154,6 +1157,9 @@ impl EventDecoder {
         self.observe_metadata(p)?;
         let decoded =
             crate::protocol::openai::responses::response::decode_with(r, &self.adaptation)?;
+        if let Some(metadata) = &mut self.metadata {
+            metadata.source_failure = decoded.metadata.source_failure;
+        }
         if self.adaptation.rules.responses_terminal_reasoning
             && terminal == StreamTerminal::Completed
         {

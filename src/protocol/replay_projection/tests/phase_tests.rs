@@ -43,6 +43,7 @@ fn source() -> DecodedResponse {
             .unwrap(),
         fidelity: Default::default(),
         metadata: crate::protocol::ResponseMetadata {
+            source_failure: None,
             delivery: None,
             id: Some("phase-response".into()),
             model: "public".into(),

@@ -386,7 +386,11 @@ fn recovery_backoff_is_bounded_and_success_resets_it() {
         let lease = state.acquire(&a, now).unwrap();
         assert_eq!(
             lease
-                .failed(ApiError::transport(RecoveryClass::Upstream), now, None)
+                .failed(
+                    ApiError::transport_fact(crate::transport::http::TransportError::Interrupted),
+                    now,
+                    None
+                )
                 .unwrap()
                 .retry_after_seconds,
             Some(seconds)
@@ -400,7 +404,11 @@ fn recovery_backoff_is_bounded_and_success_resets_it() {
         state
             .acquire(&a, now)
             .unwrap()
-            .failed(ApiError::transport(RecoveryClass::Server), now, None)
+            .failed(
+                ApiError::transport_fact(crate::transport::http::TransportError::Interrupted),
+                now,
+                None
+            )
             .unwrap()
             .retry_after_seconds,
         Some(1)
@@ -619,7 +627,10 @@ fn provider_policy_caps_hints_and_lifecycle_vetoes_do_not_create_health() {
     assert!(
         lease
             .failed(
-                ApiError::transport(RecoveryClass::CredentialUnavailable),
+                ApiError::new(
+                    axum::http::StatusCode::SERVICE_UNAVAILABLE,
+                    crate::gateway::error::ErrorKind::CredentialUnavailable
+                ),
                 now,
                 None
             )
@@ -644,7 +655,11 @@ fn successful_failover_sticks_and_older_completion_cannot_restore_failure() {
     );
     let failing = state.acquire(&a, now).unwrap();
     failing
-        .failed(ApiError::transport(RecoveryClass::Upstream), now, None)
+        .failed(
+            ApiError::transport_fact(crate::transport::http::TransportError::Interrupted),
+            now,
+            None,
+        )
         .unwrap();
     drop(failing);
     let good_binding = state

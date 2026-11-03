@@ -88,6 +88,25 @@ enum ProjectionPhase {
 }
 
 /// Coordinates incremental projection, event queuing, and explicit I/O-owned commit.
+pub(crate) fn content_event(event: &StreamEvent) -> bool {
+    use crate::semantic::task::generation::ItemKind;
+    match event {
+        StreamEvent::Delta { fragment, .. } => !fragment.is_empty(),
+        StreamEvent::ItemStarted {
+            kind: ItemKind::ToolCall { .. },
+            ..
+        }
+        | StreamEvent::ToolResultOutput { .. }
+        | StreamEvent::AudioDelta { .. }
+        | StreamEvent::PartReplay { .. }
+        | StreamEvent::ItemFinished {
+            replay: Some(_), ..
+        } => true,
+        _ => false,
+    }
+}
+
+/// Coordinates incremental projection, event queuing, and explicit I/O-owned commit.
 ///
 /// # Delivery Invariants
 /// - **Pre-Publication Holding**: Initial lifecycle frames are held in memory until the first
@@ -98,6 +117,7 @@ enum ProjectionPhase {
 /// - **Honest Completion**: Successful termination requires validated upstream EOF before
 ///   releasing downstream connections.
 pub struct ResponseDelivery {
+    content_ready: bool,
     report: Report,
     deferred_evidence: EvidenceDelta,
     client: ClientAdapter,
@@ -136,6 +156,7 @@ impl ResponseDelivery {
         let report = Report::default();
         report.begin(1);
         Self {
+            content_ready: false,
             report,
             deferred_evidence: EvidenceDelta::default(),
             client,
@@ -167,6 +188,9 @@ impl ResponseDelivery {
     }
     pub fn is_messages(&self) -> bool {
         self.client.protocol() == ClientProtocol::Messages
+    }
+    pub(crate) fn content_ready(&self) -> bool {
+        self.content_ready
     }
     /// Only Responses can deliver an upstream-reported failed response as such.
     pub fn carries_failed_responses(&self) -> bool {
@@ -883,7 +907,8 @@ impl ResponseDelivery {
         events: &[StreamEvent],
         streaming: bool,
     ) -> Result<Vec<StreamEvent>, AttemptError> {
-        self.projection
+        let projected = self
+            .projection
             .get_or_insert_with(|| {
                 crate::adapter::ClientProjection::new(
                     self.client.clone(),
@@ -898,8 +923,9 @@ impl ResponseDelivery {
                     self.messages_terminal,
                 )
             })
-            .project(events)
-            .map_err(Into::into)
+            .project(events)?;
+        self.content_ready |= projected.iter().any(content_event);
+        Ok(projected)
     }
     pub(crate) fn observe_events(
         &mut self,

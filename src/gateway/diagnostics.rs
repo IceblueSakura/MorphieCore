@@ -929,7 +929,10 @@ mod tests {
             Observation::Complete,
         ));
         trace.end_candidate(Some("gateway.quota"), true);
-        assert_eq!(trace.record.candidates[0].error_code, Some("source.quota"));
+        assert_eq!(
+            trace.record.candidates[0].error_code,
+            Some("source.rate_limit")
+        );
         trace.begin_candidate(2);
         trace
             .report

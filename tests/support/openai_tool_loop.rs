@@ -290,7 +290,6 @@ async fn start_with_recovery(
     let public = catalog.model(label).unwrap().clone();
     let mut route = catalog.route(&public.route).unwrap().clone();
     route.endpoints = vec![endpoint.id.clone()];
-    route.policy.max_attempts = if recover { 2 } else { 1 };
     if fallback {
         let mut secondary = endpoint.clone();
         secondary.id = topology::EndpointId::new(&format!("{id}-secondary")).unwrap();
@@ -298,8 +297,6 @@ async fn start_with_recovery(
             morphiecore::provider::CredentialBindingId::new(&format!("{id}-secondary-key"))
                 .unwrap();
         route.endpoints.push(secondary.id.clone());
-        route.policy.max_attempts = 2;
-        route.policy.fallback = topology::FallbackPolicy::BeforeCommit;
         entries.push(Entry {
             chat_profile,
             model: label.into(),
@@ -354,7 +351,6 @@ async fn start_with_recovery(
             endpoint: secondary.id.clone(),
         });
         endpoints.push(secondary);
-        route.policy.max_attempts = 1;
         (
             morphiecore::gateway::Credentials::from(&accounts),
             Some(store),

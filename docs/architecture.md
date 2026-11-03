@@ -437,6 +437,7 @@ Existing rule families remain valid ladder applications:
 | Instruction roles | Canonical Developer mapping; preserve root vs. ordered lifetimes |
 | Output ceilings | Preserve explicit ceilings up to the model maximum; insert target default only when client ceiling is absent |
 | Terminal stops | Coarsen natural/stop-sequence causes to `stop` or `end_turn` under named rules |
+| SIWC failed-response codes | `responses.coarsen-provider-error-code.v1` maps confirmed quota to `rate_limit_exceeded`, unsupported capability to `invalid_prompt`, and service/auth/permission codes to `server_error`; failed outcome and original source evidence remain intact |
 
 - `chat.omit-text-item-status.v1`: Plain-text incomplete message items omit individual item status when overall finish reason is `length`.
 (See [`Rule`](../src/lowering/disposition.rs) for request rules and the [delivery projection owner](#delivery-projection-ownership) for client dispositions.)
@@ -770,7 +771,7 @@ Request-wide automatic caching is enabled on native Messages targets with verifi
 
 ### Failover
 
-Shared named-account binding, scoped health, material-aware auth probes and success-owned affinity are implemented. The remaining [account rewrite gates](roadmap.md#ordered-work-and-exit-gates) replace the attempt chain and failure classifier with the accepted [execution policy](provider-account-redesign-plan.md#execution-policy). This intermediate cutover is not a deployment candidate.
+Shared named-account binding, scoped health, material-aware auth probes, success-owned affinity and bounded same-target recovery implement the accepted [execution policy](provider-account-redesign-plan.md#execution-policy). The remaining [account rewrite gates](roadmap.md#ordered-work-and-exit-gates) cover installed-client integration and fresh credentials. This intermediate cutover is not a deployment candidate.
 
 Failover operates on precompiled candidate lists under a cache-affine routing policy.
 
@@ -790,15 +791,18 @@ Preparation still validates the trusted binding, streaming and final body bounds
 
 #### Advancement
 
-The production model loader fixes one account target before dispatch and disables request-internal advancement. Configuration exposes no fallback switch, credential-member budget or candidate attempt timeout. The old low-level chain/transition internals remain owned by the bounded-executor rewrite, not a second configuration path.
+The production model loader fixes one account target before dispatch. Configuration exposes no fallback switch, credential-member budget or route send ceiling; the old chain/transition internals are removed. One lease and one prepared request own the original send and at most one serial retry. The retry reuses the exact effective endpoint, credential material, headers and body, with a network-free lifecycle/material veto before sending.
 
-Publication remains irreversible: no later attempt may replay committed output. The selected same-target retry, conservative failure evidence and short recovery clock are specified in the [execution contract](provider-account-redesign-plan.md#bounded-same-target-retry); their remaining implementation gates are explicit in Roadmap.
+Publication remains irreversible: no later attempt may replay committed output. Provider-owned finite classification separates health from the narrow resend allowlist. Typed transport causes distinguish positive interruption/connection timeout from TLS, local faults, unknown causes and ambiguous post-dispatch timeout; no private URL or third-party message enters policy. Unknown structured codes retain actual-status fallback and unknown in-band errors gain no synthetic-500 resend permission.
+
+The short recovery clock covers cleanup, hints, preparation and the retry until projected deliverable content or a validated successful no-content terminal. Headers, usage and lifecycle frames cannot remove it. Buffered JSON remains private and terminal publication still requires validated EOF; readiness removes neither the original request deadline nor the attempt deadline. The [execution contract](provider-account-redesign-plan.md#bounded-same-target-retry) owns budgets and eligibility.
 
 #### Health and recovery
 
 - **Scoping:** Auth/quota constrain an account; transient, rate-limit and permission failures constrain its exact model/operation/origin/path target. Independent constraints retain their own deadlines.
 - **Probe ownership:** Acquisition is atomic across account and target scopes. Account probes exclude sibling-model probes in either acquisition order; target probes alone do not exclude healthy sibling traffic. Cancellation releases ownership without declaring recovery.
-- **Recovery:** Only validated successful work can clear health, subject to generation fencing. Reported failures and later I/O interruptions retain independent observation times and material revisions through cleanup or cancellation. Premature terminal/framing EOF constrains target health without granting resend permission; malformed output has no health penalty. Provider-owned timing and narrowly scoped material replacement follow the [selected contract](provider-account-redesign-plan.md#cooldown-and-recovery).
+- **Recovery:** Only validated successful work can clear health, subject to generation fencing. Reported failures and independently identified transport interruptions retain observation times and material revisions through cleanup or cancellation. Clean HTTP EOF missing a protocol terminal is malformed, not positive transport-interruption evidence. A completed retry discards its first failure's pending penalty; otherwise merged account/target constraints advance each affected scope at most once. Attempt-local output resets while usage and diagnostics remain separately attributable. Provider-owned timing and narrowly scoped material replacement follow the [selected contract](provider-account-redesign-plan.md#cooldown-and-recovery).
+- **Downstream hints:** Upstream reset evidence remains available to health/recovery. Returned `Retry-After` describes only a credible short route-wide block and is suppressed when another usable target is ready; `x-should-retry` is never emitted.
 
 #### Routing unit
 
@@ -816,8 +820,8 @@ Bound replay issuers include configuration namespace, credential provenance and 
 ### Streaming and delivery
 
 Delivery lifecycle and event streaming are coordinated by [`ResponseDelivery`](file:///home/sakura/development/MorphieCore/src/execution/delivery.rs#L100) under [`SseLimits`](file:///home/sakura/development/MorphieCore/src/protocol/stream.rs#L8):
-- **Pre-publication holding:** Lifecycle-only frames are buffered until the first content delta arrives, allowing unpublished failures to fail over cleanly.
-- **Publication freeze:** Flushing content frames irreversibly freezes candidate advancement; subsequent upstream failures abort the stream with terminal error events.
+- **Pre-publication holding:** Bounded lifecycle-only frames wait for content while the one same-target retry remains possible.
+- **Publication freeze:** Flushing frames irreversibly prohibits another send; subsequent upstream failures abort the stream with terminal error events.
 - **Honest completion:** Streams require validated upstream EOF before downstream release.
 
 #### Semantic stream normalization
@@ -965,7 +969,7 @@ Authoritative log of accepted architectural decisions and their systemic consequ
 | OAuth registration removal | 2026-11-02 | Logout and recovery loading preserve removal tombstones. Re-registration creates a fresh immutable identity while retaining monotonic revision/generation counters; old bindings and stale revision-checked removal cannot revive or delete the replacement |
 | Stable failover routing | 2026-11-02 | Ordered precompiled account targets, generation-fenced scoped health and cache-affine request-boundary selection; no balancing or implicit content-derived conversations |
 | Provider accounts and service identity | 2026-11-02 | Versioned ordered named accounts replace stored pools across startup, auth/upstream CLIs and standalone tasks. API-key `openai` and SIWC `chatgpt` have separate catalog contracts. Stable names identify accounts; credential provenance owns replay/security identity. [Account model](provider-account-redesign-plan.md#account-and-configuration-model); remaining execution gates live in [Roadmap](roadmap.md#ordered-work-and-exit-gates) |
-| Cache-first bounded recovery | 2026-11-02 | Target fixed after first dispatch; scoped health, success-only versioned affinity, atomic probes and a short bound-target wait are implemented. One serial pre-publication retry from a conservative network/server set within a 30 s recovery budget and unchanged request deadline remains AR3. Merge health separately from delivery and emit only short credible `Retry-After`, without `x-should-retry`. Full contract/defaults: [execution policy](provider-account-redesign-plan.md#execution-policy); remaining gates: [Roadmap](roadmap.md#ordered-work-and-exit-gates) |
+| Cache-first bounded recovery | 2026-11-02 | Target fixed after first dispatch; scoped health, success-only versioned affinity, atomic probes and a short bound-target wait are implemented. One serial pre-publication retry uses positive Provider/transport evidence within a 30 s recovery-to-content budget and unchanged request deadline. Merge health separately from delivery and emit only short credible `Retry-After`, without `x-should-retry`. Full contract/defaults: [execution policy](provider-account-redesign-plan.md#execution-policy); remaining gates: [Roadmap](roadmap.md#ordered-work-and-exit-gates) |
 | Account lifecycle and target trust | 2026-11-02 | Configured OAuth maintenance is independent of routing enablement; subject reservations survive logout until removal. Trusted API-key root overrides compose explicit operation suffixes; OAuth overrides reject. Durable verified replacement releases only old-material auth for an exclusive probe; stale 401s cannot penalize the replacement. [Targets](provider-account-redesign-plan.md#targets-and-trust); [maintenance](provider-account-redesign-plan.md#oauth-maintenance) |
 | Scoped health and replay ownership | 2026-11-02 | Account/target constraints retain independent deadlines and atomic probe exclusion; validated failures survive pre-EOF cancellation without certifying completion. Bound codec replay uses namespace, credential provenance and exact target/operation identity, invalidating replaced keys while preserving ordinary OAuth rotation. A valid conversation binding alone earns one deadline-clipped cooldown wait |
 | Breaking account-system cutover | 2026-11-02 | No old configuration/store-format/CLI compatibility, migration or stored-record reuse requirement. The operator provisions fresh keys and managed OAuth sessions; existing private stores are not automatically changed or deleted. Reuse secure mechanisms and official protocol contracts, not legacy pool execution. [Transition contract](provider-account-redesign-plan.md#configuration-transition-and-cli-output); [execution order](roadmap.md#account-rewrite-execution-order) |

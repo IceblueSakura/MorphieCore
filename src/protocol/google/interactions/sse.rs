@@ -303,6 +303,7 @@ impl GenerationSseDecoder {
                 return Err(invalid(ShapeReason::Object));
             }
             let mut metadata = ResponseMetadata {
+                source_failure: None,
                 delivery: None,
                 storage: None,
                 id: if i.contains_key("id") {

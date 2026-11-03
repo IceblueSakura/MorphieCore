@@ -179,6 +179,89 @@ pub enum RecognitionBasis {
     OverloadPattern,
     Unrecognized,
 }
+/// Finite wire tokens; interpretation belongs to the configured Provider.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, strum::EnumString)]
+pub enum FailureCode {
+    #[strum(serialize = "insufficient_quota")]
+    InsufficientQuota,
+    #[strum(serialize = "Throttling.AllocationQuota")]
+    AllocationQuota,
+    #[strum(serialize = "rate_limit_exceeded")]
+    RateLimit,
+    #[strum(serialize = "rate_limit_error")]
+    RateLimitType,
+    #[strum(serialize = "server_error")]
+    Server,
+    #[strum(serialize = "overloaded_error")]
+    Overloaded,
+    #[strum(serialize = "server_is_overloaded")]
+    OverloadedCode,
+    #[strum(serialize = "subscription_sharing_usage_limit_exceeded")]
+    SharingQuota,
+    #[strum(serialize = "subscription_sharing_usage_unavailable")]
+    SharingUsageUnavailable,
+    #[strum(serialize = "subscription_sharing_user_unavailable")]
+    SharingUserUnavailable,
+    #[strum(serialize = "subscription_sharing_invalid_user")]
+    SharingInvalidUser,
+    #[strum(serialize = "subscription_sharing_unsupported_capability")]
+    SharingCapability,
+    #[strum(serialize = "subscription_sharing_user_not_eligible")]
+    SharingEligibility,
+    #[strum(serialize = "subscription_sharing_route_not_supported")]
+    SharingRoute,
+    #[strum(serialize = "chatpass_v2_scope_not_authorized")]
+    SharingScope,
+    #[strum(serialize = "chatpass_v2_invalid_authorization_context")]
+    SharingContext,
+    #[strum(serialize = "CreditsError")]
+    GoCredits,
+    #[strum(serialize = "MonthlyLimitError")]
+    GoMonthlyLimit,
+    #[strum(serialize = "UserLimitError")]
+    GoUserLimit,
+    #[strum(serialize = "GoUsageLimitError")]
+    GoGoUsageLimit,
+    #[strum(serialize = "FreeUsageLimitError")]
+    GoFreeUsageLimit,
+    #[strum(serialize = "BlackUsageLimitError")]
+    GoBlackUsageLimit,
+    #[strum(serialize = "RateLimitError")]
+    GoRateLimit,
+    #[strum(serialize = "AuthError")]
+    GoAuth,
+    #[strum(serialize = "ModelError")]
+    GoModel,
+    #[strum(serialize = "RegionError")]
+    GoRegion,
+    #[strum(serialize = "DataPolicyError")]
+    GoDataPolicy,
+    #[strum(serialize = "authentication")]
+    RouterAuthentication,
+    #[strum(serialize = "payment_required")]
+    RouterPaymentRequired,
+    #[strum(serialize = "permission_denied")]
+    RouterPermissionDenied,
+    #[strum(serialize = "provider_overloaded")]
+    RouterProviderOverloaded,
+    #[strum(serialize = "provider_unavailable")]
+    RouterProviderUnavailable,
+    #[strum(serialize = "server")]
+    RouterServer,
+    #[strum(serialize = "timeout")]
+    RouterTimeout,
+    #[strum(serialize = "context_length_exceeded")]
+    RouterContextLengthExceeded,
+    #[strum(serialize = "invalid_request")]
+    RouterInvalidRequest,
+    #[strum(serialize = "content_policy_violation")]
+    RouterContentPolicyViolation,
+}
+impl FailureCode {
+    pub(crate) fn parse(value: Option<&str>) -> Option<Self> {
+        value?.parse().ok()
+    }
+}
 /// A protocol-generated policy hint, never an observed HTTP response head.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(transparent)]
@@ -191,6 +274,10 @@ impl ProtocolStatusHint {
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 pub struct SourceFailureEvidence {
     pub kind: SourceFailureKind,
+    pub code: Option<FailureCode>,
+    pub error_type: Option<FailureCode>,
+    pub canonical: Option<FailureCode>,
+    pub numeric_status: bool,
     pub basis: RecognitionBasis,
     pub status_hint: Option<ProtocolStatusHint>,
     pub observation: Observation,
@@ -203,8 +290,23 @@ impl std::fmt::Display for SourceFailureEvidence {
 impl SourceFailureEvidence {
     pub fn http(status: u16, body: &[u8], observation: Observation) -> Self {
         let (kind, basis) = recognize_failure(status, body);
+        let value: serde_json::Value = serde_json::from_slice(body).unwrap_or_default();
+        let error = value
+            .get("error")
+            .filter(|v| v.is_object())
+            .unwrap_or(&value);
         Self {
             kind,
+            numeric_status: false,
+            code: FailureCode::parse(error.get("code").and_then(serde_json::Value::as_str)),
+            error_type: FailureCode::parse(error.get("type").and_then(serde_json::Value::as_str)),
+            canonical: FailureCode::parse(
+                error
+                    .get("error_type")
+                    .or_else(|| error.pointer("/metadata/error_type"))
+                    .or_else(|| value.get("error_type"))
+                    .and_then(serde_json::Value::as_str),
+            ),
             basis,
             status_hint: None,
             observation,
@@ -268,15 +370,6 @@ const OVERFLOW: &[&str] = &[
     // Gemini: "The input token count (N) exceeds the maximum number of tokens allowed (M)."
     "exceeds the maximum number of tokens allowed",
 ];
-const QUOTA: &[&str] = &[
-    "insufficient_quota",
-    "quota exceeded",
-    "billing",
-    "credit balance",
-    "insufficient balance",
-    // OpenCode Go and Zen subscription limits (`GoUsageLimitError`).
-    "usagelimiterror",
-];
 
 /// Classify a failed upstream reply from its status and the `code`, `type` and
 /// `message` of an OpenAI-compatible or Anthropic error body. Overflow wording
@@ -325,10 +418,6 @@ fn recognize_failure(status: u16, body: &[u8]) -> (SourceFailureKind, Recognitio
     match status {
         401 | 403 => (SourceFailureKind::Other, RecognitionBasis::Status),
         402 => (SourceFailureKind::Quota, RecognitionBasis::Status),
-        400..=499 if has(QUOTA) => (
-            SourceFailureKind::Quota,
-            matched_basis(QUOTA, RecognitionBasis::QuotaPattern),
-        ),
         429 => (SourceFailureKind::RateLimit, RecognitionBasis::Status),
         400 | 413 | 422 if has(OVERFLOW) => (
             SourceFailureKind::ContextOverflow,
@@ -355,7 +444,7 @@ mod tests {
         );
         assert_eq!(
             (quota.kind, quota.basis),
-            (SourceFailureKind::Quota, RecognitionBasis::EnvelopeCode)
+            (SourceFailureKind::RateLimit, RecognitionBasis::Status)
         );
         assert!(quota.status_hint.is_none());
         let message = SourceFailureEvidence::envelope(
@@ -367,7 +456,7 @@ mod tests {
         );
         assert_eq!(
             (message.kind, message.basis),
-            (SourceFailureKind::Quota, RecognitionBasis::QuotaPattern)
+            (SourceFailureKind::RateLimit, RecognitionBasis::EnvelopeType)
         );
         assert_eq!(message.status_hint.unwrap().get(), 429);
         let throttle = SourceFailureEvidence::envelope(

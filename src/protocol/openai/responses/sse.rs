@@ -32,6 +32,9 @@ pub struct ResponsesSseDecoder {
     rejected: bool,
 }
 impl ResponsesSseDecoder {
+    pub(crate) fn event_failure(&self) -> Option<crate::protocol::failure::SourceFailureEvidence> {
+        self.codec.event_failure()
+    }
     pub(crate) fn take_intake_evidence(
         &mut self,
     ) -> crate::protocol::conversion::generation::EvidenceDelta {

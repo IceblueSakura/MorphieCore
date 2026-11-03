@@ -115,19 +115,11 @@ impl Credentials {
         self.get(self.task_accounts.get(model).unwrap_or(default))
     }
 }
-fn unavailable(error: crate::credential::CredentialError) -> crate::gateway::ApiError {
-    use crate::credential::CredentialError as Error;
-    let mut response = crate::gateway::ApiError::new(
+fn unavailable(_error: crate::credential::CredentialError) -> crate::gateway::ApiError {
+    crate::gateway::ApiError::new(
         axum::http::StatusCode::SERVICE_UNAVAILABLE,
         crate::gateway::error::ErrorKind::CredentialUnavailable,
-    );
-    if matches!(
-        error,
-        Error::KeyUnavailable | Error::LoginRequired | Error::Expired
-    ) {
-        response.recovery.class = Some(crate::provider::RecoveryClass::CredentialUnavailable);
-    }
-    response
+    )
 }
 fn check_profile(kind: CredentialKind, profile: Option<&str>) -> Result<(), StartupError> {
     match (kind, profile) {

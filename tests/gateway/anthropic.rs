@@ -346,8 +346,6 @@ async fn native_fixture() -> NativeFixture {
         task: topology::TaskKind::Generation,
         endpoints: endpoint_ids.clone(),
         policy: topology::RoutePolicy {
-            fallback: topology::FallbackPolicy::BeforeCommit,
-            max_attempts: 2,
             ..Default::default()
         },
     };
@@ -987,14 +985,10 @@ async fn json_and_stream_clients_replay_native_thinking_and_tools() {
                 let (code, sse) = if prompt == "overflow" {
                     ("context_length_exceeded", stream && responses)
                 } else {
-                    ("server_is_overloaded", stream)
+                    ("server_is_overloaded", stream && prompt == "overloaded")
                 };
-                // A stream that fails before content is held, so it still fails over.
-                let calls = match prompt {
-                    "overflow" => 1,
-                    "overloaded" if stream => 1,
-                    _ => 2,
-                };
+                // This synthetic Provider has no confirmed 529 resend contract.
+                let calls = 1;
                 assert_eq!(
                     seen.lock().unwrap().len(),
                     count + calls,
@@ -1048,7 +1042,7 @@ async fn json_and_stream_clients_replay_native_thinking_and_tools() {
             }
         }
     }
-    assert_eq!(seen.lock().unwrap().len(), 42);
+    assert_eq!(seen.lock().unwrap().len(), 36);
     diagnostic_owner.flush_diagnostics().await;
     let records = std::fs::read_to_string(diagnostics).unwrap();
     let reports: Vec<Value> = records

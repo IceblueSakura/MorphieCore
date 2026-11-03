@@ -130,6 +130,11 @@ impl Rule {
         Field::Completion,
         Change::Approximate,
     );
+    pub const COARSEN_RESPONSES_ERROR_CODE: Self = Self::new(
+        "responses.coarsen-provider-error-code.v1",
+        Field::ResponseError,
+        Change::Approximate,
+    );
     pub const OMIT_RESPONSES_COMPLETION_CAUSE: Self = Self::new(
         "responses.omit-completion-cause.v1",
         Field::Completion,

@@ -1,4 +1,6 @@
 //! Delivery owner tests use an instrumented HTTP body, not a second Router.
+#[path = "recovery_tests.rs"]
+mod recovery;
 use super::*;
 use crate::{
     gateway::{
@@ -393,7 +395,7 @@ async fn upstream_failures_reach_clients_as_agent_error_classes() {
             400,
             "context_length_exceeded",
         ),
-        // DeepSeek balance and OpenCode Go subscription limits.
+        // HTTP quota status; a foreign Provider code alone has no quota meaning.
         (
             402,
             r#"{"error":{"message":"Insufficient Balance","type":"unknown_error","param":null,"code":"invalid_request_error"}}"#,
@@ -406,7 +408,7 @@ async fn upstream_failures_reach_clients_as_agent_error_classes() {
             r#"{"type":"error","error":{"type":"GoUsageLimitError","message":"Monthly usage limit reached for 117 private"}}"#,
             None,
             429,
-            "insufficient_quota",
+            "rate_limit_exceeded",
         ),
         (
             429,
@@ -477,7 +479,9 @@ async fn upstream_failures_reach_clients_as_agent_error_classes() {
         match code {
             "context_length_exceeded" => assert!(message.contains("exceeds the context window")),
             "insufficient_quota" => assert!(message.contains("billing")),
-            "rate_limit_exceeded" => assert!(message.contains("try again in 7s")),
+            "rate_limit_exceeded" if retry.is_some() => {
+                assert!(message.contains("try again in 7s"))
+            }
             _ => {}
         }
     }
@@ -489,7 +493,7 @@ async fn chat_in_band_stream_errors_keep_their_agent_error_class() {
     let gate = gateway(Limits::default());
     let (tx, source, _, _) = upstream(200, "text/event-stream");
     tx.send(Ok(Bytes::from_static(
-        br#"data: {"error":{"message":"private upstream detail","type":"insufficient_quota","param":null,"code":"insufficient_quota"}}
+        br#"data: {"error":{"code":402,"message":"private upstream detail"}}
 
 "#,
     )))

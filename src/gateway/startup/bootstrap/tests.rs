@@ -789,7 +789,6 @@ fn configured_accounts_preserve_order_targets_limits_and_replay_isolation() {
         crate::protocol::ClientProtocol::Chat,
         "claude-haiku-5-5".into(),
     )];
-    assert_eq!(entry.policy.max_attempts, 1);
     assert_eq!(entry.policy.total_timeout_ms, Some(12000));
     assert_eq!(entry.candidates.len(), 2);
     assert_eq!(
@@ -863,10 +862,6 @@ fn configured_accounts_preserve_order_targets_limits_and_replay_isolation() {
                 "claude-haiku-5-5".into(),
             ))
             .map(|entry| {
-                assert_eq!(
-                    entry.policy.fallback,
-                    crate::topology::FallbackPolicy::Disabled
-                );
                 entry
                     .candidates
                     .iter()

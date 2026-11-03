@@ -80,6 +80,7 @@ fn static_codecs_reject_new_domains_even_for_forged_target_handles() {
     .unwrap();
     let fidelity = crate::protocol::fidelity::FidelityRecords::default();
     let metadata = ResponseMetadata {
+        source_failure: None,
         delivery: None,
         storage: None,
         id: Some("r".into()),

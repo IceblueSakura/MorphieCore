@@ -212,7 +212,6 @@ async fn start_with_recovery(recover: bool) -> Fixture {
     public.contract = binding.canonical_model().contract;
     let mut endpoints = vec![endpoint];
     let mut route = binding.route();
-    route.policy.max_attempts = 1;
     let (credentials, store) = if recover {
         let (accounts, store) = crate::credential_recovery::accounts(
             provider.id.as_str(),

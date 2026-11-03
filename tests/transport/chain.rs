@@ -838,10 +838,6 @@ fn router_request_policy_is_fixed_and_luna_controls_are_not_silently_ignored() {
     let topology = catalog::default_topology().unwrap();
     let public = topology.model("gpt-6-luna").unwrap();
     let route = topology.route(&public.route).unwrap();
-    assert_eq!(
-        route.policy.fallback,
-        morphiecore::topology::FallbackPolicy::BeforeCommit
-    );
     let endpoint = route
         .endpoints
         .iter()

@@ -140,8 +140,8 @@ fn source_cause_survives_handling_failure_and_never_replaces_http_observation() 
         Some("rate_limit_error"),
         Some("synthetic-private credit balance"),
     );
-    assert_eq!(source.kind, SourceFailureKind::Quota);
-    assert_eq!(source.basis, RecognitionBasis::QuotaPattern);
+    assert_eq!(source.kind, SourceFailureKind::RateLimit);
+    assert_eq!(source.basis, RecognitionBasis::EnvelopeType);
     report.failure(
         Some(ConversionBoundary::EventDecode),
         &AttemptError::Codec(CodecError::StreamFailure(source)),
@@ -154,7 +154,7 @@ fn source_cause_survives_handling_failure_and_never_replaces_http_observation() 
     assert_eq!(r.observed_status, Some(200));
     assert_eq!(r.source_failure.unwrap().status_hint.unwrap().get(), 429);
     assert!(
-        matches!(r.failure.unwrap().cause,AttemptError::Codec(CodecError::StreamFailure(e)) if e.kind==SourceFailureKind::Quota)
+        matches!(r.failure.unwrap().cause,AttemptError::Codec(CodecError::StreamFailure(e)) if e.kind==SourceFailureKind::RateLimit)
     );
     assert!(matches!(
         r.handling_failure.unwrap().cause,

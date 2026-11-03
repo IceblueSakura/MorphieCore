@@ -13,6 +13,7 @@ use serde_json::{Value, json};
 
 fn metadata() -> ResponseMetadata {
     ResponseMetadata {
+        source_failure: None,
         delivery: None,
         storage: None,
         id: Some("response_1".into()),

@@ -178,6 +178,15 @@ pub(crate) fn terminal_losses(
         check_response_details(details)?;
     }
     let mut losses = vec![];
+    if profile == GenerationApi::Responses
+        && details
+            .error
+            .as_ref()
+            .and_then(|e| e.code.as_ref())
+            .is_some_and(|c| coarsened_error_code(c.as_str()).is_some())
+    {
+        losses.push(Rule::COARSEN_RESPONSES_ERROR_CODE);
+    }
     if details.refusal.as_ref().is_some() {
         losses.push(Rule::OMIT_EXPLANATORY_REFUSAL_DETAILS);
     }
@@ -228,7 +237,54 @@ pub(crate) fn reported_failure(
             (None, None) => (500, RecognitionBasis::EnvelopeFields),
         },
     };
-    SourceFailureEvidence::envelope(status, basis, code, kind, message)
+    let mut evidence = SourceFailureEvidence::envelope(status, basis, code, kind, message);
+    evidence.numeric_status = numeric.is_some_and(|n| (400..600).contains(&n));
+    evidence
+}
+pub(crate) fn reported_value(value: &Value) -> Result<SourceFailureEvidence, CodecError> {
+    let error = value.get("error").unwrap_or(value);
+    let object = object(error)?;
+    for name in ["type", "message", "param", "error_type"] {
+        if object
+            .get(name)
+            .is_some_and(|v| !v.is_null() && !v.is_string())
+        {
+            return Err(CodecError::invalid());
+        }
+    }
+    if object
+        .get("code")
+        .is_some_and(|v| !v.is_null() && !v.is_string() && v.as_u64().is_none())
+    {
+        return Err(CodecError::invalid());
+    }
+    let field = |name| error.get(name).and_then(Value::as_str);
+    let mut source = reported_failure(
+        error.get("code").and_then(Value::as_u64),
+        field("code"),
+        field("type"),
+        field("message"),
+    );
+    for canonical in [
+        value.get("error_type"),
+        error.get("error_type"),
+        error.pointer("/metadata/error_type"),
+    ]
+    .into_iter()
+    .flatten()
+    {
+        if !canonical.is_null() && !canonical.is_string() {
+            return Err(CodecError::invalid());
+        }
+    }
+    source.canonical = crate::protocol::failure::FailureCode::parse(
+        value
+            .get("error_type")
+            .or_else(|| error.get("error_type"))
+            .or_else(|| error.pointer("/metadata/error_type"))
+            .and_then(Value::as_str),
+    );
+    Ok(source)
 }
 /// A failed Responses outcome classified as an upstream failure, for clients
 /// whose protocol has no failed-response carrier.
@@ -253,7 +309,7 @@ pub(super) fn encode_error(error: Option<&ResponseError>) -> Value {
     error
         .map(|e| {
             let mut v =
-                json!({"code":e.code.as_ref().map(|c|c.as_str()),"message":e.message.as_str()});
+                json!({"code":e.code.as_ref().map(|c|coarsened_error_code(c.as_str()).unwrap_or(c.as_str())),"message":e.message.as_str()});
             if let Some(p) = &e.param {
                 v["param"] = json!(p.as_str());
             }
@@ -266,17 +322,31 @@ pub(super) fn encode_error(error: Option<&ResponseError>) -> Value {
 }
 pub(super) fn check_response_details(details: &TerminalDetails) -> Result<(), CodecError> {
     if details.error.as_ref().is_some_and(|error| {
-        error
-            .code
-            .as_ref()
-            .is_none_or(|code| !response_error_code(code.as_str()))
+        error.code.as_ref().is_none_or(|code| {
+            !response_error_code(code.as_str()) && coarsened_error_code(code.as_str()).is_none()
+        })
     }) {
         return Err(CodecError::Unsupported(CarrierReason::Terminal));
     }
     encode_incomplete(details.incomplete.as_ref())?;
     Ok(())
 }
-fn response_error_code(code: &str) -> bool {
+pub(super) fn coarsened_error_code(code: &str) -> Option<&'static str> {
+    use crate::protocol::failure::FailureCode as C;
+    Some(match C::parse(Some(code))? {
+        C::SharingQuota => "rate_limit_exceeded",
+        C::SharingCapability => "invalid_prompt",
+        C::SharingUsageUnavailable
+        | C::SharingUserUnavailable
+        | C::SharingInvalidUser
+        | C::SharingEligibility
+        | C::SharingRoute
+        | C::SharingScope
+        | C::SharingContext => "server_error",
+        _ => return None,
+    })
+}
+pub(super) fn response_error_code(code: &str) -> bool {
     // OpenAI Node 7.43.0 ResponseError; event errors have a separate string domain.
     matches!(
         code,

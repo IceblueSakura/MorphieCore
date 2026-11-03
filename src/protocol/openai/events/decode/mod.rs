@@ -6,6 +6,7 @@ use crate::protocol::openai::events::*;
 use serde_json::json;
 
 pub struct EventDecoder {
+    pub(super) event_failure: Option<crate::protocol::failure::SourceFailureEvidence>,
     pub(super) profile: GenerationApi,
     pub(super) adaptation: crate::protocol::openai::dialect::adaptation::Adaptation,
     /// Everything both protocols advance: accepted state, fidelity and identity.
@@ -30,6 +31,7 @@ pub struct EventDecoder {
 impl EventDecoder {
     pub fn new(profile: GenerationApi) -> Self {
         Self {
+            event_failure: None,
             profile,
             adaptation: Default::default(),
             state: Some(StreamState::new()),
@@ -195,6 +197,9 @@ impl EventDecoder {
     /// Available immediately after response.created; no whole-stream buffering is required.
     pub fn metadata(&self) -> Option<&ResponseMetadata> {
         self.metadata.as_ref()
+    }
+    pub(crate) fn event_failure(&self) -> Option<crate::protocol::failure::SourceFailureEvidence> {
+        self.event_failure
     }
     pub fn fidelity(&self) -> &FidelityRecords {
         &self.fidelity

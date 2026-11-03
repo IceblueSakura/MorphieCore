@@ -63,8 +63,19 @@ pub(super) struct Status {
     /// A later I/O interruption is independent of the reported upstream failure.
     failure_interruption: Mutex<Option<crate::gateway::routing::executors::FailureObservation>>,
     pub(super) material_revision: Mutex<Option<u64>>,
+    previous_failures: Mutex<Vec<crate::gateway::routing::executors::FailureObservation>>,
+    pub(super) recovery_ready: AtomicBool,
+    pub(super) readiness: tokio::sync::Notify,
 }
 impl Status {
+    pub(super) fn ready(&self) {
+        self.recovery_ready.store(true, Ordering::Release);
+        self.readiness.notify_waiters();
+    }
+    pub(super) fn retain_attempt(&self, error: ApiError) {
+        let failures = self.take_failures(Some(error));
+        *self.previous_failures.lock().expect("previous failures") = failures;
+    }
     pub(super) fn observe_failure(&self, error: ApiError) {
         let mut head = self.failure_head.lock().expect("failure head");
         let observation =
@@ -95,7 +106,9 @@ impl Status {
             .lock()
             .expect("failure interruption")
             .take();
-        let mut failures: Vec<_> = reported.into_iter().chain(interrupted).collect();
+        let mut failures =
+            std::mem::take(&mut *self.previous_failures.lock().expect("previous failures"));
+        failures.extend(reported.into_iter().chain(interrupted));
         if let Some(error) = final_error
             && error.recovery.affects_health
             && !failures.iter().any(|failure| failure.error == error)
@@ -118,7 +131,7 @@ impl Status {
         {
             failure.error
         } else if self.waiting_upstream.load(Ordering::Acquire) {
-            ApiError::transport(crate::provider::RecoveryClass::Timeout)
+            ApiError::transport_fact(crate::transport::http::TransportError::Timeout)
         } else {
             ApiError::timeout()
         }

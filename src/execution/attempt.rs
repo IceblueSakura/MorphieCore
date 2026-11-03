@@ -109,6 +109,7 @@ impl AttemptError {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum DeadlineReason {
     RequestBody,
+    Recovery,
     Attempt,
     Exchange,
 }
@@ -659,17 +660,35 @@ impl Attempt {
             )),
         }
     }
+    /// A validated successful terminal removes only the recovery-to-output clock.
+    /// Transport EOF and decoder finish are still required for publication/completion.
+    pub(crate) fn recovery_ready_terminal(&self) -> bool {
+        use crate::semantic::task::generation::{IncompleteReason, StreamTerminal};
+        matches!(&self.intake, Intake::Stream { terminal: Some(StreamEvent::Terminal { terminal, details }), .. }
+            if *terminal == StreamTerminal::Completed
+                || (*terminal == StreamTerminal::Incomplete && details.incomplete == Some(IncompleteReason::MaxOutputTokens)))
+    }
     /// A validated failed Responses terminal is evidence even before transport EOF.
     /// It does not establish successful completion or permit terminal publication.
     pub(crate) fn reported_failure(&self) -> Option<SourceFailureEvidence> {
         if !self.is_responses() {
             return None;
         }
+        if let Intake::Stream { decoder, .. } = &self.intake
+            && let Some(source) = decoder.event_failure()
+        {
+            return Some(source);
+        }
+        if let Some(source) = self.metadata().and_then(|m| m.source_failure) {
+            return Some(source);
+        }
         match &self.intake {
             Intake::Stream {
                 terminal:
                     Some(StreamEvent::Terminal {
-                        terminal: crate::semantic::task::generation::StreamTerminal::Failed,
+                        terminal:
+                            crate::semantic::task::generation::StreamTerminal::Failed
+                            | crate::semantic::task::generation::StreamTerminal::Error,
                         details,
                     }),
                 ..

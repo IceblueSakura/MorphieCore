@@ -25,6 +25,7 @@ use crate::{
 pub struct RecoveryDecision {
     pub class: Option<RecoveryClass>,
     pub affects_health: bool,
+    pub retryable: bool,
 }
 impl RecoveryDecision {
     pub fn source(status: u16, kind: SourceFailureKind) -> Self {
@@ -39,12 +40,7 @@ impl RecoveryDecision {
         Self {
             class,
             affects_health: true,
-        }
-    }
-    pub const fn transport(class: RecoveryClass) -> Self {
-        Self {
-            class: Some(class),
-            affects_health: true,
+            retryable: false,
         }
     }
 }
@@ -396,6 +392,7 @@ fn delivery_code(e: &DeliveryReason) -> &'static str {
 fn deadline_code(e: &DeadlineReason) -> &'static str {
     match e {
         DeadlineReason::RequestBody => "deadline.request_body",
+        DeadlineReason::Recovery => "deadline.recovery",
         DeadlineReason::Attempt => "deadline.attempt",
         DeadlineReason::Exchange => "deadline.exchange",
     }
@@ -410,17 +407,13 @@ fn lifecycle_code(e: &LifecycleError) -> &'static str {
 
 fn recovery_code(e: &RecoveryClass) -> &'static str {
     match e {
-        RecoveryClass::CredentialUnavailable => "recovery.credential_unavailable",
-        RecoveryClass::Authentication => "recovery.authentication",
-        RecoveryClass::PermissionDenied => "recovery.permission_denied",
-        RecoveryClass::InvalidRequest => "recovery.invalid_request",
-        RecoveryClass::NotFound => "recovery.not_found",
-        RecoveryClass::Redirect => "recovery.redirect",
+        RecoveryClass::Request => "recovery.request",
+        RecoveryClass::Malformed => "recovery.malformed",
+        RecoveryClass::Transient => "recovery.transient",
         RecoveryClass::RateLimit => "recovery.rate_limit",
         RecoveryClass::Quota => "recovery.quota",
-        RecoveryClass::Server => "recovery.server",
-        RecoveryClass::Timeout => "recovery.timeout",
-        RecoveryClass::Upstream => "recovery.upstream",
+        RecoveryClass::Auth => "recovery.auth",
+        RecoveryClass::Permission => "recovery.permission",
     }
 }
 

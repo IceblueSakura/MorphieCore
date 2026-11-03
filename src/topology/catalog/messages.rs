@@ -121,7 +121,6 @@ impl MessagesBinding {
             task: TaskKind::Generation,
             endpoints: vec![self.endpoint().id],
             policy: RoutePolicy {
-                max_attempts: 1,
                 ..RoutePolicy::default()
             },
         }

@@ -20,7 +20,7 @@ pub use compile::{CompiledTopology, TopologyError, compile};
 pub use endpoint::{Endpoint, EndpointTarget, ExecutionContract};
 pub use model::{CanonicalModel, Dispositions};
 pub use model_metadata::ModelMetadata;
-pub use route::{CandidatePolicy, FallbackPolicy, PublicModel, Route, RoutePolicy};
+pub use route::{CandidatePolicy, PublicModel, Route, RoutePolicy};
 
 use crate::provider::{ProviderError, ident_ok};
 

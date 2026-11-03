@@ -458,6 +458,7 @@ fn byte_fragments_encode_as_one_base64_value() {
     use morphiecore::{protocol::openai::events::EventEncoder, semantic::value::Text};
     let t = |s: &str| Text::new(s, "synthetic", 1024).unwrap();
     let meta = morphiecore::protocol::ResponseMetadata {
+        source_failure: None,
         delivery: None,
         storage: None,
         id: Some("r".into()),

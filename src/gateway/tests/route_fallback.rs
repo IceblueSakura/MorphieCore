@@ -12,54 +12,19 @@ use axum::{Json, Router, http::StatusCode, response::IntoResponse, routing::post
 use serde_json::{Value, json};
 use std::sync::Mutex;
 #[tokio::test]
-async fn ordered_route_only_falls_back_before_visible_delivery() {
-    for (status, stream, policy, max_attempts, expected_calls, expected_status) in [
-        (
-            429,
-            false,
-            FallbackPolicy::BeforeCommit,
-            2,
-            vec!["a", "b"],
-            200,
-        ),
-        (
-            503,
-            false,
-            FallbackPolicy::BeforeCommit,
-            2,
-            vec!["a", "b"],
-            200,
-        ),
-        (
-            0,
-            false,
-            FallbackPolicy::BeforeCommit,
-            2,
-            vec!["a", "b"],
-            200,
-        ),
-        // Exhausted quota or credit advances like a rate limit.
-        (
-            402,
-            false,
-            FallbackPolicy::BeforeCommit,
-            2,
-            vec!["a", "b"],
-            200,
-        ),
-        (1, false, FallbackPolicy::BeforeCommit, 2, vec!["a"], 504),
-        // Malformed successful output has no health or advancement permission.
-        (2, false, FallbackPolicy::BeforeCommit, 2, vec!["a"], 502),
-        (302, false, FallbackPolicy::BeforeCommit, 2, vec!["a"], 502),
-        (403, false, FallbackPolicy::BeforeCommit, 2, vec!["a"], 502),
-        (429, false, FallbackPolicy::Disabled, 2, vec!["a"], 429),
-        (429, false, FallbackPolicy::BeforeCommit, 1, vec!["a"], 429),
-        // A missing protocol terminal alone does not authorize another send.
-        (200, true, FallbackPolicy::BeforeCommit, 2, vec!["a"], 502),
-        // Visible content followed by EOF must not call the next target.
-        (201, true, FallbackPolicy::BeforeCommit, 2, vec!["a"], 200),
-        // Unpublished metadata cannot make a malformed stream successful.
-        (202, true, FallbackPolicy::BeforeCommit, 2, vec!["a"], 502),
+async fn selected_target_never_changes_after_dispatch() {
+    for (status, stream, expected_calls, expected_status) in [
+        (429, false, vec!["a"], 429),
+        (503, false, vec!["a", "a"], 200),
+        (402, false, vec!["a"], 429),
+        (0, false, vec!["a"], 504),
+        (1, false, vec!["a"], 504),
+        (2, false, vec!["a"], 502),
+        (302, false, vec!["a"], 502),
+        (403, false, vec!["a"], 502),
+        (200, true, vec!["a"], 502),
+        (201, true, vec!["a"], 200),
+        (202, true, vec!["a"], 502),
     ] {
         let calls = Arc::new(Mutex::new(Vec::<&str>::new()));
         let cut_stream = Arc::new(tokio::sync::Notify::new());
@@ -81,7 +46,14 @@ async fn ordered_route_only_falls_back_before_visible_delivery() {
                     assert!(body.get("session_id").is_none());
                     assert!(!headers.contains_key("x-session-affinity"));
                     assert_eq!(body["input"][0]["content"],json!([{"type":"input_text","text":"keep"},{"type":"input_image","image_url":"data:image/png;base64,AQ==","detail":"auto"}]));
-                    calls.lock().unwrap().push(id);
+                    let first = {
+                        let mut calls = calls.lock().unwrap();
+                        calls.push(id);
+                        calls.len() == 1
+                    };
+                    if id == "a" && status == 503 && !first {
+                        return ([("content-type","text/event-stream")], super::responses_wire::response_stream(json!({"object":"response","id":"retry-r","model":"a-alias","created_at":1,"status":"completed","output":[{"type":"message","id":"retry-msg","role":"assistant","status":"completed","content":[{"type":"output_text","text":"ok","annotations":[],"logprobs":[]}]}]}))).into_response();
+                    }
                     if id=="a" && status<=1 { return std::future::pending::<axum::response::Response>().await; }
                     if id=="a" && status==2 { return ([("content-type","text/html")],"<html>").into_response(); }
                     // A zero hint supplies no future reset; fallback cooldown applies.
@@ -196,8 +168,6 @@ async fn ordered_route_only_falls_back_before_visible_delivery() {
             task: TaskKind::Generation,
             endpoints: vec![EndpointId::new("a").unwrap(), EndpointId::new("b").unwrap()],
             policy: RoutePolicy {
-                fallback: policy,
-                max_attempts,
                 total_timeout_ms: (status == 1).then_some(50),
                 ..RoutePolicy::default()
             },
@@ -316,91 +286,6 @@ async fn ordered_route_only_falls_back_before_visible_delivery() {
             assert!(!value.to_string().contains("failed_candidate"));
         }
         assert_eq!(*calls.lock().unwrap(), expected_calls);
-        if expected_calls == ["a", "b"] && !stream {
-            if status == 503 {
-                // A legal suffix blocked solely by health returns local
-                // availability, not the last upstream failure.
-                let entry = &gateway.state.entries
-                    [&(crate::protocol::ClientProtocol::Responses, "public".into())];
-                let b = entry
-                    .candidates
-                    .iter()
-                    .find(|c| c.provider.id.as_str() == "b")
-                    .unwrap();
-                let lease = gateway
-                    .state
-                    .executors
-                    .acquire(b, tokio::time::Instant::now())
-                    .unwrap();
-                lease.failed(
-                    ApiError::failure(429, b"", Some(60)),
-                    tokio::time::Instant::now(),
-                    None,
-                );
-                drop(lease);
-                tokio::time::pause();
-                tokio::time::advance(std::time::Duration::from_secs(1)).await;
-                tokio::time::resume();
-                calls.lock().unwrap().clear();
-                let response = send(false).await.unwrap().unwrap();
-                assert_eq!(response.status(), 503);
-                assert!(response.headers().contains_key("retry-after"));
-                assert_eq!(
-                    response.json::<Value>().await.unwrap()["error"]["code"],
-                    "upstream_unavailable"
-                );
-                assert_eq!(*calls.lock().unwrap(), ["a"]);
-                gateway.flush_diagnostics().await;
-                let records: Vec<Value> = std::fs::read_to_string(&diagnostic_path)
-                    .unwrap()
-                    .lines()
-                    .map(|line| serde_json::from_str(line).unwrap())
-                    .filter(|value: &Value| value["event"] == "request")
-                    .collect();
-                let recovered = &records[0]["generation"];
-                assert_eq!(recovered["result"], "succeeded");
-                assert!(recovered["failure_code"].is_null());
-                assert_eq!(recovered["attempts"][0]["advanced"], true);
-                let blocked = records.last().unwrap();
-                assert_eq!(blocked["generation"]["failure_code"], "gateway.unavailable");
-                assert_eq!(blocked["generation"]["failure_status_hint"], 503);
-                assert_eq!(
-                    blocked["generation"]["attempts"].as_array().unwrap().len(),
-                    1
-                );
-                assert_eq!(blocked["generation"]["attempts"][0]["advanced"], false);
-                assert_eq!(blocked["candidates"][0]["advanced"], false);
-                assert_eq!(blocked["candidates"][0]["health"]["reason"], "failure");
-                assert_eq!(blocked["candidates"][0]["health"]["scope"], "target");
-                assert_eq!(blocked["health"]["reason"], "cooling");
-                assert_eq!(blocked["health"]["scope"], "target");
-                // Expire both scopes before the remaining affinity assertions.
-                tokio::time::pause();
-                tokio::time::advance(std::time::Duration::from_secs(60)).await;
-                tokio::time::resume();
-            }
-            // Zero reset hints cannot bypass a still-open cooldown.
-            calls.lock().unwrap().clear();
-            assert_eq!(send(false).await.unwrap().unwrap().status(), 200);
-            let cooled = status != 503;
-            assert_eq!(
-                *calls.lock().unwrap(),
-                if cooled { vec!["b"] } else { vec!["a", "b"] }
-            );
-            // The conversation stays on the executor that answered it last.
-            calls.lock().unwrap().clear();
-            assert_eq!(send(true).await.unwrap().unwrap().status(), 200);
-            assert_eq!(*calls.lock().unwrap(), ["b"]);
-        }
-        if status == 201 {
-            // The failed published request cannot replay, but its premature EOF
-            // cools A so the next request selects the ready target.
-            calls.lock().unwrap().clear();
-            let response = send(true).await.unwrap().unwrap();
-            assert_eq!(response.status(), 200);
-            drop(response);
-            assert_eq!(*calls.lock().unwrap(), ["b"]);
-        }
         gateway.shutdown();
         serving.await.unwrap();
         upstream.abort();
@@ -480,7 +365,7 @@ async fn recovery_ownership_spans_final_handoff_and_distinguishes_deadlines() {
     // Upstream JSON and EOF are already valid, but the final body is unpolled.
     let unavailable = send().await.unwrap().unwrap();
     assert_eq!(unavailable.status(), 503);
-    assert_eq!(calls.load(Ordering::SeqCst), 2);
+    assert_eq!(calls.load(Ordering::SeqCst), 3);
     drop(probe);
     drop(
         tokio::time::timeout(

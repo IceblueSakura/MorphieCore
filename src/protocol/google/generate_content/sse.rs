@@ -220,6 +220,7 @@ impl GenerationSseDecoder {
             }
         } else {
             let metadata = ResponseMetadata {
+                source_failure: None,
                 delivery: None,
                 storage: None,
                 id: Some(id.ok_or_else(|| invalid(ShapeReason::InvalidValue))?.into()),

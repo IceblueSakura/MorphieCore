@@ -240,9 +240,7 @@ fn compile_deployments(
         if route.endpoints.is_empty() {
             return Err(TopologyError::EmptyRoute);
         }
-        if route.endpoints.len() > super::route::MAX_ROUTE_CANDIDATES
-            || !(1..=super::route::MAX_ROUTE_CANDIDATES).contains(&route.policy.max_attempts)
-        {
+        if route.endpoints.len() > super::route::MAX_ROUTE_CANDIDATES {
             return Err(TopologyError::InvalidRoutePolicy);
         }
         let mut seen = std::collections::BTreeSet::new();

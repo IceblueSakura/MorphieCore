@@ -88,6 +88,7 @@ impl GenerationSseDecoder {
                     UsageStage::Checkpoint,
                 );
                 self.metadata = Some(ResponseMetadata {
+                    source_failure: None,
                     delivery: None,
                     storage: None,
                     id: Some(message.id),

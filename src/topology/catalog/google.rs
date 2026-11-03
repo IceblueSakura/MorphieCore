@@ -133,7 +133,6 @@ impl GoogleBinding {
             endpoints: vec![self.endpoint().id, self.interactions_endpoint().id],
             policy: RoutePolicy {
                 candidates: CandidatePolicy::SkipUnrepresentable,
-                fallback: FallbackPolicy::BeforeCommit,
                 ..RoutePolicy::default()
             },
         }

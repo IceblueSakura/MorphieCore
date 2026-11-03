@@ -285,6 +285,7 @@ mod tests {
 
     fn metadata(settings: GenerationSettings) -> crate::protocol::ResponseMetadata {
         crate::protocol::ResponseMetadata {
+            source_failure: None,
             delivery: None,
             storage: None,
             id: Some("resp".into()),

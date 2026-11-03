@@ -39,6 +39,130 @@ async fn environment_proxy_child() {
     }
 }
 struct Guard(tokio::task::AbortHandle);
+#[tokio::test]
+async fn wire_failures_distinguish_interruption_protocol_fault_and_timeout() {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    for (wire, body, expected) in [
+        (&b"HTTP/1.1 200"[..], false, TransportError::Incomplete),
+        (
+            &b"HTTP/1.1 200 OK\r\nContent-Length: 9\r\n\r\nshort"[..],
+            true,
+            TransportError::Interrupted,
+        ),
+        (
+            &b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n9\r\nshort"[..],
+            true,
+            TransportError::Interrupted,
+        ),
+        (
+            &b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\nz\r\ninvalid\r\n"[..],
+            true,
+            TransportError::Read,
+        ),
+        (&b"not HTTP\r\n\r\n"[..], false, TransportError::Send),
+    ] {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let origin = format!("http://{}", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let mut request = [0; 8192];
+            let mut used = 0;
+            while !request[..used].windows(4).any(|w| w == b"\r\n\r\n") {
+                let read = socket.read(&mut request[used..]).await.unwrap();
+                assert!(read > 0 && used + read < request.len());
+                used += read;
+            }
+            socket.write_all(wire).await.unwrap();
+            socket.shutdown().await.unwrap();
+        });
+        let transport = HttpTransport::with_environment_proxy(None, false).unwrap();
+        let result = transport
+            .send(
+                UpstreamRequest {
+                    origin,
+                    method: "POST",
+                    path: "/".into(),
+                    safe_headers: vec![],
+                    auth_header: ("authorization".into(), "Bearer synthetic".into()),
+                    body: vec![],
+                },
+                Duration::from_secs(2),
+            )
+            .await;
+        let fact = if body {
+            TransportError::from_reqwest(&result.unwrap().bytes().await.unwrap_err())
+        } else {
+            result.unwrap_err()
+        };
+        assert_eq!(fact, expected);
+        server.await.unwrap();
+    }
+    // The connection timeout includes a stalled TLS handshake. A timeout after
+    // an HTTP send remains ambiguous even when the response head never arrives.
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let origin = format!("https://{}", listener.local_addr().unwrap());
+    let server = tokio::spawn(async move {
+        let (_socket, _) = listener.accept().await.unwrap();
+        std::future::pending::<()>().await;
+    });
+    let _server = Guard(server.abort_handle());
+    let transport = HttpTransport {
+        client: Client::builder()
+            .no_proxy()
+            .retry(reqwest::retry::never())
+            .connect_timeout(Duration::from_millis(30))
+            .build()
+            .unwrap(),
+        loopback_authority: None,
+    };
+    let fact = transport
+        .send(
+            UpstreamRequest {
+                origin,
+                method: "POST",
+                path: "/".into(),
+                safe_headers: vec![],
+                auth_header: ("authorization".into(), "Bearer synthetic".into()),
+                body: vec![],
+            },
+            Duration::from_secs(2),
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(fact, TransportError::ConnectTimeout);
+
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let origin = format!("https://{}", listener.local_addr().unwrap());
+    let server = tokio::spawn(async move {
+        let (mut socket, _) = listener.accept().await.unwrap();
+        let mut hello = [0; 8192];
+        assert!(socket.read(&mut hello).await.unwrap() > 0);
+        // A fatal bad_certificate alert exercises rustls' typed trust veto.
+        socket
+            .write_all(b"\x15\x03\x03\x00\x02\x02\x2a")
+            .await
+            .unwrap();
+        socket.shutdown().await.unwrap();
+    });
+    let transport = HttpTransport::with_environment_proxy(None, false).unwrap();
+    let fact = transport
+        .send(
+            UpstreamRequest {
+                origin,
+                method: "POST",
+                path: "/".into(),
+                safe_headers: vec![],
+                auth_header: ("authorization".into(), "Bearer synthetic".into()),
+                body: vec![],
+            },
+            Duration::from_secs(2),
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(fact, TransportError::Tls);
+    assert!(!fact.retryable() && !fact.affects_health());
+    server.await.unwrap();
+}
 impl Drop for Guard {
     fn drop(&mut self) {
         self.0.abort();

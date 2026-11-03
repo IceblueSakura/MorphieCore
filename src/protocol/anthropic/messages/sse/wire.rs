@@ -124,6 +124,21 @@ impl MessageSseDecoder {
             return Ok(None);
         }
         let event = Event::read(&value)?;
+        if let Event::Error { kind, message } = &event {
+            let mut source = SourceFailureEvidence::envelope(
+                error_status(kind),
+                RecognitionBasis::EnvelopeType,
+                None,
+                Some(kind),
+                Some(message),
+            );
+            source.canonical = crate::protocol::failure::FailureCode::parse(
+                value
+                    .pointer("/error/error_type")
+                    .and_then(serde_json::Value::as_str),
+            );
+            return Err(CodecError::StreamFailure(source).into());
+        }
         self.event(event.clone())?;
         Ok(Some(event))
     }
