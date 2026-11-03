@@ -551,8 +551,8 @@ pub(in crate::gateway) async fn produce_chain(
                     state.retain_attempt(error);
                     // The attempt future and response have been dropped before any wait/send.
                     if let Some(seconds) = error.retry_after {
-                        let not_before = observed_at + Duration::from_secs(seconds);
-                        if not_before >= until {
+                        let delay = Duration::from_secs(seconds);
+                        if delay >= until.saturating_duration_since(observed_at) {
                             if let Some(observation) = health.failed(error) {
                                 trace.health(observation);
                             }
@@ -565,7 +565,7 @@ pub(in crate::gateway) async fn produce_chain(
                             )
                             .await);
                         }
-                        tokio::time::sleep_until(not_before).await;
+                        tokio::time::sleep_until(observed_at + delay).await;
                     }
                     if Instant::now() >= until {
                         if let Some(observation) = health.failed(error) {

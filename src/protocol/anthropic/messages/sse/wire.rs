@@ -125,6 +125,10 @@ impl MessageSseDecoder {
         }
         let event = Event::read(&value)?;
         if let Event::Error { kind, message } = &event {
+            let canonical = value.pointer("/error/error_type");
+            if canonical.is_some_and(|value| !value.is_null() && !value.is_string()) {
+                return Err(invalid());
+            }
             let mut source = SourceFailureEvidence::envelope(
                 error_status(kind),
                 RecognitionBasis::EnvelopeType,
@@ -133,9 +137,7 @@ impl MessageSseDecoder {
                 Some(message),
             );
             source.canonical = crate::protocol::failure::FailureCode::parse(
-                value
-                    .pointer("/error/error_type")
-                    .and_then(serde_json::Value::as_str),
+                canonical.and_then(serde_json::Value::as_str),
             );
             return Err(CodecError::StreamFailure(source).into());
         }

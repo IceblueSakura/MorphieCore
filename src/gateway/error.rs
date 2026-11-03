@@ -95,7 +95,7 @@ pub(super) struct ApiError {
     pub kind: ErrorKind,
     /// Pure policy decision, independent of protocol presentation.
     pub recovery: RecoveryDecision,
-    /// Upstream-reported reset in seconds, sent as `Retry-After` on rate limits.
+    /// Upstream wait in seconds; Generation replaces downstream hints with route availability.
     pub retry_after: Option<u64>,
 }
 impl ApiError {
@@ -415,7 +415,7 @@ impl IntoResponse for ApiError {
         response
     }
 }
-/// Upstream `Retry-After` in seconds (delta or HTTP date), at most one day.
+/// Upstream `Retry-After` in seconds (delta or HTTP date), without policy caps.
 pub(super) fn retry_after(headers: &reqwest::header::HeaderMap) -> Option<u64> {
     retry_after_at(headers, std::time::SystemTime::now())
 }
@@ -423,10 +423,11 @@ fn retry_after_at(headers: &reqwest::header::HeaderMap, now: std::time::SystemTi
     headers
         .get("retry-after")
         .and_then(|v| v.to_str().ok())
-        .filter(|v| !v.is_empty() && v.len() <= 128)
+        .filter(|v| !v.is_empty())
         .and_then(|v| {
-            if v.len() <= 5 && v.bytes().all(|b| b.is_ascii_digit()) {
-                v.parse::<u64>().ok()
+            if v.bytes().all(|b| b.is_ascii_digit()) {
+                // Overflow is still a valid wait that cannot fit this request's budget.
+                Some(v.parse::<u64>().unwrap_or(u64::MAX))
             } else {
                 httpdate::parse_http_date(v).ok().map(|date| {
                     let wait = date.duration_since(now).unwrap_or_default();
@@ -435,24 +436,28 @@ fn retry_after_at(headers: &reqwest::header::HeaderMap, now: std::time::SystemTi
                 })
             }
         })
-        .filter(|n| *n <= 86400)
 }
 
 #[cfg(test)]
 #[test]
-fn retry_after_dates_never_round_dispatch_earlier_and_stay_bounded() {
-    // HTTP dates and delta seconds share the selected dispatch bound.
+fn retry_after_preserves_long_hints_without_rounding_dispatch_earlier() {
     use std::time::{Duration, UNIX_EPOCH};
     let mut headers = reqwest::header::HeaderMap::new();
     for (value, expected) in [
         ("0", Some(0)),
         ("86400", Some(86400)),
-        ("86401", None),
+        ("86401", Some(86401)),
+        ("000001", Some(1)),
+        ("18446744073709551615", Some(u64::MAX)),
+        ("18446744073709551616", Some(u64::MAX)),
+        ("12x", None),
         ("-1", None),
     ] {
         headers.insert("retry-after", value.parse().unwrap());
         assert_eq!(retry_after_at(&headers, UNIX_EPOCH), expected);
     }
+    headers.insert("retry-after", "9".repeat(129).parse().unwrap());
+    assert_eq!(retry_after_at(&headers, UNIX_EPOCH), Some(u64::MAX));
     headers.insert(
         "retry-after",
         "Fri, 02 Jan 1970 00:00:00 GMT".parse().unwrap(),
@@ -465,6 +470,11 @@ fn retry_after_dates_never_round_dispatch_earlier_and_stay_bounded() {
         retry_after_at(&headers, UNIX_EPOCH + Duration::from_secs(86401)),
         Some(0)
     );
+    headers.insert(
+        "retry-after",
+        "Sat, 03 Jan 1970 00:00:00 GMT".parse().unwrap(),
+    );
+    assert_eq!(retry_after_at(&headers, UNIX_EPOCH), Some(172800));
 }
 
 #[cfg(test)]

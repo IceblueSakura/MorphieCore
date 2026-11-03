@@ -57,7 +57,7 @@ pub(crate) fn classify_source(
         "openai" => match source.code.or(source.error_type) {
             Some(C::InsufficientQuota) => Some(R::Quota),
             Some(C::RateLimit | C::RateLimitType) => Some(R::RateLimit),
-            Some(C::Server) => Some(R::Transient),
+            Some(C::Server | C::OverloadedCode) => Some(R::Transient),
             _ => None,
         },
         "chatgpt" => match source.code.or(source.error_type) {
@@ -135,7 +135,10 @@ pub(crate) fn classify_source(
     };
     let transient = matches!(class, R::Transient);
     let equivalent = match provider {
-        "openai" => source.code == Some(C::Server),
+        "openai" => matches!(
+            source.code.or(source.error_type),
+            Some(C::Server | C::OverloadedCode)
+        ),
         "chatgpt" => matches!(
             source.code,
             Some(C::Server | C::SharingUsageUnavailable | C::SharingUserUnavailable)
@@ -287,6 +290,27 @@ mod tests {
 
     #[test]
     fn server_allowlist_and_positive_in_band_evidence_are_independent_of_health() {
+        for (code, kind) in [
+            (
+                Some("server_is_overloaded"),
+                Some("service_unavailable_error"),
+            ),
+            (None, Some("server_error")),
+        ] {
+            let source = crate::protocol::openai::terminal::reported_failure(
+                None,
+                code,
+                kind,
+                Some("synthetic failure"),
+            );
+            let status = source.status_hint.unwrap().get();
+            assert!(classify_source("openai", status, source, false).0.retryable);
+            assert!(
+                !classify_source("deepseek", status, source, false)
+                    .0
+                    .retryable
+            );
+        }
         for code in [
             "subscription_sharing_usage_unavailable",
             "subscription_sharing_user_unavailable",

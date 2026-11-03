@@ -121,6 +121,7 @@ async fn produce(
     history: Option<&super::history::Pending>,
     trace: &mut Trace,
 ) -> Result<Completion, ApiError> {
+    let retry_after = crate::gateway::error::retry_after(upstream.headers());
     let json = attempt.static_body().is_some();
     let mut capture = trace.capture.as_ref().and_then(|capture| {
         capture.body(
@@ -203,7 +204,7 @@ async fn produce(
                             provider,
                             source.status_hint.map_or(500, |s| s.get()),
                             source,
-                            None,
+                            retry_after,
                             false,
                             trace,
                         )
@@ -219,7 +220,7 @@ async fn produce(
                     provider,
                     source.status_hint.map_or(500, |s| s.get()),
                     source,
-                    None,
+                    retry_after,
                     false,
                     trace,
                 );
@@ -321,7 +322,7 @@ async fn produce(
                 provider,
                 source.status_hint.map_or(500, |s| s.get()),
                 source,
-                None,
+                retry_after,
                 false,
                 trace,
             );
@@ -357,7 +358,7 @@ async fn produce(
             provider,
             source.status_hint.map_or(500, |s| s.get()),
             source,
-            None,
+            retry_after,
             false,
             trace,
         ));
@@ -733,6 +734,7 @@ mod tests {
         let upstream = reqwest::Response::from(
             axum::http::Response::builder()
                 .header("content-type", "text/event-stream")
+                .header("retry-after", "7")
                 .body(reqwest::Body::wrap_stream(chunks))
                 .unwrap(),
         );
@@ -777,6 +779,7 @@ mod tests {
         .err()
         .unwrap();
         assert!(error.recovery.retryable);
+        assert_eq!(error.retry_after, Some(7));
         let usage = serde_json::to_value(trace.report.attempt().source_usage).unwrap();
         assert_eq!(usage["reports"][0]["counts"]["input_tokens"], 7);
         assert_eq!(usage["reports"][0]["counts"]["output_tokens"], 3);
@@ -790,12 +793,18 @@ mod tests {
             Some("code"),
             Some("type"),
             Some("message"),
+            Some("missing_message"),
+            Some("null_message"),
             Some("error_type"),
             Some("metadata"),
         ] {
             let mut value = serde_json::json!({"error":{"code":500,"message":"synthetic"},"error_type":"authentication"});
             if let Some(field) = malformed {
-                if field == "metadata" {
+                if field == "missing_message" {
+                    value["error"].as_object_mut().unwrap().remove("message");
+                } else if field == "null_message" {
+                    value["error"]["message"] = serde_json::Value::Null;
+                } else if field == "metadata" {
                     value["error"]["metadata"] = serde_json::json!({"error_type":42});
                 } else {
                     value["error"][field] = serde_json::json!(false);

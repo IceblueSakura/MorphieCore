@@ -17,9 +17,28 @@ async fn recovery_clock_stops_at_content_not_headers_or_lifecycle_and_keeps_heal
         "zero",
         "hint",
         "longhint",
+        "dayhint",
+        "datehint",
+        "overflowhint",
         "inband",
+        "inbandhint",
+        "inbandlonghint",
         "empty",
     ] {
+        let retry_after = match mode {
+            "hint" | "inbandhint" => Some("1".to_owned()),
+            "longhint" | "inbandlonghint" => Some("2".to_owned()),
+            "dayhint" => Some("86401".to_owned()),
+            "datehint" => Some(httpdate::fmt_http_date(
+                std::time::SystemTime::now() + Duration::from_secs(172800),
+            )),
+            "overflowhint" => Some("18446744073709551616".to_owned()),
+            _ => None,
+        };
+        let no_retry = matches!(
+            mode,
+            "zero" | "longhint" | "dayhint" | "datehint" | "overflowhint" | "inbandlonghint"
+        );
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let origin = format!("http://{}", listener.local_addr().unwrap());
         let (calls_tx, mut calls_rx) = mpsc::channel(4);
@@ -33,6 +52,7 @@ async fn recovery_clock_stops_at_content_not_headers_or_lifecycle_and_keeps_heal
                 let calls = calls_tx.clone();
                 let wire = wire_rx.clone();
                 let requests = observed.clone();
+                let retry_after = retry_after.clone();
                 async move {
                     let ordinal = {
                         let mut requests = requests.lock().unwrap();
@@ -40,15 +60,19 @@ async fn recovery_clock_stops_at_content_not_headers_or_lifecycle_and_keeps_heal
                         requests.len()
                     };
                     calls.send(ordinal).await.unwrap();
-                    if ordinal == 1 && mode == "inband" {
-                    return ([("content-type", "text/event-stream")],
-                        "data: {\"id\":\"discarded-id\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"fixture-model\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\"},\"finish_reason\":null}]}\n\ndata: {\"error\":{\"code\":503,\"message\":\"synthetic\"}}\n\n").into_response();
-                }
-                if ordinal == 1 || mode == "twice" {
-                        if mode == "hint" || mode == "longhint" {
+                    if ordinal == 1 && matches!(mode, "inband" | "inbandhint" | "inbandlonghint") {
+                        let mut response = ([("content-type", "text/event-stream")],
+                            "data: {\"id\":\"discarded-id\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"fixture-model\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\"},\"finish_reason\":null}]}\n\ndata: {\"error\":{\"code\":503,\"message\":\"synthetic\"}}\n\n").into_response();
+                        if let Some(hint) = retry_after {
+                            response.headers_mut().insert("retry-after", hint.parse().unwrap());
+                        }
+                        return response;
+                    }
+                    if ordinal == 1 || mode == "twice" {
+                        if let Some(hint) = retry_after {
                             return (
                                 StatusCode::SERVICE_UNAVAILABLE,
-                                [("retry-after", if mode == "hint" { "1" } else { "2" })],
+                                [("retry-after", hint)],
                             )
                                 .into_response();
                         }
@@ -86,7 +110,7 @@ async fn recovery_clock_stops_at_content_not_headers_or_lifecycle_and_keeps_heal
             crate::provider::RecoveryPolicy {
                 recovery_timeout_ms: match mode {
                     "zero" => 0,
-                    "hint" => 2000,
+                    "hint" | "inbandhint" => 2000,
                     _ => 1000,
                 },
                 ..Default::default()
@@ -145,18 +169,18 @@ async fn recovery_clock_stops_at_content_not_headers_or_lifecycle_and_keeps_heal
                 Some(1)
             );
             let started = Instant::now();
-            if !matches!(mode, "zero" | "longhint") {
+            if !no_retry {
                 assert_eq!(
                     tokio::select! { result = &mut producer => panic!("early result: {:?}", result.err()), call = calls_rx.recv() => call },
                     Some(2)
                 );
-                if mode == "hint" {
+                if matches!(mode, "hint" | "inbandhint") {
                     assert!(started.elapsed() >= Duration::from_secs(1));
                 }
             }
-            if matches!(mode, "zero" | "longhint" | "quota" | "malformed" | "twice") {
+            if no_retry || matches!(mode, "quota" | "malformed" | "twice") {
                 result = Some(producer.await);
-            } else if matches!(mode, "hint" | "inband") {
+            } else if matches!(mode, "hint" | "inband" | "inbandhint") {
                 // The second send starts after the exact hint, inside the same budget.
                 wire_tx
                     .send(Ok([frames().concat(), b"data: [DONE]\n\n".to_vec()]
@@ -253,7 +277,7 @@ async fn recovery_clock_stops_at_content_not_headers_or_lifecycle_and_keeps_heal
             }
         }
         if let Some(result) = result {
-            if matches!(mode, "content" | "hint" | "inband" | "empty") {
+            if matches!(mode, "content" | "hint" | "inband" | "inbandhint" | "empty") {
                 result.unwrap();
             } else {
                 let error = result.unwrap_err();
@@ -262,7 +286,7 @@ async fn recovery_clock_stops_at_content_not_headers_or_lifecycle_and_keeps_heal
                     match mode {
                         "quota" => 429,
                         "malformed" => 502,
-                        "zero" | "longhint" | "twice" => 503,
+                        _ if no_retry || mode == "twice" => 503,
                         _ => 504,
                     },
                     "{mode}"
@@ -271,22 +295,14 @@ async fn recovery_clock_stops_at_content_not_headers_or_lifecycle_and_keeps_heal
         }
         {
             let requests = requests.lock().unwrap();
-            assert_eq!(
-                requests.len(),
-                if matches!(mode, "zero" | "longhint") {
-                    1
-                } else {
-                    2
-                },
-                "{mode}"
-            );
+            assert_eq!(requests.len(), if no_retry { 1 } else { 2 }, "{mode}");
             if requests.len() == 2 {
                 assert_eq!(requests[0], requests[1], "same credential and exact body");
             }
         }
         let candidate = &entry.candidates[0];
         let probe = gate.state.executors.acquire(candidate, Instant::now());
-        if matches!(mode, "content" | "hint" | "inband" | "empty") {
+        if matches!(mode, "content" | "hint" | "inband" | "inbandhint" | "empty") {
             assert!(
                 !probe.unwrap().probing,
                 "recovery success discards the first penalty"

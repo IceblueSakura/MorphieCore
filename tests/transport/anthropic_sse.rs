@@ -481,6 +481,40 @@ fn unknown_upstream_fields_and_event_types_are_ignored() {
     );
 }
 #[test]
+fn error_canonical_fields_are_strict_without_rejecting_unknown_tokens() {
+    use morphiecore::protocol::{CodecError, failure::FailureCode};
+    for (canonical, malformed, expected) in [
+        (json!(42), true, None),
+        (json!(false), true, None),
+        (json!({}), true, None),
+        (json!([]), true, None),
+        (json!("future_error"), false, None),
+        (
+            json!("provider_unavailable"),
+            false,
+            Some(FailureCode::RouterProviderUnavailable),
+        ),
+    ] {
+        let event = json!({"type":"error","error":{
+            "type":"api_error","message":"synthetic","error_type":canonical}});
+        let mut decoder =
+            MessageSseDecoder::new(200, "text/event-stream", SseLimits::default()).unwrap();
+        let error = feed(&mut decoder, &wire(&[event])).unwrap_err();
+        if malformed {
+            assert!(
+                matches!(error, SseError::Codec(CodecError::Invalid(_))),
+                "{error:?}"
+            );
+        } else {
+            let SseError::Codec(CodecError::StreamFailure(source)) = error else {
+                panic!("missing failure evidence: {error:?}");
+            };
+            assert_eq!(source.canonical, expected);
+        }
+        assert!(decoder.finish().is_err());
+    }
+}
+#[test]
 fn complete_tool_openers_and_empty_json_deltas_preserve_the_observed_object() {
     use morphiecore::semantic::task::generation::{Item, ToolArguments};
     for input in [

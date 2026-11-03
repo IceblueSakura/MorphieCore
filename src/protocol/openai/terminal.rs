@@ -244,7 +244,10 @@ pub(crate) fn reported_failure(
 pub(crate) fn reported_value(value: &Value) -> Result<SourceFailureEvidence, CodecError> {
     let error = value.get("error").unwrap_or(value);
     let object = object(error)?;
-    for name in ["type", "message", "param", "error_type"] {
+    if !object.get("message").is_some_and(Value::is_string) {
+        return Err(CodecError::invalid());
+    }
+    for name in ["type", "param", "error_type"] {
         if object
             .get(name)
             .is_some_and(|v| !v.is_null() && !v.is_string())
