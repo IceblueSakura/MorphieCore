@@ -5,6 +5,85 @@ use super::{
 };
 use serde_json::json;
 
+#[tokio::test]
+async fn configured_task_sends_once_to_its_named_account_despite_generation_recovery() {
+    use axum::{Json, Router, http::HeaderMap, routing::post};
+    use std::sync::{Arc, Mutex};
+    use tower::ServiceExt;
+    let calls = Arc::new(Mutex::new(Vec::new()));
+    let observed = calls.clone();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let root = format!("http://{}/custom/v1", listener.local_addr().unwrap());
+    let server = tokio::spawn(async move {
+        axum::serve(
+            listener,
+            Router::new().route(
+                "/custom/v1/embeddings",
+                post(
+                    move |headers: HeaderMap, Json(body): Json<serde_json::Value>| {
+                        let calls = observed.clone();
+                        async move {
+                            calls.lock().unwrap().push((
+                                headers["authorization"].to_str().unwrap().to_owned(),
+                                body,
+                            ));
+                            axum::http::StatusCode::SERVICE_UNAVAILABLE
+                        }
+                    },
+                ),
+            ),
+        )
+        .await
+        .unwrap();
+    });
+    let boot = Fixture::with_accounts(
+        service(),
+        json!({"models":{"text-embedding-3-small":{"account":"backup"}}}),
+        &[("openrouter", "primary", "synthetic-primary"), ("openrouter", "backup", "synthetic-backup")],
+        json!({"version":1,"providers":{"openrouter":{
+            "recovery":{"recovery_timeout_ms":5000},
+            "accounts":(["primary","backup"].map(|name| json!({
+                "name":name,"enabled":true,"credential":{"kind":"api_key","alias":name},"base_url":root
+            })))
+        }}}),
+    ).unwrap();
+    let response = boot
+        .gateway
+        .router()
+        .oneshot(
+            axum::http::Request::builder()
+                .method("POST")
+                .uri("/v1/embeddings")
+                .header(
+                    "authorization",
+                    "Bearer synthetic-gateway-client-token-0001",
+                )
+                .header("content-type", "application/json")
+                .body(axum::body::Body::from(
+                    r#"{"model":"text-embedding-3-small","input":"synthetic"}"#,
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert!(response.status().is_server_error());
+    axum::body::to_bytes(response.into_body(), 65536)
+        .await
+        .unwrap();
+    {
+        let calls = calls.lock().unwrap();
+        assert_eq!(
+            calls.len(),
+            1,
+            "standalone tasks do not inherit Generation recovery"
+        );
+        assert_eq!(calls[0].0, "Bearer synthetic-backup");
+        assert_eq!(calls[0].1["model"], "openai/text-embedding-3-small");
+    }
+    server.abort();
+    let _ = server.await;
+}
+
 #[test]
 fn embeddings_select_one_named_account_and_publish_only_the_selected_task() {
     for binding in catalog::EMBEDDING_BINDINGS {

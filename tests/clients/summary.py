@@ -7,8 +7,8 @@ import queue
 import signal
 import sys
 
-from drivers import (Child, KEY, Pi, READ, TEXT, check, check_client_version,
-                     environment, pi_configuration, private_json)
+from drivers import (Child, Pi, READ, TEXT, check, check_client_version,
+                     environment, gateway_configuration, pi_configuration)
 from recovery import (CALL, PLAN, REDACTED, SIGNATURE, State as RecoveryState,
                       assert_history, assert_profile, chat_events, native_events, server, text)
 
@@ -231,15 +231,8 @@ def main():
     state = State(native, path, scenario)
     with ExitStack() as stack:
         origin = stack.enter_context(server(state, False))
-        model = "claude-haiku-5-5" if native else "qwen3.8-flash"
-        binding = "opencode-go-haiku-messages" if native else "aliyun-tokenplan-cn-chat"
-        private_json(root / "auth.json", {"version": 1, "agents": [{"agent_id": "fixture-agent", "key": KEY}]})
-        private_json(root / "gateway.json", {"auth_file": "auth.json", "bind": "127.0.0.1:0",
-            "models_file": "models.json", "exchange_timeout_ms": 10000, "diagnostics": "diagnostics.jsonl"})
-        private_json(root / "models.json", {"models": {model: {"max_attempts": 1,
-            "chat_profile": "standard" if native else "readable_reasoning",
-            "total_timeout_ms": 8000, "candidates": [{"binding": binding,
-                "base_url": origin + "/v1", "attempt_timeout_ms": 3000}]}}})
+        # This gate observes the Agent's retry, not gateway recovery or cooldown.
+        gateway_configuration(root, native, origin, recovery={"transient_cooldown_ms": 0})
         gateway = stack.enter_context(Child([gateway_binary, "--config", str(root / "gateway.json"),
             "--credentials-dir", str(root / "credentials")], env, work))
         try:

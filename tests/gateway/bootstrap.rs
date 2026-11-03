@@ -10,6 +10,250 @@ use serde_json::{Value, json};
 use std::{sync::Arc, time::Duration};
 use tokio::net::TcpListener;
 
+#[cfg(unix)]
+#[tokio::test]
+async fn fresh_account_setup_live_runner_and_diagnostics_share_the_production_loader() {
+    use axum::{Json, http::HeaderMap, routing::post};
+    use std::{
+        io::Write,
+        os::unix::fs::{DirBuilderExt, OpenOptionsExt},
+        sync::Mutex,
+    };
+    let calls = Arc::new(Mutex::new(Vec::new()));
+    let observed = calls.clone();
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let origin = format!("http://{}/custom/v1", listener.local_addr().unwrap());
+    let _upstream = Guard(tokio::spawn(async move {
+        axum::serve(
+            listener,
+            Router::new().route(
+                "/custom/v1/messages",
+                post(move |headers: HeaderMap, Json(body): Json<Value>| {
+                    let calls = observed.clone();
+                    async move {
+                        calls
+                            .lock()
+                            .unwrap()
+                            .push((headers["x-api-key"].to_str().unwrap().to_owned(), body));
+                        StatusCode::SERVICE_UNAVAILABLE
+                    }
+                }),
+            ),
+        )
+        .await
+        .unwrap();
+    }));
+    let directory = filesystem::private_directory();
+    let root = directory.path();
+    let store = root.join("credentials");
+    let accounts = root.join("accounts.json");
+    let write = |name: &str, bytes: &[u8]| {
+        std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .open(root.join(name))
+            .unwrap()
+            .write_all(bytes)
+            .unwrap();
+    };
+    write("accounts.json", &serde_json::to_vec(&json!({"version":1,"providers":{"opencode-go":{
+        "recovery":{"recovery_timeout_ms":0},"accounts":(["primary","backup"].map(|name| json!({
+            "name":name,"enabled":true,"credential":{"kind":"api_key","alias":name},"base_url":origin
+        })))
+    }}})).unwrap());
+    let auth = |args: &[&str]| {
+        let mut command = tokio::process::Command::new(env!("CARGO_BIN_EXE_morphiecore-auth"));
+        command
+            .env_clear()
+            .args([
+                "--accounts",
+                accounts.to_str().unwrap(),
+                "--store",
+                store.to_str().unwrap(),
+            ])
+            .args(args);
+        command
+    };
+    let explained = child_process::run(
+        &mut auth(&["explain"]),
+        b"",
+        Duration::from_secs(5),
+        16 << 10,
+    )
+    .await
+    .unwrap();
+    assert!(explained.status.success() && !store.exists());
+    assert!(String::from_utf8_lossy(&explained.stdout).contains("opencode-go/primary"));
+    let absent = child_process::run(
+        &mut auth(&["validate", "--json"]),
+        b"",
+        Duration::from_secs(5),
+        16 << 10,
+    )
+    .await
+    .unwrap();
+    assert!(!absent.status.success() && !store.exists());
+    for name in ["primary", "backup"] {
+        let secret = format!("synthetic-{name}");
+        let filename = format!("{name}.key");
+        write(&filename, secret.as_bytes());
+        let added = child_process::run(
+            &mut auth(&[
+                "key",
+                "add",
+                "--provider",
+                "opencode-go",
+                "--account",
+                name,
+                "--secret-file",
+                root.join(&filename).to_str().unwrap(),
+            ]),
+            b"",
+            Duration::from_secs(5),
+            16 << 10,
+        )
+        .await
+        .unwrap();
+        assert!(added.status.success());
+        assert!(!String::from_utf8_lossy(&added.stdout).contains(&secret));
+        assert!(!String::from_utf8_lossy(&added.stderr).contains(&secret));
+    }
+    let valid = child_process::run(
+        &mut auth(&["validate", "--json"]),
+        b"",
+        Duration::from_secs(5),
+        16 << 10,
+    )
+    .await
+    .unwrap();
+    assert!(valid.status.success());
+    assert_eq!(
+        serde_json::from_slice::<Value>(&valid.stdout).unwrap()["accounts_checked"],
+        2
+    );
+    // The Python constructor must reach the actual CLI, not a mocked Popen or __new__.
+    let run = root.join("run");
+    std::fs::DirBuilder::new().mode(0o700).create(&run).unwrap();
+    let mut command = tokio::process::Command::new("python3");
+    command
+        .env_clear()
+        .env("HOME", root)
+        .env("PATH", std::env::var_os("PATH").unwrap_or_default())
+        .current_dir(env!("CARGO_MANIFEST_DIR"))
+        .args([
+            "-c",
+            r#"
+import json, sys
+from pathlib import Path
+sys.path.insert(0, "tests/sdk")
+from messages_inputs_live import Gateway, GateError, MODEL, CAP
+root, accounts, store = map(Path, sys.argv[2:])
+gateway = Gateway(Path(sys.argv[1]), root, 1, accounts=accounts, store=store)
+try:
+    try:
+        gateway.generate({"model":MODEL,"messages":[{"role":"user","content":"synthetic"}],
+                          "max_tokens":CAP,"stream":False})
+    except GateError as error:
+        assert str(error) == "http_529"
+    else:
+        raise AssertionError("synthetic failure was hidden")
+finally:
+    gateway.close()
+records = [json.loads(line) for line in (root / "diagnostics.jsonl").read_text().splitlines()]
+requests = [r for r in records if r.get("event") == "request"]
+assert len(requests) == 1 and requests[0]["outcome"] == "error"
+assert len(requests[0]["candidates"]) == 1
+"#,
+        ])
+        .arg(env!("CARGO_BIN_EXE_morphiecore"))
+        .arg(&run)
+        .arg(&accounts)
+        .arg(&store);
+    let result = child_process::run(&mut command, b"", Duration::from_secs(15), 16 << 10)
+        .await
+        .unwrap();
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    assert_eq!(calls.lock().unwrap().len(), 1);
+    assert_eq!(calls.lock().unwrap()[0].0, "synthetic-primary");
+    assert_eq!(calls.lock().unwrap()[0].1["max_tokens"], 2048);
+    let diagnostics = std::fs::read(run.join("diagnostics.jsonl")).unwrap();
+    let mut config: Value =
+        serde_json::from_slice(&std::fs::read(run.join("gateway.json")).unwrap()).unwrap();
+    config["capture"]["path"] = json!(run.join("validation-capture.jsonl"));
+    std::fs::write(
+        run.join("gateway.json"),
+        serde_json::to_vec(&config).unwrap(),
+    )
+    .unwrap();
+    let mut validation = tokio::process::Command::new(env!("CARGO_BIN_EXE_morphiecore"));
+    validation.env_clear().args([
+        "--config",
+        run.join("gateway.json").to_str().unwrap(),
+        "--validate",
+        "--json",
+    ]);
+    let validated = child_process::run(&mut validation, b"", Duration::from_secs(5), 16 << 10)
+        .await
+        .unwrap();
+    assert!(validated.status.success());
+    assert_eq!(
+        serde_json::from_slice::<Value>(&validated.stdout).unwrap(),
+        json!({"valid":true})
+    );
+    assert_eq!(
+        std::fs::read(run.join("diagnostics.jsonl")).unwrap(),
+        diagnostics
+    );
+    assert!(!run.join("validation-capture.jsonl").exists());
+    let status = child_process::run(
+        &mut auth(&["status"]),
+        b"",
+        Duration::from_secs(5),
+        16 << 10,
+    )
+    .await
+    .unwrap();
+    assert!(status.status.success());
+    let status = String::from_utf8(status.stdout).unwrap();
+    assert!(status.contains("opencode-go/primary:") && status.contains("opencode-go/backup:"));
+    assert!(!status.contains("synthetic-"));
+    let mut diagnostic = tokio::process::Command::new(env!("CARGO_BIN_EXE_morphiecore-upstream"));
+    diagnostic.env_clear().args([
+        "probe",
+        "opencode-go",
+        "--account",
+        "backup",
+        "--accounts",
+        accounts.to_str().unwrap(),
+        "--store",
+        store.to_str().unwrap(),
+        "--protocol",
+        "anthropic",
+        "--model",
+        "claude-haiku-5-5",
+        "--timeout-seconds",
+        "3",
+    ]);
+    let result = child_process::run(&mut diagnostic, b"", Duration::from_secs(5), 16 << 10)
+        .await
+        .unwrap();
+    assert!(!result.status.success());
+    assert!(String::from_utf8_lossy(&result.stderr).contains("503"));
+    let calls = calls.lock().unwrap();
+    assert_eq!(
+        calls.len(),
+        2,
+        "diagnostic failure cannot retry or choose another account"
+    );
+    assert_eq!(calls[1].0, "synthetic-backup");
+    assert_eq!(calls[1].1["max_tokens"], 1024);
+}
+
 #[tokio::test]
 async fn binaries_report_cli_identity_without_loading_credentials() {
     for (binary, name) in [

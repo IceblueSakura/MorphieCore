@@ -5,10 +5,13 @@ import os
 from pathlib import Path
 import queue
 import re
+import signal
 import sqlite3
 import subprocess
+import sys
 import threading
 import time
+from urllib.parse import urlsplit
 
 KEY = "synthetic-installed-client-ingress-000001"
 READ = "synthetic-client-read"
@@ -33,6 +36,37 @@ def check_client_version(case, version):
 def private_json(path, value):
     with open(path, "x", encoding="utf-8", opener=lambda p, f: os.open(p, f, 0o600)) as file:
         json.dump(value, file)
+
+
+def gateway_configuration(root, native, origin, *, credential_root=None,
+                          recovery=None, accounts=("primary",),
+                          total_timeout_ms=8000, exchange_timeout_ms=10000,
+                          concurrency=None):
+    """Current production-loader inputs with explicitly local synthetic accounts."""
+    target = urlsplit(origin)
+    check(target.scheme == "http" and target.hostname == "127.0.0.1"
+          and target.port is not None and not target.path
+          and not target.query and not target.fragment, "synthetic_upstream_origin")
+    model = "claude-haiku-5-5" if native else "qwen3.8-flash"
+    provider = "opencode-go" if native else "aliyun-tokenplan-cn"
+    binding = "opencode-go-haiku-messages" if native else "aliyun-tokenplan-cn-chat"
+    private_json(root / "accounts.json", {"version": 1, "providers": {provider: {
+        "recovery": {"recovery_timeout_ms": 0, **(recovery or {})},
+        "accounts": [{"name": name, "enabled": True,
+                      "credential": {"kind": "api_key", "alias": name},
+                      "base_url": origin + "/v1"} for name in accounts]}}})
+    private_json(root / "auth.json", {"version": 1, "agents": [
+        {"agent_id": "fixture-agent", "key": KEY}]})
+    service = {"version": 1, "auth_file": "auth.json", "bind": "127.0.0.1:0",
+        "accounts_file": "accounts.json", "models_file": "models.json",
+        "credentials_dir": str((credential_root or root) / "credentials"),
+        "exchange_timeout_ms": exchange_timeout_ms, "diagnostics": "diagnostics.jsonl"}
+    if concurrency is not None:
+        service["concurrency"] = concurrency
+    private_json(root / "gateway.json", service)
+    private_json(root / "models.json", {"version": 1, "models": {model: {
+        "chat_profile": "standard" if native else "readable_reasoning",
+        "total_timeout_ms": total_timeout_ms, "candidates": [{"binding": binding}]}}})
 
 
 class Child:
@@ -113,6 +147,18 @@ class Child:
 
     def __exit__(self, *_):
         self.close()
+
+
+def shutdown_gateway(child, *, failed=False):
+    """Keep an active scenario failure authoritative if bounded shutdown also fails."""
+    try:
+        child.process.send_signal(signal.SIGINT)
+        child.wait(timeout=5)
+    except (RuntimeError, OSError, subprocess.TimeoutExpired) as error:
+        if not failed:
+            raise
+        code = str(error) if isinstance(error, RuntimeError) else type(error).__name__
+        print(json.dumps({"gateway_cleanup_error": code}), file=sys.stderr)
 
 
 class Pi(Child):

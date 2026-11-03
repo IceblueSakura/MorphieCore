@@ -61,13 +61,13 @@ This page owns current scope, priorities, dependencies, and exit gates. [Archite
 
 ## Current status
 
-**Current focus (2026-11-03):** Slices R0–R5 and account rewrite gates AR0–AR3 are complete. AR4 closes installed-client configuration and synthetic recovery on the connected account path. Fresh credential provisioning, model selection and full three-protocol installed-Agent acceptance follow offline integration; Stage 4 remains paused.
+**Current focus (2026-11-03):** Slices R0–R5 and account rewrite gates AR0–AR4 are complete. AR5 starts with fresh credential provisioning and actual model selection, then closes real Provider and full three-protocol installed-Agent acceptance. Stage 4 remains paused.
 
 | Area | State | Next step |
 |---|---|---|
-| Routing | AR3 closed; finite Provider classification, precise transport facts and bounded same-target recovery implemented | AR4 installed-client configuration and synthetic recovery |
+| Routing | Account rewrite and installed-client synthetic recovery closed through AR4 | AR5 selected-account/model Provider acceptance |
 | Generation IR / Codec | R0–R5 complete; shared projections/discovery, qualified intake, history transfer and reviewed null contracts | Maintain these contracts through the installed-Agent exit |
-| Client compatibility | Earlier installed native Messages loops passed; rewritten account path has offline/SDK evidence | Revalidate installed-client configuration/recovery in AR4; full exit follows fresh model selection |
+| Client compatibility | Current pi 1.5.0 / OpenCode 2.0.32 pass 17 isolated synthetic scenarios on the rewritten account path | Full three-protocol/default-profile exit follows fresh model selection |
 | Integration | R1a/R1b/R2 loops, controlled recovery and production closure passed | Revalidate changed paths against established gates |
 | Cross-protocol conversion | Stage 3 closed for selected projections; `count_tokens` deferred | Stage-4 Embedding paths active; Google API paused |
 | Decision APIs | Dual standard-SDK direction selected (TypeSafe/OpenAI) | Contract selection and Stage-4 implementation |
@@ -94,7 +94,6 @@ The identifiers below belong only to planning and acceptance documentation, not 
 
 | Order | Work | Completion evidence |
 |---|---|---|
-| **AR4 — Close offline integration and hand over fresh setup** | Exercise every affected entrance through production construction; migrate installed-client configuration writers to the current account schema, close operational explanations and remove remaining obsolete fixture assumptions. Run the applicable SDK consumers and installed-client synthetic recovery scenarios against the completed path. Verify credential-free validation/explanation and fresh setup instructions. | Full offline baseline and applicable Python/SDK gates pass on the final code. Installed pi/OpenCode synthetic checks establish actual transmission counts, retry-hint behavior and cancellation without personal config changes. Existing task/diagnostic binding still works without new task recovery. No migration command, legacy runtime path or real credential requirement remains. |
 | **AR5 — Fresh credentials, model selection and real acceptance** | The user provisions new API keys and any required OAuth sessions through the new loader/CLI. Validate configured accounts and select actual Provider/model bindings. Then run bounded serial Provider checks and the deferred full installed-Agent exit on the rewritten path. | Actual credential kinds and selected models are verified separately from synthetic recovery. Current installed pi/OpenCode complete default reasoning/tool/history loops across the three client protocols and selected cross-protocol lanes. Unavailable account combinations are reported as unverified, not inferred from mocks. Production activation remains separately approved. |
 
 AR1–AR3 are implementation dependencies, not three runtime modes or mandatory separate commits. Internal steps may be split for review only when the resulting slice remains coherent and does not introduce old/new compatibility execution. If the account cutover needs all three to form a coherent runtime, keep them in one implementation slice instead of manufacturing compatibility shims. Delete obsolete code as soon as its owner is replaced. A failure in protocol evidence, trusted-target binding or cancellation blocks dependent work; the retry ceiling and publication rules are not relaxed to make a check pass.
@@ -111,9 +110,7 @@ AR3 closed on **2026-11-03**: the full offline baseline passes (988 Rust tests, 
 
 AR3 review fixes on **2026-11-03** pass the full offline baseline again (989 Rust tests, 39 ignored; Clippy, formatting and production compilation), 20 pinned assets, the 9/19/33/24 Python gates and all 18 serial SDK consumers. Regressions first reproduced lost long/reset hints, missing HTTP-200 failure hints, malformed Chat messages and Messages canonical fields, and omitted OpenAI overload eligibility. Real HTTP checks now retain one-send vetoes for long delta/date/overflow hints and verify in-band hint waiting, unchanged wire reuse and health ownership. Installed-Agent recovery remains AR4; no private state, real Provider or deployment was used.
 
-| Current owner | Replacement/deletion owner |
-|---|---|
-| Installed-client configuration/driver fixtures, final operational explanations and setup handoff | AR4: move remaining installed-client writers to current schema, count actual transmissions on the completed executor, and recheck fresh setup without private state |
+AR4 closed on **2026-11-03**: the final tree passes the full offline baseline (991 Rust tests, 42 ignored; Clippy, formatting and production compilation), 20 pinned assets, the 9/19/37/24 Python gates and all 18 serial SDK consumers. Current installed pi **1.5.0** and OpenCode **2.0.32** pass all 17 isolated synthetic cases. Named-account writers replace old candidate targets and attempt ceilings; same-target recovery checks unchanged bytes and post-header hint waiting. Separate cases prove long-hint one-send failure, the two-send ceiling, next-request failover and cancellation before a delayed retry. Cancellation waits for the correlated gateway terminal receipt before follow-up; publication/cancellation gates retain an eligible secondary. Summary retries remain client-owned. Fresh CLI provisioning/explanation/status/validation, the explicit-account live-runner constructor, diagnostic dispatch and fixed-account task dispatch use production construction with synthetic credentials. The current pi default-body corpus reproduces byte-for-byte; no old-Agent compatibility branch, private state, real Provider or deployment was used.
 
 Existing fixture owners suffice: credential storage fault injection and synthetic authorities for lifecycle; executor paused-time tests for health/probes; native Responses Router fixtures for failed-task health; transport loopback fixtures for interruption/TLS/deadline facts; production bootstrap, SDK and installed-client harnesses for the connected path. No new framework is needed.
 

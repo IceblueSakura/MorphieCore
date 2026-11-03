@@ -1,4 +1,4 @@
-//! Source-derived pi 1.4.0 shapes; native outputs reuse the repair-and-recall corpus.
+//! Current installed pi shapes; native outputs reuse the repair-and-recall corpus.
 //! pi-ai serializers supply defaults/replay independently of MorphieCore codecs.
 //! Bare API forms remain controls beside the resolved Go/Haiku built-in record.
 use serde_json::{Value, json};

@@ -35,12 +35,6 @@ async fn installed_case(
             )
             .unwrap();
     }
-    use std::{io::Write, os::unix::fs::OpenOptionsExt};
-    std::fs::OpenOptions::new().write(true).create_new(true).mode(0o600).open(root.join("accounts.json")).unwrap()
-        .write_all(&serde_json::to_vec(&serde_json::json!({"version":1,"providers":{domain:{"accounts":[
-            {"name":"primary","enabled":true,"credential":{"kind":"api_key","alias":"primary"}},
-            {"name":"secondary","enabled":true,"credential":{"kind":"api_key","alias":"secondary"}}
-        ]}}})).unwrap()).unwrap();
     let mut command = tokio::process::Command::new(
         std::env::var_os("MORPHIECORE_CLIENT_PYTHON").unwrap_or_else(|| "python3".into()),
     );
@@ -123,6 +117,38 @@ async fn opencode_messages_default_tool_history() {
 #[ignore = "requires explicit unwrapped installed OpenCode; synthetic Chat recovery"]
 async fn opencode_chat_credential_recovery() {
     recovery_case("opencode-chat", "MORPHIECORE_OPENCODE_BIN").await;
+}
+
+async fn recovery_boundary(scenario: &str, sends: usize) {
+    let report = installed_case(
+        "recovery_boundary",
+        "pi-chat",
+        "MORPHIECORE_PI_BIN",
+        &[scenario],
+    )
+    .await;
+    assert_eq!(report["client_requests"], 3);
+    assert_eq!(report["upstream_attempts"], sends);
+    assert_eq!(report["honest_failure"], true);
+    assert_eq!(report["next_request_boundary"], true);
+}
+
+#[tokio::test]
+#[ignore = "requires current installed pi; long hint and next-request account selection"]
+async fn pi_chat_long_hint_and_next_request_failover() {
+    recovery_boundary("next-request", 3).await;
+}
+
+#[tokio::test]
+#[ignore = "requires current installed pi; two same-target failures and no third send"]
+async fn pi_chat_two_send_recovery_limit() {
+    recovery_boundary("retry-limit", 4).await;
+}
+
+#[tokio::test]
+#[ignore = "requires current installed pi; cancel after retry hint without a second send"]
+async fn pi_chat_cancel_recovery_wait() {
+    recovery_boundary("cancel-wait", 3).await;
 }
 
 async fn pi_summary_case(case: &str, scenario: &str) {

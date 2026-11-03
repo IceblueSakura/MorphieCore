@@ -1,5 +1,5 @@
 {
-  "source": "@earendil-works/pi-ai@1.4.0",
+  "source": "@earendil-works/pi-ai@1.5.0",
   "requests": {
     "chat": {
       "text": {
@@ -662,15 +662,15 @@
     "opencode_go_haiku": {
       "resolver": "getBuiltinModel",
       "source_files": {
-        "dist/providers/data/opencode-go.json": "e3cb85944bdbc7fb369204dac3001c683e422ca44f305112e77fb1c5dbfbb79e",
-        "dist/api/anthropic-messages.js": "992daf485e2d479ac1df3886019946d0bf512ef6517ec730ce4c7315f9472ecc"
+        "dist/providers/data/opencode-go.json": "daed1626c48d9cec6da77f53a163aec917d5d5fc8d6e4d53c23f448f99463328",
+        "dist/api/anthropic-messages.js": "d25004b2882902b7d86b2e5ba82be45cfd94010244173b2d3e3515431721af89"
       },
       "model": {
         "id": "claude-haiku-5-5",
         "name": "Claude Haiku 5.5",
         "api": "anthropic-messages",
         "provider": "opencode-go",
-        "baseUrl": "https://opencode.ai/inference/go",
+        "baseUrl": "https://opencode.ai/inference/go/anthropic",
         "reasoning": true,
         "input": [
           "text",

@@ -15,8 +15,8 @@ import threading
 import time
 from urllib.parse import urlsplit
 
-from drivers import (KEY, TEXT, Child, Pi, check, check_client_version, environment,
-                     opencode_configuration, opencode_prompt, pi_configuration, private_json)
+from drivers import (TEXT, Child, Pi, check, check_client_version, environment,
+                     gateway_configuration, opencode_configuration, opencode_prompt, pi_configuration)
 from recovery import OwnedServer
 
 FIRST = "synthetic-client-first-content"
@@ -428,16 +428,10 @@ def main():
     state = State(case == "pi-messages")
     with ExitStack() as stack:
         upstream = stack.enter_context(authority(state))
-        model = "claude-haiku-5-5" if state.native else "qwen3.8-flash"
-        binding = "opencode-go-haiku-messages" if state.native else "aliyun-tokenplan-cn-chat"
-        private_json(root / "auth.json", {"version": 1, "agents": [{"agent_id": "fixture-agent", "key": KEY}]})
-        private_json(root / "gateway.json", {"auth_file": "auth.json", "bind": "127.0.0.1:0",
-            "models_file": "models.json", "concurrency": 1,
-            "exchange_timeout_ms": 30000, "diagnostics": "diagnostics.jsonl"})
-        private_json(root / "models.json", {"models": {model: {"max_attempts": 2,
-            "chat_profile": "standard" if state.native else "readable_reasoning",
-            "total_timeout_ms": 25000, "candidates": [{"binding": binding,
-                "base_url": upstream + "/v1", "attempt_timeout_ms": 20000}]}}})
+        gateway_configuration(root, state.native, upstream, total_timeout_ms=25000,
+                              exchange_timeout_ms=30000, concurrency=1,
+                              accounts=("primary", "secondary"),
+                              recovery={"recovery_timeout_ms": 2500})
         gateway = stack.enter_context(Child([gateway_binary, "--config", str(root / "gateway.json"),
             "--credentials-dir", str(root / "credentials")], env, work))
         try:

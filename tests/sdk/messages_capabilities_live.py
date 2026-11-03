@@ -198,6 +198,8 @@ def failure_summary(gateway):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--gateway-bin", required=True, type=Path)
+    parser.add_argument("--accounts", type=Path, required=True)
+    parser.add_argument("--store", type=Path, required=True)
     args = parser.parse_args()
     require_sdk("anthropic")
     require(args.gateway_bin.is_absolute() and args.gateway_bin.is_file(), "explicit_gateway_binary")
@@ -206,7 +208,8 @@ def main():
               "attempt_timeout_ms": DEADLINE_MS}
     try:
         with tempfile.TemporaryDirectory(prefix="morphiecore-messages-capabilities-") as directory:
-            gateway = Gateway(args.gateway_bin, Path(directory), BUDGET)
+            gateway = Gateway(args.gateway_bin, Path(directory), BUDGET,
+                              accounts=args.accounts, store=args.store)
             try:
                 origin = f"http://127.0.0.1:{gateway.address.port}"
                 with httpx.Client(trust_env=False, timeout=130) as http:

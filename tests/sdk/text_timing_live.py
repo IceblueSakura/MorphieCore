@@ -71,6 +71,8 @@ def measure(gateway):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--gateway-bin", required=True, type=Path)
+    parser.add_argument("--accounts", type=Path, required=True)
+    parser.add_argument("--store", type=Path, required=True)
     args = parser.parse_args()
     report = {"model": MODEL, "binding": BINDING, "request_budget": 1,
               "max_tokens": CAP, "attempt_timeout_ms": DEADLINE_MS}
@@ -78,7 +80,8 @@ def main():
         require_sdk("anthropic")
         require(args.gateway_bin.is_absolute() and args.gateway_bin.is_file(), "explicit_gateway_binary")
         with tempfile.TemporaryDirectory(prefix="morphiecore-text-timing-") as directory:
-            gateway = Gateway(args.gateway_bin, Path(directory), 1)
+            gateway = Gateway(args.gateway_bin, Path(directory), 1,
+                              accounts=args.accounts, store=args.store)
             try:
                 try:
                     values = measure(gateway)

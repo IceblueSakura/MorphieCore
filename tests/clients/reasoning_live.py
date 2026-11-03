@@ -282,6 +282,8 @@ def main():
     parser.add_argument("case", choices=("pi-chat", "opencode-chat"))
     parser.add_argument("--gateway", type=Path, required=True)
     parser.add_argument("--client-binary", type=Path, required=True)
+    parser.add_argument("--accounts", type=Path, required=True)
+    parser.add_argument("--store", type=Path, required=True)
     args = parser.parse_args()
     report = {"case": args.case, "model": MODEL, "binding": BINDING,
               "request_budget": BUDGET, "output_cap": CAP, "attempt_timeout_ms": 120000}
@@ -301,6 +303,7 @@ def main():
             gateway_root = root / "gateway"
             gateway_root.mkdir(mode=0o700)
             gateway = Gateway(args.gateway, gateway_root, BUDGET, model=MODEL, binding=BINDING,
+                              accounts=args.accounts, store=args.store,
                               chat_profile="readable_reasoning", capture_response=True)
             state = State(gateway, path)
             try:

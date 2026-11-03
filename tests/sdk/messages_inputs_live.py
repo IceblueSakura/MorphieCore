@@ -43,7 +43,8 @@ def private_json(path, value):
 
 class Gateway:
     def __init__(self, binary, directory, budget, *, model=MODEL, binding=BINDING,
-                 chat_profile=None, capture_response=False):
+                 accounts, store, chat_profile=None, capture_response=False):
+        require(accounts.is_absolute() and store.is_absolute(), "explicit_account_paths")
         self.root = directory
         self.budget = budget
         self.requests = []
@@ -55,21 +56,20 @@ class Gateway:
             capture["upstream_response"] = {"body": True}
         private_json(directory / "auth.json", {"version": 1, "agents": [{"agent_id": "fixture-agent", "key": self.key}]})
         private_json(directory / "gateway.json", {
+            "version": 1, "accounts_file": str(accounts), "credentials_dir": str(store),
             "auth_file": "auth.json", "bind": "127.0.0.1:0", "models_file": "models.json",
             "exchange_timeout_ms": DEADLINE_MS, "diagnostics": "diagnostics.jsonl",
             "capture": capture})
-        candidate = {"binding": binding, "attempt_timeout_ms": DEADLINE_MS,
-                     "maximum_output_tokens": CAP}
+        candidate = {"binding": binding, "maximum_output_tokens": CAP}
         if chat_profile is None:
             candidate["default_output_tokens"] = None
         selection = {
-            "max_attempts": 1, "total_timeout_ms": DEADLINE_MS,
+            "total_timeout_ms": DEADLINE_MS,
             "candidates": [candidate]}
         if chat_profile is not None:
             selection["chat_profile"] = chat_profile
-        private_json(directory / "models.json", {"models": {model: selection}})
-        # Inherit HOME only for the application loader's ordinary store resolution.
-        # Do not read private configuration, credentials or environment values here.
+        private_json(directory / "models.json", {"version": 1, "models": {model: selection}})
+        # Only the production loader opens the explicitly selected account/store.
         self.process = subprocess.Popen([str(binary), "--config", str(directory / "gateway.json")],
             stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
         try:
@@ -268,6 +268,8 @@ def verify_cache_controls(wires):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--gateway-bin", type=Path, required=True)
+    parser.add_argument("--accounts", type=Path, required=True)
+    parser.add_argument("--store", type=Path, required=True)
     parser.add_argument("case", choices=list(BUDGETS))
     args = parser.parse_args()
     require(args.gateway_bin.is_absolute() and args.gateway_bin.is_file(), "explicit_gateway_binary")
@@ -275,7 +277,8 @@ def main():
               "request_budget": BUDGETS[args.case], "max_tokens": CAP, "attempt_timeout_ms": DEADLINE_MS}
     try:
         with tempfile.TemporaryDirectory(prefix="morphiecore-messages-input-") as directory:
-            gateway = Gateway(args.gateway_bin, Path(directory), BUDGETS[args.case])
+            gateway = Gateway(args.gateway_bin, Path(directory), BUDGETS[args.case],
+                              accounts=args.accounts, store=args.store)
             try:
                 if args.case == "examples":
                     root, inline = examples(gateway)

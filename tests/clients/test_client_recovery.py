@@ -1,5 +1,5 @@
 """Independent failure-oracle checks for the synthetic installed-client authority."""
-from contextlib import closing, contextmanager, redirect_stdout
+from contextlib import closing, contextmanager, redirect_stderr, redirect_stdout
 import copy
 import http.client
 import io
@@ -16,6 +16,7 @@ from unittest.mock import MagicMock, patch
 import recovery
 import drivers
 import messages_defaults
+import recovery_boundary
 
 
 class ClientRecoveryOracles(unittest.TestCase):
@@ -36,7 +37,9 @@ class ClientRecoveryOracles(unittest.TestCase):
             state = states[0]
             state.ingress = [(1, "original"), (2, "original"), (0, "probe"), (3, "original")]
             state.attempts = [(1, True, None, {}), (2, True, None, {}),
-                              (2, False, None, {}), (0, True, None, {}), (3, False, None, {})]
+                              (2, True, None, {}), (0, True, None, {}), (3, True, None, {})]
+            state.wires = [(b"synthetic", ordinal) for ordinal in range(5)]
+            state.hints = [1]
             state.finish(("original", "probe"))
             return "original", "probe"
 
@@ -48,7 +51,7 @@ class ClientRecoveryOracles(unittest.TestCase):
         gateway.first_line.put(b"MorphieCore listening on http://127.0.0.1:1\n")
         with tempfile.TemporaryDirectory() as directory:
             records = [{"event": "request", "outcome": "complete", "candidates": [
-                {"recovery_probe": True} for _ in range(count)]} for count in (1, 2, 1, 1)]
+                {"recovery_probe": False} for _ in range(count)]} for count in (1, 2, 1, 1)]
             (Path(directory) / "diagnostics.jsonl").write_text(
                 "".join(json.dumps(record) + "\n" for record in records))
             output = io.StringIO()
@@ -236,13 +239,91 @@ class ClientRecoveryOracles(unittest.TestCase):
         state = recovery.State(True, self.path)
         state.ingress = [(1, "original"), (2, "original"), (0, "probe"), (3, "original")]
         state.attempts = [(1, True, "group", {}), (2, True, "group", {}),
-                          (2, False, "group", {}), (0, True, "probe-group", {}), (3, False, "group", {})]
+                          (2, True, "group", {}), (0, True, "probe-group", {}), (3, True, "group", {})]
+        state.wires = [(b"synthetic", 0)] * 5
+        state.hints = [0]
         state.finish(("original", "probe"))
         with self.assertRaisesRegex(RuntimeError, "^client_session_carrier_mismatch$"):
             state.finish(("unrelated", "probe"))
         state.attempts[3] = (0, True, None, {})
         with self.assertRaisesRegex(RuntimeError, "^native_recovery_session_not_independent$"):
             state.finish(("original", "probe"))
+
+    def test_recovery_requires_identical_wire_waited_hint_and_unchanged_target(self):
+        state = recovery.State(False, self.path)
+        state.retry_after = "1"
+        state.ingress = [(1, "original"), (2, "original"), (0, "probe"), (3, "original")]
+        state.attempts = [(1, True, None, {}), (2, True, None, {}),
+                          (2, True, None, {}), (0, True, None, {}), (3, True, None, {})]
+        state.wires = [(b"initial", 0), (b"feedback", 1), (b"feedback", 2),
+                       (b"probe", 3), (b"recall", 4)]
+        state.hints = [1]
+        state.finish(("original", "probe"))
+        for wires, attempts, error in [
+            ([], state.attempts, "retry_changed_wire"),
+            ([*state.wires[:2], (b"changed", 2), *state.wires[3:]],
+             state.attempts, "retry_changed_wire"),
+            ([*state.wires[:2], (b"feedback", 1.9), *state.wires[3:]],
+             state.attempts, "retry_hint_not_waited"),
+            (state.wires, [*state.attempts[:2], (2, False, None, {}), *state.attempts[3:]],
+             "recovery_switched_target"),
+        ]:
+            changed = copy.copy(state)
+            changed.wires, changed.attempts = wires, attempts
+            with self.subTest(error=error), self.assertRaisesRegex(RuntimeError, f"^{error}$"):
+                changed.finish(("original", "probe"))
+        # Slow authority work cannot count as waiting after Retry-After is sent.
+        state.hints = [1.5]
+        with self.assertRaisesRegex(RuntimeError, "^retry_hint_not_waited$"):
+            state.finish(("original", "probe"))
+
+    def test_cancellation_waits_for_the_correlated_gateway_terminal_receipt(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            path = root / "diagnostics.jsonl"
+            path.write_text(json.dumps({"event": "request", "request_id": "other",
+                                        "outcome": "abandoned"}) + "\n")
+            predicate = lambda r: r.get("event") == "request" and r.get("request_id") == "cancelled"
+            with self.assertRaisesRegex(RuntimeError, "^missing_terminal$"):
+                recovery_boundary.wait_for_diagnostic(root, predicate, 0, "missing_terminal")
+            expected = {"event": "request", "request_id": "cancelled", "outcome": "abandoned"}
+            with path.open("a") as file:
+                file.write(json.dumps(expected) + "\n" + '{"unfinished":')
+            self.assertEqual(recovery_boundary.wait_for_diagnostic(
+                root, predicate, 0, "missing_terminal"), expected)
+
+    def test_gateway_shutdown_preserves_an_active_failure_but_is_otherwise_fatal(self):
+        child = MagicMock()
+        child.wait.side_effect = RuntimeError("client_deadline")
+        errors = io.StringIO()
+        with redirect_stderr(errors), self.assertRaisesRegex(RuntimeError, "^primary_failure$"):
+            try:
+                raise RuntimeError("primary_failure")
+            finally:
+                drivers.shutdown_gateway(child, failed=True)
+        self.assertEqual(json.loads(errors.getvalue()), {"gateway_cleanup_error": "client_deadline"})
+        with self.assertRaisesRegex(RuntimeError, "^client_deadline$"):
+            drivers.shutdown_gateway(child)
+
+    def test_only_a_new_client_request_can_select_the_backup(self):
+        initial = self.chat()
+        initial["messages"] = [{"role": "user", "content": recovery.PROBE}]
+        headers = {"session_id": "original"}
+        for scenario in ("next-request", "retry-limit"):
+            state = recovery_boundary.State(scenario)
+            state.incoming(headers, initial)
+            failures = 2 if scenario == "retry-limit" else 1
+            for _ in range(failures):
+                status, _, _ = state.upstream({"authorization": "Bearer synthetic-client-primary"}, initial)
+                self.assertEqual(status, 503)
+            followup = {**initial, "messages": [*initial["messages"],
+                        {"role": "user", "content": recovery.NEXT}]}
+            with self.assertRaisesRegex(RuntimeError, "^boundary_hidden_retry$"):
+                state.upstream({"authorization": "Bearer synthetic-client-secondary"}, followup)
+            state.attempts.pop()
+            state.incoming(headers, followup)
+            self.assertEqual(state.upstream(
+                {"authorization": "Bearer synthetic-client-secondary"}, followup)[0], 200)
 
     def test_opencode_final_text_and_probe_completion_are_independent_oracles(self):
         drivers.check_opencode_output([{"type": "text", "part": {"text": recovery.TEXT}}])

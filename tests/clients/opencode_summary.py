@@ -9,8 +9,8 @@ import sqlite3
 import sys
 import time
 
-from drivers import (Child, KEY, READ, TEXT, check, check_client_version, check_opencode_session,
-                     environment, opencode_configuration, opencode_prompt, private_json)
+from drivers import (Child, READ, TEXT, check, check_client_version, check_opencode_session,
+                     environment, gateway_configuration, opencode_configuration, opencode_prompt)
 from recovery import (CALL, PLAN, State as RecoveryState, assert_history, assert_profile,
                       chat_events, server, text)
 from summary import AFTER, SESSION_HEADERS
@@ -129,7 +129,7 @@ def api(binary, env, work, origin, operation, identity, data=None):
 
 
 def wait_for_checkpoint(database, identity):
-    # The installed 2.0.32 API has no session.wait operation. Observe only the
+    # The current installed API has no session.wait operation. Observe only the
     # test-owned read-only store, never issue additional Generation requests.
     deadline = time.monotonic() + 20
     with closing(sqlite3.connect(f"file:{database}?mode=ro", uri=True)) as connection:
@@ -161,13 +161,7 @@ def main():
     state = State(path)
     with ExitStack() as stack:
         upstream = stack.enter_context(server(state, False))
-        private_json(root / "auth.json", {"version": 1, "agents": [{"agent_id": "fixture-agent", "key": KEY}]})
-        private_json(root / "gateway.json", {"auth_file": "auth.json", "bind": "127.0.0.1:0",
-            "models_file": "models.json", "exchange_timeout_ms": 10000, "diagnostics": "diagnostics.jsonl"})
-        private_json(root / "models.json", {"models": {"qwen3.8-flash": {"max_attempts": 1,
-            "chat_profile": "readable_reasoning",
-            "total_timeout_ms": 8000, "candidates": [{"binding": "aliyun-tokenplan-cn-chat",
-                "base_url": upstream + "/v1", "attempt_timeout_ms": 3000}]}}})
+        gateway_configuration(root, False, upstream, recovery={"transient_cooldown_ms": 0})
         gateway = stack.enter_context(Child([gateway_binary, "--config", str(root / "gateway.json"),
             "--credentials-dir", str(root / "credentials")], env, work))
         try:

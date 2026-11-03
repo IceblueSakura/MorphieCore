@@ -7,9 +7,9 @@ import signal
 import sqlite3
 import sys
 
-from drivers import (Child, KEY, NEXT, READ, TEXT, Pi, check, check_client_version,
+from drivers import (Child, NEXT, READ, TEXT, Pi, check, check_client_version,
                      check_opencode_session, environment, opencode_configuration,
-                     opencode_prompt, private_json)
+                     opencode_prompt, private_json, gateway_configuration)
 from recovery import State as RecoveryState, assert_history, native_events, server, stage
 
 MODEL = "claude-haiku-5-5"
@@ -143,14 +143,9 @@ def main():
     with Child([binary, "--version"], env, work) as client:
         version = client.wait(timeout=5).decode().strip()
     check_client_version(case, version)
-    private_json(root / "auth.json", {"version": 1, "agents": [{"agent_id": "fixture-agent", "key": KEY}]})
-    private_json(root / "gateway.json", {"auth_file": "auth.json", "bind": "127.0.0.1:0",
-        "models_file": "models.json", "exchange_timeout_ms": 10000, "diagnostics": "diagnostics.jsonl"})
     with ExitStack() as stack:
         origin = stack.enter_context(server(state, False))
-        private_json(root / "models.json", {"models": {MODEL: {"max_attempts": 1,
-            "total_timeout_ms": 8000, "candidates": [{"binding": "opencode-go-haiku-messages",
-                "base_url": origin + "/v1", "attempt_timeout_ms": 3000}]}}})
+        gateway_configuration(root, True, origin)
         gateway = stack.enter_context(Child([gateway_binary, "--config", str(root / "gateway.json"),
             "--credentials-dir", str(root / "credentials")], env, work))
         try:

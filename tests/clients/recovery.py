@@ -14,7 +14,8 @@ import threading
 import time
 from urllib.parse import urlsplit
 
-from drivers import Child, KEY, NEXT, PROBE, READ, TEXT, check, check_client_version, environment, private_json, run_opencode, run_pi
+from drivers import (Child, NEXT, PROBE, READ, TEXT, check, check_client_version,
+                     environment, gateway_configuration, run_opencode, run_pi, shutdown_gateway)
 
 PLAN = "Synthetic read plan"
 SIGNATURE = "synthetic-client-thinking-signature"
@@ -160,6 +161,17 @@ class State:
         self.errors = []
         self.gateway = None
         self.accepted = threading.Event()
+        self.retry_after = "0"
+        self.wires = []
+        self.hints = []
+
+    def observe_wire(self, raw):
+        with self.lock:
+            self.wires.append((raw, time.monotonic()))
+
+    def observe_failure_hint(self):
+        with self.lock:
+            self.hints.append(time.monotonic())
 
     def incoming(self, headers, body):
         phase = stage(body)
@@ -183,10 +195,11 @@ class State:
         session = headers.get("x-opencode-session")
         with self.lock:
             self.attempts.append((phase, primary, session, copy.deepcopy(body)))
-            expected = [(1, True), (2, True), (2, False), (0, True), (3, False)]
+            expected = [(1, True), (2, True), (2, True), (0, True), (3, True)]
             check([(p, k) for p, k, _, _ in self.attempts] == expected[:len(self.attempts)], "upstream_attempt_order")
             check(len(self.attempts) <= 5, "extra_upstream_attempt")
-        if phase == 2 and primary:
+            ordinal = len(self.attempts)
+        if ordinal == 2:
             return 503, b"", "application/json"
         return 200, (native_events if self.native else chat_events)(phase, self.path), "text/event-stream"
 
@@ -198,6 +211,14 @@ class State:
         check(self.ingress[2][1] != original, "recovery_session_not_independent")
         check((original, self.ingress[2][1]) == client_sessions, "client_session_carrier_mismatch")
         check(self.attempts[1][3] == self.attempts[2][3], "retry_changed_tool_history")
+        check(all(primary for _, primary, _, _ in self.attempts), "recovery_switched_target")
+        check(len(self.wires) == 5 and self.wires[1][0] == self.wires[2][0],
+              "retry_changed_wire")
+        # Headers may be read concurrently before the post-write timestamp;
+        # allow only a small scheduling tolerance, not authority response time.
+        check(len(self.hints) == 1
+              and self.wires[2][1] - self.hints[0] >= max(0, int(self.retry_after) - 0.02),
+              "retry_hint_not_waited")
         if self.native:
             group = self.attempts[0][2]
             check(group is not None, "missing_native_session")
@@ -266,15 +287,25 @@ def handler(state, ingress, direct_client=False):
                         finally:
                             self.server.untrack(outgoing)
                 else:
+                    observe_wire = getattr(state, "observe_wire", None)
+                    if observe_wire is not None:
+                        observe_wire(raw)
                     status, payload, content_type = state.upstream(self.headers, body)
                     self.send_response(status)
                     self.send_header("content-type", content_type)
                     self.send_header("content-length", str(len(payload)))
                     self.send_header("connection", "close")
                     if status == 503:
-                        self.send_header("retry-after", "0")
+                        self.send_header("retry-after", getattr(state, "retry_after", "0"))
                     self.end_headers()
+                    if status == 503:
+                        observe_hint = getattr(state, "observe_failure_hint", None)
+                        if observe_hint is not None:
+                            observe_hint()
                     self.wfile.write(payload)
+                    self.wfile.flush()
+                    if status == 503 and hasattr(state, "failure_sent"):
+                        state.failure_sent.set()
                 self.close_connection = True
             except Exception as error:
                 with state.lock:
@@ -367,22 +398,15 @@ def main():
     path = work / "sample.txt"
     path.write_text(TEXT + "\n", encoding="utf-8")
     state = State(native, path)
+    state.retry_after = "1"
     env = environment(root)
     with Child([client_binary, "--version"], env, work) as client:
         version = client.wait(timeout=5).decode().strip()
     check_client_version(case, version)
     with ExitStack() as stack:
         origin = stack.enter_context(server(state, False))
-        binding = "opencode-go-haiku-messages" if native else "aliyun-tokenplan-cn-chat"
-        model = "claude-haiku-5-5" if native else "qwen3.8-flash"
-        private_json(root / "auth.json", {"version": 1, "agents": [{"agent_id": "fixture-agent", "key": KEY}]})
-        private_json(root / "gateway.json", {"auth_file": "auth.json", "bind": "127.0.0.1:0",
-            "models_file": "models.json", "exchange_timeout_ms": 10000,
-            "diagnostics": "diagnostics.jsonl"})
-        private_json(root / "models.json", {"models": {model: {"max_attempts": 2,
-            "chat_profile": "standard" if native else "readable_reasoning",
-            "total_timeout_ms": 8000, "candidates": [{"binding": binding,
-                "base_url": origin + "/v1", "attempt_timeout_ms": 3000}]}}})
+        gateway_configuration(root, native, origin, accounts=("primary", "secondary"),
+                              recovery={"recovery_timeout_ms": 2500})
         gateway = stack.enter_context(Child([gateway_binary, "--config", str(root / "gateway.json"),
             "--credentials-dir", str(root / "credentials")], env, work))
         try:
@@ -408,12 +432,12 @@ def main():
             check(all(r.get("ignored_request_field_count", 0) == 0 for r in records),
                   "unclassified_ignored_request_fields")
             check([len(r["candidates"]) for r in records] == [1, 2, 1, 1], "gateway_attempt_records")
-            check(records[2]["candidates"][0].get("recovery_probe") is True, "missing_foreground_recovery")
+            check(not any(candidate.get("recovery_probe", False) for record in records
+                          for candidate in record["candidates"]), "successful_recovery_cooled_target")
         except Exception:
             # Fixed structural diagnoses only; no bodies, credentials or raw client stderr.
             if gateway.process.poll() is None:
-                gateway.process.send_signal(signal.SIGINT)
-                gateway.wait(timeout=5)
+                shutdown_gateway(gateway, failed=True)
             diagnostic_path = root / "diagnostics.jsonl"
             if diagnostic_path.exists():
                 records = [json.loads(line) for line in diagnostic_path.read_text().splitlines()]
@@ -428,7 +452,7 @@ def main():
     # Authority shutdown joins every worker before the final accounting verdict.
     state.finish(sessions)
     print(json.dumps({"case": case, "version": version, "client_requests": 4, "upstream_attempts": 5,
-        "extra_client_requests": 0, "sticky_after_recovery": True}))
+        "extra_client_requests": 0, "sticky_after_recovery": True, "retry_hint_waited": True}))
 
 
 if __name__ == "__main__":

@@ -8,7 +8,7 @@ import signal
 import sys
 
 from drivers import (Child, KEY, Pi, READ, TEXT, check, check_client_version,
-                     environment, pi_configuration, private_json)
+                     environment, gateway_configuration, pi_configuration)
 from recovery import State as RecoveryState, assert_profile, native_events, server
 
 LIMIT = "The compiled grammar is too large"
@@ -97,14 +97,7 @@ def main():
         with ExitStack() as stack:
             origin = stack.enter_context(server(state, False, direct_client=direct))
             if not direct:
-                private_json(run / "auth.json", {"version": 1, "agents": [{"agent_id": "fixture-agent", "key": KEY}]})
-                private_json(run / "gateway.json", {"auth_file": "auth.json", "bind": "127.0.0.1:0",
-                    "models_file": "models.json", "exchange_timeout_ms": 10000,
-                    "diagnostics": "diagnostics.jsonl"})
-                private_json(run / "models.json", {"models": {"claude-haiku-5-5": {
-                    "max_attempts": 1, "total_timeout_ms": 8000, "candidates": [{
-                        "binding": "opencode-go-haiku-messages", "base_url": origin + "/v1",
-                        "attempt_timeout_ms": 3000}]}}})
+                gateway_configuration(run, True, origin, credential_root=root)
                 gateway = stack.enter_context(Child([gateway_binary, "--config", str(run / "gateway.json"),
                     "--credentials-dir", str(root / "credentials")], env, work))
                 try:

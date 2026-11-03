@@ -312,7 +312,7 @@ The production-construction companion runs with `cargo test --locked --offline -
 
 Distinct controls cover Bailian summary-only history, explicitly readable DeepSeek Chat, adaptive signed/redacted Messages and Grok opaque-only continuation on an otherwise nonreasoning request. Each checks actual second-upstream history; Responses controls also compare retrieval with delivered output. API-key/subscription catalog cases and these controls compare content, usage, terminal meaning and report fields across JSON/SSE, normalizing isolated request-owned IDs, sealed carrier bytes and the Chat accumulator's empty/null shell. Non-null Responses metadata now takes the shared owner's named Chat SSE omission while JSON retains its carrier; null still suppresses request echo. The independent Responses fold requires text, summary and tool-argument deltas to agree with value completion, completed items and the terminal array; done snapshots cannot repair missing content. Native Messages and existing incomplete-reasoning controls retain their own folds and replay checks. [Source distinctions](refs/2026-10-27-client-ir-boundaries.md#binding-history-source-review-2026-10-28) leave unestablished history facts open for S11.
 
-The committed `agent-defaults.json` retains nine bare synthetic-model HTTP bodies from installed pi-ai 1.4.0 (text, tools and medium reasoning per API), beside three bodies from the actual `getBuiltinModel` Go/Haiku record. The latter retains complete public model metadata, source digests and raw headers, changes only the origin, and uses intercepted fetch with synthetic options. Regenerate for review with `node tests/clients/pi_default_shapes.mjs /absolute/path/to/installed/pi-ai`; no network request or personal configuration is used. The gate selects resolved Haiku bodies by default, separately checks bare manual-budget conversion to adaptive thinking, and checks raw resolved/version/beta headers for two-turn acceptance. Actual installed-Agent execution remains a separate gate.
+The committed `agent-defaults.json` retains nine bare synthetic-model HTTP bodies from installed pi-ai 1.5.0 (text, tools and medium reasoning per API), beside three bodies from the actual `getBuiltinModel` Go/Haiku record. The latter retains complete public model metadata, source digests and raw headers, changes only the origin, and uses intercepted fetch with synthetic options. The 2026-11-03 refresh leaves request bodies unchanged and updates the source version, digests and built-in protocol-specific Go origin. Regenerate for review with `node tests/clients/pi_default_shapes.mjs /absolute/path/to/installed/pi-ai`; no network request or personal configuration is used. The gate selects resolved Haiku bodies by default, separately checks bare manual-budget conversion to adaptive thinking, and checks raw resolved/version/beta headers for two-turn acceptance. Actual installed-Agent execution remains a separate gate.
 
 The companion pins per-lane diagnostic failure codes and dispatch counts, checks client-visible failure/terminal honesty, consumes JSON/SSE outputs and checks actual second-upstream history. Current blockers report an acceptance target and their migration owner; an asserted rejection is not closure. Responses storage controls compare retrieval with delivered output, including finalized incomplete reasoning. JSON, `store:true` and cache-free Messages requests are explicitly labelled controls, not pi defaults. Messages controls cover both accepted version headers and ignored beta headers without enabling unselected body semantics. Its Rust history adapter models pi reconstruction; [actual current-client characterization](#installed-client-default-characterization) checks that assumption separately, including phase and grouped results. Native delivery still checks exact original arguments despite the corpus's JavaScript unsafe-integer rounding.
 
@@ -471,7 +471,7 @@ Do not remove safety invariant tests solely because their code paths are exercis
 
 ## Online acceptance
 
-Record the tested binary version separately from the pinned source revision. An installed-client gate does not establish behavior for a different pinned revision or every protocol route.
+Record the tested binary version separately from the pinned source revision. Maintain only the current latest local Agent at test time: update characterization and drivers when it changes, without old-version branches or a multi-version matrix. Historical results retain their dates and tested versions. An installed-client gate does not establish behavior for a different revision or every protocol route.
 
 ### Production-profile acceptance
 
@@ -490,11 +490,12 @@ For the explicit readable Chat real-Agent gate, use the current installed unwrap
 ```sh
 python3 tests/clients/reasoning_live.py pi-chat \
   --gateway /absolute/path/to/morphiecore \
-  --client-binary /absolute/path/to/current/unwrapped/pi
+  --client-binary /absolute/path/to/current/unwrapped/pi \
+  --accounts "$ROOT/accounts.json" --store "$ROOT/credentials"
 # Run separately and serially with opencode-chat and the current OpenCode binary.
 ```
 
-This runner fixes `aliyun-tokenplan-cn-chat` / `qwen3.8-flash`, three Generation requests, 2048 output tokens each, one candidate/attempt and 120-second attempt/exchange deadlines. It admits an actual read/tool-result/final-answer loop and same-session recall, rejecting extra transmissions before forwarding. It reuses the ordinary CLI credential loader and isolated Agent drivers; no host Agent configuration or credentials are read by the runner. The test-owned loopback forwarder observes unchanged client deliveries in memory, capped at 2 MiB per response and 1 MiB per event, and verifies complete EOF/DONE/terminal structure. It compares delivered reasoning, text and call identities/argument values against client replay and complete prepared next-request history, including role order and tool results. Prepared-request capture must be complete and unredacted; response capture may intentionally exclude unsafe tool-argument fragments. Production redaction is unchanged, raw response observations are never persisted, temporary captures are deleted, and reports expose only counts/fixed classifications. This observes delivery→client replay→preparation, not an independent raw Provider→delivery comparison, real failover, summarization or timing. Use an outer process bound of 420 seconds.
+This runner fixes `aliyun-tokenplan-cn-chat` / `qwen3.8-flash`, three Generation requests, 2048 output tokens each and 120-second route/exchange deadlines. Supply an absolute current-schema account file with only the selected account and Provider `recovery.recovery_timeout_ms:0`; this bounds each request to one send without a removed model attempt ceiling. The store path is also explicit; only the production loader opens these inputs. It admits an actual read/tool-result/final-answer loop and same-session recall, rejecting extra transmissions before forwarding. It reuses the ordinary CLI credential loader and isolated Agent drivers; no host Agent configuration or credentials are read by the runner. The test-owned loopback forwarder observes unchanged client deliveries in memory, capped at 2 MiB per response and 1 MiB per event, and verifies complete EOF/DONE/terminal structure. It compares delivered reasoning, text and call identities/argument values against client replay and complete prepared next-request history, including role order and tool results. Prepared-request capture must be complete and unredacted; response capture may intentionally exclude unsafe tool-argument fragments. Production redaction is unchanged, raw response observations are never persisted, temporary captures are deleted, and reports expose only counts/fixed classifications. This observes delivery→client replay→preparation, not an independent raw Provider→delivery comparison, real failover, summarization or timing. Use an outer process bound of 420 seconds.
 
 #### Initial production-profile baseline
 
@@ -510,7 +511,7 @@ Synthetic recovery profiles configure single-candidate routes with explicit clie
 | Profile | Fixed client declaration | Cache, session and auxiliary calls |
 |---|---|---|
 | pi Chat | `openai-completions`, `qwen3.8-flash`, low effort, 2048-token cap; developer role, strict mode and store disabled; reasoning effort and `max_completion_tokens` enabled | Short retention and OpenAI affinity headers; agent retries off, provider retries zero; warming and automatic compaction off |
-| pi Messages | `anthropic-messages`, `claude-haiku-5-5`, requested low effort, 2048-token cap; adaptive thinking, strict tools and mid-conversation effort/system/tool changes enabled; temperature disabled | Short retention and native affinity; root effort remains high, requested effort is system-scoped; same retry/warming/compaction restrictions as pi Chat |
+| pi Messages | `anthropic-messages`, `claude-haiku-5-5`, low effort, 2048-token cap; adaptive thinking, strict/eager read tools and mid-conversation system messages enabled; mid-conversation effort/tool changes and temperature disabled | Short retention and native affinity; stable root-low effort without message-local effort; same retry/warming/compaction restrictions as pi Chat |
 | OpenCode Chat | `@opencode/ai/providers/openai-compatible`, `qwen3.8-flash#low`, explicit 2048-token cap; only read permission | Explicit titles suppress title requests; warming and automatic compaction off; scratch persistent session resumed for continuation. Zero extra transmissions is checked, not an assertion that every client retry path is disabled |
 
 Recovery allows exactly four client requests/five synthetic attempts per profile. It classifies initial tool declaration, tool feedback, an independent no-tool-invocation recovery conversation, and original-session continuation. It rejects duplicates, strict downgrades, summaries and other auxiliary transmissions rather than silently widening that budget. The 2026-10-21 rerun passed all three cases with local pi `1.3.0` and OpenCode `2.0.32`; this is synthetic recovery evidence only.
@@ -552,11 +553,15 @@ MORPHIECORE_OPENCODE_BIN=/absolute/path/to/unwrapped/opencode \
 
 Python 3 from the development environment needs only its standard library; `MORPHIECORE_CLIENT_PYTHON` optionally selects it. Always use the host's current installed pi, OpenCode and other Agents, not binaries installed to match protocol source pins. The harness validates and reports actual version strings without requiring source-lock equality. Use safe unwrapped launchers with isolated test state; do not downgrade, replace or reconfigure host installations. Record full actual versions and revalidate changed client behavior; a version string alone is not acceptance.
 
-Each of the three serial cases (pi Chat, pi native Messages, OpenCode Chat) fixes four client Generation requests and five upstream attempts: initial `read` on the primary, unpublished `503` on tool feedback, the same feedback completed by the secondary, an independent conversation recovering the primary, then original-session continuation on the secondary. Wire caps are 2048 tokens; candidate/route/exchange deadlines are 3/8/10 seconds, with a 120-second driver bound. The transparent admission forwarder counts client POSTs independently, rejects duplicates/excess requests and never rewrites payloads or session headers. pi retries are disabled; OpenCode's zero extra transmissions are observed, not inferred from an unsupported retry setting.
+Each of the three serial recovery cases (pi Chat, pi native Messages, OpenCode Chat) fixes four client Generation requests and five upstream sends: initial `read` on the primary, unpublished `503` on tool feedback, an identical same-target retry after `Retry-After:1`, an independent primary conversation, then original-session continuation on the primary. A configured secondary must receive no sends. Recovery has a 2.5-second budget; route/exchange deadlines are 8/10 seconds, with 2048 output tokens and a 120-second driver bound. The transparent admission forwarder counts client POSTs independently, rejects duplicates/excess requests and never rewrites payloads or session headers. The authority compares retry bytes and timestamps independently of diagnostics. pi retries are disabled; OpenCode's zero extra transmissions are observed, not inferred from an unsupported retry setting.
 
-Independent wire expectations check ordered history, call/result IDs, readable reasoning and native signatures/redacted blocks. Client events and scratch OpenCode database state establish actual tool completion, final text and idle success; observed session carriers must match the clients' reported session IDs. Gateway diagnostics require honest completion, a real foreground recovery probe and zero unclassified ignored request fields. Native session carriers remain stable through migration and differ for the probe.
+`recovery_boundary.py` adds three current-pi Chat cases, each with three gateway requests. A 60-second hint prevents a second send; only the next client request selects the backup, which remains sticky (three sends). Two short-hint failures stop at two identical primary sends, then a new client request selects the backup (four sends). Cancellation runs directly against the gateway and synchronizes on its failed-attempt telemetry receipt before the two-second hint expires. After pi settles, it waits for the correlated gateway terminal receipt before the next prompt, proving release without a delayed retry or false success; already observed failure health lets the next request select the backup (three sends). Request diagnostics independently check ingress and attempt counts for this direct cancellation path. Existing owner-local controlled-clock tests retain deadline and concurrent health authority.
+
+Independent wire expectations check ordered history, call/result IDs, readable reasoning and native signatures/redacted blocks. Client events and scratch OpenCode database state establish actual tool completion, final text and idle success; observed session carriers must match the clients' reported session IDs. Gateway diagnostics require honest completion, no cooldown/probe after successful same-target recovery and zero unclassified ignored request fields. Native session carriers remain stable through recovery and differ for the independent conversation. Summary retry gates explicitly disable gateway recovery and transient cooldown so they measure the Agent's new HTTP request, not an absorbed gateway retry.
 
 Owned HTTP sockets/workers and child process groups are bounded and released, including incomplete headers, timeout and cancellation. Focused authority-oracle checks live in `tests/clients/test_client_recovery.py`; descendant teardown checks live in `tests/process/child_process.rs`. These checks call no real Providers and do not prove account-compatible replay, Provider cache behavior, R1b Responses or every failure/concurrency scenario.
+
+The ordinary offline gate `cargo test --locked --offline --test gateway fresh_account_setup` exercises [fresh setup](usage.md#prepare-credentials) with synthetic private files: store-free explanation, honest unprovisioned validation, actual key provisioning/status, local validation without sink activation, the shared live-runner constructor and one explicitly selected diagnostic send. `cargo test --locked --offline --lib configured_task_sends_once` checks fixed-account Embedding dispatch with Generation recovery enabled and two available accounts; its failure sends once to the selected account. Neither gate requires installed Agents or real credentials.
 
 ### Installed-client synthetic summaries
 
@@ -614,7 +619,7 @@ Before each run:
 1. Fix the target model/Provider, request count, output cap and timeout.
 2. Use the project loader and application-owned store. Do not source private environment files or third-party auth caches.
 3. Use explicit model/candidate entries in `models.json` so unrelated accounts are not selected.
-4. Run serially with no hidden retries. For a single-attempt check, set the selected model's attempt ceiling to one.
+4. Run serially with no hidden retries. For a single-send Generation check, use only the selected configured account and set its Provider `recovery.recovery_timeout_ms` to zero. Model attempt ceilings are not supported.
 5. Report only redacted status, counts and error codes. Never print credentials or request/response bodies.
 
 The gateway CLI loads `gateway.json`, its selected Agent-key `auth.json`, `accounts.json`, `models.json` and managed credential references through the project loader. A test harness must do the same; do not hand-parse credential files.
@@ -627,14 +632,17 @@ Distinguish HTTP success, honest completion and visual recognition. Check a know
 
 #### Native Messages input acceptance
 
-`tests/sdk/messages_inputs_live.py` is an explicit live companion, not an offline test. It starts the CLI with scratch service/model configuration, resolves only existing Go/Haiku credentials through the project loader, and uses one candidate with one attempt per request. Each case fixes a 2048-token output ceiling, 120-second attempt/route/exchange deadlines, 256 KiB client requests and 8 MiB responses. No SDK/client retry, model fallback, URL fetch, Files ID or real tool execution is involved.
+`tests/sdk/messages_inputs_live.py` is an explicit live companion, not an offline test. It starts the CLI with scratch service/model configuration and explicit absolute `--accounts`/`--store` paths, resolved only through the project loader. Prepare the account file with only the selected Go account and `recovery.recovery_timeout_ms:0` for one send per request. Each case fixes a 2048-token output ceiling, 120-second route/exchange deadlines, 256 KiB client requests and 8 MiB responses. No SDK/client retry, model fallback, URL fetch, Files ID or real tool execution is involved.
 
 Run cases separately and serially after building the selected CLI:
 
 ```sh
-python3 tests/sdk/messages_inputs_live.py --gateway-bin /absolute/path/to/morphiecore examples
-python3 tests/sdk/messages_inputs_live.py --gateway-bin /absolute/path/to/morphiecore context
-python3 tests/sdk/messages_inputs_live.py --gateway-bin /absolute/path/to/morphiecore cache
+python3 tests/sdk/messages_inputs_live.py --gateway-bin /absolute/path/to/morphiecore \
+  --accounts "$ROOT/accounts.json" --store "$ROOT/credentials" examples
+python3 tests/sdk/messages_inputs_live.py --gateway-bin /absolute/path/to/morphiecore \
+  --accounts "$ROOT/accounts.json" --store "$ROOT/credentials" context
+python3 tests/sdk/messages_inputs_live.py --gateway-bin /absolute/path/to/morphiecore \
+  --accounts "$ROOT/accounts.json" --store "$ROOT/credentials" cache
 ```
 
 The examples case fixes three requests: root examples → model-issued result with a by-value example definition → second real-call result/final answer. The context case fixes three: distinct contexts for two uses of one plain-text source, a real fetch call, then a contextual document in its result. The cache case fixes four: unique synthetic prefixes of 2,000 words, immediately repeated under explicit 5m and 1h automatic policies. Require positive reported cache writes/reads and the requested TTL write class; absent counters are not zero. Prepared 5m may use the documented omitted-default representation; 1h must remain explicit.
@@ -649,7 +657,8 @@ Run `messages_capabilities_live.py` explicitly with the [locked SDK environment]
 
 ```sh
 uv run --project tests/sdk --locked --offline python tests/sdk/messages_capabilities_live.py \
-  --gateway-bin /absolute/path/to/morphiecore
+  --gateway-bin /absolute/path/to/morphiecore \
+  --accounts "$ROOT/accounts.json" --store "$ROOT/credentials"
 ```
 
 The existing Go/Haiku binding, loader, single-attempt routing, temporary private capture and deadlines follow the preceding native input gate. This profile fixes seven serial requests: structured JSON, structured SSE using returned history, an SSE `max_tokens:1` truncation, then required JSON and named SSE tool/result pairs. Other requests use 2048 tokens. Keep adaptive thinking with summarized display and `drop_block`, root-high/system-low effort, explicit strict tools, numeric `record` enum `[71,82]`, and single-call `disable_parallel_tool_use:true` unchanged. JSON/SSE output and tool prompts request out-of-enum `93`/`94` without supplying an allowed fallback; require an actual integer from the unchanged enum. Tool feedback follows the actual accepted argument, not a preselected answer. The named control selects `inspect` despite the prompt requesting `lookup`; result turns explicitly select `none`. Use only model-issued call IDs and untouched returned content.
@@ -668,7 +677,8 @@ This accepts only the declared schema/control combination. Conflict cases establ
 
 ```sh
 uv run --project tests/sdk --locked --offline python tests/sdk/text_timing_live.py \
-  --gateway-bin /absolute/path/to/morphiecore
+  --gateway-bin /absolute/path/to/morphiecore \
+  --accounts "$ROOT/accounts.json" --store "$ROOT/credentials"
 ```
 
 Use the same loader, native adaptive/root-high/system-low profile, private scratch cleanup and 120-second bounds as the preceding companion, with 2048 output tokens, no declared tools, explicit `tool_choice:none`, one candidate/attempt and zero SDK retries. Observe only source text deltas, not reasoning or cumulative SDK snapshots; reject unexpected calls and incomplete completion without executing or repairing them. Offline ordering oracles live in `test_text_timing_live.py`.
