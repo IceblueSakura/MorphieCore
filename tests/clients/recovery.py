@@ -110,10 +110,10 @@ def assert_history(body, phase, native, path, *, profile=True):
                   "chat_final_history")
 
 
-def chat_events(phase, path, answer=TEXT):
+def chat_events(phase, path, answer=TEXT, *, model="qwen3.8-flash"):
     def chunk(delta, finish=None):
         return {"id": f"chat-client-{phase}", "object": "chat.completion.chunk", "created": 1,
-                "model": "qwen3.8-flash", "choices": [{"index": 0, "delta": delta, "finish_reason": finish}]}
+                "model": model, "choices": [{"index": 0, "delta": delta, "finish_reason": finish}]}
     values = [chunk({"role": "assistant"}), chunk({"reasoning_content": PLAN if phase == 1 else "Synthetic final check"})]
     if phase == 1:
         values.append(chunk({"tool_calls": [{"index": 0, "id": CALL, "type": "function",
@@ -122,7 +122,7 @@ def chat_events(phase, path, answer=TEXT):
         values.append(chunk({"content": answer}))
     values.append(chunk({}, "tool_calls" if phase == 1 else "stop"))
     values.append({"id": f"chat-client-{phase}", "object": "chat.completion.chunk", "created": 1,
-                   "model": "qwen3.8-flash", "choices": [],
+                   "model": model, "choices": [],
                    "usage": {"prompt_tokens": 11, "completion_tokens": 7, "total_tokens": 18}})
     return ("".join(f"data: {json.dumps(v)}\n\n" for v in values) + "data: [DONE]\n\n").encode()
 
@@ -247,7 +247,8 @@ def handler(state, ingress, direct_client=False):
         def do_POST(self):
             try:
                 self.connection.settimeout(12)
-                expected = "/v1/messages" if state.native else "/v1/chat/completions"
+                expected = getattr(state, "endpoint_path",
+                                   "/v1/messages" if state.native else "/v1/chat/completions")
                 route = urlsplit(self.path)
                 check(route.path == expected, "unexpected_http_path")
                 check(not route.query or ((ingress or direct_client) and state.native and route.query == "beta=true"),

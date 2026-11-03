@@ -46,15 +46,15 @@ def private_json(path, value):
 def gateway_configuration(root, native, origin, *, credential_root=None,
                           recovery=None, accounts=("primary",),
                           total_timeout_ms=8000, exchange_timeout_ms=10000,
-                          concurrency=None):
+                          concurrency=None, model=None, provider=None, binding=None):
     """Current production-loader inputs with explicitly local synthetic accounts."""
     target = urlsplit(origin)
     check(target.scheme == "http" and target.hostname == "127.0.0.1"
           and target.port is not None and not target.path
           and not target.query and not target.fragment, "synthetic_upstream_origin")
-    model = "claude-haiku-5-5" if native else "qwen3.8-flash"
-    provider = "opencode-go" if native else "aliyun-tokenplan-cn"
-    binding = "opencode-go-haiku-messages" if native else "aliyun-tokenplan-cn-chat"
+    model = model or ("claude-haiku-5-5" if native else "qwen3.8-flash")
+    provider = provider or ("opencode-go" if native else "aliyun-tokenplan-cn")
+    binding = binding or ("opencode-go-haiku-messages" if native else "aliyun-tokenplan-cn-chat")
     private_json(root / "accounts.json", {"version": 1, "providers": {provider: {
         "recovery": {"recovery_timeout_ms": 0, **(recovery or {})},
         "accounts": [{"name": name, "enabled": True,
@@ -305,25 +305,27 @@ def check_opencode_output(events):
     check(answer == TEXT, "opencode_final_answer")
 
 
-def check_opencode_session(database, identity, expected):
+def check_opencode_session(database, identity, expected, *, idle_outcome="succeeded"):
     rows = database.execute("SELECT data FROM session_message WHERE session_id=? AND type='assistant' ORDER BY time_created, id", (identity,)).fetchall()
     check([json.loads(row[0]).get("finish") for row in rows] == expected, "opencode_assistant_termination")
     idle = database.execute("SELECT idle_outcome FROM session_v2 WHERE id=?", (identity,)).fetchone()
-    check(idle == ("succeeded",), "opencode_idle_outcome")
+    check(idle == (idle_outcome,), "opencode_idle_outcome")
 
 
 def opencode_prompt(binary, env, work, prompt, title, session=None, origin=None, timeout=30,
-                    check_output=check_opencode_output, model="recovery/qwen3.8-flash#low"):
+                    check_output=check_opencode_output, model="recovery/qwen3.8-flash#low",
+                    expected_status=0):
     args = [binary, "run", *(["--server", origin] if origin else ["--standalone"]),
             "--format", "json", "--title", title, "-m", model]
     if session:
         args.extend(["--session", session])
     with Child([*args, prompt], env, work) as child:
-        output = child.wait(timeout=timeout)
+        output = child.wait(timeout=timeout, expected_status=expected_status)
     events = [json.loads(line) for line in output.split(b"\n") if line]
     identities = {e["sessionID"] for e in events if "sessionID" in e}
     check(len(identities) == 1, "opencode_session_event_identity")
-    check(not any(e.get("type") == "error" for e in events), "opencode_error_event")
+    errors = [event for event in events if event.get("type") == "error"]
+    check(not errors if expected_status == 0 else bool(errors), "opencode_error_event")
     check_output(events)
     return identities.pop(), events
 

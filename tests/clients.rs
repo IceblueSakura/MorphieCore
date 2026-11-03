@@ -20,7 +20,11 @@ async fn installed_case(
     let directory = filesystem::private_directory();
     let root = directory.path();
     let native = case.contains("messages");
-    let domain = if native {
+    let domain = if script == "protocol_defaults" && case.contains("chat") {
+        "deepseek"
+    } else if case.contains("responses") {
+        "openai"
+    } else if native {
         "opencode-go"
     } else {
         "aliyun-tokenplan-cn"
@@ -93,7 +97,7 @@ async fn pi_messages_credential_recovery() {
 }
 
 async fn messages_defaults(case: &str, variable: &str) {
-    let report = installed_case("messages_defaults", case, variable, &[]).await;
+    let report = installed_case("protocol_defaults", case, variable, &[]).await;
     assert_eq!(report["client_requests"], 3);
     assert_eq!(report["upstream_attempts"], 3);
     assert_eq!(report["extra_client_requests"], 0);
@@ -111,6 +115,70 @@ async fn pi_messages_default_tool_history() {
 #[ignore = "requires current installed OpenCode; default native Messages tool/history through gateway"]
 async fn opencode_messages_default_tool_history() {
     messages_defaults("opencode-messages-default", "MORPHIECORE_OPENCODE_BIN").await;
+}
+
+async fn openai_defaults(case: &str, variable: &str) {
+    let report = installed_case("protocol_defaults", case, variable, &[]).await;
+    assert_eq!(report["client_requests"], 3);
+    assert_eq!(report["upstream_attempts"], 3);
+    assert_eq!(report["extra_client_requests"], 0);
+    assert_eq!(report["tool_history"], true);
+    assert_eq!(report["default_rejection"], false);
+}
+
+#[tokio::test]
+#[ignore = "requires current installed OpenCode; native Responses loop then missing-annotation rejection"]
+async fn opencode_responses_default_continuation_rejection() {
+    let report = installed_case(
+        "protocol_defaults",
+        "opencode-responses-default",
+        "MORPHIECORE_OPENCODE_BIN",
+        &[],
+    )
+    .await;
+    assert_eq!(report["client_requests"], 3);
+    assert_eq!(report["upstream_attempts"], 2);
+    assert_eq!(report["tool_history"], true);
+    assert_eq!(report["next_turn_history"], false);
+    assert_eq!(report["default_rejection"], true);
+}
+
+#[tokio::test]
+#[ignore = "requires current installed OpenCode; native Chat defaults and tool/history"]
+async fn opencode_chat_default_tool_history() {
+    openai_defaults("opencode-chat-default", "MORPHIECORE_OPENCODE_BIN").await;
+}
+
+#[tokio::test]
+#[ignore = "requires current installed pi; builtin Chat strict guarantee rejects without dispatch"]
+async fn pi_chat_default_strict_guarantee_rejection() {
+    let report = installed_case(
+        "protocol_defaults",
+        "pi-chat-default",
+        "MORPHIECORE_PI_BIN",
+        &[],
+    )
+    .await;
+    assert_eq!(report["client_requests"], 1);
+    assert_eq!(report["upstream_attempts"], 0);
+    assert_eq!(report["tool_history"], false);
+    assert_eq!(report["default_rejection"], true);
+}
+
+#[tokio::test]
+#[ignore = "requires current installed pi; builtin Responses additional_tools rejects without dispatch"]
+async fn pi_responses_default_additional_tools_rejection() {
+    let report = installed_case(
+        "protocol_defaults",
+        "pi-responses-default",
+        "MORPHIECORE_PI_BIN",
+        &[],
+    )
+    .await;
+    assert_eq!(report["client_requests"], 1);
+    assert_eq!(report["upstream_attempts"], 0);
+    assert_eq!(report["tool_history"], false);
+    assert_eq!(report["default_rejection"], true);
 }
 
 #[tokio::test]

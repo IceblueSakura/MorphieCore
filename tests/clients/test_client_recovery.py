@@ -18,7 +18,7 @@ from unittest.mock import MagicMock, patch
 
 import recovery
 import drivers
-import messages_defaults
+import protocol_defaults
 import recovery_boundary
 
 
@@ -223,7 +223,7 @@ class ClientRecoveryOracles(unittest.TestCase):
                 headers = Message()
                 headers["x-api-key"] = "synthetic-client-primary"
                 headers["anthropic-version"] = "2023-06-01" if method == "incoming" else "2026-10-21"
-                getattr(messages_defaults.State(self.path, pi=pi), method)(headers, original)
+                getattr(protocol_defaults.MessagesState(self.path, pi=pi), method)(headers, original)
                 for keys, value, error in cases:
                     body = copy.deepcopy(original)
                     owner = body
@@ -232,7 +232,7 @@ class ClientRecoveryOracles(unittest.TestCase):
                     owner[keys[-1]] = value
                     with self.subTest(pi=pi, method=method, error=error), self.assertRaisesRegex(
                             RuntimeError, f"^{error}$"):
-                        getattr(messages_defaults.State(self.path, pi=pi), method)(headers, body)
+                        getattr(protocol_defaults.MessagesState(self.path, pi=pi), method)(headers, body)
 
     def test_duplicate_client_transmission_and_missing_identity_reject(self):
         headers = Message()
@@ -240,14 +240,14 @@ class ClientRecoveryOracles(unittest.TestCase):
         headers["anthropic-beta"] = "interleaved-thinking-2025-05-14"
         initial = self.native_defaults(True)
         initial["messages"] = initial["messages"][:1]
-        state = messages_defaults.State(self.path, pi=True)
+        state = protocol_defaults.MessagesState(self.path, pi=True)
         state.incoming(headers, initial)
         self.assertTrue(state.beta_seen)
         with self.assertRaisesRegex(RuntimeError, "^default_extra_or_reordered_client_request$"):
             state.incoming(headers, initial)
         headers.replace_header("anthropic-version", "2026-10-21")
         with self.assertRaisesRegex(RuntimeError, "^default_messages_version$"):
-            messages_defaults.State(self.path, pi=True).incoming(headers, initial)
+            protocol_defaults.MessagesState(self.path, pi=True).incoming(headers, initial)
         state.ingress = state.attempts = [1, 2, 3]
         state.errors.append("late_worker_failure")
         with self.assertRaisesRegex(RuntimeError, "^default_authority_errors:late_worker_failure$"):
