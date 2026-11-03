@@ -9,6 +9,8 @@ import socket
 import sqlite3
 import queue
 import tempfile
+import threading
+import time
 import unittest
 from email.message import Message
 from unittest.mock import MagicMock, patch
@@ -39,7 +41,7 @@ class ClientRecoveryOracles(unittest.TestCase):
             state.attempts = [(1, True, None, {}), (2, True, None, {}),
                               (2, True, None, {}), (0, True, None, {}), (3, True, None, {})]
             state.wires = [(b"synthetic", ordinal) for ordinal in range(5)]
-            state.hints = [1]
+            state.hints = [(1, 1)]
             state.finish(("original", "probe"))
             return "original", "probe"
 
@@ -241,7 +243,7 @@ class ClientRecoveryOracles(unittest.TestCase):
         state.attempts = [(1, True, "group", {}), (2, True, "group", {}),
                           (2, True, "group", {}), (0, True, "probe-group", {}), (3, True, "group", {})]
         state.wires = [(b"synthetic", 0)] * 5
-        state.hints = [0]
+        state.hints = [(0, 0)]
         state.finish(("original", "probe"))
         with self.assertRaisesRegex(RuntimeError, "^client_session_carrier_mismatch$"):
             state.finish(("unrelated", "probe"))
@@ -257,7 +259,7 @@ class ClientRecoveryOracles(unittest.TestCase):
                           (2, True, None, {}), (0, True, None, {}), (3, True, None, {})]
         state.wires = [(b"initial", 0), (b"feedback", 1), (b"feedback", 2),
                        (b"probe", 3), (b"recall", 4)]
-        state.hints = [1]
+        state.hints = [(1, 1)]
         state.finish(("original", "probe"))
         for wires, attempts, error in [
             ([], state.attempts, "retry_changed_wire"),
@@ -273,7 +275,18 @@ class ClientRecoveryOracles(unittest.TestCase):
             with self.subTest(error=error), self.assertRaisesRegex(RuntimeError, f"^{error}$"):
                 changed.finish(("original", "probe"))
         # Slow authority work cannot count as waiting after Retry-After is sent.
-        state.hints = [1.5]
+        state.hints = [(1.5, 1.5)]
+        with self.assertRaisesRegex(RuntimeError, "^retry_hint_not_waited$"):
+            state.finish(("original", "probe"))
+        # Sampling after publication may be delayed even though the gateway
+        # waited correctly. Preserve that uncertainty, including a sample
+        # recorded only after the retry, rather than fabricating a short wait.
+        for after in (1.15, 2.15):
+            state.hints = [(1, after)]
+            wait = state.finish(("original", "probe"))
+            self.assertLess(wait["minimum"], 1)
+            self.assertGreaterEqual(wait["maximum"], 1)
+        state.wires[2] = (b"feedback", 1.9)
         with self.assertRaisesRegex(RuntimeError, "^retry_hint_not_waited$"):
             state.finish(("original", "probe"))
 
@@ -351,11 +364,23 @@ class ClientRecoveryOracles(unittest.TestCase):
             self.assertTrue(state.accepted.wait(timeout=2))
         self.assertEqual(connection.recv(1), b"")
 
-    def test_authority_advertises_connection_close_before_retry(self):
+    def test_authority_advertises_close_and_brackets_header_publication(self):
         state = recovery.State(False, self.path)
         initial = self.chat()
         initial["messages"] = initial["messages"][:1]
-        with recovery.server(state, False) as origin:
+        published, release = threading.Event(), threading.Event()
+        samples = []
+        end_headers = recovery.BaseHTTPRequestHandler.end_headers
+
+        def delayed_sample(handler):
+            end_headers(handler)
+            if len(state.attempts) == 2:
+                samples.append(time.monotonic())
+                published.set()
+                drivers.check(release.wait(timeout=3), "header_sample_release")
+
+        with patch.object(recovery.BaseHTTPRequestHandler, "end_headers", delayed_sample), \
+                recovery.server(state, False) as origin:
             address = recovery.urlsplit(origin)
             for body, status in [(initial, 200), (self.chat(), 503)]:
                 connection = http.client.HTTPConnection(address.hostname, address.port, timeout=3)
@@ -367,10 +392,19 @@ class ClientRecoveryOracles(unittest.TestCase):
                     self.assertTrue(response.will_close)
                     if status == 503:
                         self.assertEqual(response.getheader("retry-after"), "0")
+                        self.assertTrue(published.wait(timeout=3))
                     response.read()
+                    if status == 503:
+                        retry_at = time.monotonic()
                 finally:
+                    if status == 503:
+                        release.set()
                     connection.close()
         self.assertFalse(state.errors)
+        before, after = state.hints[0]
+        self.assertLessEqual(before, samples[0])
+        self.assertLessEqual(samples[0], retry_at)
+        self.assertLessEqual(retry_at, after)
 
 
 if __name__ == "__main__":

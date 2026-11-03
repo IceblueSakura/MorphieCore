@@ -106,7 +106,7 @@ def run(binary, env, root, work, origin, state):
                 and r["telemetry"]["attributes"].get("outcome") == "failed",
                 1.5, "boundary_failure_not_observed")
             request_id = receipt["telemetry"]["attributes"]["request_id"]
-            check(time.monotonic() - state.hints[0] < 2, "boundary_hint_elapsed_before_cancel")
+            check(time.monotonic() - state.hints[0][0] < 2, "boundary_hint_elapsed_before_cancel")
             abort = client.submit("abort")
             acknowledged, terminals, settled = set(), [], False
             deadline = time.monotonic() + 5

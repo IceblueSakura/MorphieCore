@@ -169,9 +169,9 @@ class State:
         with self.lock:
             self.wires.append((raw, time.monotonic()))
 
-    def observe_failure_hint(self):
+    def observe_failure_hint(self, before_headers):
         with self.lock:
-            self.hints.append(time.monotonic())
+            self.hints.append((before_headers, time.monotonic()))
 
     def incoming(self, headers, body):
         phase = stage(body)
@@ -214,17 +214,21 @@ class State:
         check(all(primary for _, primary, _, _ in self.attempts), "recovery_switched_target")
         check(len(self.wires) == 5 and self.wires[1][0] == self.wires[2][0],
               "retry_changed_wire")
-        # Headers may be read concurrently before the post-write timestamp;
-        # allow only a small scheduling tolerance, not authority response time.
-        check(len(self.hints) == 1
-              and self.wires[2][1] - self.hints[0] >= max(0, int(self.retry_after) - 0.02),
-              "retry_hint_not_waited")
+        check(len(self.hints) == 1, "retry_hint_observation_count")
+        before, after = self.hints[0]
+        # Header publication is somewhere inside this window. Reject only a
+        # provably early retry; report the interval instead of claiming that a
+        # delayed post-write sample is the exact start of the gateway's wait.
+        retry_at = self.wires[2][1]
+        wait = {"minimum": max(0, retry_at - after), "maximum": retry_at - before}
+        check(wait["maximum"] >= int(self.retry_after), "retry_hint_not_waited")
         if self.native:
             group = self.attempts[0][2]
             check(group is not None, "missing_native_session")
             check(all(session == group for phase, _, session, _ in self.attempts if phase != 0), "native_session_changed")
             check(bool(self.attempts[3][2]) and self.attempts[3][2] != group,
                   "native_recovery_session_not_independent")
+        return wait
 
 
 def handler(state, ingress, direct_client=False):
@@ -297,11 +301,12 @@ def handler(state, ingress, direct_client=False):
                     self.send_header("connection", "close")
                     if status == 503:
                         self.send_header("retry-after", getattr(state, "retry_after", "0"))
+                        before_headers = time.monotonic()
                     self.end_headers()
                     if status == 503:
                         observe_hint = getattr(state, "observe_failure_hint", None)
                         if observe_hint is not None:
-                            observe_hint()
+                            observe_hint(before_headers)
                     self.wfile.write(payload)
                     self.wfile.flush()
                     if status == 503 and hasattr(state, "failure_sent"):
@@ -450,9 +455,9 @@ def main():
                               "attempts": [[p, k] for p, k, _, _ in state.attempts]}), file=sys.stderr)
             raise
     # Authority shutdown joins every worker before the final accounting verdict.
-    state.finish(sessions)
+    wait = state.finish(sessions)
     print(json.dumps({"case": case, "version": version, "client_requests": 4, "upstream_attempts": 5,
-        "extra_client_requests": 0, "sticky_after_recovery": True, "retry_hint_waited": True}))
+        "extra_client_requests": 0, "sticky_after_recovery": True, "retry_hint_wait_seconds": wait}))
 
 
 if __name__ == "__main__":

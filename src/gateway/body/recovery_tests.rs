@@ -168,14 +168,17 @@ async fn recovery_clock_stops_at_content_not_headers_or_lifecycle_and_keeps_heal
                 tokio::select! { result = &mut producer => panic!("early result: {:?}", result.err()), call = calls_rx.recv() => call },
                 Some(1)
             );
-            let started = Instant::now();
             if !no_retry {
                 assert_eq!(
                     tokio::select! { result = &mut producer => panic!("early result: {:?}", result.err()), call = calls_rx.recv() => call },
                     Some(2)
                 );
                 if matches!(mode, "hint" | "inbandhint") {
-                    assert!(started.elapsed() >= Duration::from_secs(1));
+                    let observed_at = state.previous_failures.lock().unwrap()[0].at;
+                    assert!(
+                        observed_at.elapsed() >= Duration::from_secs(1),
+                        "hint waiting starts at failure observation, not request startup"
+                    );
                 }
             }
             if no_retry || matches!(mode, "quota" | "malformed" | "twice") {
