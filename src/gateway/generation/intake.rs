@@ -161,7 +161,9 @@ async fn produce(
             chunk = upstream.chunk() => chunk.map_err(|e| {
                 let class=if e.is_timeout(){crate::transport::http::TransportError::Timeout}else{crate::transport::http::TransportError::Read};
                 trace.report.failure(None,&crate::execution::AttemptError::Transport(class));
-                ApiError::transport(class.recovery_class())
+                let failure = ApiError::transport(class.recovery_class());
+                lane.state.observe_interruption(failure);
+                failure
             })?,
         };
         lane.state
@@ -278,6 +280,22 @@ async fn produce(
     trace.stage(Stage::Terminal);
     attempt.finish().map_err(|error| {
         trace.decode_error(&error);
+        if matches!(
+            error.codec(),
+            Some(crate::protocol::CodecError::Event(
+                crate::semantic::task::generation::EventError::EofBeforeTerminal
+            ))
+        ) || matches!(
+            error,
+            crate::execution::AttemptError::Sse(crate::protocol::stream::SseError::Framing(
+                crate::transport::sse::SseDecodeError::UnexpectedEof
+            ))
+        ) {
+            // Missing terminals affect health without granting resend permission.
+            lane.state.observe_interruption(ApiError::transport(
+                crate::provider::RecoveryClass::Upstream,
+            ));
+        }
         ApiError::upstream()
     })?;
     let evidence = attempt.take_evidence();
@@ -584,19 +602,6 @@ pub(in crate::gateway) async fn produce_candidate(
         trace,
     )
     .await;
-    if let Err(error) = result
-        && error.recovery.affects_health
-        && lane
-            .state
-            .failure_head
-            .lock()
-            .expect("failure head")
-            .is_none()
-    {
-        // Error delivery can itself stall or be cancelled. Preserve the failure
-        // before flushing pending output, not only when this future returns.
-        lane.state.observe_failure(error);
-    }
     trace.coalescing_peak(delivery.coalescing_peak_bytes());
 
     if result.is_err() {

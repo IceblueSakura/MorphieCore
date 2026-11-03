@@ -27,37 +27,19 @@ struct HealthAttempt<'a> {
 }
 impl HealthAttempt<'_> {
     fn failed(&self, error: ApiError) -> Option<crate::gateway::routing::executors::Observation> {
-        let now = Instant::now();
-        let observed = self
-            .state
-            .failure_head
-            .lock()
-            .expect("upstream failure")
-            .take();
-        let observation =
-            observed.unwrap_or(crate::gateway::routing::executors::FailureObservation {
-                error,
-                at: now,
-                material_revision: *self
-                    .state
-                    .material_revision
-                    .lock()
-                    .expect("material revision"),
-            });
-        self.lease.as_ref()?.resolve_failures(&[observation], now)
+        let failures = self.state.take_failures(Some(error));
+        self.lease
+            .as_ref()?
+            .resolve_failures(&failures, Instant::now())
     }
 }
 impl Drop for HealthAttempt<'_> {
     fn drop(&mut self) {
-        if let Some(observation) = self
-            .state
-            .failure_head
-            .lock()
-            .expect("upstream failure")
-            .take()
+        let failures = self.state.take_failures(None);
+        if !failures.is_empty()
             && let Some(lease) = &self.lease
         {
-            lease.resolve_failures(&[observation], Instant::now());
+            lease.resolve_failures(&failures, Instant::now());
         }
     }
 }
@@ -392,7 +374,7 @@ pub(in crate::gateway) async fn produce_chain(
         trace.executor(candidate.provider.id.as_str());
         trace.named_account(candidate.account.as_deref());
         state.waiting_upstream.store(false, Ordering::Release);
-        *state.failure_head.lock().expect("failure head") = None;
+        state.take_failures(None);
         *state.material_revision.lock().expect("material revision") = None;
         let health = HealthAttempt { lease, state };
         let attempt_deadline = deadline
@@ -781,6 +763,228 @@ async fn bound_cooldown_wait_is_single_cancellable_and_deadline_clipped() {
             drop(competing);
         }
         drop(late);
+    }
+}
+
+#[cfg(test)]
+#[tokio::test]
+async fn response_failures_preserve_independent_health_evidence() {
+    use crate::{
+        gateway::routing::executors::Scopes,
+        protocol::openai::{Dialect, GenerationApi, GenerationCodec, TargetContract},
+    };
+    use futures_util::StreamExt;
+    let mut observed = Vec::new();
+    for case in [
+        "terminal_eof",
+        "framing_eof",
+        "malformed",
+        "request",
+        "quota",
+    ] {
+        let gate = crate::gateway::tests::support::gateway(Limits::default());
+        let mut entry = gate.state.entries[&(
+            crate::protocol::ClientProtocol::Chat,
+            "fixture-model".into(),
+        )]
+            .as_ref()
+            .clone();
+        entry.client = crate::adapter::ClientAdapter::openai(
+            GenerationCodec::new(GenerationApi::Responses, Dialect::MorphieCore, None),
+            TargetContract::full(),
+        );
+        let mut candidate = entry.candidates[0].as_ref().clone();
+        candidate.endpoint.protocol = crate::topology::GenerationProtocol::OpenAiResponses;
+        candidate.endpoint.representation =
+            GenerationCodec::new(GenerationApi::Responses, Dialect::Siwc, None)
+                .contract(&TargetContract::full())
+                .into();
+        candidate.health = Scopes::bind(&[0; 32], &candidate.endpoint, "synthetic-account");
+        let candidate = Arc::new(candidate);
+        let mut sibling = candidate.as_ref().clone();
+        sibling.endpoint.upstream_model = "synthetic-sibling".into();
+        sibling.health = Scopes::bind(&[0; 32], &sibling.endpoint, "synthetic-account");
+        let request = entry
+            .client
+            .decode_client_request(br#"{"model":"fixture-model","input":"hello"}"#)
+            .unwrap();
+        let mut response = crate::gateway::tests::responses_wire::subscription_response(true);
+        let mut events = crate::gateway::tests::responses_wire::response_events(response.clone());
+        let read_error = matches!(case, "request" | "quota");
+        if read_error {
+            response["status"] = serde_json::json!("failed");
+            response["error"] = if case == "quota" {
+                serde_json::json!({"code":"rate_limit_exceeded","type":"insufficient_quota","message":"synthetic quota"})
+            } else {
+                serde_json::json!({"code":"invalid_prompt","type":"invalid_request_error","message":"synthetic request"})
+            };
+            let last = events.last_mut().unwrap();
+            last["type"] = serde_json::json!("response.failed");
+            last["response"] = response;
+        } else {
+            events.truncate(1);
+        }
+        let mut bytes = events
+            .iter()
+            .map(|event| {
+                format!(
+                    "event: {}\ndata: {event}\n\n",
+                    event["type"].as_str().unwrap()
+                )
+            })
+            .collect::<String>()
+            .into_bytes();
+        if case == "framing_eof" {
+            bytes.extend_from_slice(b"data: {}");
+        } else if case == "malformed" {
+            // Invalid UTF-8 is rejected at finish, not while feeding this line.
+            bytes.extend_from_slice(b"data: \xff");
+        }
+        let chunks = futures_util::stream::once(std::future::ready(Ok::<_, std::io::Error>(
+            bytes::Bytes::from(bytes),
+        )))
+        .chain(futures_util::stream::iter(read_error.then(|| {
+            Err(std::io::Error::new(
+                std::io::ErrorKind::ConnectionReset,
+                "synthetic read interruption",
+            ))
+        })));
+        let upstream = reqwest::Response::from(
+            axum::http::Response::builder()
+                .status(200)
+                .header("content-type", "text/event-stream")
+                .body(reqwest::Body::wrap_stream(chunks))
+                .unwrap(),
+        );
+        let state = Status::default();
+        let (tx, _rx) = mpsc::channel(1);
+        let mut trace = Trace::for_request(
+            None,
+            &axum::extract::Request::new(axum::body::Body::empty()),
+        );
+        let result = produce_chain(
+            Upstreams::Observed {
+                runtime: Some(gate.state.clone()),
+                candidate: candidate.clone(),
+                response: upstream,
+            },
+            &entry,
+            &request,
+            &gate.state.limits,
+            Instant::now() + Duration::from_secs(3),
+            &tx,
+            &state,
+            &mut trace,
+        )
+        .await;
+        assert!(
+            result.is_err(),
+            "{case}: a failed source cannot complete delivery"
+        );
+        if matches!(case, "terminal_eof" | "framing_eof") {
+            assert!(
+                result.unwrap_err().recovery.class.is_none(),
+                "EOF alone cannot grant a resend"
+            );
+        }
+        let report = trace.report.attempt();
+        assert_eq!(
+            report
+                .handling_failure
+                .or(report.failure)
+                .unwrap()
+                .cause
+                .code(),
+            match case {
+                "terminal_eof" => "event.eof_before_terminal",
+                "framing_eof" => "sse.unexpected_eof",
+                "malformed" => "sse.invalid_utf8",
+                _ => "transport.read_failed",
+            },
+            "{case}: reach the intended failure boundary"
+        );
+        assert!(!state.published.load(Ordering::Acquire), "{case}");
+        let now = Instant::now();
+        let target_blocked = gate
+            .state
+            .executors
+            .unavailable(&candidate.health, now)
+            .is_some();
+        let account_blocked = gate
+            .state
+            .executors
+            .unavailable(&sibling.health, now)
+            .is_some();
+        // Clear an expired account constraint through a different model. An
+        // independent target constraint must still require its own probe.
+        let later = now + Duration::from_secs(1801);
+        let account_probe = gate.state.executors.acquire(&sibling, later).unwrap();
+        assert!(account_probe.completed(None, later).0);
+        drop(account_probe);
+        let target_probe = gate
+            .state
+            .executors
+            .acquire(&candidate, later)
+            .unwrap()
+            .probing;
+        observed.push((case, target_blocked, account_blocked, target_probe));
+    }
+    assert_eq!(
+        observed,
+        [
+            ("terminal_eof", true, false, true),
+            ("framing_eof", true, false, true),
+            ("malformed", false, false, false),
+            ("request", true, false, true),
+            ("quota", true, true, true),
+        ]
+    );
+}
+
+#[cfg(test)]
+#[tokio::test(start_paused = true)]
+async fn recorded_interruption_survives_cleanup_without_extending_its_cooldown() {
+    for cancelled in [false, true] {
+        let gate = crate::gateway::tests::support::gateway(Limits::default());
+        let entry = gate.state.entries.values().next().unwrap();
+        let candidate = &entry.candidates[0];
+        let state = Status::default();
+        let attempt = HealthAttempt {
+            lease: Some(
+                gate.state
+                    .executors
+                    .acquire(candidate, Instant::now())
+                    .unwrap(),
+            ),
+            state: &state,
+        };
+        state.observe_failure(ApiError::failure(400, b"", None));
+        let interruption = ApiError::transport(crate::provider::RecoveryClass::Upstream);
+        state.observe_interruption(interruption);
+        assert_eq!(state.timeout_error(), interruption);
+        tokio::time::advance(Duration::from_secs(2)).await;
+        if !cancelled {
+            attempt.failed(interruption);
+        }
+        drop(attempt);
+        let now = Instant::now();
+        assert!(
+            gate.state
+                .executors
+                .unavailable(&candidate.health, now)
+                .is_none(),
+            "cleanup cannot restart an expired cooldown"
+        );
+        let probe = gate.state.executors.acquire(candidate, now).unwrap();
+        assert!(probe.probing, "the interruption still requires a probe");
+        assert_eq!(
+            probe
+                .failed(ApiError::failure(503, b"", None), now, None)
+                .unwrap()
+                .retry_after_seconds,
+            Some(2),
+            "normal resolution and cancellation each advance backoff only once"
+        );
     }
 }
 

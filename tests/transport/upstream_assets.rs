@@ -376,6 +376,84 @@ fn feed(
 }
 
 #[test]
+fn upstream_eof_is_distinct_from_malformed_pending_frames() {
+    use morphiecore::{
+        execution::{Attempt, AttemptError},
+        protocol::{
+            CodecError,
+            stream::{SseError, SseLimits},
+        },
+        semantic::task::generation::EventError,
+        transport::sse::SseDecodeError,
+    };
+    let target = ReplayTarget::new("public-fixture", "gemini-fixture").unwrap();
+    let responses = crate::wire::events(2)
+        .iter()
+        .map(|event| {
+            format!(
+                "event: {}\ndata: {event}\n\n",
+                event["type"].as_str().unwrap()
+            )
+        })
+        .collect::<String>()
+        .into_bytes();
+    for (adapter, bytes) in [
+        (openai(GenerationApi::Chat), asset("openai/chat-tool.sse")),
+        (openai(GenerationApi::Responses), responses),
+        (
+            messages("claude-3-opus-latest"),
+            messages_with_delimiter("anthropic/basic.sse"),
+        ),
+        (
+            UpstreamAdapter::GoogleGenerateContent {
+                target: target.clone(),
+            },
+            jsonl_sse("vercel/google-text.jsonl", None),
+        ),
+        (
+            UpstreamAdapter::GoogleInteractions { target },
+            jsonl_sse("vercel/interactions-basic.jsonl", Some("event_type")),
+        ),
+    ] {
+        let raw = std::str::from_utf8(&bytes).unwrap();
+        let frames: Vec<_> = raw.split_inclusive("\n\n").collect();
+        let prefix = frames[..frames.len() - 1].concat().into_bytes();
+        for chunk in [1, bytes.len()] {
+            for suffix in [b"".as_slice(), b"data: {}", b"data: \xff"] {
+                let mut attempt = Attempt::new(adapter.clone(), 2 << 20, SseLimits::default());
+                attempt.begin(200, "text/event-stream").unwrap();
+                feed(&mut attempt, &prefix, chunk).unwrap();
+                feed(&mut attempt, suffix, chunk).unwrap();
+                let error = attempt.finish().unwrap_err();
+                if suffix.is_empty() {
+                    assert!(
+                        matches!(
+                            error.codec(),
+                            Some(CodecError::Event(EventError::EofBeforeTerminal))
+                        ),
+                        "{adapter:?}: {error:?}"
+                    );
+                } else {
+                    assert!(
+                        matches!(
+                            error,
+                            AttemptError::Sse(SseError::Framing(ref framing))
+                                if *framing == if suffix == b"data: {}" {
+                                    SseDecodeError::UnexpectedEof
+                                } else {
+                                    SseDecodeError::InvalidUtf8
+                                }
+                        ),
+                        "{adapter:?}: {error:?}"
+                    );
+                }
+                assert!(attempt.response().is_err());
+            }
+        }
+    }
+}
+
+#[test]
 fn upstream_ingress_budgets_are_independent_and_fragmentation_invariant() {
     use morphiecore::{
         execution::{Attempt, AttemptError},

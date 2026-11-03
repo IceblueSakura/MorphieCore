@@ -578,24 +578,15 @@ fn interrupted_final_never_becomes_completed_or_replayable_before_eof() {
             remaining = &remaining[used..];
         }
         let error = attempt.finish().unwrap_err();
-        match api {
-            Api::Responses => assert!(
-                matches!(
-                    error,
-                    AttemptError::Sse(SseError::Codec(CodecError::Event(
-                        EventError::EofBeforeTerminal
-                    )))
-                ),
-                "{error:?}"
+        assert!(
+            matches!(
+                error,
+                AttemptError::Sse(SseError::Codec(CodecError::Event(
+                    EventError::EofBeforeTerminal
+                )))
             ),
-            _ => {
-                let expected = morphiecore::protocol::failure::ShapeReason::InvalidValue;
-                assert!(
-                    matches!(error, AttemptError::Sse(SseError::Codec(CodecError::Invalid(label))) if label==expected),
-                    "{error:?}"
-                );
-            }
-        }
+            "{error:?}"
+        );
         assert!(delivery(api).encode_json(&attempt).is_err());
     }
 }

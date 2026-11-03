@@ -798,7 +798,7 @@ Publication remains irreversible: no later attempt may replay committed output. 
 
 - **Scoping:** Auth/quota constrain an account; transient, rate-limit and permission failures constrain its exact model/operation/origin/path target. Independent constraints retain their own deadlines.
 - **Probe ownership:** Acquisition is atomic across account and target scopes. Account probes exclude sibling-model probes in either acquisition order; target probes alone do not exclude healthy sibling traffic. Cancellation releases ownership without declaring recovery.
-- **Recovery:** Only validated successful work can clear health, subject to generation fencing. Failed terminal evidence survives cancellation before EOF. Malformed output has no health penalty. Provider-owned timing and narrowly scoped material replacement follow the [selected contract](provider-account-redesign-plan.md#cooldown-and-recovery).
+- **Recovery:** Only validated successful work can clear health, subject to generation fencing. Reported failures and later I/O interruptions retain independent observation times and material revisions through cleanup or cancellation. Premature terminal/framing EOF constrains target health without granting resend permission; malformed output has no health penalty. Provider-owned timing and narrowly scoped material replacement follow the [selected contract](provider-account-redesign-plan.md#cooldown-and-recovery).
 
 #### Routing unit
 

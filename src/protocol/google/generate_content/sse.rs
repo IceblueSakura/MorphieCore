@@ -795,7 +795,7 @@ impl GenerationSseDecoder {
         let result = (|| {
             self.framing.finish_strict()?;
             if !self.finished {
-                return Err(invalid(ShapeReason::InvalidValue));
+                return Err(CodecError::Event(EventError::EofBeforeTerminal).into());
             }
             Ok(DecodedResponse {
                 evidence: Default::default(),

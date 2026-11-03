@@ -393,11 +393,13 @@ async fn ordered_route_only_falls_back_before_visible_delivery() {
             assert_eq!(*calls.lock().unwrap(), ["b"]);
         }
         if status == 201 {
+            // The failed published request cannot replay, but its premature EOF
+            // cools A so the next request selects the ready target.
             calls.lock().unwrap().clear();
             let response = send(true).await.unwrap().unwrap();
             assert_eq!(response.status(), 200);
             drop(response);
-            assert_eq!(*calls.lock().unwrap(), ["a"]);
+            assert_eq!(*calls.lock().unwrap(), ["b"]);
         }
         gateway.shutdown();
         serving.await.unwrap();

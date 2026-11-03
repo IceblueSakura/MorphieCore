@@ -7,7 +7,9 @@ use crate::{
         stream::{SseError, SseLimits},
     },
     semantic::{
-        task::generation::{MAX_ITEMS, MAX_TEXT_BYTES, MAX_TOTAL_BYTES, StructuredValue},
+        task::generation::{
+            EventError, MAX_ITEMS, MAX_TEXT_BYTES, MAX_TOTAL_BYTES, StructuredValue,
+        },
         value::{JsonLimits, parse_json},
     },
     transport::sse::{SseDecoder, SseEvent},
@@ -357,7 +359,10 @@ impl MessageSseDecoder {
         self.closed = true;
         let result = (|| {
             self.framing.finish_strict()?;
-            if !self.stopped || self.open.is_some() {
+            if !self.stopped {
+                return Err(CodecError::Event(EventError::EofBeforeTerminal).into());
+            }
+            if self.open.is_some() {
                 return Err(invalid());
             }
             let message = self.message.take().ok_or_else(invalid)?;

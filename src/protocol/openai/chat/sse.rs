@@ -13,7 +13,7 @@ use crate::{
     },
     semantic::{
         context::StreamOptions,
-        task::generation::{MAX_TOTAL_BYTES, StreamEvent},
+        task::generation::{EventError, MAX_TOTAL_BYTES, StreamEvent},
     },
     transport::sse::{SseDecoder, SseEvent},
 };
@@ -150,7 +150,7 @@ impl ChatSseDecoder {
         let result = (|| {
             self.framing.finish_strict()?;
             if !self.done {
-                return Err(SseError::Codec(CodecError::invalid()));
+                return Err(CodecError::Event(EventError::EofBeforeTerminal).into());
             }
             Ok(self.codec.finish()?)
         })();

@@ -60,6 +60,8 @@ pub(super) struct Status {
     pub(super) waiting_upstream: AtomicBool,
     /// Failed HTTP heads or stream failures survive interrupted error delivery.
     pub(super) failure_head: Mutex<Option<crate::gateway::routing::executors::FailureObservation>>,
+    /// A later I/O interruption is independent of the reported upstream failure.
+    failure_interruption: Mutex<Option<crate::gateway::routing::executors::FailureObservation>>,
     pub(super) material_revision: Mutex<Option<u64>>,
 }
 impl Status {
@@ -73,8 +75,47 @@ impl Status {
             });
         observation.error = error;
     }
+    pub(super) fn observe_interruption(&self, error: ApiError) {
+        self.failure_interruption
+            .lock()
+            .expect("failure interruption")
+            .get_or_insert_with(|| crate::gateway::routing::executors::FailureObservation {
+                error,
+                at: Instant::now(),
+                material_revision: *self.material_revision.lock().expect("material revision"),
+            });
+    }
+    pub(super) fn take_failures(
+        &self,
+        final_error: Option<ApiError>,
+    ) -> Vec<crate::gateway::routing::executors::FailureObservation> {
+        let reported = self.failure_head.lock().expect("failure head").take();
+        let interrupted = self
+            .failure_interruption
+            .lock()
+            .expect("failure interruption")
+            .take();
+        let mut failures: Vec<_> = reported.into_iter().chain(interrupted).collect();
+        if let Some(error) = final_error
+            && error.recovery.affects_health
+            && !failures.iter().any(|failure| failure.error == error)
+        {
+            failures.push(crate::gateway::routing::executors::FailureObservation {
+                error,
+                at: Instant::now(),
+                material_revision: *self.material_revision.lock().expect("material revision"),
+            });
+        }
+        failures
+    }
     pub(super) fn timeout_error(&self) -> ApiError {
-        if let Some(failure) = *self.failure_head.lock().expect("failure head") {
+        let interrupted = *self
+            .failure_interruption
+            .lock()
+            .expect("failure interruption");
+        if let Some(failure) =
+            interrupted.or_else(|| *self.failure_head.lock().expect("failure head"))
+        {
             failure.error
         } else if self.waiting_upstream.load(Ordering::Acquire) {
             ApiError::transport(crate::provider::RecoveryClass::Timeout)

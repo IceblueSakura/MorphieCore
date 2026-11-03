@@ -89,7 +89,7 @@ impl ErrorKind {
         }
     }
 }
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) struct ApiError {
     pub status: StatusCode,
     pub kind: ErrorKind,
