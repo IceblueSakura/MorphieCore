@@ -61,7 +61,7 @@ This page owns current scope, priorities, dependencies, and exit gates. [Archite
 
 ## Current status
 
-**Current focus (2026-11-04):** Slices R0–R5, account rewrite gates AR0–AR4 and the requested pre-AR5 simplification are complete. The [product-hypothesis selection policy](development.md#test-selection-and-pruning) replaces coverage-driven pruning. Three concrete Chat/Responses default blockers remain; fresh credentials, actual live model selection, real Provider checks and the full three-protocol installed-Agent exit still precede AR5 closure. Stage 4 remains paused.
+**Current focus (2026-11-04):** Slices R0–R5, account rewrite gates AR0–AR4, pre-AR5 test pruning and Generation/credential ownership cleanup are complete. The [product-hypothesis selection policy](development.md#test-selection-and-pruning) replaces coverage-driven pruning. Three concrete Chat/Responses default blockers remain; fresh credentials, actual live model selection, real Provider checks and the full three-protocol installed-Agent exit still precede AR5 closure. Stage 4 remains paused.
 
 | Area | State | Next step |
 |---|---|---|

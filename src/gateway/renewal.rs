@@ -7,15 +7,13 @@ use tokio::time::{Instant, MissedTickBehavior};
 
 impl Gateway {
     pub(super) async fn renew_credentials(&self) {
-        let mut accounts: Vec<(AccessBinding, Instant)> = Vec::new();
-        for binding in &self.state.oauth_accounts {
-            if !accounts
-                .iter()
-                .any(|(other, _)| binding.same_account(other))
-            {
-                accounts.push((binding.clone(), Instant::now()));
-            }
-        }
+        let mut accounts: Vec<(AccessBinding, Instant)> = self
+            .state
+            .oauth_accounts
+            .iter()
+            .cloned()
+            .map(|binding| (binding, Instant::now()))
+            .collect();
         if accounts.is_empty() {
             return;
         }

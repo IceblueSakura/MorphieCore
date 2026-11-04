@@ -17,29 +17,16 @@ pub trait AuthDriver: Send + Sync {
     fn dynamic_registration(&self) -> bool {
         false
     }
-    fn login_registered<'a>(
-        &'a self,
-        client: &'a str,
-        options: &'a LoginOptions,
-        notify: LoginObserver<'a>,
-        _registration: RegistrationContext<'a>,
-    ) -> DriverFuture<'a, Grant> {
-        self.login(client, options, notify)
-    }
     fn check_access(&self, _credential: &Credential) -> Result<(), Error> {
         Ok(())
     }
     fn renew<'a>(
         &'a self,
-        client: &'a str,
-        identity: &'a VerifiedIdentity,
-        previous: &'a Credential,
+        _client: &'a str,
+        _identity: &'a VerifiedIdentity,
+        _previous: &'a Credential,
     ) -> DriverFuture<'a, crate::credential::Renewal> {
-        Box::pin(async move {
-            self.refresh(client, identity, previous)
-                .await
-                .map(crate::credential::Renewal::Verified)
-        })
+        Box::pin(async { Err(Error::Unsupported) })
     }
     fn verify_renewal<'a>(
         &'a self,
@@ -66,17 +53,10 @@ pub trait AuthDriver: Send + Sync {
         client: &'a str,
         options: &'a LoginOptions,
         notify: LoginObserver<'a>,
+        registration: RegistrationContext<'a>,
     ) -> DriverFuture<'a, Grant>;
     fn can_refresh(&self) -> bool {
         false
-    }
-    fn refresh<'a>(
-        &'a self,
-        _client: &'a str,
-        _identity: &'a VerifiedIdentity,
-        _previous: &'a Credential,
-    ) -> DriverFuture<'a, Grant> {
-        Box::pin(async { Err(Error::Unsupported) })
     }
     fn revoke<'a>(&'a self, _client: &'a str, _credential: &'a Credential) -> DriverFuture<'a, ()> {
         Box::pin(async { Err(Error::Unsupported) })

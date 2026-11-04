@@ -1,7 +1,7 @@
 //! Bounded authority HTTP; explicit proxies override environment proxy selection.
 use crate::credential::{CredentialError as Error, SecretBytes};
 use futures_util::StreamExt;
-use reqwest::{Client, Method, header::HeaderValue};
+use reqwest::{Client, RequestBuilder, header::HeaderValue};
 use std::time::Duration;
 use tokio::time::Instant;
 
@@ -83,83 +83,55 @@ impl AuthHttp {
         }
         Self::build_with_environment(origin.into(), None, agent, false)
     }
-    pub async fn request(
+    pub async fn post_form(
         &self,
         path: &str,
         fields: &[(&str, &str)],
-        bearer: Option<&str>,
-        deadline: Instant,
-    ) -> Result<(u16, SecretBytes), Error> {
-        self.request_with_metadata(path, fields, bearer, &[], deadline)
-            .await
-    }
-    pub async fn request_with_metadata(
-        &self,
-        path: &str,
-        fields: &[(&str, &str)],
-        bearer: Option<&str>,
         metadata: &[(&str, &str)],
         deadline: Instant,
     ) -> Result<(u16, SecretBytes), Error> {
-        if let Some(token) = bearer {
-            return self.send(path, None, Some(token), metadata, deadline).await;
-        }
         let body = {
             let mut form = url::form_urlencoded::Serializer::new(String::new());
             form.extend_pairs(fields.iter().copied());
             form.finish()
         };
-        self.send(
-            path,
-            Some(("application/x-www-form-urlencoded", body)),
-            None,
-            metadata,
-            deadline,
-        )
-        .await
-    }
-    pub async fn get(&self, path: &str, deadline: Instant) -> Result<(u16, SecretBytes), Error> {
-        self.send(path, None, None, &[], deadline).await
-    }
-    async fn send(
-        &self,
-        path: &str,
-        body: Option<(&str, String)>,
-        bearer: Option<&str>,
-        metadata: &[(&str, &str)],
-        deadline: Instant,
-    ) -> Result<(u16, SecretBytes), Error> {
-        let deadline = deadline.min(Instant::now() + REQUEST_TIMEOUT);
-        if deadline <= Instant::now() {
-            return Err(Error::Timeout);
+        let deadline = bounded_deadline(deadline)?;
+        if body.len() > BODY_LIMIT {
+            return Err(Error::Protocol);
         }
         let mut request = self
             .client
-            .request(
-                if body.is_some() {
-                    Method::POST
-                } else {
-                    Method::GET
-                },
-                format!("{}{path}", self.origin),
-            )
-            .header("accept", "application/json");
-        if let Some((content_type, body)) = body {
-            if body.len() > BODY_LIMIT {
-                return Err(Error::Protocol);
-            }
-            request = request.header("content-type", content_type).body(body);
+            .post(format!("{}{path}", self.origin))
+            .header("content-type", "application/x-www-form-urlencoded")
+            .body(body);
+        // Only trusted drivers supply metadata, never response fields or business input.
+        for (name, value) in metadata {
+            request = request.header(*name, *value);
         }
+        self.execute(request, deadline).await
+    }
+    pub async fn get(
+        &self,
+        path: &str,
+        bearer: Option<&str>,
+        deadline: Instant,
+    ) -> Result<(u16, SecretBytes), Error> {
+        let deadline = bounded_deadline(deadline)?;
+        let mut request = self.client.get(format!("{}{path}", self.origin));
         if let Some(token) = bearer {
             let mut value =
                 HeaderValue::from_str(&format!("Bearer {token}")).map_err(|_| Error::Protocol)?;
             value.set_sensitive(true);
             request = request.header("authorization", value);
         }
-        // Only trusted drivers supply metadata, never response fields or business input.
-        for (name, value) in metadata {
-            request = request.header(*name, *value);
-        }
+        self.execute(request, deadline).await
+    }
+    async fn execute(
+        &self,
+        request: RequestBuilder,
+        deadline: Instant,
+    ) -> Result<(u16, SecretBytes), Error> {
+        let request = request.header("accept", "application/json");
         tokio::time::timeout_at(deadline, async {
             let response = request.send().await.map_err(|_| Error::Network)?;
             let status = response.status().as_u16();
@@ -186,6 +158,13 @@ impl AuthHttp {
         .await
         .map_err(|_| Error::Timeout)?
     }
+}
+fn bounded_deadline(deadline: Instant) -> Result<Instant, Error> {
+    let deadline = deadline.min(Instant::now() + REQUEST_TIMEOUT);
+    if deadline <= Instant::now() {
+        return Err(Error::Timeout);
+    }
+    Ok(deadline)
 }
 
 #[cfg(test)]
@@ -216,7 +195,7 @@ mod tests {
         }
         .unwrap();
         let result = http
-            .get("/fixture", Instant::now() + Duration::from_secs(2))
+            .get("/fixture", None, Instant::now() + Duration::from_secs(2))
             .await;
         if proxy_environment::expected_status() == 0 {
             assert!(result.is_err());
@@ -247,7 +226,7 @@ mod tests {
         let origin = format!("http://{}", target.local_addr().unwrap());
         let http = AuthHttp::build(origin.clone(), Some(&proxy_url), None).unwrap();
         let exchange = async {
-            let call = http.get("/jwks", Instant::now() + Duration::from_secs(2));
+            let call = http.get("/jwks", None, Instant::now() + Duration::from_secs(2));
             let serve = async {
                 let (mut stream, _) = proxy.accept().await.unwrap();
                 let mut request = Vec::new();

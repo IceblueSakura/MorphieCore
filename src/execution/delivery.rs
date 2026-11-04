@@ -396,22 +396,9 @@ impl ResponseDelivery {
         }
     }
     pub(crate) fn client_response(
-        &mut self,
-        attempt: &Attempt,
-    ) -> Result<crate::protocol::DecodedResponse, AttemptError> {
-        self.client_view(attempt).map(|(response, _)| response)
-    }
-    /// The client-facing response and the losses of producing it, without recording them.
-    fn client_view(
         &self,
         attempt: &Attempt,
-    ) -> Result<
-        (
-            crate::protocol::DecodedResponse,
-            Vec<crate::protocol::conversion::generation::Effect>,
-        ),
-        AttemptError,
-    > {
+    ) -> Result<crate::protocol::DecodedResponse, AttemptError> {
         let mut decoded = attempt.response()?.clone();
         decoded.evidence = EvidenceDelta::default();
         decoded.metadata = self.metadata(attempt)?;
@@ -419,7 +406,6 @@ impl ResponseDelivery {
             &mut decoded,
             &crate::protocol::replay_envelope::CLIENT_ORIGIN,
         )?;
-        let losses = vec![];
         if self.client.protocol() == ClientProtocol::Responses || attempt.is_native() {
             for (owner, _) in decoded.semantic.items() {
                 if decoded.fidelity.response_item_id(*owner).is_none() {
@@ -434,7 +420,7 @@ impl ResponseDelivery {
                 }
             }
         }
-        Ok((decoded, losses))
+        Ok(decoded)
     }
     /// Bounded cache-only projection of exactly the delivered values; not stored history.
     pub(crate) fn cache_successor(
@@ -575,7 +561,7 @@ impl ResponseDelivery {
         view: View,
     ) -> Result<(crate::protocol::DecodedResponse, Vec<u8>, EvidenceDelta), AttemptError> {
         let mut evidence = self.complete_presentation(attempt, view)?;
-        let (mut response, effects) = self.client_view(attempt)?;
+        let mut response = self.client_response(attempt)?;
         let source = response.clone();
         let hidden = source
             .semantic
@@ -629,10 +615,7 @@ impl ResponseDelivery {
                 .expect("projection")
                 .take_evidence(),
         );
-        for effect in effects {
-            evidence.push(effect);
-        }
-        let (mut decoded, mut value, effects) = self.client.render_projected(response)?;
+        let (mut decoded, mut value) = self.client.render_projected(response)?;
         if hidden {
             decoded.semantic = source
                 .semantic
@@ -644,9 +627,6 @@ impl ResponseDelivery {
                 })
                 .map_err(CodecError::from)?;
             decoded.fidelity = source.fidelity;
-        }
-        for effect in effects {
-            evidence.push(effect);
         }
         if let Some(notice) = self.report.preview_notice(view, &evidence) {
             notice.attach(&mut value, self.limits.max_wire_bytes, false);

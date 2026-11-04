@@ -15,10 +15,10 @@ fn keys_have_separate_lifecycle_and_rotation_never_reuses_a_bound_epoch() {
         .add_api_key("alpha", "one", secret("synthetic-first"))
         .unwrap();
     assert_eq!(first.state, ApiKeyState::Enabled);
-    let access = manager.bind_api_key("alpha", "one").unwrap();
+    let access = manager.bind_key_reference("alpha", "one").unwrap();
     let snapshot = access.borrow().unwrap();
     let provenance = access.provenance();
-    assert!(manager.bind_api_key("beta", "one").is_err());
+    assert!(manager.bind_key_reference("beta", "one").is_err());
     assert!(
         manager
             .add_api_key("alpha", "one", secret("duplicate"))
@@ -30,7 +30,7 @@ fn keys_have_separate_lifecycle_and_rotation_never_reuses_a_bound_epoch() {
     assert!(access.borrow().is_err());
     assert_eq!(snapshot.expose(), "synthetic-first");
     assert_eq!(next.generation, first.generation + 1);
-    let fresh = manager.bind_api_key("alpha", "one").unwrap();
+    let fresh = manager.bind_key_reference("alpha", "one").unwrap();
     assert_ne!(fresh.provenance(), provenance);
     assert_eq!(fresh.borrow().unwrap().expose(), "synthetic-next");
     assert_eq!(
@@ -43,12 +43,18 @@ fn keys_have_separate_lifecycle_and_rotation_never_reuses_a_bound_epoch() {
         .set_api_key_enabled("alpha", "one", next.revision, false)
         .unwrap();
     assert!(fresh.borrow().is_err());
-    assert!(manager.bind_api_key("alpha", "one").is_err());
+    assert!(
+        manager
+            .bind_key_reference("alpha", "one")
+            .unwrap()
+            .borrow()
+            .is_err()
+    );
     let enabled = manager
         .set_api_key_enabled("alpha", "one", disabled.revision, true)
         .unwrap();
     assert!(fresh.borrow().is_err());
-    let fresh = manager.bind_api_key("alpha", "one").unwrap();
+    let fresh = manager.bind_key_reference("alpha", "one").unwrap();
     let removed = manager
         .remove_api_key("alpha", "one", enabled.revision)
         .unwrap();
@@ -77,8 +83,7 @@ fn keys_have_separate_lifecycle_and_rotation_never_reuses_a_bound_epoch() {
         .unwrap();
     assert_eq!(restored.state, ApiKeyState::Enabled);
     assert!(fresh.borrow().is_err());
-    let public = serde_json::to_string(&manager.inventory().unwrap()).unwrap();
-    assert!(public.contains("api_key"));
+    let public = serde_json::to_string(&manager.list_api_keys(None).unwrap()).unwrap();
     for forbidden in ["synthetic", "secret", "record_id", "epoch"] {
         assert!(!public.contains(forbidden), "{forbidden}");
     }
@@ -102,7 +107,7 @@ fn key_publication_faults_quarantine_uncertainty_and_allow_explicit_replacement(
         let first = manager
             .add_api_key("alpha", "one", secret("synthetic-old"))
             .unwrap();
-        let binding = manager.bind_api_key("alpha", "one").unwrap();
+        let binding = manager.bind_key_reference("alpha", "one").unwrap();
         manager.keys.fail_at(fault);
         let result =
             manager.replace_api_key("alpha", "one", first.revision, secret("synthetic-new"));
@@ -118,7 +123,13 @@ fn key_publication_faults_quarantine_uncertainty_and_allow_explicit_replacement(
         if uncertain {
             assert_eq!(result.unwrap_err(), CredentialError::PersistenceUncertain);
             assert!(binding.borrow().is_err());
-            assert!(manager.bind_api_key("alpha", "one").is_err());
+            assert!(
+                manager
+                    .bind_key_reference("alpha", "one")
+                    .unwrap()
+                    .borrow()
+                    .is_err()
+            );
             manager
                 .replace_api_key(
                     "alpha",
@@ -129,7 +140,7 @@ fn key_publication_faults_quarantine_uncertainty_and_allow_explicit_replacement(
                 .unwrap();
             assert_eq!(
                 manager
-                    .bind_api_key("alpha", "one")
+                    .bind_key_reference("alpha", "one")
                     .unwrap()
                     .borrow()
                     .unwrap()
@@ -162,7 +173,7 @@ fn unpublished_keys_require_explicit_recovery_and_missing_mutations_create_nothi
     let status = manager.list_api_keys(None).unwrap().remove(0);
     assert!(status.recovery_required);
     assert_eq!(status.revision, 0);
-    assert!(manager.bind_api_key("alpha", "one").is_err());
+    assert!(manager.bind_key_reference("alpha", "one").is_err());
     assert!(
         manager
             .add_api_key("alpha", "one", secret("synthetic"))
@@ -196,14 +207,14 @@ fn out_of_band_material_edit_cannot_reuse_a_pinned_replay_identity() {
     manager
         .add_api_key("alpha", "one", secret("synthetic-before"))
         .unwrap();
-    let before = manager.bind_api_key("alpha", "one").unwrap();
+    let before = manager.bind_key_reference("alpha", "one").unwrap();
     let path = dir.path.join("alpha.json");
     let mut document: serde_json::Value =
         serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
     document["api_keys"]["one"]["secret"] = serde_json::json!("synthetic-after");
     std::fs::write(path, serde_json::to_vec(&document).unwrap()).unwrap();
     assert!(before.borrow().is_err());
-    let after = manager.bind_api_key("alpha", "one").unwrap();
+    let after = manager.bind_key_reference("alpha", "one").unwrap();
     assert_ne!(before.provenance(), after.provenance());
     assert_eq!(after.borrow().unwrap().expose(), "synthetic-after");
 }
@@ -230,7 +241,10 @@ fn key_documents_reject_wrong_kind_identity_and_inconsistent_material() {
         let mut corrupted = original.clone();
         corrupted["api_keys"]["one"][field] = value;
         std::fs::write(&path, serde_json::to_vec(&corrupted).unwrap()).unwrap();
-        assert!(manager.bind_api_key("alpha", "one").is_err(), "{field}");
+        assert!(
+            manager.bind_key_reference("alpha", "one").is_err(),
+            "{field}"
+        );
     }
 }
 #[test]
@@ -255,7 +269,7 @@ fn local_locks_and_record_binding_are_shared_but_domains_are_isolated() {
         .unwrap();
     drop(lock);
     std::fs::rename(dir.path.join("alpha.json"), dir.path.join("other.json")).unwrap();
-    assert!(manager.bind_api_key("alpha", "other").is_err());
+    assert!(manager.bind_key_reference("alpha", "other").is_err());
     assert!(
         manager
             .add_api_key("../escape", "one", secret("synthetic"))
@@ -270,7 +284,7 @@ fn concurrent_borrows_wait_for_short_transactions_within_a_bound() {
     manager
         .add_api_key("alpha", "one", secret("synthetic-one"))
         .unwrap();
-    let access = std::sync::Arc::new(manager.bind_api_key("alpha", "one").unwrap());
+    let access = std::sync::Arc::new(manager.bind_key_reference("alpha", "one").unwrap());
     // Parallel requests on one binding contend only for short store transactions.
     let workers: Vec<_> = (0..8)
         .map(|_| {

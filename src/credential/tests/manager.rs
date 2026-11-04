@@ -40,6 +40,7 @@ impl AuthDriver for ThirdDriver {
         client: &'a str,
         _options: &'a LoginOptions,
         _notify: LoginObserver<'a>,
+        _registration: RegistrationContext<'a>,
     ) -> DriverFuture<'a, Grant> {
         Box::pin(async move {
             if let Some(barrier) = &self.login_barrier {
@@ -55,16 +56,16 @@ impl AuthDriver for ThirdDriver {
     fn can_refresh(&self) -> bool {
         true
     }
-    fn refresh<'a>(
+    fn renew<'a>(
         &'a self,
         _client: &'a str,
         _identity: &'a VerifiedIdentity,
         _previous: &'a Credential,
-    ) -> DriverFuture<'a, Grant> {
+    ) -> DriverFuture<'a, Renewal> {
         Box::pin(async move {
             self.entered.notify_one();
             self.release.notified().await;
-            Ok(grant())
+            Ok(Renewal::Verified(grant()))
         })
     }
 }

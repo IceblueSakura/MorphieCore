@@ -13,7 +13,7 @@ use std::{collections::BTreeMap, path::Path, sync::Arc};
 pub struct CredentialManager {
     pub(super) store: Arc<Store>,
     pub(super) keys: Arc<Store>,
-    drivers: BTreeMap<String, Arc<dyn AuthDriver>>,
+    drivers: Arc<BTreeMap<String, Arc<dyn AuthDriver>>>,
 }
 impl CredentialManager {
     pub fn new(root: impl AsRef<Path>, drivers: Vec<Arc<dyn AuthDriver>>) -> Result<Self, Error> {
@@ -38,7 +38,7 @@ impl CredentialManager {
         Ok(Self {
             store,
             keys,
-            drivers: registry,
+            drivers: Arc::new(registry),
         })
     }
     pub(super) fn driver(&self, profile: &str) -> Result<&dyn AuthDriver, Error> {
@@ -82,20 +82,6 @@ impl CredentialManager {
             )?;
         }
         Ok(loaded)
-    }
-    /// Redacted inventory; each partition is read under its own short transaction.
-    pub fn inventory(&self) -> Result<Vec<super::CredentialStatus>, Error> {
-        let mut statuses: Vec<_> = self
-            .list(None)?
-            .into_iter()
-            .map(super::CredentialStatus::OAuth)
-            .collect();
-        statuses.extend(
-            self.list_api_keys(None)?
-                .into_iter()
-                .map(super::CredentialStatus::ApiKey),
-        );
-        Ok(statuses)
     }
     pub fn list(&self, selected: Option<&str>) -> Result<Vec<AccountStatus>, Error> {
         if let Some(profile) = selected {
@@ -211,7 +197,7 @@ impl CredentialManager {
             tx.publish(&account)
         };
         let grant = driver
-            .login_registered(
+            .login(
                 &ticket.client,
                 &options,
                 &notify,

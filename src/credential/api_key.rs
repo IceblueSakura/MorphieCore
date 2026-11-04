@@ -322,23 +322,9 @@ impl CredentialManager {
         domain: &str,
         alias: &str,
     ) -> Result<ApiKeyAccess, Error> {
-        self.key_access(domain, alias, false)
-    }
-    pub fn bind_api_key(&self, domain: &str, alias: &str) -> Result<ApiKeyAccess, Error> {
-        self.key_access(domain, alias, true)
-    }
-    fn key_access(
-        &self,
-        domain: &str,
-        alias: &str,
-        require_enabled: bool,
-    ) -> Result<ApiKeyAccess, Error> {
         let tx = self.keys.transaction()?;
-        let (record, recovery) = tx.load_document::<KeyRecord>(domain, alias)?;
+        let (record, _) = tx.load_document::<KeyRecord>(domain, alias)?;
         let record = record.ok_or(Error::KeyUnavailable)?;
-        if require_enabled && (recovery || record.state != ApiKeyState::Enabled) {
-            return Err(Error::KeyUnavailable);
-        }
         let material = record.material_digest();
         Ok(ApiKeyAccess {
             material,

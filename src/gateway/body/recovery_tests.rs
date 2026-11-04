@@ -174,7 +174,7 @@ async fn recovery_clock_stops_at_content_not_headers_or_lifecycle_and_keeps_heal
                     Some(2)
                 );
                 if matches!(mode, "hint" | "inbandhint") {
-                    let observed_at = state.previous_failures.lock().unwrap()[0].at;
+                    let observed_at = state.failures.lock().unwrap().previous[0].at;
                     assert!(
                         observed_at.elapsed() >= Duration::from_secs(1),
                         "hint waiting starts at failure observation, not request startup"

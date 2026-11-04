@@ -53,7 +53,7 @@ impl BrowserGrant {
         // Retain the issued registration before code consumption, including invalid_grant.
         (registration.retain_client)(&client)?;
         let (status, body) = http
-            .request(
+            .post_form(
                 token_path,
                 &[
                     ("grant_type", "authorization_code"),
@@ -63,7 +63,7 @@ impl BrowserGrant {
                     ("code_verifier", self.verifier.expose()),
                     ("resource", resource),
                 ],
-                None,
+                &[],
                 self.deadline,
             )
             .await?;

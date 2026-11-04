@@ -36,8 +36,6 @@ pub struct ExecutionPlan {
 pub enum PlanError {
     #[error("unknown public model label")]
     UnknownModel,
-    #[error("task kind does not match the public model")]
-    TaskMismatch,
     #[error("request does not satisfy public semantic admission")]
     InvalidRequest,
     #[error("no activated candidate can faithfully represent the request")]
@@ -88,14 +86,7 @@ pub fn representable(
     endpoint: &Endpoint,
     request: &crate::protocol::GenerationRequestEnvelope,
 ) -> Result<(), RejectionReason> {
-    representable_for_client(endpoint, request, None)
-}
-pub(crate) fn representable_for_client(
-    endpoint: &Endpoint,
-    request: &crate::protocol::GenerationRequestEnvelope,
-    client: Option<&crate::adapter::ClientAdapter>,
-) -> Result<(), RejectionReason> {
-    project_candidate(endpoint, request, client).map(drop)
+    project_candidate(endpoint, request, None).map(drop)
 }
 
 /// One preflight conversion, including its body-free adaptation evidence.
@@ -170,24 +161,13 @@ pub fn select_candidates<'a>(
     policy: CandidatePolicy,
     endpoints: impl IntoIterator<Item = &'a Endpoint>,
 ) -> Result<CandidateSelection, PlanError> {
-    select_candidates_for_client(request, policy, endpoints, None)
-}
-pub(crate) fn select_candidates_for_client<'a>(
-    request: &crate::protocol::GenerationRequestEnvelope,
-    policy: CandidatePolicy,
-    endpoints: impl IntoIterator<Item = &'a Endpoint>,
-    client: Option<&crate::adapter::ClientAdapter>,
-) -> Result<CandidateSelection, PlanError> {
-    let (candidates, rejections) = select_candidates_with(
-        request,
-        policy,
-        endpoints,
-        client,
-        |ordinal, endpoint, _| CandidatePlan {
-            ordinal,
-            endpoint_id: endpoint.id.clone(),
-        },
-    )?;
+    let (candidates, rejections) =
+        select_candidates_with(request, policy, endpoints, None, |ordinal, endpoint, _| {
+            CandidatePlan {
+                ordinal,
+                endpoint_id: endpoint.id.clone(),
+            }
+        })?;
     Ok(CandidateSelection {
         candidates,
         rejections,
@@ -254,38 +234,6 @@ impl ExecutionPlan {
             policy: route.policy.clone(),
             candidates: selected.candidates,
             rejections: selected.rejections,
-        })
-    }
-    /// Derive the plan for one public model label. The label is the only model
-    /// input a request supplies; targets, credentials and profiles stay fixed.
-    pub fn derive(
-        topology: &CompiledTopology,
-        model: &str,
-        task: TaskKind,
-        delivery: Delivery,
-    ) -> Result<Self, PlanError> {
-        let model_contract = topology.model(model).ok_or(PlanError::UnknownModel)?;
-        if model_contract.task != task {
-            return Err(PlanError::TaskMismatch);
-        }
-        let route = topology
-            .route(&model_contract.route)
-            .ok_or(PlanError::UnknownModel)?;
-        Ok(Self {
-            model: model_contract.id.clone(),
-            task,
-            delivery,
-            policy: route.policy.clone(),
-            rejections: vec![],
-            candidates: route
-                .endpoints
-                .iter()
-                .enumerate()
-                .map(|(ordinal, endpoint_id)| CandidatePlan {
-                    ordinal,
-                    endpoint_id: endpoint_id.clone(),
-                })
-                .collect(),
         })
     }
 }
@@ -382,41 +330,30 @@ mod tests {
             .rules
             .reject_disabled_reasoning = true;
         assert_eq!(
-            representable_for_client(&always_thinking, &request, Some(&plain)),
+            project_candidate(&always_thinking, &request, Some(&plain)).map(drop),
             Err(RejectionReason::Representation)
         );
-        let selected = select_candidates_for_client(
-            &request,
-            CandidatePolicy::SkipUnrepresentable,
-            [endpoint, &unknown],
-            Some(&plain),
-        )
-        .unwrap();
-        assert_eq!(selected.candidates[0].ordinal, 0);
-        assert_eq!(selected.candidates[1].ordinal, 1);
-        assert!(selected.rejections.is_empty());
-        assert_eq!(
-            select_candidates_for_client(
+        let select = |policy, client: &ClientAdapter| {
+            select_candidates_with(
                 &request,
-                CandidatePolicy::RequireAll,
+                policy,
                 [endpoint, &unknown],
-                Some(&plain),
+                Some(client),
+                |ordinal, _, _| ordinal,
             )
-            .unwrap()
-            .candidates
-            .len(),
+        };
+        let (selected, rejected) = select(CandidatePolicy::SkipUnrepresentable, &plain).unwrap();
+        assert_eq!(selected, [0, 1]);
+        assert!(rejected.is_empty());
+        assert_eq!(
+            select(CandidatePolicy::RequireAll, &plain).unwrap().0.len(),
             2
         );
         assert_eq!(
-            select_candidates_for_client(
-                &request,
-                CandidatePolicy::RequireAll,
-                [endpoint, &unknown],
-                Some(&readable),
-            )
-            .unwrap()
-            .candidates
-            .len(),
+            select(CandidatePolicy::RequireAll, &readable)
+                .unwrap()
+                .0
+                .len(),
             2
         );
         assert_eq!(request, original);
@@ -425,7 +362,6 @@ mod tests {
             endpoint.encode_request(&off).unwrap()["reasoning_effort"],
             "none"
         );
-        representable_for_client(endpoint, &off, Some(&plain)).unwrap();
         assert!(
             !project_candidate(endpoint, &off, Some(&plain))
                 .unwrap()
@@ -436,15 +372,15 @@ mod tests {
         settings.tools = None;
         let mut text = request.clone();
         text.task.semantic = text.task.semantic.with_settings(settings).unwrap();
-        representable_for_client(endpoint, &text, Some(&plain)).unwrap();
+        project_candidate(endpoint, &text, Some(&plain)).unwrap();
         let assessed = topology
             .endpoint(&EndpointId::new("dashscope-flash-chat").unwrap())
             .unwrap();
-        representable_for_client(assessed, &text, Some(&plain)).unwrap();
+        project_candidate(assessed, &text, Some(&plain)).unwrap();
         let unassessed = topology
             .endpoint(&EndpointId::new("aliyun-tokenplan-cn-chat").unwrap())
             .unwrap();
         assert!(unassessed.encode_request(&text).is_ok());
-        representable_for_client(unassessed, &text, Some(&plain)).unwrap();
+        project_candidate(unassessed, &text, Some(&plain)).unwrap();
     }
 }

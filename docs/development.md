@@ -442,7 +442,7 @@ Preserve direct evidence for credential/auth isolation, trusted origins, strict 
 
 Run the affected behavior gates and the offline baseline; check SDK/Agent boundaries when their drivers change. Judge completion by the removed maintenance burden and surviving product hypotheses, not line coverage, percentages or test counts. Coverage tooling remains available for optional diagnosis, but coverage measurements/comparisons are not required for pruning or used as execution status.
 
-**Verified 2026-11-04:** the pre-AR5 pruning passes the offline baseline, pinned-asset verification, all retained upstream/SDK/client/OpenAPI Python checks, connected SDK loopback and installed-Agent synthetic workflows with pi 1.5.0 / OpenCode 2.0.32. No coverage was collected and no real Provider or private configuration was used. The native-default blockers remain recorded in the [lane table](#installed-client-synthetic-recovery).
+**Verified 2026-11-04:** the pre-AR5 pruning and Generation/credential ownership cleanup pass the offline baseline, pinned-asset verification, all retained upstream/SDK/client/OpenAPI Python checks, connected SDK loopback and installed-Agent synthetic workflows with pi 1.5.0 / OpenCode 2.0.32. Focused credential lifecycle, renewal, source binding, CLI, delivery, cancellation and recovery checks also pass. No coverage was collected and no real Provider or private configuration was used. The native-default blockers remain recorded in the [lane table](#installed-client-synthetic-recovery).
 
 ## Online acceptance
 

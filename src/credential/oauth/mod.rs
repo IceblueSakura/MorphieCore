@@ -50,7 +50,7 @@ pub(in crate::credential) async fn exchange_code(
     metadata: &[(&str, &str)],
     deadline: tokio::time::Instant,
 ) -> Result<(u16, crate::credential::SecretBytes), Error> {
-    http.request_with_metadata(
+    http.post_form(
         path,
         &[
             ("grant_type", "authorization_code"),
@@ -59,7 +59,6 @@ pub(in crate::credential) async fn exchange_code(
             ("redirect_uri", exchange.redirect),
             ("code_verifier", exchange.verifier),
         ],
-        None,
         metadata,
         deadline,
     )

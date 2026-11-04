@@ -403,6 +403,8 @@ Accepted on 2026-10-30; it replaces the earlier exact-first fallback and the fai
 
 **Ownership.** The request side has one owner: one feature vocabulary, with each target declaring a disposition per feature (native, equivalent, approximate, omit, delegate or reject), and one pure projection applying it per candidate during planning. This vocabulary replaces the separate requirement, feature-set, feature-enum, target-contract and published-rejection representations; encoders consume only projected copies, and source-level admission keeps only grammar checks and L5. The delivery side has one owner in [`ClientAdapter`](../src/adapter/downstream.rs): a (fact, client protocol) table drives one projection over the IR event stream; JSON and retained views reduce the projected events to a snapshot and render it, so JSON/SSE agreement holds by construction and encoders only render. Discovery and `/capabilities` read the same tables.
 
+Safety-assessment omission and its evidence belong to that projection, not a second encoder wrapper. Rendering and replay sealing do not introduce separate adaptation-result channels.
+
 The request implementation lives in [`lowering/request.rs`](../src/lowering/request.rs) and [`lowering/disposition.rs`](../src/lowering/disposition.rs). Source trust validation and visible-history transfer precede candidate feature admission; the final check sees projected semantic fields and envelope controls. Presentation, summary granularity and encrypted-include decisions use candidate rows, refreshed after allocation conversion where native thinking availability matters; hidden-display guarantees without a carrier reject through those rows. Parallel permission preserves the binding's disposition, independently of the explicit serial guarantee. Native grammar and replay-identity assertions remain codec responsibilities. Ordered Messages effort/tool rewrites consume the same table rather than a second carrier-policy object. Request-envelope session affinity remains outside semantic IR, with its target disposition resolved by this owner. The [single delivery projection](#delivery-projection-ownership) and [shared discovery compilation](#generation-text-model-discovery) consume these owners.
 
 **Evidence.** Receipts record only L3 approximations, L4 omissions and schema-completion estimates; L2 normalizations, derivations, defaults and request inferences produce none. Target encoders carry whole evidence deltas so coverage and truncation counts survive merging; Messages retains its directional preference for detailed receipts over matching field summaries. Rule IDs live in the disposition tables rather than a separate projection-rule enum and scattered string literals. Migration order is owned by the [roadmap](roadmap.md#conversion-ladder-migration).
@@ -799,6 +801,8 @@ The short recovery clock covers cleanup, hints, preparation and the retry until 
 
 #### Health and recovery
 
+One exchange-local failure ledger retains the original HTTP observation, later interruption, material revision and previous-attempt evidence. Terminal cleanup resolves health and releases its lease before asynchronous downstream normalization.
+
 - **Scoping:** Auth/quota constrain an account; transient, rate-limit and permission failures constrain its exact model/operation/origin/path target. Independent constraints retain their own deadlines.
 - **Probe ownership:** Acquisition is atomic across account and target scopes. Account probes exclude sibling-model probes in either acquisition order; target probes alone do not exclude healthy sibling traffic. Cancellation releases ownership without declaring recovery.
 - **Recovery:** Only validated successful work can clear health, subject to generation fencing. Reported failures and independently identified transport interruptions retain observation times and material revisions through cleanup or cancellation. Clean HTTP EOF missing a protocol terminal is malformed, not positive transport-interruption evidence. A completed retry discards its first failure's pending penalty; otherwise merged account/target constraints advance each affected scope at most once. Attempt-local output resets while usage and diagnostics remain separately attributable. Provider-owned timing and narrowly scoped material replacement follow the [selected contract](provider-account-redesign-plan.md#cooldown-and-recovery).
@@ -851,8 +855,10 @@ Configured via [`DeltaCoalescing`](file:///home/sakura/development/MorphieCore/s
 
 ### Credentials and security
 
-- **Store:** Credentials reside exclusively in private memory-locked storage.
-- **Automatic OAuth renewal:** Proactive background renewal scans tokens expiring within 120s, rotating credentials serially under account locks.
+- **Store:** Private files and redacted, zeroizing in-memory secret types; loaders reject unsafe paths.
+- **Driver ownership:** Managers share an immutable driver registry. Each driver has one registration-aware login entrance and one renewal entrance; pending renewal still requires its separate identity verification and durable publication steps.
+- **Automatic OAuth renewal:** Startup owns the deduplicated maintenance registry, including configured disabled accounts. Listener-owned renewal consumes that registry and scans tokens expiring within 120s, rotating credentials serially under account locks.
+- **API-key access:** Startup binds a reference; borrowing enforces enabled state, quarantine, record/epoch/generation identity and material digest. No separate strict-binding policy is maintained.
 - **Ingress Auth:** Binds exactly one configured Agent key via Bearer token or `x-api-key`.
 
 ### Agent identity and cluster diagnostics
@@ -983,6 +989,7 @@ Authoritative log of accepted architectural decisions and their systemic consequ
 |---|---|---|
 | Upstream protocol tests | 2026-10-23 | Pinned official SDK and upstream fixtures serve as regression baseline |
 | Product-hypothesis test selection | 2026-11-04 | Aggressively prune implementation restatements and dependency-only experiments; retain independent product/protocol/safety evidence. Coverage and test counts are not progress or acceptance criteria. [Selection procedure](development.md#test-selection-and-pruning) |
+| Runtime ownership convergence | 2026-11-04 | One projection owns delivery adaptations; one exchange ledger retains independent failure observations and terminal cleanup releases health before awaiting normalization. [Credential ownership](#credentials-and-security) uses one login/renewal driver contract and startup-owned maintenance registration |
 | Delta coalescing | 2026-10-26 | Default 50ms / 16 KiB buffer merges adjacent text deltas |
 | Messages ordered block delivery | 2026-10-28 | Codec-local bounded serialization preserves owner/part order, incremental head output and signed history; incomplete text-owner wire closure preserves source lifecycle, native intake and EOF authority |
 | Semantic-equivalence compatibility | 2026-10-28 | Protocol-equivalent empty/default forms use ordinary lossless mapping without named omissions or loss receipts; covers null-only reports, empty logprobs/cache options and already-enabled permissions; source observations and meaningful constraints remain protected |

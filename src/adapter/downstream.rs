@@ -78,9 +78,8 @@ impl ClientAdapter {
         decoded: DecodedResponse,
     ) -> Result<(DecodedResponse, Value, Vec<Effect>), crate::protocol::ConversionFailure> {
         let (projected, losses) = self.project_response(&decoded)?;
-        let (projected, value, mut effects) = self.render_projected(projected)?;
-        effects.extend(losses);
-        Ok((projected, value, effects))
+        let (projected, value) = self.render_projected(projected)?;
+        Ok((projected, value, losses))
     }
     pub(crate) fn project_response(
         &self,
@@ -156,7 +155,7 @@ impl ClientAdapter {
     pub(crate) fn render_projected(
         &self,
         decoded: DecodedResponse,
-    ) -> Result<(DecodedResponse, Value, Vec<Effect>), crate::protocol::ConversionFailure> {
+    ) -> Result<(DecodedResponse, Value), crate::protocol::ConversionFailure> {
         let value = match self {
             Self::Messages => crate::protocol::anthropic::messages::client::encode_client_response(
                 &decoded,
@@ -182,7 +181,7 @@ impl ClientAdapter {
                 }
             }
         };
-        Ok((decoded, value, vec![]))
+        Ok((decoded, value))
     }
     /// Protocol-shaped cache continuation, not conversation storage or target selection.
     pub(crate) fn cache_successor(
@@ -235,22 +234,19 @@ impl ClientAdapter {
                         &metadata.model,
                     )
                     .with_limits(limits)?;
-                let mut client = ClientEncoder {
-                    encoder: Encoder::Messages(encoder),
-                    losses: vec![],
-                };
+                let mut client = ClientEncoder::Messages(encoder);
                 client.update_metadata(metadata)?;
                 return Ok(client);
             }
             Self::OpenAi { adapter, contract } => match adapter.protocol {
-                GenerationApi::Chat => Encoder::Chat(ChatSseEncoder::new(
+                GenerationApi::Chat => ClientEncoder::Chat(ChatSseEncoder::new(
                     metadata,
                     adapter.contract(contract),
                     limits,
                     options,
                     padding,
                 )?),
-                GenerationApi::Responses => Encoder::Responses(ResponsesSseEncoder::new(
+                GenerationApi::Responses => ClientEncoder::Responses(ResponsesSseEncoder::new(
                     metadata,
                     adapter.contract(contract),
                     limits,
@@ -258,10 +254,7 @@ impl ClientAdapter {
                 )?),
             },
         };
-        Ok(ClientEncoder {
-            encoder,
-            losses: vec![],
-        })
+        Ok(encoder)
     }
     /// Whether an error frame closes this protocol's stream is a carrier property.
     pub(crate) fn failure_frames(
@@ -275,10 +268,12 @@ impl ClientAdapter {
             if let Some(notice) = notice {
                 encoder.set_notice(notice.clone());
             }
-            return match (&mut encoder.encoder, self.protocol()) {
-                (Encoder::Messages(e), ClientProtocol::Messages) => Ok(e.fail(error)?),
-                (Encoder::Chat(e), ClientProtocol::Chat) => Ok(vec![e.fail(error)?]),
-                (Encoder::Responses(e), ClientProtocol::Responses) => Ok(vec![e.fail(error)?]),
+            return match (encoder, self.protocol()) {
+                (ClientEncoder::Messages(e), ClientProtocol::Messages) => Ok(e.fail(error)?),
+                (ClientEncoder::Chat(e), ClientProtocol::Chat) => Ok(vec![e.fail(error)?]),
+                (ClientEncoder::Responses(e), ClientProtocol::Responses) => {
+                    Ok(vec![e.fail(error)?])
+                }
                 _ => Err(CodecError::ProfileMismatch.into()),
             };
         }
@@ -307,39 +302,35 @@ impl ClientAdapter {
 /// Client carriers have no safety assessment slot. Assessment-only reports are
 /// omitted under a named rule; blocking reports remain protected and reject.
 pub(crate) const SAFETY_ASSESSMENT_RULE: &str = "generation.omit-safety-assessment.v1";
-fn safety_assessment_loss(direction: &'static str) -> Effect {
+fn safety_assessment_loss() -> Effect {
     Effect::Field {
         rule: crate::protocol::conversion::generation::RuleId::new(SAFETY_ASSESSMENT_RULE),
         field: ("response.safety_reports").into(),
-        boundary: (direction).into(),
+        boundary: ("event.project").into(),
         change: ("omit").into(),
         owner: crate::protocol::conversion::generation::Owner::Root,
     }
 }
 
-enum Encoder {
+pub(crate) enum ClientEncoder {
     Responses(ResponsesSseEncoder),
     Chat(ChatSseEncoder),
     Messages(crate::protocol::anthropic::messages::client::sse::ClientEventEncoder),
 }
-pub(crate) struct ClientEncoder {
-    losses: Vec<crate::protocol::conversion::generation::Effect>,
-    encoder: Encoder,
-}
 impl ClientEncoder {
     pub(crate) fn set_notice(&mut self, notice: crate::protocol::diagnostics::AdaptationNotice) {
-        match &mut self.encoder {
-            Encoder::Chat(e) => e.set_notice(notice),
-            Encoder::Responses(e) => e.set_notice(notice),
-            Encoder::Messages(e) => e.set_notice(notice),
+        match self {
+            Self::Chat(e) => e.set_notice(notice),
+            Self::Responses(e) => e.set_notice(notice),
+            Self::Messages(e) => e.set_notice(notice),
         }
     }
 
     pub(crate) fn update_metadata(&mut self, metadata: ResponseMetadata) -> Result<(), SseError> {
-        match &mut self.encoder {
-            Encoder::Chat(e) => e.update_metadata(metadata),
-            Encoder::Responses(e) => e.update_metadata(metadata),
-            Encoder::Messages(e) => {
+        match self {
+            Self::Chat(e) => e.update_metadata(metadata),
+            Self::Responses(e) => e.update_metadata(metadata),
+            Self::Messages(e) => {
                 if let Err(error) =
                     crate::protocol::anthropic::messages::client::validate_metadata(&metadata)
                 {
@@ -357,48 +348,34 @@ impl ClientEncoder {
         event: &StreamEvent,
         fidelity: &FidelityRecords,
     ) -> Result<Vec<Bytes>, SseError> {
-        if let StreamEvent::SafetyReport(report) = event
-            && report.is_assessment_only()
-        {
-            let loss = safety_assessment_loss("event.encode");
-            if !self.losses.contains(&loss) {
-                self.losses.push(loss);
-            }
-            return Ok(vec![]);
-        }
-        match &mut self.encoder {
-            Encoder::Chat(e) => e.encode(event, fidelity),
-            Encoder::Responses(e) => e.encode(event, fidelity),
-            Encoder::Messages(e) => Ok(e.encode(event)?),
+        match self {
+            Self::Chat(e) => e.encode(event, fidelity),
+            Self::Responses(e) => e.encode(event, fidelity),
+            Self::Messages(e) => Ok(e.encode(event)?),
         }
     }
     pub(crate) fn finish(&self) -> Result<(), SseError> {
-        match &self.encoder {
-            Encoder::Chat(e) => e.finish(),
-            Encoder::Responses(e) => e.finish(),
-            Encoder::Messages(e) => Ok(e.finish()?),
+        match self {
+            Self::Chat(e) => e.finish(),
+            Self::Responses(e) => e.finish(),
+            Self::Messages(e) => Ok(e.finish()?),
         }
     }
     #[cfg(test)]
     pub(crate) fn effects(&self) -> Vec<Effect> {
-        let mut effects = self.losses.clone();
-        match &self.encoder {
-            Encoder::Chat(e) => effects.extend_from_slice(e.projection()),
-            Encoder::Responses(e) => effects.extend_from_slice(e.projection()),
-            Encoder::Messages(e) => effects.extend_from_slice(e.losses()),
+        match self {
+            Self::Chat(e) => e.projection().to_vec(),
+            Self::Responses(e) => e.projection().to_vec(),
+            Self::Messages(e) => e.losses().to_vec(),
         }
-        effects
     }
     pub(crate) fn take_evidence(
         &mut self,
     ) -> crate::protocol::conversion::generation::EvidenceDelta {
-        let mut evidence: crate::protocol::conversion::generation::EvidenceDelta =
-            std::mem::take(&mut self.losses).into_iter().collect();
-        evidence.extend(match &mut self.encoder {
-            Encoder::Chat(e) => e.take_evidence(),
-            Encoder::Responses(e) => e.take_evidence(),
-            Encoder::Messages(e) => e.take_evidence(),
-        });
-        evidence
+        match self {
+            Self::Chat(e) => e.take_evidence(),
+            Self::Responses(e) => e.take_evidence(),
+            Self::Messages(e) => e.take_evidence(),
+        }
     }
 }

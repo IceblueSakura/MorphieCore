@@ -310,24 +310,28 @@ impl AuthDriver for Driver {
         _: &'a str,
         _: &'a LoginOptions,
         _: LoginObserver<'a>,
+        _: morphiecore::credential::RegistrationContext<'a>,
     ) -> DriverFuture<'a, Grant> {
         Box::pin(async move { Ok(grant("synthetic-old-access", self.expired.then_some(1))) })
     }
     fn can_refresh(&self) -> bool {
         true
     }
-    fn refresh<'a>(
+    fn renew<'a>(
         &'a self,
         _: &'a str,
         _: &'a VerifiedIdentity,
         _: &'a Credential,
-    ) -> DriverFuture<'a, Grant> {
+    ) -> DriverFuture<'a, morphiecore::credential::Renewal> {
         Box::pin(async move {
             self.refreshes.fetch_add(1, Ordering::SeqCst);
             if self.fail {
                 Err(CredentialError::InvalidGrant)
             } else {
-                Ok(grant("synthetic-new-access", None))
+                Ok(morphiecore::credential::Renewal::Verified(grant(
+                    "synthetic-new-access",
+                    None,
+                )))
             }
         })
     }

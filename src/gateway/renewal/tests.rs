@@ -55,25 +55,26 @@ impl AuthDriver for Driver {
         _: &'a str,
         _: &'a LoginOptions,
         _: LoginObserver<'a>,
+        _: RegistrationContext<'a>,
     ) -> DriverFuture<'a, Grant> {
         Box::pin(async { Ok(grant()) })
     }
     fn can_refresh(&self) -> bool {
         true
     }
-    fn refresh<'a>(
+    fn renew<'a>(
         &'a self,
         _: &'a str,
         _: &'a VerifiedIdentity,
         _: &'a Credential,
-    ) -> DriverFuture<'a, Grant> {
+    ) -> DriverFuture<'a, Renewal> {
         Box::pin(async move {
             self.calls.fetch_add(1, Ordering::SeqCst);
             self.entered.notify_one();
             if self.hold {
                 std::future::pending::<()>().await;
             }
-            Ok(grant())
+            Ok(Renewal::Verified(grant()))
         })
     }
 }
@@ -105,10 +106,14 @@ async fn setup(
         .unwrap();
     let mut gate = gateway(limits);
     // Registration maintenance is independent of generation candidates.
-    Arc::get_mut(&mut gate.state).unwrap().oauth_accounts = vec![
-        manager.bind_access("synthetic", "one").unwrap(),
-        manager.bind_access("synthetic", "one").unwrap(),
-    ];
+    let mut credentials = crate::gateway::Credentials::new();
+    for id in ["first", "duplicate"] {
+        credentials.insert_account(
+            crate::provider::CredentialBindingId::new(id).unwrap(),
+            manager.bind_access("synthetic", "one").unwrap(),
+        );
+    }
+    Arc::get_mut(&mut gate.state).unwrap().oauth_accounts = credentials.oauth_accounts;
     (directory, gate, manager, calls, entered)
 }
 async fn poll_maintenance(future: &mut std::pin::Pin<Box<impl std::future::Future<Output = ()>>>) {

@@ -52,18 +52,22 @@ pub(super) enum Message {
     Error(ApiError),
 }
 #[derive(Default)]
+pub(super) struct FailureState {
+    /// The first failure time survives later classification and error-body cleanup.
+    pub(super) head: Option<crate::gateway::routing::executors::FailureObservation>,
+    /// A later I/O interruption does not replace the classified upstream failure.
+    interruption: Option<crate::gateway::routing::executors::FailureObservation>,
+    pub(super) material_revision: Option<u64>,
+    previous: Vec<crate::gateway::routing::executors::FailureObservation>,
+}
+#[derive(Default)]
 pub(super) struct Status {
     error: Mutex<Option<ApiError>>,
     complete: AtomicBool,
     pub(super) published: AtomicBool,
     /// Explicit wait attribution; the last trace stage is not a wait state.
     pub(super) waiting_upstream: AtomicBool,
-    /// Failed HTTP heads or stream failures survive interrupted error delivery.
-    pub(super) failure_head: Mutex<Option<crate::gateway::routing::executors::FailureObservation>>,
-    /// A later I/O interruption is independent of the reported upstream failure.
-    failure_interruption: Mutex<Option<crate::gateway::routing::executors::FailureObservation>>,
-    pub(super) material_revision: Mutex<Option<u64>>,
-    previous_failures: Mutex<Vec<crate::gateway::routing::executors::FailureObservation>>,
+    pub(super) failures: Mutex<FailureState>,
     pub(super) recovery_ready: AtomicBool,
     pub(super) readiness: tokio::sync::Notify,
 }
@@ -74,41 +78,39 @@ impl Status {
     }
     pub(super) fn retain_attempt(&self, error: ApiError) {
         let failures = self.take_failures(Some(error));
-        *self.previous_failures.lock().expect("previous failures") = failures;
+        self.failures.lock().expect("failure state").previous = failures;
     }
     pub(super) fn observe_failure(&self, error: ApiError) {
-        let mut head = self.failure_head.lock().expect("failure head");
-        let observation =
-            head.get_or_insert_with(|| crate::gateway::routing::executors::FailureObservation {
+        let mut failures = self.failures.lock().expect("failure state");
+        let material_revision = failures.material_revision;
+        let observation = failures.head.get_or_insert_with(|| {
+            crate::gateway::routing::executors::FailureObservation {
                 error,
                 at: Instant::now(),
-                material_revision: *self.material_revision.lock().expect("material revision"),
-            });
+                material_revision,
+            }
+        });
         observation.error = error;
     }
     pub(super) fn observe_interruption(&self, error: ApiError) {
-        self.failure_interruption
-            .lock()
-            .expect("failure interruption")
-            .get_or_insert_with(|| crate::gateway::routing::executors::FailureObservation {
+        let mut failures = self.failures.lock().expect("failure state");
+        let material_revision = failures.material_revision;
+        failures.interruption.get_or_insert_with(|| {
+            crate::gateway::routing::executors::FailureObservation {
                 error,
                 at: Instant::now(),
-                material_revision: *self.material_revision.lock().expect("material revision"),
-            });
+                material_revision,
+            }
+        });
     }
     pub(super) fn take_failures(
         &self,
         final_error: Option<ApiError>,
     ) -> Vec<crate::gateway::routing::executors::FailureObservation> {
-        let reported = self.failure_head.lock().expect("failure head").take();
-        let interrupted = self
-            .failure_interruption
-            .lock()
-            .expect("failure interruption")
-            .take();
-        let mut failures =
-            std::mem::take(&mut *self.previous_failures.lock().expect("previous failures"));
-        failures.extend(reported.into_iter().chain(interrupted));
+        let mut state = self.failures.lock().expect("failure state");
+        let mut failures = std::mem::take(&mut state.previous);
+        failures.extend(state.head.take());
+        failures.extend(state.interruption.take());
         if let Some(error) = final_error
             && error.recovery.affects_health
             && !failures.iter().any(|failure| failure.error == error)
@@ -116,19 +118,17 @@ impl Status {
             failures.push(crate::gateway::routing::executors::FailureObservation {
                 error,
                 at: Instant::now(),
-                material_revision: *self.material_revision.lock().expect("material revision"),
+                material_revision: state.material_revision,
             });
         }
         failures
     }
     pub(super) fn timeout_error(&self) -> ApiError {
-        let interrupted = *self
-            .failure_interruption
-            .lock()
-            .expect("failure interruption");
-        if let Some(failure) =
-            interrupted.or_else(|| *self.failure_head.lock().expect("failure head"))
-        {
+        let observed = {
+            let failures = self.failures.lock().expect("failure state");
+            failures.interruption.or(failures.head)
+        };
+        if let Some(failure) = observed {
             failure.error
         } else if self.waiting_upstream.load(Ordering::Acquire) {
             ApiError::transport_fact(crate::transport::http::TransportError::Timeout)

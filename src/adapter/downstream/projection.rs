@@ -557,8 +557,7 @@ impl ClientProjection {
                         }
                     }
                     StreamEvent::SafetyReport(report) if report.is_assessment_only() => {
-                        self.losses
-                            .push(super::safety_assessment_loss("event.project"));
+                        self.losses.push(super::safety_assessment_loss());
                         continue;
                     }
                     StreamEvent::SafetyReport(_) => {

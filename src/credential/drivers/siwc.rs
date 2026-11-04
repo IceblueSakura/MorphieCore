@@ -81,7 +81,10 @@ impl SiwcAuthority {
         nonce: Option<&str>,
         deadline: Instant,
     ) -> Result<VerifiedIdentity, Error> {
-        let (status, body) = self.http.get("/.well-known/jwks.json", deadline).await?;
+        let (status, body) = self
+            .http
+            .get("/.well-known/jwks.json", None, deadline)
+            .await?;
         if status != 200 {
             // Browser login carries a nonce; refresh retains its existing error contract.
             if nonce.is_some() {
@@ -217,14 +220,6 @@ impl AuthDriver for SiwcAuthority {
     }
     fn login<'a>(
         &'a self,
-        _client: &'a str,
-        _options: &'a LoginOptions,
-        _notify: LoginObserver<'a>,
-    ) -> DriverFuture<'a, Grant> {
-        Box::pin(async { Err(Error::Unsupported) })
-    }
-    fn login_registered<'a>(
-        &'a self,
         client: &'a str,
         options: &'a LoginOptions,
         notify: LoginObserver<'a>,
@@ -313,7 +308,7 @@ impl AuthDriver for SiwcAuthority {
             }
             let (status, body) = self
                 .http
-                .request(
+                .post_form(
                     TOKEN,
                     &[
                         ("grant_type", "refresh_token"),
@@ -328,7 +323,7 @@ impl AuthDriver for SiwcAuthority {
                         ),
                         ("resource", RESOURCE),
                     ],
-                    None,
+                    &[],
                     Instant::now() + REQUEST_TIMEOUT,
                 )
                 .await?;
@@ -368,7 +363,7 @@ impl AuthDriver for SiwcAuthority {
             let deadline = Instant::now() + REQUEST_TIMEOUT;
             let (status, body) = self
                 .http
-                .get("/.well-known/openid-configuration", deadline)
+                .get("/.well-known/openid-configuration", None, deadline)
                 .await?;
             if status != 200 {
                 return Err(failure(status, &body));
@@ -387,7 +382,7 @@ impl AuthDriver for SiwcAuthority {
             }
             let (status, body) = self
                 .http
-                .request(
+                .post_form(
                     REVOKE,
                     &[
                         ("client_id", client),
@@ -401,7 +396,7 @@ impl AuthDriver for SiwcAuthority {
                                 .expose(),
                         ),
                     ],
-                    None,
+                    &[],
                     deadline,
                 )
                 .await?;

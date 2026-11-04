@@ -559,8 +559,10 @@ pub(in crate::gateway) async fn produce_candidate(
             .unwrap_or_default()
             .recovery_timeout_ms;
         let cleanup_deadline = {
-            let head = lane.state.failure_head.lock().expect("failure head");
-            head.as_ref()
+            let failures = lane.state.failures.lock().expect("failure state");
+            failures
+                .head
+                .as_ref()
                 .filter(|failure| failure.error.recovery.retryable && budget > 0)
                 .map(|failure| failure.at + std::time::Duration::from_millis(budget))
         };
@@ -994,9 +996,10 @@ mod tests {
                     assert!(polled.is_pending());
                 }
                 let failure = state
-                    .failure_head
+                    .failures
                     .lock()
                     .unwrap()
+                    .head
                     .expect("validated upstream failure");
                 assert_eq!(
                     failure.error.recovery.class,

@@ -100,7 +100,7 @@ impl Gateway {
         )?;
         Ok(Self {
             state: Arc::new(Runtime {
-                oauth_accounts: credentials.oauth_accounts.clone(),
+                oauth_accounts: credentials.oauth_accounts,
                 diagnostics: None,
                 request_ids: crate::gateway::ingress::correlation::RequestIds::new()
                     .map_err(|_| StartupError::Environment)?,

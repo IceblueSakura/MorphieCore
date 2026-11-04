@@ -100,7 +100,11 @@ async fn prepare_attempt<'r>(
     let candidate = planned.candidate.clone();
     let (secret, grant) = candidate.secret.resolve_for_request().await?;
     let revision = grant.as_ref().map(|grant| grant.material_revision);
-    *state.material_revision.lock().expect("material revision") = revision;
+    state
+        .failures
+        .lock()
+        .expect("failure state")
+        .material_revision = revision;
     if let Some(lease) = lease {
         lease.sent_material(revision);
     }
@@ -339,252 +343,239 @@ pub(in crate::gateway) async fn produce_chain(
         let mut planned = Some(planned);
         let mut recovery_deadline = None;
         let mut initial_failure = None;
-        for ordinal in 1..=2 {
-            trace.begin_candidate(ordinal);
-            trace.probe(health.lease.as_ref().is_some_and(|lease| lease.probing));
-            trace.executor(candidate.provider.id.as_str());
-            trace.named_account(candidate.account.as_deref());
-            state.waiting_upstream.store(false, Ordering::Release);
-            state.recovery_ready.store(false, Ordering::Release);
-            let attempt_deadline = deadline.min(
-                Instant::now() + Duration::from_millis(candidate.endpoint.execution.timeout_ms),
-            );
-            let attempt = async {
-                let upstream = if let Some(response) = observed.take() {
-                    response
-                } else {
-                    let runtime = runtime.as_ref().ok_or(ApiError::upstream())?;
-                    if prepared.is_none() {
-                        prepared = Some(
-                            prepare_attempt(
-                                runtime,
-                                health.lease.as_ref(),
-                                &entry.client,
-                                planned.take().expect("prepare once"),
-                                request,
-                                state,
-                                trace,
+        let (error, stop_selection) = 'sends: {
+            for ordinal in 1..=2 {
+                trace.begin_candidate(ordinal);
+                trace.probe(health.lease.as_ref().is_some_and(|lease| lease.probing));
+                trace.executor(candidate.provider.id.as_str());
+                trace.named_account(candidate.account.as_deref());
+                state.waiting_upstream.store(false, Ordering::Release);
+                state.recovery_ready.store(false, Ordering::Release);
+                let attempt_deadline = deadline.min(
+                    Instant::now() + Duration::from_millis(candidate.endpoint.execution.timeout_ms),
+                );
+                let attempt = async {
+                    let upstream = if let Some(response) = observed.take() {
+                        response
+                    } else {
+                        let runtime = runtime.as_ref().ok_or(ApiError::upstream())?;
+                        if prepared.is_none() {
+                            prepared = Some(
+                                prepare_attempt(
+                                    runtime,
+                                    health.lease.as_ref(),
+                                    &entry.client,
+                                    planned.take().expect("prepare once"),
+                                    request,
+                                    state,
+                                    trace,
+                                )
+                                .await?,
+                            );
+                        }
+                        if ordinal == 2 {
+                            let available = candidate.secret.availability_for_request().await?;
+                            if available
+                                != state
+                                    .failures
+                                    .lock()
+                                    .expect("failure state")
+                                    .material_revision
+                            {
+                                return Err(ApiError::new(
+                                    axum::http::StatusCode::SERVICE_UNAVAILABLE,
+                                    crate::gateway::error::ErrorKind::CredentialUnavailable,
+                                ));
+                            }
+                        }
+                        if Instant::now() >= attempt_deadline
+                            || recovery_deadline.is_some_and(|until| Instant::now() >= until)
+                        {
+                            return Err(ApiError::timeout());
+                        }
+                        let ready = prepared.as_ref().expect("prepared request");
+                        trace.report.update(|a| a.prepared = true);
+                        trace.stage(Stage::Connect);
+                        if let Some(capture) = &trace.capture {
+                            capture.upstream_request(&ready.wire, ordinal);
+                        }
+                        state.waiting_upstream.store(true, Ordering::Release);
+                        trace.report.update(|a| a.send_started = true);
+                        let response = runtime
+                            .transport
+                            .send(
+                                ready.wire.clone(),
+                                attempt_deadline.saturating_duration_since(Instant::now()),
                             )
-                            .await?,
+                            .await
+                            .map_err(|fact| {
+                                trace.report.failure(
+                                    None,
+                                    &crate::execution::AttemptError::Transport(fact),
+                                );
+                                let failure = ApiError::transport_fact(fact);
+                                state.observe_interruption(failure);
+                                failure
+                            })?;
+                        state.waiting_upstream.store(false, Ordering::Release);
+                        trace.affinity_carriers(ready.key_sent, ready.session_sent);
+                        response
+                    };
+                    let local = prepared
+                        .as_ref()
+                        .map_or(request, |ready| ready.request.as_ref());
+                    let produced = intake::produce_candidate(
+                        entry,
+                        &candidate,
+                        local,
+                        request,
+                        upstream,
+                        limits,
+                        &lane,
+                        ordinal == 1
+                            && retry_capable
+                            && !recovery_budget.is_zero()
+                            && runtime.is_some(),
+                        history.as_deref(),
+                        trace,
+                    )
+                    .await?;
+                    if let (Some(ready), Some(successor), Some(runtime)) =
+                        (&prepared, produced.successor, &runtime)
+                        && let Some(selection) = &ready.affinity
+                    {
+                        selection.publish(
+                            &runtime.affinity,
+                            &candidate,
+                            Some(&successor),
+                            &entry.client,
                         );
                     }
-                    if ordinal == 2 {
-                        let available = candidate.secret.availability_for_request().await?;
-                        if available != *state.material_revision.lock().expect("material revision")
-                        {
-                            return Err(ApiError::new(
-                                axum::http::StatusCode::SERVICE_UNAVAILABLE,
-                                crate::gateway::error::ErrorKind::CredentialUnavailable,
-                            ));
-                        }
-                    }
-                    if Instant::now() >= attempt_deadline
-                        || recovery_deadline.is_some_and(|until| Instant::now() >= until)
-                    {
-                        return Err(ApiError::timeout());
-                    }
-                    let ready = prepared.as_ref().expect("prepared request");
-                    trace.report.update(|a| a.prepared = true);
-                    trace.stage(Stage::Connect);
-                    if let Some(capture) = &trace.capture {
-                        capture.upstream_request(&ready.wire, ordinal);
-                    }
-                    state.waiting_upstream.store(true, Ordering::Release);
-                    trace.report.update(|a| a.send_started = true);
-                    let response = runtime
-                        .transport
-                        .send(
-                            ready.wire.clone(),
-                            attempt_deadline.saturating_duration_since(Instant::now()),
-                        )
-                        .await
-                        .map_err(|fact| {
-                            trace
-                                .report
-                                .failure(None, &crate::execution::AttemptError::Transport(fact));
-                            let failure = ApiError::transport_fact(fact);
-                            state.observe_interruption(failure);
-                            failure
-                        })?;
-                    state.waiting_upstream.store(false, Ordering::Release);
-                    trace.affinity_carriers(ready.key_sent, ready.session_sent);
-                    response
+                    Ok(produced.completion)
                 };
-                let local = prepared
-                    .as_ref()
-                    .map_or(request, |ready| ready.request.as_ref());
-                let produced = intake::produce_candidate(
-                    entry,
-                    &candidate,
-                    local,
-                    request,
-                    upstream,
-                    limits,
-                    &lane,
-                    ordinal == 1
-                        && retry_capable
-                        && !recovery_budget.is_zero()
-                        && runtime.is_some(),
-                    history.as_deref(),
-                    trace,
-                )
-                .await?;
-                if let (Some(ready), Some(successor), Some(runtime)) =
-                    (&prepared, produced.successor, &runtime)
-                    && let Some(selection) = &ready.affinity
-                {
-                    selection.publish(
-                        &runtime.affinity,
-                        &candidate,
-                        Some(&successor),
-                        &entry.client,
-                    );
-                }
-                Ok(produced.completion)
-            };
-            let (result, expired) = {
-                tokio::pin!(attempt);
-                let recovery = async {
-                    let Some(until) = recovery_deadline else {
-                        return std::future::pending::<()>().await;
-                    };
-                    loop {
-                        let notified = state.readiness.notified();
-                        if state.recovery_ready.load(Ordering::Acquire) {
+                let (result, expired) = {
+                    tokio::pin!(attempt);
+                    let recovery = async {
+                        let Some(until) = recovery_deadline else {
                             return std::future::pending::<()>().await;
+                        };
+                        loop {
+                            let notified = state.readiness.notified();
+                            if state.recovery_ready.load(Ordering::Acquire) {
+                                return std::future::pending::<()>().await;
+                            }
+                            tokio::select! {
+                                biased;
+                                _ = notified => {}
+                                _ = tokio::time::sleep_until(until) => return,
+                            }
                         }
-                        tokio::select! {
-                            biased;
-                            _ = notified => {}
-                            _ = tokio::time::sleep_until(until) => return,
-                        }
+                    };
+                    tokio::select! {
+                        biased;
+                        result = &mut attempt => (result, None),
+                        _ = recovery => (Err(ApiError::timeout()), Some(crate::execution::attempt::DeadlineReason::Recovery)),
+                        _ = tokio::time::sleep_until(attempt_deadline) => (Err(state.timeout_error()), Some(crate::execution::attempt::DeadlineReason::Attempt)),
                     }
                 };
-                tokio::select! {
-                    biased;
-                    result = &mut attempt => (result, None),
-                    _ = recovery => (Err(ApiError::timeout()), Some(crate::execution::attempt::DeadlineReason::Recovery)),
-                    _ = tokio::time::sleep_until(attempt_deadline) => (Err(state.timeout_error()), Some(crate::execution::attempt::DeadlineReason::Attempt)),
+                if let Some(reason) = expired {
+                    trace
+                        .report
+                        .failure(None, &crate::execution::AttemptError::Deadline(reason));
                 }
-            };
-            if let Some(reason) = expired {
-                trace
-                    .report
-                    .failure(None, &crate::execution::AttemptError::Deadline(reason));
-            }
-            match result {
-                Ok(completion) => {
-                    let failure = match completion {
-                        intake::Completion::Eligible => {
-                            state.take_failures(None);
-                            if let Some(lease) = &health.lease {
-                                let (_, commit) = lease.completed(binding.as_ref(), Instant::now());
-                                trace.affinity_commit(commit);
+                match result {
+                    Ok(completion) => {
+                        let failure = match completion {
+                            intake::Completion::Eligible => {
+                                state.take_failures(None);
+                                if let Some(lease) = &health.lease {
+                                    let (_, commit) =
+                                        lease.completed(binding.as_ref(), Instant::now());
+                                    trace.affinity_commit(commit);
+                                }
+                                None
                             }
-                            None
-                        }
-                        intake::Completion::Failed(error) => {
-                            record_failure(trace, error);
-                            if let Some(observation) = health.failed(error) {
-                                trace.health(observation);
-                            }
-                            Some(error.diagnostic_code())
-                        }
-                        intake::Completion::Neutral => {
-                            if let Some(lease) = &health.lease {
-                                let failures = state.take_failures(None);
-                                if let Some(observation) =
-                                    lease.resolve_failures(&failures, Instant::now())
-                                {
+                            intake::Completion::Failed(error) => {
+                                record_failure(trace, error);
+                                if let Some(observation) = health.failed(error) {
                                     trace.health(observation);
                                 }
+                                Some(error.diagnostic_code())
                             }
-                            None
-                        }
-                    };
-                    trace.end_candidate(failure, false);
-                    return Ok(());
-                }
-                Err(mut error) => {
-                    if ordinal == 2
-                        && !trace.report.attempt().send_started
-                        && error.kind == crate::gateway::error::ErrorKind::CredentialUnavailable
-                    {
-                        error = initial_failure.expect("retained initial failure");
-                    }
-                    record_failure(trace, error);
-                    // Anchor the recovery clock to observation, not error-body cleanup.
-                    let observed_at = state
-                        .failure_head
-                        .lock()
-                        .expect("failure head")
-                        .as_ref()
-                        .map_or_else(Instant::now, |failure| failure.at);
-                    let until = (observed_at + recovery_budget).min(deadline);
-                    let retry = ordinal == 1
-                        && retry_capable
-                        && runtime.is_some()
-                        && error.recovery.retryable
-                        && !recovery_budget.is_zero()
-                        && !state.published.load(Ordering::Acquire)
-                        && Instant::now() < until;
-                    trace.end_candidate(Some(error.diagnostic_code()), false);
-                    if !retry {
-                        if let Some(observation) = health.failed(error) {
-                            trace.health(observation);
-                        }
-                        trace.selection_stop(if state.published.load(Ordering::Acquire) {
-                            "published"
-                        } else {
-                            "not_retryable"
-                        });
-                        drop(health);
-                        return Err(downstream_failure(
-                            error,
-                            runtime.as_deref(),
-                            &route_targets,
-                            limits,
-                        )
-                        .await);
-                    }
-                    initial_failure = Some(error);
-                    state.retain_attempt(error);
-                    // The attempt future and response have been dropped before any wait/send.
-                    if let Some(seconds) = error.retry_after {
-                        let delay = Duration::from_secs(seconds);
-                        if delay >= until.saturating_duration_since(observed_at) {
-                            if let Some(observation) = health.failed(error) {
-                                trace.health(observation);
+                            intake::Completion::Neutral => {
+                                if let Some(lease) = &health.lease {
+                                    let failures = state.take_failures(None);
+                                    if let Some(observation) =
+                                        lease.resolve_failures(&failures, Instant::now())
+                                    {
+                                        trace.health(observation);
+                                    }
+                                }
+                                None
                             }
-                            drop(health);
-                            return Err(downstream_failure(
-                                error,
-                                runtime.as_deref(),
-                                &route_targets,
-                                limits,
-                            )
-                            .await);
-                        }
-                        tokio::time::sleep_until(observed_at + delay).await;
+                        };
+                        trace.end_candidate(failure, false);
+                        return Ok(());
                     }
-                    if Instant::now() >= until {
-                        if let Some(observation) = health.failed(error) {
-                            trace.health(observation);
+                    Err(mut error) => {
+                        if ordinal == 2
+                            && !trace.report.attempt().send_started
+                            && error.kind == crate::gateway::error::ErrorKind::CredentialUnavailable
+                        {
+                            error = initial_failure.expect("retained initial failure");
                         }
-                        drop(health);
-                        return Err(downstream_failure(
-                            error,
-                            runtime.as_deref(),
-                            &route_targets,
-                            limits,
-                        )
-                        .await);
+                        record_failure(trace, error);
+                        // Anchor the recovery clock to observation, not error-body cleanup.
+                        let observed_at = state
+                            .failures
+                            .lock()
+                            .expect("failure state")
+                            .head
+                            .as_ref()
+                            .map_or_else(Instant::now, |failure| failure.at);
+                        let until = (observed_at + recovery_budget).min(deadline);
+                        let retry = ordinal == 1
+                            && retry_capable
+                            && runtime.is_some()
+                            && error.recovery.retryable
+                            && !recovery_budget.is_zero()
+                            && !state.published.load(Ordering::Acquire)
+                            && Instant::now() < until;
+                        trace.end_candidate(Some(error.diagnostic_code()), false);
+                        if !retry {
+                            break 'sends (error, true);
+                        }
+                        initial_failure = Some(error);
+                        state.retain_attempt(error);
+                        // The attempt future and response have been dropped before any wait/send.
+                        if let Some(seconds) = error.retry_after {
+                            let delay = Duration::from_secs(seconds);
+                            if delay >= until.saturating_duration_since(observed_at) {
+                                break 'sends (error, false);
+                            }
+                            tokio::time::sleep_until(observed_at + delay).await;
+                        }
+                        if Instant::now() >= until {
+                            break 'sends (error, false);
+                        }
+                        recovery_deadline = Some(until);
                     }
-                    recovery_deadline = Some(until);
                 }
             }
+            unreachable!("two sends are terminal");
+        };
+        if let Some(observation) = health.failed(error) {
+            trace.health(observation);
         }
-        unreachable!("two sends are terminal");
+        if stop_selection {
+            trace.selection_stop(if state.published.load(Ordering::Acquire) {
+                "published"
+            } else {
+                "not_retryable"
+            });
+        }
+        drop(health);
+        return Err(downstream_failure(error, runtime.as_deref(), &route_targets, limits).await);
     }
     trace.selection_stop(if any_blocked {
         "unavailable"

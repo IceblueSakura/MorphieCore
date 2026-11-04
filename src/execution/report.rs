@@ -186,7 +186,6 @@ fn serialize_planning_failure<S: Serializer>(
     // Retain the typed cause internally, but never expose private endpoint IDs.
     let (kind, reasons) = match error {
         PlanError::UnknownModel => ("unknown_model", vec![]),
-        PlanError::TaskMismatch => ("task_mismatch", vec![]),
         PlanError::InvalidRequest => ("invalid_request", vec![]),
         PlanError::CandidateLimit => ("candidate_limit", vec![]),
         PlanError::CandidateRejected(reason) => ("candidate_rejected", vec![reason.code()]),

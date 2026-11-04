@@ -48,14 +48,6 @@ pub fn read_private_file(
         .ok_or(CredentialError::Storage)
 }
 
-#[derive(Debug, serde::Serialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
-pub enum CredentialStatus {
-    #[serde(rename = "oauth")]
-    OAuth(AccountStatus),
-    ApiKey(ApiKeyStatus),
-}
-
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum CredentialError {
     #[error("API key record already exists; explicit revision-checked replacement required")]

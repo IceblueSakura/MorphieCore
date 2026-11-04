@@ -117,7 +117,10 @@ impl GrokAuthority {
             let wire: TokenWire =
                 serde_json::from_slice(&response.body).map_err(|_| Error::Protocol)?;
             let id = wire.id_token.as_deref().ok_or(Error::Protocol)?;
-            let (status, keys) = self.http.get("/.well-known/jwks.json", deadline).await?;
+            let (status, keys) = self
+                .http
+                .get("/.well-known/jwks.json", None, deadline)
+                .await?;
             if status != 200 {
                 return Err(failure(status, &keys));
             }
@@ -154,14 +157,13 @@ impl GrokAuthority {
         let started = Instant::now();
         let (status, body) = self
             .http
-            .request_with_metadata(
+            .post_form(
                 "/oauth2/device/code",
                 &[
                     ("client_id", client),
                     ("scope", SCOPES),
                     ("referrer", REFERRER),
                 ],
-                None,
                 &[
                     ("x-grok-client-version", VERSION),
                     ("x-grok-client-surface", self.surface),
@@ -204,14 +206,13 @@ impl GrokAuthority {
             crate::credential::oauth::wait_for_poll(device.interval, device.deadline).await?;
             let (status, body) = self
                 .http
-                .request_with_metadata(
+                .post_form(
                     "/oauth2/token",
                     &[
                         ("grant_type", "urn:ietf:params:oauth:grant-type:device_code"),
                         ("client_id", client),
                         ("device_code", device.device_code.expose()),
                     ],
-                    None,
                     &[
                         ("x-grok-client-version", VERSION),
                         ("x-grok-client-surface", self.surface),
@@ -254,14 +255,14 @@ impl GrokAuthority {
     ) -> Result<Credential, Error> {
         let (status, body) = self
             .http
-            .request(
+            .post_form(
                 "/oauth2/token",
                 &[
                     ("grant_type", "refresh_token"),
                     ("client_id", client),
                     ("refresh_token", refresh),
                 ],
-                None,
+                &[],
                 Instant::now() + REQUEST_TIMEOUT,
             )
             .await?;
@@ -279,9 +280,8 @@ impl GrokAuthority {
         // instead of treating a decoded ID-token payload as identity proof.
         let (status, body) = self
             .http
-            .request(
+            .get(
                 "/oauth2/userinfo",
-                &[],
                 Some(credential.access.expose()),
                 deadline,
             )
@@ -301,14 +301,14 @@ impl GrokAuthority {
     pub async fn revoke(&self, client: &str, refresh: &str) -> Result<(), Error> {
         let (status, _) = self
             .http
-            .request(
+            .post_form(
                 "/oauth2/revoke",
                 &[
                     ("token", refresh),
                     ("token_type_hint", "refresh_token"),
                     ("client_id", client),
                 ],
-                None,
+                &[],
                 Instant::now() + REQUEST_TIMEOUT,
             )
             .await?;
@@ -438,6 +438,7 @@ impl crate::credential::AuthDriver for GrokAuthority {
         client: &'a str,
         options: &'a crate::credential::LoginOptions,
         notify: crate::credential::LoginObserver<'a>,
+        _registration: crate::credential::RegistrationContext<'a>,
     ) -> crate::credential::DriverFuture<'a, crate::credential::Grant> {
         Box::pin(async move {
             let (credential, identity) = match options.method {
@@ -467,12 +468,12 @@ impl crate::credential::AuthDriver for GrokAuthority {
     fn can_refresh(&self) -> bool {
         true
     }
-    fn refresh<'a>(
+    fn renew<'a>(
         &'a self,
         client: &'a str,
         _identity: &'a VerifiedIdentity,
         previous: &'a Credential,
-    ) -> crate::credential::DriverFuture<'a, crate::credential::Grant> {
+    ) -> crate::credential::DriverFuture<'a, crate::credential::Renewal> {
         Box::pin(async move {
             let credential = self
                 .refresh(
@@ -488,13 +489,15 @@ impl crate::credential::AuthDriver for GrokAuthority {
             let subject = self
                 .identity(&credential, Instant::now() + REQUEST_TIMEOUT)
                 .await?;
-            Ok(crate::credential::Grant {
-                identity: VerifiedIdentity {
-                    subject,
-                    scope: None,
+            Ok(crate::credential::Renewal::Verified(
+                crate::credential::Grant {
+                    identity: VerifiedIdentity {
+                        subject,
+                        scope: None,
+                    },
+                    credential,
                 },
-                credential,
-            })
+            ))
         })
     }
     fn revoke<'a>(
