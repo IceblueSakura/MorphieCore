@@ -12,6 +12,7 @@ This page owns current scope, priorities, dependencies, and exit gates. [Archite
   - [Scope and boundaries](#scope-and-boundaries)
   - [Reference strategy](#reference-strategy)
   - [Agent-default production findings](#agent-default-production-findings)
+  - [Tool protocol root repair](#tool-protocol-root-repair)
   - [Conversion-ladder migration](#conversion-ladder-migration)
     - [Remaining stabilization exit](#remaining-stabilization-exit)
   - [Retained rejections](#retained-rejections)
@@ -54,11 +55,12 @@ This page owns current scope, priorities, dependencies, and exit gates. [Archite
 
 ## Current status
 
-**Current focus (2026-11-04):** Resolve the three Chat/Responses default-profile blockers before fresh credential provisioning and model selection. Complete AR5 real Provider checks and the full three-protocol installed-Agent exit before resuming Stage 4.
+**Current focus (2026-11-04):** Complete the tool-protocol root repair behind pi Responses `additional_tools`, including the broader tool-parameter assessment. Pi Chat strict read remains open. OpenCode Responses missing annotations is postponed for user consideration; no normalization or acceptance waiver is selected. Complete AR5 real Provider checks and the full three-protocol installed-Agent exit before resuming Stage 4.
 
 | Priority | Remaining work | Exit |
 |---|---|---|
-| Agent defaults | Resolve pi Chat strict read, pi Responses `additional_tools`, and OpenCode Responses recall annotations | Actual default reasoning/tool/history loops pass without compatibility opt-outs or input rewriting |
+| Tool protocols | Implement the selected ordered-tool direction after the full parameter/ownership assessment | Native/equivalent declarations, selection and explicit guarantees survive tool/history loops |
+| Agent defaults | Resolve pi Chat strict read; revisit postponed OpenCode Responses annotations | Actual default reasoning/tool/history loops pass without compatibility opt-outs or input rewriting |
 | Account acceptance | Provision fresh credentials, select actual Provider/model bindings, and complete AR5 | Bounded real Provider checks and installed-Agent exit on the rewritten account path |
 | API expansion | Select and implement Stage-4 operation contracts after AR5 | Per-operation lifecycle, protocol and SDK acceptance |
 | Downstream integration | Implement opt-in per-Agent JSONL session storage | Selected isolation and lifetime bounds |
@@ -110,15 +112,35 @@ This workstream repairs semantic fidelity across standard Chat Completions, Resp
 
 ### Agent-default production findings
 
-The [native-default characterization](development.md#installed-client-synthetic-recovery) exercises all three protocols with pi 1.5.0 and OpenCode 2.0.32. Resolve the first three default-profile blockers before the fresh-credential gate; characterization alone does not authorize new semantic admission. Endpoint qualification and Chat usage-emitter work retain their separate scope.
+The [native-default characterization](development.md#installed-client-synthetic-recovery) exercises all three protocols with pi 1.5.0 and OpenCode 2.0.32. The user selected the ordered-tool direction and postponed missing-annotations repair on 2026-11-04. The postponed lane remains unaccepted; neither postponement nor characterization waives the fresh-credential/default-Agent gates. Endpoint qualification and Chat usage-emitter work retain their separate scope.
 
 | Lane | Remaining issue | Required resolution | Scope |
 |---|---|---|---|
 | Pi Chat | Actual strict read guarantee is blocked | Resolve the explicit guarantee without client downgrade or input rewriting | Before fresh credentials |
-| Pi Responses | `additional_tools` input is blocked | Select its contract before changing admission | Before fresh credentials |
-| OpenCode Responses | Recall omits required text annotations | Resolve the history boundary against official contracts and actual client behavior | Before fresh credentials |
-| Responses client → OpenAI subscriptions, flat tools | Flat tools reject (requires namespace definitions and qualified calls) | Retain selected tool contract until endpoint evidence qualifies carrier | Endpoint qualification |
+| Pi Responses | `additional_tools` input is blocked | Native/equivalent ordered mapping through the [tool root repair](#tool-protocol-root-repair), not a decoder-only exception | Before fresh credentials |
+| OpenCode Responses | Recall omits required text annotations | Postponed for user consideration; retain strict intake, no inferred empty annotations | Deferred decision; acceptance remains open |
+| Responses client → OpenAI subscriptions, flat tools | Current binding requires namespaces and qualified calls even for inline definitions | Reconcile with official SIWC `additional_tools` support, including subsequent direct call/result history | Tool contract repair; real endpoint acceptance separate |
 | Chat upstream usage | Duplicate nonnull final reports | Qualify at emitter | Outside stabilization slices |
+
+### Tool protocol root repair
+
+The [accepted direction](architecture.md#ordered-tool-availability) requires a complete assessment of the existing tool parameter families, not blanket activation of every tool in an SDK union. The [dated audit](refs/2026-10-27-client-ir-boundaries.md#tool-protocol-root-cause-audit-2026-11-04) covers Chat, Responses, Messages, generateContent and Interactions across definitions, selection, dispatch, ordered availability, calls/results, streaming and replay. Google remains upstream-only and its expansion pause stays in effect.
+
+Implementation uses the existing semantic tool types, validation, disposition tables, request projection, fidelity and protocol codecs; no new dependency, tool registry or execution service is planned.
+
+| Order | Root repair | Exit check |
+|---|---|---|
+| 1 | Separate definition-local validation from request-wide ordered availability and selection. Generalize the typed ordered owner to preserve supported definition batches, namespace identity and item fidelity; resolve root-versus-inline precedence before crossing protocols | Independent initial/late/redefinition/reference/removal cases; inline-only required/named/allowed choices; no identity or source mutation; malformed fields and resource bounds remain strict |
+| 2 | Make initial, namespace and inline definitions participate consistently in feature checks, strictness, schema/dispatch restrictions, serial guarantees and grammar budgets | Regressions for inline-only selection and the reproduced lost serial switch; one boundary cannot bypass another by changing declaration location; documented null/default contrasts stay direction-specific |
+| 3 | Connect native Responses and legal Messages equivalents through encoding and history. Reconcile SIWC inline tools with direct-call continuation. Keep root-only targets behind a proven leading-declaration equivalence or explicit rejection | Wire→IR and IR→wire oracles retain positions, versions, IDs, arguments and results; conditional/explicit strictness remain distinct; no ordinary addition is converted into tool search, prose or general final-set collapse |
+| 4 | Audit returned declaration batches, item roles, JSON/SSE snapshots, retained history and discovery through the same contract; make any unsupported boundary explicit | No response role promoted to developer authority, no fabricated call links/completion, honest EOF and cancellation. Full offline baseline, applicable SDK gates and current installed-pi default Responses tool/recall loop pass |
+
+Scope decisions before broadening a mapping:
+
+- Root/in-band name collisions, output-side role asymmetry and qualified namespace selection need authoritative semantics. Preserve native data where expressible; unknown upstream validation alone is not a reason for blanket rejection.
+- Existing `messages.collapse-tool-changes.v1` is a previously selected lossy policy. Do not silently apply it to the newly selected preservation path; explicitly reconcile its scope rather than treating it as equivalent.
+- Schema subsets, Google function-output schemas/validated modes, result-media source drift and ordinary Interactions call-signature authority are assessment findings, not automatic Google expansion or weakened strict guarantees.
+- Tool discovery, hosted execution, programmatic orchestration, new tool families/endpoints and OpenCode annotation normalization remain outside this repair. A standard input carrier does not activate those operations.
 
 ### Conversion-ladder migration
 

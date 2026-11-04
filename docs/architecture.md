@@ -233,6 +233,12 @@ Target encoding maps canonical instructions to native carriers:
 - `FunctionTool.input_examples` holds bounded, ordered tool input examples. Mapped natively to Anthropic Messages input examples.
 - `FileDescription.context` holds per-use model-visible document context for file resources.
 
+#### Ordered tool availability
+
+**Selected direction, 2026-11-04; implementation pending.** Preserve ordinary client-tool declarations at their conversation positions, including Responses `additional_tools`. Prefer native carriage and equivalent mappings; do not generally hoist late declarations or replace tool history with its final inventory. A leading declaration may map to root tools only when availability, identity, definition precedence and explicit constraints remain equivalent. Tool-removal prose remains instruction content, not a structural withdrawal.
+
+Repair the shared tool contract rather than adding a decoder-only exception. Initial definitions, namespace leaves and ordered additions must receive consistent definition validation, selection resolution, feature accounting, bounds and target checks. Reuse the existing semantic tools, request projection, fidelity and codec owners; do not add a gateway tool registry or executor. The [protocol audit](refs/2026-10-27-client-ir-boundaries.md#tool-protocol-root-cause-audit-2026-11-04) distinguishes confirmed defects, native carriers and unresolved equivalence. [Roadmap](roadmap.md#tool-protocol-root-repair) owns scope and exit gates; discovery and hosted execution remain separately scheduled.
+
 #### Citation point anchors
 
 `ClaimAnchor::Point(TextPoint)` represents a character insertion boundary in a text part with explicit byte or Unicode units, distinct from range anchors or file list indices.
@@ -994,6 +1000,7 @@ Authoritative log of accepted architectural decisions and their systemic consequ
 | Delta coalescing | 2026-10-26 | Default 50ms / 16 KiB buffer merges adjacent text deltas |
 | Messages ordered block delivery | 2026-10-28 | Codec-local bounded serialization preserves owner/part order, incremental head output and signed history; incomplete text-owner wire closure preserves source lifecycle, native intake and EOF authority |
 | Semantic-equivalence compatibility | 2026-10-28 | Protocol-equivalent empty/default forms use ordinary lossless mapping without named omissions or loss receipts; covers null-only reports, empty logprobs/cache options and already-enabled permissions; source observations and meaningful constraints remain protected |
+| Ordered tool root repair | 2026-11-04 | Select native/equivalent ordered `additional_tools` mapping and evaluate the full existing Generation tool contract before implementation, including selection, guarantees, calls/results and replay. No new general history collapse, discovery or hosted execution is selected. OpenCode missing-annotations normalization is postponed without changing its strict intake boundary. [Contract](#ordered-tool-availability); [scope](roadmap.md#tool-protocol-root-repair) |
 | Client/IR projection principles | 2026-10-28 | After semantic-equivalence handling, P1–P5 classify remaining projections: request-context deduction, carrier-less non-content omission, delivery closure, planning-time impossibility and conditional source defaults |
 | Responses strictness resolution | 2026-10-28 | Omitted `strict` resolves per tool and target by the documented compatibility rule; revised 2026-10-30: unknown compatibility and grammar overflow resolve non-strict, explicit strict stays guarded |
 | Ladder applications | 2026-10-30 | Nearest effort (ties upward), model-maximum clamp, thinking-off fallback for required Chat history, uncarried reasoning omission, Messages `end_turn`/`tool_use` derivations, `block_binding` levels; `stop` without carrier and unknown Chat/Messages stop causes remain rejections |
