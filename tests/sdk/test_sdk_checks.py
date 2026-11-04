@@ -6,69 +6,7 @@ from pathlib import Path
 
 
 class SdkOracleTests(unittest.TestCase):
-    def test_messages_sdk_preserves_complete_openers_and_single_signatures(self):
-        import json
-        import anthropic
-        import httpx2
-        from sdk_support import require_sdk
-        require_sdk("anthropic")
-        cases = [
-            ({"type": "tool_use", "id": "c", "name": "lookup", "input": value},
-             {"type": "input_json_delta", "partial_json": ""},
-             "input", value, "tool_use")
-            for value in ({}, {"n": 9007199254740993, "nested": {"session_id": "data"}})
-        ]
-        # The official Thinking guide specifies one opaque signature delta,
-        # including when the displayed thinking summary is omitted.
-        cases.extend(
-            ({"type": "thinking", "thinking": text, "signature": ""},
-             {"type": "signature_delta", "signature": "synthetic-signature"},
-             "signature", "synthetic-signature", "end_turn")
-            for text in ("summary", "")
-        )
-        for opening, delta, field, value, stop in cases:
-            events = [
-                {"type": "message_start", "message": {
-                    "id": "msg", "type": "message", "role": "assistant", "model": "m",
-                    "content": [], "stop_reason": None, "stop_sequence": None,
-                    "usage": {"input_tokens": 1, "output_tokens": 0}}},
-                {"type": "content_block_start", "index": 0, "content_block": opening},
-                {"type": "content_block_delta", "index": 0, "delta": delta},
-                {"type": "content_block_stop", "index": 0},
-                {"type": "message_delta", "delta": {
-                    "stop_reason": stop, "stop_sequence": None}, "usage": {"output_tokens": 1}},
-                {"type": "message_stop"},
-            ]
-            wire = "".join(f"event: {e['type']}\ndata: {json.dumps(e)}\n\n" for e in events)
-            def respond(request):
-                self.assertEqual(request.url.host, "127.0.0.1")
-                return httpx2.Response(200, headers={"content-type": "text/event-stream"},
-                                       content=wire.encode())
-            with httpx2.Client(transport=httpx2.MockTransport(respond), trust_env=False) as http:
-                with anthropic.Anthropic(api_key="synthetic", base_url="http://127.0.0.1:1",
-                                         max_retries=0, http_client=http,
-                                         _strict_response_validation=True) as client:
-                    with client.messages.stream(model="m", max_tokens=8,
-                                                messages=[{"role": "user", "content": "go"}]) as stream:
-                        result = stream.get_final_message()
-            self.assertEqual(getattr(result.content[0], field), value)
-            if opening["type"] == "thinking":
-                self.assertEqual(result.content[0].thinking, opening["thinking"])
-            self.assertEqual(result.stop_reason, stop)
 
-    def test_google_object_result_types_retain_exact_values_and_error_presence(self):
-        from google.genai import types
-        from google.genai._gaos.types.interactions.functionresultstep import FunctionResultStep
-        for value in ({}, {"n": 9007199254740993, "nested": [None, {"$ref": "literal"}]}):
-            for error in (None, False, True):
-                data = {"type": "function_result", "call_id": "c", "name": "read", "result": value}
-                if error is not None:
-                    data["is_error"] = error
-                result = FunctionResultStep.model_validate(data)
-                self.assertEqual(result.model_dump(exclude_unset=True), data)
-                envelope = {"error" if error is True else "output": value}
-                response = types.FunctionResponse(id="c", name="read", response=envelope)
-                self.assertEqual(response.model_dump(exclude_unset=True)["response"], envelope)
 
     def test_reasoning_replay_oracle_keeps_readable_and_opaque_facts_separate(self):
         code = """

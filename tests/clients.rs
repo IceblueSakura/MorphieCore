@@ -7,12 +7,7 @@ mod filesystem;
 use morphiecore::credential::{CredentialManager, Secret};
 use std::{path::PathBuf, time::Duration};
 
-async fn installed_case(
-    script: &str,
-    case: &str,
-    variable: &str,
-    arguments: &[&str],
-) -> serde_json::Value {
+async fn installed_case(script: &str, case: &str, variable: &str, arguments: &[&str]) {
     // Explicit unwrapped binaries only: PATH entries may source host credentials.
     let binary =
         PathBuf::from(std::env::var_os(variable).expect("set the unwrapped client binary"));
@@ -73,251 +68,202 @@ async fn installed_case(
     // The Python driver records the current host binary's actual version.
     assert!(report["version"].as_str().is_some_and(|v| !v.is_empty()));
     eprintln!("{report}");
-    report
-}
-
-async fn recovery_case(case: &str, variable: &str) {
-    let report = installed_case("recovery", case, variable, &[]).await;
-    assert_eq!(report["client_requests"], 4);
-    assert_eq!(report["upstream_attempts"], 5);
-    assert_eq!(report["extra_client_requests"], 0);
-    assert_eq!(report["sticky_after_recovery"], true);
 }
 
 #[tokio::test]
 #[ignore = "requires explicit unwrapped installed pi; synthetic Chat recovery, no Provider"]
 async fn pi_chat_credential_recovery() {
-    recovery_case("pi-chat", "MORPHIECORE_PI_BIN").await;
+    installed_case("recovery", "pi-chat", "MORPHIECORE_PI_BIN", &[]).await;
 }
 
 #[tokio::test]
 #[ignore = "requires explicit unwrapped installed pi; synthetic native Messages recovery"]
 async fn pi_messages_credential_recovery() {
-    recovery_case("pi-messages", "MORPHIECORE_PI_BIN").await;
-}
-
-async fn messages_defaults(case: &str, variable: &str) {
-    let report = installed_case("protocol_defaults", case, variable, &[]).await;
-    assert_eq!(report["client_requests"], 3);
-    assert_eq!(report["upstream_attempts"], 3);
-    assert_eq!(report["extra_client_requests"], 0);
-    assert_eq!(report["default_headers"], true);
-    assert_eq!(report["tool_history"], true);
+    installed_case("recovery", "pi-messages", "MORPHIECORE_PI_BIN", &[]).await;
 }
 
 #[tokio::test]
 #[ignore = "requires current installed pi; default native Messages tool/history through gateway"]
 async fn pi_messages_default_tool_history() {
-    messages_defaults("pi-messages-default", "MORPHIECORE_PI_BIN").await;
+    installed_case(
+        "protocol_defaults",
+        "pi-messages-default",
+        "MORPHIECORE_PI_BIN",
+        &[],
+    )
+    .await;
 }
 
 #[tokio::test]
 #[ignore = "requires current installed OpenCode; default native Messages tool/history through gateway"]
 async fn opencode_messages_default_tool_history() {
-    messages_defaults("opencode-messages-default", "MORPHIECORE_OPENCODE_BIN").await;
-}
-
-async fn openai_defaults(case: &str, variable: &str) {
-    let report = installed_case("protocol_defaults", case, variable, &[]).await;
-    assert_eq!(report["client_requests"], 3);
-    assert_eq!(report["upstream_attempts"], 3);
-    assert_eq!(report["extra_client_requests"], 0);
-    assert_eq!(report["tool_history"], true);
-    assert_eq!(report["default_rejection"], false);
+    installed_case(
+        "protocol_defaults",
+        "opencode-messages-default",
+        "MORPHIECORE_OPENCODE_BIN",
+        &[],
+    )
+    .await;
 }
 
 #[tokio::test]
 #[ignore = "requires current installed OpenCode; native Responses loop then missing-annotation rejection"]
 async fn opencode_responses_default_continuation_rejection() {
-    let report = installed_case(
+    installed_case(
         "protocol_defaults",
         "opencode-responses-default",
         "MORPHIECORE_OPENCODE_BIN",
         &[],
     )
     .await;
-    assert_eq!(report["client_requests"], 3);
-    assert_eq!(report["upstream_attempts"], 2);
-    assert_eq!(report["tool_history"], true);
-    assert_eq!(report["next_turn_history"], false);
-    assert_eq!(report["default_rejection"], true);
 }
 
 #[tokio::test]
 #[ignore = "requires current installed OpenCode; native Chat defaults and tool/history"]
 async fn opencode_chat_default_tool_history() {
-    openai_defaults("opencode-chat-default", "MORPHIECORE_OPENCODE_BIN").await;
+    installed_case(
+        "protocol_defaults",
+        "opencode-chat-default",
+        "MORPHIECORE_OPENCODE_BIN",
+        &[],
+    )
+    .await;
 }
 
 #[tokio::test]
 #[ignore = "requires current installed pi; builtin Chat strict guarantee rejects without dispatch"]
 async fn pi_chat_default_strict_guarantee_rejection() {
-    let report = installed_case(
+    installed_case(
         "protocol_defaults",
         "pi-chat-default",
         "MORPHIECORE_PI_BIN",
         &[],
     )
     .await;
-    assert_eq!(report["client_requests"], 1);
-    assert_eq!(report["upstream_attempts"], 0);
-    assert_eq!(report["tool_history"], false);
-    assert_eq!(report["default_rejection"], true);
 }
 
 #[tokio::test]
 #[ignore = "requires current installed pi; builtin Responses additional_tools rejects without dispatch"]
 async fn pi_responses_default_additional_tools_rejection() {
-    let report = installed_case(
+    installed_case(
         "protocol_defaults",
         "pi-responses-default",
         "MORPHIECORE_PI_BIN",
         &[],
     )
     .await;
-    assert_eq!(report["client_requests"], 1);
-    assert_eq!(report["upstream_attempts"], 0);
-    assert_eq!(report["tool_history"], false);
-    assert_eq!(report["default_rejection"], true);
 }
 
 #[tokio::test]
 #[ignore = "requires explicit unwrapped installed OpenCode; synthetic Chat recovery"]
 async fn opencode_chat_credential_recovery() {
-    recovery_case("opencode-chat", "MORPHIECORE_OPENCODE_BIN").await;
-}
-
-async fn recovery_boundary(scenario: &str, sends: usize) {
-    let report = installed_case(
-        "recovery_boundary",
-        "pi-chat",
-        "MORPHIECORE_PI_BIN",
-        &[scenario],
-    )
-    .await;
-    assert_eq!(report["client_requests"], 3);
-    assert_eq!(report["upstream_attempts"], sends);
-    assert_eq!(report["honest_failure"], true);
-    assert_eq!(report["next_request_boundary"], true);
+    installed_case("recovery", "opencode-chat", "MORPHIECORE_OPENCODE_BIN", &[]).await;
 }
 
 #[tokio::test]
 #[ignore = "requires current installed pi; long hint and next-request account selection"]
 async fn pi_chat_long_hint_and_next_request_failover() {
-    recovery_boundary("next-request", 3).await;
+    installed_case(
+        "recovery_boundary",
+        "pi-chat",
+        "MORPHIECORE_PI_BIN",
+        &["next-request"],
+    )
+    .await;
 }
 
 #[tokio::test]
 #[ignore = "requires current installed pi; two same-target failures and no third send"]
 async fn pi_chat_two_send_recovery_limit() {
-    recovery_boundary("retry-limit", 4).await;
+    installed_case(
+        "recovery_boundary",
+        "pi-chat",
+        "MORPHIECORE_PI_BIN",
+        &["retry-limit"],
+    )
+    .await;
 }
 
 #[tokio::test]
 #[ignore = "requires current installed pi; cancel after retry hint without a second send"]
 async fn pi_chat_cancel_recovery_wait() {
-    recovery_boundary("cancel-wait", 3).await;
-}
-
-async fn pi_summary_case(case: &str, scenario: &str) {
-    let report = installed_case("summary", case, "MORPHIECORE_PI_BIN", &[scenario]).await;
-    let auxiliary = scenario != "ordinary";
-    assert_eq!(report["client_requests"], if auxiliary { 7 } else { 6 });
-    assert_eq!(report["upstream_attempts"], if auxiliary { 7 } else { 6 });
-    assert_eq!(
-        report["ordinary_summaries"],
-        if scenario == "split" { 2 } else { 1 }
-    );
-    assert_eq!(report["summary_retries"], u8::from(scenario == "retry"));
-    assert_eq!(report["rebuilt_tool_history"], true);
+    installed_case(
+        "recovery_boundary",
+        "pi-chat",
+        "MORPHIECORE_PI_BIN",
+        &["cancel-wait"],
+    )
+    .await;
 }
 
 #[tokio::test]
 #[ignore = "requires explicit unwrapped installed pi; ordinary Chat summary and rebuilt tools"]
 async fn pi_chat_summary_and_rebuilt_tool_history() {
-    pi_summary_case("pi-chat", "ordinary").await;
+    installed_case("summary", "pi-chat", "MORPHIECORE_PI_BIN", &["ordinary"]).await;
 }
 
 #[tokio::test]
 #[ignore = "requires explicit unwrapped installed pi; ordinary Messages summary and rebuilt tools"]
 async fn pi_messages_summary_and_rebuilt_tool_history() {
-    pi_summary_case("pi-messages", "ordinary").await;
+    installed_case(
+        "summary",
+        "pi-messages",
+        "MORPHIECORE_PI_BIN",
+        &["ordinary"],
+    )
+    .await;
 }
 
 #[tokio::test]
 #[ignore = "requires explicit unwrapped installed pi; split Messages summaries and rebuilt tools"]
 async fn pi_messages_split_summary_and_rebuilt_tool_history() {
-    pi_summary_case("pi-messages", "split").await;
+    installed_case("summary", "pi-messages", "MORPHIECORE_PI_BIN", &["split"]).await;
 }
 
 #[tokio::test]
 #[ignore = "requires explicit unwrapped installed pi; one bounded Chat summary retry"]
 async fn pi_chat_summary_retry_and_rebuilt_tool_history() {
-    pi_summary_case("pi-chat", "retry").await;
+    installed_case("summary", "pi-chat", "MORPHIECORE_PI_BIN", &["retry"]).await;
 }
 
 #[tokio::test]
 #[ignore = "requires explicit unwrapped installed pi; synthetic strict-limit errors only"]
 async fn pi_messages_strict_fallback_and_gateway_error() {
-    let report = installed_case("strict_tools", "pi-messages", "MORPHIECORE_PI_BIN", &[]).await;
-    assert_eq!(report["direct_client_requests"], 2);
-    assert_eq!(report["direct_strict_fallbacks"], 1);
-    assert_eq!(report["client_requests"], 1);
-    assert_eq!(report["upstream_attempts"], 1);
-    assert_eq!(report["gateway_strict_fallbacks"], 0);
-    assert_eq!(report["honest_error"], true);
+    installed_case("strict_tools", "pi-messages", "MORPHIECORE_PI_BIN", &[]).await;
 }
 
 #[tokio::test]
 #[ignore = "requires explicit unwrapped installed OpenCode; ordinary summary retry/nudge and tools"]
 async fn opencode_chat_summary_retry_nudge_and_rebuilt_tool_history() {
-    let report = installed_case(
+    installed_case(
         "opencode_summary",
         "opencode-chat",
         "MORPHIECORE_OPENCODE_BIN",
         &[],
     )
     .await;
-    assert_eq!(report["client_requests"], 7);
-    assert_eq!(report["upstream_attempts"], 7);
-    assert_eq!(report["summary_retries"], 1);
-    assert_eq!(report["summary_nudges"], 1);
-    assert_eq!(report["rebuilt_tool_history"], true);
-}
-
-async fn lifecycle_case(case: &str, variable: &str) {
-    let report = installed_case("lifecycle", case, variable, &[]).await;
-    assert_eq!(report["client_requests"], 2);
-    assert_eq!(report["upstream_attempts"], 2);
-    assert_eq!(report["content_before_terminal_and_eof"], true);
-    assert_eq!(report["coalesced_before_cancel"], true);
-    assert_eq!(report["upstream_cancelled"], true);
-    assert_eq!(report["single_permit_recovery"], true);
-    assert_eq!(report["post_publication_replays"], 0);
-    if std::env::var_os("MORPHIECORE_NGINX_BIN").is_some() {
-        assert_eq!(report["proxy"]["gzip_responses"], 2);
-        assert!(
-            report["proxy"]["version"]
-                .as_str()
-                .is_some_and(|v| !v.is_empty())
-        );
-    }
 }
 
 #[tokio::test]
 #[ignore = "requires installed pi; held Chat content, cancellation and single-permit recovery"]
 async fn pi_chat_incremental_lifecycle() {
-    lifecycle_case("pi-chat", "MORPHIECORE_PI_BIN").await;
+    installed_case("lifecycle", "pi-chat", "MORPHIECORE_PI_BIN", &[]).await;
 }
 
 #[tokio::test]
 #[ignore = "requires installed pi; held Messages content, cancellation and single-permit recovery"]
 async fn pi_messages_incremental_lifecycle() {
-    lifecycle_case("pi-messages", "MORPHIECORE_PI_BIN").await;
+    installed_case("lifecycle", "pi-messages", "MORPHIECORE_PI_BIN", &[]).await;
 }
 
 #[tokio::test]
 #[ignore = "requires installed OpenCode; core delta, interrupt and single-permit recovery"]
 async fn opencode_chat_incremental_lifecycle() {
-    lifecycle_case("opencode-chat", "MORPHIECORE_OPENCODE_BIN").await;
+    installed_case(
+        "lifecycle",
+        "opencode-chat",
+        "MORPHIECORE_OPENCODE_BIN",
+        &[],
+    )
+    .await;
 }

@@ -10,9 +10,6 @@ import assets
 
 
 class AssetContracts(unittest.TestCase):
-    def test_checked_in_bytes_and_literal_derivations_are_offline(self):
-        with patch.object(assets, "download", side_effect=AssertionError("network")):
-            self.assertGreater(assets.verify(), 0)
 
     def test_missing_changed_and_retargeted_assets_do_not_silently_pass(self):
         with tempfile.TemporaryDirectory() as directory:

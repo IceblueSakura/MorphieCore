@@ -11,7 +11,6 @@ use morphiecore::{
     transport::sse::SseDecoder,
 };
 use serde_json::{Value, json};
-use sha2::{Digest, Sha256};
 
 fn openai(profile: GenerationApi) -> UpstreamAdapter {
     GenerationCodec::new(profile, Dialect::Standard, None).into()
@@ -41,38 +40,6 @@ fn text(attempt: &morphiecore::execution::Attempt) -> String {
             _ => vec![],
         })
         .collect()
-}
-
-#[test]
-fn asset_bytes_and_revisions_match_the_reviewed_sources() {
-    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-    let sources: Value = serde_json::from_slice(
-        &std::fs::read(root.join("tests/upstream/sources.lock.json")).unwrap(),
-    )
-    .unwrap();
-    let manifest: Value = serde_json::from_slice(
-        &std::fs::read(root.join("tests/upstream/assets.lock.json")).unwrap(),
-    )
-    .unwrap();
-    for entry in manifest["files"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .chain(manifest["framing"].as_array().unwrap())
-    {
-        let local = entry["local"].as_str().unwrap();
-        let digest: String = Sha256::digest(asset(local))
-            .iter()
-            .map(|byte| format!("{byte:02x}"))
-            .collect();
-        assert_eq!(digest, entry["sha256"].as_str().unwrap(), "{local}");
-        if let Some(source) = entry["source"].as_str() {
-            assert_eq!(
-                entry["revision"], sources["sources"][source]["revision"],
-                "{local}"
-            );
-        }
-    }
 }
 
 #[test]

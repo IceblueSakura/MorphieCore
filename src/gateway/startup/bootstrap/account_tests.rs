@@ -260,7 +260,7 @@ fn account_names_cannot_duplicate_one_security_target() {
     )];
     assert_eq!(entry.candidates.len(), 2);
     assert_ne!(
-        entry.candidates[0].cache_scope,
-        entry.candidates[1].cache_scope
+        entry.candidates[0].cache_scope(),
+        entry.candidates[1].cache_scope()
     );
 }

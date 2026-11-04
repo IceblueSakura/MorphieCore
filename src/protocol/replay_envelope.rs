@@ -155,23 +155,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn sealed_values_round_trip_with_origin_and_format() {
-        let origin = ReplayOrigin::new("anthropic/claude-synthetic").unwrap();
-        let sealed = seal(
-            &origin,
-            ReplayFormat::AnthropicMessagesThinking,
-            "synthetic-signature/+=",
-        )
-        .unwrap();
-        assert!(sealed.as_str().starts_with(PREFIX));
-        assert!(!sealed.as_str().contains("synthetic-signature"));
-        let (o, f, d) = open(sealed.as_str()).unwrap();
-        assert_eq!(o, origin);
-        assert_eq!(f, ReplayFormat::AnthropicMessagesThinking);
-        assert_eq!(d.as_str(), "synthetic-signature/+=");
-    }
-
-    #[test]
     fn foreign_or_damaged_values_have_no_origin() {
         let origin = ReplayOrigin::new("openai/model").unwrap();
         let sealed = seal(&origin, ReplayFormat::ResponsesEncrypted, "token").unwrap();

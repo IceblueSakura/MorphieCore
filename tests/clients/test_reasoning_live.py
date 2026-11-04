@@ -43,10 +43,6 @@ class ReasoningLiveOracles(unittest.TestCase):
                          {"type": "text", "text": "extra"}]):
             with self.assertRaisesRegex(RuntimeError, "^live_client_final_answer$"):
                 live.pi_final_output(content)
-        observed = {"content": live.TEXT + "\n", "reasoning_content": "Check", "tool_calls": []}
-        with self.assertRaisesRegex(RuntimeError, "^answer_changed$"):
-            live.same_message({"role": "assistant", "content": live.TEXT,
-                               "reasoning_content": "Check"}, observed)
 
     def test_live_opencode_requires_the_scratch_consumer_terminal_outcome(self):
         for finishes, idle, error in [

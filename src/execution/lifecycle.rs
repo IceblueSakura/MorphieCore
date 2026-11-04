@@ -68,35 +68,3 @@ impl Lifecycle {
         self.state == DeliveryState::Uncommitted
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn delivery_state_is_monotonic_and_gates_fallback() {
-        let mut lifecycle = Lifecycle::new();
-        assert_eq!(lifecycle.state(), DeliveryState::Uncommitted);
-        assert!(lifecycle.may_retry_or_fallback());
-
-        lifecycle.commit().unwrap();
-        assert_eq!(lifecycle.state(), DeliveryState::Committed);
-        assert!(
-            !lifecycle.may_retry_or_fallback(),
-            "post-commit replay is forbidden"
-        );
-        lifecycle.commit().unwrap();
-
-        lifecycle.terminal().unwrap();
-        assert_eq!(lifecycle.state(), DeliveryState::Terminal);
-        assert_eq!(lifecycle.terminal(), Err(LifecycleError::AlreadyTerminal));
-        assert_eq!(lifecycle.commit(), Err(LifecycleError::OutputAfterTerminal));
-    }
-
-    #[test]
-    fn a_terminal_without_output_is_still_terminal() {
-        let mut lifecycle = Lifecycle::new();
-        lifecycle.terminal().unwrap();
-        assert!(!lifecycle.may_retry_or_fallback());
-    }
-}

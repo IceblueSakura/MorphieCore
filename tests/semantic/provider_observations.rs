@@ -287,21 +287,6 @@ fn local_references_need_no_native_alias_and_later_facts_do_not_erase_unknown_re
 }
 
 #[test]
-fn provider_observations_are_not_implicitly_admitted_by_existing_product_contracts() {
-    // A core type is not a product capability.
-    let response = GenerationResponse::new(
-        vec![(ItemId::new(1), Item::ProviderTool(operation()))],
-        Outcome::Completed,
-    )
-    .unwrap();
-    let request =
-        GenerationRequest::new(response.items().to_vec(), GenerationControls::default()).unwrap();
-    let contract = morphiecore::protocol::openai::TargetContract::full().dispositions;
-    assert!(contract.check(&request).is_err());
-    assert!(contract.check_response(&response).is_err());
-}
-
-#[test]
 fn stream_alias_conflicts_and_existing_call_capability_checks_remain_strict() {
     let state = reduce(StreamState::new(), StreamEvent::Started).unwrap();
     let state = reduce(

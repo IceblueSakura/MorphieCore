@@ -61,7 +61,7 @@ This page owns current scope, priorities, dependencies, and exit gates. [Archite
 
 ## Current status
 
-**Current focus (2026-11-03):** Slices R0–R5 and account rewrite gates AR0–AR4 are complete. AR5 is preparing native-default offline acceptance before fresh credentials; three concrete Chat/Responses blockers remain. Actual live model selection, real Provider checks and the full three-protocol installed-Agent exit follow. Stage 4 remains paused.
+**Current focus (2026-11-04):** Slices R0–R5, account rewrite gates AR0–AR4 and the requested pre-AR5 simplification are complete. The [product-hypothesis selection policy](development.md#test-selection-and-pruning) replaces coverage-driven pruning. Three concrete Chat/Responses default blockers remain; fresh credentials, actual live model selection, real Provider checks and the full three-protocol installed-Agent exit still precede AR5 closure. Stage 4 remains paused.
 
 | Area | State | Next step |
 |---|---|---|
@@ -73,7 +73,7 @@ This page owns current scope, priorities, dependencies, and exit gates. [Archite
 | Decision APIs | Dual standard-SDK direction selected (TypeSafe/OpenAI) | Contract selection and Stage-4 implementation |
 | Embedding & Media | Operational (Google native, OpenAI via OpenRouter, DashScope); Grok image codec implemented | Stage-4 contract selection for Images, Audio, Files, and Video |
 | Downstream integration | Agent API key authentication and diagnostic attribution implemented | Per-Agent JSONL session storage design |
-| Test baseline | Pinned upstream test baseline closed; strict SDK accumulators verified | Maintain offline baseline (`cargo test --locked --offline`) |
+| Test baseline | Retain independent product/protocol/safety hypotheses and connected consumers; remove implementation-only checks | Validate behavior gates; no coverage or test-count status metric |
 
 ## Account rewrite execution order
 
@@ -116,11 +116,7 @@ AR4 timing review on **2026-11-03** reproduced a false early-retry verdict by de
 
 Existing fixture owners suffice: credential storage fault injection and synthetic authorities for lifecycle; executor paused-time tests for health/probes; native Responses Router fixtures for failed-task health; transport loopback fixtures for interruption/TLS/deadline facts; production bootstrap, SDK and installed-client harnesses for the connected path. No new framework is needed.
 
-AR5 pre-credential runner hardening on **2026-11-03** repairs the existing [curated readable-Chat live gate](development.md#production-profile-acceptance): Pi honors command deadlines and reader EOF/failures, final-answer whitespace tolerance leaves replay bytes exact, and OpenCode verifies its scratch consumer terminals and successful idle outcome. Regressions first reproduced the early idle failure, newline rejection and missing consumer-outcome gate, then passed after repair. All 41 client oracles, the full offline baseline (991 Rust tests, 42 ignored; Clippy, formatting, production compilation, 20 pinned assets and nine upstream Python checks) and all 17 installed-Agent synthetic cases pass with pi 1.5.0 and OpenCode 2.0.32. No real Provider or private credential was used. Actual Provider/account/model bindings and selected cross-protocol lanes remain to be chosen before real acceptance and the default-profile three-protocol exit; do not infer them from old credentials or historical curated profiles.
-
 The user selected **offline three-protocol preparation before fresh credentials** on 2026-11-03. The [native-default characterization](development.md#installed-client-synthetic-recovery) now exercises Chat and Responses alongside Messages. OpenCode Chat and both Messages clients complete their tool/recall loops. Pi Chat's actual strict read guarantee and pi Responses' `additional_tools` input remain blocked; OpenCode Responses completes its tool turn but omits required text annotations on recall. Keep these boundary regressions distinct from accepted loops: no compatibility opt-out, input rewrite, new semantic admission or real Provider call is authorized by this characterization. Fresh credential provisioning, actual live model selection, selected cross-protocol lanes and resolution of these concrete defaults still precede AR5 closure.
-
-The final characterization tree passes 47 client oracles, the full offline baseline (991 Rust tests, 46 ignored; Clippy, formatting, production compilation, 20 pinned assets and nine upstream Python checks) and 21 current installed-Agent synthetic cases with pi 1.5.0 / OpenCode 2.0.32. Three of those cases deliberately reproduce the listed blockers and their honest client-visible failures; they do not close the blocked default loops.
 
 ### Verification and operator handoff
 

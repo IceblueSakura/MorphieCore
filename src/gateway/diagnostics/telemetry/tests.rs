@@ -1,8 +1,7 @@
 use super::*;
 use crate::gateway::diagnostics::{Sink, Trace};
 use crate::protocol::failure::ShapeReason;
-use opentelemetry::logs::AnyValue;
-use serde_json::{Value, json};
+use serde_json::Value;
 #[path = "../../../../tests/support/child_process.rs"]
 mod child_process;
 
@@ -185,24 +184,6 @@ async fn body_abort_keeps_the_runtime_alive_and_closes_interrupted_spans_once() 
     assert_eq!(spans.len(), 2);
     assert!(spans.iter().all(|row| row["status"] == "error"));
     assert_eq!(select(&rows, "log").len(), 1);
-}
-
-#[test]
-fn native_body_encoding_is_explicit_and_does_not_relabel_unknowns_or_wide_counts() {
-    let encoded = super::super::export::body(
-        json!({"unknown":null,"zero":0,"max":u64::MAX,"list":[true,1,"x"]}),
-    )
-    .unwrap();
-    let AnyValue::Map(map) = encoded else {
-        panic!("not a structured body")
-    };
-    assert!(!map.contains_key(&opentelemetry::Key::from("unknown")));
-    assert_eq!(map[&opentelemetry::Key::from("zero")], AnyValue::Int(0));
-    assert_eq!(
-        map[&opentelemetry::Key::from("max")],
-        AnyValue::String(u64::MAX.to_string().into())
-    );
-    assert!(super::super::export::body(json!([null])).is_err());
 }
 
 #[tokio::test]

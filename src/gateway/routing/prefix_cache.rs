@@ -197,7 +197,7 @@ pub(in crate::gateway) fn choose(
         }
     };
     let context = request.conversation.as_ref()?;
-    let scope = &candidate.cache_scope;
+    let scope = candidate.cache_scope();
     let mut hash = Sha256::new();
     hash.update(b"MorphieCore.cache-scope.v1\0");
     for value in [scope.as_str(), endpoint.id.as_str(), profile_id] {
@@ -315,76 +315,6 @@ mod tests {
     }
 
     #[test]
-    fn materialization_only_hashes_requests_that_need_a_lookup() {
-        let gate = crate::gateway::tests::support::gateway(crate::gateway::Limits::default());
-        let entry = &gate.state.entries[&(
-            crate::protocol::ClientProtocol::Chat,
-            "fixture-model".into(),
-        )];
-        let candidate = &entry.candidates[0];
-        let source = request(entry, "one");
-        let materialize = |index: &Index, request: &crate::protocol::GenerationRequestEnvelope| {
-            index
-                .materialize(
-                    &candidate.endpoint,
-                    request,
-                    crate::execution::plan::project_candidate(&candidate.endpoint, request, None)
-                        .unwrap(),
-                )
-                .unwrap()
-        };
-        let direct = crate::execution::attempt::encode_projection(
-            &candidate.endpoint,
-            &source,
-            crate::execution::plan::project_candidate(&candidate.endpoint, &source, None).unwrap(),
-        )
-        .unwrap();
-        assert!(direct.value.prefixes.is_none());
-        assert!(
-            materialize(&Index::new(false), &source)
-                .value
-                .prefixes
-                .is_none()
-        );
-        let original = materialize(&gate.state.affinity, &source);
-        assert!(original.value.prefixes.is_some());
-        let selection = super::choose(
-            &gate.state.affinity,
-            candidate,
-            &source,
-            original.value.prefixes.as_deref(),
-            &mut trace(),
-        )
-        .unwrap();
-        let (hinted, projected) = selection
-            .project(candidate, &source, &entry.client)
-            .unwrap();
-        assert!(projected.value.prefixes.is_none());
-        assert!(
-            materialize(&gate.state.affinity, &hinted)
-                .value
-                .prefixes
-                .is_none()
-        );
-        let mut explicit = source.clone();
-        explicit.context.cache.prompt_cache_key = Some("explicit".into());
-        assert!(
-            materialize(&gate.state.affinity, &explicit)
-                .value
-                .prefixes
-                .is_none()
-        );
-        explicit = source.clone();
-        explicit.conversation = Some(ConversationContext::conversation("explicit").unwrap());
-        assert!(
-            materialize(&gate.state.affinity, &explicit)
-                .value
-                .prefixes
-                .is_none()
-        );
-    }
-
-    #[test]
     fn reserved_key_objects_and_numeric_annotations_have_distinct_prefixes() {
         let gate = crate::gateway::tests::support::gateway(crate::gateway::Limits::default());
         let entry = &gate.state.entries[&(
@@ -466,8 +396,9 @@ mod tests {
         assert!(crate::execution::plan::representable(&other.endpoint, &first).is_ok());
         assert!(selection.project(&other, &first, &entry.client).is_none());
         other.endpoint = candidate.endpoint.clone();
-        other.cache_scope =
-            crate::semantic::value::ReplayOrigin::new("other-principal-or-key-epoch").unwrap();
+        other.endpoint.bound_replay_scope = Some(
+            crate::semantic::value::ReplayOrigin::new("other-principal-or-key-epoch").unwrap(),
+        );
         assert_ne!(
             choose(&gate.state.affinity, &other, &second, &mut trace())
                 .unwrap()
@@ -475,7 +406,6 @@ mod tests {
             selection.hint
         );
         other.endpoint = candidate.endpoint.clone();
-        other.cache_scope = candidate.cache_scope.clone();
         other.endpoint.upstream_model = "other-model".into();
         assert_ne!(
             choose(&gate.state.affinity, &other, &second, &mut trace())

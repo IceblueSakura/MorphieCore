@@ -23,7 +23,14 @@ pub(super) struct BoundCandidate {
     pub(super) secret: credentials::Source,
     pub(super) account: Option<String>,
     pub(super) health: executors::Scopes,
-    pub(super) cache_scope: crate::semantic::value::ReplayOrigin,
+}
+impl BoundCandidate {
+    pub(super) fn cache_scope(&self) -> &crate::semantic::value::ReplayOrigin {
+        self.endpoint
+            .bound_replay_scope
+            .as_ref()
+            .expect("bound candidate replay scope")
+    }
 }
 /// Bound identity and its optional, request-local preflight conversion move together.
 pub(super) struct PlannedCandidate {
@@ -354,7 +361,8 @@ mod tests {
         second.secret = credentials::Source::ApiKey(Arc::new(
             crate::provider::SecretMaterial::new("synthetic-second-credential").unwrap(),
         ));
-        second.cache_scope = crate::semantic::value::ReplayOrigin::new("synthetic-second").unwrap();
+        second.endpoint.bound_replay_scope =
+            Some(crate::semantic::value::ReplayOrigin::new("synthetic-second").unwrap());
         entry.candidates = vec![Arc::new(first), Arc::new(second)];
         let request = entry.client.decode_client_request(
             br#"{"model":"fixture-model","messages":[{"role":"user","content":"hello"}],"prediction":{"type":"content","content":"hint"}}"#,

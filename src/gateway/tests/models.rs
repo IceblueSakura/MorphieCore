@@ -22,6 +22,7 @@ fn admitted_omitted_control_is_not_published_as_rejected_input() {
         .endpoint(&crate::topology::EndpointId::new("fixture-responses").unwrap())
         .unwrap()
         .clone();
+    candidate.endpoint.bound_replay_scope = entry.candidates[0].endpoint.bound_replay_scope.clone();
     candidate
         .endpoint
         .representation

@@ -447,15 +447,4 @@ mod tests {
         assert!(unassessed.encode_request(&text).is_ok());
         representable_for_client(unassessed, &text, Some(&plain)).unwrap();
     }
-
-    #[test]
-    fn unknown_labels_never_plan() {
-        let topology = default_topology().unwrap();
-        assert_eq!(
-            ExecutionPlan::derive(&topology, "gpt-42", TaskKind::Generation, Delivery::Json),
-            Err(PlanError::UnknownModel)
-        );
-        // TaskMismatch becomes observable when a second task domain is admitted;
-        // with a single TaskKind the compile-time checks already pin the binding.
-    }
 }

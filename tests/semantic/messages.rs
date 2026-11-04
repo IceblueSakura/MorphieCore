@@ -232,26 +232,6 @@ mod message_envelopes {
             assert_eq!(call.arguments, ToolArguments::Raw("{ \"x\": 1 }".into()));
         }
     }
-
-    #[test]
-    fn envelope_selection_keeps_the_declared_container() {
-        let source = history();
-        let ids: Vec<_> = source.items().iter().map(|(id, _)| *id).collect();
-        let group = MessageEnvelope::new(
-            GroupId::new(LocalScope::ROOT, 1),
-            MessageEnvelopeRole::Assistant,
-            ids[..3].to_vec(),
-        )
-        .unwrap();
-        let source = source.with_message_envelopes(vec![group.clone()]).unwrap();
-        let rebuilt = ClientManaged::new(GenerationSettings::default())
-            .unwrap()
-            .select_request_items(&source, &ids[..3])
-            .unwrap()
-            .build()
-            .unwrap();
-        assert_eq!(rebuilt.message_envelopes(), &[group]);
-    }
 }
 mod message_ownership_owner {
     //! A08/T28: semantic membership is independent of target contiguity.

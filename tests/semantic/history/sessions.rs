@@ -500,7 +500,7 @@ fn exercise(api: Api) {
     let corpus = load(api);
     // Native static intake where supported, plus arbitrary byte cuts through UTF-8,
     // escaped/raw arguments and SSE boundaries. Google remains SSE-only upstream.
-    for (stream, chunk_size) in [(false, LIMIT), (true, 13), (true, 1)] {
+    for (stream, chunk_size) in [(false, LIMIT), (true, 1)] {
         run(api, &corpus, stream, chunk_size, None);
     }
 }

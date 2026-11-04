@@ -59,7 +59,7 @@ impl Preference {
         };
         let same = |a: &crate::gateway::runtime::BoundCandidate,
                     b: &crate::gateway::runtime::BoundCandidate| {
-            a.endpoint.id == b.endpoint.id && a.cache_scope == b.cache_scope
+            a.endpoint.id == b.endpoint.id && a.cache_scope() == b.cache_scope()
         };
         if !same(&entry.candidates[0], &native.candidates[0]) {
             return preference;

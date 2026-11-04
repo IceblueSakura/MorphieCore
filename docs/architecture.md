@@ -982,6 +982,7 @@ Authoritative log of accepted architectural decisions and their systemic consequ
 | Decision | Date | Accepted Architectural Consequence |
 |---|---|---|
 | Upstream protocol tests | 2026-10-23 | Pinned official SDK and upstream fixtures serve as regression baseline |
+| Product-hypothesis test selection | 2026-11-04 | Aggressively prune implementation restatements and dependency-only experiments; retain independent product/protocol/safety evidence. Coverage and test counts are not progress or acceptance criteria. [Selection procedure](development.md#test-selection-and-pruning) |
 | Delta coalescing | 2026-10-26 | Default 50ms / 16 KiB buffer merges adjacent text deltas |
 | Messages ordered block delivery | 2026-10-28 | Codec-local bounded serialization preserves owner/part order, incremental head output and signed history; incomplete text-owner wire closure preserves source lifecycle, native intake and EOF authority |
 | Semantic-equivalence compatibility | 2026-10-28 | Protocol-equivalent empty/default forms use ordinary lossless mapping without named omissions or loss receipts; covers null-only reports, empty logprobs/cache options and already-enabled permissions; source observations and meaningful constraints remain protected |

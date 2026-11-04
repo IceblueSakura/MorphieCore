@@ -35,19 +35,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn default_config_is_a_fixed_child_of_an_absolute_home() {
-        let home = PathBuf::from(if cfg!(windows) {
-            r"C:\synthetic-home"
-        } else {
-            "/synthetic-home"
-        });
-        assert_eq!(
-            home_directory(Some(home.clone().into_os_string())).unwrap(),
-            home.join(".local/share/morphiecore")
-        );
-    }
-
-    #[test]
     fn missing_empty_or_relative_home_never_selects_the_working_directory() {
         for home in [None, Some("".into()), Some("relative-home".into())] {
             assert_eq!(

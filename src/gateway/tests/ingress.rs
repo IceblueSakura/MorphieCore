@@ -1004,7 +1004,7 @@ fn entries_cannot_escape_compiled_route_or_credential_ownership() {
     assert!(matches!(result, Err(StartupError::Binding)));
     let gate = gateway(Limits::default());
     let scope = gate.state.entries.values().next().unwrap().candidates[0]
-        .cache_scope
+        .cache_scope()
         .clone();
     let other = Gateway::new(
         topology(),
@@ -1030,7 +1030,7 @@ fn entries_cannot_escape_compiled_route_or_credential_ownership() {
     )
     .unwrap();
     assert_ne!(
-        scope,
-        other.state.entries.values().next().unwrap().candidates[0].cache_scope
+        &scope,
+        other.state.entries.values().next().unwrap().candidates[0].cache_scope()
     );
 }

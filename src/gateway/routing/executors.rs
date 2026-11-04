@@ -333,7 +333,7 @@ impl Executors {
         let preferred = state.affinity.preferred(&observed.observed, now)?;
         let candidate = candidates
             .iter()
-            .find(|c| c.as_ref().cache_scope.as_str() == preferred)?;
+            .find(|c| c.as_ref().cache_scope().as_str() == preferred)?;
         let until = blocking(&state, &candidate.as_ref().health, now)?.0?;
         (until.saturating_duration_since(now) <= max_wait).then_some(until)
     }
@@ -350,12 +350,12 @@ impl Executors {
         let cooling = |c: &T| blocked(&state, &c.as_ref().health, now).is_some();
         let affine = candidates
             .iter()
-            .any(|c| !cooling(c) && Some(c.as_ref().cache_scope.as_str()) == preferred);
+            .any(|c| !cooling(c) && Some(c.as_ref().cache_scope().as_str()) == preferred);
         let cooled = candidates.iter().any(&cooling);
         candidates.sort_by_key(|c| {
             (
                 cooling(c),
-                Some(c.as_ref().cache_scope.as_str()) != preferred,
+                Some(c.as_ref().cache_scope().as_str()) != preferred,
             )
         });
         match (affine, cooled) {
@@ -476,9 +476,13 @@ impl Lease<'_> {
         }
         let affinity = match binding {
             None => AffinityCommit::NotApplicable,
-            Some(binding) if Arc::ptr_eq(&binding.state, &self.owner.state) => state
-                .affinity
-                .commit(&binding.observed, self.candidate.cache_scope.as_str(), now),
+            Some(binding) if Arc::ptr_eq(&binding.state, &self.owner.state) => {
+                state.affinity.commit(
+                    &binding.observed,
+                    self.candidate.cache_scope().as_str(),
+                    now,
+                )
+            }
             Some(_) => AffinityCommit::Stale,
         };
         (true, affinity)

@@ -241,7 +241,7 @@ fn bind_candidate(
     let health =
         crate::gateway::routing::executors::Scopes::bind(namespace, &endpoint, &provenance);
     let cache_scope = cache_scope(namespace, &provenance, public, provider, &endpoint)?;
-    endpoint.bound_replay_scope = Some(cache_scope.clone());
+    endpoint.bound_replay_scope = Some(cache_scope);
     let scope = endpoint.replay_origin();
     if let Some(caps) = endpoint.representation.openai_mut() {
         caps.adaptation.scope = Some(scope.clone());
@@ -255,7 +255,6 @@ fn bind_candidate(
         secret: secret.clone(),
         account: binding.name.clone(),
         health,
-        cache_scope,
     })
 }
 

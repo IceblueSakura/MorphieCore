@@ -56,9 +56,3 @@ tempfile = "=3.27.0"
 reqwest = { version = "=0.13.5", default-features = false, features = ["json"] }
 tower = { version = "=0.5.3", features = ["util"] }
 tokio = { version = "=1.54.1", default-features = false, features = ["process", "io-util", "test-util"] }
-# Additional ecosystem feasibility features; no production network exporter.
-tracing = { version = "=0.1.44", default-features = false, features = ["std", "attributes"] }
-tracing-subscriber = { version = "=0.3.23", default-features = false, features = ["std", "registry", "fmt", "json"] }
-opentelemetry = { version = "=0.33.1", default-features = false, features = ["trace", "logs", "metrics"] }
-opentelemetry_sdk = { version = "=0.33.1", default-features = false, features = ["trace", "logs", "metrics", "testing", "internal-logs"] }
-opentelemetry-otlp = { version = "=0.33.1", default-features = false, features = ["logs", "http-proto", "reqwest-blocking-client", "reqwest-rustls", "internal-logs"] }

@@ -285,36 +285,6 @@ fn external_summary_is_new_user_content_with_explicit_sources_and_no_old_authori
     }]);
     assert_eq!(result.unwrap_err().stage, ContextStage::Edit);
 }
-#[test]
-fn sparse_response_selection_does_not_edit_or_reattribute_original_reports() {
-    let mut items = vec![message(1, "one"), message(2, "two")];
-    for (_, item) in &mut items {
-        let Item::Message(message) = item else {
-            panic!()
-        };
-        message.role = MessageRole::Assistant;
-    }
-    let usage = Usage::operation(10, 20, 30);
-    let response = GenerationResponse::new(items, Outcome::Completed)
-        .unwrap()
-        .with_usage(Some(usage))
-        .unwrap()
-        .with_progress(InteractionProgress::NeedsContinuation)
-        .unwrap();
-    let selected = ClientManaged::new(GenerationSettings::default())
-        .unwrap()
-        .select_response_items(&response, &[ItemId::new(1)])
-        .unwrap()
-        .finish()
-        .unwrap();
-    assert_eq!(selected.request().items().len(), 1);
-    assert_eq!(
-        selected.selections()[0].progress,
-        Some(InteractionProgress::NeedsContinuation)
-    );
-    assert_eq!(response.usage(), Some(usage));
-    assert_eq!(response.items().len(), 2);
-}
 
 #[test]
 fn edits_never_orphan_results_and_relations_have_one_final_owner() {

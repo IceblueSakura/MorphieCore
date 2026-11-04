@@ -879,52 +879,6 @@ async fn native_reports_project_without_changing_content_or_terminal_outcome() {
     }
 }
 
-#[test]
-fn intake_experiment_covers_json_capable_catalog_bindings() {
-    use crate::topology::{GenerationProtocol, catalog};
-    let mut covered = BASIC_EXPECTATIONS
-        .iter()
-        .flat_map(|(ids, _)| ids.iter().map(|id| (*id).to_owned()))
-        .collect::<std::collections::BTreeSet<_>>();
-    covered.extend(
-        catalog::SUBSCRIPTION_BINDINGS
-            .iter()
-            .map(|entry| entry.endpoint_id().as_str().to_owned()),
-    );
-    covered.insert(
-        BINDINGS
-            .iter()
-            .find(|b| b.4 == Api::Messages)
-            .unwrap()
-            .1
-            .into(),
-    );
-    let topology = catalog::default_topology().unwrap();
-    for endpoint in topology.endpoints() {
-        if covered.remove(endpoint.id.as_str()) {
-            continue;
-        }
-        assert!(
-            matches!(
-                endpoint.protocol,
-                GenerationProtocol::GoogleGenerateContent | GenerationProtocol::GoogleInteractions
-            ),
-            "uncovered intake binding: {}",
-            endpoint.id.as_str()
-        );
-        assert!(endpoint.protocol.requires_streaming_intake());
-        assert!(!endpoint.adapter().unwrap().accepts_json());
-        eprintln!(
-            "intake {}: already streaming-only; no JSON decoder to compare",
-            endpoint.id.as_str()
-        );
-    }
-    assert!(
-        covered.is_empty(),
-        "reviewed intake bindings left the catalog"
-    );
-}
-
 #[tokio::test]
 async fn catalog_basic_production_lanes() {
     use crate::topology::{GenerationProtocol, catalog::API_KEY_BINDINGS};

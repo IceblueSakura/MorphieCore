@@ -52,7 +52,6 @@ async fn consume(
         secret: base.secret.clone(),
         account: None,
         health: base.health.clone(),
-        cache_scope: base.cache_scope.clone(),
     });
     let entry = Arc::new(BoundEntry {
         public: original.public.clone(),

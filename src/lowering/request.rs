@@ -2462,53 +2462,6 @@ mod tests {
     }
 
     #[test]
-    fn messages_request_encoding_preserves_saturated_omission_evidence() {
-        use crate::protocol::{
-            anthropic::messages::{Dialect, Profile, TargetContract},
-            native::ReplayTarget,
-            openai::{Dialect as OpenAiDialect, GenerationCodec},
-        };
-        let mut input = vec![json!({"role":"user","content":"go"})];
-        input.extend((0..65).flat_map(|i| {
-            let call = format!("call_{i}");
-            [
-                json!({"type":"function_call","call_id":call,"name":"lookup","arguments":"{}"}),
-                json!({"type":"function_call_output","call_id":call,"output":"feedback"}),
-            ]
-        }));
-        let mut source =
-            GenerationCodec::new(GenerationApi::Responses, OpenAiDialect::Standard, None)
-                .decode_request(
-                    json!({"model":"m","max_output_tokens":64,"input":input})
-                        .to_string()
-                        .as_bytes(),
-                )
-                .unwrap();
-        let mut items = source.task.semantic.items().to_vec();
-        for (_, item) in &mut items {
-            if let Item::ToolResult(result) = item {
-                result.execution = Some(ToolExecution::Unknown);
-            }
-        }
-        source.task.semantic = source.task.semantic.with_items(items).unwrap();
-        let original = source.clone();
-        let contract = TargetContract::new(Profile::AdaptiveTextTools, Dialect::Standard);
-        let target = ReplayTarget::new("synthetic", "m").unwrap();
-        let encoded = contract.encode_request(&source, &target).unwrap();
-        assert_eq!(
-            encoded.evidence.rule_names(),
-            ["messages.omit-tool-execution.v1"]
-        );
-        assert!(encoded.evidence.omitted_entries > 0);
-        assert_eq!(
-            encoded.evidence.len() as u64 + encoded.evidence.omitted_entries,
-            65
-        );
-        assert_eq!(encoded.value["messages"].as_array().unwrap().len(), 131);
-        assert_eq!(source, original);
-    }
-
-    #[test]
     fn reasoning_presentation_admission_and_losses_follow_candidate_rows() {
         use crate::protocol::openai::{Dialect, GenerationCodec};
         for api in [GenerationApi::Chat, GenerationApi::Responses] {

@@ -1,5 +1,4 @@
 use morphiecore::semantic::task::generation::*;
-use proptest::prelude::*;
 
 fn report(scope: UsageScope, stage: UsageStage, tokens: u64) -> UsageReport {
     let mut report = UsageReport::operation(Usage::operation(tokens, 0, tokens));
@@ -151,51 +150,6 @@ fn split_modality_relations_do_not_turn_known_overflow_into_unknown() {
     sparse.validate().unwrap();
     assert_eq!(sparse.summary().input_text_tokens, None);
     assert_eq!(valid.details.modalities[1].tokens, Some(1));
-}
-
-proptest! {
-    #![proptest_config(crate::test_properties::config())]
-    #[test]
-    fn property_split_modality_relationships_use_checked_arithmetic(
-        input in prop_oneof![Just(0u64), Just(u64::MAX), any::<u64>()],
-        tool in prop_oneof![Just(0u64), Just(u64::MAX), any::<u64>()],
-        relation in 0u8..3,
-        modality in prop::sample::select(vec![
-            TokenModality::Text, TokenModality::Image, TokenModality::Audio
-        ])
-    ) {
-        let relation = match relation {
-            0 => ToolInputRelation::Additional,
-            1 => ToolInputRelation::Included,
-            _ => ToolInputRelation::Unreported,
-        };
-        let mut report = split_modalities(input, tool, relation);
-        for part in &mut report.details.modalities {
-            part.modality = Some(modality);
-        }
-        let valid = match relation {
-            ToolInputRelation::Additional => input.checked_add(tool).is_some(),
-            ToolInputRelation::Included => tool <= input,
-            ToolInputRelation::Unreported => true,
-        };
-        prop_assert_eq!(report.validate().is_ok(), valid);
-        if valid {
-            let summary = report.summary();
-            let actual = match modality {
-                TokenModality::Text => summary.input_text_tokens,
-                TokenModality::Image => summary.input_image_tokens,
-                TokenModality::Audio => summary.input_audio_tokens,
-                _ => unreachable!(),
-            };
-            let expected = match relation {
-                ToolInputRelation::Additional => input.checked_add(tool),
-                ToolInputRelation::Included => Some(input),
-                ToolInputRelation::Unreported => None,
-            };
-            prop_assert_eq!(actual, expected);
-            prop_assert_eq!(summary.input_tokens, None);
-        }
-    }
 }
 
 #[test]

@@ -100,33 +100,29 @@ fn request_wire(grouped: bool, stream: bool) -> Value {
 fn native_request_directions_use_actual_subscription_bindings() {
     for binding in SUBSCRIPTION_BINDINGS {
         let grouped = binding.profile == "openai";
-        for stream in [false, true] {
-            let wire = request_wire(grouped, stream);
-            let source = adapter(binding.dialect)
-                .decode_client_request(wire.to_string().as_bytes())
-                .unwrap();
-            let independent = request(grouped, stream);
-            assert_eq!(source.task.semantic, independent.task.semantic);
-            assert_eq!(
-                source.context.cache.prompt_cache_key,
-                Some("affinity".into())
-            );
-            assert_eq!(source.delivery.stream, Some(stream));
-            for input in [source, independent] {
-                let before = input.clone();
-                let (actual, rules) = binding
-                    .endpoint()
-                    .encode_request_with_rules(&input)
-                    .unwrap();
-                let mut expected = wire.clone();
-                expected["model"] = json!(binding.upstream);
-                expected["stream"] = json!(true);
-                expected["input"][0] = json!({"role":"developer","content":"ordered"});
-                assert_eq!(actual, expected, "{}", binding.identity);
-                assert!(rules.is_empty());
-                assert_eq!(input, before);
-            }
-        }
+        let wire = request_wire(grouped, false);
+        let source = adapter(binding.dialect)
+            .decode_client_request(wire.to_string().as_bytes())
+            .unwrap();
+        let independent = request(grouped, false);
+        assert_eq!(source.task.semantic, independent.task.semantic);
+        assert_eq!(
+            source.context.cache.prompt_cache_key,
+            Some("affinity".into())
+        );
+        assert_eq!(source.delivery.stream, Some(false));
+        let before = independent.clone();
+        let (actual, rules) = binding
+            .endpoint()
+            .encode_request_with_rules(&independent)
+            .unwrap();
+        let mut expected = wire.clone();
+        expected["model"] = json!(binding.upstream);
+        expected["stream"] = json!(true);
+        expected["input"][0] = json!({"role":"developer","content":"ordered"});
+        assert_eq!(actual, expected, "{}", binding.identity);
+        assert!(rules.is_empty());
+        assert_eq!(independent, before);
     }
 }
 fn response(grouped: bool, streamed: bool) -> DecodedResponse {

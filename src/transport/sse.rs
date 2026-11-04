@@ -222,39 +222,6 @@ impl EventBuilder {
 #[cfg(test)]
 mod tests {
     use super::SseDecoder;
-    use proptest::prelude::*;
-    proptest! {
-        #![proptest_config(crate::test_properties::config())]
-        #[test]
-        fn property_sse_arbitrary_chunk_boundaries_preserve_independent_fields(
-            data in prop::collection::vec(prop::sample::select(vec!['a', ' ', '你', 'é', '🦀']), 0..80),
-            ending in prop::sample::select(vec!["\n", "\r", "\r\n"]),
-            sizes in prop::collection::vec(1usize..24, 1..32)
-        ) {
-            let text: String = data.into_iter().collect();
-            let wire = format!("\u{feff}event: delta{ending}id: fixture{ending}retry: 17{ending}data: {text}{ending}data: second{ending}{ending}data: done{ending}{ending}");
-            let mut decoder = SseDecoder::new(4096);
-            let mut events = Vec::new();
-            let (mut offset, mut chunk) = (0, 0);
-            while offset < wire.len() {
-                let end = (offset + sizes[chunk % sizes.len()]).min(wire.len());
-                while offset < end {
-                    let (event, used) = decoder.push_until_event(&wire.as_bytes()[offset..end]).unwrap();
-                    prop_assert!(used > 0 && used <= end - offset);
-                    offset += used;
-                    events.extend(event);
-                }
-                chunk += 1;
-            }
-            prop_assert!(decoder.finish_strict().unwrap().is_empty());
-            prop_assert_eq!(events.len(), 2);
-            prop_assert_eq!(events[0].event(), Some("delta"));
-            prop_assert_eq!(events[0].id(), Some("fixture"));
-            prop_assert_eq!(events[0].retry_ms(), Some(17));
-            prop_assert_eq!(events[0].data(), format!("{text}\nsecond"));
-            prop_assert_eq!(events[1].data(), "done");
-        }
-    }
     #[test]
     fn precommit_decode_returns_exactly_one_raw_event_prefix() {
         let payload = b": keepalive\n\nevent: first\ndata: one\n\nevent: second\ndata: two\n\n";

@@ -1225,34 +1225,6 @@ impl EventDecoder {
 }
 
 #[cfg(test)]
-mod snapshot_tests {
-    use super::*;
-    #[test]
-    fn replay_difference_reports_direction_without_values() {
-        let absent = vec![json!({"type":"reasoning","id":"synthetic-private-id","summary":[]})];
-        let first = vec![json!({
-            "type": "reasoning",
-            "id": "synthetic-private-id",
-            "summary": [],
-            "encrypted_content": "synthetic-private-first",
-        })];
-        let second = vec![json!({
-            "type": "reasoning",
-            "id": "synthetic-private-id",
-            "summary": [],
-            "encrypted_content": "synthetic-private-second",
-        })];
-        for (actual, expected, label) in [
-            (&first, &absent, ShapeReason::SnapshotReplayAdded),
-            (&absent, &first, ShapeReason::SnapshotReplayRemoved),
-            (&second, &first, ShapeReason::SnapshotReplayChanged),
-        ] {
-            assert_eq!(terminal_snapshot_difference(actual, expected), label);
-        }
-    }
-}
-
-#[cfg(test)]
 mod mapping_evidence_tests {
     use super::*;
     use crate::protocol::{

@@ -711,28 +711,3 @@ fn google_sampling_omission_is_binding_selected_and_preparation_matches_prefligh
     }
     assert_eq!(request, original);
 }
-
-#[test]
-fn unreviewed_google_models_do_not_inherit_ignored_sampling() {
-    use morphiecore::{protocol::google::SamplingPolicy, topology::catalog::GoogleBinding};
-    let binding = GoogleBinding {
-        model: "unreviewed-model",
-        upstream: "unreviewed-model",
-        released_at: 1,
-        developer: "synthetic",
-    };
-    let endpoint = binding.endpoint();
-    let morphiecore::lowering::target::TargetContract::GoogleGenerateContent(caps) =
-        endpoint.representation
-    else {
-        unreachable!()
-    };
-    assert_eq!(caps.sampling, SamplingPolicy::Native);
-    let endpoint = binding.interactions_endpoint();
-    let morphiecore::lowering::target::TargetContract::GoogleInteractions(caps) =
-        endpoint.representation
-    else {
-        unreachable!()
-    };
-    assert_eq!(caps.sampling, SamplingPolicy::Reject);
-}

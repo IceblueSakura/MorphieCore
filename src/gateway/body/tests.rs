@@ -171,7 +171,6 @@ async fn observed_response(
         secret: template.secret.clone(),
         account: None,
         health: template.health.clone(),
-        cache_scope: template.cache_scope.clone(),
     });
     let mut request = entry
         .client

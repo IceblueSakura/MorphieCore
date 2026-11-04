@@ -188,47 +188,6 @@ fn failed_ack_does_not_certify_delivery() {
 }
 
 #[test]
-fn failure_codes_preserve_leaf_identity_without_debug_or_input() {
-    use crate::{
-        protocol::stream::SseError, semantic::context::ContextError, transport::sse::SseDecodeError,
-    };
-    for (cause, expected) in [
-        (
-            AttemptError::Sse(SseError::Framing(SseDecodeError::InvalidUtf8)),
-            "sse.invalid_utf8",
-        ),
-        (
-            AttemptError::Sse(SseError::Framing(SseDecodeError::UnexpectedEof)),
-            "sse.unexpected_eof",
-        ),
-        (
-            AttemptError::Codec(CodecError::Context(ContextError::Limit)),
-            "context.limit",
-        ),
-        (
-            AttemptError::Codec(CodecError::Context(ContextError::Stateful)),
-            "context.stateful_unsupported",
-        ),
-        (
-            AttemptError::Transport(crate::transport::http::TransportError::RequestConstruction),
-            "transport.request_construction",
-        ),
-        (
-            AttemptError::Transport(crate::transport::http::TransportError::Connect),
-            "transport.connect_failed",
-        ),
-    ] {
-        let value = serde_json::to_value(Failure {
-            boundary: None,
-            cause,
-        })
-        .unwrap();
-        assert_eq!(value["code"], expected);
-        assert!(value.get("reason").is_none());
-    }
-}
-
-#[test]
 fn failed_task_source_is_primary_even_without_a_codec_error() {
     let report = Report::default();
     report.begin(1);

@@ -9,12 +9,12 @@ This guide owns tooling, test procedures and evidence reporting. Use offline, sy
 - [Upstream test sources](#upstream-test-sources)
 - [Verification gates](#verification-gates)
   - [Offline baseline](#offline-baseline)
-  - [Telemetry ecosystem checks](#telemetry-ecosystem-checks)
+  - [Diagnostics behavior checks](#diagnostics-behavior-checks)
   - [Reusable Generation sessions](#reusable-generation-sessions)
   - [SDK loopback gate](#sdk-loopback-gate)
   - [Reverse-proxy delivery gate](#reverse-proxy-delivery-gate)
   - [Documentation checks](#documentation-checks)
-- [Coverage and pruning](#coverage-and-pruning)
+- [Test selection and pruning](#test-selection-and-pruning)
 - [Online acceptance](#online-acceptance)
   - [Production-profile acceptance](#production-profile-acceptance)
   - [Installed-client default characterization](#installed-client-default-characterization)
@@ -44,14 +44,13 @@ For Cargo updates, check current non-yanked stable releases before editing exact
 
 | Entry | Scope and execution |
 |---|---|
-| `src/**` unit tests | Owner-local contracts, including private state, credential lifecycle and synthetic Router regressions |
+| `src/**` unit tests | Product invariants at their responsible owner, credential lifecycle and synthetic Router regressions |
 | `src/bin/upstream/tests.rs` | Manual diagnostic target/wire contracts and credential-manager refresh checks; no real upstream requests |
 | `tests/semantic.rs` → `semantic/` | Offline IR, codecs, lowering, replay and history editing |
 | `tests/transport.rs` → `transport/` | Offline SSE framing/decoding, candidate preparation and Attempt/delivery lifecycle |
 | `tests/credential.rs` → `credential/` | Offline credential CLI checks with synthetic stores/authorities; Unix-gated |
 | `tests/gateway.rs` → `gateway/` | Offline Router → synthetic Provider and isolated binary startup |
 | `tests/process.rs` → `process/` | Offline child I/O limits, timeout, cancellation and descendant cleanup |
-| `tests/telemetry.rs` → `telemetry/` | Test-only tracing/OTel correlation, sampling, aggregation, cancellation, bounded batch/export failure and loopback OTLP; no production instrumentation |
 | `tests/sdk_loopback.rs` → `sdk/` | Pinned Python SDK loopback scenarios; ignored by default |
 | `tests/clients.rs` → `clients/` | Ignored by default, Unix; explicitly selected installed clients against a synthetic CLI gateway |
 | `tests/{sdk,clients,gateway}/test_*.py` | Separate Python unittest discovery for SDK oracles, installed-client oracles and OpenAPI schemas |
@@ -135,7 +134,7 @@ Run selected external code without private configuration or credentials, against
 
 For an operation-level extension, record which upstream cases exercise which local boundary and how to run them. Inspect mock-server assumptions and select raw fixtures or actual clients accordingly; SDK tests against their own generated mocks are not independent response oracles. Reuse source management and fixture readers, not a mandatory SSE representation: binary bodies, multipart inputs and job states stay in their responsible test layers.
 
-Replace handwritten fixtures or duplicate test logic only after transferring their useful assertions to checks with equivalent boundary and gate coverage. A connected or ignored SDK test does not automatically replace a default offline check. Preserve small diagnostic, IR-specific and safety cases; follow [coverage and pruning](#coverage-and-pruning) for a deliberate removal pass.
+Keep handwritten fixtures and local IR checks only when they challenge a concrete product or protocol assumption. Delete implementation restatements and their exclusive scaffolding rather than moving them into another suite. A connected or ignored SDK test does not automatically replace an independently valuable offline boundary check. Follow [test selection and pruning](#test-selection-and-pruning).
 
 ### SSE layers
 
@@ -201,13 +200,13 @@ These checks use synthetic data only. Do not use real Providers or private confi
 
 Account-recovery owner checks use `cargo test --locked --offline --lib gateway::body::tests::recovery`, `gateway::generation::intake::tests`, `provider::errors::tests` and `transport::http::tests::wire_failures_distinguish` as separate selectors. They exercise real loopback HTTP with controlled response bodies/clocks, strict finite failure evidence, native failed-envelope accounting and positive interruption versus TLS/protocol/timeout facts. Source content must survive the client projection before it ends the short recovery clock; valid no-content terminals end that clock without authorizing publication before EOF. Production-loader account checks separately cover a long primary hint with a ready backup. SDK consumers and installed-Agent recovery remain separate gates.
 
-The committed configuration templates are exercised by `cargo test --locked --offline --lib committed_configuration_templates`: copy them into private test storage, prove unchanged Agent-key placeholders reject, replace only those keys with synthetic values, then load each model variant through the real startup path with test-owned named accounts and managed credentials. Capture and diagnostics stay disabled. This is configuration/catalog validation, not Provider access. Validate the Nginx template with `nginx -t` after replacing its listen address with a test-owned unprivileged loopback port and using temporary certificate/log/body paths. Do not assume configuration testing cannot open files or attempt socket binds; never start or reload a host service as part of this check.
+Configuration checks exercise private-file admission and real startup failures rather than snapshotting committed examples or activated catalog sizes. Validate the Nginx template with `nginx -t` after replacing its listen address with a test-owned unprivileged loopback port and using temporary certificate/log/body paths. Configuration validation may open files or bind sockets; never start or reload a host service as part of this check.
 
-Generation Text discovery has focused wire, source-domain projection, common-subset, independent context/input/output, unknown-limit, image placement/detail, bounds, authentication and privacy checks in `cargo test --locked --offline --lib gateway::tests::models::`. `protocol::model_limits` and `configured_accounts_preserve_order_targets_limits_and_replay_isolation` cover narrowing and invalidation after model/origin/path changes. Synthetic CLI startup checks confirm Generation-only publication without upstream calls; `tests/gateway/test_openapi_schema.py` validates active shapes and schema-only task branches, including rejection of those branches by the active list/detail schema.
+Generation Text discovery has focused wire, source-domain projection, common-subset, independent context/input/output, unknown-limit, image placement/detail, bounds, authentication and privacy checks in `cargo test --locked --offline --lib gateway::tests::models::`. `protocol::model_limits` and `configured_accounts_preserve_order_targets_limits_and_replay_isolation` cover narrowing and invalidation after model/origin/path changes. Synthetic CLI startup checks confirm Generation-only publication without upstream calls; `tests/gateway/test_openapi_schema.py` validates public schema/reference integrity and protocol constraints without a second hypothetical discovery corpus.
 
 Pi integration is maintained by the workstation's provider extension. Use disposable, test-owned state to load both its source and generated instrumented entry through the installed Pi loader, refresh with synthetic discovery data, and intercept native Responses requests. Check discovered-versus-fallback capacities, offline/failed-refresh budget narrowing, excluded cached protocols/operations/origins, the native minimum output cap, user/tool-result images with explicit auto detail, task exclusions and cancellation. Do not patch Pi, inspect personal auth/model caches or call real Providers for this offline gate. Existing SDK Models consumption remains a standard-API regression gate; neither metadata publication nor synthetic Pi payload checks certify real Provider effectiveness.
 
-Request-conversion reuse has owner-local checks in `cargo test --locked --offline --lib gateway::runtime::tests` and `cargo test --locked --offline --lib gateway::routing::prefix_cache::tests`. They cover retained versus recomputed bytes/evidence, bound candidate and credential pairing after reordering, unchanged eligibility when the retention budget exhausts, spare evidence capacity, and ordinary reserved-key schema objects through actual hit/miss paths. Prefix checks distinguish eligible lookup materialization from direct, disabled, explicit and already-hinted paths. Existing affinity, credential-recovery, cancellation and production-construction checks exercise the surrounding exchange path, including invalidation by the test-only streaming override. [Architecture](architecture.md#request-conversion-reuse) owns the retention contract; [dated findings](refs/2026-10-27-client-ir-boundaries.md#request-conversion-reuse-2026-10-30) record the reconstruction counterexamples and measured-size/lazy-prefix simplification.
+Request-conversion reuse has owner-local checks in `cargo test --locked --offline --lib gateway::runtime::tests` and `cargo test --locked --offline --lib gateway::routing::prefix_cache::tests`. They cover retained versus recomputed bytes/evidence, bound candidate and credential pairing after reordering, unchanged eligibility when the retention budget exhausts, spare evidence capacity, and ordinary reserved-key schema objects through actual hit/miss paths. Prefix checks retain account/target isolation and unchanged forwarded bodies rather than internal hash-placement assertions. Existing affinity, credential-recovery, cancellation and production-construction checks exercise the surrounding exchange path, including invalidation by the test-only streaming override. [Architecture](architecture.md#request-conversion-reuse) owns the retention contract; [dated findings](refs/2026-10-27-client-ir-boundaries.md#request-conversion-reuse-2026-10-30) record the reconstruction counterexamples and measured-size/lazy-prefix simplification.
 
 Focused examples:
 
@@ -222,28 +221,11 @@ cargo test --locked --offline --test process
 
 Automatic OAuth renewal is verified via unit tests for eligibility, identity pinning, exclusivity, deduplication, cooldown, deadlines, and listener cancellation.
 
-### Telemetry ecosystem checks
+### Diagnostics behavior checks
 
-MorphieCore's telemetry stack (`tracing` and OpenTelemetry) is tested offline via synthetic tracing and log events:
+Run `cargo test --locked --offline --lib gateway::diagnostics` against actual production sinks and traces. Dependency-only tracing, metric and OTLP exporter feasibility tests are removed; future exporter integration needs its own product boundary.
 
-```sh
-cargo test --locked --offline --test telemetry
-cargo tree --locked --offline -d
-```
-
-Run the target normally, not directly with `--ignored`. Its ordinary wrapper reuses the owned-child helper to run four environment-cleared checks serially, with a 45-second deadline and 64-KiB output caps. The ignored children are executed and their successful completion checked by that wrapper, not omitted from the offline baseline. Only synthetic OTEL settings enter the child; no inherited credential, proxy, resource or exporter environment is used.
-
-The in-memory SDK checks assert exact request/attempt/projection log-span attribution, one failed attempt beside one successful request, outcome-specific counters and a duration histogram. Events use the log bridge only, avoiding duplicate trace events. `skip_all` and target filtering exclude synthetic payload/error sentinels; this is not automatic redaction of arbitrary approved fields. The default log bridge does not copy request fields from tracing spans, so independently queried log fields need explicit recording. Scoped dispatch must remain active during span destruction and registry parent cleanup; the test retains the attempt owner handle through task join and releases it under that dispatch.
-
-The abort check runs with sampling on and off: logs remain available, an unfinished worker closes its span without a fabricated terminal event, and span closure alone classifies neither success nor cancellation. This is a synthetic instrumented worker, not a gateway/SSE-body acceptance claim. Existing gateway publication, EOF, body-drop and cancellation tests retain that authority.
-
-The loopback receiver observes actual protobuf HTTP export, identical retry bodies after one `503`, non-retryable `400`, timeout and pre-HTTP oversize rejection. Endpoint builder precedence is exercised against a synthetic environment endpoint; headers reveal a limitation: the reviewed SDK merges a synthetic environment-only header even with explicit builder headers. Content-type/bytes and response handling are checked, not backend ingestion, indexing, TLS, full protobuf field decoding or retained queries. No listener or Provider exists outside test-owned loopback.
-
-A gated test exporter deterministically holds one batch: two queued records remain, six overflow records drop, and the separate local shutdown summary exposes that count without re-exporting SDK health. The first warning inside the tracing bridge may be suppressed by reentrancy protection; it is not a reliable standalone overflow alarm. Shutdown timeout ends the caller's wait, not the exporter; explicit release reaches exporter shutdown afterward. Stable runtime drop/failure health and configuration isolation still need production integration. A later successful empty flush is not recovery of a failed batch, and neither flush nor shutdown is a durable-delivery receipt.
-
-Domain-evidence checks remain separate from this ecosystem prototype. `execution::report::tests` covers complete/partial/abandoned batches, empty-effect progress, association saturation, failure preservation and successful recovery. Existing delivery/accounting tests check individual exact/estimated counters and source immutability; protocol tests compare closed shape/carrier/resource causes rather than deleted free-form labels. Gateway checks retain decoder-initialization failures, source/public-status separation, cancellation and validated EOF. Run the normal offline baseline and all 16 connected SDK scenarios after this migration. Standard response/retrieval comparisons ignore the optional `morphiecore` field; they do not establish diagnostic parity or SDK retention.
-
-Production local wiring has separate owner-local checks: `cargo test --locked --offline --lib gateway::diagnostics`. They inspect actual JSONL records from scoped SDK exporters: one structured report, request/attempt trace IDs, recovered statuses without phantom interruption, independent runtimes, body-abort/provider ownership, allowlisted events and exact wide-counter encoding. An ordinary wrapper runs its ignored configuration child through the owned-child helper with a cleared environment, synthetic hostile OTEL settings, a 25-second deadline and 32-KiB output caps; do not run that child manually with inherited environment. Existing private-file, queue/disconnection and write/flush-failure tests remain authoritative. Local file checks do not prove OTLP ingestion, Collector query retention, full-process power-loss durability or a general detached-worker shutdown barrier.
+These checks inspect actual JSONL records from scoped SDK exporters: one structured report, request/attempt trace IDs, recovered statuses without phantom interruption, independent runtimes, body-abort/provider ownership, allowlisted events and exact wide-counter encoding. An ordinary wrapper runs its ignored configuration child through the owned-child helper with a cleared environment, synthetic hostile OTEL settings, a 25-second deadline and 32-KiB output caps; do not run that child manually with inherited environment. Existing private-file, queue/disconnection and write/flush-failure tests remain authoritative. OTLP/backend integration and process durability remain separate acceptance boundaries.
 
 ### Python checks
 
@@ -450,24 +432,17 @@ For Markdown changes, check local paths and heading anchors, then run `git diff 
 
 For OpenAPI changes, also run the [schema checks](#python-checks) and compare paths, authentication and error envelopes with the gateway code. The OpenAPI file is an API summary, not a second codec implementation.
 
-## Coverage and pruning
+## Test selection and pruning
 
-`cargo-llvm-cov` and its own package fixtures use the project's Rust toolchain and matching `llvm-tools-preview` component. The devShell exposes `llvm-cov` and `llvm-profdata` and sets `LLVM_COV`/`LLVM_PROFDATA`; no separate LLVM major selection or global installation is needed:
+Keep a test when it can falsify a product assumption, public protocol contract or concrete external failure risk. Expectations must be independent of the implementation being checked. A useful counterexample names what a user could lose: authority, data, identity, an explicit guarantee, bounded resources or an honest terminal result.
 
-```sh
-nix develop --command cargo llvm-cov --locked --offline --lcov --output-path <out>.lcov
-```
+Aggressively delete implementation-derived expectations, getter/setter and assembly checks, catalog/example snapshots, third-party self-tests and redundant permutations. Remove their exclusive helpers, fixtures, features and dependencies too. Do not relocate low-value assertions or invent replacements to preserve test counts. Clear cases should be deleted without a mandatory inventory, coverage experiment or mutation framework.
 
-When measuring coverage changes, use the same test selection before and after, and keep reports under ignored `testdata/reports/`. A run leaves startup-test `default_*.profraw` files in the repository root; remove them afterwards. `--json --output-path testdata/reports/coverage.json` exports machine-readable file summaries. Report the scope precisely: an aggregate of `src/` also includes unit tests embedded there; focused production-only modules are a clearer measure for local changes. Inspect uncovered paths for missing invariants before adding tests. Do not force defensive unreachable branches or count generated cases as separate contracts.
+Preserve direct evidence for credential/auth isolation, trusted origins, strict JSON and resource bounds, cancellation/release, replay identity and terminal honesty. Keep independent wire→IR / IR→wire checks and connected SDK/Agent workflows at their responsible boundaries. A lower-level implementation test earns no exemption merely because it is called a regression.
 
-For a pruning pass:
+Run the affected behavior gates and the offline baseline; check SDK/Agent boundaries when their drivers change. Judge completion by the removed maintenance burden and surviving product hypotheses, not line coverage, percentages or test counts. Coverage tooling remains available for optional diagnosis, but coverage measurements/comparisons are not required for pruning or used as execution status.
 
-1. Record `src/` line coverage before changes.
-2. Build instrumented binaries using `cargo llvm-cov show-env`.
-3. Run each selected test with `--exact` and export its coverage.
-4. Compare coverage after pruning and inspect every newly uncovered line.
-
-Do not remove safety invariant tests solely because their code paths are exercised by other tests.
+**Verified 2026-11-04:** the pre-AR5 pruning passes the offline baseline, pinned-asset verification, all retained upstream/SDK/client/OpenAPI Python checks, connected SDK loopback and installed-Agent synthetic workflows with pi 1.5.0 / OpenCode 2.0.32. No coverage was collected and no real Provider or private configuration was used. The native-default blockers remain recorded in the [lane table](#installed-client-synthetic-recovery).
 
 ## Online acceptance
 

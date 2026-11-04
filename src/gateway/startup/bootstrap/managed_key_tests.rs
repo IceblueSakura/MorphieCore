@@ -92,7 +92,7 @@ fn bootstrap_loads_selected_key_and_requires_reactivation_after_rotation() {
         entry.client.as_openai().unwrap().1.replay_origin,
         next.client.as_openai().unwrap().1.replay_origin
     );
-    assert_ne!(candidate.cache_scope, next.candidates[0].cache_scope);
+    assert_ne!(candidate.cache_scope(), next.candidates[0].cache_scope());
     let mut replacement = next.candidates[0].endpoint.clone();
     replacement
         .representation

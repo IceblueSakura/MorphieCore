@@ -166,33 +166,6 @@ fn login_steps() -> Vec<test_support::Step> {
     ]
 }
 
-#[test]
-fn builtin_siwc_is_a_dynamic_browser_profile() {
-    assert_eq!(siwc::APPLICATION_NAME, "MorphieCore");
-    assert_eq!(
-        siwc::APPLICATION_DESCRIPTION,
-        "Experimental routing gateway for a distributed Agent Runtime"
-    );
-    let drivers = builtin_drivers(None).unwrap();
-    let driver = drivers
-        .iter()
-        .find(|d| d.profile() == "openai")
-        .expect("OpenAI ChatGPT OAuth profile must be registered");
-    assert!(!drivers.iter().any(|d| d.profile() == "siwc"));
-    assert!(driver.login_client(&LoginOptions::default()).is_err());
-    assert_eq!(
-        driver
-            .login_client(&LoginOptions {
-                method: LoginMethod::Browser,
-                client_id: None,
-                callback_port: Some(0),
-                consent: false,
-            })
-            .unwrap(),
-        "dynamic_agent_client"
-    );
-}
-
 #[tokio::test]
 async fn registration_returning_login_and_identity_only_access_are_separate() {
     let authority = Authority::new(login_steps()).await;

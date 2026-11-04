@@ -135,19 +135,6 @@ async fn ingress(runtime: Arc<Runtime>, request: Request) -> Result<Response, Ap
     )
     .await
 }
-async fn produce(
-    runtime: Arc<Runtime>,
-    entry: Arc<BoundTranscription>,
-    prepared: crate::execution::task::PreparedTaskRequest,
-    deadline: Instant,
-    lane: &body::Lane<'_>,
-    trace: &mut Trace,
-) -> Result<(), ApiError> {
-    trace.begin_candidate(1);
-    let result = produce_one(&runtime, &entry, prepared, deadline, lane, trace).await;
-    trace.end_candidate(result.as_ref().err().map(|e| e.diagnostic_code()), false);
-    result
-}
 async fn produce_one(
     runtime: &Runtime,
     entry: &BoundTranscription,
@@ -172,10 +159,7 @@ async fn produce_one(
     crate::semantic::value::json_size(&projected.body, runtime.limits.response_bytes)
         .map_err(|_| ApiError::upstream())?;
     let bytes = serde_json::to_vec(&projected.body).map_err(|_| ApiError::upstream())?;
-    let mut lifecycle = crate::execution::Lifecycle::new();
     body::send_frame(lane, bytes.into(), trace).await?;
-    lifecycle.commit().map_err(|_| ApiError::upstream())?;
-    lifecycle.terminal().map_err(|_| ApiError::upstream())?;
     Ok(())
 }
 pub(in crate::gateway) async fn receive(
@@ -198,20 +182,21 @@ struct Exchange {
     prepared: crate::execution::task::PreparedTaskRequest,
 }
 impl body::Produce for Exchange {
-    fn produce(
+    async fn produce(
         self,
         _: &crate::gateway::Limits,
         deadline: Instant,
         lane: &body::Lane<'_>,
         trace: &mut Trace,
-    ) -> impl std::future::Future<Output = Result<(), ApiError>> + Send {
-        produce(
-            self.runtime,
-            self.entry,
-            self.prepared,
-            deadline,
-            lane,
-            trace,
-        )
+    ) -> Result<(), ApiError> {
+        let Self {
+            runtime,
+            entry,
+            prepared,
+        } = self;
+        trace.begin_candidate(1);
+        let result = produce_one(&runtime, &entry, prepared, deadline, lane, trace).await;
+        trace.end_candidate(result.as_ref().err().map(|e| e.diagnostic_code()), false);
+        result
     }
 }

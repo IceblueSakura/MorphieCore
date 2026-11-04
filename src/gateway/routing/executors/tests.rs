@@ -129,13 +129,13 @@ fn stale_same_target_completion_and_lookups_do_not_renew_idle_ttl() {
         state.order(Some(&stale), &mut choices, now + Duration::from_secs(13)),
         "affinity"
     );
-    assert_eq!(choices[0].cache_scope, a.cache_scope);
+    assert_eq!(choices[0].cache_scope(), a.cache_scope());
     let mut choices = [Arc::new(b), Arc::new(a)];
     assert_eq!(
         state.order(Some(&stale), &mut choices, now + Duration::from_secs(14)),
         "compiled"
     );
-    assert_eq!(choices[0].cache_scope.as_str(), "synthetic-b");
+    assert_eq!(choices[0].cache_scope().as_str(), "synthetic-b");
 }
 
 #[test]
@@ -163,7 +163,7 @@ fn account_affinity_is_agent_model_and_explicit_carrier_scoped() {
             state.order(observed.as_ref(), &mut choices, now),
             "compiled"
         );
-        assert_eq!(choices[0].cache_scope, b.cache_scope);
+        assert_eq!(choices[0].cache_scope(), b.cache_scope());
     }
 }
 
@@ -225,7 +225,7 @@ fn concurrent_absent_observers_cannot_overwrite_the_first_successful_binding() {
         &mut ordered,
         now + Duration::from_secs(1),
     );
-    assert_eq!(ordered[0].cache_scope.as_str(), "synthetic-b");
+    assert_eq!(ordered[0].cache_scope().as_str(), "synthetic-b");
 }
 
 fn candidates() -> (BoundCandidate, BoundCandidate) {
@@ -239,7 +239,8 @@ fn candidates() -> (BoundCandidate, BoundCandidate) {
         .clone();
     a.health = Scopes::bind(&[0; 32], &a.endpoint, "synthetic-a");
     let mut b = a.clone();
-    b.cache_scope = crate::semantic::value::ReplayOrigin::new("synthetic-b").unwrap();
+    b.endpoint.bound_replay_scope =
+        Some(crate::semantic::value::ReplayOrigin::new("synthetic-b").unwrap());
     b.health = Scopes::bind(&[0; 32], &b.endpoint, "synthetic-b");
     (a, b)
 }
@@ -683,7 +684,7 @@ fn successful_failover_sticks_and_older_completion_cannot_restore_failure() {
         &mut ordered,
         now + Duration::from_secs(1),
     );
-    assert_eq!(ordered[0].cache_scope.as_str(), "synthetic-b");
+    assert_eq!(ordered[0].cache_scope().as_str(), "synthetic-b");
     state.order(None, &mut ordered, now + Duration::from_secs(1)); // stable input order when no preference
-    assert_eq!(ordered[0].cache_scope.as_str(), "synthetic-b");
+    assert_eq!(ordered[0].cache_scope().as_str(), "synthetic-b");
 }

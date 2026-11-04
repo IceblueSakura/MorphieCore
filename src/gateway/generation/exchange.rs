@@ -776,7 +776,8 @@ async fn bound_cooldown_wait_is_single_cancellable_and_deadline_clipped() {
         let a = runtime.entries.values().next().unwrap().candidates[0].clone();
         let mut b = a.as_ref().clone();
         b.health = Scopes::bind(&[0; 32], &b.endpoint, "synthetic-secondary");
-        b.cache_scope = crate::semantic::value::ReplayOrigin::new("synthetic-secondary").unwrap();
+        b.endpoint.bound_replay_scope =
+            Some(crate::semantic::value::ReplayOrigin::new("synthetic-secondary").unwrap());
         let b = Arc::new(b);
         let now = Instant::now();
         let initial = runtime
@@ -824,11 +825,11 @@ async fn bound_cooldown_wait_is_single_cancellable_and_deadline_clipped() {
                     panic!("{mode}: unexpected wait")
                 };
                 assert_eq!(
-                    selected[0].candidate.cache_scope,
+                    selected[0].candidate.cache_scope(),
                     if mode == "ready" {
-                        a.cache_scope.clone()
+                        a.cache_scope()
                     } else {
-                        b.cache_scope.clone()
+                        b.cache_scope()
                     }
                 );
                 assert_eq!(Instant::now(), now);
@@ -850,11 +851,11 @@ async fn bound_cooldown_wait_is_single_cancellable_and_deadline_clipped() {
             } else {
                 let selected = result.unwrap();
                 assert_eq!(
-                    selected[0].candidate.cache_scope,
+                    selected[0].candidate.cache_scope(),
                     if matches!(mode, "probe_race" | "extended") {
-                        b.cache_scope.clone()
+                        b.cache_scope()
                     } else {
-                        a.cache_scope.clone()
+                        a.cache_scope()
                     }
                 );
                 assert_eq!(Instant::now() - now, Duration::from_secs(5));

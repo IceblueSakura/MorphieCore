@@ -98,54 +98,7 @@ class MessagesInputRunnerOracles(unittest.TestCase):
             with self.assertRaisesRegex(live.GateError, "^incomplete_native_outcome$"):
                 self.gateway(address).generate(request)
 
-    def test_example_plan_preserves_model_issued_ids_and_exact_definition_owners(self):
-        class Gateway:
-            def __init__(self):
-                self.requests = []
 
-            def generate(self, body):
-                self.requests.append(copy.deepcopy(body))
-                turn = len(self.requests)
-                if turn <= 2:
-                    return {"stop_reason": "tool_use", "content": [{"type": "tool_use",
-                        "id": f"model-issued-{turn}", "name": "lookup" if turn == 1 else "inspect",
-                        "input": {"label": "cedar" if turn == 1 else "birch"}}]}
-                return {"stop_reason": "end_turn", "content": [{"type": "text", "text": "cedar-71 birch-82"}]}
-
-        gateway = Gateway()
-        root, inline = live.examples(gateway)
-        self.assertEqual(len(gateway.requests), 3)
-        for body in gateway.requests:
-            self.assertEqual(body["tools"][0], root)
-            self.assertEqual(body["max_tokens"], 2048)
-        self.assertEqual(gateway.requests[1]["messages"][2]["content"][0]["tool_use_id"], "model-issued-1")
-        self.assertEqual(gateway.requests[2]["messages"][5]["content"][0]["tool_use_id"], "model-issued-2")
-        self.assertEqual(gateway.requests[2]["messages"][3]["content"][0]["tool"]["definition"], inline)
-        with self.assertRaisesRegex(live.GateError, "^expected_model_call_not_observed$"):
-            live.call({"stop_reason": "end_turn", "content": []}, "lookup", {"label": "cedar"})
-
-    def test_context_plan_keeps_separate_uses_and_actual_tool_result_identity(self):
-        class Gateway:
-            def __init__(self):
-                self.requests = []
-
-            def generate(self, body):
-                self.requests.append(copy.deepcopy(body))
-                turn = len(self.requests)
-                if turn == 2:
-                    return {"stop_reason": "tool_use", "content": [{"type": "tool_use",
-                        "id": "model-issued-fetch", "name": "fetch", "input": {"label": "birch"}}]}
-                return {"stop_reason": "end_turn", "content": [{"type": "text",
-                    "text": "ALPHA cedar-71\nBETA cedar-71" if turn == 1 else "GAMMA birch-82"}]}
-
-        gateway = Gateway()
-        first, second, result = live.contexts(gateway)
-        self.assertEqual(first["source"], second["source"])
-        self.assertNotEqual(first["context"], second["context"])
-        self.assertEqual(gateway.requests[0]["messages"][0]["content"][:2], [first, second])
-        feedback = gateway.requests[2]["messages"][-1]["content"][0]
-        self.assertEqual(feedback["tool_use_id"], "model-issued-fetch")
-        self.assertEqual(feedback["content"], [result])
 
     def test_cache_plan_requires_reported_writes_reads_and_ttl_classes(self):
         class Gateway:

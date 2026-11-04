@@ -38,6 +38,7 @@ fn interface_preference_uses_qualified_primary_native_contract_without_loss_rank
         .endpoint(&crate::topology::EndpointId::new("fixture-responses").unwrap())
         .unwrap()
         .clone();
+    second.endpoint.bound_replay_scope = entry.candidates[0].endpoint.bound_replay_scope.clone();
     entry.candidates.push(Arc::new(second));
     let preferred = inspect(vec![(ClientProtocol::Chat, entry.clone())]);
     assert_eq!(preferred["protocol"], "chat_completions");
@@ -77,6 +78,7 @@ fn interface_preference_uses_qualified_primary_native_contract_without_loss_rank
     entry.candidates.truncate(1);
     let mut candidate = entry.candidates[0].as_ref().clone();
     candidate.endpoint = crate::topology::catalog::GOOGLE_BINDINGS[0].endpoint();
+    candidate.endpoint.bound_replay_scope = entry.candidates[0].endpoint.bound_replay_scope.clone();
     entry.candidates = vec![Arc::new(candidate)];
     assert_eq!(
         inspect(vec![(ClientProtocol::Chat, entry)])["state"],
@@ -503,6 +505,7 @@ fn text_reasoning_uses_source_scopes_and_never_advertises_noop_activation_or_def
         .clone();
     let mut candidate = entry.candidates[0].as_ref().clone();
     candidate.endpoint = crate::topology::catalog::GOOGLE_BINDINGS[0].endpoint();
+    candidate.endpoint.bound_replay_scope = entry.candidates[0].endpoint.bound_replay_scope.clone();
     entry.candidates = vec![Arc::new(candidate.clone())];
     let value = descriptor(entry.clone());
     assert_eq!(value["token_limits"]["max_output_tokens"], 65536);
@@ -525,6 +528,7 @@ fn text_reasoning_uses_source_scopes_and_never_advertises_noop_activation_or_def
             .is_some_and(|values| values.contains(&json!("adaptive")))
     );
     candidate.endpoint = crate::topology::catalog::MESSAGES_BINDINGS[0].endpoint();
+    candidate.endpoint.bound_replay_scope = entry.candidates[0].endpoint.bound_replay_scope.clone();
     entry.candidates = vec![Arc::new(candidate)];
     let value = descriptor(entry);
     assert_eq!(value["token_limits"]["max_output_tokens"], Value::Null);
@@ -591,6 +595,7 @@ fn image_domains_preserve_placement_detail_and_candidate_intersection() {
         .endpoint(&crate::topology::EndpointId::new("fixture-responses").unwrap())
         .unwrap()
         .clone();
+    responses.endpoint.bound_replay_scope = entry.candidates[0].endpoint.bound_replay_scope.clone();
     let responses = Arc::new(responses);
     entry.candidates = vec![responses.clone()];
     let value = descriptor(entry.clone());
