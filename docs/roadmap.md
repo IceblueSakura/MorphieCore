@@ -132,6 +132,8 @@ The [accepted direction](architecture.md#ordered-tool-availability) covers three
 
 **Stage placement selected; implementation pending.** The core belongs before AR5, because it repairs the existing Generation tool contract rather than adding Stage-4 APIs or Stage-5 tool execution. Stage placement does not activate unselected loss policies. Use existing semantic types, validation, disposition tables, request/delivery projection, fidelity, strict JSON and SDK/Agent harnesses. No new dependency, persistent registry, executor, general schema simplifier or nine pair-specific adapters. First make one native Responses addition/function loop work end-to-end, then grow shared rules across the remaining cells.
 
+**S3-T0 in progress (2026-11-04):** [Current stable source qualification](refs/2026-10-27-client-ir-boundaries.md#tool-contract-qualification-2026-11-04) confirms the native batch, source-cardinality and strictness distinctions. The [concrete first-package dispositions](api-expansion-design.md#first-package-dispositions) await tool-set content-loss selection; collision-dependent transformations and non-developer returned-addition replay stay isolated. The actual pi Chat strict-read lane additionally needs an explicit DeepSeek strict-endpoint/binding qualification decision. No new loss or endpoint is activated by this preparation.
+
 #### Stage-3 core packages
 
 S3-T0 → S3-T1 → S3-T2 → S3-T3 → S3-T4 is the core dependency order. Verification accompanies each slice; S3-T4 consolidates the connected exit rather than postponing tests. Identifiers are planning labels only, never module or test names.

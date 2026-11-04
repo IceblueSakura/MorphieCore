@@ -5,6 +5,7 @@ Checked **2026-10-27** using public GitHub release metadata and isolated release
 ## Contents
 
 - [Source selection and licenses](#source-selection-and-licenses)
+- [Tool-contract release recheck (2026-11-04)](#tool-contract-release-recheck-2026-11-04)
 - [How to read an SDK](#how-to-read-an-sdk)
 - [OpenAI](#openai)
 - [Anthropic](#anthropic)
@@ -27,6 +28,19 @@ These were the latest non-prerelease releases returned by GitHub on the observat
 All six root licenses are **Apache-2.0**. Anthropic retains `LICENSE-MIT` for previously MIT-published versions and applicable pre-change contributions; this does not make all new code dual-licensed. Check the actual file and notices when importing an asset. Dependency/vendor licenses were not audited.
 
 OpenAI's intervening releases add delegation/cache controls and broaden Decision types; Node 7.44.0 explicitly notes a typing break. The latest pair adds a model identifier. Anthropic's intervening releases add threads/reports, tool-runner changes and beta-query cleanup. These are review inputs, not automatic admission of new APIs. Use [Development](../development.md#source-links-and-updates) for any baseline promotion.
+
+## Tool-contract release recheck (2026-11-04)
+
+GitHub's latest non-draft, non-prerelease metadata and resolved release tags identify the following current stable sources. This focused inspection reads tool/history types, not every intervening API change. The regression source/asset locks and installed SDK packages remain independent; implementation must integrate selected directional expectations through the existing asset/SDK process.
+
+| Source | Stable release | Immutable tool-contract source |
+|---|---|---|
+| OpenAI Python | [3.45.0](https://github.com/openai/openai-python/releases/tag/v3.45.0) | [`9b3458a`](https://github.com/openai/openai-python/tree/9b3458a2ef563493111a0a4265d4e9e7e14fe840/src/openai/types) |
+| OpenAI Node | [7.50.0](https://github.com/openai/openai-node/releases/tag/v7.50.0) | [`42563fe`](https://github.com/openai/openai-node/blob/42563fe08083ed7af6feba046063e3100fa7ef50/src/resources/responses/responses.ts) |
+| Anthropic Python | [2.4.0](https://github.com/anthropics/anthropic-sdk-python/releases/tag/v2.4.0) | [`5752c13`](https://github.com/anthropics/anthropic-sdk-python/tree/5752c132041af71055584632caab5ca2325cae5e/src/anthropic/types) |
+| Anthropic TypeScript | [1.4.0](https://github.com/anthropics/anthropic-sdk-typescript/releases/tag/sdk-v1.4.0) | [`ea8d7de`](https://github.com/anthropics/anthropic-sdk-typescript/blob/ea8d7de0e47614ae71044fbf7bf12041318ba37e/src/resources/messages/messages.ts) |
+
+Both current OpenAI SDKs retain developer-only input `additional_tools`, optional-nullable input item ID, required output item ID and eight output roles. Input function-result status remains optional-nullable; function-call input and result-output status do not acquire that nullability. Current Anthropic named/any choice types still document exactly one call only with `disable_parallel_tool_use:true`. These shapes agree with the corresponding earlier regression references; they do not resolve collision precedence, output-role replay or strict-schema grammar accounting. The [tool-contract qualification](2026-10-27-client-ir-boundaries.md#tool-contract-qualification-2026-11-04) owns those consequential distinctions and source-access limits.
 
 ## How to read an SDK
 

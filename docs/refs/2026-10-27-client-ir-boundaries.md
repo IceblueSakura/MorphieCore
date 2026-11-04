@@ -29,6 +29,7 @@ Reviewed on **2026-10-27** at **`1b4f828`**, after the five-slice request repair
 - [Native-default installed-Agent characterization (2026-11-03)](#native-default-installed-agent-characterization-2026-11-03)
 - [Tool-protocol root-cause audit (2026-11-04)](#tool-protocol-root-cause-audit-2026-11-04)
 - [Nine-direction tool assessment (2026-11-04)](#nine-direction-tool-assessment-2026-11-04)
+- [Tool-contract qualification (2026-11-04)](#tool-contract-qualification-2026-11-04)
 
 ## Scope and evidence
 
@@ -724,3 +725,34 @@ The [proposed matrix and loss policies](../api-expansion-design.md#three-protoco
 | Completed `status:null` input result versus required output terminal status | Global null normalization weakens the wrong boundary; input-only documented normalization remains valid |
 
 The nine ordinary function loops can be verified using existing SDK/gateway harnesses without nine converters or a new test framework. Advanced families need distinct directional checks rather than every permutation. Source-based uncertainty about collision precedence, namespace selection, returned-role replay and custom streams remains explicit; synthetic fixtures cannot establish unknown real Provider behavior. Missing-annotations repair remains postponed.
+
+## Tool-contract qualification (2026-11-04)
+
+Rechecked the shared owners at **`a22cf0d`** and the [current stable SDK release sources](2026-10-27-official-sdk-sources.md#tool-contract-release-recheck-2026-11-04). This qualifies the first tool package; it does not select a new content loss, activate an endpoint or establish Provider acceptance. [Design](../api-expansion-design.md#first-package-dispositions) owns the proposed dispositions.
+
+### Primary-source access and contracts
+
+The ordinary OpenAI page extractor returned 404 and the Claude extractor returned regional-unavailability pages. Direct, bounded reads of the official `.md` endpoints below succeeded. Their actual text, not those failed fetches or search excerpts, supports these observations:
+
+| Primary source | Consequential contract |
+|---|---|
+| [OpenAI ordered additions](https://developers.openai.com/api/docs/guides/tools-tool-search.md) | Developer `additional_tools` batches become available after their position; manual round-tripping preserves that position. The inspected guide gives no root/inline same-name winner or repeated-definition precedence |
+| [SIWC limitations](https://developers.openai.com/siwc/token-sharing-open-source/preview-limitations.md) | Functions/custom tools may use namespaces **or** `additional_tools`. `tool_search` and top-level programmatic calling remain unsupported. Inline direct-call continuation needs implementation and endpoint acceptance; a blanket namespace requirement contradicts the documented declaration alternative |
+| [OpenAI function calling](https://developers.openai.com/api/docs/guides/function-calling.md#tool-choice) | Required means one-or-more; forced function means exactly one. Allowed tools constrain calls without removing other definitions. `parallel_tool_calls:false` permits zero or one; combine it with the minimum-call requirement, rather than confusing the two controls |
+| [Messages parallel control](https://platform.claude.com/docs/en/agents-and-tools/tool-use/parallel-tool-use.md) | Auto plus disabled parallel use means at most one; named/any plus that flag means exactly one. Parallel use defaults on. The page also excludes named/any choice on several current models, including Sonnet 5.5: protocol carriage alone cannot qualify a model binding |
+| [Messages ordered changes](https://platform.claude.com/docs/en/build-with-claude/mid-conversation-system-messages.md) | Same-type by-value definitions replace from their position. References surface deferred or removed tools. Inline-only definitions are accepted with a first-definition cache miss. Content-bearing system messages have constrained positions and cannot separate a tool call from its result |
+| [Messages strict schemas](https://platform.claude.com/docs/en/build-with-claude/structured-outputs.md#json-schema-limitations) | Native strict supports local nonrecursive references and a simple regex subset, but does not guarantee string enum/const casing. The combined request limits remain 20 strict tools, 24 optional parameters and 16 union parameters. The inspected pages do not explain charging repeated historical versions against those limits |
+| [DeepSeek strict tools](https://api-docs.deepseek.com/guides/tool_calls.md) | Strict requires `https://api.deepseek.com/beta`, every function marked strict and server schema validation. The documented subset excludes string lengths and array item-count constraints. A standard-endpoint capability flag cannot establish this guarantee |
+
+Current Python and TypeScript OpenAI unions agree on the input/output additions role asymmetry. They provide no lawful rule to relabel a returned assistant/tool addition as developer input. Input result `status:null` has an independent normalization basis; call status and output terminal requirements stay strict. Namespace-qualified choice spelling and Chat custom SSE remain separate unresolved boundaries.
+
+### Responsible owners and implementation constraints
+
+- **Declarations versus selection:** settings validation and the Messages wire validator resolve choices from root definitions only. Shared declaration traversal must include batches and namespace leaves, while current callable availability stays distinct from historical call identity. An old call without its definition does not acquire today's schema.
+- **Batch and stream identity:** the current single-function `AddDefinition` cannot own one Responses batch containing two definitions and one wire ID. Input, returned items, added/done events and retained snapshots need the same typed owner; response-role observations cannot become instruction authority.
+- **Seriality and target checks:** implicit Messages serial choice depends on root `tools` presence; inline-only definitions can lose the guarantee. Inline feature accounting also omits `Tools`, and some SIWC/dispatch checks walk roots only. Lifting the blanket OpenAI rejection alone would leave these defects.
+- **Strictness and cardinality:** native Messages assurance is weaker than an exact-case cross-protocol assertion. Native compatibility checks and cross-protocol equivalence checks cannot share that stronger interpretation. Named selection must independently retain minimum/maximum call meaning; forcing OpenAI singleton behavior onto a repeat-capable Messages choice is not equivalent.
+- **Pi Chat target qualification:** `tests/clients/protocol_defaults.py` selects `deepseek-flash` on the standard DeepSeek Chat endpoint. Pi 1.5.0 emits actual `strict:true` for read; `src/topology/catalog/models.rs` declares no strict-tools support and `src/provider/providers.json` has no beta path. The rejection is consistent with that binding. Repair needs an explicitly qualified strict endpoint/binding, not deletion of the OpenAI schema checker, a canonical flag flip or client rewriting.
+- **Bounds:** retained bytes/items, one batch's definitions, effective available identities and compiled strict grammars are different populations. Preserve finite local bounds without treating each replayed historical version as another active tool. Unknown native grammar charging delegates to the qualified upstream; a cross-protocol strict-default inference cannot assume it fits.
+
+Collision-dependent transformations remain unqualified; collision-free native batches need not wait for an invented winner. Non-developer returned-addition replay and custom streaming stay explicit boundaries. The first-package selection must acknowledge historical schema/timing/cache loss without weakening current availability, explicit strictness, selection, call count or seriality.
