@@ -3,8 +3,8 @@ use serde_json::json;
 
 fn configuration() -> serde_json::Value {
     json!({"version":1,"providers":{"opencode-go":{"accounts":[
-        {"name":"primary","enabled":true,"credential":{"kind":"api_key","alias":"one"},"base_url":"https://relay.invalid/custom/v1/"},
-        {"name":"standby","enabled":false,"credential":{"kind":"api_key","alias":"two"}}
+        {"name":"primary","enabled":true,"credential":{"alias":"one"},"base_url":"https://relay.invalid/custom/v1/"},
+        {"name":"standby","enabled":false,"credential":{"alias":"two"}}
     ]}}})
 }
 fn parse(value: serde_json::Value) -> Result<Accounts, AccountError> {
@@ -64,16 +64,10 @@ fn account_declarations_reject_ambiguous_identity_and_untrusted_targets() {
         value["providers"]["opencode-go"]["accounts"][0]["base_url"] = json!(root);
         assert!(parse(value).is_err(), "{root}");
     }
-    let mut value = configuration();
-    value["providers"]["opencode-go"]["accounts"][0]["credential"] =
-        json!({"kind":"oauth","profile":"openai","alias":"one"});
-    assert!(parse(value).is_err());
-    assert!(parse(json!({"version":1,"providers":{"chatgpt":{"accounts":[{"name":"one","enabled":true,
-        "credential":{"kind":"oauth","profile":"openai","alias":"one"},"base_url":"https://api.openai.com/v1"}]}}})).is_err());
     assert!(
         parse(
-            json!({"version":1,"providers":{"openai":{"accounts":[{"name":"one","enabled":true,
-        "credential":{"kind":"oauth","profile":"openai","alias":"one"}}]}}})
+            json!({"version":1,"providers":{"chatgpt":{"accounts":[{"name":"one","enabled":true,
+        "credential":{"alias":"one"},"base_url":"https://api.openai.com/v1"}]}}})
         )
         .is_err()
     );

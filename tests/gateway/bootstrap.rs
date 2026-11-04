@@ -57,11 +57,15 @@ async fn fresh_account_setup_live_runner_and_diagnostics_share_the_production_lo
             .write_all(bytes)
             .unwrap();
     };
-    write("accounts.json", &serde_json::to_vec(&json!({"version":1,"providers":{"opencode-go":{
-        "recovery":{"recovery_timeout_ms":0},"accounts":(["primary","backup"].map(|name| json!({
-            "name":name,"enabled":true,"credential":{"kind":"api_key","alias":name},"base_url":origin
-        })))
-    }}})).unwrap());
+    write(
+        "accounts.json",
+        &serde_json::to_vec(&json!({"version":1,"providers":{"opencode-go":{
+            "recovery":{"recovery_timeout_ms":0},"accounts":(["primary","backup"].map(|name| json!({
+                "name":name,"enabled":true,"credential":{"alias":name},"base_url":origin
+            })))
+        }}}))
+        .unwrap(),
+    );
     let auth = |args: &[&str]| {
         let mut command = tokio::process::Command::new(env!("CARGO_BIN_EXE_morphiecore-auth"));
         command
@@ -331,8 +335,8 @@ async fn binary_bootstraps_default_home_files_and_ignores_environment_keys() {
     use std::io::Write;
     options.open(root.parent().unwrap().join("accounts.json")).unwrap().write_all(&serde_json::to_vec(&json!({
         "version":1,"providers":{
-            "deepseek":{"accounts":[{"name":"primary","enabled":true,"credential":{"kind":"api_key","alias":"one"}}]},
-            "openrouter":{"accounts":[{"name":"speech","enabled":true,"credential":{"kind":"api_key","alias":"speech"}}]}
+            "deepseek":{"accounts":[{"name":"primary","enabled":true,"credential":{"alias":"one"}}]},
+            "openrouter":{"accounts":[{"name":"speech","enabled":true,"credential":{"alias":"speech"}}]}
         }
     })).unwrap()).unwrap();
     options
@@ -515,7 +519,7 @@ async fn cli_diagnostics_rotate_recover_and_refuse_unowned_files_before_listenin
         )
         .unwrap();
     write("accounts.json",&serde_json::to_vec(&json!({"version":1,"providers":{"aliyun-dashscope-cn":{"accounts":[{
-        "name":"primary","enabled":true,"credential":{"kind":"api_key","alias":"one"},"base_url":format!("{origin}/v1")
+        "name":"primary","enabled":true,"credential":{"alias":"one"},"base_url":format!("{origin}/v1")
     }]}}})).unwrap());
     write(
         "auth.json",

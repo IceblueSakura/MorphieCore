@@ -166,7 +166,7 @@ impl Fixture {
                 .as_array_mut()
                 .unwrap()
                 .push(serde_json::json!({
-                    "name":name,"enabled":true,"credential":{"kind":"api_key","alias":name}
+                    "name":name,"enabled":true,"credential":{"alias":name}
                 }));
         }
         for &(provider, name) in oauth {
@@ -198,9 +198,12 @@ impl Fixture {
                 }))
                 .unwrap(),
             );
-            providers.insert(provider.into(),serde_json::json!({"accounts":[{
-                "name":name,"enabled":true,"credential":{"kind":"oauth","profile":profile,"alias":name}
-            }]}));
+            providers.insert(
+                provider.into(),
+                serde_json::json!({"accounts":[{
+                    "name":name,"enabled":true,"credential":{"alias":name}
+                }]}),
+            );
         }
         write_accounts(
             directory.path(),

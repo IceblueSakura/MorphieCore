@@ -1,12 +1,13 @@
 //! Named-account operations over the shared trusted account source.
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use morphiecore::{
-    account::{Account, AccountError, Accounts, CredentialRef},
+    account::{Account, AccountError, Accounts},
     credential::{
         AccountStatus, ApiKeyStatus, CredentialError, CredentialManager, LoginMethod, LoginOptions,
         LoginPrompt, LogoutOutcome, Secret, builtin_drivers, default_config_directory,
         read_private_file, resolve_store_directory,
     },
+    provider::{CredentialKind, ProviderDefinition, catalog},
 };
 use serde_json::{Value, json};
 use std::{
@@ -162,16 +163,25 @@ fn prompt(prompt: &LoginPrompt) {
         ),
     }
 }
-fn oauth(account: &Account) -> Result<(&str, &str), Error> {
-    match &account.credential {
-        CredentialRef::OAuth { profile, alias } => Ok((profile, alias)),
+fn oauth<'a>(
+    provider: &ProviderDefinition,
+    account: &'a Account,
+) -> Result<(&'static str, &'a str), Error> {
+    match provider.auth.kind() {
+        CredentialKind::OAuth(profile) => Ok((profile, &account.credential.alias)),
         _ => Err(Error::Kind),
     }
 }
-fn api_key(account: &Account) -> Result<&str, Error> {
-    match &account.credential {
-        CredentialRef::ApiKey { alias } => Ok(alias),
+fn api_key<'a>(provider: &ProviderDefinition, account: &'a Account) -> Result<&'a str, Error> {
+    match provider.auth.kind() {
+        CredentialKind::ApiKey => Ok(&account.credential.alias),
         _ => Err(Error::Kind),
+    }
+}
+fn kind_name(kind: CredentialKind) -> &'static str {
+    match kind {
+        CredentialKind::ApiKey => "api_key",
+        CredentialKind::OAuth(_) => "oauth",
     }
 }
 fn key_status(provider: &str, account: &Account, status: ApiKeyStatus) -> Value {
@@ -196,12 +206,20 @@ async fn execute(options: Options) -> Result<Value, Error> {
         {
             return Err(AccountError::Provider(provider.clone()).into());
         }
-        let declarations: Vec<_> = accounts.providers.iter().filter(|(id,_)| provider.as_ref().is_none_or(|p| p == *id))
-            .flat_map(|(id, configured)| configured.accounts.iter().map(move |account| json!({
-                "provider":id,"account":account.name,"enabled":account.enabled,
-                "kind":match account.credential {CredentialRef::ApiKey{..}=>"api_key",CredentialRef::OAuth{..}=>"oauth"},
-                "endpoint_override":account.base_url.is_some(),"selection":"route order at request boundary"
-            }))).collect();
+        let mut declarations = Vec::new();
+        for (id, configured) in &accounts.providers {
+            if provider.as_ref().is_some_and(|p| p != id) {
+                continue;
+            }
+            let definition = catalog::get(id).ok_or_else(|| AccountError::Provider(id.clone()))?;
+            for account in &configured.accounts {
+                declarations.push(json!({
+                    "provider":id,"account":account.name,"enabled":account.enabled,
+                    "kind":kind_name(definition.auth.kind()),
+                    "endpoint_override":account.base_url.is_some(),"selection":"route order at request boundary"
+                }));
+            }
+        }
         return Ok(json!({"accounts":declarations}));
     }
     let root = resolve_store_directory(options.store)?;
@@ -227,24 +245,29 @@ async fn execute(options: Options) -> Result<Value, Error> {
                 if provider.as_ref().is_some_and(|p| p != id) {
                     continue;
                 }
+                let definition =
+                    catalog::get(id).ok_or_else(|| AccountError::Provider(id.clone()))?;
                 for account in &configured.accounts {
-                    let status = match &account.credential {
-                        CredentialRef::ApiKey { alias } => manager
+                    let alias = &account.credential.alias;
+                    let status = match definition.auth.kind() {
+                        CredentialKind::ApiKey => manager
                             .list_api_keys(Some(id))?
                             .into_iter()
                             .find(|s| &s.alias == alias)
                             .map(|s| key_status(id, account, s)),
-                        CredentialRef::OAuth { profile, alias } => manager
+                        CredentialKind::OAuth(profile) => manager
                             .list(Some(profile))?
                             .into_iter()
                             .find(|s| &s.account == alias)
                             .map(|s| oauth_status(id, account, s)),
                     };
-                    statuses.push(status.unwrap_or_else(||json!({
-                        "provider":id,"account":account.name,"enabled":account.enabled,
-                        "kind":match &account.credential {CredentialRef::ApiKey{..}=>"api_key",CredentialRef::OAuth{..}=>"oauth"},
-                        "state":"unprovisioned","access":"unavailable"
-                    })));
+                    statuses.push(status.unwrap_or_else(|| {
+                        json!({
+                            "provider":id,"account":account.name,"enabled":account.enabled,
+                            "kind":kind_name(definition.auth.kind()),
+                            "state":"unprovisioned","access":"unavailable"
+                        })
+                    }));
                 }
             }
             Ok(json!({"accounts":statuses}))
@@ -257,8 +280,8 @@ async fn execute(options: Options) -> Result<Value, Error> {
                 | KeyCommand::Disable { selected, .. }
                 | KeyCommand::Remove { selected, .. } => selected,
             };
-            let (_, account) = accounts.account(&selected.provider, &selected.account)?;
-            let alias = api_key(account)?;
+            let (definition, account) = accounts.account(&selected.provider, &selected.account)?;
+            let alias = api_key(definition, account)?;
             // Parse secret input before creating a destination store.
             let material = match &operation {
                 KeyCommand::Add { secret_file, .. } | KeyCommand::Replace { secret_file, .. } => {
@@ -291,9 +314,9 @@ async fn execute(options: Options) -> Result<Value, Error> {
             Ok(key_status(&provider, account, status))
         }
         Command::Login(login) => {
-            let (_, account) =
+            let (definition, account) =
                 accounts.account(&login.selected.provider, &login.selected.account)?;
-            let (profile, alias) = oauth(account)?;
+            let (profile, alias) = oauth(definition, account)?;
             let method = login.method.unwrap_or(if profile == "openai" {
                 Method::Browser
             } else {
@@ -327,16 +350,16 @@ async fn execute(options: Options) -> Result<Value, Error> {
             Ok(oauth_status(&login.selected.provider, account, status))
         }
         Command::Refresh(selected) => {
-            let (_, account) = accounts.account(&selected.provider, &selected.account)?;
-            let (profile, alias) = oauth(account)?;
+            let (definition, account) = accounts.account(&selected.provider, &selected.account)?;
+            let (profile, alias) = oauth(definition, account)?;
             let manager =
                 CredentialManager::new(root, builtin_drivers(selected.proxy.as_deref())?)?;
             let status = manager.refresh(profile, alias).await?;
             Ok(oauth_status(&selected.provider, account, status))
         }
         Command::Logout { selected, revoke } => {
-            let (_, account) = accounts.account(&selected.provider, &selected.account)?;
-            let (profile, alias) = oauth(account)?;
+            let (definition, account) = accounts.account(&selected.provider, &selected.account)?;
+            let (profile, alias) = oauth(definition, account)?;
             let manager =
                 CredentialManager::new(root, builtin_drivers(selected.proxy.as_deref())?)?;
             let outcome = manager.logout(profile, alias, revoke).await?;
@@ -351,8 +374,8 @@ async fn execute(options: Options) -> Result<Value, Error> {
             )
         }
         Command::Remove { selected, revision } => {
-            let (_, account) = accounts.account(&selected.provider, &selected.account)?;
-            let (profile, alias) = oauth(account)?;
+            let (definition, account) = accounts.account(&selected.provider, &selected.account)?;
+            let (profile, alias) = oauth(definition, account)?;
             let manager =
                 CredentialManager::new(root, builtin_drivers(selected.proxy.as_deref())?)?;
             Ok(oauth_status(
@@ -455,6 +478,68 @@ mod test_files;
 mod tests {
     use super::*;
     #[tokio::test]
+    async fn provider_kind_and_obsolete_fields_reject_before_credential_access() {
+        let directory = test_files::private_directory();
+        let store = directory.path().join("absent-store");
+        let file = tempfile::NamedTempFile::new_in(directory.path()).unwrap();
+        let declarations = json!({"version":1,"providers":{
+            "openai":{"accounts":[{"name":"primary","enabled":true,"credential":{"alias":"private-key"}}]},
+            "chatgpt":{"accounts":[{"name":"personal","enabled":true,"credential":{"alias":"private-session"}}]}
+        }});
+        std::fs::write(file.path(), serde_json::to_vec(&declarations).unwrap()).unwrap();
+        let options = |arguments: &[&str]| {
+            Options::try_parse_from(
+                [
+                    "auth",
+                    "--store",
+                    store.to_str().unwrap(),
+                    "--accounts",
+                    file.path().to_str().unwrap(),
+                ]
+                .into_iter()
+                .chain(arguments.iter().copied()),
+            )
+            .unwrap()
+        };
+        let explained = execute(options(&["explain"])).await.unwrap();
+        assert_eq!(explained["accounts"][0]["provider"], "chatgpt");
+        assert_eq!(explained["accounts"][0]["kind"], "oauth");
+        assert_eq!(explained["accounts"][1]["kind"], "api_key");
+        assert!(!explained.to_string().contains("private-"));
+        for arguments in [
+            vec![
+                "key",
+                "add",
+                "--provider",
+                "chatgpt",
+                "--account",
+                "personal",
+                "--secret-file",
+                "missing-secret-input",
+            ],
+            vec!["login", "--provider", "openai", "--account", "primary"],
+        ] {
+            assert!(matches!(
+                execute(options(&arguments)).await,
+                Err(Error::Kind)
+            ));
+        }
+        for (provider, field, value) in [
+            ("openai", "kind", "api_key"),
+            ("chatgpt", "kind", "oauth"),
+            ("chatgpt", "profile", "openai"),
+        ] {
+            let mut obsolete = declarations.clone();
+            obsolete["providers"][provider]["accounts"][0]["credential"][field] = json!(value);
+            std::fs::write(file.path(), serde_json::to_vec(&obsolete).unwrap()).unwrap();
+            assert!(matches!(
+                execute(options(&["validate"])).await,
+                Err(Error::Accounts(AccountError::Configuration))
+            ));
+        }
+        assert!(!store.exists());
+    }
+    #[tokio::test]
     async fn status_preserves_provisioned_revisions_when_another_account_is_missing() {
         use std::io::Write;
         let directory = test_files::private_directory();
@@ -469,8 +554,8 @@ mod tests {
             .unwrap();
         let mut file = tempfile::NamedTempFile::new_in(directory.path()).unwrap();
         write!(file,"{}",json!({"version":1,"providers":{"openai":{"accounts":[
-            {"name":"primary","enabled":true,"credential":{"kind":"api_key","alias":"private-locator"}},
-            {"name":"backup","enabled":true,"credential":{"kind":"api_key","alias":"private-unprovisioned-locator"}}
+            {"name":"primary","enabled":true,"credential":{"alias":"private-locator"}},
+            {"name":"backup","enabled":true,"credential":{"alias":"private-unprovisioned-locator"}}
         ]}}})).unwrap();
         let options = Options::try_parse_from([
             "auth",

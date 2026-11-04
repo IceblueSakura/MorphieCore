@@ -24,8 +24,8 @@ async fn command(dir: &Directory, args: &[&str], input: Option<&[u8]>) -> std::p
     private_write(
         &accounts,
         &serde_json::to_vec(&json!({"version":1,"providers":{"openai":{"accounts":[
-            {"name":"primary","enabled":true,"credential":{"kind":"api_key","alias":"one"}},
-            {"name":"backup","enabled":true,"credential":{"kind":"api_key","alias":"two"}}
+            {"name":"primary","enabled":true,"credential":{"alias":"one"}},
+            {"name":"backup","enabled":true,"credential":{"alias":"two"}}
         ]}}}))
         .unwrap(),
     );

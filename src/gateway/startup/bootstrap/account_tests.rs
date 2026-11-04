@@ -34,8 +34,8 @@ async fn loader_binds_named_accounts_without_switching_after_dispatch() {
         }))).await.unwrap();
     });
     let accounts = json!({"version":1,"providers":{"deepseek":{"accounts":[
-        {"name":"primary","enabled":true,"credential":{"kind":"api_key","alias":"primary"},"base_url":root},
-        {"name":"backup","enabled":true,"credential":{"kind":"api_key","alias":"backup"},"base_url":root}
+        {"name":"primary","enabled":true,"credential":{"alias":"primary"},"base_url":root},
+        {"name":"backup","enabled":true,"credential":{"alias":"backup"},"base_url":root}
     ]}}});
     let boot = Fixture::with_accounts(
         service(),
@@ -105,7 +105,7 @@ fn provider_recovery_configuration_reaches_bound_health_and_keeps_schema_strict(
         json!({"models":{"deepseek-flash":{"candidates":[{"binding":"deepseek-responses"}]}}});
     let keys = [("deepseek", "primary", "synthetic-key")];
     let mut accounts = json!({"version":1,"providers":{"deepseek":{
-        "accounts":[{"name":"primary","enabled":true,"credential":{"kind":"api_key","alias":"primary"}}],
+        "accounts":[{"name":"primary","enabled":true,"credential":{"alias":"primary"}}],
         "recovery":{"transient_cooldown_ms":7,"transient_multiplier":0}
     }}});
     let boot =
@@ -241,8 +241,8 @@ async fn read_only_validation_checks_observation_configuration_without_creating_
 #[test]
 fn account_names_cannot_duplicate_one_security_target() {
     let mut accounts = json!({"version":1,"providers":{"deepseek":{"accounts":[
-        {"name":"primary","enabled":true,"credential":{"kind":"api_key","alias":"shared"}},
-        {"name":"another-name","enabled":true,"credential":{"kind":"api_key","alias":"shared"}}
+        {"name":"primary","enabled":true,"credential":{"alias":"shared"}},
+        {"name":"another-name","enabled":true,"credential":{"alias":"shared"}}
     ]}}});
     let models =
         json!({"models":{"deepseek-flash":{"candidates":[{"binding":"deepseek-responses"}]}}});

@@ -54,12 +54,11 @@ This page owns current scope, priorities, dependencies, and exit gates. [Archite
 
 ## Current status
 
-**Current focus (2026-11-04):** Resolve the three Chat/Responses default-profile blockers and complete the Provider-owned credential configuration adjustment before fresh credential provisioning and model selection. Complete AR5 real Provider checks and the full three-protocol installed-Agent exit before resuming Stage 4.
+**Current focus (2026-11-04):** Resolve the three Chat/Responses default-profile blockers before fresh credential provisioning and model selection. Complete AR5 real Provider checks and the full three-protocol installed-Agent exit before resuming Stage 4.
 
 | Priority | Remaining work | Exit |
 |---|---|---|
 | Agent defaults | Resolve pi Chat strict read, pi Responses `additional_tools`, and OpenCode Responses recall annotations | Actual default reasoning/tool/history loops pass without compatibility opt-outs or input rewriting |
-| Account configuration | Derive credential kind/profile from Provider and remove redundant account fields | All configuration consumers use the alias-only reference; obsolete fields reject; credential safety checks pass |
 | Account acceptance | Provision fresh credentials, select actual Provider/model bindings, and complete AR5 | Bounded real Provider checks and installed-Agent exit on the rewritten account path |
 | API expansion | Select and implement Stage-4 operation contracts after AR5 | Per-operation lifecycle, protocol and SDK acceptance |
 | Downstream integration | Implement opt-in per-Agent JSONL session storage | Selected isolation and lifetime bounds |
@@ -67,7 +66,7 @@ This page owns current scope, priorities, dependencies, and exit gates. [Archite
 
 ## Account rewrite execution order
 
-The accepted [account specification](provider-account-redesign-plan.md) requires one configuration adjustment before real acceptance on fresh credentials and selected models. The user selected **offline three-protocol preparation before fresh credentials** on 2026-11-03 and added the Provider-owned credential adjustment on 2026-11-04. Both that adjustment and the [default-profile blockers](#agent-default-production-findings) must close before AR5 provisioning. No compatibility mode, private-store migration or deployment is included.
+The remaining gate for the accepted [account specification](provider-account-redesign-plan.md) is real acceptance on fresh credentials and selected models. The user selected **offline three-protocol preparation before fresh credentials** on 2026-11-03; resolve the [default-profile blockers](#agent-default-production-findings) before AR5 provisioning. Setup uses the [Provider-owned, alias-only credential contract](provider-account-redesign-plan.md#credential-kind-and-header-placement). No compatibility mode, private-store migration or deployment is included.
 
 ### Ordered work and exit gates
 
@@ -75,16 +74,7 @@ The identifiers below belong only to planning and acceptance documentation, not 
 
 | Order | Work | Completion evidence |
 |---|---|---|
-| **AR4a — Provider-owned credential configuration** | Apply the accepted [credential ownership contract](provider-account-redesign-plan.md#credential-kind-and-header-placement) using the existing catalog, shared account loader and credential manager. Remove account-level kind/profile selection; retain alias references and derive authentication from Provider. Update startup, auth/upstream CLIs, standalone tasks, templates and usage together. | All consumers accept the simplified declaration and reject obsolete fields before credential access. Focused offline safety checks and the full offline baseline pass. Updated setup commands are ready before fresh provisioning; no real credentials or calls are needed. |
 | **AR5 — Fresh credentials, model selection and real acceptance** | The user provisions new API keys and any required OAuth sessions through the new loader/CLI. Validate configured accounts and select actual Provider/model bindings. Then run bounded serial Provider checks and the deferred full installed-Agent exit on the rewritten path. | Actual credential kinds and selected models are verified separately from synthetic recovery. Current installed pi/OpenCode complete default reasoning/tool/history loops across the three client protocols and selected cross-protocol lanes. Unavailable account combinations are reported as unverified, not inferred from mocks. Production activation remains separately approved. |
-
-AR4a is a bounded configuration simplification, not another account-system rewrite:
-
-1. Change the shared declaration and binding contract; check API-key/OAuth resolution, obsolete-field rejection and OAuth origin restrictions with isolated synthetic state.
-2. Update all callers, CLI behavior, templates and usage; exercise representative provisioning, validation and diagnostic paths without live authorities. Preserve endpoint-specific header placement and redacted output.
-3. Run the [full offline baseline](development.md#offline-baseline) and [documentation checks](development.md#documentation-checks). Add applicable SDK/client gates only if their boundaries change. AR5 remains blocked until this slice and the default-profile repairs close.
-
-Preserve credential-store namespaces/formats, API-key and OAuth lifecycle separation, identity/replay isolation, routing and recovery policy. A need to change store ownership or lifecycle semantics requires a separate decision rather than expanding this slice.
 
 ### Verification and operator handoff
 

@@ -58,7 +58,7 @@ def gateway_configuration(root, native, origin, *, credential_root=None,
     private_json(root / "accounts.json", {"version": 1, "providers": {provider: {
         "recovery": {"recovery_timeout_ms": 0, **(recovery or {})},
         "accounts": [{"name": name, "enabled": True,
-                      "credential": {"kind": "api_key", "alias": name},
+                      "credential": {"alias": name},
                       "base_url": origin + "/v1"} for name in accounts]}}})
     private_json(root / "auth.json", {"version": 1, "agents": [
         {"agent_id": "fixture-agent", "key": KEY}]})

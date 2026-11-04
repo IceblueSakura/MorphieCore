@@ -157,8 +157,8 @@ pub fn accounts(domain: &str, base_url: &str) -> (BoundAccounts, tempfile::TempD
     }
     let path = directory.path().join("accounts.json");
     let value = serde_json::json!({"version":1,"providers":{domain:{"accounts":[
-        {"name":"primary","enabled":true,"credential":{"kind":"api_key","alias":"primary"},"base_url":base_url},
-        {"name":"secondary","enabled":true,"credential":{"kind":"api_key","alias":"secondary"},"base_url":base_url}
+        {"name":"primary","enabled":true,"credential":{"alias":"primary"},"base_url":base_url},
+        {"name":"secondary","enabled":true,"credential":{"alias":"secondary"},"base_url":base_url}
     ]}}});
     let mut options = std::fs::OpenOptions::new();
     options.write(true).create_new(true);

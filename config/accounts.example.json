@@ -3,22 +3,22 @@
   "providers": {
     "aliyun-tokenplan-cn": {
       "accounts": [
-        { "name": "primary", "enabled": true, "credential": { "kind": "api_key", "alias": "example" } }
+        { "name": "primary", "enabled": true, "credential": { "alias": "example" } }
       ]
     },
     "opencode-go": {
       "accounts": [
-        { "name": "primary", "enabled": true, "credential": { "kind": "api_key", "alias": "example" } }
+        { "name": "primary", "enabled": true, "credential": { "alias": "example" } }
       ]
     },
     "google": {
       "accounts": [
-        { "name": "primary", "enabled": true, "credential": { "kind": "api_key", "alias": "example" } }
+        { "name": "primary", "enabled": true, "credential": { "alias": "example" } }
       ]
     },
     "openrouter": {
       "accounts": [
-        { "name": "primary", "enabled": true, "credential": { "kind": "api_key", "alias": "example" } }
+        { "name": "primary", "enabled": true, "credential": { "alias": "example" } }
       ]
     }
   }

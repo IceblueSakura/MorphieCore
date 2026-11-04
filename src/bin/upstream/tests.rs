@@ -158,8 +158,8 @@ async fn diagnostics_select_only_the_configured_named_account_without_alias_bypa
         .unwrap();
     let accounts: Accounts =
         serde_json::from_value(json!({"version":1,"providers":{"deepseek":{"accounts":[
-            {"name":"primary","enabled":true,"credential":{"kind":"api_key","alias":"one"}},
-            {"name":"backup","enabled":true,"credential":{"kind":"api_key","alias":"two"}}
+            {"name":"primary","enabled":true,"credential":{"alias":"one"}},
+            {"name":"backup","enabled":true,"credential":{"alias":"two"}}
         ]}}}))
         .unwrap();
     accounts.validate().unwrap();
@@ -358,16 +358,10 @@ async fn expired_oauth_refreshes_once_through_manager_and_persists_without_rebin
             name: "primary".into(),
             enabled: true,
             base_url: None,
-            credential: CredentialRef::OAuth {
-                profile: "grok".into(),
+            credential: morphiecore::account::CredentialRef {
                 alias: "one".into(),
             },
         };
-        assert!(
-            account
-                .bind(catalog::get("deepseek").unwrap(), &manager)
-                .is_err()
-        );
         let bound = account
             .bind(catalog::get("grok").unwrap(), &manager)
             .unwrap();

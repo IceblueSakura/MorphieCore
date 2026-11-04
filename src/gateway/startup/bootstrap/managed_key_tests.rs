@@ -22,7 +22,7 @@ fn setup() -> (tempfile::TempDir, CredentialManager) {
     write_accounts(
         dir.path(),
         &serde_json::json!({"version":1,"providers":{"deepseek":{"accounts":[{
-            "name":"primary","enabled":true,"credential":{"kind":"api_key","alias":"one"}
+            "name":"primary","enabled":true,"credential":{"alias":"one"}
         }]}}}),
     );
     (dir, manager)

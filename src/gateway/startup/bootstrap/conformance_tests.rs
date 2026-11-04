@@ -450,7 +450,7 @@ async fn observe_intake(
             models,
             &[(provider, pool, "synthetic-upstream-key")],
             json!({"version":1,"providers":{provider:{"accounts":[{
-                "name":pool,"enabled":true,"credential":{"kind":"api_key","alias":pool},"base_url":origin
+                "name":pool,"enabled":true,"credential":{"alias":pool},"base_url":origin
             }]}}}),
         )
     }
@@ -786,13 +786,21 @@ async fn grouped_responses_history_agrees_between_managed_and_stateless_continua
         let _server = Server(tokio::spawn(async move {
             axum::serve(listener, router).await.unwrap();
         }));
-        let boot = Fixture::with_accounts(service(), json!({"models":{model:{
+        let boot = Fixture::with_accounts(
+            service(),
+            json!({"models":{model:{
             "candidates":[{"binding":"dashscope-flash-responses"}]}}}),
-            &[("aliyun-dashscope-cn","aliyun-dashscope-cn-api-key","synthetic-upstream-key")],
+            &[(
+                "aliyun-dashscope-cn",
+                "aliyun-dashscope-cn-api-key",
+                "synthetic-upstream-key",
+            )],
             json!({"version":1,"providers":{"aliyun-dashscope-cn":{"accounts":[{
                 "name":"aliyun-dashscope-cn-api-key","enabled":true,
-                "credential":{"kind":"api_key","alias":"aliyun-dashscope-cn-api-key"},"base_url":origin
-            }]}}})).unwrap();
+                "credential":{"alias":"aliyun-dashscope-cn-api-key"},"base_url":origin
+            }]}}}),
+        )
+        .unwrap();
         let mut request =
             json!({"model":model,"input":"go","max_output_tokens":64,"stream":stream,"store":true});
         request["tools"] = json!([{"type":"function","name":"lookup","description":"Look up a key.",

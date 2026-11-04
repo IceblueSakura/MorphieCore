@@ -39,14 +39,18 @@ async fn configured_task_sends_once_to_its_named_account_despite_generation_reco
     let boot = Fixture::with_accounts(
         service(),
         json!({"models":{"text-embedding-3-small":{"account":"backup"}}}),
-        &[("openrouter", "primary", "synthetic-primary"), ("openrouter", "backup", "synthetic-backup")],
+        &[
+            ("openrouter", "primary", "synthetic-primary"),
+            ("openrouter", "backup", "synthetic-backup"),
+        ],
         json!({"version":1,"providers":{"openrouter":{
             "recovery":{"recovery_timeout_ms":5000},
             "accounts":(["primary","backup"].map(|name| json!({
-                "name":name,"enabled":true,"credential":{"kind":"api_key","alias":name},"base_url":root
+                "name":name,"enabled":true,"credential":{"alias":name},"base_url":root
             })))
         }}}),
-    ).unwrap();
+    )
+    .unwrap();
     let response = boot
         .gateway
         .router()
@@ -158,8 +162,8 @@ fn task_accounts_share_target_composition_but_not_automatic_account_selection() 
         ("openrouter", "backup", "synthetic-second"),
     ];
     let declarations = json!({"version":1,"providers":{"openrouter":{"accounts":[
-        {"name":"primary","enabled":true,"credential":{"kind":"api_key","alias":"primary"}},
-        {"name":"backup","enabled":true,"credential":{"kind":"api_key","alias":"backup"},"base_url":"https://relay.invalid/custom/v1"}
+        {"name":"primary","enabled":true,"credential":{"alias":"primary"}},
+        {"name":"backup","enabled":true,"credential":{"alias":"backup"},"base_url":"https://relay.invalid/custom/v1"}
     ]}}});
     let boot = Fixture::with_accounts(
         service(),

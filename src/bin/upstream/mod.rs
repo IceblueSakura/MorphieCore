@@ -5,7 +5,7 @@ mod wire;
 
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use morphiecore::{
-    account::{Account, AccountCredential, Accounts, CredentialRef},
+    account::{Account, AccountCredential, Accounts},
     credential::{
         CredentialError, CredentialManager, Secret, builtin_drivers, default_config_directory,
         resolve_store_directory,
@@ -104,8 +104,6 @@ pub(super) enum Error {
     Endpoint,
     #[error("invalid account configuration or local account binding")]
     Account,
-    #[error("credential kind/profile does not match the Provider endpoint")]
-    CredentialMismatch,
     #[error("credential operation: {0}")]
     Credential(#[from] CredentialError),
     #[error("transport failed; no retry")]
@@ -199,11 +197,11 @@ async fn credential(
     account: &Account,
     binding: &AccountCredential,
 ) -> Result<(Secret, bool), Error> {
-    match (&account.credential, binding) {
-        (CredentialRef::ApiKey { .. }, AccountCredential::ApiKey(key)) => {
-            Ok((key.borrow()?, false))
-        }
-        (CredentialRef::OAuth { profile, alias }, AccountCredential::OAuth(binding)) => {
+    match binding {
+        AccountCredential::ApiKey(key) => Ok((key.borrow()?, false)),
+        AccountCredential::OAuth(binding) => {
+            let profile = binding.profile();
+            let alias = &account.credential.alias;
             let pending = manager
                 .list(Some(profile))?
                 .iter()
@@ -221,7 +219,6 @@ async fn credential(
                 Err(error) => Err(error.into()),
             }
         }
-        _ => Err(Error::CredentialMismatch),
     }
 }
 pub async fn execute(options: Options) -> Result<Value, Error> {

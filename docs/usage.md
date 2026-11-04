@@ -80,7 +80,7 @@ A running gateway pins key identity at startup. Replacement, disablement and rem
 
 ### Configure accounts
 
-`accounts.json` is private configuration outside the credential store. It lists ordered named accounts and credential references, not tokens or verified principal metadata. Start with [`accounts.example.json`](../config/accounts.example.json). A minimal API-key declaration is:
+`accounts.json` is private configuration outside the credential store. It lists ordered named accounts and alias-only credential references, not tokens or verified principal metadata. The Provider catalog determines credential kind and OAuth profile; account-level `kind` and `profile` fields reject. Start with [`accounts.example.json`](../config/accounts.example.json). A minimal API-key declaration is:
 
 ```json
 {
@@ -91,7 +91,7 @@ A running gateway pins key identity at startup. Replacement, disablement and rem
         {
           "name": "primary",
           "enabled": true,
-          "credential": {"kind": "api_key", "alias": "platform-primary"}
+          "credential": {"alias": "platform-primary"}
         }
       ]
     }
@@ -111,7 +111,7 @@ Each Provider declaration accepts an optional `recovery` object with the timing 
 
 An API-key account may set `base_url` to a complete trusted API root. The catalog appends an explicit operation-relative suffix: `https://relay.example/custom/v1` plus `responses` becomes `/custom/v1/responses`. Omission retains each operation's original catalog target. HTTPS is required except for literal loopback HTTP; userinfo, queries, fragments and unsafe paths reject. OAuth overrides reject before credential borrowing.
 
-`openai` means OpenAI API-key access. SIWC is the separate `chatgpt` Provider, whose declaration uses `{"kind":"oauth","profile":"openai","alias":"personal"}`. Grok uses Provider/profile `grok`. Model availability and fixed request controls belong to each Provider's catalog bindings, not the account file.
+`openai` means OpenAI API-key access. SIWC is the separate `chatgpt` Provider, which derives OAuth profile `openai` from the catalog. Grok uses Provider/profile `grok`. Both reference credentials with the same alias-only shape. Model availability and fixed request controls belong to each Provider's catalog bindings, not the account file.
 
 Inspect declarations without opening the credential store, or validate all local references without login, refresh or probes:
 
@@ -126,6 +126,19 @@ Gateway validation also uses the real model/task loader and Agent authentication
 ### OAuth
 
 Declare the named OAuth account before login. Login and revocation remain explicit operator actions; ordinary inference borrowing is network-free:
+
+```json
+{
+  "version": 1,
+  "providers": {
+    "chatgpt": {
+      "accounts": [
+        {"name": "personal", "enabled": true, "credential": {"alias": "personal"}}
+      ]
+    }
+  }
+}
+```
 
 ```sh
 morphiecore-auth --accounts "$ROOT/accounts.json" --store "$ROOT/credentials" \

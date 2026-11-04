@@ -52,8 +52,7 @@ fn named_oauth_accounts_keep_distinct_principals_and_network_free_borrowing() {
                         name: alias.into(),
                         enabled: true,
                         base_url: None,
-                        credential: CredentialRef::OAuth {
-                            profile: "grok".into(),
+                        credential: CredentialRef {
                             alias: alias.into(),
                         },
                     })
@@ -92,8 +91,7 @@ fn named_oauth_accounts_keep_distinct_principals_and_network_free_borrowing() {
                         name: "one".into(),
                         enabled: false,
                         base_url: None,
-                        credential: CredentialRef::OAuth {
-                            profile: "grok".into(),
+                        credential: CredentialRef {
                             alias: "first".into(),
                         },
                     },
@@ -101,8 +99,7 @@ fn named_oauth_accounts_keep_distinct_principals_and_network_free_borrowing() {
                         name: "two".into(),
                         enabled: true,
                         base_url: None,
-                        credential: CredentialRef::OAuth {
-                            profile: "grok".into(),
+                        credential: CredentialRef {
                             alias: "second".into(),
                         },
                     },

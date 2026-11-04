@@ -50,7 +50,7 @@ fn declare(root: &Path, profile: &str, alias: &str) {
         .as_array_mut()
         .unwrap();
     if !accounts.iter().any(|account| account["name"] == alias) {
-        accounts.push(json!({"name":alias,"enabled":true,"credential":{"kind":"oauth","profile":profile,"alias":alias}}));
+        accounts.push(json!({"name":alias,"enabled":true,"credential":{"alias":alias}}));
     }
     OpenOptions::new()
         .write(true)

@@ -710,8 +710,8 @@ fn configured_accounts_preserve_order_targets_limits_and_replay_isolation() {
         )
         .unwrap();
     let mut account_config = serde_json::json!({"version":1,"providers":{"openrouter":{"accounts":[
-        {"name":"primary","enabled":true,"credential":{"kind":"api_key","alias":"one"},"base_url":"https://primary.example/custom/v1"},
-        {"name":"secondary","enabled":true,"credential":{"kind":"api_key","alias":"one"},"base_url":"https://secondary.example/v1"}
+        {"name":"primary","enabled":true,"credential":{"alias":"one"},"base_url":"https://primary.example/custom/v1"},
+        {"name":"secondary","enabled":true,"credential":{"alias":"one"},"base_url":"https://secondary.example/v1"}
     ]}}});
     write_accounts(directory.path(), &account_config);
     let binding = catalog::API_KEY_BINDINGS
@@ -972,7 +972,7 @@ fn configured_accounts_preserve_order_targets_limits_and_replay_isolation() {
         )
         .unwrap();
     account_config["providers"]["google"] = serde_json::json!({"accounts":[{
-        "name":"primary","enabled":true,"credential":{"kind":"api_key","alias":"one"}
+        "name":"primary","enabled":true,"credential":{"alias":"one"}
     }]});
     write_accounts(directory.path(), &account_config);
     let limits_config = serde_json::json!({"models":{google.model:{"candidates":[

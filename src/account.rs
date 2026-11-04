@@ -30,16 +30,9 @@ pub enum AccountError {
 }
 
 #[derive(Clone, Deserialize, Serialize)]
-#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
-pub enum CredentialRef {
-    ApiKey {
-        alias: String,
-    },
-    #[serde(rename = "oauth")]
-    OAuth {
-        profile: String,
-        alias: String,
-    },
+#[serde(deny_unknown_fields)]
+pub struct CredentialRef {
+    pub alias: String,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -123,25 +116,14 @@ impl Account {
         manager: &CredentialManager,
     ) -> Result<BoundAccount, AccountError> {
         crate::credential::valid_alias(&self.name).map_err(|_| AccountError::Configuration)?;
-        match (&self.credential, provider.auth.kind()) {
-            (CredentialRef::ApiKey { alias }, CredentialKind::ApiKey) => {
-                crate::credential::valid_alias(alias)
-                    .map_err(|_| self.invalid(provider.id.as_str()))?;
-            }
-            (CredentialRef::OAuth { profile, alias }, CredentialKind::OAuth(expected))
-                if profile == expected =>
-            {
-                crate::credential::valid_alias(alias)
-                    .map_err(|_| self.invalid(provider.id.as_str()))?;
-            }
-            _ => return Err(self.invalid(provider.id.as_str())),
-        }
+        let alias = &self.credential.alias;
+        crate::credential::valid_alias(alias).map_err(|_| self.invalid(provider.id.as_str()))?;
         let target = self.target(provider)?;
-        let credential = match &self.credential {
-            CredentialRef::ApiKey { alias } => manager
+        let credential = match provider.auth.kind() {
+            CredentialKind::ApiKey => manager
                 .bind_key_reference(provider.id.as_str(), alias)
                 .map(AccountCredential::ApiKey),
-            CredentialRef::OAuth { profile, alias } => manager
+            CredentialKind::OAuth(profile) => manager
                 .bind_access(profile, alias)
                 .map(AccountCredential::OAuth),
         }
@@ -193,16 +175,8 @@ impl Accounts {
                 if !names.insert(&account.name) {
                     return Err(account.invalid(id));
                 }
-                let alias = match (&account.credential, provider.auth.kind()) {
-                    (CredentialRef::ApiKey { alias }, CredentialKind::ApiKey) => alias,
-                    (CredentialRef::OAuth { profile, alias }, CredentialKind::OAuth(expected))
-                        if profile == expected =>
-                    {
-                        alias
-                    }
-                    _ => return Err(account.invalid(id)),
-                };
-                crate::credential::valid_alias(alias).map_err(|_| account.invalid(id))?;
+                crate::credential::valid_alias(&account.credential.alias)
+                    .map_err(|_| account.invalid(id))?;
                 account.target(provider)?;
             }
         }

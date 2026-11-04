@@ -125,7 +125,7 @@ Credential kind remains distinct from endpoint header placement and fixed reques
 
 Binding, validation, provisioning and diagnostics derive kind/profile from the same catalog definition before credential access. Reject obsolete account-level `kind`/`profile` fields rather than inferring intent or supporting both schemas. Preserve separate API-key and OAuth lifecycle types, verified identity, trusted origins and replay provenance; this decision does not unify their lifecycle machinery or change credential-store namespaces, formats or encryption.
 
-The implementation already enforces one kind/profile per Provider but still requires redundant account fields. Removing those fields and updating all consumers is a pending [pre-acceptance adjustment](roadmap.md#ordered-work-and-exit-gates), not delivered behavior. [Usage](usage.md#configure-accounts) continues to describe the implemented schema until that slice lands.
+The shared account loader, startup, provisioning and diagnostics implement this alias-only contract. [Usage](usage.md#configure-accounts) owns current declarations and setup commands; [Roadmap](roadmap.md#ordered-work-and-exit-gates) owns the remaining fresh-credential acceptance gate.
 
 ### Targets and trust
 
