@@ -252,7 +252,7 @@ Upstream response parsing must remain strict on known fields and ignore unknown 
 
 ### Three-protocol tool conversion design
 
-**Assessment requested on 2026-11-04; concrete new loss policies remain proposals.** [Architecture](architecture.md#ordered-tool-availability) accepts the nine-direction scope and approximation-first compatibility objective after native/equivalent carriage. [Evidence](refs/2026-10-27-client-ir-boundaries.md#nine-direction-tool-assessment-2026-11-04) distinguishes inspected behavior from recommendations; [Roadmap](roadmap.md#tool-protocol-root-repair) owns sequencing and acceptance. This is existing Generation tool work, not stage-5 discovery or hosted execution.
+**Assessment requested on 2026-11-04; first-package tool-set losses subsequently selected.** [Architecture](architecture.md#ordered-tool-availability) owns the accepted nine-direction scope and concrete bounded tool-set projection combination. Other content losses below remain proposals. [Evidence](refs/2026-10-27-client-ir-boundaries.md#nine-direction-tool-assessment-2026-11-04) distinguishes inspected behavior from recommendations; [Roadmap](roadmap.md#tool-protocol-root-repair) owns sequencing and acceptance. This is existing Generation tool work, not stage-5 discovery or hosted execution.
 
 The unit of assessment is **client request → selected upstream → original client response → tool result → subsequent history**, not the request encoder alone. A same-protocol cell is a native-carriage goal, not a claim of universal fidelity across models, dialects or streaming variants. Ordinary functions are the common vertical slice; custom tools, namespaces and ordered changes keep their own dispositions.
 
@@ -323,9 +323,9 @@ Preserve authoritative raw OpenAI arguments in source history; only the target c
 
 Recommended first package: shared semantics/validation repairs, three native paths, ordinary function conversion in all six cross paths, and the selected versions of effective-set/allowed-subset projections. Reuse existing error/default losses. Qualify namespace aliases as a separate full return/replay slice, followed by grammar-free custom text wrappers if selected. This ordering prevents wrappers from becoming a prerequisite for basic function compatibility.
 
-Before activating each new content projection, select its concrete loss row; accepting approximation in general does not erase source guarantees. No further blanket permission is needed for research or existing L1/L2 mapping work. These remaining choices can be made independently:
+Before activating each new content projection, select its concrete loss row; accepting approximation in general does not erase source guarantees. No further blanket permission is needed for research or existing L1/L2 mapping work. The selection boundary is:
 
-- **Recommended:** current-tool-set preservation with acknowledged historical definition loss, plus allowed-subset filtering where necessary.
+- **Selected 2026-11-04:** the [bounded tool-set projection combination](architecture.md#ordered-tool-availability), with acknowledged historical definition/timing/cache loss and unchanged current-call guarantees.
 - **Recommended separately:** reversible namespace aliases, accepting altered model-facing grouping/names.
 - **Optional later:** plain custom-text wrappers and examples-in-description. Keep explicit custom grammar, media relocation and instruction-history synthesis outside the first package.
 
@@ -333,22 +333,20 @@ The source facts still requiring qualification are Responses root/inline collisi
 
 #### First-package dispositions
 
-The [2026-11-04 qualification](refs/2026-10-27-client-ir-boundaries.md#tool-contract-qualification-2026-11-04) separates source facts from the content selections still needed before implementation. The following is the concrete proposed first-package boundary, not approval by scheduling:
+The [2026-11-04 qualification](refs/2026-10-27-client-ir-boundaries.md#tool-contract-qualification-2026-11-04) separates source facts from content selection. The user subsequently selected the tool-set projection combination; [Architecture](architecture.md#ordered-tool-availability) is its sole contract home. The remaining boundary is:
 
 | Field family | Disposition / activation condition |
 |---|---|
 | Root/inline ordinary function definitions, arguments, call/result links and batch position/ID | L1/L2 native carriage with shared validation and independent directional expectations. Preserve raw argument authority and distinct item/call IDs |
 | Source defaults and input-result nullable status | Apply the existing conditional-strict rule and documented input-only null normalization. Do not normalize call/output status globally |
-| Current tool set without an ordered target carrier | **Proposed L3 effective active-set projection:** retain current callable definitions and call/result history, losing old definition visibility, declaration timing and rendered-prefix/cache stability. Never guess a collision winner |
-| Historical declarations with a target allowed-set carrier | **Proposed L3 retained-history/current-set projection:** prefer native historical declarations plus exact current-call restriction when enforceable. Acknowledge lost withdrawal intervals or replacement semantics; fall back to selected active-set projection only when its source set is determinate |
-| Allowed subset without a native carrier | **Proposed L3 inventory filtering:** filter root and inline definitions together; preserve optional/required invocation, selected identities and source schemas, losing filtered-definition visibility and potentially cache reuse |
+| Current tool set, retained historical declarations and allowed subset | Apply the [selected named L3 dispositions](architecture.md#ordered-tool-availability); implementation must preserve the stated current-call guarantees and report their acknowledged losses |
 | Strictness, minimum/maximum calls, seriality and dispatch | Preserve each source guarantee independently with native/equivalent carriers. Retain L5 when an explicit guarantee has no equivalent carrier; no guarantee downgrade is proposed |
 | Native Messages strict assurance | Delegate native-compatible schema behavior under its documented strength. Cross-protocol exact-case assertions still reject known casing mismatches; no schema-to-prose or constraint deletion |
 | Response additions with non-developer roles | Keep role observations distinct from instruction authority. No role promotion or manual replay approximation is selected |
 | Namespaces, custom text, examples and result media/schema | Reuse native carriers where qualified; new alias/wrapper/example losses stay in their conditional packages. No grammar-to-prose or media relocation in the core |
 | Unknown collision precedence or native grammar accounting | Preserve native shape and upstream validation where possible. Reject only transformations requiring an unknown winner or an unproved explicit guarantee, not native declarations solely for lack of an observed result |
 
-The three proposed tool-set projections form one bounded content-selection question; they do not authorize aliases, wrappers, extra prompt annotations or weaker guarantees. DeepSeek beta endpoint qualification is a separate binding-scope decision needed for the actual pi Chat strict-read lane, not an automatic endpoint rewrite.
+Aliases, wrappers, extra prompt annotations and weaker guarantees remain outside the selected combination. The user separately included explicit DeepSeek beta strict binding qualification in Stage 3 for the actual pi Chat strict-read lane; this does not authorize automatic endpoint redirection or production activation.
 
 ### Resource and execution safety
 

@@ -71,10 +71,16 @@ pub(crate) fn collapse_tools(
             (ToolChangeAction::AddReference(_), Some(i)) => tools[i].1 = true,
             (ToolChangeAction::Remove(_), Some(i)) => tools[i].1 = false,
             (ToolChangeAction::AddDefinition(tool), Some(i)) => {
-                tools[i] = (ToolDefinition::Function((**tool).clone()), true);
+                tools[i] = (
+                    ToolDefinition::Function((**tool).clone()),
+                    !tool.dispatch.defer_loading,
+                );
             }
             (ToolChangeAction::AddDefinition(tool), None) => {
-                tools.push((ToolDefinition::Function((**tool).clone()), true));
+                tools.push((
+                    ToolDefinition::Function((**tool).clone()),
+                    !tool.dispatch.defer_loading,
+                ));
             }
             (_, None) => {
                 return Err(CodecError::invalid());

@@ -37,6 +37,39 @@ fn request_wire(d: &DecodedRequest, profile: GenerationApi) -> Value {
     }
 }
 #[test]
+fn reported_tool_choices_validate_shape_without_current_request_inventory() {
+    let reference = |name: &str| ToolReference {
+        kind: ToolKind::Function,
+        name: text(name),
+        namespace: None,
+    };
+    let choices = [
+        ToolChoice::Allowed {
+            required: false,
+            tools: vec![],
+        },
+        ToolChoice::Allowed {
+            required: false,
+            tools: vec![reference("read"), reference("read")],
+        },
+        ToolChoice::Allowed {
+            required: false,
+            tools: (0..=MAX_TOOLS)
+                .map(|i| reference(&format!("f{i}")))
+                .collect(),
+        },
+        ToolChoice::Qualified(reference("read")),
+    ];
+    for choice in choices {
+        let settings = GenerationSettings {
+            tool_choice: Some(choice),
+            ..Default::default()
+        };
+        assert!(settings.validate().is_err());
+    }
+}
+
+#[test]
 fn tool_defaults_keep_non_strict_and_conditional_projection_distinct() {
     let source = json!({"messages":[{"role":"user","content":"go"}],
             "tools":[{"type":"function","function":{"name":"lookup","parameters":{

@@ -469,6 +469,9 @@ impl ToolChoice {
     }
     fn validate(&self) -> Result<(), CodecError> {
         nonnull(&self.disable_parallel_tool_use)?;
+        if let Selection::Tool(tool) = &self.selection {
+            name(tool, 128)?;
+        }
         if self.selection == Selection::None && !self.disable_parallel_tool_use.is_absent() {
             return Err(CodecError::invalid());
         }
@@ -1016,18 +1019,6 @@ impl Request {
         }
         if let Presence::Value(choice) = &self.tool_choice {
             choice.validate()?;
-            match &choice.selection {
-                Selection::Any if names.is_empty() => {
-                    return Err(CodecError::invalid());
-                }
-                Selection::Tool(s) => {
-                    name(s, 128)?;
-                    if !names.contains(s.as_str()) {
-                        return Err(CodecError::invalid());
-                    }
-                }
-                _ => {}
-            }
         }
         validate_turns(
             &self.messages,

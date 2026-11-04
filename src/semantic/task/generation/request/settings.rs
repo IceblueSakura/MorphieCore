@@ -253,6 +253,8 @@ impl GenerationSettings {
                 .map_or(0, |v| v.iter().map(|m| m.label().len()).sum::<usize>())
             + crate::semantic::task::generation::validate::tools(
                 self.tools.as_deref().unwrap_or_default(),
+            )?
+            + crate::semantic::task::generation::validate::tool_choice_shape(
                 self.tool_choice.as_ref(),
             )?
             + crate::semantic::task::generation::validate::output(self.output())?;

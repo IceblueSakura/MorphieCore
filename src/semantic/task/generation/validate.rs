@@ -1,7 +1,7 @@
 //! Pure validation and bounded accounting shared by construction, transforms and lowering.
 mod controls;
 use crate::semantic::task::generation::*;
-pub(super) use controls::{output, tools};
+pub(super) use controls::{output, tool_choice, tool_choice_shape, tools};
 use std::collections::{BTreeMap, BTreeSet};
 // Sized for long agent sessions that resend whole histories with inline media.
 pub const MAX_ITEMS: usize = 65_536;
@@ -292,7 +292,7 @@ pub fn items(
                 match &change.action {
                     ToolChangeAction::AddDefinition(tool) => charge(
                         &mut bytes,
-                        tools(&[ToolDefinition::Function((**tool).clone())], None)?,
+                        tools(&[ToolDefinition::Function((**tool).clone())])?,
                     )?,
                     ToolChangeAction::AddReference(name) | ToolChangeAction::Remove(name) => {
                         if !nonempty_within(name.as_str(), MAX_NAME_BYTES) {

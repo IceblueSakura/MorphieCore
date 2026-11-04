@@ -514,7 +514,7 @@ pub(in crate::protocol::anthropic::messages) fn project(
     } else {
         // Messages carries the switch only inside `tool_choice`, whose default is `auto`.
         match s.parallel_tool_calls {
-            Some(false) if tools.value().is_some() => Presence::Value(super::ToolChoice {
+            Some(false) => Presence::Value(super::ToolChoice {
                 selection: Selection::Auto,
                 disable_parallel_tool_use: Presence::Value(true),
             }),

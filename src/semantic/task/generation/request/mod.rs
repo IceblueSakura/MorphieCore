@@ -83,6 +83,11 @@ impl GenerationRequest {
         } else {
             crate::semantic::task::generation::validate::items(&self.items, false, &self.resources)?
         };
+        crate::semantic::task::generation::validate::tool_choice(
+            self.tools(),
+            &self.items,
+            self.tool_choice(),
+        )?;
         let resources = self.resources.uncharged_bytes(&self.items)?;
         let cached_context = self
             .cached_context
@@ -208,6 +213,16 @@ impl GenerationRequest {
         let mut settings = self.settings().clone();
         settings.reasoning = reasoning;
         self.with_settings(settings)
+    }
+    /// A projection can change declarations and history together without validating
+    /// an intermediate state whose selection no longer has its activation item.
+    pub(crate) fn with_items_and_settings(
+        mut self,
+        items: Vec<(ItemId, Item)>,
+        settings: GenerationSettings,
+    ) -> Result<Self, GenerationError> {
+        self.settings = std::sync::Arc::new(settings);
+        self.with_items(items)
     }
     pub fn with_items(mut self, items: Vec<(ItemId, Item)>) -> Result<Self, GenerationError> {
         if items.len() > MAX_ITEMS {

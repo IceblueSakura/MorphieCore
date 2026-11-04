@@ -35,7 +35,6 @@ pub(in crate::semantic::task::generation) fn output(
 }
 pub(in crate::semantic::task::generation) fn tools(
     tools: &[ToolDefinition],
-    choice: Option<&ToolChoice>,
 ) -> Result<usize, GenerationError> {
     fn schema_bytes(total: &mut usize, bytes: usize) -> Result<(), GenerationError> {
         *total = total.checked_add(bytes).ok_or(GenerationError::Limit)?;
@@ -47,7 +46,7 @@ pub(in crate::semantic::task::generation) fn tools(
     if tools.len() > MAX_TOOLS {
         return Err(GenerationError::Limit);
     }
-    let mut available = BTreeSet::new();
+    let mut names = BTreeSet::new();
     let mut groups = BTreeSet::new();
     let mut count = tools.len();
     let mut bytes = 0;
@@ -70,14 +69,11 @@ pub(in crate::semantic::task::generation) fn tools(
             if count > MAX_TOOLS {
                 return Err(GenerationError::Limit);
             }
-            charge(&mut bytes, self::tools(&group.tools, None)?)?;
+            charge(&mut bytes, self::tools(&group.tools)?)?;
             add(&mut bytes, &group.description)?;
-            for leaf in &group.tools {
-                available.insert((Some(n), leaf.kind().expect("leaf"), leaf.name().as_str()));
-            }
             continue;
         }
-        if !available.insert((None, t.kind().expect("leaf"), n)) {
+        if !names.insert((t.kind().expect("leaf"), n)) {
             return Err(GenerationError::InvalidToolDefinition);
         }
         match t {
@@ -117,6 +113,72 @@ pub(in crate::semantic::task::generation) fn tools(
             ToolDefinition::Namespace(_) => unreachable!("handled above"),
         }
     }
+    Ok(bytes)
+}
+
+type ToolKey<'a> = (Option<&'a str>, ToolKind, &'a str);
+
+/// Resolve present selection independently of historical calls and their schemas.
+pub(in crate::semantic::task::generation) fn tool_choice(
+    root: &[ToolDefinition],
+    items: &[(ItemId, Item)],
+    choice: Option<&ToolChoice>,
+) -> Result<(), GenerationError> {
+    let mut known = BTreeMap::new();
+    let mut active = 0usize;
+    for definition in root {
+        let namespace = match definition {
+            ToolDefinition::Namespace(group) => Some(group.name.as_str()),
+            _ => None,
+        };
+        for leaf in definition.leaves() {
+            let offered = match leaf {
+                ToolDefinition::Function(tool) => !tool.dispatch.defer_loading,
+                ToolDefinition::Custom(tool) => !tool.dispatch.defer_loading,
+                ToolDefinition::Namespace(_) => unreachable!("validated leaf"),
+            };
+            known.insert(
+                (namespace, leaf.kind().expect("leaf"), leaf.name().as_str()),
+                offered,
+            );
+            active += usize::from(offered);
+        }
+    }
+    for (_, item) in items {
+        let Item::ToolChange(change) = item else {
+            continue;
+        };
+        // Reference/removal currently name unqualified function definitions.
+        let key = (None, ToolKind::Function, change.name().as_str());
+        let (previous, next) = match &change.action {
+            ToolChangeAction::AddDefinition(tool) => {
+                let next = !tool.dispatch.defer_loading;
+                (known.insert(key, next).unwrap_or(false), next)
+            }
+            ToolChangeAction::AddReference(_) | ToolChangeAction::Remove(_) => {
+                let offered = known
+                    .get_mut(&key)
+                    .ok_or(GenerationError::InvalidToolDefinition)?;
+                let next = matches!(change.action, ToolChangeAction::AddReference(_));
+                (std::mem::replace(offered, next), next)
+            }
+        };
+        active = active - usize::from(previous) + usize::from(next);
+        if active > MAX_TOOLS {
+            return Err(GenerationError::Limit);
+        }
+    }
+    let available = known
+        .into_iter()
+        .filter_map(|(key, offered)| offered.then_some(key))
+        .collect();
+    validate_choice(&available, choice)
+}
+
+fn validate_choice(
+    available: &BTreeSet<ToolKey<'_>>,
+    choice: Option<&ToolChoice>,
+) -> Result<(), GenerationError> {
     match choice {
         Some(ToolChoice::Specific(n))
             if !available.contains(&(None, ToolKind::Function, n.as_str())) =>
@@ -138,8 +200,55 @@ pub(in crate::semantic::task::generation) fn tools(
         {
             return Err(GenerationError::InvalidToolChoice);
         }
-        Some(ToolChoice::Required) if tools.is_empty() => {
+        Some(ToolChoice::Required) if available.is_empty() => {
             return Err(GenerationError::InvalidToolChoice);
+        }
+        Some(ToolChoice::Allowed { tools, .. }) => {
+            for r in tools {
+                let reference = (
+                    r.namespace.as_ref().map(|n| n.as_str()),
+                    r.kind,
+                    r.name.as_str(),
+                );
+                if !available.contains(&reference) {
+                    return Err(GenerationError::InvalidToolChoice);
+                }
+            }
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+pub(in crate::semantic::task::generation) fn tool_choice_shape(
+    choice: Option<&ToolChoice>,
+) -> Result<usize, GenerationError> {
+    let mut bytes = 0;
+    let mut reference = |r: &ToolReference| -> Result<(), GenerationError> {
+        if !nonempty_within(r.name.as_str(), MAX_NAME_BYTES) {
+            return Err(GenerationError::InvalidToolChoice);
+        }
+        add(&mut bytes, r.name.as_str())?;
+        if let Some(namespace) = &r.namespace {
+            if !nonempty_within(namespace.as_str(), MAX_NAME_BYTES) {
+                return Err(GenerationError::InvalidToolChoice);
+            }
+            add(&mut bytes, namespace.as_str())?;
+        }
+        Ok(())
+    };
+    match choice {
+        Some(ToolChoice::Specific(name) | ToolChoice::Custom(name)) => {
+            if !nonempty_within(name.as_str(), MAX_NAME_BYTES) {
+                return Err(GenerationError::InvalidToolChoice);
+            }
+            add(&mut bytes, name.as_str())?;
+        }
+        Some(ToolChoice::Qualified(r)) => {
+            if r.namespace.is_none() {
+                return Err(GenerationError::InvalidToolChoice);
+            }
+            reference(r)?;
         }
         Some(ToolChoice::Allowed { tools, .. }) => {
             if tools.is_empty() || tools.len() > MAX_TOOLS {
@@ -147,12 +256,8 @@ pub(in crate::semantic::task::generation) fn tools(
             }
             let mut seen = BTreeSet::new();
             for r in tools {
-                let reference = (
-                    r.namespace.as_ref().map(|n| n.as_str()),
-                    r.kind,
-                    r.name.as_str(),
-                );
-                if !available.contains(&reference) || !seen.insert(reference) {
+                reference(r)?;
+                if !seen.insert((r.namespace.as_ref(), r.kind, &r.name)) {
                     return Err(GenerationError::InvalidToolChoice);
                 }
             }

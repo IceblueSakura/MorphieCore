@@ -2289,6 +2289,127 @@ fn client_messages_sampling_uses_exact_numeric_bounds() {
 }
 
 #[test]
+fn inline_tool_choices_use_current_availability() {
+    use morphiecore::protocol::{anthropic, native::ReplayTarget};
+    let caps = anthropic::messages::TargetContract::new(
+        anthropic::messages::Profile::AdaptiveTextTools,
+        anthropic::messages::Dialect::Standard,
+    );
+    let target = ReplayTarget::new("synthetic", "synthetic").unwrap();
+    let body = json!({"model":"m","max_tokens":64,
+        "messages":[{"role":"user","content":"go"},{"role":"system","content":[
+            {"type":"tool_addition","tool":{"type":"tool_definition","definition":{
+                "name":"read","input_schema":{"type":"object"}}}}]}]});
+    for choice in [json!({"type":"any"}), json!({"type":"tool","name":"read"})] {
+        let mut selected = body.clone();
+        selected["tool_choice"] = choice;
+        let decoded = decode_client_request(selected.to_string().as_bytes()).unwrap();
+        let source = decoded.clone();
+        let projected = caps.encode_request(&decoded, &target).unwrap();
+        assert_eq!(projected.value["tools"][0]["name"], "read");
+        assert_eq!(decoded, source);
+        let mut settings = decoded.task.semantic.settings().clone();
+        settings.tool_choice = Some(ToolChoice::Allowed {
+            required: true,
+            tools: vec![ToolReference {
+                kind: ToolKind::Function,
+                name: morphiecore::semantic::value::Text::new("read", "name", 128).unwrap(),
+                namespace: None,
+            }],
+        });
+        decoded.task.semantic.with_settings(settings).unwrap();
+    }
+    let mut removed = body;
+    removed["tools"] = json!([{"name":"read","input_schema":{"type":"object"}}]);
+    removed["messages"][1]["content"] =
+        json!([{"type":"tool_removal","tool":{"type":"tool_reference","name":"read"}}]);
+    removed["tool_choice"] = json!({"type":"tool","name":"read"});
+    assert!(decode_client_request(removed.to_string().as_bytes()).is_err());
+    removed["tool_choice"] = json!({"type":"none"});
+    decode_client_request(removed.to_string().as_bytes()).unwrap();
+}
+
+#[test]
+fn deferred_inline_definitions_require_surfacing_before_forced_selection() {
+    use morphiecore::protocol::{anthropic, native::ReplayTarget};
+    let mut body = json!({"model":"m","max_tokens":64,
+        "tool_choice":{"type":"tool","name":"read"},
+        "messages":[{"role":"user","content":"go"},{"role":"system","content":[
+            {"type":"tool_addition","tool":{"type":"tool_definition","definition":{
+                "name":"read","defer_loading":true,"input_schema":{"type":"object"}}}}]}]});
+    assert!(decode_client_request(body.to_string().as_bytes()).is_err());
+    body["messages"][1]["content"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!({"type":"tool_addition","tool":{"type":"tool_reference","name":"read"}}));
+    let request = decode_client_request(body.to_string().as_bytes()).unwrap();
+    let caps = anthropic::messages::TargetContract::new(
+        anthropic::messages::Profile::AdaptiveTextTools,
+        anthropic::messages::Dialect::Standard,
+    );
+    let target = ReplayTarget::new("synthetic", "synthetic").unwrap();
+    let wire = caps.encode_request(&request, &target).unwrap().value;
+    assert_eq!(wire["tools"][0]["name"], "read");
+    assert!(wire["tools"][0].get("defer_loading").is_none());
+    body["tools"] = json!([{"name":"read","input_schema":{"type":"object"},"defer_loading":true}]);
+    body["messages"][1]["content"] =
+        json!([{"type":"tool_addition","tool":{"type":"tool_reference","name":"read"}}]);
+    let request = decode_client_request(body.to_string().as_bytes()).unwrap();
+    caps.encode_request(&request, &target).unwrap();
+}
+
+#[test]
+fn available_tool_bounds_count_current_tools_not_historical_versions() {
+    let addition = json!({"type":"tool_addition","tool":{"type":"tool_definition",
+        "definition":{"name":"extra","input_schema":{"type":"object"}}}});
+    let mut body = json!({"model":"m","max_tokens":64,
+        "tools":(0..MAX_TOOLS).map(|i| json!({
+            "name":format!("f{i}"),"input_schema":{"type":"object"}})).collect::<Vec<_>>(),
+        "messages":[{"role":"user","content":"go"},{"role":"system","content":[addition]}]});
+    assert!(decode_client_request(body.to_string().as_bytes()).is_err());
+    let mut changes =
+        vec![json!({"type":"tool_removal","tool":{"type":"tool_reference","name":"f0"}})];
+    changes.extend(std::iter::repeat_n(addition, MAX_TOOLS + 1));
+    body["messages"][1]["content"] = json!(changes);
+    decode_client_request(body.to_string().as_bytes()).unwrap();
+    changes.push(json!({"type":"tool_addition","tool":{"type":"tool_reference","name":"f0"}}));
+    body["messages"][1]["content"] = json!(changes);
+    assert!(decode_client_request(body.to_string().as_bytes()).is_err());
+}
+
+#[test]
+fn inline_tools_keep_serial_intent_and_target_admission() {
+    use morphiecore::protocol::{anthropic, native::ReplayTarget};
+    let body = json!({"model":"m","max_tokens":64,
+        "messages":[{"role":"user","content":"go"},{"role":"system","content":[
+            {"type":"tool_addition","tool":{"type":"tool_definition","definition":{
+                "name":"read","input_schema":{"type":"object"}}}}]}]});
+    let mut request = decode_client_request(body.to_string().as_bytes()).unwrap();
+    let mut caps = anthropic::messages::TargetContract::new(
+        anthropic::messages::Profile::AdaptiveTextTools,
+        anthropic::messages::Dialect::Standard,
+    );
+    caps.dispositions.set_native(Feature::ToolChanges, true);
+    let target = ReplayTarget::new("synthetic", "synthetic").unwrap();
+    let source = request.clone();
+    caps.dispositions.set_native(Feature::Tools, false);
+    assert!(
+        caps.encode_request(&request, &target).is_err(),
+        "inline definitions must not bypass a binding's tool restriction"
+    );
+    caps.dispositions.set_native(Feature::Tools, true);
+    let mut settings = request.task.semantic.settings().clone();
+    settings.parallel_tool_calls = Some(false);
+    request.task.semantic = request.task.semantic.with_settings(settings).unwrap();
+    let wire = caps.encode_request(&request, &target).unwrap().value;
+    assert_eq!(
+        wire["tool_choice"],
+        json!({"type":"auto","disable_parallel_tool_use":true})
+    );
+    assert_eq!(source.task.semantic.items(), request.task.semantic.items());
+}
+
+#[test]
 fn client_tool_changes_keep_order_and_candidate_carriers() {
     use morphiecore::protocol::{anthropic, native::ReplayTarget};
     let definition = json!({"name":"write","input_schema":{"type":"object","properties":{

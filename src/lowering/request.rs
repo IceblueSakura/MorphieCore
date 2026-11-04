@@ -1655,9 +1655,7 @@ fn project_semantic_with_table<'a>(
             semantic = Cow::Owned(
                 semantic
                     .into_owned()
-                    .with_items(items)
-                    .map_err(CodecError::from)?
-                    .with_settings(settings)
+                    .with_items_and_settings(items, settings)
                     .map_err(CodecError::from)?,
             );
         }

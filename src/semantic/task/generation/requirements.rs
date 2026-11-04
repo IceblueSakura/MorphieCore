@@ -289,6 +289,7 @@ impl GenerationRequest {
                         tool,
                     ) = &change.action
                     {
+                        count(&mut facts, Tools, 1);
                         mark(
                             &mut facts,
                             StrictTools,
