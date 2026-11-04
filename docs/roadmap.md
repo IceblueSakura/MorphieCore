@@ -13,6 +13,9 @@ This page owns current scope, priorities, dependencies, and exit gates. [Archite
   - [Reference strategy](#reference-strategy)
   - [Agent-default production findings](#agent-default-production-findings)
   - [Tool protocol root repair](#tool-protocol-root-repair)
+    - [Stage-3 core packages](#stage-3-core-packages)
+    - [Conditional Stage-3 follow-ups](#conditional-stage-3-follow-ups)
+    - [Tool verification and scope gates](#tool-verification-and-scope-gates)
   - [Conversion-ladder migration](#conversion-ladder-migration)
     - [Remaining stabilization exit](#remaining-stabilization-exit)
   - [Retained rejections](#retained-rejections)
@@ -55,11 +58,12 @@ This page owns current scope, priorities, dependencies, and exit gates. [Archite
 
 ## Current status
 
-**Current focus (2026-11-04):** Plan the unified Chat/Responses/Messages tool repair across all nine client-to-upstream directions, including bounded lossy conversion, return delivery and replay. Pi Chat strict read and pi Responses `additional_tools` are concrete acceptance cases. OpenCode Responses missing annotations remains postponed; no normalization or acceptance waiver is selected. Complete AR5 real Provider checks and the full three-protocol installed-Agent exit before resuming Stage 4.
+**Current focus (2026-11-04):** Execute the scheduled Stage-3 tool-repair core, S3-T0–S3-T4, across all nine Chat/Responses/Messages directions. Concrete new loss policies are selected at S3-T0 before activation. Pi Chat strict read and pi Responses `additional_tools` are acceptance cases. OpenCode Responses missing annotations remains postponed; no normalization or acceptance waiver is selected. The core and outstanding default-profile gate precede AR5; Stage 4 resumes only after real Provider and installed-Agent acceptance.
 
 | Priority | Remaining work | Exit |
 |---|---|---|
-| Tool protocols | Select concrete approximation policies and execute the [nine-direction tool plan](#tool-protocol-root-repair) | Native/equivalent or explicitly lossy mappings complete client-native tool/history loops without hidden guarantee loss |
+| Stage-3 tool core | Execute [S3-T0–S3-T4](#stage-3-core-packages): contract selection, shared semantics, native mappings, bounded projections and nine-direction acceptance | Ordinary function loops complete in all nine directions, with no hidden guarantee loss |
+| Conditional tool follow-ups | [S3-T5–S3-T7](#conditional-stage-3-follow-ups): namespace aliases, custom-text wrappers and examples projection | Separate policy selection and full affected-loop acceptance; not default prerequisites for AR5 |
 | Agent defaults | Resolve pi Chat strict read; revisit postponed OpenCode Responses annotations | Actual default reasoning/tool/history loops pass without compatibility opt-outs or input rewriting |
 | Account acceptance | Provision fresh credentials, select actual Provider/model bindings, and complete AR5 | Bounded real Provider checks and installed-Agent exit on the rewritten account path |
 | API expansion | Select and implement Stage-4 operation contracts after AR5 | Per-operation lifecycle, protocol and SDK acceptance |
@@ -76,7 +80,7 @@ The identifiers below belong only to planning and acceptance documentation, not 
 
 | Order | Work | Completion evidence |
 |---|---|---|
-| **AR5 — Fresh credentials, model selection and real acceptance** | The user provisions new API keys and any required OAuth sessions through the new loader/CLI. Validate configured accounts and select actual Provider/model bindings. Then run bounded serial Provider checks and the deferred full installed-Agent exit on the rewritten path. | Actual credential kinds and selected models are verified separately from synthetic recovery. Current installed pi/OpenCode complete default reasoning/tool/history loops across the three client protocols and selected cross-protocol lanes. Unavailable account combinations are reported as unverified, not inferred from mocks. Production activation remains separately approved. |
+| **AR5 — Fresh credentials, model selection and real acceptance** | Entry: S3-T0–S3-T4 and the outstanding default-profile gate are complete. The user provisions new API keys and any required OAuth sessions through the new loader/CLI. Validate configured accounts and select actual Provider/model bindings. Then run bounded serial Provider checks and the deferred full installed-Agent exit on the rewritten path. | Actual credential kinds and selected models are verified separately from synthetic recovery. Current installed pi/OpenCode complete default reasoning/tool/history loops across the three client protocols and selected cross-protocol lanes. Unavailable account combinations are reported as unverified, not inferred from mocks. Production activation remains separately approved. |
 
 ### Verification and operator handoff
 
@@ -90,7 +94,7 @@ AR5 closure resumes the existing Stage-4 sequence, not a new API expansion.
 
 ## Three-protocol fidelity repair
 
-This workstream repairs semantic fidelity across standard Chat Completions, Responses, and Messages via the [conversion-ladder migration](#conversion-ladder-migration). Authoritative contracts: [conversion ladder](architecture.md#conversion-ladder), [field handling](architecture.md#field-handling), [projection principles](architecture.md#clientir-projection-principles), and [stream normalization](architecture.md#semantic-stream-normalization).
+This is the targeted **Stage-3 follow-up**, not a reopening of completed Stage-3 scope. It repairs semantic fidelity across standard Chat Completions, Responses, and Messages via the [tool core](#stage-3-core-packages) and [remaining stabilization exit](#remaining-stabilization-exit). Authoritative contracts: [conversion ladder](architecture.md#conversion-ladder), [field handling](architecture.md#field-handling), [projection principles](architecture.md#clientir-projection-principles), and [stream normalization](architecture.md#semantic-stream-normalization).
 
 ### Scope and boundaries
 
@@ -126,16 +130,31 @@ The [native-default characterization](development.md#installed-client-synthetic-
 
 The [accepted direction](architecture.md#ordered-tool-availability) covers three native and six cross-protocol paths across Chat, Responses and Messages, each including request, client-native return, tool-result submission and recall. The [design](api-expansion-design.md#three-protocol-tool-conversion-design) owns the nine-cell matrix, candidate losses and recommendations; [dated evidence](refs/2026-10-27-client-ir-boundaries.md#nine-direction-tool-assessment-2026-11-04) owns findings. Earlier Google assessment remains reference material; Google expansion is not part of this execution plan.
 
-**Planning complete; implementation and new loss-policy activation pending.** Use existing semantic types, validation, disposition tables, request/delivery projection, fidelity, strict JSON and SDK/Agent harnesses. No new dependency, persistent registry, executor, general schema simplifier or nine pair-specific adapters. First make one native Responses addition/function loop work end-to-end, then grow shared rules across the remaining cells.
+**Stage placement selected; implementation pending.** The core belongs before AR5, because it repairs the existing Generation tool contract rather than adding Stage-4 APIs or Stage-5 tool execution. Stage placement does not activate unselected loss policies. Use existing semantic types, validation, disposition tables, request/delivery projection, fidelity, strict JSON and SDK/Agent harnesses. No new dependency, persistent registry, executor, general schema simplifier or nine pair-specific adapters. First make one native Responses addition/function loop work end-to-end, then grow shared rules across the remaining cells.
 
-| Order / dependency | Coherent slice | Exit check |
+#### Stage-3 core packages
+
+S3-T0 → S3-T1 → S3-T2 → S3-T3 → S3-T4 is the core dependency order. Verification accompanies each slice; S3-T4 consolidates the connected exit rather than postponing tests. Identifiers are planning labels only, never module or test names.
+
+| Package / dependency | Coherent slice | Exit check |
 |---|---|---|
-| 1 / first | Qualify current official contracts and stable source/SDK pins; resolve or isolate collision precedence, forced-call cardinality, strictness strength, output roles and custom-stream gaps. Select the concrete first-package loss rows | Independent source expectations and a disposition for each material field family; unknown native behavior delegates, while transformations needing an unknown winner do not guess. No package/source version conflation |
-| 2 / after 1 | Generalize ordered batches and shared definition/availability checks. Separate current selection from historical identity. Fix inline-only choice, serial emission, feature/dispatch traversal and bounds; add only necessary semantic distinctions | Existing defect regressions fail before repair and pass after it; independent batch/ID, root/inline/namespace, required/named/allowed and malformed/bounds cases. A single Responses native request→call→result→recall slice works |
-| 3 / after 2 | Complete native function paths and ordinary cross mappings, source-default strictness, call cardinality, nullable input status and legal Messages positions. Reconcile SIWC inline declarations and subsequent direct calls | Three native function loops preserve their source guarantees; cross-protocol fixtures check both wire directions; no returned role promotion or fabricated historical schema. Pi strict-read admission is fixed at its actual protocol/binding owner, not by removing `strict:true` |
-| 4 / after 2–3 and policy selection | Generalize active-set/allowed-set projection from existing Messages collapse into one owner. Preserve more native history where current selection can still be enforced; retain existing error/default losses | V1/call/V2, removal/re-addition, deferred reference, empty set, conflicting forced choice and allowed-subset contrasts. Source history is immutable; cache-prefix loss is explicit; no withheld/removed tool becomes callable |
-| 5 / after 3–4, separately selectable | Implement namespace aliases with inverse request/return/history mapping; then grammar-free custom wrappers and examples projection only if selected | Duplicate leaf names, reorder/append/remove stability, original client names/kinds, candidate isolation, JSON/SSE/retained agreement. Wrappers have bounded buffering and honest truncated-input handling; no invented custom SSE |
-| 6 / throughout; final after selected slices | Complete nine-cell SDK/gateway acceptance and current installed-Agent checks; update discovery from the same dispositions and remove obsolete blanket rejection tests/helpers | Ordinary function call→result→answer→recall succeeds for all nine cells. Selected advanced families pass applicable directional tests or retain explicit boundaries. Full offline baseline and relevant SDK gates pass before publication |
+| **S3-T0 — Contracts and loss selection** / first | Qualify current official contracts and stable source/SDK pins; resolve or isolate collision precedence, forced-call cardinality, strictness strength, output roles and custom-stream gaps. Select the concrete first-package loss rows | Independent source expectations and a disposition for each material field family; unknown native behavior delegates, while transformations needing an unknown winner do not guess. No package/source version conflation |
+| **S3-T1 — Shared tool semantics** / after S3-T0 | Generalize ordered batches and shared definition/availability checks. Separate current selection from historical identity. Fix inline-only choice, serial emission, feature/dispatch traversal and bounds; add only necessary semantic distinctions | Existing defect regressions fail before repair and pass after it; independent batch/ID, root/inline/namespace, required/named/allowed and malformed/bounds cases. A single Responses native request→call→result→recall slice works |
+| **S3-T2 — Native and ordinary cross mappings** / after S3-T1 | Complete native function paths and ordinary cross mappings, source-default strictness, call cardinality, nullable input status and legal Messages positions. Reconcile SIWC inline declarations and subsequent direct calls | Three native function loops preserve their source guarantees; cross-protocol fixtures check both wire directions; no returned role promotion or fabricated historical schema. Pi strict-read admission is fixed at its actual protocol/binding owner, not by removing `strict:true` |
+| **S3-T3 — Bounded tool-set projection** / after S3-T2 and policy selection | Generalize active-set/allowed-set projection from existing Messages collapse into one owner. Preserve more native history where current selection can still be enforced; retain existing error/default losses | V1/call/V2, removal/re-addition, deferred reference, empty set, conflicting forced choice and allowed-subset contrasts. Source history is immutable; cache-prefix loss is explicit; no withheld/removed tool becomes callable |
+| **S3-T4 — Nine-direction offline and client exit** / after S3-T3 | Complete nine-cell SDK/gateway acceptance and current installed-Agent checks; update discovery from the same dispositions and remove obsolete blanket rejection tests/helpers | Ordinary function call→result→answer→recall succeeds for all nine cells. Pi default tool blockers pass synthetic checks; postponed OpenCode annotations stays separately reported. Full offline baseline and relevant SDK gates pass; real Provider evidence belongs to AR5 |
+
+#### Conditional Stage-3 follow-ups
+
+These existing-tool compatibility improvements belong to Stage 3, not modality expansion or hosted execution. They remain **conditionally scheduled after the core**, requiring separate policy selection. They do not block AR5 or Stage 4 by default; if a selected acceptance lane requires one, make that package an explicit prerequisite for that lane. Deferred packages remain here rather than being silently activated or treated as complete.
+
+| Package / entry | Scope | Exit check |
+|---|---|---|
+| **S3-T5 — Namespace aliases** / after S3-T4 and alias-policy selection | Reversible leaf names through request, selection, return and history; reuse candidate/delivery ownership | Duplicate leaf names, reorder/append/remove stability, original client identity, candidate isolation and JSON/SSE/retained agreement |
+| **S3-T6 — Plain custom-text wrapping** / after S3-T4 and wrapper-policy selection; S3-T5 only for namespaced wrappers | Grammar-free custom text through function wrappers and inverse delivery; no grammar-to-prose fallback | Exact completed text and original call kind, bounded buffering, honest partial/cancelled states and lawful client delivery; no invented custom SSE |
+| **S3-T7 — Tool examples projection** / after S3-T4 and content-policy selection | Bounded labelled examples in descriptions when no native examples carrier exists | Example order/content and absent-versus-empty meaning remain deliberate; schema, selection and strictness unchanged; token/cache/salience loss recorded |
+
+#### Tool verification and scope gates
 
 Verification is layered rather than every field multiplied by nine:
 
@@ -150,7 +169,7 @@ Risks that change the plan:
 - Unknown root/inline precedence prevents computing a faithful source active set for colliding definitions; scope that approximation to known cases, while preserving native shapes when possible.
 - Missing custom-SSE carriers or lawful returned-role replay prevent complete advanced-family loops. Keep those boundaries explicit; ordinary function work need not wait for a speculative transport.
 - Explicit strict, selected-tool, cardinality or serial guarantees with no target carrier remain rejected unless that concrete guarantee downgrade is selected. Do not repair by schema deletion, automatic prompting or a new silent fallback.
-- Namespace/wrapper losses require their own selection before slice 5; historical annotations, media relocation and grammar-to-prose are not recommended for the first package.
+- S3-T5–S3-T7 require their own policy selection and affected-loop acceptance; historical annotations, media relocation and grammar-to-prose remain outside the scheduled packages.
 
 Tool discovery, hosted/programmatic execution, new endpoints, Google expansion and OpenCode annotation normalization remain outside this plan. Public capability metadata must describe conditional mappings honestly; general protocol or SDK presence is not a per-model promise.
 
@@ -189,7 +208,7 @@ The [2026-10-28 source and feasibility recheck](refs/2026-10-27-client-ir-bounda
 | `user:null`, Chat refusal requiredness, Responses image-detail default | Preserve current intake; image `detail:"auto"` already takes L2 | Service contract clarifies the discrepancy or a selected strict consumer exposes a concrete failure |
 | Legacy function carriers | Retained rejection | A real client needs a constrained association/default/conflict/history contract |
 | Broader settings echo and richer output grouping | Case-specific ladder application | A concrete failure has an exact mapping or a bounded approximation; preserve report authority and content-coordinate ownership |
-| Messages custom-input wrapping | Defer as an end-to-end tool-interface adaptation | Declaration, arguments, return/history mapping and client execution expectations are selected together |
+| Messages custom-input wrapping | Conditional Stage-3 follow-up S3-T6; not a core exit prerequisite | Declaration, arguments, return/history mapping and client execution expectations are selected together |
 | Token scope and SDK drift | Investigate only the selected target/field; no automatic source-pin promotion | A bounded budget rule or reviewed version change has independent expectations and a reachable target path |
 
 ### Closure boundary
@@ -200,10 +219,13 @@ Default reasoning/tool/history gateway success on all three client protocols is 
 
 ## Planned order
 
-Only remaining stages are listed. Stage 4 resumes after [AR5](#ordered-work-and-exit-gates); Stage 5 remains unscheduled.
+Only remaining work is listed. The Stage-3 tool core precedes the outstanding default-profile gate and [AR5](#ordered-work-and-exit-gates); independent resolution of the postponed annotations decision can proceed alongside the core, but its gate is not waived. Stage 4 resumes after AR5; Stage 5 remains unscheduled.
 
 | Stage | Goal | Exit evidence |
 |---|---|---|
+| **3 — Tool-semantic core follow-up** | [S3-T0–S3-T4](#stage-3-core-packages): contracts, shared semantics, native/cross mappings, selected bounded projections and nine-direction acceptance | Nine ordinary function SDK/gateway loops, focused loss/invariant tests and current-Agent synthetic checks; no claim of live Provider acceptance |
+| **3 — Conditional compatibility follow-ups** | [S3-T5–S3-T7](#conditional-stage-3-follow-ups): namespace aliases, plain custom wrappers and examples projection | Separate policy selection and affected full-loop verification; not default blockers for AR5 or Stage 4 |
+| **AR5 — Pre-Stage-4 acceptance gate** | After the core and default-profile gate: fresh credentials, actual model/binding selection and bounded real Provider/current-Agent checks | Real tool/history loops on the rewritten account path; unresolved or unavailable lanes reported honestly |
 | **4 — Modalities, Decision & file resources** | Decision, Embedding extensions, Audio (Speech/Transcription/Translation), Images, Files/Uploads, and Video at equal priority | Verified request/result contracts, media bounds, resource isolation, cancellation, and SDK loops |
 | **5 — Unscheduled follow-ups** | Citations, tool discovery, hosted tools, server-side compaction, Batch, and Realtime | Requires explicit per-slice design selection and scheduling prior to implementation |
 
@@ -212,7 +234,7 @@ Only remaining stages are listed. Stage 4 resumes after [AR5](#ordered-work-and-
 Every work package follows this lifecycle:
 1. **Entry:** Pin source revisions, dialect rules, target profiles, and unresolved decisions. Document protocol findings in `docs/refs/`.
 2. **Delivery:** Implement one coherent request/result/stream/history slice. Resolve unselected structures with a minimal counterexample and options before proceeding.
-3. **Invariants:** Maintain immutable source IR, fresh per-attempt decoder state, and history-prefix stability during turn appending.
+3. **Invariants:** Maintain immutable source IR and fresh per-attempt decoder state. Native/equivalent history projections preserve earlier turns; selected lossy projections record rendered-prefix/cache changes under the [candidate-local contract](architecture.md#candidate-local-projection).
 4. **Evidence:** Provide independent directional tests and focused failure assertions at the responsible layer. Classify each field's ladder level and give rejections their L5 reason.
 5. **Exit:** Run the offline baseline and relevant SDK gates before commit and push. Remove completed roadmap packages and record decisions in [Architecture](architecture.md).
 
@@ -261,6 +283,7 @@ Before public Generate activation, resolve dimensions, quality tiers, creation t
 All Stage 5 tasks are currently unscheduled:
 - **Citations & source attribution:** Unified citation models ([1C proposal](api-expansion-design.md#1c-design-messages-citations)).
 - **Tool discovery:** Dynamic tool discovery and native `web_search`.
+- **Hosted tool execution:** Separate contracts for Provider-executed tools and observations; ordinary declarations, aliases and custom-text adaptation remain in the Stage-3 tool work.
 - **Server-side compaction:** Provider-executed `/responses/compact` operations.
 - **Batch:** Asynchronous job processing and reconciliation.
 - **Realtime:** Bi-directional streaming sessions, interruption, and media transport.
@@ -330,6 +353,9 @@ Prerequisites for activating newly implemented codec carriers on public routes:
 
 | Issue | Status | Action |
 |---|---|---|
+| Tool-set history loss | S3-T0 selection; S3-T3 implementation | Select effective-set/allowed-set losses without weakening explicit call/schema guarantees |
+| Namespace aliases, custom text and examples | Conditional S3-T5–S3-T7 | Select each content/interface adaptation separately; do not make all three implicit core prerequisites |
+| OpenCode missing annotations | Postponed user decision; default-profile gate remains open | Keep strict intake until its separate history contract is selected; tool work does not normalize it |
 | Complete citations | Stage 5 | Retain local point-anchor owner; defer full citation model |
 | Execution controls | Paused | Enforce pre-dispatch validation; reject unsupported controls |
 | Google error envelopes | Paused | Maintain per-API classification; avoid speculative unified parsing |
