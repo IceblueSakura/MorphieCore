@@ -21,7 +21,7 @@ This document owns the finalized account-redesign specification. It supersedes t
 
 ## User requirements
 
-1. **Several named accounts per Provider.** Each Provider supports several named accounts of its declared credential kinds. `openai` denotes OpenAI API-key access; `chatgpt` denotes SIWC OAuth access. They have separate model bindings and service contracts, rather than requiring mixed key/OAuth accounts under one OpenAI Provider. Account recovery can distinguish exhausted credit, rate limits and other failures (Provider split selected on 2026-11-02).
+1. **Several named accounts per Provider.** Each Provider supports several named accounts of exactly one catalog-owned credential kind: API key or OAuth with one fixed profile (generalized on 2026-11-04). `openai` denotes OpenAI API-key access; `chatgpt` denotes SIWC OAuth access. They have separate model bindings and service contracts, rather than requiring mixed key/OAuth accounts under one OpenAI Provider. Account recovery can distinguish exhausted credit, rate limits and other failures (Provider split selected on 2026-11-02).
 2. **Provider-owned recovery configuration.** Configure cooldown durations, backoff, reset-hint bounds and the short recovery-time budget (default 30 s). Permit at most one additional inference send for the selected network/server failure set before content publication, always to the same Provider, account, upstream model and effective endpoint. Do not restore per-class retry counters or within-request target switching. Provider classifiers replace operator-defined per-status rules (finalized on 2026-11-02).
 3. **API-key endpoint override.** API-key accounts inherit the Provider's default `base_url` unless they supply their own, including a deployment-specific API prefix. OAuth accounts never override it (user decision, 2026-10-30).
 4. **Global OAuth maintenance settings.** Configure the check interval and refresh-ahead window globally, without a separate timing configuration for every Provider.
@@ -76,10 +76,11 @@ Use three operator-facing concepts:
 
 ```text
 Provider
-  catalog facts: default origin, operation paths, header placement per credential kind
+  catalog facts: default origin, operation paths, one credential kind and optional OAuth profile
+  endpoint-specific header placement
   recovery policy
   ordered named accounts
-    credential: API key, or OAuth registration of a profile
+    credential: alias of a managed instance; kind/profile derived from Provider
     base_url override (API-key accounts only)
     enabled state
 
@@ -118,9 +119,13 @@ Configuration declares API-key `openai` and SIWC `chatgpt` directly; old referen
 
 ### Credential kind and header placement
 
-The account owns its credential kind: API key, or OAuth registration of a named profile. The Provider and its endpoints own how each kind is placed on the wire and which fixed request controls it needs. The two cannot share one field: OpenCode Go sends the same API key as a bearer token to Chat Completions and as `x-api-key` to Messages, while SIWC adds profile-specific request controls.
+Selected on 2026-11-04: each Provider owns exactly one credential kind, either API key or OAuth with one fixed profile. All accounts under that Provider use that kind; account configuration references only the managed credential instance by alias, without repeating `kind` or `profile`. When both access contracts are supported for one service, give them separate Provider IDs, as with `openai` and `chatgpt`.
 
-Validate each account's credential kind against the kinds its Provider declares. Handle authentication differences in the Provider/adapter boundary, not a capability-scoring router.
+Credential kind remains distinct from endpoint header placement and fixed request controls. OpenCode Go sends the same API key as a bearer token to Chat Completions and as `x-api-key` to Messages, while SIWC adds profile-specific request controls. Endpoint overrides must preserve the Provider's credential kind and OAuth profile.
+
+Binding, validation, provisioning and diagnostics derive kind/profile from the same catalog definition before credential access. Reject obsolete account-level `kind`/`profile` fields rather than inferring intent or supporting both schemas. Preserve separate API-key and OAuth lifecycle types, verified identity, trusted origins and replay provenance; this decision does not unify their lifecycle machinery or change credential-store namespaces, formats or encryption.
+
+The implementation already enforces one kind/profile per Provider but still requires redundant account fields. Removing those fields and updating all consumers is a pending [pre-acceptance adjustment](roadmap.md#ordered-work-and-exit-gates), not delivered behavior. [Usage](usage.md#configure-accounts) continues to describe the implemented schema until that slice lands.
 
 ### Targets and trust
 
