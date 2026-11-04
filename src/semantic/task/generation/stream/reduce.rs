@@ -58,6 +58,17 @@ pub fn reduce(mut state: StreamState, event: StreamEvent) -> Result<StreamState,
         StreamEvent::ToolResultOutput { item, output } => {
             items::update_tool_result(&mut state, item, output)?
         }
+        StreamEvent::ToolBatchSnapshot { item, batch } => {
+            if !matches!(state.open_item(item)?.kind, ItemKind::ToolBatch(_)) {
+                return Err(EventError::Lifecycle);
+            }
+            let old = match &state.open_item(item)?.kind {
+                ItemKind::ToolBatch(old) => old.validate(true)?,
+                _ => unreachable!("checked batch kind"),
+            };
+            state.charge(batch.validate(true)?.saturating_sub(old))?;
+            state.open_item(item)?.kind = ItemKind::ToolBatch(batch);
+        }
         StreamEvent::PartStarted { item, part, kind } => {
             if state.part_ids.len() >= MAX_ITEMS {
                 return Err(EventError::Limit);
@@ -439,12 +450,14 @@ pub fn reduce(mut state: StreamState, event: StreamEvent) -> Result<StreamState,
             state.charge(after)?;
         }
         StreamEvent::Terminal { terminal, details } => {
-            if terminal == StreamTerminal::Completed
-                && state
-                    .items
-                    .iter()
-                    .any(|i| i.status != Some(ItemLifecycle::Completed))
-            {
+            // Statusless declaration batches have no partial wire carrier.
+            // An overall incomplete outcome cannot turn an opener into a final batch.
+            if state.items.iter().any(|i| {
+                (terminal == StreamTerminal::Completed
+                    || terminal != StreamTerminal::Error
+                        && matches!(i.kind, ItemKind::ToolBatch(_)))
+                    && i.status != Some(ItemLifecycle::Completed)
+            }) {
                 return Err(EventError::Lifecycle);
             }
             let outcome = outcome(terminal);

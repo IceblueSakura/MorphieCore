@@ -96,6 +96,23 @@ pub fn check_event(
             )
             .map_err(|_| RepresentationError::TextMetadata)?;
         }
+        StreamEvent::ToolBatchSnapshot { batch, .. }
+        | StreamEvent::ItemStarted {
+            kind: ItemKind::ToolBatch(batch),
+            ..
+        } => {
+            if profile != GenerationApi::Responses
+                || !contract.dispositions.native(Feature::Tools)
+                || !contract.dispositions.native(Feature::CustomTools)
+                    && batch
+                        .tools
+                        .iter()
+                        .flat_map(ToolDefinition::leaves)
+                        .any(|tool| matches!(tool, ToolDefinition::Custom(_)))
+            {
+                return Err(RepresentationError::Tools);
+            }
+        }
         StreamEvent::TextMetadata { annotations, .. } => {
             for a in annotations {
                 crate::protocol::openai::content::citations::check(a, state.resources(), profile)

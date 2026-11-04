@@ -13,24 +13,7 @@ pub(crate) fn project(
     strict_carrier: impl Fn(&SchemaDocument) -> bool,
     fits_request: impl Fn(&GenerationRequest) -> bool,
 ) -> Result<Option<(GenerationRequest, Vec<Effect>)>, RepresentationError> {
-    let functions = || {
-        request
-            .tools()
-            .iter()
-            .flat_map(ToolDefinition::leaves)
-            .filter_map(|tool| match tool {
-                ToolDefinition::Function(tool) => Some(tool),
-                _ => None,
-            })
-            .chain(request.items().iter().filter_map(|(_, item)| match item {
-                Item::ToolChange(ToolChange {
-                    action: ToolChangeAction::AddDefinition(tool),
-                    ..
-                }) => Some(tool.as_ref()),
-                _ => None,
-            }))
-    };
-    if !functions().any(is_conditional) {
+    if !request.function_tools().any(is_conditional) {
         return Ok(None);
     }
     fn resolve(
@@ -51,45 +34,15 @@ pub(crate) fn project(
         tool.strict = FunctionStrictness::Explicit(exact_strict);
         *loss |= !exact_strict;
     }
-    fn resolve_tools(
-        tools: &mut [ToolDefinition],
-        strict_carrier: &impl Fn(&SchemaDocument) -> bool,
-        force_non_strict: bool,
-        loss: &mut bool,
-    ) {
-        for tool in tools {
-            match tool {
-                ToolDefinition::Function(tool) => {
-                    resolve(tool, strict_carrier, force_non_strict, loss);
-                }
-                ToolDefinition::Namespace(group) => {
-                    resolve_tools(&mut group.tools, strict_carrier, force_non_strict, loss);
-                }
-                _ => {}
-            }
-        }
-    }
     let resolve_request = |force_non_strict| -> Result<_, RepresentationError> {
         let mut settings = request.settings().clone();
         let mut loss = false;
-        resolve_tools(
-            settings.tools.as_deref_mut().unwrap_or_default(),
-            &strict_carrier,
-            force_non_strict,
-            &mut loss,
-        );
         let mut items = request.items().to_vec();
-        for (_, item) in &mut items {
-            if let Item::ToolChange(ToolChange {
-                action: ToolChangeAction::AddDefinition(tool),
-                ..
-            }) = item
-            {
-                resolve(tool, &strict_carrier, force_non_strict, &mut loss);
-            }
-        }
+        for_each_function_tool_mut(&mut settings, &mut items, |_, tool| {
+            resolve(tool, &strict_carrier, force_non_strict, &mut loss);
+        });
         Ok((
-            request.clone().with_settings(settings)?.with_items(items)?,
+            request.clone().with_items_and_settings(items, settings)?,
             loss,
         ))
     };

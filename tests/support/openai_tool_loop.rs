@@ -57,15 +57,17 @@ impl Drop for Fixture {
         }
     }
 }
-fn snapshot(profile: GenerationApi, turn: usize, reasoning: bool) -> Value {
+fn snapshot(profile: GenerationApi, turn: usize, reasoning: bool, batch: bool) -> Value {
     match profile {
         GenerationApi::Chat => chat::snapshot(turn, reasoning),
+        GenerationApi::Responses if batch => responses::batch_snapshot(turn),
         GenerationApi::Responses => responses::snapshot(turn),
     }
 }
-fn events(profile: GenerationApi, turn: usize, reasoning: bool) -> Vec<Value> {
+fn events(profile: GenerationApi, turn: usize, reasoning: bool, batch: bool) -> Vec<Value> {
     match profile {
         GenerationApi::Chat => chat::events(turn, reasoning),
+        GenerationApi::Responses if batch => responses::batch_events(turn),
         GenerationApi::Responses => responses::events(turn),
     }
 }
@@ -122,7 +124,7 @@ async fn answer(
     let stream = body["stream"] == true;
     let bytes = if stream {
         let mut bytes = Vec::new();
-        for mut event in events(profile, turn, reasoning) {
+        for mut event in events(profile, turn, reasoning, mode == "batch") {
             if incomplete {
                 if event["type"] == "response.output_item.done"
                     && event["item"]["type"] == "reasoning"
@@ -147,7 +149,7 @@ async fn answer(
         }
         bytes
     } else {
-        let mut value = snapshot(profile, turn, reasoning);
+        let mut value = snapshot(profile, turn, reasoning, mode == "batch");
         if incomplete {
             responses::make_incomplete(&mut value);
         }

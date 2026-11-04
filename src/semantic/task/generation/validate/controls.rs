@@ -36,6 +36,11 @@ pub(in crate::semantic::task::generation) fn output(
 pub(in crate::semantic::task::generation) fn tools(
     tools: &[ToolDefinition],
 ) -> Result<usize, GenerationError> {
+    declarations(tools.iter().map(ToolDeclaration::from))
+}
+pub(in crate::semantic::task::generation) fn declarations<'a>(
+    tools: impl ExactSizeIterator<Item = ToolDeclaration<'a>>,
+) -> Result<usize, GenerationError> {
     fn schema_bytes(total: &mut usize, bytes: usize) -> Result<(), GenerationError> {
         *total = total.checked_add(bytes).ok_or(GenerationError::Limit)?;
         if *total > MAX_TOTAL_BYTES {
@@ -49,14 +54,18 @@ pub(in crate::semantic::task::generation) fn tools(
     let mut names = BTreeSet::new();
     let mut groups = BTreeSet::new();
     let mut count = tools.len();
-    let mut bytes = 0;
+    let mut bytes = tools.len() * std::mem::size_of::<ToolDefinition>();
     for t in tools {
-        let n = t.name().as_str();
+        let (n, kind) = match t {
+            ToolDeclaration::Function(tool) => (tool.name.as_str(), Some(ToolKind::Function)),
+            ToolDeclaration::Custom(tool) => (tool.name.as_str(), Some(ToolKind::Custom)),
+            ToolDeclaration::Namespace(tool) => (tool.name.as_str(), None),
+        };
         if n.is_empty() || n.len() > 128 {
             return Err(GenerationError::InvalidToolDefinition);
         }
         add(&mut bytes, n)?;
-        if let ToolDefinition::Namespace(group) = t {
+        if let ToolDeclaration::Namespace(group) = t {
             if !groups.insert(n)
                 || group.tools.is_empty()
                 || group.tools.iter().any(|t| t.kind().is_none())
@@ -73,11 +82,11 @@ pub(in crate::semantic::task::generation) fn tools(
             add(&mut bytes, &group.description)?;
             continue;
         }
-        if !names.insert((t.kind().expect("leaf"), n)) {
+        if !names.insert((kind.expect("leaf"), n)) {
             return Err(GenerationError::InvalidToolDefinition);
         }
         match t {
-            ToolDefinition::Function(t) => {
+            ToolDeclaration::Function(t) => {
                 charge(&mut bytes, t.dispatch.validate()?)?;
                 charge(
                     &mut bytes,
@@ -101,7 +110,7 @@ pub(in crate::semantic::task::generation) fn tools(
                     }
                 }
             }
-            ToolDefinition::Custom(t) => {
+            ToolDeclaration::Custom(t) => {
                 charge(&mut bytes, t.dispatch.validate()?)?;
                 if let Some(d) = &t.description {
                     add(&mut bytes, d)?;
@@ -110,7 +119,7 @@ pub(in crate::semantic::task::generation) fn tools(
                     add(&mut bytes, definition.as_str())?;
                 }
             }
-            ToolDefinition::Namespace(_) => unreachable!("handled above"),
+            ToolDeclaration::Namespace(_) => unreachable!("handled above"),
         }
     }
     Ok(bytes)
@@ -123,7 +132,7 @@ pub(in crate::semantic::task::generation) fn tool_choice(
     root: &[ToolDefinition],
     items: &[(ItemId, Item)],
     choice: Option<&ToolChoice>,
-) -> Result<(), GenerationError> {
+) -> Result<usize, GenerationError> {
     let mut known = BTreeMap::new();
     let mut active = 0usize;
     for definition in root {
@@ -145,6 +154,34 @@ pub(in crate::semantic::task::generation) fn tool_choice(
         }
     }
     for (_, item) in items {
+        if let Item::ToolBatch(batch) = item {
+            for definition in &batch.tools {
+                let namespace = match definition {
+                    ToolDefinition::Namespace(group) => Some(group.name.as_str()),
+                    _ => None,
+                };
+                for leaf in definition.leaves() {
+                    let offered = match leaf {
+                        ToolDefinition::Function(tool) => !tool.dispatch.defer_loading,
+                        ToolDefinition::Custom(tool) => !tool.dispatch.defer_loading,
+                        ToolDefinition::Namespace(_) => unreachable!("validated leaf"),
+                    };
+                    let key = (namespace, leaf.kind().expect("leaf"), leaf.name().as_str());
+                    // A batch does not select a same-name schema winner. Membership
+                    // admits a possible native choice; collision-dependent lowering
+                    // must qualify precedence before projecting this history.
+                    let previous = known.entry(key).or_insert(false);
+                    if offered && !*previous {
+                        active += 1;
+                        *previous = true;
+                    }
+                }
+            }
+            if active > MAX_TOOLS {
+                return Err(GenerationError::Limit);
+            }
+            continue;
+        }
         let Item::ToolChange(change) = item else {
             continue;
         };
@@ -172,7 +209,8 @@ pub(in crate::semantic::task::generation) fn tool_choice(
         .into_iter()
         .filter_map(|(key, offered)| offered.then_some(key))
         .collect();
-    validate_choice(&available, choice)
+    validate_choice(&available, choice)?;
+    Ok(available.len())
 }
 
 fn validate_choice(

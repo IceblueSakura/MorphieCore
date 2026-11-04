@@ -85,6 +85,7 @@ impl EventEncoder {
     }
     pub(super) fn responses(&mut self, event: &StreamEvent) -> Result<Vec<Value>, CodecError> {
         let result = match event {
+            StreamEvent::ToolBatchSnapshot { .. } => vec![],
             StreamEvent::AudioDelta { .. } => {
                 return Err(CodecError::Unsupported(CarrierReason::Unavailable));
             }
@@ -168,6 +169,7 @@ impl EventEncoder {
                     ItemKind::ToolResult(_) | ItemKind::CustomResult(_) => {
                         item_wire(self.state()?, *item, &self.fidelity)?
                     }
+                    ItemKind::ToolBatch(_) => item_wire(self.state()?, *item, &self.fidelity)?,
                     ItemKind::ProviderTool(_) | ItemKind::ProviderResult { .. } => {
                         return Err(CodecError::Unsupported(CarrierReason::Unavailable));
                     }

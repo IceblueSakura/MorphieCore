@@ -22,6 +22,43 @@ pub struct GenerationRequest {
     envelopes: crate::semantic::task::generation::history::envelope::MessageEnvelopes,
 }
 impl GenerationRequest {
+    /// All retained declarations, not the current callable set. Namespace
+    /// containers and item attribution survive this borrowed view.
+    pub fn tool_declarations(&self) -> impl Iterator<Item = (Option<ItemId>, ToolDeclaration<'_>)> {
+        self.tools()
+            .iter()
+            .map(|tool| (None, ToolDeclaration::from(tool)))
+            .chain(self.items().iter().flat_map(|(id, item)| {
+                let batch = match item {
+                    Item::ToolBatch(batch) => batch.tools.as_slice(),
+                    _ => &[],
+                };
+                let single = match item {
+                    Item::ToolChange(ToolChange {
+                        action: ToolChangeAction::AddDefinition(tool),
+                        ..
+                    }) => Some(ToolDeclaration::Function(tool)),
+                    _ => None,
+                };
+                batch
+                    .iter()
+                    .map(ToolDeclaration::from)
+                    .chain(single)
+                    .map(move |tool| (Some(*id), tool))
+            }))
+    }
+    pub fn function_tools(&self) -> impl Iterator<Item = &FunctionTool> {
+        self.tool_declarations()
+            .flat_map(|(_, tool)| tool.leaves())
+            .filter_map(ToolDeclaration::function)
+    }
+    pub(crate) fn available_tool_count(&self) -> Result<usize, GenerationError> {
+        crate::semantic::task::generation::validate::tool_choice(
+            self.tools(),
+            self.items(),
+            self.tool_choice(),
+        )
+    }
     pub fn new(
         items: Vec<(ItemId, Item)>,
         controls: GenerationControls,

@@ -55,6 +55,7 @@ pub(crate) fn emit(
                 }
             }
             Item::ConfigurationUpdate(update) => ItemKind::ConfigurationUpdate(*update),
+            Item::ToolBatch(batch) => ItemKind::ToolBatch(batch.clone()),
             Item::Program(program) => ItemKind::Program {
                 call_id: program.call_id.clone(),
                 code: program.code.clone(),

@@ -146,6 +146,9 @@ pub(super) fn start_item(
     if let ItemKind::ConfigurationUpdate(update) = &kind {
         update.validate().map_err(|_| EventError::Lifecycle)?;
     }
+    if let ItemKind::ToolBatch(batch) = &kind {
+        state.charge(batch.validate(true)?)?;
+    }
     if let Some(r) = &replay {
         r.validate(&kind)?;
         state.charge(r.value.as_str().len())?;
@@ -194,6 +197,9 @@ pub(super) fn finish_item(
         return Err(EventError::Lifecycle);
     }
     let owner = state.open_item(item)?;
+    if matches!(owner.kind, ItemKind::ToolBatch(_)) && status != ItemLifecycle::Completed {
+        return Err(EventError::Lifecycle);
+    }
     if replay.is_none()
         && owner.replay.as_ref().is_some_and(|old| {
             matches!(owner.kind, ItemKind::ToolCall { .. }) || old.value.replay_token().is_some()

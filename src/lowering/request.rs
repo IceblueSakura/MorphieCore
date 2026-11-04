@@ -243,6 +243,14 @@ impl<'a> Target<'a> {
         table.set_native(ToolChoice, self.declared().native(Tools));
         match self {
             Self::OpenAi(api, c) => {
+                table.set_native(
+                    ToolChanges,
+                    api == GenerationApi::Responses
+                        && !source
+                            .items()
+                            .iter()
+                            .any(|(_, item)| matches!(item, Item::ToolChange(_))),
+                );
                 let rules = &c.adaptation.rules;
                 if rules.thinking_controls || rules.bailian_requests {
                     table.set(ReasoningActivation, Disposition::Native);
@@ -452,7 +460,9 @@ impl<'a> Target<'a> {
                 );
                 table.set(
                     ToolChanges,
-                    if c.dispositions.native(ToolChanges) {
+                    if source.items().iter().any(|(_, item)| matches!(item, Item::ToolBatch(_))) {
+                        Disposition::Reject("the native Messages carrier cannot preserve a declaration batch without a selected history projection")
+                    } else if c.dispositions.native(ToolChanges) {
                         Disposition::Native
                     } else if source.features().contains_key(&ToolExamples) {
                         Disposition::Reject(
@@ -685,10 +695,9 @@ impl<'a> Target<'a> {
             && streaming
             && custom_output
             && source
-                .tools()
-                .iter()
-                .flat_map(ToolDefinition::leaves)
-                .any(|tool| matches!(tool, ToolDefinition::Custom(_)))
+                .tool_declarations()
+                .flat_map(|(_, tool)| tool.leaves())
+                .any(|tool| matches!(tool, ToolDeclaration::Custom(_)))
         {
             table.set(
                 Feature::CustomTools,
@@ -718,8 +727,9 @@ impl<'a> Target<'a> {
             }
         }
         if contract.adaptation.rules.responses_siwc
-            && (source.tools().iter().any(|tool| {
-                !matches!(tool, ToolDefinition::Namespace(_)) || !tool.dispatch_inactive()
+            && (source.tool_declarations().any(|(owner, tool)| {
+                owner.is_none() && !matches!(tool, ToolDeclaration::Namespace(_))
+                    || !tool.dispatch_inactive()
             }) || source.items().iter().any(|(_, item)| match item {
                 Item::ToolCall(call) => {
                     call.context.namespace.is_none()
@@ -773,8 +783,8 @@ impl<'a> Target<'a> {
                     Disposition::Reject("the selected carrier cannot enforce this allocation mode"),
                 );
             }
-            if source.tools().iter().any(|tool| match tool {
-                ToolDefinition::Function(function) => {
+            if source.tool_declarations().any(|(_, tool)| match tool {
+                ToolDeclaration::Function(function) => {
                     function.output_schema.is_some() || !function.dispatch.is_inactive()
                 }
                 _ => true,
@@ -801,7 +811,7 @@ impl<'a> Target<'a> {
                                 | ToolChoice::Allowed { required: true, .. }
                         )
                     )
-                    && source.tools().len() != 1
+                    && source.available_tool_count() != Ok(1)
             {
                 table.set(
                     Feature::ToolChoice,
@@ -1161,24 +1171,6 @@ fn project_semantic_with_table<'a>(
     if table.get(Feature::ReasoningMode) == Disposition::Equivalent {
         settings.reasoning.mode = Presence::Absent;
     }
-    fn strip_eager(tools: &mut [ToolDefinition]) -> bool {
-        let mut changed = false;
-        for tool in tools {
-            match tool {
-                ToolDefinition::Function(tool) => changed |= tool.eager_input.take().is_some(),
-                ToolDefinition::Namespace(namespace) => {
-                    changed |= strip_eager(&mut namespace.tools)
-                }
-                _ => {}
-            }
-        }
-        changed
-    }
-    if let Disposition::Omit(rule) = table.get(Feature::EagerToolInput)
-        && strip_eager(settings.tools.as_deref_mut().unwrap_or_default())
-    {
-        evidence.push(rule.effect(ConversionBoundary::RequestProject));
-    }
     if matches!(target, Target::Messages(_))
         && !target.has_budget()
         && source.reasoning().budget_tokens.is_some()
@@ -1441,17 +1433,22 @@ fn project_semantic_with_table<'a>(
         settings.text.presence = None;
     }
     let mut items = semantic.items().to_vec();
-    for (id, item) in &mut items {
-        if let Item::ToolChange(change) = item
-            && let ToolChangeAction::AddDefinition(tool) = &mut change.action
-            && let Disposition::Omit(rule) = table.get(Feature::EagerToolInput)
-            && tool.eager_input.take().is_some()
-        {
-            evidence.push(
-                rule.effect(ConversionBoundary::RequestProject)
-                    .at(Owner::item(*id)),
-            );
+    if let Disposition::Omit(rule) = table.get(Feature::EagerToolInput) {
+        let mut owners = std::collections::BTreeSet::new();
+        for_each_function_tool_mut(&mut settings, &mut items, |owner, tool| {
+            if tool.eager_input.take().is_some() {
+                owners.insert(owner);
+            }
+        });
+        for owner in owners {
+            let mut effect = rule.effect(ConversionBoundary::RequestProject);
+            if let Some(id) = owner {
+                effect = effect.at(Owner::item(id));
+            }
+            evidence.push(effect);
         }
+    }
+    for (id, item) in &mut items {
         if let Item::ConfigurationUpdate(update) = item
             && let Some(effort) = update.effort
         {
@@ -1499,25 +1496,9 @@ fn project_semantic_with_table<'a>(
     let bailian =
         matches!(target, Target::OpenAi(_, contract) if contract.adaptation.rules.bailian_requests);
     if bailian {
-        fn descriptions(tool: &mut ToolDefinition) {
-            match tool {
-                ToolDefinition::Function(f) => {
-                    f.description.get_or_insert_with(String::new);
-                }
-                ToolDefinition::Namespace(ns) => ns.tools.iter_mut().for_each(descriptions),
-                _ => {}
-            }
-        }
-        if let Some(tools) = &mut settings.tools {
-            tools.iter_mut().for_each(descriptions);
-        }
-        for (_, item) in &mut items {
-            if let Item::ToolChange(change) = item
-                && let ToolChangeAction::AddDefinition(tool) = &mut change.action
-            {
-                tool.description.get_or_insert_with(String::new);
-            }
-        }
+        for_each_function_tool_mut(&mut settings, &mut items, |_, tool| {
+            tool.description.get_or_insert_with(String::new);
+        });
     }
     for (_, item) in &mut items {
         fn detail(use_: &mut ResourceUse, target: Target<'_>, evidence: &mut EvidenceDelta) {
@@ -1815,19 +1796,10 @@ fn project_cache(
             _ => {}
         }
     }
-    fn strip_tools(tools: &mut [ToolDefinition]) -> bool {
-        let mut changed = false;
-        for tool in tools {
-            match tool {
-                ToolDefinition::Function(tool) => changed |= tool.cache.take().is_some(),
-                ToolDefinition::Namespace(group) => changed |= strip_tools(&mut group.tools),
-                _ => {}
-            }
-        }
-        changed
-    }
     if ttl {
-        omitted_ttl |= strip_tools(settings.tools.as_deref_mut().unwrap_or_default());
+        for_each_function_tool_mut(settings, items, |_, tool| {
+            omitted_ttl |= tool.cache.take().is_some();
+        });
         for (_, item) in items {
             match item {
                 Item::ToolCall(call) => omitted_ttl |= call.cache.take().is_some(),
@@ -1836,9 +1808,6 @@ fn project_cache(
                 }
                 Item::ToolChange(change) => {
                     omitted_ttl |= change.cache.take().is_some();
-                    if let ToolChangeAction::AddDefinition(tool) = &mut change.action {
-                        omitted_ttl |= tool.cache.take().is_some();
-                    }
                 }
                 _ => {}
             }

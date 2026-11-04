@@ -34,20 +34,7 @@ pub(crate) fn admits_generation(
     use crate::semantic::task::generation::*;
     let empty = crate::protocol::openai::lowering::strictness::empty_parameters();
     let tools = request
-        .tools()
-        .iter()
-        .flat_map(ToolDefinition::leaves)
-        .filter_map(|tool| match tool {
-            ToolDefinition::Function(tool) => Some(tool),
-            _ => None,
-        })
-        .chain(request.items().iter().filter_map(|(_, item)| match item {
-            Item::ToolChange(ToolChange {
-                action: ToolChangeAction::AddDefinition(tool),
-                ..
-            }) => Some(tool.as_ref()),
-            _ => None,
-        }))
+        .function_tools()
         .filter(|tool| tool.strict == FunctionStrictness::Explicit(true))
         .map(|tool| tool.parameters.as_ref().unwrap_or(&empty).root());
     let output = match request.output() {

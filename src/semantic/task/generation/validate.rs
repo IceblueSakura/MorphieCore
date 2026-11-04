@@ -285,6 +285,9 @@ pub fn items(
                 )?;
             }
             Item::ConfigurationUpdate(update) => update.validate()?,
+            Item::ToolBatch(batch) => {
+                charge(&mut bytes, batch.validate(response)?)?;
+            }
             Item::ToolChange(change) => {
                 if response {
                     return Err(GenerationError::InvalidResponse);
@@ -292,7 +295,7 @@ pub fn items(
                 match &change.action {
                     ToolChangeAction::AddDefinition(tool) => charge(
                         &mut bytes,
-                        tools(&[ToolDefinition::Function((**tool).clone())])?,
+                        controls::declarations(std::iter::once(ToolDeclaration::Function(tool)))?,
                     )?,
                     ToolChangeAction::AddReference(name) | ToolChangeAction::Remove(name) => {
                         if !nonempty_within(name.as_str(), MAX_NAME_BYTES) {

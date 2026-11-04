@@ -649,6 +649,7 @@ pub(in crate::protocol::openai) fn encode_items_with(
             Item::ProviderTool(_)
             | Item::ConfigurationUpdate(_)
             | Item::ToolChange(_)
+            | Item::ToolBatch(_)
             | Item::Compaction(_)
             | Item::Program(_)
             | Item::ProgramOutput(_) => {

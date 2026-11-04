@@ -1,7 +1,7 @@
 use crate::semantic::task::generation::{
     ContentPart, EffortScope, Feature, FunctionStrictness, GenerationRequest, GenerationResponse,
     Item, OutputConstraint, PrefixCacheBoundary, ResourceKind, ResourceLocation, ResourceUse,
-    StrictDefault, ToolDefinition,
+    StrictDefault, ToolDeclaration, ToolDefinition,
 };
 use std::collections::BTreeMap;
 
@@ -141,14 +141,14 @@ impl GenerationRequest {
                 }
             }
         }
-        for tool in r.tools().iter().flat_map(ToolDefinition::leaves) {
+        for tool in r.tool_declarations().flat_map(|(_, tool)| tool.leaves()) {
             count(&mut facts, Tools, 1);
             mark(
                 &mut facts,
                 CustomTools,
-                matches!(tool, ToolDefinition::Custom(_)),
+                matches!(tool, ToolDeclaration::Custom(_)),
             );
-            if let ToolDefinition::Function(tool) = tool {
+            if let ToolDeclaration::Function(tool) = tool {
                 mark(
                     &mut facts,
                     StrictTools,
@@ -283,26 +283,8 @@ impl GenerationRequest {
                 }
                 Item::Compaction(_) => mark(&mut facts, Compaction, true),
                 Item::ProviderTool(_) => mark(&mut facts, ProviderObservation, true),
-                Item::ToolChange(change) => {
+                Item::ToolBatch(_) | Item::ToolChange(_) => {
                     mark(&mut facts, ToolChanges, true);
-                    if let crate::semantic::task::generation::ToolChangeAction::AddDefinition(
-                        tool,
-                    ) = &change.action
-                    {
-                        count(&mut facts, Tools, 1);
-                        mark(
-                            &mut facts,
-                            StrictTools,
-                            tool.strict == FunctionStrictness::Explicit(true),
-                        );
-                        mark(&mut facts, ToolExamples, tool.input_examples.is_some());
-                        mark(&mut facts, EagerToolInput, tool.eager_input.is_some());
-                        mark(
-                            &mut facts,
-                            ConditionalToolStrictness,
-                            tool.strict == FunctionStrictness::Omitted(StrictDefault::Conditional),
-                        );
-                    }
                 }
             }
         }
@@ -341,6 +323,14 @@ impl GenerationResponseRequirements {
                 Item::Instruction(_) => q.instructions = true,
                 Item::ProviderTool(_) => q.provider_observations = true,
                 Item::ToolChange(_) => q.tools = true,
+                Item::ToolBatch(batch) => {
+                    q.tools = true;
+                    q.custom_tools |= batch
+                        .tools
+                        .iter()
+                        .flat_map(ToolDefinition::leaves)
+                        .any(|tool| matches!(tool, ToolDefinition::Custom(_)));
+                }
                 Item::ToolCall(call) => {
                     q.tools = true;
                     q.structured_arguments |= !matches!(

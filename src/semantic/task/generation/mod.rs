@@ -26,7 +26,7 @@ pub use content::citation::{
 };
 pub use content::item::{
     ConfigurationUpdate, ContentPart, InputPart, Instruction, Item, Message, MessageRole, Part,
-    Phase, ToolChange, ToolChangeAction,
+    Phase, ToolBatch, ToolBatchRole, ToolChange, ToolChangeAction,
 };
 pub use content::reasoning::{
     EffortControl, EffortLevel, EffortScope, ReasoningActivation, ReasoningContent,
@@ -67,6 +67,7 @@ pub use terminal_reports::{RefusalCategory, RefusalDetails, TerminalExplanation}
 pub const MAX_TERMINAL_REPORT_BYTES: usize = 64 << 10;
 pub use stream::audio::{AudioBuffer, AudioUpdate};
 pub use stream::value::StreamPartValue;
+pub(crate) use tools::for_each_function_tool_mut;
 pub use tools::provider::{
     ProviderAction, ProviderExecutionProgress, ProviderOperation, ProviderOperationReference,
     ProviderRequester, ProviderResultFormat, ProviderToolObservation,
@@ -76,7 +77,7 @@ pub use tools::{
     ArgumentFormat, CallContext, CallOrigin, CallerMode, CustomCall, CustomFormat, CustomTool,
     FunctionStrictness, FunctionTool, GrammarSyntax, ItemLifecycle, PrefixCacheBoundary,
     PrefixCacheTtl, Program, ProgramOutput, StrictDefault, ToolArguments, ToolCall, ToolChoice,
-    ToolDefinition, ToolDispatch, ToolKind, ToolNamespace, ToolReference,
+    ToolDeclaration, ToolDefinition, ToolDispatch, ToolKind, ToolNamespace, ToolReference,
 };
 pub use usage::reports::{
     CacheWriteTokens, ModalityTokens, SplitTotalRelation, TokenModality, ToolInputRelation,

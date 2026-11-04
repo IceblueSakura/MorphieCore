@@ -144,6 +144,7 @@ impl StreamItem {
                     .clone(),
             ),
             ItemKind::ConfigurationUpdate(update) => Item::ConfigurationUpdate(*update),
+            ItemKind::ToolBatch(batch) => Item::ToolBatch(batch.clone()),
             ItemKind::Program {
                 call_id,
                 code,

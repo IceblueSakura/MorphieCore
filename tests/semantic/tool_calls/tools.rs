@@ -17,6 +17,346 @@ use serde_json::{Value, json};
 fn text(s: &str) -> Text {
     Text::new(s, "fixture", 1024).unwrap()
 }
+// Official Responses ToolParam/AdditionalTools unions and ordered-additions guide:
+// docs/refs/2026-10-27-client-ir-boundaries.md#tool-contract-qualification-2026-11-04
+fn definition_batch() -> Value {
+    json!({"type":"additional_tools","id":"batch-a","role":"developer","tools":[
+        {"type":"function","name":"read","strict":true,"parameters":{
+            "type":"object","properties":{"path":{"type":"string"}},"required":["path"],"additionalProperties":false}},
+        {"type":"custom","name":"note","format":{"type":"text"}},
+        {"type":"namespace","name":"ops","description":"Scoped tools","tools":[
+            {"type":"function","name":"read","strict":false,"parameters":{"type":"object"}}]}
+    ]})
+}
+#[test]
+fn responses_batches_keep_membership_identity_order_and_shared_admission() {
+    let batch = definition_batch();
+    let source = json!({"input":[
+        {"role":"user","content":"read"},
+        batch,
+        {"type":"additional_tools","id":"empty-batch","role":"developer","tools":[]}
+    ],"tool_choice":{"type":"allowed_tools","mode":"required","tools":[
+        {"type":"function","name":"read"},{"type":"custom","name":"note"}
+    ]},"parallel_tool_calls":false});
+    let decoded = responses::decode_generation(&source).unwrap();
+    assert_eq!(decoded.semantic.items().len(), 3);
+    let (owner, Item::ToolBatch(batch)) = &decoded.semantic.items()[1] else {
+        panic!("one batch owner")
+    };
+    assert_eq!(batch.tools.len(), 3);
+    assert_eq!(decoded.fidelity.response_item_id(*owner), Some("batch-a"));
+    assert_eq!(decoded.semantic.function_tools().count(), 2);
+    assert!(
+        decoded
+            .semantic
+            .features()
+            .contains_key(&Feature::CustomTools)
+    );
+    let encoded = request_wire(&decoded, GenerationApi::Responses);
+    assert_eq!(encoded["input"][1], source["input"][1]);
+    assert_eq!(encoded["input"][2], source["input"][2]);
+    assert_eq!(encoded["tool_choice"], source["tool_choice"]);
+    assert_eq!(encoded["parallel_tool_calls"], false);
+    assert!(encoded.get("tools").is_none());
+    for feature in [Feature::Tools, Feature::StrictTools, Feature::CustomTools] {
+        let mut contract = Contract::full();
+        contract.dispositions.set_native(feature, false);
+        assert!(
+            lower_request(
+                &decoded.semantic,
+                &decoded.fidelity,
+                GenerationApi::Responses,
+                contract
+            )
+            .is_err()
+        );
+    }
+    let mut invalid_strict = source.clone();
+    invalid_strict["input"][1]["tools"][0]["parameters"]
+        .as_object_mut()
+        .unwrap()
+        .remove("required");
+    let invalid_strict = responses::decode_generation(&invalid_strict).unwrap();
+    assert!(
+        lower_request(
+            &invalid_strict.semantic,
+            &invalid_strict.fidelity,
+            GenerationApi::Responses,
+            Contract::full()
+        )
+        .is_err()
+    );
+    assert_eq!(
+        request_wire(&decoded, GenerationApi::Responses)["input"][1],
+        source["input"][1]
+    );
+    let mut items = decoded.semantic.items().to_vec();
+    let Item::ToolBatch(batch) = &mut items[1].1 else {
+        panic!("batch")
+    };
+    let ToolDefinition::Namespace(group) = &mut batch.tools[2] else {
+        panic!("namespace")
+    };
+    let ToolDefinition::Function(tool) = &mut group.tools[0] else {
+        panic!("function")
+    };
+    tool.cache = Some(PrefixCacheTtl::FiveMinutes);
+    tool.eager_input = Some(true);
+    tool.strict = FunctionStrictness::Explicit(true);
+    tool.parameters = Some(
+        json!({"type":"object","properties":{},"required":[],"additionalProperties":false}).into(),
+    );
+    let source = decoded.semantic.clone().with_items(items).unwrap();
+    let before = source.clone();
+    let projected = lower_request(
+        &source,
+        &decoded.fidelity,
+        GenerationApi::Responses,
+        Contract::full(),
+    )
+    .unwrap();
+    assert!(
+        projected
+            .semantic()
+            .function_tools()
+            .all(|tool| tool.cache.is_none() && tool.eager_input.is_none())
+    );
+    assert!(projected.projection().iter().any(|effect| effect.owner()
+        == morphiecore::protocol::conversion::generation::Owner::item(source.items()[1].0)));
+    let encoded = responses::encode_generation(&projected).unwrap();
+    assert_eq!(encoded["input"][1]["tools"][2]["tools"][0]["strict"], true);
+    assert_eq!(
+        encoded["input"][1]["tools"][2]["tools"][0]["parameters"],
+        json!({"type":"object","properties":{},"required":[],"additionalProperties":false})
+    );
+    assert_eq!(source, before);
+}
+#[test]
+fn native_batches_preserve_old_arguments_without_choosing_a_schema_winner() {
+    let batch = |key: &str| {
+        json!({"type":"additional_tools","role":"developer","tools":[
+            {"type":"function","name":"read","strict":false,"parameters":{
+                "type":"object","properties":{key:{"type":"integer"}},"required":[key]}}
+        ]})
+    };
+    let source = json!({"input":[batch("old"),
+        {"type":"function_call","id":"historical-call","call_id":"call","name":"read","arguments":"{ \"old\":9007199254740993 }"},
+        {"type":"function_call_output","call_id":"call","output":"old-result"},
+        batch("new")
+    ],"tool_choice":{"type":"function","name":"read"}});
+    let decoded = responses::decode_generation(&source).unwrap();
+    let encoded = request_wire(&decoded, GenerationApi::Responses);
+    assert_eq!(encoded["input"], source["input"]);
+}
+#[test]
+fn responses_batch_presence_bounds_and_choice_follow_the_input_contract() {
+    let batch = definition_batch();
+    for id in [None, Some(Value::Null), Some(json!("batch-a"))] {
+        let mut batch = batch.clone();
+        if let Some(id) = &id {
+            batch["id"] = id.clone();
+        } else {
+            batch.as_object_mut().unwrap().remove("id");
+        }
+        let decoded = responses::decode_generation(&json!({"input":[batch]})).unwrap();
+        let encoded = request_wire(&decoded, GenerationApi::Responses);
+        assert_eq!(
+            encoded["input"][0]["id"].as_str(),
+            id.as_ref().and_then(Value::as_str)
+        );
+    }
+    for field in ["tools", "role"] {
+        for value in [None, Some(Value::Null), Some(json!(17))] {
+            let mut batch = batch.clone();
+            if let Some(value) = value {
+                batch[field] = value;
+            } else {
+                batch.as_object_mut().unwrap().remove(field);
+            }
+            assert!(responses::decode_generation(&json!({"input":[batch]})).is_err());
+        }
+    }
+    let mut too_many = batch.clone();
+    too_many["tools"] = (0..=MAX_TOOLS)
+        .map(|i| json!({"type":"function","name":format!("f{i}")}))
+        .collect();
+    assert!(responses::decode_generation(&json!({"input":[too_many]})).is_err());
+    assert!(responses::decode_generation(&json!({"input":[batch.clone(),batch]})).is_err());
+    let empty = json!({"input":[{"type":"additional_tools","role":"developer","tools":[]}]});
+    assert_eq!(
+        responses::decode_generation(&empty)
+            .unwrap()
+            .semantic
+            .items()
+            .len(),
+        1
+    );
+    let mut required = empty;
+    required["tool_choice"] = json!("required");
+    assert!(responses::decode_generation(&required).is_err());
+}
+#[test]
+fn responses_returned_batches_keep_snapshot_roles_and_replay_authority() {
+    use morphiecore::protocol::openai::{Dialect, GenerationCodec};
+    for id in [None, Some(Value::Null)] {
+        let mut batch = definition_batch();
+        if let Some(id) = id {
+            batch["id"] = id;
+        } else {
+            batch.as_object_mut().unwrap().remove("id");
+        }
+        assert!(responses::decode_response(&envelope("completed", json!([batch]))).is_err());
+    }
+    let input =
+        responses::decode_generation(&json!({"input":[{"role":"user","content":"go"}]})).unwrap();
+    let codec = GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None);
+    for role in ["developer", "system", "unknown"] {
+        let mut batch = definition_batch();
+        batch["role"] = json!(role);
+        let response = envelope("completed", json!([batch]));
+        let static_value = responses::decode_response(&response).unwrap();
+        let representation = lower_response(
+            &static_value.semantic,
+            &static_value.fidelity,
+            &static_value.metadata,
+            GenerationApi::Responses,
+            Contract::full(),
+        )
+        .unwrap();
+        assert_eq!(
+            responses::encode_response(&representation).unwrap()["output"],
+            response["output"]
+        );
+        let frames = crate::wire::response_events(response.clone());
+        let mut decoder = events::EventDecoder::new(GenerationApi::Responses);
+        let mut semantic_events = Vec::new();
+        for frame in &frames {
+            semantic_events.extend(decoder.push(frame).unwrap());
+        }
+        decoder.finish().unwrap();
+        let streamed = decoder.materialize().unwrap();
+        assert_eq!(streamed.semantic.items(), static_value.semantic.items());
+        let rendered = encode(
+            &semantic_events,
+            GenerationApi::Responses,
+            &streamed.fidelity,
+        );
+        assert_eq!(
+            rendered.last().unwrap()["response"]["output"],
+            response["output"]
+        );
+        let continuation = json!({"model":"synthetic","input":[{"role":"user","content":"next"}]});
+        let managed = codec.decode_client_history(
+            &serde_json::to_vec(&continuation).unwrap(),
+            Some((&input, &static_value)),
+        );
+        assert_eq!(managed.is_ok(), role == "developer");
+        let manual = responses::decode_generation(&json!({"input":response["output"]}));
+        assert_eq!(manual.is_ok(), role == "developer");
+        let mut missing_done = events::EventDecoder::new(GenerationApi::Responses);
+        for frame in frames.iter().take(2) {
+            missing_done.push(frame).unwrap();
+        }
+        assert!(missing_done.finish().is_err());
+        let mut changed = events::EventDecoder::new(GenerationApi::Responses);
+        changed.push(&frames[0]).unwrap();
+        changed.push(&frames[1]).unwrap();
+        let mut done = frames[2].clone();
+        done["item"]["id"] = json!("different-batch");
+        assert!(changed.push(&done).is_err());
+    }
+}
+#[test]
+fn returned_batch_custom_carrier_is_checked_at_open_and_final_snapshot() {
+    let mut batch = definition_batch();
+    batch["tools"] = json!([batch["tools"][2].clone()]);
+    batch["tools"][0]["tools"] = json!([{"type":"custom","name":"note","format":{"type":"text"}}]);
+    let decoded = responses::decode_response(&envelope("completed", json!([batch]))).unwrap();
+    let mut contract = Contract::full();
+    contract
+        .dispositions
+        .set_native(Feature::CustomTools, false);
+    assert!(
+        lower_response(
+            &decoded.semantic,
+            &decoded.fidelity,
+            &decoded.metadata,
+            GenerationApi::Responses,
+            contract.clone()
+        )
+        .is_err()
+    );
+    let Item::ToolBatch(batch) = &decoded.semantic.items()[0].1 else {
+        panic!("batch")
+    };
+    for opening in [true, false] {
+        let mut encoder = events::EventEncoder::new(GenerationApi::Responses, metadata())
+            .unwrap()
+            .with_contract(contract.clone());
+        encoder
+            .encode(&StreamEvent::Started, &decoded.fidelity)
+            .unwrap();
+        let start = start(
+            1,
+            ItemKind::ToolBatch(if opening {
+                batch.clone()
+            } else {
+                ToolBatch {
+                    tools: vec![],
+                    role: ToolBatchRole::Developer,
+                }
+            }),
+        );
+        let result = encoder.encode(&start, &decoded.fidelity);
+        if opening {
+            assert!(result.is_err());
+        } else {
+            result.unwrap();
+            assert!(
+                encoder
+                    .encode(
+                        &StreamEvent::ToolBatchSnapshot {
+                            item: ItemId::new(1),
+                            batch: batch.clone()
+                        },
+                        &decoded.fidelity
+                    )
+                    .is_err()
+            );
+        }
+    }
+}
+#[test]
+fn incomplete_terminal_cannot_close_an_unfinished_declaration_batch() {
+    let mut batch = definition_batch();
+    batch["tools"] = json!([]);
+    let mut response = envelope("incomplete", json!([batch]));
+    response["incomplete_details"] = json!({"reason":"max_output_tokens"});
+    let frames = crate::wire::response_events(response);
+    let mut decoder = events::EventDecoder::new(GenerationApi::Responses);
+    for frame in &frames {
+        decoder.push(frame).unwrap();
+    }
+    decoder.finish().unwrap();
+    let mut missing_done = events::EventDecoder::new(GenerationApi::Responses);
+    for frame in frames.iter().take(2) {
+        missing_done.push(frame).unwrap();
+    }
+    assert!(missing_done.push(frames.last().unwrap()).is_err());
+    assert!(missing_done.materialize().is_err());
+    let prefix = [
+        StreamEvent::Started,
+        start(
+            1,
+            ItemKind::ToolBatch(ToolBatch {
+                tools: vec![],
+                role: ToolBatchRole::Developer,
+            }),
+        ),
+    ];
+    let state = apply(&prefix).unwrap();
+    assert!(reduce(state, close(1, ItemLifecycle::Incomplete)).is_err());
+}
 fn chat_history() -> Value {
     json!({"messages":[
         {"role":"user","content":"weather?"},

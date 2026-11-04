@@ -99,6 +99,8 @@ pub enum Item {
     ConfigurationUpdate(ConfigurationUpdate),
     /// Ordered tool availability change; request tools stay the initial declaration.
     ToolChange(ToolChange),
+    /// One ordered declaration batch, independent of replacement-style changes.
+    ToolBatch(ToolBatch),
     Program(Program),
     ProgramOutput(ProgramOutput),
     ProviderTool(ProviderToolObservation),
@@ -126,6 +128,32 @@ impl ConfigurationUpdate {
 pub struct ToolChange {
     pub action: ToolChangeAction,
     pub cache: Option<PrefixCacheTtl>,
+}
+/// A batch keeps its position and membership under one item identity.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ToolBatch {
+    pub tools: Vec<ToolDefinition>,
+    /// A reported role is not an instruction or an authorization grant.
+    pub role: ToolBatchRole,
+}
+impl ToolBatch {
+    pub(crate) fn validate(&self, response: bool) -> Result<usize, GenerationError> {
+        if !response && self.role != ToolBatchRole::Developer {
+            return Err(GenerationError::InvalidToolDefinition);
+        }
+        crate::semantic::task::generation::validate::tools(&self.tools)
+    }
+}
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ToolBatchRole {
+    Unknown,
+    User,
+    Assistant,
+    System,
+    Critic,
+    Discriminator,
+    Developer,
+    Tool,
 }
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ToolChangeAction {
@@ -254,6 +282,18 @@ impl Item {
             .chain(messages.iter().filter_map(|p| p.cache))
             .chain(results.iter().filter_map(|p| p.cache))
             .chain(outer.into_iter().flatten().map(PrefixCacheBoundary::Ttl))
+            .chain(
+                match self {
+                    Self::ToolBatch(batch) => batch.tools.as_slice(),
+                    _ => &[],
+                }
+                .iter()
+                .flat_map(ToolDefinition::leaves)
+                .filter_map(|tool| match tool {
+                    ToolDefinition::Function(tool) => tool.cache.map(PrefixCacheBoundary::Ttl),
+                    _ => None,
+                }),
+            )
     }
     pub fn has_cache_breakpoints(&self) -> bool {
         self.cache_boundaries().next().is_some()

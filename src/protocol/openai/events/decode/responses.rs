@@ -298,6 +298,13 @@ impl EventDecoder {
                     result: raw_string(v, "result")?,
                 }
             }
+            "additional_tools" => {
+                ItemKind::ToolBatch(crate::protocol::openai::responses::items::tool_batch(
+                    v,
+                    true,
+                    DecodeDirection::Upstream,
+                )?)
+            }
             "function_call" => {
                 DecodeDirection::Upstream.fields(
                     v,
@@ -931,6 +938,24 @@ impl EventDecoder {
             .ok_or(CodecError::Invalid(ShapeReason::Identity))?;
         let v = o.get("item").ok_or(CodecError::invalid())?;
         let p = object(v)?;
+        if matches!(self.state()?.item(item)?.kind, ItemKind::ToolBatch(_)) {
+            if string(p, "type")? != "additional_tools"
+                || self.fidelity.response_item_id(item) != Some(string(p, "id")?)
+            {
+                return Err(CodecError::Invalid(ShapeReason::Identity));
+            }
+            self.emit(
+                StreamEvent::ToolBatchSnapshot {
+                    item,
+                    batch: crate::protocol::openai::responses::items::tool_batch(
+                        p,
+                        true,
+                        DecodeDirection::Upstream,
+                    )?,
+                },
+                out,
+            )?;
+        }
         if let ItemKind::ToolResult(old) | ItemKind::CustomResult(old) =
             &self.state()?.item(item)?.kind
         {
@@ -958,7 +983,10 @@ impl EventDecoder {
                 out,
             )?;
         }
-        let status = if matches!(self.state()?.item(item)?.kind, ItemKind::CustomCall { .. }) {
+        let status = if matches!(
+            self.state()?.item(item)?.kind,
+            ItemKind::CustomCall { .. } | ItemKind::ToolBatch(_)
+        ) {
             ItemLifecycle::Completed
         } else {
             match p.get("status").filter(|v| !v.is_null()) {
@@ -1004,12 +1032,14 @@ impl EventDecoder {
             out,
         )?;
         let snapshot = self.state()?.item(item)?.snapshot()?;
-        self.fidelity.observe_created_by(
-            item,
-            &snapshot,
-            self.state.as_ref().expect("state").resources(),
-            p.get("created_by"),
-        )?;
+        if !matches!(snapshot, Item::ToolBatch(_)) {
+            self.fidelity.observe_created_by(
+                item,
+                &snapshot,
+                self.state.as_ref().expect("state").resources(),
+                p.get("created_by"),
+            )?;
+        }
         let expected = item_wire(self.state()?, item, &self.fidelity)?;
         let wrapper = json!({
             "id": "snapshot",

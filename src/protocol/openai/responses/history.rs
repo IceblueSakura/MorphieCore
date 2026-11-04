@@ -99,6 +99,11 @@ pub(super) fn seed<'a>(
     let mut groups = input.semantic.message_envelopes().to_vec();
     for (old_id, old) in output.semantic.items() {
         let mut item = old.clone();
+        if matches!(&item, Item::ToolBatch(batch) if batch.role != ToolBatchRole::Developer) {
+            return Err(CodecError::Unsupported(
+                crate::protocol::failure::CarrierReason::Unavailable,
+            ));
+        }
         match &mut item {
             Item::Instruction(value) => {
                 for p in &mut value.parts {
@@ -155,6 +160,7 @@ pub(super) fn seed<'a>(
             | Item::Compaction(_)
             | Item::ConfigurationUpdate(_)
             | Item::ToolChange(_)
+            | Item::ToolBatch(_)
             | Item::Program(_)
             | Item::ProgramOutput(_) => {}
         }

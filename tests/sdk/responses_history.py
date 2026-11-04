@@ -64,8 +64,14 @@ def run(base):
                       _strict_response_validation=True) as client:
         for stream in (False, True):
             for stored in (False, True):
-                params = dict(model="gpt-6-luna", tools=[{"type": "function", **function}],
-                              input=[{"role": "user", "content": "lookup"}], store=stored,
+                params = dict(model="gpt-6-luna",
+                              input=[{"role": "user", "content": "batch"},
+                                     {"type": "additional_tools", "id": "batch-initial",
+                                      "role": "developer", "tools": [
+                                          {"type": "function", **function},
+                                          {"type": "function", "name": "inspect", "strict": False,
+                                           "parameters": {"type": "object", "properties": {}}}]}],
+                              store=stored,
                               reasoning={"effort": "low", "summary": "auto"},
                               include=["reasoning.encrypted_content"], max_output_tokens=256)
                 for turn in range(1, 4):
@@ -75,6 +81,9 @@ def run(base):
                     check(result["usage"]["output_tokens_details"]["reasoning_tokens"] == 2)
                     output = result["output"]
                     if turn == 1:
+                        batch, = [i for i in output if i["type"] == "additional_tools"]
+                        check(batch["id"] == "batch-returned" and batch["role"] == "developer"
+                              and batch["tools"][0]["name"] == "followup")
                         reason, = [i for i in output if i["type"] == "reasoning"]
                         check(reason["summary"][0]["text"] == "Plan 🧪" and reason.get("encrypted_content"))
                         check(any(i.get("phase") == "commentary" for i in output))

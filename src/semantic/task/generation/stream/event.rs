@@ -30,6 +30,7 @@ pub enum ItemKind {
     Reasoning,
     Compaction,
     ConfigurationUpdate(ConfigurationUpdate),
+    ToolBatch(ToolBatch),
     Program {
         call_id: Text,
         code: String,
@@ -104,6 +105,11 @@ pub enum StreamEvent {
     ToolResultOutput {
         item: ItemId,
         output: ToolOutput,
+    },
+    /// A declaration item has snapshots, not argument or text fragments.
+    ToolBatchSnapshot {
+        item: ItemId,
+        batch: ToolBatch,
     },
     PartStarted {
         item: ItemId,

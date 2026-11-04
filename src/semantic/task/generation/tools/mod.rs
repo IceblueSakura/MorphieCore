@@ -2,7 +2,8 @@
 pub(in crate::semantic::task::generation) mod provider;
 pub(in crate::semantic::task::generation) mod result;
 use crate::semantic::task::generation::{
-    GenerationError, MAX_TEXT_BYTES, ReplayValue, StructuredValue,
+    GenerationError, GenerationSettings, Item, ItemId, MAX_TEXT_BYTES, ReplayValue,
+    StructuredValue, ToolChange, ToolChangeAction,
 };
 use crate::semantic::value::Text;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -124,6 +125,12 @@ pub enum ToolDefinition {
     Namespace(ToolNamespace),
 }
 impl ToolDefinition {
+    pub(crate) fn leaves_mut(&mut self) -> &mut [Self] {
+        match self {
+            Self::Namespace(group) => &mut group.tools,
+            _ => std::slice::from_mut(self),
+        }
+    }
     pub fn name(&self) -> &Text {
         match self {
             Self::Function(t) => &t.name,
@@ -150,6 +157,83 @@ impl ToolDefinition {
         match self {
             Self::Namespace(group) => &group.tools,
             _ => std::slice::from_ref(self),
+        }
+    }
+}
+/// Visit owned functions without changing batch, namespace or item identity.
+pub(crate) fn for_each_function_tool_mut(
+    settings: &mut GenerationSettings,
+    items: &mut [(ItemId, Item)],
+    mut visit: impl FnMut(Option<ItemId>, &mut FunctionTool),
+) {
+    fn definitions(
+        tools: &mut [ToolDefinition],
+        owner: Option<ItemId>,
+        visit: &mut impl FnMut(Option<ItemId>, &mut FunctionTool),
+    ) {
+        for tool in tools.iter_mut().flat_map(ToolDefinition::leaves_mut) {
+            if let ToolDefinition::Function(tool) = tool {
+                visit(owner, tool);
+            }
+        }
+    }
+    definitions(
+        settings.tools.as_deref_mut().unwrap_or_default(),
+        None,
+        &mut visit,
+    );
+    for (id, item) in items {
+        match item {
+            Item::ToolBatch(batch) => definitions(&mut batch.tools, Some(*id), &mut visit),
+            Item::ToolChange(ToolChange {
+                action: ToolChangeAction::AddDefinition(tool),
+                ..
+            }) => visit(Some(*id), tool),
+            _ => {}
+        }
+    }
+}
+/// Borrowed declaration syntax, including function-only replacement additions.
+#[derive(Clone, Copy)]
+pub enum ToolDeclaration<'a> {
+    Function(&'a FunctionTool),
+    Custom(&'a CustomTool),
+    Namespace(&'a ToolNamespace),
+}
+impl<'a> From<&'a ToolDefinition> for ToolDeclaration<'a> {
+    fn from(value: &'a ToolDefinition) -> Self {
+        match value {
+            ToolDefinition::Function(tool) => Self::Function(tool),
+            ToolDefinition::Custom(tool) => Self::Custom(tool),
+            ToolDefinition::Namespace(group) => Self::Namespace(group),
+        }
+    }
+}
+impl<'a> ToolDeclaration<'a> {
+    pub fn dispatch_inactive(self) -> bool {
+        match self {
+            Self::Function(tool) => tool.dispatch.is_inactive(),
+            Self::Custom(tool) => tool.dispatch.is_inactive(),
+            Self::Namespace(group) => group.tools.iter().all(ToolDefinition::dispatch_inactive),
+        }
+    }
+    pub fn leaves(self) -> impl Iterator<Item = Self> {
+        let group = match self {
+            Self::Namespace(group) => Some(group),
+            _ => None,
+        };
+        std::iter::once(self)
+            .filter(move |_| group.is_none())
+            .chain(
+                group
+                    .into_iter()
+                    .flat_map(|group| group.tools.iter().map(Self::from)),
+            )
+    }
+    pub fn function(self) -> Option<&'a FunctionTool> {
+        match self {
+            Self::Function(tool) => Some(tool),
+            _ => None,
         }
     }
 }

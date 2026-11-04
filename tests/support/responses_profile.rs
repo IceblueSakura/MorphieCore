@@ -99,6 +99,10 @@ pub fn response_events(final_response: Value) -> Vec<Value> {
             "function_call" => added["arguments"] = json!(""),
             "message" => added["content"] = json!([]),
             "function_call_output" | "custom_tool_call_output" => {}
+            "additional_tools" => {
+                added.as_object_mut().unwrap().remove("status");
+                added["tools"] = json!([]);
+            }
             _ => panic!("unsupported Responses fixture item: {kind}"),
         }
         events.push(json!({"type":"response.output_item.added","output_index":index,"item":added}));
@@ -175,7 +179,7 @@ pub fn response_events(final_response: Value) -> Vec<Value> {
                     events.push(json!({"type":"response.content_part.done","output_index":index,"item_id":id,"content_index":part_index,"part":part}));
                 }
             }
-            "function_call_output" | "custom_tool_call_output" => {}
+            "function_call_output" | "custom_tool_call_output" | "additional_tools" => {}
             _ => unreachable!(),
         }
         if !unfinished {

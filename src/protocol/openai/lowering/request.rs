@@ -69,7 +69,7 @@ pub(crate) fn render_request<'a>(
     if q.contains_key(&Feature::ToolResultError) {
         return Err(RepresentationError::Tools);
     }
-    check_strict_schemas(r.settings())?;
+    check_strict_schemas(r)?;
     if q.contains_key(&Feature::ProviderObservation) {
         return Err(RepresentationError::UnmigratedSemantic);
     }
@@ -186,17 +186,16 @@ pub(crate) fn render_request<'a>(
     }
     text_items(r.items(), profile, true, r.resources())?;
     if profile == GenerationApi::Chat
-        && r.tools()
-            .iter()
-            .any(|t| matches!(t, ToolDefinition::Namespace(_)))
+        && r.tool_declarations()
+            .any(|(_, t)| matches!(t, ToolDeclaration::Namespace(_)))
     {
         return Err(RepresentationError::Tools);
     }
-    for tool in r.tools().iter().flat_map(ToolDefinition::leaves) {
+    for tool in r.tool_declarations().flat_map(|(_, tool)| tool.leaves()) {
         if !tool.dispatch_inactive() && profile == GenerationApi::Chat {
             return Err(RepresentationError::Tools);
         }
-        if let ToolDefinition::Function(t) = tool {
+        if let ToolDeclaration::Function(t) = tool {
             if profile == GenerationApi::Chat
                 && !crate::protocol::openai::function_tools::valid_chat_function_name(
                     t.name.as_str(),
@@ -238,27 +237,18 @@ pub(crate) fn render_request<'a>(
     })
 }
 /// The IR admits any bounded schema; only an OpenAI request target checks its strict subset.
-fn check_strict_schemas(settings: &GenerationSettings) -> Result<(), RepresentationError> {
+fn check_strict_schemas(request: &GenerationRequest) -> Result<(), RepresentationError> {
     use crate::protocol::openai::strict_schema::admits;
     if let OutputConstraint::JsonSchema {
         schema,
         strict: Some(true),
         ..
-    } = settings.output()
+    } = request.output()
         && !admits(schema)
     {
         return Err(RepresentationError::StructuredOutput);
     }
-    for tool in settings
-        .tools
-        .as_deref()
-        .unwrap_or_default()
-        .iter()
-        .flat_map(ToolDefinition::leaves)
-    {
-        let ToolDefinition::Function(tool) = tool else {
-            continue;
-        };
+    for tool in request.function_tools() {
         if tool.strict == FunctionStrictness::Explicit(true)
             && tool.parameters.as_ref().is_some_and(|p| !admits(p))
         {

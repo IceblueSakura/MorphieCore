@@ -110,8 +110,10 @@ pub(super) fn represent_reasoning(
         return Err(RepresentationError::Reasoning);
     }
     for (id, item) in items {
-        // No OpenAI carrier orders tool availability; collapsing it is a separate policy.
-        if matches!(item, Item::ToolChange(_)) {
+        // Replacement/reference/removal changes need a separate projection.
+        if matches!(item, Item::ToolChange(_))
+            || profile != GenerationApi::Responses && matches!(item, Item::ToolBatch(_))
+        {
             return Err(RepresentationError::Tools);
         }
         if let Item::ConfigurationUpdate(update) = item

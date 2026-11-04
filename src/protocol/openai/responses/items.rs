@@ -269,6 +269,80 @@ pub(in crate::protocol::openai) fn tool_result(
     })
 }
 
+pub(in crate::protocol::openai) fn tool_batch(
+    o: &Map<String, Value>,
+    response: bool,
+    direction: DecodeDirection,
+) -> Result<ToolBatch, CodecError> {
+    direction.fields(o, &["type", "id", "role", "tools"])?;
+    let role = match string(o, "role")? {
+        "unknown" => ToolBatchRole::Unknown,
+        "user" => ToolBatchRole::User,
+        "assistant" => ToolBatchRole::Assistant,
+        "system" => ToolBatchRole::System,
+        "critic" => ToolBatchRole::Critic,
+        "discriminator" => ToolBatchRole::Discriminator,
+        "developer" => ToolBatchRole::Developer,
+        "tool" => ToolBatchRole::Tool,
+        _ => return Err(CodecError::invalid()),
+    };
+    if response {
+        text(string(o, "id")?, "batch id", 256)?;
+    } else if role != ToolBatchRole::Developer {
+        return Err(CodecError::invalid());
+    }
+    let tools = o
+        .get("tools")
+        .and_then(Value::as_array)
+        .ok_or(CodecError::invalid())?;
+    if tools.len() > MAX_TOOLS {
+        return Err(CodecError::Limit);
+    }
+    let batch = ToolBatch {
+        role,
+        tools: tools
+            .iter()
+            .map(|tool| {
+                crate::protocol::openai::function_tools::read_tool(
+                    object(tool)?,
+                    GenerationApi::Responses,
+                    direction,
+                )
+            })
+            .collect::<Result<_, _>>()?,
+    };
+    batch.validate(response)?;
+    Ok(batch)
+}
+pub(in crate::protocol::openai) fn tool_batch_wire(
+    batch: &ToolBatch,
+    response: bool,
+) -> Result<Value, CodecError> {
+    batch.validate(response)?;
+    let mut tools = batch
+        .tools
+        .iter()
+        .map(|tool| {
+            crate::protocol::openai::function_tools::write_tool(tool, GenerationApi::Responses)
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    if response {
+        for tool in &mut tools {
+            crate::protocol::openai::function_tools::complete_response_tool(tool);
+        }
+    }
+    let role = match batch.role {
+        ToolBatchRole::Unknown => "unknown",
+        ToolBatchRole::User => "user",
+        ToolBatchRole::Assistant => "assistant",
+        ToolBatchRole::System => "system",
+        ToolBatchRole::Critic => "critic",
+        ToolBatchRole::Discriminator => "discriminator",
+        ToolBatchRole::Developer => "developer",
+        ToolBatchRole::Tool => "tool",
+    };
+    Ok(json!({"type":"additional_tools", "role":role, "tools":tools}))
+}
 /// Which Responses surface supplies the array. `Output` carries the response's own
 /// item lifecycle; `History` is an input echo with no per-item status field.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -300,6 +374,7 @@ pub(in crate::protocol::openai) fn decode_items(
             .map(|v| v.as_str().ok_or(CodecError::invalid()))
             .transpose()?;
         let item = match typ {
+            Some("additional_tools") => Item::ToolBatch(tool_batch(o, response, direction)?),
             Some("function_call") => Item::ToolCall(tool_call(
                 o,
                 GenerationApi::Responses,
@@ -613,12 +688,16 @@ pub(in crate::protocol::openai) fn decode_items(
             }
         };
         // Report IDs and the explicitly nullable input-item IDs use their own contracts.
-        if !((response || matches!(typ, Some("compaction" | "function_call_output")))
+        if !((response
+            || matches!(
+                typ,
+                Some("compaction" | "function_call_output" | "additional_tools")
+            ))
             && o.get("id").is_some_and(Value::is_null))
         {
             b.record_id(id, o)?;
         }
-        if response {
+        if response && !matches!(item, Item::ToolBatch(_)) {
             b.fidelity
                 .observe_created_by(id, &item, &b.resources, o.get("created_by"))?;
         }
@@ -833,6 +912,7 @@ pub(in crate::protocol::openai) fn encode_items(
             }
             Item::ProviderTool(_) => unreachable!("checked Provider carrier"),
             Item::ToolChange(_) => unreachable!("lowering rejects tool changes"),
+            Item::ToolBatch(batch) => tool_batch_wire(batch, response)?,
         };
         if response {
             if let Some(actor) = fidelity.created_by(*id, item, resources) {

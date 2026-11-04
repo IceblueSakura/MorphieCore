@@ -33,7 +33,50 @@ pub fn make_incomplete(response: &mut Value) {
         }
     }
 }
-
+fn returned_batch() -> Value {
+    json!({"type":"additional_tools","id":"batch-returned","role":"developer","tools":[
+        {"type":"function","name":"followup","strict":false,"parameters":{"type":"object","properties":{}}}
+    ]})
+}
+pub fn batch_snapshot(turn: usize) -> Value {
+    let mut value = snapshot(turn);
+    if turn == 1 {
+        value["output"]
+            .as_array_mut()
+            .unwrap()
+            .push(returned_batch());
+    }
+    value
+}
+pub fn batch_events(turn: usize) -> Vec<Value> {
+    let mut values = events(turn);
+    if turn == 1 {
+        let terminal = values.pop().unwrap();
+        let mut opening = returned_batch();
+        opening["tools"] = json!([]);
+        values.push(json!({"type":"response.output_item.added","output_index":4,"item":opening}));
+        values.push(
+            json!({"type":"response.output_item.done","output_index":4,"item":returned_batch()}),
+        );
+        let mut terminal = terminal;
+        terminal["response"]["output"]
+            .as_array_mut()
+            .unwrap()
+            .push(returned_batch());
+        values.push(terminal);
+    }
+    for (sequence, event) in values.iter_mut().enumerate() {
+        event["sequence_number"] = json!(sequence);
+    }
+    values
+}
+fn initial_batch() -> Value {
+    json!({"type":"additional_tools","id":"batch-initial","role":"developer","tools":[
+        {"type":"function","name":"lookup","description":"Synthetic lookup","strict":false,
+            "parameters":{"type":"object","properties":{"key":{"type":"string"}},"required":["key"]}},
+        {"type":"function","name":"inspect","strict":false,"parameters":{"type":"object","properties":{}}}
+    ]})
+}
 pub fn events(turn: usize) -> Vec<Value> {
     let mut events = crate::responses_wire::response_events(snapshot(turn));
     if turn == 1 {
@@ -89,7 +132,15 @@ pub fn assert_request(body: &Value) -> usize {
         "reported null is not request intent"
     );
     assert_eq!(body["provider"], json!({"require_parameters":true}));
-    let tool = &body["tools"][0];
+    let history = body["input"].as_array().unwrap();
+    let batch = history[0]["content"] == "batch" || history[0]["content"][0]["text"] == "batch";
+    let tool = if batch {
+        assert!(body.get("tools").is_none());
+        assert_eq!(history[1], initial_batch());
+        &history[1]["tools"][0]
+    } else {
+        &body["tools"][0]
+    };
     assert_eq!(tool["name"], "lookup");
     assert_eq!(tool["strict"], false);
     assert_eq!(
@@ -97,7 +148,6 @@ pub fn assert_request(body: &Value) -> usize {
         json!({"type":"object",
         "properties":{"key":{"type":"string"}},"required":["key"]})
     );
-    let history = body["input"].as_array().unwrap();
     let incomplete =
         history[0]["content"] == "incomplete" || history[0]["content"][0]["text"] == "incomplete";
     let turn = if history.iter().any(|v| {
@@ -111,7 +161,7 @@ pub fn assert_request(body: &Value) -> usize {
     };
     if turn >= 2 {
         let mut expected = vec![
-            json!({"type":"message","role":"user","content":[{"type":"input_text","text":if incomplete{"incomplete"}else{"lookup"}}]}),
+            json!({"type":"message","role":"user","content":[{"type":"input_text","text":if incomplete{"incomplete"}else if batch{"batch"}else{"lookup"}}]}),
             json!({"id":"reason","type":"reasoning",
             "summary":[{"type":"summary_text","text":"Plan 🧪"}],
             "content":[{"type":"reasoning_text","text":"Check"}],"encrypted_content":"synthetic-final-token"}),
@@ -126,6 +176,10 @@ pub fn assert_request(body: &Value) -> usize {
         ];
         if incomplete {
             expected[1]["status"] = json!("incomplete");
+        }
+        if batch {
+            expected.insert(1, initial_batch());
+            expected.insert(6, returned_batch());
         }
         if turn == 3 {
             expected.extend([
