@@ -28,6 +28,7 @@ Reviewed on **2026-10-27** at **`1b4f828`**, after the five-slice request repair
 - [Generation null-contract review (2026-11-02)](#generation-null-contract-review-2026-11-02)
 - [Native-default installed-Agent characterization (2026-11-03)](#native-default-installed-agent-characterization-2026-11-03)
 - [Tool-protocol root-cause audit (2026-11-04)](#tool-protocol-root-cause-audit-2026-11-04)
+- [Nine-direction tool assessment (2026-11-04)](#nine-direction-tool-assessment-2026-11-04)
 
 ## Scope and evidence
 
@@ -613,6 +614,8 @@ The connected gate fixes counts independently: one request/zero sends for each p
 
 Inspected **`c520b13`** across Chat Completions, Responses, Messages and the existing upstream-only Google generateContent/Interactions paths. This is a field-family and ownership assessment, not full Provider/model qualification. [Architecture](../architecture.md#ordered-tool-availability) records the selected direction; [Roadmap](../roadmap.md#tool-protocol-root-repair) owns implementation and open decisions. OpenCode missing-annotations normalization was postponed; its current rejection remains.
 
+The subsequent [nine-direction assessment](#nine-direction-tool-assessment-2026-11-04) broadens the proposed fallback scope to explicit lossy conversion. The findings below retain their original evidence; the earlier native-only repair restriction no longer limits the assessment.
+
 Evidence combines the fixed [source revisions](../../tests/upstream/sources.lock.json), current official pages below, public installed pi 1.5.0/OpenCode 2.0.32 source and isolated synthetic probes. The local Node SDK is 7.19.0, not the pinned 7.43.0 reference; package execution and reference-source evidence must remain separate. No live Provider calls or private credential/configuration inspection occurred.
 
 ### Primary contracts and consequential distinctions
@@ -689,3 +692,35 @@ The current Messages fallback `messages.collapse-tool-changes.v1` removes ordere
 - Hosted tool families, tools emitted by discovery, execution budgets and toolset identities remain explicit deferred contracts. This audit covers their boundaries, not their activation.
 
 No new lossy mapping is selected by this audit. Independent directional fixtures, the existing SDK consumers and full current-Agent tool/recall loops are the implementation oracle; a round trip or a decoder-only success cannot establish this contract.
+
+## Nine-direction tool assessment (2026-11-04)
+
+At **`40d005d`**, the user requested all three native and six cross-protocol Chat/Responses/Messages paths, accepting bounded semantic approximation as a design direction. Three independent read-only investigations were divided by target protocol and combined with shared-owner inspection and primary-source checks. No product source, tests, source pins, credentials or runtime state changed; no Provider calls or new executable probes ran. Earlier synthetic reproductions remain the evidence for the root-only choice and lost-serial defects.
+
+The [proposed matrix and loss policies](../api-expansion-design.md#three-protocol-tool-conversion-design) are the single design home; [Roadmap](../roadmap.md#tool-protocol-root-repair) owns execution. This extension is evidence and counterexamples, not another implementation queue.
+
+### Additional findings
+
+1. **Availability, model-visible definitions and permitted calls are distinct.** [OpenAI tool choice](https://developers.openai.com/api/docs/guides/function-calling#tool-choice) restricts current calls without requiring the whole definition inventory to be removed. Existing [choice encoding](../../src/protocol/openai/function_tools.rs) already supports flat allowed subsets for Chat and Responses. A candidate can sometimes retain historical definitions and restrict present calls instead of collapsing everything. This still does not encode Messages' withdrawal intervals or establish Responses replacement precedence; it is a lower-loss candidate, not an equivalent removal protocol.
+2. **Forced-call cardinality is not merely a name.** The same OpenAI guide specifies required as one-or-more and forced function as exactly one. [Messages parallel control](https://platform.claude.com/docs/en/agents-and-tools/tool-use/parallel-tool-use) requires `disable_parallel_tool_use:true` with `any`/named `tool` for exactly one. [Current mapping](../../src/protocol/anthropic/messages/request.rs) copies named selection while emitting the serial switch only from `parallel_tool_calls`. The shared `Specific` representation and source normalization need a directional cardinality test; a label-only mapping is insufficient evidence. Conversely, a Messages named choice permitting multiple calls must not silently become an OpenAI singleton guarantee.
+3. **Native strictness and cross-protocol exactness differ.** [Messages structured outputs](https://platform.claude.com/docs/en/build-with-claude/structured-outputs#json-schema-limitations) documents enum/const casing exceptions even under strict tool use, and supported local-reference/regex subsets. [Current strict checks](../../src/protocol/anthropic/messages/strict_schema.rs) reject string enum/const, references and patterns. That protects stronger cross-protocol assertions but can over-restrict native Messages requests. Preserve the source's actual assurance, not a stronger interpretation of the same boolean. Known mismatches need disposition; unknown native compatibility can delegate. Joint budget and repeated-definition charging remain separate questions.
+4. **Native custom JSON is not proof of custom streaming.** The pinned [Chat chunk type](https://github.com/openai/openai-python/blob/e8a0fd28bbdc1699c97ff0f602b1af3dd378382d/src/openai/types/chat/chat_completion_chunk.py) allows only function tool deltas, while static custom calls have an input carrier. [Current Chat stream intake](../../src/protocol/openai/events/decode/chat.rs) rejects custom calls. Neither a generic wrapper nor a successful static round trip establishes a lawful Chat custom SSE contract.
+5. **Identity-preserving aliases need the return path.** Chat/Messages lack the Responses namespace carrier, and naive `namespace.name` spelling violates their function-name alphabets. `a.read` and `b.read` are a minimal collision example. Reversible aliases can preserve leaf schemas and selection better than one dispatch function, but only if [client delivery](../../src/adapter/downstream.rs), retained snapshots and subsequent source history restore the original kind/name/namespace. Mapping only active definitions loses removed historical calls; array-position aliases change when new tools are inserted.
+6. **Returned additions have a role asymmetry.** The pinned [output union](https://github.com/openai/openai-python/blob/e8a0fd28bbdc1699c97ff0f602b1af3dd378382d/src/openai/types/responses/response_output_item.py) permits eight reported roles; the [input union](https://github.com/openai/openai-python/blob/e8a0fd28bbdc1699c97ff0f602b1af3dd378382d/src/openai/types/responses/response_input_item_param.py) accepts only developer additions. Both output-item added/done events carry the output union. Native output support, lawful input replay and delivery to Chat/Messages are three separate checks. A returned declaration necessary to interpret a call cannot be treated as harmless metadata or promoted to developer authority.
+7. **Existing collapse has a narrow owner.** [Request projection](../../src/lowering/request.rs) applies collapse only for Messages targets, and [the helper](../../src/protocol/anthropic/messages/carriers.rs) handles single function definitions/references/removals, clears surfaced deferral and selects a final set. Generalizing it is structural work, not a declaration that Chat/Responses already support the proposed policy. Existing unconditional prefix-stability wording also needed qualification: a changing root inventory alters rendered history/cache reuse even when source IR is unchanged.
+8. **The mature adapter comparison supports reuse, not wholesale adoption.** Pinned [Vercel Chat conversion](https://github.com/vercel/ai/blob/594495a5af70547d9d7a13d6df334ae30db49622/packages/openai/src/chat/convert-to-openai-chat-messages.ts) turns explicit errors into textual JSON and serializes normalized tool inputs/results. Its function-oriented abstraction is useful precedent for bounded result wrapping and consumer tests. It does not preserve this gateway's full native input/history union; copying normalized-input repair or media descriptor serialization would lose required content.
+
+### Discriminating counterexamples
+
+| Input distinction | What an insufficient conversion gets wrong |
+|---|---|
+| `f(V1) → call/result → f(V2)` | Final-set collapse erases V1 visibility; a generic root-plus-inline mapping assumes undocumented collision precedence |
+| Deferred `f`, never activated; or `f` removed at the end | Unioning all historical definitions makes a currently unavailable tool callable |
+| Root `f,g`, allowed only `f`, optional versus required | Dropping allowed selection permits `g`; changing required to auto permits no call. Filtering can preserve the restriction but loses definition visibility |
+| Named Messages tool permitting repetition versus OpenAI forced singleton | Copying a name loses call-count meaning in at least one direction |
+| Namespaced `a.read`, `b.read`, then remove `a.read` | Flat-name collisions or current-inventory-only reverse lookup misidentify historical calls |
+| Custom input containing quotes, Unicode and partial JSON wrapper bytes | Forwarding target wrapper deltas as source custom input changes bytes or exposes incomplete executable input |
+| Old call/result supplied without its old declaration | Synthesizing a schema or applying today's schema invents historical meaning |
+| Completed `status:null` input result versus required output terminal status | Global null normalization weakens the wrong boundary; input-only documented normalization remains valid |
+
+The nine ordinary function loops can be verified using existing SDK/gateway harnesses without nine converters or a new test framework. Advanced families need distinct directional checks rather than every permutation. Source-based uncertainty about collision precedence, namespace selection, returned-role replay and custom streams remains explicit; synthetic fixtures cannot establish unknown real Provider behavior. Missing-annotations repair remains postponed.

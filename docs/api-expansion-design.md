@@ -10,6 +10,11 @@
     - [Missing Messages output ceilings](#missing-messages-output-ceilings)
     - [Messages null response metadata](#messages-null-response-metadata)
     - [Google output report owners (unselected)](#google-output-report-owners-unselected)
+  - [Three-protocol tool conversion design](#three-protocol-tool-conversion-design)
+    - [Nine-direction matrix](#nine-direction-matrix)
+    - [Candidate approximation policies](#candidate-approximation-policies)
+    - [Ownership and return path](#ownership-and-return-path)
+    - [Recommended selection boundary](#recommended-selection-boundary)
   - [Resource and execution safety](#resource-and-execution-safety)
 - [Operation contracts](#operation-contracts)
   - [Decisions](#decisions)
@@ -243,6 +248,87 @@ The [transcription adapter](../src/adapter/transcription.rs) and [preparation](.
 Standalone topology has narrow operation and execution restrictions; see [image routes](../src/topology/images.rs). Review model identity across operations, task-specific streaming admission and operation bindings during scheduled integration. Do not fabricate separate model identities to bypass a one-operation restriction.
 
 Upstream response parsing must remain strict on known fields and ignore unknown fields. Review the shared closed-object helper in [OpenAI image/embedding codecs](../src/protocol/openai/images.rs) when reopening those contracts; current rejection of unknown response fields is not the intended forward-compatibility policy.
+
+### Three-protocol tool conversion design
+
+**Assessment requested on 2026-11-04; concrete new loss policies remain proposals.** [Architecture](architecture.md#ordered-tool-availability) accepts the nine-direction scope and approximation-first compatibility objective after native/equivalent carriage. [Evidence](refs/2026-10-27-client-ir-boundaries.md#nine-direction-tool-assessment-2026-11-04) distinguishes inspected behavior from recommendations; [Roadmap](roadmap.md#tool-protocol-root-repair) owns sequencing and acceptance. This is existing Generation tool work, not stage-5 discovery or hosted execution.
+
+The unit of assessment is **client request → selected upstream → original client response → tool result → subsequent history**, not the request encoder alone. A same-protocol cell is a native-carriage goal, not a claim of universal fidelity across models, dialects or streaming variants. Ordinary functions are the common vertical slice; custom tools, namespaces and ordered changes keep their own dispositions.
+
+#### Nine-direction matrix
+
+Each row names the preferred mapping and additional work; proposed approximations are described below. Conditional strict defaults differ from explicit guarantees. The current root-only validation and missing Responses additions affect multiple rows, so these are plans, not nine passing support claims.
+
+| Client → upstream | Preferred request representation | Additional projection or boundary | Return and next request |
+|---|---|---|---|
+| Chat → Chat | Native function/custom definitions, choices, raw arguments and text results | Preserve Chat non-strict default; qualify static custom separately from the missing standard custom SSE carrier | Original call IDs, names and raw arguments; no invented custom chunks |
+| Chat → Responses | Root function/custom definitions; same selection and serial intent | Materialize `strict:false` for omitted Chat strictness. Do not fabricate historical declarations. SIWC root-to-inline adaptation is a separate binding qualification | Responses calls become Chat calls, with `call_id` distinct from Responses item ID; custom SSE limitation still applies |
+| Chat → Messages | Functions → native schemas, calls/results → `tool_use`/`tool_result` | Allowed-subset projection; source-sensitive forced-call cardinality; strict subset; custom-text wrapper candidate | Return original Chat call kind/name; unwrap selected wrappers before publication. Complete function input must be an object, not repaired JSON |
+| Responses → Chat | Native ordinary function/custom definitions and linked history | Active-set projection for ordered changes; namespace aliases; conditional strict-default resolution. Result schemas/media need explicit separate dispositions | Restore namespace/kind before Chat-upstream calls reach Responses client; preserve result links and raw strings; do not rewrite old calls to current schema |
+| Responses → Responses | Root tools and ordered addition batches remain separate, with position/IDs | Native unknown collision behavior may delegate. Output roles, qualified choices and SIWC direct-call history need qualification | Added/done/snapshot agreement; replay only in a lawful input role, never promote returned tool/assistant declarations to developer |
+| Responses → Messages | Native functions and legal equivalent inline definitions | Leading/illegal-position additions may need active-set projection; namespaces need aliases; custom text needs a wrapper; strict guarantees need source-aware checks | Restore Responses identity and kind; JSON/SSE/retained history share inverse mapping, including removed historical tools |
+| Messages → Chat | Root functions and ordinary linked calls/results | Active-set projection for additions/removals; examples-to-description candidate; existing named error wrapping; result media remains a separate boundary | Chat call input must become a valid Messages object; return ID/name and subsequent result association remain intact |
+| Messages → Responses | Root functions, non-strict default, collision-free additions; expand valid references from supplied definitions | Retain declarations plus current allowed-set restriction where possible; replacement/removal may instead require active-set projection. Never invent a missing old definition | Messages `tool_use`/`tool_result` loop; result error takes existing wrapping. Returned additions cannot disappear if needed to interpret a call |
+| Messages → Messages | Native definitions, references/replacements/removals, examples/cache, result errors/media and controls | Evaluate source-native strictness under its own guarantee; use existing collapse only when the selected binding lacks native changes | Preserve native object inputs, IDs and ordering; retain signature/origin checks and honest partial/terminal states |
+
+The matrix does not authorize custom SSE spelling, arbitrary namespace-qualified selection syntax, or a tool family absent from the selected target. Native representation and the public model's actual binding capabilities are separate.
+
+#### Candidate approximation policies
+
+All new policies need a named disposition and bounded loss evidence before activation. Existing error wrapping and conditional-strict-default handling are reused, not reopened. The following recommendations identify the main preserved intent and precise loss, rather than assigning one “lossless” label to an entire route.
+
+| Candidate | Recommended treatment | Preserved intent and loss |
+|---|---|---|
+| Effective active-set projection | First implementation candidate for targets without the required ordered carrier | Preserve tools callable for this generation and historical call/result content; lose declaration timing, old-schema visibility, batch presentation and rendered-prefix/cache stability. Do not expose never-activated or withdrawn tools |
+| Retain declarations + current allowed set | Prefer over collapse when target-native definitions and allowed selection can enforce the same current set | Retain more historical schema context and restrict present calls exactly; withdrawal intervals and replacement precedence can still be approximate. Intersect with original choice; empty set plus required/forced choice must not become `auto` |
+| Allowed subset by inventory filtering | Candidate for Messages where a direct allowed-subset carrier is unavailable | Preserve allowed identities and required/optional invocation, but lose visibility of filtered definitions and possibly prefix reuse. Handle native inline definitions too; filtering root tools alone is insufficient |
+| Namespace aliases | Prefer one reversible target name per leaf over a universal dispatch function | Preserve individual schema, call identity and selection; lose native grouping/model-facing names and possibly namespace description placement. Names must be legal, bounded, stable and collision-checked; inverse mapping is mandatory |
+| Custom text → `{"input": string}` function | Separate, later candidate for targets lacking custom text | Preserve the completed text and original client call kind through inverse mapping; change model generation format, token cost and incremental delivery. Do not weaken an explicit Lark/regex grammar into prose |
+| Examples → definition description | Separate bounded content projection candidate | Preserve ordered example information as labelled data, not the native examples channel; change salience, escaping and token/cache behavior. Keep schema/choice/strictness separate |
+| Result error → textual wrapper | Reuse the selected tool-error rule | Preserve explicit failure information in content; lose the native boolean carrier. Never infer error flags from arbitrary result prose |
+| Historical change annotations | Do not include in the initial package | Can retain supplied change facts as bounded text, but adds prompt content/authority questions and still cannot enforce availability. Prefer native history or an explicit, simpler collapse; do not invent absent schemas |
+| Tool-result media → adjacent user content | Do not include in the initial package | Moving intact media could preserve what is seen but changes role and tool-result attribution; stringifying a media descriptor does not preserve the media itself |
+| Result schema or custom grammar → prose | Do not select as a general fallback | The source contract may promise more than guidance. A schema for tool outputs is not generation response format; a prompt instruction is not constrained decoding |
+
+Active-set projection is not “keep the last same-name entry”:
+
+1. Resolve only source-defined operations and references. Root, namespace and ordered entries share definition checks but retain their precedence semantics. Natural-language removal notices stay prose.
+2. Derive availability at the generation boundary and historical identities separately. A call without its old definition is not permission to synthesize one or validate it against today's schema; an unresolved structural reference cannot be expanded.
+3. Apply the original selection constraint to the effective callable set. Keep minimum/maximum calls, permitted identities, seriality, dispatch and explicit schemas independent. A stronger restriction introduced accidentally is still a behavioral change.
+4. Choose the target carrier, then validate the projected combination and budgets. Retained history bytes, active definitions and compiled strict schemas are different populations.
+5. Project only candidate copies. Existing Messages collapse should move to the shared owner rather than remain a second algorithm; retain source identity and honest loss evidence. A collision requiring an unknown source winner blocks that collapse, not native forwarding of an otherwise carriable request.
+
+#### Ownership and return path
+
+Use the project's existing Rust/Serde strict-JSON facilities, typed tool definitions/references, disposition tables, `FidelityRecords`, candidate request projection and `ClientAdapter` event projection. No new dependency, schema compiler, tool executor, persistent alias service or pair-specific conversion framework is planned.
+
+| Owner | Proposed responsibility |
+|---|---|
+| Semantic tools / ordered items | One authoritative definition/batch identity and source meaning; bounded pure views of historical and current availability. Add a semantic dimension only where a concrete distinction, such as forced-call cardinality, cannot already be represented |
+| Source codec | Normalize protocol defaults and operations into those meanings; retain direction-specific wire IDs/forms in fidelity, not vendor bags |
+| Candidate projection | Select native/equivalent/approximate carriage, derive current selection, apply target restrictions once and produce any bounded inverse-name/wrapper context |
+| Client delivery projection | Restore original call kind/name/namespace before first publication; apply the same transformation to events, JSON snapshots and retained history |
+| History / replay | Keep original semantic identity; recompute mappings from available source history, including withdrawn historical calls, without requiring clients to echo diagnostic extensions |
+
+Alias identity must not depend on definition array position. A new tool, reordered inventory or removed current definition must not rename old calls on replay. Track mapping outside semantic tool identity and bind it to the selected candidate/delivery context; failover candidates cannot reuse one another's aliases. Collisions cannot be resolved by silently truncating names or exposing gateway aliases to the client.
+
+For wrappers, a target's partial escaped JSON is not yet a source custom-input string. Prefer bounded call-level buffering with explicit loss of incrementality over an ad hoc streaming JSON unescaper. Truncation, malformed completed input and cancellation must stay non-executable. A missing source custom-SSE carrier remains a boundary even if wrapper JSON succeeds.
+
+Preserve authoritative raw OpenAI arguments in source history; only the target copy may parse a valid object for Messages. Do not copy SDK-style `{}` repairs. Native Messages objects can be serialized to OpenAI JSON strings without pretending their original whitespace existed.
+
+**Established alternatives.** Existing MorphieCore projections are the smallest fit and already own security, replay and loss evidence. Pinned official SDKs supply directional contract/consumer evidence. Vercel's adapter is a useful reference for result serialization and typed consumer tests, but its function-oriented normalized message model is not a replacement for this gateway's raw arguments, ordered definitions and client-native replay. A universal dispatch-function wrapper is rejected as the default: it changes every call schema, selection rule and inverse transformation even when a native leaf mapping exists.
+
+#### Recommended selection boundary
+
+Recommended first package: shared semantics/validation repairs, three native paths, ordinary function conversion in all six cross paths, and the selected versions of effective-set/allowed-subset projections. Reuse existing error/default losses. Qualify namespace aliases as a separate full return/replay slice, followed by grammar-free custom text wrappers if selected. This ordering prevents wrappers from becoming a prerequisite for basic function compatibility.
+
+Before activating each new content projection, select its concrete loss row; accepting approximation in general does not erase source guarantees. No further blanket permission is needed for research or existing L1/L2 mapping work. These remaining choices can be made independently:
+
+- **Recommended:** current-tool-set preservation with acknowledged historical definition loss, plus allowed-subset filtering where necessary.
+- **Recommended separately:** reversible namespace aliases, accepting altered model-facing grouping/names.
+- **Optional later:** plain custom-text wrappers and examples-in-description. Keep explicit custom grammar, media relocation and instruction-history synthesis outside the first package.
+
+The source facts still requiring qualification are Responses root/inline collision precedence, namespace-qualified choice spelling, lawful replay of non-developer returned additions, Chat custom SSE, and Messages repeated-definition grammar accounting. Resolve source semantics with official references; do not reject a carriable native request merely because upstream behavior is unassessed. Known unsupported guarantees stay explicit boundaries. OpenCode missing text annotations remains postponed and is unrelated to proposed textual tool-history annotations.
 
 ### Resource and execution safety
 

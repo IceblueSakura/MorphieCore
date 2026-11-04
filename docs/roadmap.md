@@ -55,11 +55,11 @@ This page owns current scope, priorities, dependencies, and exit gates. [Archite
 
 ## Current status
 
-**Current focus (2026-11-04):** Complete the tool-protocol root repair behind pi Responses `additional_tools`, including the broader tool-parameter assessment. Pi Chat strict read remains open. OpenCode Responses missing annotations is postponed for user consideration; no normalization or acceptance waiver is selected. Complete AR5 real Provider checks and the full three-protocol installed-Agent exit before resuming Stage 4.
+**Current focus (2026-11-04):** Plan the unified Chat/Responses/Messages tool repair across all nine client-to-upstream directions, including bounded lossy conversion, return delivery and replay. Pi Chat strict read and pi Responses `additional_tools` are concrete acceptance cases. OpenCode Responses missing annotations remains postponed; no normalization or acceptance waiver is selected. Complete AR5 real Provider checks and the full three-protocol installed-Agent exit before resuming Stage 4.
 
 | Priority | Remaining work | Exit |
 |---|---|---|
-| Tool protocols | Implement the selected ordered-tool direction after the full parameter/ownership assessment | Native/equivalent declarations, selection and explicit guarantees survive tool/history loops |
+| Tool protocols | Select concrete approximation policies and execute the [nine-direction tool plan](#tool-protocol-root-repair) | Native/equivalent or explicitly lossy mappings complete client-native tool/history loops without hidden guarantee loss |
 | Agent defaults | Resolve pi Chat strict read; revisit postponed OpenCode Responses annotations | Actual default reasoning/tool/history loops pass without compatibility opt-outs or input rewriting |
 | Account acceptance | Provision fresh credentials, select actual Provider/model bindings, and complete AR5 | Bounded real Provider checks and installed-Agent exit on the rewritten account path |
 | API expansion | Select and implement Stage-4 operation contracts after AR5 | Per-operation lifecycle, protocol and SDK acceptance |
@@ -112,35 +112,47 @@ This workstream repairs semantic fidelity across standard Chat Completions, Resp
 
 ### Agent-default production findings
 
-The [native-default characterization](development.md#installed-client-synthetic-recovery) exercises all three protocols with pi 1.5.0 and OpenCode 2.0.32. The user selected the ordered-tool direction and postponed missing-annotations repair on 2026-11-04. The postponed lane remains unaccepted; neither postponement nor characterization waives the fresh-credential/default-Agent gates. Endpoint qualification and Chat usage-emitter work retain their separate scope.
+The [native-default characterization](development.md#installed-client-synthetic-recovery) exercises all three protocols with pi 1.5.0 and OpenCode 2.0.32. On 2026-11-04 the user expanded ordered-tool analysis to all nine Chat/Responses/Messages directions and accepted bounded approximation as a design direction. Missing-annotations repair remains postponed and unaccepted; neither postponement nor characterization waives the fresh-credential/default-Agent gates. Endpoint qualification and Chat usage-emitter work retain their separate scope.
 
 | Lane | Remaining issue | Required resolution | Scope |
 |---|---|---|---|
 | Pi Chat | Actual strict read guarantee is blocked | Resolve the explicit guarantee without client downgrade or input rewriting | Before fresh credentials |
-| Pi Responses | `additional_tools` input is blocked | Native/equivalent ordered mapping through the [tool root repair](#tool-protocol-root-repair), not a decoder-only exception | Before fresh credentials |
+| Pi Responses | `additional_tools` input is blocked | Ordered source preservation plus target-native or selected approximate projection through the [tool root repair](#tool-protocol-root-repair) | Before fresh credentials |
 | OpenCode Responses | Recall omits required text annotations | Postponed for user consideration; retain strict intake, no inferred empty annotations | Deferred decision; acceptance remains open |
 | Responses client → OpenAI subscriptions, flat tools | Current binding requires namespaces and qualified calls even for inline definitions | Reconcile with official SIWC `additional_tools` support, including subsequent direct call/result history | Tool contract repair; real endpoint acceptance separate |
 | Chat upstream usage | Duplicate nonnull final reports | Qualify at emitter | Outside stabilization slices |
 
 ### Tool protocol root repair
 
-The [accepted direction](architecture.md#ordered-tool-availability) requires a complete assessment of the existing tool parameter families, not blanket activation of every tool in an SDK union. The [dated audit](refs/2026-10-27-client-ir-boundaries.md#tool-protocol-root-cause-audit-2026-11-04) covers Chat, Responses, Messages, generateContent and Interactions across definitions, selection, dispatch, ordered availability, calls/results, streaming and replay. Google remains upstream-only and its expansion pause stays in effect.
+The [accepted direction](architecture.md#ordered-tool-availability) covers three native and six cross-protocol paths across Chat, Responses and Messages, each including request, client-native return, tool-result submission and recall. The [design](api-expansion-design.md#three-protocol-tool-conversion-design) owns the nine-cell matrix, candidate losses and recommendations; [dated evidence](refs/2026-10-27-client-ir-boundaries.md#nine-direction-tool-assessment-2026-11-04) owns findings. Earlier Google assessment remains reference material; Google expansion is not part of this execution plan.
 
-Implementation uses the existing semantic tool types, validation, disposition tables, request projection, fidelity and protocol codecs; no new dependency, tool registry or execution service is planned.
+**Planning complete; implementation and new loss-policy activation pending.** Use existing semantic types, validation, disposition tables, request/delivery projection, fidelity, strict JSON and SDK/Agent harnesses. No new dependency, persistent registry, executor, general schema simplifier or nine pair-specific adapters. First make one native Responses addition/function loop work end-to-end, then grow shared rules across the remaining cells.
 
-| Order | Root repair | Exit check |
+| Order / dependency | Coherent slice | Exit check |
 |---|---|---|
-| 1 | Separate definition-local validation from request-wide ordered availability and selection. Generalize the typed ordered owner to preserve supported definition batches, namespace identity and item fidelity; resolve root-versus-inline precedence before crossing protocols | Independent initial/late/redefinition/reference/removal cases; inline-only required/named/allowed choices; no identity or source mutation; malformed fields and resource bounds remain strict |
-| 2 | Make initial, namespace and inline definitions participate consistently in feature checks, strictness, schema/dispatch restrictions, serial guarantees and grammar budgets | Regressions for inline-only selection and the reproduced lost serial switch; one boundary cannot bypass another by changing declaration location; documented null/default contrasts stay direction-specific |
-| 3 | Connect native Responses and legal Messages equivalents through encoding and history. Reconcile SIWC inline tools with direct-call continuation. Keep root-only targets behind a proven leading-declaration equivalence or explicit rejection | Wire→IR and IR→wire oracles retain positions, versions, IDs, arguments and results; conditional/explicit strictness remain distinct; no ordinary addition is converted into tool search, prose or general final-set collapse |
-| 4 | Audit returned declaration batches, item roles, JSON/SSE snapshots, retained history and discovery through the same contract; make any unsupported boundary explicit | No response role promoted to developer authority, no fabricated call links/completion, honest EOF and cancellation. Full offline baseline, applicable SDK gates and current installed-pi default Responses tool/recall loop pass |
+| 1 / first | Qualify current official contracts and stable source/SDK pins; resolve or isolate collision precedence, forced-call cardinality, strictness strength, output roles and custom-stream gaps. Select the concrete first-package loss rows | Independent source expectations and a disposition for each material field family; unknown native behavior delegates, while transformations needing an unknown winner do not guess. No package/source version conflation |
+| 2 / after 1 | Generalize ordered batches and shared definition/availability checks. Separate current selection from historical identity. Fix inline-only choice, serial emission, feature/dispatch traversal and bounds; add only necessary semantic distinctions | Existing defect regressions fail before repair and pass after it; independent batch/ID, root/inline/namespace, required/named/allowed and malformed/bounds cases. A single Responses native request→call→result→recall slice works |
+| 3 / after 2 | Complete native function paths and ordinary cross mappings, source-default strictness, call cardinality, nullable input status and legal Messages positions. Reconcile SIWC inline declarations and subsequent direct calls | Three native function loops preserve their source guarantees; cross-protocol fixtures check both wire directions; no returned role promotion or fabricated historical schema. Pi strict-read admission is fixed at its actual protocol/binding owner, not by removing `strict:true` |
+| 4 / after 2–3 and policy selection | Generalize active-set/allowed-set projection from existing Messages collapse into one owner. Preserve more native history where current selection can still be enforced; retain existing error/default losses | V1/call/V2, removal/re-addition, deferred reference, empty set, conflicting forced choice and allowed-subset contrasts. Source history is immutable; cache-prefix loss is explicit; no withheld/removed tool becomes callable |
+| 5 / after 3–4, separately selectable | Implement namespace aliases with inverse request/return/history mapping; then grammar-free custom wrappers and examples projection only if selected | Duplicate leaf names, reorder/append/remove stability, original client names/kinds, candidate isolation, JSON/SSE/retained agreement. Wrappers have bounded buffering and honest truncated-input handling; no invented custom SSE |
+| 6 / throughout; final after selected slices | Complete nine-cell SDK/gateway acceptance and current installed-Agent checks; update discovery from the same dispositions and remove obsolete blanket rejection tests/helpers | Ordinary function call→result→answer→recall succeeds for all nine cells. Selected advanced families pass applicable directional tests or retain explicit boundaries. Full offline baseline and relevant SDK gates pass before publication |
 
-Scope decisions before broadening a mapping:
+Verification is layered rather than every field multiplied by nine:
 
-- Root/in-band name collisions, output-side role asymmetry and qualified namespace selection need authoritative semantics. Preserve native data where expressible; unknown upstream validation alone is not a reason for blanket rejection.
-- Existing `messages.collapse-tool-changes.v1` is a previously selected lossy policy. Do not silently apply it to the newly selected preservation path; explicitly reconcile its scope rather than treating it as equivalent.
-- Schema subsets, Google function-output schemas/validated modes, result-media source drift and ordinary Interactions call-signature authority are assessment findings, not automatic Google expansion or weakened strict guarantees.
-- Tool discovery, hosted execution, programmatic orchestration, new tool families/endpoints and OpenCode annotation normalization remain outside this repair. A standard input carrier does not activate those operations.
+- Extend existing semantic and SDK tool-history fixtures with independent wire→IR and IR→wire expectations. Nine ordinary loop cells cover route composition; family-specific tests cover distinct losses and failures, not redundant permutations.
+- Check JSON/SSE and retained-view agreement, partial arguments, raw-string authority, distinct item/call IDs, error results, cancellation, bounds, EOF and replay isolation. New alias/wrapper mapping must finish before publication and cannot depend on clients returning diagnostics.
+- Reuse `tests/sdk/openai_tool_history.rs`, `tests/sdk/messages_tool_loop.rs`, existing semantic tool/schema/stream cases and installed-client drivers. Keep official baseline assets and real SDK consumers; do not create a parallel fixture framework.
+- Current installed pi/OpenCode versions are recorded at execution time, without downgrade. Pi default Responses and the strict Chat tool case are positive goals. OpenCode Responses' postponed annotations case remains a separately reported known failure, not repaired by fixtures or waived by nine SDK loops.
+- Reuse the [offline baseline](development.md#offline-baseline) and [SDK gate](development.md#sdk-loopback-gate) per implementation slice. Real Provider/model checks remain AR5 with fresh credentials and separately bounded runs; synthetic acceptance does not certify endpoint behavior.
+
+Risks that change the plan:
+
+- Unknown root/inline precedence prevents computing a faithful source active set for colliding definitions; scope that approximation to known cases, while preserving native shapes when possible.
+- Missing custom-SSE carriers or lawful returned-role replay prevent complete advanced-family loops. Keep those boundaries explicit; ordinary function work need not wait for a speculative transport.
+- Explicit strict, selected-tool, cardinality or serial guarantees with no target carrier remain rejected unless that concrete guarantee downgrade is selected. Do not repair by schema deletion, automatic prompting or a new silent fallback.
+- Namespace/wrapper losses require their own selection before slice 5; historical annotations, media relocation and grammar-to-prose are not recommended for the first package.
+
+Tool discovery, hosted/programmatic execution, new endpoints, Google expansion and OpenCode annotation normalization remain outside this plan. Public capability metadata must describe conditional mappings honestly; general protocol or SDK presence is not a per-model promise.
 
 ### Conversion-ladder migration
 
