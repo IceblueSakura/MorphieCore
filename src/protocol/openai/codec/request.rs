@@ -60,7 +60,11 @@ impl GenerationCodec {
             // The trusted source dialect, never a requested target, defines this
             // spelling as user content. The standard decoder still validates it.
             for item in items {
-                if item.get("role").and_then(Value::as_str) == Some("developer") {
+                if matches!(
+                    item.get("type").and_then(Value::as_str),
+                    None | Some("message")
+                ) && item.get("role").and_then(Value::as_str) == Some("developer")
+                {
                     if let Some(parts) = item.get("content").and_then(Value::as_array)
                         && parts.iter().any(|part| {
                             !matches!(

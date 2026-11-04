@@ -132,6 +132,75 @@ fn responses_batches_keep_membership_identity_order_and_shared_admission() {
     assert_eq!(source, before);
 }
 #[test]
+fn responses_message_dialects_preserve_inline_and_retained_tool_batches() {
+    use morphiecore::protocol::openai::{Dialect, GenerationCodec};
+    let batch = json!({"type":"additional_tools","id":"input-batch","role":"developer","tools":[
+        {"type":"function","name":"read","strict":false,"parameters":{"type":"object"}}
+    ]});
+    let mut returned = batch.clone();
+    returned["id"] = json!("returned-batch");
+    returned["tools"][0]["name"] = json!("write");
+    let source = json!({"model":"synthetic","input":[
+        {"role":"developer","content":"Use the tools."},
+        batch,
+        {"role":"user","content":"read"}
+    ]});
+    let standard = GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None);
+    let request = standard
+        .decode_request(&serde_json::to_vec(&source).unwrap())
+        .unwrap();
+    let output = responses::decode_response(&envelope("completed", json!([returned]))).unwrap();
+    let continuation = standard
+        .decode_client_history(
+            &serde_json::to_vec(&json!({"model":"synthetic","input":"write"})).unwrap(),
+            Some((&request.task, &output)),
+        )
+        .unwrap();
+    for dialect in [Dialect::Zhipu, Dialect::DeepSeek] {
+        let codec = GenerationCodec::new(GenerationApi::Responses, dialect, None);
+        for (request, retained) in [(&request, false), (&continuation, true)] {
+            let wire = codec
+                .encode_request(request, "synthetic", &Contract::full())
+                .unwrap();
+            assert_eq!(wire["input"][1], batch, "{dialect:?}");
+            assert_eq!(wire["input"][0]["content"], "Use the tools.");
+            assert_eq!(
+                wire["input"][0]["role"],
+                if dialect == Dialect::DeepSeek {
+                    "system"
+                } else {
+                    "developer"
+                }
+            );
+            if dialect == Dialect::Zhipu {
+                assert_eq!(wire["input"][0]["type"], "message");
+            }
+            if retained {
+                assert_eq!(wire["input"][3], returned, "{dialect:?}");
+                assert_eq!(wire["input"][4]["content"][0]["text"], "write");
+            }
+        }
+        let decoded = codec
+            .decode_request(&serde_json::to_vec(&source).unwrap())
+            .unwrap();
+        assert!(matches!(
+            &decoded.task.semantic.items()[1].1,
+            Item::ToolBatch(batch) if batch.role == ToolBatchRole::Developer
+        ));
+        if dialect == Dialect::DeepSeek {
+            assert!(matches!(
+                &decoded.task.semantic.items()[0].1,
+                Item::Message(message) if message.role == MessageRole::User
+            ));
+        } else {
+            assert!(matches!(
+                &decoded.task.semantic.items()[0].1,
+                Item::Instruction(_)
+            ));
+        }
+    }
+}
+#[test]
 fn native_batches_preserve_old_arguments_without_choosing_a_schema_winner() {
     let batch = |key: &str| {
         json!({"type":"additional_tools","role":"developer","tools":[

@@ -156,6 +156,12 @@ pub fn encode_generation(target: &RequestRepresentation<'_>) -> Result<Value, Co
         encoded_settings.instructions = None;
     }
     for item in &mut input {
+        if !matches!(
+            item.get("type").and_then(Value::as_str),
+            None | Some("message")
+        ) {
+            continue;
+        }
         if target.adaptation.rules.responses_typed_messages
             && matches!(
                 item.get("role").and_then(Value::as_str),
