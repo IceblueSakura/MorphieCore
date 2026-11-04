@@ -68,7 +68,7 @@ Protocol mappings need independent wire→IR and IR→wire expectations from off
 
 Select checks from the relevant [roadmap package](roadmap.md#planned-order). Same-protocol fidelity needs a pinned revision/domain and independent request, response, JSON/SSE and returned-history expectations; a successful tool loop does not prove losslessness. Independent tasks and resources need their own lifecycle checks, not Generation round trips.
 
-The [design-review gate](roadmap.md#generation-design-review-gate) owns approved scope, coverage authorization and outstanding approval requirements. Use counterexamples to support design review; do not encode unresolved defects as successful expectations. Passing checks, measured coverage and agent review are not human design approval.
+[Architecture](architecture.md#scope-and-activation-decisions) records approved design; [Roadmap](roadmap.md#planned-order) owns remaining scope and exit gates. Unresolved concrete semantics and new integration still need selection. Use counterexamples to support design review; do not encode unresolved defects as successful expectations. Passing checks, measured coverage and agent review are not human design approval.
 
 ## Upstream test sources
 
@@ -150,7 +150,7 @@ Upstream implementation-specific assertions require adaptation, not blind adopti
 
 ### Text and SSE integration baseline
 
-Verified on **2026-10-24**, using the source/asset locks and Python SDK lock (OpenAI 3.37.0, Anthropic 2.1.0, Google Gen AI 2.33.0). This closes the finite [text/SSE gate](roadmap.md#current-text-and-sse-gate), not all official features or latest-candidate acceptance.
+Verified on **2026-10-24**, using the source/asset locks and Python SDK lock (OpenAI 3.37.0, Anthropic 2.1.0, Google Gen AI 2.33.0). This closes the finite text/SSE integration gate, not all official features or latest-candidate acceptance.
 
 | Boundary | Executable evidence |
 |---|---|
@@ -450,7 +450,7 @@ Record the tested binary version separately from the pinned source revision. Mai
 
 ### Production-profile acceptance
 
-For the selected [production closure](roadmap.md#generation-text-production-closure), begin with the actual intended client profile, not an assumption that the earlier reduced acceptance configuration is its default. Keep the existing scratch-state, unwrapped-binary, loader and redaction boundaries; reuse the existing test layout rather than another harness framework.
+For [remaining production acceptance](roadmap.md#ordered-work-and-exit-gates), begin with the actual intended client profile, not an assumption that the earlier reduced acceptance configuration is its default. Keep the existing scratch-state, unwrapped-binary, loader and redaction boundaries; reuse the existing test layout rather than another harness framework.
 
 1. Record client version, API/model/compat flags, tool and strictness declarations, cache/session options, compaction mode/model, retries and auxiliary-request settings. Inspect only public source and test-owned configuration, never host credentials or private agent state.
 2. Characterize request shapes and internal retries against a synthetic upstream first. The [client source guide](refs/2026-10-27-client-and-proxy-sources.md#pi-actual-consumer-and-history-behavior) identifies pi's independent strict-tool downgrade and compaction behavior; its dated OpenCode observations distinguish native compaction and summary nudges. Count client transmissions separately from gateway attempts; a single command or disabled SDK retry does not establish a single request. A downgraded strict request does not pass the stricter profile.

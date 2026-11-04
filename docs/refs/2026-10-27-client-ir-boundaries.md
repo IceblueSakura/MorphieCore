@@ -1,6 +1,6 @@
 # Client and IR protocol boundary review
 
-Reviewed on **2026-10-27** at **`1b4f828`**, after the five-slice request repair. This is a source-backed review and capability inventory, not implementation approval, a new work queue or a conformance certificate. [Architecture](../architecture.md#field-handling) owns the clarified rules; [Roadmap](../roadmap.md#standard-request-boundary-repair) owns subsequent scope. The earlier [request review](2026-10-26-standard-request-boundaries.md) retains its original date and repair disposition.
+Reviewed on **2026-10-27** at **`1b4f828`**, after the five-slice request repair. This is a source-backed review and capability inventory, not implementation approval, a new work queue or a conformance certificate. [Architecture](../architecture.md#field-handling) owns the clarified rules; [Roadmap](../roadmap.md#three-protocol-fidelity-repair) owns subsequent scope. The earlier [request review](2026-10-26-standard-request-boundaries.md) retains its original date and repair disposition.
 
 ## Contents
 

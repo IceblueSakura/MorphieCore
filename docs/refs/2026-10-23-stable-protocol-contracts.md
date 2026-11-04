@@ -1,6 +1,6 @@
 # Stable-release protocol contracts
 
-Checked **2026-10-23**, with dated rechecks below, against official releases, SDK source, and then-current API documentation. The [source lock](../../tests/upstream/sources.lock.json) owns exact release revisions; [Architecture](../architecture.md) owns accepted design, and [Roadmap](../roadmap.md#standards-reset-and-redesign) owns execution.
+Checked **2026-10-23**, with dated rechecks below, against official releases, SDK source, and then-current API documentation. The [source lock](../../tests/upstream/sources.lock.json) owns exact release revisions; [Architecture](../architecture.md) owns accepted design, and [Roadmap](../roadmap.md#planned-order) owns remaining execution.
 
 ## Contents
 

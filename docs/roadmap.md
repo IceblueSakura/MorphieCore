@@ -6,34 +6,27 @@ This page owns current scope, priorities, dependencies, and exit gates. [Archite
 
 - [Current status](#current-status)
 - [Account rewrite execution order](#account-rewrite-execution-order)
-  - [Scope and cutover](#scope-and-cutover)
   - [Ordered work and exit gates](#ordered-work-and-exit-gates)
   - [Verification and operator handoff](#verification-and-operator-handoff)
-- [Standard request boundary repair](#standard-request-boundary-repair)
 - [Three-protocol fidelity repair](#three-protocol-fidelity-repair)
+  - [Scope and boundaries](#scope-and-boundaries)
+  - [Reference strategy](#reference-strategy)
   - [Agent-default production findings](#agent-default-production-findings)
   - [Conversion-ladder migration](#conversion-ladder-migration)
+    - [Remaining stabilization exit](#remaining-stabilization-exit)
   - [Retained rejections](#retained-rejections)
   - [Remaining issue dispositions](#remaining-issue-dispositions)
   - [Closure boundary](#closure-boundary)
-- [Standards reset and redesign](#standards-reset-and-redesign)
 - [Planned order](#planned-order)
   - [Execution sequence and work-package rules](#execution-sequence-and-work-package-rules)
-  - [Stage 1 work plan](#stage-1-work-plan)
-  - [Stage 2 work plan](#stage-2-work-plan)
-  - [Stage 3 work plan](#stage-3-work-plan)
-  - [Generation Text production closure](#generation-text-production-closure)
   - [Stage 4 scope](#stage-4-scope)
     - [Decision API closure](#decision-api-closure)
     - [Stage-4 operation readiness](#stage-4-operation-readiness)
-    - [Embedding integration targets](#embedding-integration-targets)
     - [Grok Imagine adaptation](#grok-imagine-adaptation)
   - [Stage 5 backlog](#stage-5-backlog)
 - [Test supplementation](#test-supplementation)
-  - [Current text and SSE gate](#current-text-and-sse-gate)
   - [Stage-4 reuse and acceptance](#stage-4-reuse-and-acceptance)
 - [Phase rules](#phase-rules)
-  - [Generation design review gate](#generation-design-review-gate)
   - [Observability follow-up](#observability-follow-up)
   - [Agent authorization and diagnostics follow-up](#agent-authorization-and-diagnostics-follow-up)
   - [Temporary routing freeze](#temporary-routing-freeze)
@@ -41,11 +34,11 @@ This page owns current scope, priorities, dependencies, and exit gates. [Archite
   - [Verification and integration boundary](#verification-and-integration-boundary)
 - [Integration handoff](#integration-handoff)
   - [P7 boundary review](#p7-boundary-review)
-  - [Controlled routing acceptance](#controlled-routing-acceptance)
 - [Pending decisions](#pending-decisions)
   - [Ownership and projection decisions](#ownership-and-projection-decisions)
   - [Scheduling and product decisions](#scheduling-and-product-decisions)
 - [Deferred work](#deferred-work)
+  - [Google API pause](#google-api-pause)
   - [Deferred Generation semantics](#deferred-generation-semantics)
   - [Deferred cache prewarming](#deferred-cache-prewarming)
   - [Deferred tool discovery and web search](#deferred-tool-discovery-and-web-search)
@@ -61,32 +54,19 @@ This page owns current scope, priorities, dependencies, and exit gates. [Archite
 
 ## Current status
 
-**Current focus (2026-11-04):** Slices R0–R5, account rewrite gates AR0–AR4, pre-AR5 test pruning and Generation/credential ownership cleanup are complete. The [product-hypothesis selection policy](development.md#test-selection-and-pruning) replaces coverage-driven pruning. Three concrete Chat/Responses default blockers remain; fresh credentials, actual live model selection, real Provider checks and the full three-protocol installed-Agent exit still precede AR5 closure. Stage 4 remains paused.
+**Current focus (2026-11-04):** Resolve the three Chat/Responses default-profile blockers before fresh credential provisioning and model selection. Complete AR5 real Provider checks and the full three-protocol installed-Agent exit before resuming Stage 4.
 
-| Area | State | Next step |
+| Priority | Remaining work | Exit |
 |---|---|---|
-| Routing | Account rewrite and installed-client synthetic recovery closed through AR4 | AR5 selected-account/model Provider acceptance |
-| Generation IR / Codec | R0–R5 complete; shared projections/discovery, qualified intake, history transfer and reviewed null contracts | Maintain these contracts through the installed-Agent exit |
-| Client compatibility | Native defaults now exercise all three protocols with current pi 1.5.0 / OpenCode 2.0.32; three concrete default blockers remain | Resolve blocked Chat/Responses profiles before claiming the full default-profile exit |
-| Integration | R1a/R1b/R2 loops, controlled recovery and production closure passed | Revalidate changed paths against established gates |
-| Cross-protocol conversion | Stage 3 closed for selected projections; `count_tokens` deferred | Stage-4 Embedding paths active; Google API paused |
-| Decision APIs | Dual standard-SDK direction selected (TypeSafe/OpenAI) | Contract selection and Stage-4 implementation |
-| Embedding & Media | Operational (Google native, OpenAI via OpenRouter, DashScope); Grok image codec implemented | Stage-4 contract selection for Images, Audio, Files, and Video |
-| Downstream integration | Agent API key authentication and diagnostic attribution implemented | Per-Agent JSONL session storage design |
-| Test baseline | Retain independent product/protocol/safety hypotheses and connected consumers; remove implementation-only checks | Validate behavior gates; no coverage or test-count status metric |
+| Agent defaults | Resolve pi Chat strict read, pi Responses `additional_tools`, and OpenCode Responses recall annotations | Actual default reasoning/tool/history loops pass without compatibility opt-outs or input rewriting |
+| Account acceptance | Provision fresh credentials, select actual Provider/model bindings, and complete AR5 | Bounded real Provider checks and installed-Agent exit on the rewritten account path |
+| API expansion | Select and implement Stage-4 operation contracts after AR5 | Per-operation lifecycle, protocol and SDK acceptance |
+| Downstream integration | Implement opt-in per-Agent JSONL session storage | Selected isolation and lifetime bounds |
+| Production preparation | Decide diagnostic packaging and deferred observability scope | Explicit deployer selection |
 
 ## Account rewrite execution order
 
-Plan prepared on **2026-11-02** for the accepted [account specification](provider-account-redesign-plan.md). The sequence follows ownership dependencies: replace the shared account source before routing health, establish health/lifecycle ownership before retrying attempts, then validate consumers before requesting real credentials. No migration phase or compatibility mode is included.
-
-### Scope and cutover
-
-- Replace account configuration, stored-record shapes where needed, provisioning/inspection CLI, Provider/model binding, startup wiring and Generation recovery. Bind existing diagnostic and standalone-task entrances to the same account source without adding their own multi-account retry machinery or activating frozen features.
-- Remove pools, historical aliases, legacy readers, per-pool attempt policy and request-internal target advancement. Do not retain old schemas merely to reuse credentials. The user will provide fresh keys; OAuth accounts use managed login where needed.
-- Reuse the current semantic IR, protocol codecs, pure lowering, secure-store primitives, OAuth drivers and transport/client libraries unless an account-boundary defect requires a scoped change. Keep official protocol, replay, publication, cancellation and credential-security contracts; “fully breaking” does not discard these invariants.
-- Use the existing Nix toolchain, Tokio timers/cancellation, reqwest with implicit retries disabled, serde/schema parsing, clap, `fs-mistrust`/atomic storage helpers and `httpdate`. No new scheduler, persistence service or test framework is planned.
-- Work on `main` in coherent verified slices. A cutover may touch all consumers of one account contract in one slice; do not create a compatibility adapter just to preserve smaller commits. Intermediate slices are development checkpoints, not deployment candidates. Remove superseded helpers/tests with their owners, while preserving safety assertions.
-- No private credentials are needed for AR0–AR4. Use fresh test-owned storage, synthetic identities and local upstream authorities. Do not inspect, migrate, erase or revoke existing private credentials.
+The remaining gate for the accepted [account specification](provider-account-redesign-plan.md) is real acceptance on fresh credentials and selected models. The user selected **offline three-protocol preparation before fresh credentials** on 2026-11-03; resolve the [default-profile blockers](#agent-default-production-findings) first. No compatibility mode, private-store migration or deployment is included.
 
 ### Ordered work and exit gates
 
@@ -96,43 +76,15 @@ The identifiers below belong only to planning and acceptance documentation, not 
 |---|---|---|
 | **AR5 — Fresh credentials, model selection and real acceptance** | The user provisions new API keys and any required OAuth sessions through the new loader/CLI. Validate configured accounts and select actual Provider/model bindings. Then run bounded serial Provider checks and the deferred full installed-Agent exit on the rewritten path. | Actual credential kinds and selected models are verified separately from synthetic recovery. Current installed pi/OpenCode complete default reasoning/tool/history loops across the three client protocols and selected cross-protocol lanes. Unavailable account combinations are reported as unverified, not inferred from mocks. Production activation remains separately approved. |
 
-AR1–AR3 are implementation dependencies, not three runtime modes or mandatory separate commits. Internal steps may be split for review only when the resulting slice remains coherent and does not introduce old/new compatibility execution. If the account cutover needs all three to form a coherent runtime, keep them in one implementation slice instead of manufacturing compatibility shims. Delete obsolete code as soon as its owner is replaced. A failure in protocol evidence, trusted-target binding or cancellation blocks dependent work; the retry ceiling and publication rules are not relaxed to make a check pass.
-
-### Account cutover ownership
-
-AR0 closed on **2026-11-02** against clean `9c68a7d`: the full offline baseline passed (950 Rust tests, 39 ignored; 20 pinned assets; nine upstream Python tests), with no existing failures. The [dependency and official-source recheck](refs/2026-11-02-account-recovery-sources.md) requires no pin changes. No private configuration, credentials or real Providers were used.
-
-AR1 closed on **2026-11-02**: the full offline baseline passes (962 Rust tests, 39 ignored; Clippy, formatting, library/binary compilation, 20 pinned assets and nine upstream Python checks). The other Python suites pass (19 SDK-oracle, 33 client-driver, 24 gateway/schema tests), as do all 18 pinned SDK loopback consumers. Production-loader checks cover named account ordering, independent API-key/SIWC contracts, task targets, duplicate security targets, network-free validation and single-target dispatch. Regressions first reproduced removal-tombstone/revision failures and observation-validation gaps, then passed after repair. Installed-client fixture/configuration acceptance remains AR4; no private state, real Provider or deployment was used.
-
-AR2 closed on **2026-11-02**: the full offline baseline passes (980 Rust tests, 39 ignored; Clippy, formatting, library/binary compilation and 20 pinned assets), with the 9/19/33/24 Python gates and all 18 serial SDK loopbacks. Native failed Responses, concurrent absent affinity observers, reverse-order account/target probes and pre-EOF failure cancellation each reproduced their intended defect before repair. Deterministic checks cover scoped constraints, short bound-target waits, deadline/cancellation, probe competition, expiry/eviction ABA, stale results and bounded observations. Actual credential maintenance advances verified material receipts consumed by network-free request availability; replacement releases only old auth for a probe, fences stale 401s and preserves quota/lifecycle vetoes. Managed-key replacement now changes the codec replay issuer; same-account signed history remains intact and account switching strips only foreign opaque owners. Configurable OAuth timing retains short-grant spacing and cancellation quarantine; zero scan/renewal budgets dispatch no unbounded work. Installed-client configuration and recovery remain AR4; no private state, real Provider or deployment was used.
-
-AR3 closed on **2026-11-03**: the full offline baseline passes (988 Rust tests, 39 ignored; Clippy, formatting and production compilation), with 20 pinned assets, the 9/19/33/24 Python gates and all 18 serial SDK consumers. Real HTTP and controlled clocks cover exact same-target wire reuse, two-send bounds, hint waiting, zero budget, cancellation, original deadlines, long generation after content and valid empty terminal readiness without early JSON publication. Failed terminal usage, native failure evidence, malformed canonical fields, cross-Provider code isolation and clean EOF versus typed transport interruption have focused regressions. TLS alerts remain health-neutral and non-retryable; a ready backup suppresses a primary's long route hint. Legacy chain/transition and route send-budget internals are removed. Installed-Agent configuration/recovery remains AR4; no private state, real Provider or deployment was used.
-
-AR3 review fixes on **2026-11-03** pass the full offline baseline again (989 Rust tests, 39 ignored; Clippy, formatting and production compilation), 20 pinned assets, the 9/19/33/24 Python gates and all 18 serial SDK consumers. Regressions first reproduced lost long/reset hints, missing HTTP-200 failure hints, malformed Chat messages and Messages canonical fields, and omitted OpenAI overload eligibility. Real HTTP checks now retain one-send vetoes for long delta/date/overflow hints and verify in-band hint waiting, unchanged wire reuse and health ownership. Installed-Agent recovery remains AR4; no private state, real Provider or deployment was used.
-
-AR4 closed on **2026-11-03**: the final tree passes the full offline baseline (991 Rust tests, 42 ignored; Clippy, formatting and production compilation), 20 pinned assets, the 9/19/37/24 Python gates and all 18 serial SDK consumers. Current installed pi **1.5.0** and OpenCode **2.0.32** pass all 17 isolated synthetic cases. Named-account writers replace old candidate targets and attempt ceilings; same-target recovery checks unchanged bytes and post-header hint waiting. Separate cases prove long-hint one-send failure, the two-send ceiling, next-request failover and cancellation before a delayed retry. Cancellation waits for the correlated gateway terminal receipt before follow-up; publication/cancellation gates retain an eligible secondary. Summary retries remain client-owned. Fresh CLI provisioning/explanation/status/validation, the explicit-account live-runner constructor, diagnostic dispatch and fixed-account task dispatch use production construction with synthetic credentials. The current pi default-body corpus reproduces byte-for-byte; no old-Agent compatibility branch, private state, real Provider or deployment was used.
-
-AR4 timing review on **2026-11-03** reproduced a false early-retry verdict by delaying the authority's post-header sample by 150ms. The repaired gate brackets publication, reports its elapsed-time interval and still rejects definitely early retries; the Rust owner independently requires the full delay from retained failure observation. The original reproduction now passes, as do all 17 current-Agent synthetic cases, 37 client oracles and the full offline baseline (991 Rust tests, 42 ignored; Clippy, formatting, production compilation, 20 pinned assets and nine upstream Python checks). SDK source and production behavior are unchanged; their preceding acceptance remains valid.
-
-Existing fixture owners suffice: credential storage fault injection and synthetic authorities for lifecycle; executor paused-time tests for health/probes; native Responses Router fixtures for failed-task health; transport loopback fixtures for interruption/TLS/deadline facts; production bootstrap, SDK and installed-client harnesses for the connected path. No new framework is needed.
-
-The user selected **offline three-protocol preparation before fresh credentials** on 2026-11-03. The [native-default characterization](development.md#installed-client-synthetic-recovery) now exercises Chat and Responses alongside Messages. OpenCode Chat and both Messages clients complete their tool/recall loops. Pi Chat's actual strict read guarantee and pi Responses' `additional_tools` input remain blocked; OpenCode Responses completes its tool turn but omits required text annotations on recall. Keep these boundary regressions distinct from accepted loops: no compatibility opt-out, input rewrite, new semantic admission or real Provider call is authorized by this characterization. Fresh credential provisioning, actual live model selection, selected cross-protocol lanes and resolution of these concrete defaults still precede AR5 closure.
-
 ### Verification and operator handoff
 
-- Add focused assertions at the responsible owner while rewriting, using `tests/{credential,process,gateway,transport}` and existing unit helpers. Integrate independent source-derived wire expectations when binding/classification changes; do not use old pool mappings or round trips as the oracle.
-- Before publishing each completed implementation slice, run the [full offline baseline](development.md#offline-baseline). Run applicable [Python checks](development.md#python-checks) and [SDK loopback](development.md#sdk-loopback-gate) for changed surfaces; reuse still-valid evidence instead of rerunning unchanged suites after documentation edits. Keep tests enabled and preserve strict JSON, bounds, auth, origin, replay, lifecycle and terminal assertions.
-- AR4's [installed-client synthetic recovery](development.md#installed-client-synthetic-recovery) is distinct from AR5's real Provider/default-Agent exit. Use currently installed Agents with isolated state, never downgrade them to source pins or alter their personal credentials.
-- Finish AR0–AR4 before asking the user for keys. Deliver current configuration examples, human-readable validation/status and explicit setup commands; secret values do not appear in source, command logs or reports. OAuth provisioning is an interactive managed login, not token copying.
-- For AR5, fix target, request count, output cap and timeout before each real run, use the project loader and redacted reporting, and run serially without hidden harness retries. New model selection follows the rewrite; only correctly bound existing models serve as intermediate reference cases.
-- Do not stop/restart deployed services, overwrite old credential stores, revoke sessions or activate new bindings as a side effect of code acceptance. Deployment and any destructive private-data operation remain separately approved. A new credential format does not require automatic deletion of the old files.
-- Likely blockers are loss of transport failure-stage information, Provider/profile-specific model restrictions and credential-publication races. Resolve them with pinned source inspection and synthetic reproductions within the affected slice; do not add compatibility layers or broaden semantic admission as a workaround.
+- Deliver current configuration examples, human-readable validation/status and explicit setup commands; secret values do not appear in source, command logs or reports. OAuth provisioning is an interactive managed login, not token copying.
+- Keep [installed-client synthetic recovery](development.md#installed-client-synthetic-recovery) distinct from real Provider/default-Agent acceptance. Use currently installed Agents with isolated state, never downgrade them to source pins or alter their personal credentials.
+- Fix target, request count, output cap and timeout before each real run, use the project loader and redacted reporting, and run serially without hidden harness retries. Use the [production-profile acceptance procedure](development.md#production-profile-acceptance).
+- Do not stop/restart deployed services, overwrite old credential stores, revoke sessions or activate new bindings as a side effect of code acceptance. Deployment and any destructive private-data operation remain separately approved.
+- Resolve Provider/profile-specific model restrictions or credential-publication failures with pinned source inspection and synthetic reproductions; do not add compatibility layers or broaden semantic admission as a workaround.
 
-Completed rows are removed as slices land; meaningful contract changes belong in Architecture and the account specification. AR5 closure resumes the existing Stage-4 sequence, not a new API expansion.
-
-## Standard request boundary repair
-
-Completed on 2026-10-26. [Architecture](architecture.md#standard-request-boundary) defines standard-priority contracts; see [dated findings](refs/2026-10-26-standard-request-boundaries.md#repair-disposition) for specific resolutions.
+AR5 closure resumes the existing Stage-4 sequence, not a new API expansion.
 
 ## Three-protocol fidelity repair
 
@@ -158,28 +110,27 @@ This workstream repairs semantic fidelity across standard Chat Completions, Resp
 
 ### Agent-default production findings
 
-Captured pi 1.4.0 shapes run through the permanent [production-construction gate](development.md#sdk-loopback-gate). R1–R4 resolved earlier lanes; unresolved lanes are listed below:
+The [native-default characterization](development.md#installed-client-synthetic-recovery) exercises all three protocols with pi 1.5.0 and OpenCode 2.0.32. Resolve the first three default-profile blockers before the fresh-credential gate; characterization alone does not authorize new semantic admission. Endpoint qualification and Chat usage-emitter work retain their separate scope.
 
-| Lane | Current gate disposition | Ladder resolution | Slice |
+| Lane | Remaining issue | Required resolution | Scope |
 |---|---|---|---|
+| Pi Chat | Actual strict read guarantee is blocked | Resolve the explicit guarantee without client downgrade or input rewriting | Before fresh credentials |
+| Pi Responses | `additional_tools` input is blocked | Select its contract before changing admission | Before fresh credentials |
+| OpenCode Responses | Recall omits required text annotations | Resolve the history boundary against official contracts and actual client behavior | Before fresh credentials |
 | Responses client → OpenAI subscriptions, flat tools | Flat tools reject (requires namespace definitions and qualified calls) | Retain selected tool contract until endpoint evidence qualifies carrier | Endpoint qualification |
-| Chat upstream usage | Duplicate nonnull final reports | Qualify at emitter | Outside slices |
+| Chat upstream usage | Duplicate nonnull final reports | Qualify at emitter | Outside stabilization slices |
 
 ### Conversion-ladder migration
 
-R0–R5 migrated rejection sites onto shared request/delivery projections and compiled discovery. [Architecture](architecture.md#delivery-and-evidence-decisions) owns the completed contracts, including the identity probe and null review.
-
 #### Remaining stabilization exit
 
-| Slice | Work | Exit gate |
-|---|---|---|
-| **Exit (deferred)** | After account rewrite and new model selection: current-client characterization, then default reasoning/tool/history gateway loops with installed pi and OpenCode across all three client protocols and selected cross-protocol lanes. | Gateway execution and replay pass within documented profiles on the rewritten account path and selected models. |
+After the default-profile repairs, fresh credentials and model selection, run current-client characterization and default reasoning/tool/history gateway loops with installed pi and OpenCode across all three client protocols and selected cross-protocol lanes.
 
-Dependencies: R0–R5 are complete. Local representation identities remain after the probe; [null-contract evidence](refs/2026-10-27-client-ir-boundaries.md#generation-null-contract-review-2026-11-02) distinguishes defaults from reported absence. The final current-client exit remains independent of offline regression and SDK gates. The [account-redesign sequence](#temporary-routing-freeze) now precedes this exit; interim verification uses focused offline and applicable SDK gates without requiring the deferred full installed-Agent loop. Existing acceptance remains dated evidence, not qualification of the rewritten path or newly selected models.
+Exit: gateway execution and replay pass within documented profiles on the rewritten account path and selected models. This exit is part of [AR5](#ordered-work-and-exit-gates), independent of offline regression and SDK gates. Interim verification uses focused offline and applicable SDK gates; dated acceptance does not qualify new account/model paths.
 
 ### Retained rejections
 
-These L5 boundaries and invariant guards remain after the migration. Current additional blockers are tracked in the [findings table](#agent-default-production-findings) with their slice.
+These L5 boundaries and invariant guards constrain the remaining work. Current additional blockers and their scope are tracked in the [findings table](#agent-default-production-findings).
 
 | Boundary | Retained |
 |---|---|
@@ -209,22 +160,17 @@ The [2026-10-28 source and feasibility recheck](refs/2026-10-27-client-ir-bounda
 
 ### Closure boundary
 
-Reclose Client/IR stabilization when the corrected R0 gate is permanent; every same-protocol lane and each selected cross-protocol lane accepts or cites a [retained rejection](#retained-rejections) or invariant; R1–R5 each have verified completion; discovery publishes the same facts; and the exit loops pass.
+Close Client/IR stabilization when every same-protocol lane and each selected cross-protocol lane accepts or cites a [retained rejection](#retained-rejections) or invariant; discovery publishes the same facts; and the exit loops pass.
 
 Default reasoning/tool/history gateway success on all three client protocols is required for closure. Deployer-selected public model profiles (e.g. `readable_reasoning`) are configuration, not client overrides.
 
-## Standards reset and redesign
-
-Accepted on 2026-10-23 and closed on 2026-10-24. Pinned upstream release sources, standard delivery dialects, and canonical IR instruction mapping are settled in [Architecture](architecture.md#protocols) and verified in [Development](development.md#upstream-test-sources). Safe-to-ignore diagnostic extensions are permitted without dedicated extension tests pending final production packaging.
-
 ## Planned order
+
+Only remaining stages are listed. Stage 4 resumes after [AR5](#ordered-work-and-exit-gates); Stage 5 remains unscheduled.
 
 | Stage | Goal | Exit evidence |
 |---|---|---|
-| **1 — Same-protocol lossless IR codecs** | Preserve protocol semantics across same-protocol request, response, streaming, and history paths. Prioritize known fields, presence/defaults, reasoning/replay, and terminals | Independent wire→IR and IR→wire tests in each direction; JSON/SSE agreement; history round-trip preservation |
-| **2 — Basic agent tool interactions** | Function-tool declarations, schema intent, call IDs/arguments, streaming results, and multi-turn history for pi/OpenCode | Verified same-protocol tool loops preserving source data, reasoning signatures, and cache controls |
-| **3 — Cross-protocol stability & counting** | Cross-protocol request, response, and history conversion via exact carriers or approved adaptations. `count_tokens` deferred | Directional conversion tests; rejection of unrepresentable semantics; candidate-local isolation |
-| **4 — Modalities, Decision & file resources** | Decision, Embedding, Audio (Speech/Transcription/Translation), Images, Files/Uploads, and Video at equal priority | Verified request/result contracts, media bounds, resource isolation, cancellation, and SDK loops |
+| **4 — Modalities, Decision & file resources** | Decision, Embedding extensions, Audio (Speech/Transcription/Translation), Images, Files/Uploads, and Video at equal priority | Verified request/result contracts, media bounds, resource isolation, cancellation, and SDK loops |
 | **5 — Unscheduled follow-ups** | Citations, tool discovery, hosted tools, server-side compaction, Batch, and Realtime | Requires explicit per-slice design selection and scheduling prior to implementation |
 
 ### Execution sequence and work-package rules
@@ -235,37 +181,6 @@ Every work package follows this lifecycle:
 3. **Invariants:** Maintain immutable source IR, fresh per-attempt decoder state, and history-prefix stability during turn appending.
 4. **Evidence:** Provide independent directional tests and focused failure assertions at the responsible layer. Classify each field's ladder level and give rejections their L5 reason.
 5. **Exit:** Run the offline baseline and relevant SDK gates before commit and push. Remove completed roadmap packages and record decisions in [Architecture](architecture.md).
-
-### Stage 1 work plan
-
-**Status: Closed.** Replaced by the standards-reset baseline. Chat, Responses, and Messages maintain independent directional expectations within the [contract inventory](refs/2026-10-23-stable-protocol-contracts.md). Google generation has no downstream client pair.
-
-### Stage 2 work plan
-
-**Status: Closed.** Verified client interaction loops:
-- Chat tool/reasoning history ([R1a gate](development.md#sdk-loopback-gate)).
-- Responses native history and lifecycle reports ([R1b gate](development.md#sdk-loopback-gate)).
-- Native Messages signed history and cache controls ([R2 gate](development.md#sdk-loopback-gate)).
-
-### Stage 3 work plan
-
-**Status: Closed for Generation Text projections; token counting deferred.** Implemented contracts: [model-effective guards](architecture.md#model-effective-values), [trusted missing-cap defaults](architecture.md#missing-output-ceilings), [attribution](architecture.md#end-user-attribution), [foreground Google intake](architecture.md#google-foreground-intake), and [Messages terminal projection](architecture.md#messages-terminal-projection).
-
-#### Google API pause
-
-Further general Google API expansion is paused. Implemented exceptions:
-1. **Terminal reports:** Bounded `finishMessage` and [processing-class reports](architecture.md#service-policies-and-reports).
-2. **Embedding:** Standalone native `gemini-embedding-2` text endpoint under Stage 4.
-
-General multimodal input, native client intake, and custom tools remain excluded from the Google path.
-
-### Generation Text production closure
-
-**Status: Completed.** Bounded offline, SDK, installed-client, and Provider gates pass within documented profiles:
-- **Baseline profiles:** Initial production profile verified with `pi` 1.4.0 and `opencode` 2.0.32 across reasoning, tool calls, and recovery.
-- **Contract enforcement:** Bounded explanatory reports, automatic TTL cache controls, and numeric thinking budgets enforced.
-- **Sustained operation:** Verified cancellation, stopped readers, budget resets, and bounded logging.
-- **Exclusions:** Native `file_citation` insertion units and cross-account real failover remain excluded from production claims.
 
 ### Stage 4 scope
 
@@ -297,25 +212,15 @@ Selected direction: Dual-SDK support (TypeSafe and OpenAI) backed by a unified D
 | Family | Readiness | Next step |
 |---|---|---|
 | Decision | Dual-SDK direction selected; IR drafts under review | Finalize contract selection and implement codecs |
-| Text Embedding | Operational (DashScope, OpenRouter, Google) | Maintain contract; multimodal embeddings remain separate |
 | Images Generate | Grok static codec implemented; public contracts under review | Select public default encoding (PNG vs Base64) and response metadata |
 | Images Edit & Stream | Research complete; mask boundaries and stream formats unselected | Await static Generate closure |
 | Audio (Speech/ASR) | Static paths exist; streaming and multipart unselected | Select bounded single-operation profile |
 | Files & Uploads | Safety requirements defined; storage authority unselected | Select storage authority and ID authorization |
 | Video | Upstream API research available; job lifecycles unselected | Select job status and retrieval contract |
 
-#### Embedding integration targets
-
-Implemented on `POST /v1/embeddings`:
-- **DashScope:** Text embedding models.
-- **OpenRouter:** `text-embedding-3-small` with trusted scoped tokens.
-- **Google:** Native `gemini-embedding-2` with 100-input ceiling and 60,000-value budget.
-
 #### Grok Imagine adaptation
 
-Pure static image codec implemented (`grok-imagine-image-2.0`) with Base64 delivery. Video integration is deferred to native asynchronous APIs rather than a synchronous facade.
-- OAuth uses the shared single-account Grok pool without inline login.
-- Generate contract requires explicit resolution of dimensions, quality tiers, and creation timestamps before public activation.
+Before public Generate activation, resolve dimensions, quality tiers, creation timestamps, default encoding and response metadata using the existing static codec. OAuth must use the shared account source without inline login. Video integration requires a native asynchronous job contract rather than a synchronous facade.
 
 ### Stage 5 backlog
 
@@ -330,12 +235,6 @@ All Stage 5 tasks are currently unscheduled:
 
 The test strategy uses pinned upstream assets and standard SDK consumers rather than hand-maintained mock matrices.
 
-### Current text and SSE gate
-
-- **Baseline:** Validated in `tests/upstream` using pinned sources and locked assets.
-- **Scope:** Chat Completions, Responses, and Messages request/response contracts, SSE framing, EOF handling, and stream accumulation.
-- **Invariants:** Upstream test updates are reviewed and locked; candidates remain unpromoted until reviewed.
-
 ### Stage-4 reuse and acceptance
 
 1. Identify applicable official SDK fixtures for each selected operation.
@@ -344,33 +243,23 @@ The test strategy uses pinned upstream assets and standard SDK consumers rather 
 
 ## Phase rules
 
-### Generation design review gate
-
-The standards-reset architecture baseline was accepted on 2026-10-23. Implemented invariants:
-- **Semantic ownership:** Ordered content, controls, and reported facts maintain separate typed owners in IR.
-- **Source parsing & projection:** Source input is immutable; target projection operates on private copies.
-- **Tools & schemas:** Tool identity, schema constraints, and explicit strictness are preserved; conditional defaults relax only through named ladder rules.
-- **Delivery & terminals:** Output streaming preserves phase ordering; terminals require validated upstream EOF.
-- **History & replay:** Resumed history reflects actual delivered output, preserving reasoning signatures and cache markers.
-
 ### Observability follow-up
 
-- **Domain evidence:** Authoritative, body-free diagnostic receipts and typed error classifications are active.
-- **Local telemetry:** File and terminal traces are operational with log-rotation and queue bounds.
-- **Deferred scope:** Centralized OTel Collector forwarding, public diagnostic schema stabilization, and cluster metrics aggregations await production packaging.
+Centralized OTel Collector forwarding, public diagnostic schema stabilization, and cluster metrics aggregation await production packaging.
+
+Safe-to-ignore diagnostic extensions may be added without dedicated extension tests. Information organization/aggregation and those tests await the deployer's final production-preparation decision; existing standard Agent-loop, authoritative evidence and safety checks remain required.
 
 ### Agent authorization and diagnostics follow-up
 
-- **Current state:** Startup-configured Agent API keys with diagnostic attribution are active.
-- **Session design:** Per-Agent JSONL session storage is selected as the downstream integration architecture; implementation requires storage opt-in, boundary isolation, and lifetime bounds.
+- **Session design:** Implement the selected opt-in [per-Agent JSONL session storage](architecture.md#agent-session-files), including boundary isolation and lifetime bounds.
 - **Deferred scope:** Dynamic OAuth authorization servers, cross-agent token exchange, and cluster IAM remain unscheduled.
 
 ### Temporary routing freeze
 
-The separately requested [Provider account redesign plan](provider-account-redesign-plan.md) was **finalized on 2026-11-02**; Architecture records its [accepted decisions](architecture.md#routing-and-security-decisions). The user accepted the fully breaking scope, fresh manual provisioning and subsequent implementation. The [execution plan](#account-rewrite-execution-order) owns dependencies and gates: replace the account system, provision fresh credentials and select models, complete the installed-Agent exit, then resume Stage 4. Implementation does not authorize changing deployed credentials or activation.
+The [accepted account contract](provider-account-redesign-plan.md) and [routing decisions](architecture.md#routing-and-security-decisions) constrain the remaining acceptance work. Provision fresh credentials and select models, complete the installed-Agent exit, then resume Stage 4. Implementation does not authorize changing deployed credentials or activation.
 
-During the account rewrite, only in-scope work may replace the [stable routing baseline](architecture.md#failover); unrelated codec and protocol work must not alter:
-- Pool membership, health probes, or target ordering.
+Until AR5 closes, unrelated codec and protocol work must not alter the [stable routing baseline](architecture.md#failover):
+- Account membership, health probes, or target ordering.
 - Conversation cache affinity or cooldown thresholds.
 - Route selection based on projected loss or codec capability.
 
@@ -401,18 +290,6 @@ Prerequisites for activating newly implemented codec carriers on public routes:
 3. Validate routing stability under failure and reconnection.
 4. Complete offline baseline and connected SDK acceptance before client validation.
 
-#### First reconnection slices
-
-Selected loops (R1a, R2, R1b) and Google basic reconnection are completed under their recorded evidence. Further reconnection follows the [public capability contract](architecture.md#public-capability-and-adaptation-notice) and model-level preflight validation.
-
-### Controlled routing acceptance
-
-Controlled synthetic recovery is verified:
-- Router/SDK recovery across simulated network faults and expired credentials.
-- Sticky conversation continuation with signed-history preservation.
-- All-cooling fail-safe recovery.
-Real cross-account failover requires distinct, advanceable production credentials and remains subject to production deployment gates.
-
 ## Pending decisions
 
 ### Ownership and projection decisions
@@ -432,10 +309,14 @@ Real cross-account failover requires distinct, advanceable production credential
 | Models discovery extensions | Generation Text active; other modalities schema-only | Discovery endpoint only |
 | Cache prewarming | Deferred; requires dedicated contract selection | Operation-specific |
 | Token counting | Deferred; upstream-first policy selected | `POST /v1/messages/count_tokens` |
-| API expansion | Stage 4 active at equal priority; Stage 5 unscheduled | Specific modalities |
+| API expansion | Stage 4 paused until AR5, then equal priority; Stage 5 unscheduled | Specific modalities |
 | Files & multipart uploads | Stage 4 priority; requires storage authority selection | File resource endpoints |
 
 ## Deferred work
+
+### Google API pause
+
+Further general Google API expansion is paused. Preserve the existing [terminal-report exceptions](architecture.md#service-policies-and-reports) and [native text Embedding path](architecture.md#independent-embedding-path). General multimodal input, native client intake, custom tools, unified error parsing and broader probability reports remain excluded from this work.
 
 ### Deferred Generation semantics
 - Turn-scoped system messages (`clear_at`).
@@ -454,7 +335,7 @@ Dynamic tool discovery and native Provider web search remain unscheduled Stage 5
 `POST /v1/messages/count_tokens` is deferred. The gateway returns 404 rather than generating synthetic or estimated counts. Reopening requires defining upstream reliability criteria and coarse estimation provenance.
 
 ### Models discovery interfaces
-Generation Text model discovery, shared capability derivation and qualified native-interface preference are operational; [Architecture](architecture.md#generation-text-model-discovery) owns the published domains. Discovery for other task families (Embeddings, Media, Decision) remains schema-only until those operations are publicly activated.
+Discovery for other task families (Embeddings, Media, Decision) remains schema-only until those operations are publicly activated. Extend the existing [Generation discovery contract](architecture.md#generation-text-model-discovery) only with selected operation contracts.
 
 ### Messages citations
 Unified citation delivery ([1C proposal](api-expansion-design.md#1c-design-messages-citations)) remains unscheduled. Requests requiring citation output are rejected.
