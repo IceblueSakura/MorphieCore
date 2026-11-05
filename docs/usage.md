@@ -787,6 +787,17 @@ Read capability `state`, not just field presence:
 
 Positive effort/activation choices include `values`; nonpositive choices have no values. Effort scopes stay separate: Chat/Responses use reasoning effort, Messages uses response-wide effort. Choices describe source requests through selected conversions, not raw upstream enums. `enabled` describes the documented minimal manual-thinking domain, not every numeric budget. Function tools, strict schemas, parallel permission, JSON-object and JSON-Schema output are independent, scoped declarations—not all combinations, schemas or tool/replay loops.
 
+Tool-selection and declaration-history features assess these additional finite source domains through the same candidate projector:
+
+| Feature | Assessed domain |
+|---|---|
+| `serial_tool_calls` | One root function, automatic selection and an explicit serial flag |
+| `named_tool_choice` | One root function and native named selection: exactly one call for Chat/Responses, one-or-more for Messages |
+| `allowed_tool_subset` | Two root functions restricted to a required singleton flat subset; Messages has no source carrier |
+| `ordered_tool_declarations` | One root function followed, after a user message, by one distinct inline function addition; Chat has no source carrier |
+
+These witnesses do not assess arbitrary declaration replacement/removal, collision resolution, schemas or complete replay loops. In particular, the mixed root/inline domain may be unavailable on a binding that supports inline-only declarations. Approved active-set collapse and allowed-inventory filtering expose their named loss rules; native or equivalent carriage remains faithful. The capabilities endpoint carries the corresponding finite `domain` alongside each request feature.
+
 `reasoning.history` reports the route-common [binding history fact](architecture.md#binding-reasoning-history-contract): `unsupported`, `ignored`, `accepted` or `required_with_tools`. Differing assessed candidates yield `non_uniform`; any unassessed candidate yields `not_assessed`. It is independent of wire carriers and full-loop acceptance. Required-history Chat tools use the readable Chat profile or Standard Chat's named thinking-off fallback. If thinking cannot be disabled, or explicit `read_history: true` prevents that fallback, planning rejects.
 
 Limits are planning hints; `null` means unknown, not unlimited. Context/input capacities come from applicable trusted declarations, including explicit candidate configuration; missing or non-JSON-safe facts on any candidate leave the common value unknown. The [capacity evidence](refs/2026-10-26-model-discovery.md) distinguishes exact native source facts from unknown proxy/subscription limits. A known output maximum is not a default; it does not guarantee the entire maximum can be visible output or combined with other maxima. Discovery implements no token counting and never substitutes an input maximum for a context window.

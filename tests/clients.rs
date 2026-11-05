@@ -148,8 +148,8 @@ async fn pi_chat_default_strict_guarantee() {
 }
 
 #[tokio::test]
-#[ignore = "requires current installed pi; builtin Responses additional_tools rejects without dispatch"]
-async fn pi_responses_default_additional_tools_rejection() {
+#[ignore = "requires current installed pi; builtin Responses inline tools and direct-call history"]
+async fn pi_responses_default_tool_history() {
     installed_case(
         "protocol_defaults",
         "pi-responses-default",

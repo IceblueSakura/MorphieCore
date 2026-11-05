@@ -7,6 +7,37 @@ from pathlib import Path
 
 class SdkOracleTests(unittest.TestCase):
 
+    def test_retained_tool_history_oracle_rejects_missing_reordered_or_changed_input(self):
+        code = """
+from copy import deepcopy
+from ordinary_tool_history import check_input_items, RESULT
+calls = [{"type":"function_call","id":"item-a","call_id":"call-lookup","name":"lookup","arguments":'{"key":"A"}'},
+         {"type":"function_call","id":"item-b","call_id":"call-second","name":"lookup","arguments":'{"key":"B"}'}]
+answer = {"role":"assistant","id":"answer","content":[{"text":"cedar-71"}]}
+items = [{"role":"user","content":[{"text":"ordinary-responses"}]}, *calls,
+         {"type":"function_call_output","call_id":"call-second","output":"second-result"},
+         {"type":"function_call_output","call_id":"call-lookup","output":RESULT},
+         answer, {"role":"user","content":[{"text":"next"}]}]
+check_input_items(items, 3, calls, answer)
+changed = deepcopy(items)
+changed[1]["id"] = "changed"
+reordered = deepcopy(items)
+reordered[3], reordered[4] = reordered[4], reordered[3]
+missing_recall = deepcopy(items)
+missing_recall[6]["content"][0]["text"] = "changed"
+for invalid in ([], items[:-2], changed, reordered, missing_recall):
+    try:
+        check_input_items(invalid, 3, calls, answer)
+    except ValueError:
+        continue
+    raise RuntimeError("wrong retained tool history passed its oracle")
+"""
+        for flags in ([], ["-O"]):
+            with self.subTest(flags=flags):
+                result = subprocess.run([sys.executable, *flags, "-c", code],
+                    cwd=Path(__file__).parent, capture_output=True, text=True, timeout=15)
+                self.assertEqual(result.returncode, 0, result.stderr)
+
 
     def test_reasoning_replay_oracle_keeps_readable_and_opaque_facts_separate(self):
         code = """

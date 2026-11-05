@@ -707,6 +707,10 @@
               "function_tools",
               "strict_tool_schema",
               "parallel_tool_calls",
+              "serial_tool_calls",
+              "named_tool_choice",
+              "allowed_tool_subset",
+              "ordered_tool_declarations",
               "json_object_output",
               "json_schema_output",
               "max_output_tokens"
@@ -719,6 +723,22 @@
                 "$ref": "#/components/schemas/TextCapability"
               },
               "parallel_tool_calls": {
+                "$ref": "#/components/schemas/TextCapability"
+              },
+              "serial_tool_calls": {
+                "description": "One root function with automatic selection and explicit seriality; see docs/usage.md finite tool domains.",
+                "$ref": "#/components/schemas/TextCapability"
+              },
+              "named_tool_choice": {
+                "description": "One root function with native named selection: exactly one call for Chat/Responses, one-or-more for Messages.",
+                "$ref": "#/components/schemas/TextCapability"
+              },
+              "allowed_tool_subset": {
+                "description": "A required singleton flat subset of two root functions; Messages has no source carrier.",
+                "$ref": "#/components/schemas/TextCapability"
+              },
+              "ordered_tool_declarations": {
+                "description": "One root function followed after a user message by a distinct inline function addition; not inline-only or arbitrary replacement/removal history.",
                 "$ref": "#/components/schemas/TextCapability"
               },
               "json_object_output": {

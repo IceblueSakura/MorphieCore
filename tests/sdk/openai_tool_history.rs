@@ -86,6 +86,41 @@ async fn responses_stored_and_stateless_history() {
 }
 
 #[tokio::test]
+#[ignore = "requires pinned OpenAI/Anthropic SDKs; nine ordinary tool/result/answer/recall directions"]
+async fn ordinary_tools_across_all_client_and_target_protocols() {
+    use morphiecore::topology::GenerationProtocol;
+    for (target, model) in [
+        (GenerationProtocol::OpenAiChat, "qwen3.8-flash"),
+        (GenerationProtocol::OpenAiResponses, "gpt-6-luna"),
+        (GenerationProtocol::AnthropicMessages, "claude-haiku-5-5"),
+    ] {
+        let fixture = fixture::start_ordinary(target).await;
+        let home = tempfile::tempdir().unwrap();
+        let mut command = super::isolated_sdk_python(home.path());
+        command.args(["tests/sdk/ordinary_tool_history.py", &fixture.base, model]);
+        let output =
+            super::child_process::run(&mut command, b"", Duration::from_secs(60), 64 << 10)
+                .await
+                .unwrap();
+        assert!(
+            output.status.success(),
+            "{target:?} SDK failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(
+            report["requests"],
+            serde_json::json!({"chat":6,"responses":12,"messages":6})
+        );
+        assert_eq!(report["three_turn_history"], true);
+        assert_eq!(report["stored_stateless"], true);
+        assert_eq!(report["http_requests"], 36);
+        assert_eq!(fixture.seen.lock().unwrap().len(), 24);
+        fixture.gateway.flush_diagnostics().await;
+    }
+}
+
+#[tokio::test]
 #[ignore = "requires pinned OpenAI SDK; synthetic Chat credential migration JSON/SSE"]
 async fn chat_sdk_tool_feedback_retries_with_one_new_http_request() {
     for stream in [false, true] {

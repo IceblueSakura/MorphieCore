@@ -1,6 +1,8 @@
 //! Catalog-backed Chat/Responses Router fixture; protocol wire oracles stay separate.
 #[path = "openai_tool_loop/chat.rs"]
 mod chat;
+#[path = "openai_tool_loop/ordinary.rs"]
+mod ordinary;
 #[path = "openai_tool_loop/responses.rs"]
 mod responses;
 use axum::{
@@ -10,7 +12,7 @@ use morphiecore::{
     gateway::{ChatProfile, Entry, Gateway, Limits, TaskEntries},
     protocol::openai::GenerationApi,
     provider::{SecretMaterial, TrustedOrigin},
-    topology::{self, catalog},
+    topology::{self, GenerationProtocol, catalog},
 };
 use serde_json::Value;
 use std::{
@@ -45,6 +47,7 @@ impl Drop for DropSignal {
 #[derive(Clone)]
 struct StateData {
     profile: GenerationApi,
+    ordinary: Option<GenerationProtocol>,
     thinking_off: bool,
     seen: Arc<Mutex<Vec<Value>>>,
     control: Arc<Control>,
@@ -74,6 +77,7 @@ fn events(profile: GenerationApi, turn: usize, reasoning: bool, batch: bool) -> 
 async fn answer(
     State(StateData {
         profile,
+        ordinary,
         thinking_off,
         seen,
         control,
@@ -82,6 +86,35 @@ async fn answer(
     headers: HeaderMap,
     Json(body): Json<Value>,
 ) -> Response {
+    if let Some(target) = ordinary {
+        let mut seen = seen.lock().unwrap();
+        assert!(seen.len() < 24, "extra ordinary upstream request");
+        let turn = ordinary::assert_request(target, &headers, &body);
+        assert_eq!(
+            turn,
+            seen.len() % 3 + 1,
+            "independent call/result/recall sequence"
+        );
+        let source = &body[if target == GenerationProtocol::OpenAiResponses {
+            "input"
+        } else {
+            "messages"
+        }][0]["content"];
+        let source = source
+            .as_str()
+            .or_else(|| source[0]["text"].as_str())
+            .unwrap();
+        assert_eq!(
+            source,
+            match seen.len() {
+                0..6 => "ordinary-chat",
+                6..18 => "ordinary-responses",
+                _ => "ordinary-messages",
+            }
+        );
+        seen.push(body.clone());
+        return ordinary::answer(target, turn, body["stream"] == true);
+    }
     let secret = headers["authorization"]
         .to_str()
         .unwrap()
@@ -203,7 +236,20 @@ async fn answer(
         .unwrap()
 }
 pub async fn start(profile: GenerationApi, fallback: bool) -> Fixture {
-    start_with_recovery(profile, fallback, false, ChatProfile::Standard, false).await
+    start_with_recovery(profile, fallback, false, ChatProfile::Standard, false, None).await
+}
+
+#[allow(dead_code)] // The explicit SDK gate owns the connected nine-direction exit.
+pub async fn start_ordinary(target: GenerationProtocol) -> Fixture {
+    start_with_recovery(
+        GenerationApi::Chat,
+        false,
+        false,
+        ChatProfile::Standard,
+        false,
+        Some(target),
+    )
+    .await
 }
 
 pub async fn start_recovery() -> Fixture {
@@ -213,6 +259,7 @@ pub async fn start_recovery() -> Fixture {
         true,
         ChatProfile::Standard,
         false,
+        None,
     )
     .await
 }
@@ -224,6 +271,7 @@ pub async fn start_readable() -> Fixture {
         false,
         ChatProfile::ReadableReasoning,
         true,
+        None,
     )
     .await
 }
@@ -236,6 +284,7 @@ pub async fn start_required_history() -> Fixture {
         false,
         ChatProfile::Standard,
         true,
+        None,
     )
     .await
 }
@@ -246,6 +295,7 @@ async fn start_with_recovery(
     recover: bool,
     chat_profile: ChatProfile,
     required_history: bool,
+    ordinary: Option<GenerationProtocol>,
 ) -> Fixture {
     let seen = Arc::new(Mutex::new(Vec::new()));
     let control = Arc::new(Control::default());
@@ -253,24 +303,43 @@ async fn start_with_recovery(
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let origin =
         TrustedOrigin::parse(&format!("http://{}", listener.local_addr().unwrap())).unwrap();
-    let app = Router::new()
-        .route("/compatible-mode/v1/chat/completions", post(answer))
-        .route("/api/v1/responses", post(answer))
-        .with_state(StateData {
-            profile,
-            thinking_off: required_history && chat_profile == ChatProfile::Standard,
-            seen: seen.clone(),
-            control: control.clone(),
-            recovery: recovery.clone(),
-        });
+    let app = if let Some(target) = ordinary {
+        Router::new().route(
+            match target {
+                GenerationProtocol::OpenAiChat => "/compatible-mode/v1/chat/completions",
+                GenerationProtocol::OpenAiResponses => "/api/v1/responses",
+                GenerationProtocol::AnthropicMessages => "/zen/go/v1/messages",
+                _ => unreachable!(),
+            },
+            post(answer),
+        )
+    } else {
+        Router::new()
+            .route("/compatible-mode/v1/chat/completions", post(answer))
+            .route("/api/v1/responses", post(answer))
+    }
+    .with_state(StateData {
+        profile,
+        ordinary,
+        thinking_off: required_history && chat_profile == ChatProfile::Standard,
+        seen: seen.clone(),
+        control: control.clone(),
+        recovery: recovery.clone(),
+    });
     let upstream = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
     let catalog = catalog::default_topology().unwrap();
     let mut endpoints = Vec::new();
     let mut entries = Vec::new();
     let mut credentials = BTreeMap::new();
-    let (label, id) = match profile {
-        GenerationApi::Chat => ("qwen3.8-flash", "dashscope-flash-chat"),
-        GenerationApi::Responses => ("gpt-6-luna", "openrouter-responses"),
+    let (label, id) = match ordinary {
+        Some(GenerationProtocol::AnthropicMessages) => {
+            ("claude-haiku-5-5", "opencode-go-haiku-messages")
+        }
+        Some(GenerationProtocol::OpenAiResponses) => ("gpt-6-luna", "openrouter-responses"),
+        _ => match profile {
+            GenerationApi::Chat => ("qwen3.8-flash", "dashscope-flash-chat"),
+            GenerationApi::Responses => ("gpt-6-luna", "openrouter-responses"),
+        },
     };
     let mut endpoint = catalog
         .endpoint(&topology::EndpointId::new(id).unwrap())
@@ -322,6 +391,21 @@ async fn start_with_recovery(
         protocol: profile.into(),
         endpoint: endpoint.id.clone(),
     });
+    if ordinary.is_some() {
+        entries = [
+            morphiecore::protocol::ClientProtocol::Chat,
+            morphiecore::protocol::ClientProtocol::Responses,
+            morphiecore::protocol::ClientProtocol::Messages,
+        ]
+        .into_iter()
+        .map(|protocol| Entry {
+            chat_profile,
+            model: label.into(),
+            protocol,
+            endpoint: endpoint.id.clone(),
+        })
+        .collect();
+    }
     credentials.insert(
         endpoint.credential.clone(),
         Arc::new(SecretMaterial::new("synthetic-tool-history-upstream").unwrap()),

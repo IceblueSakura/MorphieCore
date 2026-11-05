@@ -10,16 +10,7 @@ import protocol_defaults as defaults
 class ProtocolDefaultOracles(unittest.TestCase):
     path = Path("/synthetic/sample.txt")
 
-    def test_pi_rejection_cannot_be_replaced_by_an_unrelated_parser_or_transport_failure(self):
-        for protocol, prefix in [("chat", "400 "), ("responses", "opencode API error (400): ")]:
-            message = {"stopReason": "error", "errorMessage": prefix + defaults.REJECTION_MESSAGE}
-            defaults.assert_pi_rejection([message], protocol)
-            for error in ("connection closed", "Unexpected end of JSON input", "400 invalid JSON",
-                          "500 " + defaults.REJECTION_MESSAGE):
-                with self.subTest(protocol=protocol, error=error), self.assertRaisesRegex(
-                    RuntimeError, "^pi_default_error_identity$"
-                ):
-                    defaults.assert_pi_rejection([{**message, "errorMessage": error}], protocol)
+    def test_rejection_requires_the_sanitized_gateway_envelope(self):
         payload = json.dumps({"error": {"type": "invalid_request_error", "code": "invalid_request",
                                       "message": defaults.REJECTION_MESSAGE, "param": None}}).encode()
         defaults.assert_rejection_response(400, "application/json", payload)
@@ -41,7 +32,7 @@ class ProtocolDefaultOracles(unittest.TestCase):
                 "input": [{"role": "user", "content": defaults.READ}]}
         if pi:
             body["reasoning"] = {"effort": "medium", "summary": "auto"}
-            body["input"].append({"type": "additional_tools", "tools": [tool]})
+            body["input"].insert(0, {"type": "additional_tools", "role": "developer", "tools": [tool]})
         else:
             body["tools"] = [{**tool, "strict": False}]
         return body
@@ -61,7 +52,7 @@ class ProtocolDefaultOracles(unittest.TestCase):
                 body[field] = value
                 with self.subTest(pi=pi, field=field), self.assertRaisesRegex(RuntimeError, "^" + error + "$"):
                     defaults.assert_responses_profile(body, pi)
-            tool = original["input"][-1]["tools"][0] if pi else original["tools"][0]
+            tool = original["input"][0]["tools"][0] if pi else original["tools"][0]
             tool["strict"] = True
             with self.assertRaisesRegex(RuntimeError, "^default_read_strict$"):
                 defaults.assert_responses_profile(original, pi)
@@ -69,6 +60,14 @@ class ProtocolDefaultOracles(unittest.TestCase):
                 del tool["strict"]
             else:
                 tool["strict"] = False
+            if pi:
+                moved = copy.deepcopy(original)
+                moved["input"].append(moved["input"].pop(0))
+                wrong_role = copy.deepcopy(original)
+                wrong_role["input"][0]["role"] = "system"
+                for changed in (moved, wrong_role):
+                    with self.assertRaisesRegex(RuntimeError, "^default_responses_declaration_position$"):
+                        defaults.assert_responses_profile(changed, pi)
             del tool["parameters"]["properties"]["path"]
             with self.assertRaisesRegex(RuntimeError, "^default_read_path_schema$"):
                 defaults.assert_responses_profile(original, pi)
@@ -108,6 +107,10 @@ class ProtocolDefaultOracles(unittest.TestCase):
         mutations = [
             (2, "call_id", "changed", "default_responses_call_identity"),
             (2, "arguments", "{}", "default_responses_call_identity"),
+            (2, "namespace", "invented", "default_responses_direct_call"),
+            (2, "async", True, "default_responses_direct_call"),
+            (2, "caller", {"type": "code_execution_20260120", "tool_id": "invented"},
+             "default_responses_direct_call"),
             (3, "call_id", "changed", "default_responses_result_identity"),
             (3, "output", "changed", "default_responses_result_identity"),
             (1, "summary", [], "default_responses_reasoning_content"),
@@ -123,34 +126,33 @@ class ProtocolDefaultOracles(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "^default_responses_history_order$"):
             defaults.assert_responses_history(reordered, 3, self.path)
         body["input"][5]["content"][0]["annotations"] = []
-        with self.assertRaisesRegex(RuntimeError, "^default_responses_missing_annotations_changed$"):
+        with self.assertRaisesRegex(RuntimeError, "^default_responses_annotations$"):
             defaults.assert_responses_history(body, 3, self.path)
+        defaults.assert_responses_history(body, 3, self.path, pi=True)
+        del body["input"][5]["content"][0]["annotations"]
+        with self.assertRaisesRegex(RuntimeError, "^default_responses_annotations$"):
+            defaults.assert_responses_history(body, 3, self.path, pi=True)
 
     def test_rejections_require_the_intended_boundary_and_zero_dispatch(self):
-        failures = [
-            ("responses", True, {"failure": {"boundary": "request.decode",
-                                             "code": "codec.unsupported.unavailable"}}),
-            ("responses", False, {"failure": {"boundary": "request.decode",
-                                              "code": "codec.invalid.invalid_value"}}),
-        ]
-        for protocol, pi, generation in failures:
-            final = {"stage": "admission", "outcome": "error", "candidates": [], "generation": generation}
-            records = [final] if pi else [
-                {"outcome": "complete", "candidates": [{}]},
-                {"outcome": "complete", "candidates": [{}]}, final]
-            defaults.assert_diagnostics(records, protocol, pi)
-            for key, value, error in [
-                ("stage", "intake", "default_rejection_stage"),
-                ("candidates", [{}], "default_gateway_completion"),
-                ("outcome", "complete", "default_gateway_completion"),
-                ("generation", {}, "default_responses_rejection_reason"),
-            ]:
-                changed = copy.deepcopy(records)
-                changed[-1][key] = value
-                with self.subTest(protocol=protocol, pi=pi, key=key), self.assertRaisesRegex(
-                    RuntimeError, "^" + error + "$"
-                ):
-                    defaults.assert_diagnostics(changed, protocol, pi)
+        final = {"stage": "admission", "outcome": "error", "candidates": [],
+                 "generation": {"failure": {"boundary": "request.decode",
+                                           "code": "codec.invalid.invalid_value"}}}
+        records = [{"outcome": "complete", "candidates": [{}]},
+                   {"outcome": "complete", "candidates": [{}]}, final]
+        defaults.assert_diagnostics(records, "responses", False)
+        for key, value, error in [
+            ("stage", "intake", "default_rejection_stage"),
+            ("candidates", [{}], "default_gateway_completion"),
+            ("outcome", "complete", "default_gateway_completion"),
+            ("generation", {}, "default_responses_rejection_reason"),
+        ]:
+            changed = copy.deepcopy(records)
+            changed[-1][key] = value
+            with self.subTest(key=key), self.assertRaisesRegex(RuntimeError, "^" + error + "$"):
+                defaults.assert_diagnostics(changed, "responses", False)
+        defaults.assert_diagnostics([{"outcome": "complete", "candidates": [{}]}] * 3, "responses", True)
+        with self.assertRaisesRegex(RuntimeError, "^default_gateway_completion$"):
+            defaults.assert_diagnostics(records, "responses", True)
 
     def test_failed_continuation_cannot_claim_a_client_answer(self):
         failure = {"type": "error", "error": {"type": "provider.invalid-request", "status": 400}}

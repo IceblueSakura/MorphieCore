@@ -116,6 +116,9 @@ for (const profile of ["text", "tools", "reasoning"]) {
   assert.equal(calls, 1);
 }
 assert.equal(resolved.requests.reasoning.thinking.type, "adaptive");
-assert.equal(resolved.requests.reasoning.output_config.effort, "medium");
+assert.equal(resolved.requests.reasoning.output_config.effort, "low");
+assert.deepEqual(resolved.requests.reasoning.messages.at(-1), {
+  role: "system", content: [], output_config: { effort: "medium" },
+});
 assert(!Object.hasOwn(resolved.requests.reasoning, "temperature"));
 console.log(JSON.stringify(result, null, 2));

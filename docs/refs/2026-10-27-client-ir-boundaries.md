@@ -30,6 +30,7 @@ Reviewed on **2026-10-27** at **`1b4f828`**, after the five-slice request repair
 - [Tool-protocol root-cause audit (2026-11-04)](#tool-protocol-root-cause-audit-2026-11-04)
 - [Nine-direction tool assessment (2026-11-04)](#nine-direction-tool-assessment-2026-11-04)
 - [Tool-contract qualification (2026-11-04)](#tool-contract-qualification-2026-11-04)
+- [Current-Agent tool exit recheck (2026-11-05)](#current-agent-tool-exit-recheck-2026-11-05)
 
 ## Scope and evidence
 
@@ -760,3 +761,37 @@ The findings below describe the reviewed `a22cf0d` source. Implemented repairs n
 - **Bounds:** retained bytes/items, one batch's definitions, effective available identities and compiled strict grammars are different populations. Preserve finite local bounds without treating each replayed historical version as another active tool. Unknown native grammar charging delegates to the qualified upstream; a cross-protocol strict-default inference cannot assume it fits.
 
 Collision-dependent transformations remain unqualified; collision-free native batches need not wait for an invented winner. Non-developer returned-addition replay and custom streaming stay explicit boundaries. The first-package selection must acknowledge historical schema/timing/cache loss without weakening current availability, explicit strictness, selection, call count or seriality.
+
+## Current-Agent tool exit recheck (2026-11-05)
+
+Inspected the current installed public pi 1.5.0 package and OpenCode 2.0.32 against the production CLI loader at the S3-T4 working slice based on `058ab08`. All authorities, keys, homes and files are synthetic and test-owned; no personal configuration, credential caches or real Providers were read or called. [Development](../development.md#installed-client-synthetic-recovery) owns execution evidence; [Roadmap](../roadmap.md#stage-3-core-packages) owns the remaining exit.
+
+### Artifact-qualified producer changes
+
+The installed `@earendil-works/pi-ai@1.5.0` public assets have these BLAKE3 digests:
+
+| Asset | BLAKE3 |
+|---|---|
+| `dist/providers/data/opencode-go.json` | `e6c321fadc23e7b5fe937adac6170ed5430cbe66ec0256f1fe0778e75082559f` |
+| `dist/api/anthropic-messages.js` | `8d1077ebe02c9b78fe876878ae47fb00a582b7dc8d0da8dc6c0a40d1f8cf1347` |
+| `dist/api/openai-responses-shared.js` | `a17af0bacfcd7c422018f9f8d1da04d339219324fdeb8cd460f57969f864f159` |
+
+The built-in Go/Haiku record now enables `supportsMidConvoEffort:true`. The Messages serializer's `effortMessages` path fixes root effort to low, selects adaptive summarized thinking with `block_binding.prefix_mismatch_behavior:"drop_block"`, inserts historical effort markers and appends the active effort marker. `insertThinkingLevelMessages` spells markers as system messages with empty content and message-local `output_config`. A bounded intercepted-fetch probe independently captured one request with root-low effort and the active medium marker; actual RPC still resolves medium as the default. The unchanged version string does not identify the earlier recorded source artifact.
+
+Minimal current request distinction:
+
+```json
+{
+  "output_config": {"effort": "low"},
+  "messages": [
+    {"role": "user", "content": "Synthetic request"},
+    {"role": "system", "content": [], "output_config": {"effort": "medium"}}
+  ]
+}
+```
+
+This is a contract counterexample, not a complete request fixture. Keeping only the root changes active effort from medium to low; lifting the latest marker to the root loses historical effort boundaries and changes the rendered prefix. Neither projection is selected. Current public Messages intake rejects any message-local `output_config` in `client/request.rs`; the installed-Agent run confirms `request.decode / codec.unsupported.unavailable`, one ingress request and zero upstream attempts. Completing that default lane requires an explicit message-local effort contract, not a compatibility override or weaker oracle.
+
+The Responses serializer anchors developer `additional_tools` at the first transcript system position and reconstructs subsequent unqualified direct calls/results without invented namespace, asynchronous or programmatic context. The real CLI gateway now completes read, tool-result feedback, final answer and recall. Its final text history retains empty annotations and `final_answer` phase. OpenCode still omits required text annotations on recall and remains a separately postponed strict-intake failure.
+
+Recovery and summary failures previously recorded under the same pi version no longer reproduce with the inspected artifacts. This recheck establishes current synthetic behavior; it neither reconstructs every historical failure's cause nor qualifies a real Provider endpoint.

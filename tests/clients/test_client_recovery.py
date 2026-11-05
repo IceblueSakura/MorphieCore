@@ -136,12 +136,14 @@ class ClientRecoveryOracles(unittest.TestCase):
 
     def native_defaults(self, pi):
         body = self.native()
+        body["messages"] = body["messages"][:1]
         tool = body["tools"][0]
         tool.pop("strict")
         tool["input_schema"].update(type="object", required=["path"])
         if pi:
             body["thinking"]["display"] = "summarized"
-            body["output_config"]["effort"] = "medium"
+            body["messages"].append({"role": "system", "content": [],
+                                     "output_config": {"effort": "medium"}})
         else:
             body.pop("output_config")
             tool.pop("eager_input_streaming")
@@ -184,7 +186,6 @@ class ClientRecoveryOracles(unittest.TestCase):
     def test_default_messages_profiles_reject_wire_loss_or_invented_controls(self):
         for pi in (True, False):
             original = self.native_defaults(pi)
-            original["messages"] = original["messages"][:1]
             cases = [
                 (("tools",), [], "default_read_tool_declaration"),
                 (("tools",), original["tools"] * 2, "default_read_tool_declaration"),
@@ -197,6 +198,8 @@ class ClientRecoveryOracles(unittest.TestCase):
                 (("output_config",), {} if pi else {"effort": "medium"}, "default_effort"),
                 (("thinking", "display"), None if pi else "summarized", "default_thinking_display"),
             ]
+            if pi:
+                cases.append((("messages", -1, "output_config", "effort"), "low", "default_message_effort"))
             for method in ("incoming", "upstream"):
                 headers = Message()
                 headers["x-api-key"] = "synthetic-client-primary"
@@ -217,7 +220,6 @@ class ClientRecoveryOracles(unittest.TestCase):
         headers["anthropic-version"] = "2023-06-01"
         headers["anthropic-beta"] = "interleaved-thinking-2025-05-14"
         initial = self.native_defaults(True)
-        initial["messages"] = initial["messages"][:1]
         state = protocol_defaults.MessagesState(self.path, pi=True)
         state.incoming(headers, initial)
         self.assertTrue(state.beta_seen)

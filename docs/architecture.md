@@ -705,6 +705,8 @@ Preference follows only the primary candidate's native Chat, Responses or Messag
 
 Simple feature support, default-request disposition and full delivery/history support are separate claims. Explicit-strict synthetic tools do not stand in for omitted-strict Agent declarations. Keep unassessed/nonuniform facts and partial/composition coverage explicit. Publishing a preference does not establish that a client consumes it: integration must state whether application is automatic, explicit configuration or advisory. This neither permits capability-based candidate skipping nor changes routing priority.
 
+Tool selection/history discovery uses the same candidate projector as execution for finite seriality, source-directional named cardinality, required allowed-subset and ordered-addition witnesses. The [usage domains](usage.md#generation-text-model-discovery) define their limits; a witness does not qualify arbitrary tool histories or live model behavior. The pinned Agent-default corpus is a reproducible artifact baseline, not an assertion that a same-version installed serializer is byte-identical; installed-client acceptance must recharacterize drift independently.
+
 Effective control support and request admission are distinct projections of the same probe. An omitted maximum-output control is `unavailable` as effective support but an admitted named adaptation in `/capabilities`, not rejected input. Private per-candidate default qualification includes JSON/SSE independently of route-common delivery publication; matching another interface also requires the same primary endpoint and credential scope.
 
 ## History and replay

@@ -193,9 +193,7 @@ impl<'a> Entry<'a> {
         let protocol = entry.client.protocol();
         let request = contract
             .request_cases()
-            .map(|(name, capability)| {
-                Case::from_capability(name, "simple_source_domain", capability)
-            })
+            .map(|(name, domain, capability)| Case::from_capability(name, domain, capability))
             .collect();
         let mut assessments = Case::new(
             "generation.safety",

@@ -469,6 +469,10 @@ fn text_contract_uses_actual_dialect_checks_and_does_not_advertise_omitted_contr
         value["features"]["function_tools"],
         json!({"state":"faithful"})
     );
+    assert_eq!(
+        value["features"]["named_tool_choice"],
+        json!({"state":"unavailable"})
+    );
     let mut candidate = entry.candidates[0].as_ref().clone();
     candidate
         .endpoint
@@ -494,6 +498,37 @@ fn text_contract_uses_actual_dialect_checks_and_does_not_advertise_omitted_contr
     assert_eq!(
         descriptor(entry)["features"]["function_tools"],
         json!({"state":"approved_adaptation","rules":["chat.fallback-thinking-off.v1"]})
+    );
+}
+
+#[test]
+fn tool_discovery_reports_selected_history_loss_and_inventory_filtering() {
+    use crate::protocol::openai::{Dialect, GenerationApi, GenerationCodec, TargetContract};
+    let gate = crate::gateway::tests::support::gateway(Limits::default());
+    let mut entry = gate.state.entries[&(ClientProtocol::Chat, "fixture-model".into())]
+        .as_ref()
+        .clone();
+    entry.client = crate::adapter::ClientAdapter::openai(
+        GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None),
+        TargetContract::full(),
+    );
+    let value = descriptor(entry.clone());
+    assert_eq!(
+        value["features"]["ordered_tool_declarations"],
+        json!({"state":"approved_adaptation","rules":["generation.collapse-tool-set.v1"]})
+    );
+    let mut candidate = entry.candidates[0].as_ref().clone();
+    candidate.endpoint = crate::topology::catalog::MESSAGES_BINDINGS[0].endpoint();
+    candidate.endpoint.bound_replay_scope = entry.candidates[0].endpoint.bound_replay_scope.clone();
+    entry.candidates = vec![Arc::new(candidate)];
+    let value = descriptor(entry);
+    assert_eq!(
+        value["features"]["allowed_tool_subset"],
+        json!({"state":"approved_adaptation","rules":["generation.filter-allowed-inventory.v1"]})
+    );
+    assert_eq!(
+        value["features"]["serial_tool_calls"],
+        json!({"state":"faithful"})
     );
 }
 

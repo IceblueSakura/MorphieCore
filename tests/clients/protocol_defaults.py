@@ -9,7 +9,7 @@ import sys
 
 from drivers import (Child, NEXT, READ, TEXT, Pi, check, check_client_version,
                      check_opencode_session, environment, opencode_configuration,
-                     opencode_prompt, private_json, gateway_configuration)
+                     opencode_prompt, private_json, gateway_configuration, shutdown_gateway)
 from recovery import (State as RecoveryState, PLAN, CALL, assert_history, chat_events,
                       native_events, server, stage, text)
 
@@ -23,19 +23,14 @@ PROFILES = {
 REJECTION_MESSAGE = "The request could not be completed (invalid_request)."
 
 
-def assert_rejection_response(status, content_type, payload):
+def assert_rejection_response(status, content_type, payload, *, native=False):
     check(status == 400 and content_type is not None
           and content_type.split(";")[0] == "application/json", "default_rejection_http")
-    check(json.loads(payload) == {"error": {"type": "invalid_request_error",
-          "code": "invalid_request", "message": REJECTION_MESSAGE, "param": None}},
+    expected = {"type": "error", "error": {"type": "invalid_request_error", "message": REJECTION_MESSAGE}} if native else {
+        "error": {"type": "invalid_request_error", "code": "invalid_request",
+                  "message": REJECTION_MESSAGE, "param": None}}
+    check(json.loads(payload) == expected,
           "default_rejection_envelope")
-
-
-def assert_pi_rejection(messages, protocol):
-    check(len(messages) == 1 and messages[0]["stopReason"] == "error", "pi_default_request_rejection")
-    message = messages[0].get("errorMessage", "")
-    prefix = "400" if protocol == "chat" else "opencode API error (400):"
-    check(message.startswith(prefix) and REJECTION_MESSAGE in message, "pi_default_error_identity")
 
 
 class DefaultState(RecoveryState):
@@ -46,7 +41,7 @@ class DefaultState(RecoveryState):
 
     def observe_response(self, body, status, content_type, payload):
         if status != 200:
-            assert_rejection_response(status, content_type, payload)
+            assert_rejection_response(status, content_type, payload, native=self.native)
         else:
             check(content_type is not None and content_type.split(";")[0] == "text/event-stream",
                   "default_delivery_content_type")
@@ -70,8 +65,11 @@ def assert_default_profile(body, pi):
     check(tool.get("eager_input_streaming") is True if pi
           else "eager_input_streaming" not in tool, "default_read_eager_input")
     effort = body.get("output_config", {})
-    check(effort.get("effort") == "medium" if pi else "effort" not in effort,
+    check(effort.get("effort") == "low" if pi else "effort" not in effort,
           "default_effort")
+    if pi:
+        check(body["messages"][-1] == {"role": "system", "content": [],
+              "output_config": {"effort": "medium"}}, "default_message_effort")
     check(thinking.get("display") == "summarized" if pi else "display" not in thinking,
           "default_thinking_display")
 
@@ -253,6 +251,8 @@ def assert_responses_profile(body, pi):
     additions = [item for item in body["input"] if item.get("type") == "additional_tools"]
     if pi:
         check(len(additions) == 1 and not body.get("tools"), "default_responses_additional_tools")
+        check(body["input"][0] is additions[0] and additions[0].get("role") == "developer",
+              "default_responses_declaration_position")
         tools = additions[0]["tools"]
     else:
         check(not additions, "default_responses_additional_tools")
@@ -267,7 +267,7 @@ def assert_responses_profile(body, pi):
           and "path" in schema.get("required", []), "default_read_path_schema")
 
 
-def assert_responses_history(body, phase, path):
+def assert_responses_history(body, phase, path, *, pi=False):
     items = body["input"]
     calls = [item for item in items if item.get("type") == "function_call"]
     results = [item for item in items if item.get("type") == "function_call_output"]
@@ -279,7 +279,7 @@ def assert_responses_history(body, phase, path):
     expected_order = ["user"] if phase == 1 else ["user", "reasoning", "function_call", "function_call_output"]
     if phase == 3:
         expected_order += ["reasoning", "assistant", "user"]
-    # Pi's rejected initial request declares its actual read tool in-band.
+    # Pi declares its actual read tool in-band; it keeps its conversation position.
     order = [kind for kind in order if kind != "additional_tools"]
     check(order == expected_order, "default_responses_history_order")
     check(len(calls) == len(results) == int(phase > 1), "default_responses_call_count")
@@ -288,6 +288,9 @@ def assert_responses_history(body, phase, path):
         check(call.get("id") == "fc_default_read" and call.get("call_id") == CALL
               and call.get("name") == "read" and json.loads(call["arguments"]) == {"path": str(path)},
               "default_responses_call_identity")
+        check(call.get("namespace") is None and call.get("async") in (None, False)
+              and call.get("caller") in (None, {"type": "direct"}),
+              "default_responses_direct_call")
         check(results[0].get("call_id") == CALL and TEXT in text(results[0]["output"]),
               "default_responses_result_identity")
     if phase == 3:
@@ -296,8 +299,8 @@ def assert_responses_history(body, phase, path):
               and "".join(part["text"] for part in answer["content"]) == TEXT,
               "default_responses_final_history")
         check(answer.get("status") == "completed" and
-              all("annotations" not in part for part in answer["content"]),
-              "default_responses_missing_annotations_changed")
+              all(part.get("annotations") == [] if pi else "annotations" not in part
+                  for part in answer["content"]), "default_responses_annotations")
     reasoning = [item for item in items if item.get("type") == "reasoning"]
     check(len(reasoning) == phase - 1,
           "default_responses_reasoning_history")
@@ -316,19 +319,18 @@ class ResponsesState(DefaultState):
     def incoming(self, headers, body):
         assert_responses_profile(body, self.pi)
         phase = responses_stage(body)
-        assert_responses_history(body, phase, self.path)
+        assert_responses_history(body, phase, self.path, pi=self.pi)
         with self.lock:
             self.ingress.append(phase)
             check(len(self.ingress) <= 3 and self.ingress == [1, 2, 3][:len(self.ingress)],
                   "default_extra_or_reordered_client_request")
 
     def upstream(self, headers, body):
-        check(not self.pi, "default_additional_tools_dispatched")
         check(headers.get("authorization") == "Bearer synthetic-client-primary",
               "default_upstream_credential")
         assert_responses_profile(body, self.pi)
         phase = responses_stage(body)
-        assert_responses_history(body, phase, self.path)
+        assert_responses_history(body, phase, self.path, pi=self.pi)
         with self.lock:
             self.attempts.append(phase)
             check(len(self.attempts) <= 3 and self.attempts == [1, 2, 3][:len(self.attempts)],
@@ -337,9 +339,9 @@ class ResponsesState(DefaultState):
 
     def finish(self):
         check(not self.errors, "default_authority_errors:" + ",".join(self.errors))
-        check(self.ingress == ([1] if self.pi else [1, 2, 3])
-              and self.attempts == ([] if self.pi else [1, 2]), "default_exchange_counts")
-        check(self.deliveries == ([400] if self.pi else [200, 200, 400]), "default_deliveries")
+        check(self.ingress == [1, 2, 3]
+              and self.attempts == ([1, 2, 3] if self.pi else [1, 2]), "default_exchange_counts")
+        check(self.deliveries == ([200, 200, 200] if self.pi else [200, 200, 400]), "default_deliveries")
 
 
 def assert_opencode_rejection(events):
@@ -351,10 +353,9 @@ def assert_opencode_rejection(events):
 
 
 def assert_diagnostics(requests, protocol, pi):
-    initial_rejection = pi and protocol == "responses"
-    check(len(requests) == (1 if initial_rejection else 3), "default_gateway_request_count")
+    check(len(requests) == 3, "default_gateway_request_count")
     for index, record in enumerate(requests):
-        rejected = initial_rejection or protocol == "responses" and index == 2
+        rejected = not pi and protocol == "responses" and index == 2
         check(record["outcome"] == ("error" if rejected else "complete")
               and len(record["candidates"]) == (0 if rejected else 1),
               "default_gateway_completion")
@@ -369,7 +370,7 @@ def assert_diagnostics(requests, protocol, pi):
         generation = record["generation"]
         check(generation.get("failure") == {
             "boundary": "request.decode",
-            "code": "codec.unsupported.unavailable" if pi else "codec.invalid.invalid_value"},
+            "code": "codec.invalid.invalid_value"},
             "default_responses_rejection_reason")
 
 
@@ -395,15 +396,6 @@ def run_pi(binary, env, root, work, origin, path, protocol):
                   and model["compat"]["supportsTemperature"] is False, "pi_resolved_messages_metadata")
         check(initial["thinkingLevel"] == ("high" if protocol == "chat" else "medium"),
               "pi_default_thinking_level")
-        if protocol == "responses":
-            _, events = client.command("prompt", message=f"{READ}: Read {path}, then answer.")
-            finished = [event["message"] for event in events if event.get("type") == "message_end"
-                        and event.get("message", {}).get("role") == "assistant"]
-            assert_pi_rejection(finished, protocol)
-            check(not any(event["type"].startswith(("auto_retry", "compaction", "tool_execution",
-                                                   "summarization_retry")) for event in events),
-                  "pi_default_request_rejection_retried")
-            return
         client.prompt(f"{READ}: Read {path}, then answer.", ["toolUse", "stop"])
         client.prompt(f"{NEXT}: Repeat the answer without reading again.", ["stop"])
         final, _ = client.command("get_state")
@@ -461,9 +453,9 @@ def main():
     path.write_text(TEXT + "\n", encoding="utf-8")
     protocol = case.split("-")[1]
     pi = case.startswith("pi-")
-    rejected = pi and protocol == "responses"
-    count = 1 if rejected else 3
-    attempts = 0 if rejected else 2 if protocol == "responses" else 3
+    rejected = not pi and protocol == "responses"
+    count = 3
+    attempts = 2 if rejected else 3
     model_id, provider, binding, _ = PROFILES[protocol]
     if pi and protocol == "chat":
         # pi's builtin strict read tool needs the beta endpoint binding.
@@ -499,15 +491,19 @@ def main():
             requests = [r for r in records if r.get("event") == "request"]
             assert_diagnostics(requests, protocol, pi)
         except Exception:
+            shutdown_gateway(gateway, failed=True)
+            records = [json.loads(line) for line in (root / "diagnostics.jsonl").read_text().splitlines()]
             print(json.dumps({"errors": state.errors, "ingress_phases": state.ingress,
-                              "upstream_phases": state.attempts}), file=sys.stderr)
+                              "upstream_phases": state.attempts,
+                              "failures": [r.get("generation", {}).get("failure")
+                                           for r in records if r.get("event") == "request"]}), file=sys.stderr)
             raise
     state.finish()
     print(json.dumps({"case": case, "version": version, "client_requests": count,
         "upstream_attempts": attempts, "extra_client_requests": 0,
-        "tool_history": not rejected,
-        "default_rejection": rejected or protocol == "responses",
-        "next_turn_history": not rejected and protocol != "responses",
+        "tool_history": True,
+        "default_rejection": rejected,
+        "next_turn_history": not rejected,
         **({"default_headers": True, "beta_header_seen": state.beta_seen,
             "block_binding_seen": state.block_binding_seen} if protocol == "messages" else {})}))
 

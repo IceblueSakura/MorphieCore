@@ -58,13 +58,13 @@ This page owns current scope, priorities, dependencies, and exit gates. [Archite
 
 ## Current status
 
-**Current focus (2026-11-05):** Execute the scheduled Stage-3 tool-repair core, S3-T0–S3-T4, across all nine Chat/Responses/Messages directions. S3-T0–S3-T3 are delivered: contract selection, shared semantics, native/cross function paths with directional cardinality, SIWC inline direct-call continuation, input-result null normalization, the qualified DeepSeek beta strict binding and the unified bounded tool-set projection owner. Pi Chat strict read now passes on the beta binding. OpenCode Responses missing annotations remains postponed; no normalization or acceptance waiver is selected. The S3-T4 nine-direction SDK/current-Agent exit precedes AR5; Stage 4 resumes only after real Provider and installed-Agent acceptance.
+**Current focus (2026-11-05):** Finish the S3-T4 current-Agent exit. The nine Chat/Responses/Messages SDK directions now complete ordinary function call/result/answer/recall in JSON/SSE, including Responses stored/stateless history. Pi Chat strict read and Responses inline-tool continuation pass. Recovery/summary drift no longer reproduces with the current installed artifacts. Pi Messages now emits message-local effort and reaches the retained unsupported boundary; its contract needs selection. OpenCode Responses missing annotations remains postponed, without normalization or an acceptance waiver. S3-T4 remains open before AR5; Stage 4 resumes only after real Provider and installed-Agent acceptance.
 
 | Priority | Remaining work | Exit |
 |---|---|---|
-| Stage-3 tool core | [S3-T0–S3-T3 delivered](#stage-3-core-packages); execute S3-T4 nine-direction acceptance | Ordinary function loops complete in all nine directions, with no hidden guarantee loss |
+| Stage-3 tool core | Nine-direction connected SDK exit delivered; finish [S3-T4 current-Agent exit](#stage-3-core-packages) | Ordinary function loops and current-Agent tool defaults complete, with no hidden guarantee loss |
 | Conditional tool follow-ups | [S3-T5–S3-T7](#conditional-stage-3-follow-ups): namespace aliases, custom-text wrappers and examples projection | Separate policy selection and full affected-loop acceptance; not default prerequisites for AR5 |
-| Agent defaults | Resolve pi Chat strict read; revisit postponed OpenCode Responses annotations | Actual default reasoning/tool/history loops pass without compatibility opt-outs or input rewriting |
+| Agent defaults | Select the current pi Messages message-local effort contract; revisit postponed OpenCode Responses annotations | Actual default reasoning/tool/history loops pass without compatibility opt-outs or input rewriting |
 | Account acceptance | Provision fresh credentials, select actual Provider/model bindings, and complete AR5 | Bounded real Provider checks and installed-Agent exit on the rewritten account path |
 | API expansion | Select and implement Stage-4 operation contracts after AR5 | Per-operation lifecycle, protocol and SDK acceptance |
 | Downstream integration | Implement opt-in per-Agent JSONL session storage | Selected isolation and lifetime bounds |
@@ -120,8 +120,9 @@ The [native-default characterization](development.md#installed-client-synthetic-
 
 | Lane | Remaining issue | Required resolution | Scope |
 |---|---|---|---|
-| Pi Chat | Strict read passes through the qualified beta binding; remaining installed-client failures are pre-existing environment drift, not strict admission | Recharacterize the drifting recovery lanes before AR5 | Before fresh credentials |
-| Pi Responses | Native batch intake/shared SDK loop repaired; SIWC continuation and installed-Agent exit remain | Qualify inline direct-call continuation and rerun the current-Agent default lane through the [tool root repair](#tool-protocol-root-repair) | Before fresh credentials |
+| Pi Chat | Strict read passes through the qualified beta binding; current recovery/summary lanes pass again | Retain qualified binding and current-client evidence | Before fresh credentials |
+| Pi Responses | Current installed pi completes inline declarations, direct call/result, final answer and recall | Real SIWC endpoint acceptance remains separate from the synthetic CLI gate | AR5 |
+| Pi Messages | Current pi 1.5.0 uses root-low effort plus message-local medium markers; intake rejects before dispatch | Select the message-local request/history and target-projection contract; no client opt-out, root lifting or silent omission is selected | Before fresh credentials |
 | OpenCode Responses | Recall omits required text annotations | Postponed for user consideration; retain strict intake, no inferred empty annotations | Deferred decision; acceptance remains open |
 | Responses client → OpenAI subscriptions, flat tools | SIWC inline `additional_tools` declarations and their direct call/result history are admitted; namespace requirements stay for root declarations | Real endpoint acceptance for the inline continuation path | Tool contract repair; real endpoint acceptance separate |
 | Chat upstream usage | Duplicate nonnull final reports | Qualify at emitter | Outside stabilization slices |
@@ -134,7 +135,7 @@ The [accepted direction](architecture.md#ordered-tool-availability) covers three
 
 **Contracts selected (2026-11-04):** [Current stable source qualification](refs/2026-10-27-client-ir-boundaries.md#tool-contract-qualification-2026-11-04) and the [first-package dispositions](api-expansion-design.md#first-package-dispositions) close S3-T0. The user selected the [bounded tool-set projection combination](architecture.md#ordered-tool-availability) and included explicit DeepSeek beta strict binding qualification in S3-T2, preserving the existing standard binding. Collision-dependent transformations and non-developer returned-addition replay stay isolated. Selection does not activate an endpoint.
 
-**Shared contract delivered:** [Architecture](architecture.md#ordered-tool-availability) owns the implemented batch/role/closure and declaration-view rules. The native Responses SDK loop covers two-definition input, a returned developer batch, call/result/final answer/recall, JSON/SSE and stored/stateless history. Focused checks cover independent batch/ID and choice expectations, strict/capability admission, candidate/source isolation, historical arguments, bounds, malformed known fields, non-developer replay and unclosed incomplete streams. S3-T1–S3-T3 are delivered; S3-T4 connected/current-Agent acceptance remains below.
+**Shared contract delivered:** [Architecture](architecture.md#ordered-tool-availability) owns the implemented batch/role/closure and declaration-view rules. The native Responses SDK loop covers two-definition input, a returned developer batch, call/result/final answer/recall, JSON/SSE and stored/stateless history. Focused checks cover independent batch/ID and choice expectations, strict/capability admission, candidate/source isolation, historical arguments, bounds, malformed known fields, non-developer replay and unclosed incomplete streams. S3-T1–S3-T3 and the S3-T4 connected SDK portion are delivered; the remaining current-Agent gate is below.
 
 
 **S3-T3 delivered (2026-11-05):** One shared owner (`src/lowering/tool_set.rs`) now projects ordered tool declarations onto each target's carrier: Chat targets collapse to the effective active set, Responses targets keep developer batches and convert pure by-value additions to batches at their position, and Messages targets with native changes lift a leading batch prefix to root, convert legal-position additions to ordered `tool_addition` blocks, or fall back to the active set when no legal placement exists. Allowed-set inventory filtering applies the restriction and required invocation on Messages targets. Batch redeclarations without a documented winner block every projected fallback (native forwarding keeps them), and converted items take fresh identities so surviving ids keep their item kind. The former Messages-only `messages.collapse-tool-changes.v1` collapse moved into this owner as `generation.collapse-tool-set.v1`, beside the new `generation.retain-ordered-additions.v1` and `generation.filter-allowed-inventory.v1` rules. Google targets keep rejecting ordered declarations; the pause is unchanged.
@@ -143,11 +144,11 @@ The [accepted direction](architecture.md#ordered-tool-availability) covers three
 
 #### Stage-3 core packages
 
-S3-T0–S3-T3 are delivered. S3-T4 consolidates the connected exit, including the review regressions for carrier admission, beta API roots, retained capacity and indexed history projection. Identifiers are planning labels only, never module or test names.
+S3-T0–S3-T3 and the S3-T4 nine-direction SDK portion are delivered. Connected checks cover independent wire histories, an independently counted call/result/recall sequence, exact Generation/HTTP counts, raw string arguments, distinct Responses item/call identities and retained input/output. Discovery derives finite ordered-declaration, subset, named-cardinality and seriality domains from the same projector. Current installed pi completes the Responses inline-tool lane; pi Messages still blocks the current-Agent exit. Identifiers are planning labels only, never module or test names.
 
 | Package / dependency | Coherent slice | Exit check |
 |---|---|---|
-| **S3-T4 — Nine-direction offline and client exit** / after S3-T3 | Complete nine-cell SDK/gateway acceptance and current installed-Agent checks; update discovery from the same dispositions and remove obsolete blanket rejection tests/helpers | Ordinary function call→result→answer→recall succeeds for all nine cells. Pi default tool blockers pass synthetic checks; postponed OpenCode annotations stays separately reported. Full offline baseline and relevant SDK gates pass; real Provider evidence belongs to AR5 |
+| **S3-T4 — Remaining current-Agent exit** / after message-local effort contract selection | Resolve the current pi Messages default boundary, refresh affected public-source characterization and rerun the installed-Agent exit | Pi Messages default call/result/answer/recall succeeds without compatibility opt-outs or input rewriting. Keep the completed nine-direction SDK exit passing; postponed OpenCode annotations stays separately reported. Real Provider evidence belongs to AR5 |
 
 #### Conditional Stage-3 follow-ups
 
@@ -358,9 +359,9 @@ Prerequisites for activating newly implemented codec carriers on public routes:
 
 | Issue | Status | Action |
 |---|---|---|
-| Tool-set history loss | Selected 2026-11-04; S3-T3 implemented | Verify the [accepted combination](architecture.md#ordered-tool-availability) in the remaining S3-T4 connected exit without weakening explicit call/schema guarantees |
 | Namespace aliases, custom text and examples | Conditional S3-T5–S3-T7 | Select each content/interface adaptation separately; do not make all three implicit core prerequisites |
 | OpenCode missing annotations | Postponed user decision; default-profile gate remains open | Keep strict intake until its separate history contract is selected; tool work does not normalize it |
+| Messages message-local effort | Current installed pi default emits it; contract unselected | Select request/history ownership and target projection before implementation; retain the pre-dispatch rejection meanwhile |
 | Complete citations | Stage 5 | Retain local point-anchor owner; defer full citation model |
 | Execution controls | Paused | Enforce pre-dispatch validation; reject unsupported controls |
 | Google error envelopes | Paused | Maintain per-API classification; avoid speculative unified parsing |

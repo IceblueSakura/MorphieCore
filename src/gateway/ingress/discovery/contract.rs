@@ -99,7 +99,7 @@ pub(in crate::gateway) struct Interface {
     protocol: &'static str,
     delivery_modes: Vec<&'static str>,
     #[serde(skip)]
-    request_cases: BTreeMap<&'static str, Capability>,
+    request_cases: BTreeMap<&'static str, (&'static str, Capability)>,
     generation: Generation,
 }
 #[derive(Serialize)]
@@ -229,10 +229,10 @@ impl Interface {
     }
     pub(in crate::gateway) fn request_cases(
         &self,
-    ) -> impl Iterator<Item = (&'static str, &Capability)> {
+    ) -> impl Iterator<Item = (&'static str, &'static str, &Capability)> {
         self.request_cases
             .iter()
-            .map(|(name, capability)| (*name, capability))
+            .map(|(name, (domain, capability))| (*name, *domain, capability))
     }
     pub(in crate::gateway) fn defaults(&self) -> &DefaultRequests {
         &self.generation.agent_defaults
@@ -266,13 +266,17 @@ impl Interface {
             ("function_tools", Case::Tools(false)),
             ("strict_tool_schema", Case::Tools(true)),
             ("parallel_tool_calls", Case::Parallel),
+            ("serial_tool_calls", Case::SerialTools),
+            ("named_tool_choice", Case::NamedTool),
+            ("allowed_tool_subset", Case::AllowedTools),
+            ("ordered_tool_declarations", Case::OrderedTools),
             ("json_object_output", Case::JsonObject),
             ("json_schema_output", Case::JsonSchema),
             ("max_output_tokens", Case::MaximumOutput),
         ] {
             let (effective, admission) = assess_case(entry, &delivery_modes, case);
             features.insert(name, effective);
-            request_cases.insert(name, admission);
+            request_cases.insert(name, (case.domain(entry.client.protocol()), admission));
         }
         let effort_scope = if entry.client.protocol() == ClientProtocol::Messages {
             "response"
@@ -394,6 +398,10 @@ pub(super) enum Case {
     Image(super::media::ImageCase),
     Tools(bool),
     Parallel,
+    SerialTools,
+    NamedTool,
+    AllowedTools,
+    OrderedTools,
     JsonObject,
     JsonSchema,
     MaximumOutput,
@@ -401,11 +409,24 @@ pub(super) enum Case {
     Effort(&'static str),
 }
 impl Case {
+    fn domain(self, protocol: ClientProtocol) -> &'static str {
+        match self {
+            Self::SerialTools => "auto_function_choice_with_explicit_seriality",
+            Self::NamedTool if protocol == ClientProtocol::Messages => "named_function_one_or_more",
+            Self::NamedTool => "named_function_exactly_one",
+            Self::AllowedTools => "required_flat_singleton_subset_of_two_root_functions",
+            Self::OrderedTools => "root_function_then_distinct_inline_function_addition",
+            _ => "simple_source_domain",
+        }
+    }
     fn protected_field(self) -> Option<Field> {
         match self {
             Self::MaximumOutput => Some(Field::MaximumOutput),
             Self::Activation(_) | Self::Effort(_) => Some(Field::Effort),
             Self::Tools(_) => Some(Field::Tools),
+            Self::OrderedTools => Some(Field::Tools),
+            Self::NamedTool | Self::AllowedTools => Some(Field::ToolChoice),
+            Self::SerialTools => Some(Field::ParallelTools),
             _ => None,
         }
     }
@@ -438,7 +459,12 @@ impl Case {
         match self {
             Self::Text => {}
             Self::Image(image) => image.apply(&mut value, protocol)?,
-            Self::Tools(_) | Self::Parallel => {
+            Self::Tools(_)
+            | Self::Parallel
+            | Self::SerialTools
+            | Self::NamedTool
+            | Self::AllowedTools
+            | Self::OrderedTools => {
                 let strict = matches!(self, Self::Tools(true));
                 let function = json!({"name":"lookup","description":"Look up a value","parameters":schema,"strict":strict});
                 value["tools"] = match protocol {
@@ -450,13 +476,58 @@ impl Case {
                         json!([{"name":"lookup","description":"Look up a value","input_schema":schema,"strict":strict}])
                     }
                 };
-                if matches!(self, Self::Parallel) {
+                if matches!(self, Self::Parallel | Self::SerialTools) {
+                    let serial = matches!(self, Self::SerialTools);
                     match protocol {
                         ClientProtocol::Messages => {
                             value["tool_choice"] =
-                                json!({"type":"auto","disable_parallel_tool_use":false})
+                                json!({"type":"auto","disable_parallel_tool_use":serial})
                         }
-                        _ => value["parallel_tool_calls"] = json!(true),
+                        _ => value["parallel_tool_calls"] = json!(!serial),
+                    }
+                }
+                if matches!(self, Self::NamedTool) {
+                    value["tool_choice"] = match protocol {
+                        ClientProtocol::Chat => {
+                            json!({"type":"function","function":{"name":"lookup"}})
+                        }
+                        ClientProtocol::Responses => json!({"type":"function","name":"lookup"}),
+                        // This is intentionally one-or-more, unlike OpenAI's exactly-one choice.
+                        ClientProtocol::Messages => json!({"type":"tool","name":"lookup"}),
+                    };
+                }
+                if matches!(self, Self::AllowedTools) {
+                    if protocol == ClientProtocol::Messages {
+                        return None;
+                    }
+                    let mut second = value["tools"][0].clone();
+                    if protocol == ClientProtocol::Chat {
+                        second["function"]["name"] = json!("inspect");
+                    } else {
+                        second["name"] = json!("inspect");
+                    }
+                    value["tools"].as_array_mut()?.push(second);
+                    value["tool_choice"] = if protocol == ClientProtocol::Chat {
+                        json!({"type":"allowed_tools","allowed_tools":{"mode":"required",
+                            "tools":[{"type":"function","function":{"name":"lookup"}}]}})
+                    } else {
+                        json!({"type":"allowed_tools","mode":"required",
+                            "tools":[{"type":"function","name":"lookup"}]})
+                    };
+                }
+                if matches!(self, Self::OrderedTools) {
+                    match protocol {
+                        ClientProtocol::Chat => return None,
+                        ClientProtocol::Responses => {
+                            value["input"] = json!([{"role":"user","content":"text"},
+                                {"type":"additional_tools","role":"developer","tools":[
+                                    {"type":"function","name":"inspect","parameters":schema,"strict":false}]}]);
+                        }
+                        ClientProtocol::Messages => {
+                            value["messages"].as_array_mut()?.push(json!({"role":"system","content":[
+                                {"type":"tool_addition","tool":{"type":"tool_definition",
+                                    "definition":{"name":"inspect","input_schema":schema,"strict":false}}}]}));
+                        }
                     }
                 }
             }
