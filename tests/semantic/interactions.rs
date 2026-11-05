@@ -1635,10 +1635,6 @@ fn projects_instructions_tool_choice_effort_summaries_and_result_errors() {
         (json!("auto"), json!("auto")),
         (json!("none"), json!("none")),
         (json!("required"), json!("any")),
-        (
-            json!({"type":"function","function":{"name":"read"}}),
-            json!({"allowed_tools":{"mode":"any","tools":["read"]}}),
-        ),
     ] {
         let (wire, _) = chat(json!({"tool_choice": choice}));
         assert_eq!(
@@ -1647,6 +1643,20 @@ fn projects_instructions_tool_choice_effort_summaries_and_result_errors() {
             "{choice}"
         );
     }
+    // An OpenAI forced choice is exactly one call; the decoder records that on
+    // the serial carrier, and Interactions has no exact serial-tool carrier.
+    let body = json!({"model":"public","messages":[
+        {"role":"developer","content":"Be brief."},
+        {"role":"user","content":"go"},
+        {"role":"assistant","content":"Reading."}],
+        "tools":[{"type":"function","function":{"name":"read","parameters":{"type":"object"}}}],
+        "tool_choice":{"type":"function","function":{"name":"read"}}});
+    let request = GenerationCodec::new(GenerationApi::Chat, Dialect::Standard, None)
+        .decode_request(body.to_string().as_bytes())
+        .unwrap();
+    assert!(
+        encode_generation_request(&request.task.semantic, &request.task.fidelity, &target).is_err()
+    );
     for effort in ["minimal", "low", "medium", "high"] {
         let (wire, _) = chat(json!({"reasoning_effort": effort}));
         assert_eq!(

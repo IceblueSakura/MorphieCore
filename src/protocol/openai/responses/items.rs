@@ -253,12 +253,18 @@ pub(in crate::protocol::openai) fn tool_result(
         text(string(o, "id")?, "result id", 256)?;
         string(o, "status")?;
     }
+    // The input union permits a nullable result status that means absence; output
+    // snapshots keep the required terminal status above.
+    // https://github.com/openai/openai-python/blob/9b3458a2ef563493111a0a4265d4e9e7e14fe840/src/openai/types/responses/response_input_item_param.py
     Ok(ToolResult {
         call_id,
         cache: None,
         name: optional("name", 128)?,
         output: output(b, o.get("output").ok_or(CodecError::invalid())?, response)?,
-        status: if o.contains_key("status") {
+        status: if o
+            .get("status")
+            .is_some_and(|v| !v.is_null())
+        {
             Some(status(o, ItemLifecycle::Completed)?)
         } else {
             None

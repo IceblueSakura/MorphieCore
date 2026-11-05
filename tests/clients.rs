@@ -16,7 +16,12 @@ async fn installed_case(script: &str, case: &str, variable: &str, arguments: &[&
     let root = directory.path();
     let native = case.contains("messages");
     let domain = if script == "protocol_defaults" && case.contains("chat") {
-        "deepseek"
+        // pi's builtin strict read tool routes through the beta endpoint binding.
+        if case.starts_with("pi-chat") {
+            "deepseek-beta"
+        } else {
+            "deepseek"
+        }
     } else if case.contains("responses") {
         "openai"
     } else if native {
@@ -131,8 +136,8 @@ async fn opencode_chat_default_tool_history() {
 }
 
 #[tokio::test]
-#[ignore = "requires current installed pi; builtin Chat strict guarantee rejects without dispatch"]
-async fn pi_chat_default_strict_guarantee_rejection() {
+#[ignore = "requires current installed pi; builtin Chat strict tools dispatch through the beta binding"]
+async fn pi_chat_default_strict_guarantee() {
     installed_case(
         "protocol_defaults",
         "pi-chat-default",

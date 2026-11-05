@@ -14,6 +14,10 @@ pub enum RequestSlice {
     RestrictedLuna,
     OpenCodeHy4,
     AudioText,
+    /// The DeepSeek standard endpoint does not validate strict tool schemas;
+    /// the model's strict-tools capability belongs to the beta binding.
+    /// Source: https://api-docs.deepseek.com/guides/tool_calls/
+    DeepSeekStandard,
 }
 impl RequestSlice {
     pub fn apply(
@@ -71,6 +75,12 @@ impl RequestSlice {
             contract.set_native(crate::semantic::task::generation::Feature::Logprobs, false);
             contract.set_native(
                 crate::semantic::task::generation::Feature::ParallelTools,
+                false,
+            );
+        }
+        if matches!(self, Self::DeepSeekStandard) {
+            contract.set_native(
+                crate::semantic::task::generation::Feature::StrictTools,
                 false,
             );
         }
@@ -550,6 +560,24 @@ pub const API_KEY_BINDINGS: &[ApiKeyBinding] = &[
         protocols: BOTH,
         reasoning_history: TOOL_HISTORY,
         replay_responses: true,
+        replay_chat: false,
+        public_slice: RequestSlice::Canonical,
+        endpoint_slice: RequestSlice::DeepSeekStandard,
+    },
+    // Endpoint-qualified strict-tool validation on the DeepSeek beta chat path.
+    // Activation still requires an explicit models-file candidate and account.
+    // Source: https://api-docs.deepseek.com/guides/tool_calls/
+    ApiKeyBinding {
+        provider: catalog::deepseek_beta,
+        dialect: Dialect::DeepSeek,
+        endpoint_prefix: "deepseek-beta",
+        effort_mappings: &[],
+        model: "deepseek-flash",
+        canonical_model: "deepseek-flash",
+        upstream: "deepseek-flash",
+        protocols: CHAT,
+        reasoning_history: TOOL_HISTORY,
+        replay_responses: false,
         replay_chat: false,
         public_slice: RequestSlice::Canonical,
         endpoint_slice: RequestSlice::Canonical,

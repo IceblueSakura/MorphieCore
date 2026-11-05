@@ -23,6 +23,21 @@
       "https://api-docs.deepseek.com/guides/responses_api/"
     ]
   },
+  "deepseek-beta": {
+    "base_url": "https://api.deepseek.com",
+    "auth": {
+      "kind": "bearer"
+    },
+    "endpoints": {
+      "chat_completions": {
+        "path": "/beta/chat/completions",
+        "suffix": "/beta/chat/completions"
+      }
+    },
+    "sources": [
+      "https://api-docs.deepseek.com/guides/tool_calls/"
+    ]
+  },
   "xiaomi": {
     "base_url": "https://api.xiaomimimo.com",
     "auth": {

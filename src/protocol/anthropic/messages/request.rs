@@ -507,9 +507,13 @@ pub(in crate::protocol::anthropic::messages) fn project(
                 ToolChoice::Specific(t) => Selection::Tool(t.as_str().into()),
                 _ => return Err(unsupported()),
             },
-            disable_parallel_tool_use: s
-                .parallel_tool_calls
-                .map_or(Presence::Absent, |b| Presence::Value(!b)),
+            // `none` permits no calls, so seriality is vacuous and the wire
+            // validator rejects the flag next to a `none` selection.
+            disable_parallel_tool_use: match (&choice, s.parallel_tool_calls) {
+                (ToolChoice::None, _) => Presence::Absent,
+                (_, Some(b)) => Presence::Value(!b),
+                (_, None) => Presence::Absent,
+            },
         })
     } else {
         // Messages carries the switch only inside `tool_choice`, whose default is `auto`.

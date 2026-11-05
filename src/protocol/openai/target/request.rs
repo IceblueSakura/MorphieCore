@@ -480,4 +480,41 @@ mod tests {
             })
         ));
     }
+
+    #[test]
+    /// SIWC permits functions through inline `additional_tools` declarations, so
+    /// direct-call history naming those leaves is lawful; unqualified calls to
+    /// root declarations stay rejected. The nullable input result status is the
+    /// documented input-only normalization.
+    fn siwc_admits_inline_additional_tools_direct_call_history() {
+        let client = GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None);
+        let target = GenerationCodec::new(GenerationApi::Responses, Dialect::Siwc, None);
+        let contract = TargetContract::full();
+        let body = serde_json::json!({"model":"synthetic","input":[
+            {"type":"message","role":"user","content":"pick"},
+            {"type":"additional_tools","role":"developer","tools":[
+                {"type":"function","name":"weather","strict":false}]},
+            {"type":"function_call","call_id":"call_1","name":"weather","arguments":"{}"},
+            {"type":"function_call_output","call_id":"call_1","output":"sunny","status":null},
+            {"type":"message","role":"user","content":"thanks"}]});
+        let request = client
+            .decode_request(body.to_string().as_bytes())
+            .unwrap();
+        let wire = target
+            .encode_request(&request, "selected-slug", &contract)
+            .unwrap();
+        assert_eq!(wire["input"][1]["type"], "additional_tools");
+        assert_eq!(wire["input"][1]["tools"][0]["name"], "weather");
+        assert_eq!(wire["input"][2]["call_id"], "call_1");
+        // Removing the declaration leaves an unqualified history call with no
+        // inline owner; the namespace requirement applies again.
+        let mut unqualified = body.clone();
+        unqualified["input"].as_array_mut().unwrap().remove(1);
+        let request = client
+            .decode_request(unqualified.to_string().as_bytes())
+            .unwrap();
+        assert!(target
+            .encode_request(&request, "selected-slug", &contract)
+            .is_err());
+    }
 }

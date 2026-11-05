@@ -2100,10 +2100,6 @@ fn request_maps_tool_choice_effort_and_leading_instructions() {
         (json!("auto"), json!({"mode":"AUTO"})),
         (json!("none"), json!({"mode":"NONE"})),
         (json!("required"), json!({"mode":"ANY"})),
-        (
-            json!({"type":"function","function":{"name":"read"}}),
-            json!({"mode":"ANY","allowedFunctionNames":["read"]}),
-        ),
     ] {
         let (wire, _) = encode(json!({"tool_choice": choice}));
         assert_eq!(
@@ -2112,6 +2108,23 @@ fn request_maps_tool_choice_effort_and_leading_instructions() {
             "{choice}"
         );
     }
+    // An OpenAI forced choice is exactly one call; the decoder records that on
+    // the serial carrier, and Google has no exact serial-tool guarantee carrier.
+    let body = json!({"model":"gemini","messages":[
+        {"role":"developer","content":"Be brief."},
+        {"role":"user","content":"go"}],
+        "tools":[{"type":"function","function":{"name":"read","parameters":{"type":"object"}}}],
+        "tool_choice":{"type":"function","function":{"name":"read"}}});
+    let request = client(GenerationApi::Chat, body);
+    assert!(
+        encode_generation_request(
+            &request.task.semantic,
+            &request.task.fidelity,
+            &target(),
+            None
+        )
+        .is_err()
+    );
     for (effort, level) in [
         ("minimal", "MINIMAL"),
         ("low", "LOW"),

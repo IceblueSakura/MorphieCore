@@ -110,6 +110,16 @@ pub(super) fn read_settings(
         .map(|v| read_choice(v, profile, direction))
         .transpose()?;
     settings.parallel_tool_calls = nullable_bool(o, "parallel_tool_calls")?;
+    // A forced specific or custom choice is exactly one call under the OpenAI
+    // contract; the serial carrier records that cardinality for other targets.
+    // https://developers.openai.com/api/docs/guides/function-calling#tool-choice
+    if settings
+        .tool_choice
+        .as_ref()
+        .is_some_and(|c| matches!(c, ToolChoice::Specific(_) | ToolChoice::Custom(_)))
+    {
+        settings.parallel_tool_calls = Some(false);
+    }
     settings.validate()?;
     Ok(())
 }
@@ -439,7 +449,7 @@ pub(super) fn write_settings(
         );
     }
     if let Some(c) = &s.tool_choice {
-        o.insert("tool_choice".into(), write_choice(c, profile)?);
+        o.insert("tool_choice".into(), write_choice(c, profile, s.parallel_tool_calls)?);
     }
     if let Some(v) = s.parallel_tool_calls {
         o.insert("parallel_tool_calls".into(), json!(v));
@@ -554,7 +564,36 @@ pub(super) fn write_tool(t: &ToolDefinition, profile: GenerationApi) -> Result<V
         }
     })
 }
-pub(super) fn write_choice(c: &ToolChoice, profile: GenerationApi) -> Result<Value, CodecError> {
+pub(super) fn write_choice(
+    c: &ToolChoice,
+    profile: GenerationApi,
+    parallel: Option<bool>,
+) -> Result<Value, CodecError> {
+    // A named choice without the serial fact carries the source's one-or-more
+    // meaning; the forced spelling would strengthen it to exactly one call.
+    let named = match c {
+        ToolChoice::Specific(n) => Some(ToolReference {
+            kind: ToolKind::Function,
+            name: n.clone(),
+            namespace: None,
+        }),
+        ToolChoice::Custom(n) => Some(ToolReference {
+            kind: ToolKind::Custom,
+            name: n.clone(),
+            namespace: None,
+        }),
+        _ => None,
+    };
+    if let (Some(reference), None | Some(true)) = (&named, parallel) {
+        return write_choice(
+            &ToolChoice::Allowed {
+                required: true,
+                tools: vec![reference.clone()],
+            },
+            profile,
+            parallel,
+        );
+    }
     Ok(match c {
         ToolChoice::Auto => json!("auto"),
         ToolChoice::None => json!("none"),

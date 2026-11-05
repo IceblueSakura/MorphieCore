@@ -119,8 +119,8 @@ def assert_chat_profile(body, pi, *, upstream=False):
           "default_operational_output_cap")
     check("store" not in body and body.get("stream_options") == {"include_usage": True},
           "default_chat_storage_and_usage")
-    check(body.get("thinking") == {"type": "enabled"} if pi else "thinking" not in body,
-          "default_chat_thinking")
+    check(body.get("thinking") == {"type": "enabled"} if pi and not upstream
+          else "thinking" not in body, "default_chat_thinking")
     check(body.get("reasoning_effort") == "high" if pi else "reasoning_effort" not in body,
           "default_effort")
     tools = body.get("tools", [])
@@ -137,6 +137,8 @@ def assert_chat_profile(body, pi, *, upstream=False):
 class ChatState(DefaultState):
     def __init__(self, path, *, pi):
         super().__init__(False, path, pi=pi)
+        # pi's strict lane dispatches through the DeepSeek beta endpoint binding.
+        self.upstream_endpoint_path = "/v1/beta/chat/completions" if pi else "/v1/chat/completions"
 
     def incoming(self, headers, body):
         assert_chat_profile(body, self.pi)
@@ -144,15 +146,13 @@ class ChatState(DefaultState):
         assert_history(body, phase, False, self.path, profile=False)
         with self.lock:
             self.ingress.append(phase)
-            expected = [1] if self.pi else [1, 2, 3]
-            check(len(self.ingress) <= len(expected) and self.ingress == expected[:len(self.ingress)],
+            check(len(self.ingress) <= 3 and self.ingress == [1, 2, 3][:len(self.ingress)],
                   "default_extra_or_reordered_client_request")
 
     def upstream(self, headers, body):
-        check(not self.pi, "default_strict_guarantee_dispatched")
         check(headers.get("authorization") == "Bearer synthetic-client-primary",
               "default_upstream_credential")
-        assert_chat_profile(body, False, upstream=True)
+        assert_chat_profile(body, self.pi, upstream=True)
         phase = stage(body)
         assert_history(body, phase, False, self.path, profile=False)
         with self.lock:
@@ -163,9 +163,8 @@ class ChatState(DefaultState):
 
     def finish(self):
         check(not self.errors, "default_authority_errors:" + ",".join(self.errors))
-        check(self.ingress == ([1] if self.pi else [1, 2, 3])
-              and self.attempts == ([] if self.pi else [1, 2, 3]), "default_exchange_counts")
-        check(self.deliveries == ([400] if self.pi else [200, 200, 200]), "default_deliveries")
+        check(self.ingress == self.attempts == [1, 2, 3], "default_exchange_counts")
+        check(self.deliveries == [200, 200, 200], "default_deliveries")
 
 
 def response_items(phase, path):
@@ -352,7 +351,7 @@ def assert_opencode_rejection(events):
 
 
 def assert_diagnostics(requests, protocol, pi):
-    initial_rejection = pi and protocol != "messages"
+    initial_rejection = pi and protocol == "responses"
     check(len(requests) == (1 if initial_rejection else 3), "default_gateway_request_count")
     for index, record in enumerate(requests):
         rejected = initial_rejection or protocol == "responses" and index == 2
@@ -360,18 +359,18 @@ def assert_diagnostics(requests, protocol, pi):
               and len(record["candidates"]) == (0 if rejected else 1),
               "default_gateway_completion")
         if not rejected:
-            check(record.get("ignored_request_field_count", 0) == 0, "default_gateway_ignored_fields")
+            # pi's builtin Chat profile carries a client-side `thinking` object
+            # the Chat union does not define; it is ignored, never interpreted.
+            expected_ignored = 1 if pi and protocol == "chat" else 0
+            check(record.get("ignored_request_field_count", 0) == expected_ignored,
+                  "default_gateway_ignored_fields")
             continue
         check(record["stage"] == "admission", "default_rejection_stage")
         generation = record["generation"]
-        if protocol == "chat":
-            check(generation.get("planning_failure", {}).get("reasons") == ["admission.strict_tools"],
-                  "default_strict_rejection_reason")
-        else:
-            check(generation.get("failure") == {
-                "boundary": "request.decode",
-                "code": "codec.unsupported.unavailable" if pi else "codec.invalid.invalid_value"},
-                "default_responses_rejection_reason")
+        check(generation.get("failure") == {
+            "boundary": "request.decode",
+            "code": "codec.unsupported.unavailable" if pi else "codec.invalid.invalid_value"},
+            "default_responses_rejection_reason")
 
 
 def run_pi(binary, env, root, work, origin, path, protocol):
@@ -396,7 +395,7 @@ def run_pi(binary, env, root, work, origin, path, protocol):
                   and model["compat"]["supportsTemperature"] is False, "pi_resolved_messages_metadata")
         check(initial["thinkingLevel"] == ("high" if protocol == "chat" else "medium"),
               "pi_default_thinking_level")
-        if protocol != "messages":
+        if protocol == "responses":
             _, events = client.command("prompt", message=f"{READ}: Read {path}, then answer.")
             finished = [event["message"] for event in events if event.get("type") == "message_end"
                         and event.get("message", {}).get("role") == "assistant"]
@@ -462,10 +461,13 @@ def main():
     path.write_text(TEXT + "\n", encoding="utf-8")
     protocol = case.split("-")[1]
     pi = case.startswith("pi-")
-    rejected = pi and protocol != "messages"
+    rejected = pi and protocol == "responses"
     count = 1 if rejected else 3
     attempts = 0 if rejected else 2 if protocol == "responses" else 3
     model_id, provider, binding, _ = PROFILES[protocol]
+    if pi and protocol == "chat":
+        # pi's builtin strict read tool needs the beta endpoint binding.
+        provider, binding = "deepseek-beta", "deepseek-beta-chat"
     state = {"messages": MessagesState, "chat": ChatState, "responses": ResponsesState}[protocol](path, pi=pi)
     env = environment(root)
     with Child([binary, "--version"], env, work) as client:

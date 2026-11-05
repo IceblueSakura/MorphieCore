@@ -81,11 +81,13 @@ pub const MODELS: &[ModelDefinition] = &[
     },
     // The official alias names V4.1 Flash.
     // Source: https://api-docs.deepseek.com/updates/ (2026-09-10).
+    // Strict tool schemas are validated by the beta endpoint binding, not the
+    // standard endpoint. Source: https://api-docs.deepseek.com/guides/tool_calls/
     ModelDefinition {
         id: "deepseek-flash",
         images: true,
         files: false,
-        strict_tools: false,
+        strict_tools: true,
         released_at: 1_788_998_400,
         developer: "DeepSeek",
     },

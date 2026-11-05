@@ -327,14 +327,13 @@ async fn observe_intake(
     });
     let calls = Arc::new(Mutex::new(Vec::<Value>::new()));
     let captured = calls.clone();
-    let thinking_fallback = provider == "deepseek"
+    let thinking_fallback = matches!(provider, "deepseek" | "deepseek-beta")
         && upstream == Api::Chat
         && client == Api::Chat
         && profile != Profile::Text
         && control == Control::Default;
-    let router = Router::new().route(
-        upstream.path(),
-        post(move |headers: HeaderMap, Json(body): Json<Value>| {
+    let beta_chat = binding == "deepseek-beta-chat";
+    let handler = post(move |headers: HeaderMap, Json(body): Json<Value>| {
             let calls = captured.clone();
             let parameters = parameters.clone();
             async move {
@@ -424,8 +423,15 @@ async fn observe_intake(
                 };
                 ([("content-type", content_type)], bytes).into_response()
             }
-        }),
-    );
+        });
+    // The beta binding's account-rebuilt path differs from the standard lane.
+    let router = if beta_chat {
+        Router::new()
+            .route(upstream.path(), handler.clone())
+            .route("/v1/beta/chat/completions", handler)
+    } else {
+        Router::new().route(upstream.path(), handler)
+    };
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let origin = format!("http://{}/v1", listener.local_addr().unwrap());
     let _server = Server(tokio::spawn(async move {
@@ -1313,7 +1319,7 @@ const BASIC_EXPECTATIONS: &[(&[&str], [&[&str]; 4])] = &[
             ACCEPT,
         ],
     ),
-    (&["deepseek-chat"], [ACCEPT, ACCEPT, ACCEPT, ACCEPT]),
+    (&["deepseek-chat", "deepseek-beta-chat"], [ACCEPT, ACCEPT, ACCEPT, ACCEPT]),
     (
         &[
             "dashscope-flash-responses",

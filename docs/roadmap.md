@@ -58,11 +58,11 @@ This page owns current scope, priorities, dependencies, and exit gates. [Archite
 
 ## Current status
 
-**Current focus (2026-11-04):** Execute the scheduled Stage-3 tool-repair core, S3-T0–S3-T4, across all nine Chat/Responses/Messages directions. Concrete new loss policies are selected at S3-T0 before activation. Pi Chat strict read and pi Responses `additional_tools` are acceptance cases. OpenCode Responses missing annotations remains postponed; no normalization or acceptance waiver is selected. The core and outstanding default-profile gate precede AR5; Stage 4 resumes only after real Provider and installed-Agent acceptance.
+**Current focus (2026-11-05):** Execute the scheduled Stage-3 tool-repair core, S3-T0–S3-T4, across all nine Chat/Responses/Messages directions. S3-T0–S3-T2 are delivered: contract selection, shared semantics, native/cross function paths with directional cardinality, SIWC inline direct-call continuation, input-result null normalization and the qualified DeepSeek beta strict binding. Pi Chat strict read now passes on the beta binding. OpenCode Responses missing annotations remains postponed; no normalization or acceptance waiver is selected. S3-T3 projection unification and the S3-T4 nine-direction/current-Agent exit precede AR5; Stage 4 resumes only after real Provider and installed-Agent acceptance.
 
 | Priority | Remaining work | Exit |
 |---|---|---|
-| Stage-3 tool core | Execute [S3-T0–S3-T4](#stage-3-core-packages): contract selection, shared semantics, native mappings, bounded projections and nine-direction acceptance | Ordinary function loops complete in all nine directions, with no hidden guarantee loss |
+| Stage-3 tool core | [S3-T0–S3-T2 delivered](#stage-3-core-packages); execute S3-T3 bounded tool-set projection and S3-T4 nine-direction acceptance | Ordinary function loops complete in all nine directions, with no hidden guarantee loss |
 | Conditional tool follow-ups | [S3-T5–S3-T7](#conditional-stage-3-follow-ups): namespace aliases, custom-text wrappers and examples projection | Separate policy selection and full affected-loop acceptance; not default prerequisites for AR5 |
 | Agent defaults | Resolve pi Chat strict read; revisit postponed OpenCode Responses annotations | Actual default reasoning/tool/history loops pass without compatibility opt-outs or input rewriting |
 | Account acceptance | Provision fresh credentials, select actual Provider/model bindings, and complete AR5 | Bounded real Provider checks and installed-Agent exit on the rewritten account path |
@@ -120,10 +120,10 @@ The [native-default characterization](development.md#installed-client-synthetic-
 
 | Lane | Remaining issue | Required resolution | Scope |
 |---|---|---|---|
-| Pi Chat | Actual strict read guarantee is blocked | Resolve the explicit guarantee without client downgrade or input rewriting | Before fresh credentials |
+| Pi Chat | Strict read passes through the qualified beta binding; remaining installed-client failures are pre-existing environment drift, not strict admission | Recharacterize the drifting recovery lanes before AR5 | Before fresh credentials |
 | Pi Responses | Native batch intake/shared SDK loop repaired; SIWC continuation and installed-Agent exit remain | Qualify inline direct-call continuation and rerun the current-Agent default lane through the [tool root repair](#tool-protocol-root-repair) | Before fresh credentials |
 | OpenCode Responses | Recall omits required text annotations | Postponed for user consideration; retain strict intake, no inferred empty annotations | Deferred decision; acceptance remains open |
-| Responses client → OpenAI subscriptions, flat tools | Current binding requires namespaces and qualified calls even for inline definitions | Reconcile with official SIWC `additional_tools` support, including subsequent direct call/result history | Tool contract repair; real endpoint acceptance separate |
+| Responses client → OpenAI subscriptions, flat tools | SIWC inline `additional_tools` declarations and their direct call/result history are admitted; namespace requirements stay for root declarations | Real endpoint acceptance for the inline continuation path | Tool contract repair; real endpoint acceptance separate |
 | Chat upstream usage | Duplicate nonnull final reports | Qualify at emitter | Outside stabilization slices |
 
 ### Tool protocol root repair
@@ -135,6 +135,8 @@ The [accepted direction](architecture.md#ordered-tool-availability) covers three
 **Contracts selected (2026-11-04):** [Current stable source qualification](refs/2026-10-27-client-ir-boundaries.md#tool-contract-qualification-2026-11-04) and the [first-package dispositions](api-expansion-design.md#first-package-dispositions) close S3-T0. The user selected the [bounded tool-set projection combination](architecture.md#ordered-tool-availability) and included explicit DeepSeek beta strict binding qualification in S3-T2, preserving the existing standard binding. Collision-dependent transformations and non-developer returned-addition replay stay isolated. Selection does not activate an endpoint.
 
 **Shared contract delivered:** [Architecture](architecture.md#ordered-tool-availability) owns the implemented batch/role/closure and declaration-view rules. The native Responses SDK loop covers two-definition input, a returned developer batch, call/result/final answer/recall, JSON/SSE and stored/stateless history. Focused checks cover independent batch/ID and choice expectations, strict/capability admission, candidate/source isolation, historical arguments, bounds, malformed known fields, non-developer replay and unclosed incomplete streams. S3-T1 is closed; SIWC continuation, ordinary cross mappings, selected projections and current-Agent acceptance remain below.
+
+**S3-T2 delivered (2026-11-05):** Native and ordinary cross function mappings carry directional cardinality: an OpenAI forced choice is exactly one call and decodes onto the serial carrier, a Messages named choice without the parallel flag is one-or-more and encodes as the exact required subset instead of a strengthened forced spelling, and a `none` selection omits the vacuous serial flag. Input `function_call_output.status:null` normalizes to absence while output terminal status stays strict. SIWC admits inline `additional_tools` declarations with their subsequent unqualified direct calls; root declarations keep the namespace requirement. The DeepSeek beta strict binding is qualified as an endpoint-scoped catalog binding with an explicit `deepseek-beta` provider path; the standard binding explicitly declines strict validation and pi's strict Chat read loop passes on it. The conditional strictness path to Messages targets resolves through the shared rule rather than a hard rejection. Messages-position projection for ordered declarations remains with S3-T3.
 
 #### Stage-3 core packages
 

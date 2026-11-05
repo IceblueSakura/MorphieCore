@@ -249,6 +249,10 @@ def handler(state, ingress, direct_client=False):
                 self.connection.settimeout(12)
                 expected = getattr(state, "endpoint_path",
                                    "/v1/messages" if state.native else "/v1/chat/completions")
+                if not ingress:
+                    # Upstream and client-facing paths differ when a binding
+                    # selects a different provider endpoint.
+                    expected = getattr(state, "upstream_endpoint_path", expected)
                 route = urlsplit(self.path)
                 check(route.path == expected, "unexpected_http_path")
                 check(not route.query or ((ingress or direct_client) and state.native and route.query == "beta=true"),

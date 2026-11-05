@@ -407,7 +407,10 @@ fn custom_tools_and_text_array_results_are_not_function_arguments() {
         "tools":[{"type":"function","function":{"name":"sql","strict":false}},
             {"type":"custom","custom":{"name":"sql","format":{"type":"grammar",
                 "grammar":{"syntax":"regex","definition":"SELECT [0-9]+"}}}}],
-        "tool_choice":{"type":"custom","custom":{"name":"sql"}}
+        "tool_choice":{"type":"custom","custom":{"name":"sql"}},
+        // The forced custom choice is exactly one call; the decoder records that
+        // on the serial carrier and the Chat writer keeps it explicit.
+        "parallel_tool_calls":false
     });
     let decoded = morphiecore::protocol::openai::chat::decode_generation(&chat_wire).unwrap();
     assert!(

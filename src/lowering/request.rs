@@ -730,20 +730,43 @@ impl<'a> Target<'a> {
             && (source.tool_declarations().any(|(owner, tool)| {
                 owner.is_none() && !matches!(tool, ToolDeclaration::Namespace(_))
                     || !tool.dispatch_inactive()
-            }) || source.items().iter().any(|(_, item)| match item {
-                Item::ToolCall(call) => {
-                    call.context.namespace.is_none()
-                        || call.context.async_call
-                        || call.context.caller.is_some()
-                }
-                Item::CustomCall(call) => {
-                    call.context.namespace.is_none()
-                        || call.context.async_call
-                        || call.context.caller.is_some()
-                }
-                Item::Program(_) | Item::ProgramOutput(_) => true,
-                _ => false,
-            }))
+            }) || {
+                // Inline `additional_tools` declarations enable later direct
+                // calls by leaf name; root declarations stay namespace-qualified.
+                // https://developers.openai.com/siwc/token-sharing-open-source/preview-limitations
+                let mut inline: Vec<(ToolKind, &str)> = Vec::new();
+                source.items().iter().any(|(_, item)| match item {
+                    Item::ToolBatch(batch) => {
+                        for tool in &batch.tools {
+                            if let Some(kind) = tool.kind() {
+                                inline.push((kind, tool.name().as_str()));
+                            }
+                        }
+                        false
+                    }
+                    Item::ToolChange(ToolChange {
+                        action: ToolChangeAction::AddDefinition(tool),
+                        ..
+                    }) => {
+                        inline.push((ToolKind::Function, tool.name.as_str()));
+                        false
+                    }
+                    Item::ToolCall(call) => {
+                        call.context.async_call
+                            || call.context.caller.is_some()
+                            || call.context.namespace.is_none()
+                                && !inline.contains(&(ToolKind::Function, call.name.as_str()))
+                    }
+                    Item::CustomCall(call) => {
+                        call.context.async_call
+                            || call.context.caller.is_some()
+                            || call.context.namespace.is_none()
+                                && !inline.contains(&(ToolKind::Custom, call.name.as_str()))
+                    }
+                    Item::Program(_) | Item::ProgramOutput(_) => true,
+                    _ => false,
+                })
+            })
         {
             table.set(Feature::Tools, Disposition::Reject("the selected native tool contract requires inactive namespaces and namespace-qualified direct calls"));
         }

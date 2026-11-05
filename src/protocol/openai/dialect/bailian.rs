@@ -546,7 +546,7 @@ pub(in crate::protocol::openai) fn write_tools(
             ToolChoice::Specific(name) if profile == GenerationApi::Responses => {
                 json!({"type":"allowed_tools","mode":"required","tools":[{"type":"function","name":name.as_str()}]})
             }
-            _ => function_tools::write_choice(choice, profile)?,
+            _ => function_tools::write_choice(choice, profile, s.parallel_tool_calls)?,
         };
         o.insert("tool_choice".into(), value);
     }

@@ -519,6 +519,183 @@ fn tool_defaults_keep_non_strict_and_conditional_projection_distinct() {
         false
     );
 }
+#[test]
+/// Named-choice cardinality is directional: an OpenAI forced choice is exactly
+/// one call, a Messages named choice without the parallel flag is one-or-more,
+/// and each carrier must not silently strengthen or weaken the source meaning.
+/// https://developers.openai.com/api/docs/guides/function-calling#tool-choice
+/// https://platform.claude.com/docs/en/agents-and-tools/tool-use/parallel-tool-use
+fn named_choice_cardinality_keeps_directional_meaning() {
+    use morphiecore::protocol::{
+        GenerationRequestEnvelope, anthropic::messages::TargetContract, native::ReplayTarget,
+        openai::{Dialect, GenerationCodec},
+    };
+    use morphiecore::protocol::anthropic::messages::{
+        Dialect as MessagesDialect, Profile,
+    };
+    let parameters = json!({"type":"object","properties":{"path":{"type":"string"}},
+        "required":["path"],"additionalProperties":false});
+    // An OpenAI forced choice is exactly one call; the decoder records the
+    // cardinality on the serial carrier.
+    let forced = chat::decode_generation(&json!({
+        "max_completion_tokens":64,
+        "messages":[{"role":"user","content":"go"}],
+        "tools":[{"type":"function","function":{"name":"read","strict":false,
+            "parameters":parameters}}],
+        "tool_choice":{"type":"function","function":{"name":"read"}}}))
+    .unwrap();
+    assert_eq!(forced.semantic.parallel_tool_calls(), Some(false));
+    let chat = GenerationCodec::new(GenerationApi::Chat, Dialect::Standard, None);
+    let envelope = GenerationRequestEnvelope::from_generation(forced.clone(), "m").unwrap();
+    let chat_wire = chat
+        .encode_request(&envelope, "m", &Contract::full())
+        .unwrap();
+    assert_eq!(
+        chat_wire["tool_choice"],
+        json!({"type":"function","function":{"name":"read"}})
+    );
+    assert_eq!(chat_wire["parallel_tool_calls"], false);
+    // Messages carries exactly one as the named choice plus disabled parallel use.
+    let envelope = GenerationRequestEnvelope::from_generation(forced, "m").unwrap();
+    let messages_wire = TargetContract::new(Profile::AdaptiveTextTools, MessagesDialect::Standard)
+        .encode_request(&envelope, &ReplayTarget::new("synthetic", "m").unwrap())
+        .unwrap();
+    assert_eq!(
+        messages_wire.value["tool_choice"],
+        json!({"type":"tool","name":"read","disable_parallel_tool_use":true})
+    );
+    // A Messages named choice without the flag is one-or-more of that tool; the
+    // OpenAI forced spelling would strengthen it, so the exact required subset
+    // carries the meaning instead.
+    let named = morphiecore::adapter::ClientAdapter::Messages
+        .decode_client_request(
+            json!({"model":"m","max_tokens":64,
+                "messages":[{"role":"user","content":"go"}],
+                "tools":[{"name":"read","input_schema":parameters}],
+                "tool_choice":{"type":"tool","name":"read"}})
+                .to_string()
+                .as_bytes(),
+        )
+        .unwrap();
+    assert_eq!(named.task.semantic.parallel_tool_calls(), None);
+    let chat_wire = chat
+        .encode_request(&named, "m", &Contract::full())
+        .unwrap();
+    assert_eq!(
+        chat_wire["tool_choice"],
+        json!({"type":"allowed_tools","allowed_tools":{"mode":"required","tools":[
+            {"type":"function","function":{"name":"read"}}]}})
+    );
+    assert!(chat_wire.get("parallel_tool_calls").is_none());
+    // `any` plus the flag is exactly one overall; `none` makes seriality vacuous
+    // and the wire validator rejects the flag next to a `none` selection.
+    let exactly_one = morphiecore::adapter::ClientAdapter::Messages
+        .decode_client_request(
+            json!({"model":"m","max_tokens":64,
+                "messages":[{"role":"user","content":"go"}],
+                "tools":[{"name":"read","input_schema":parameters}],
+                "tool_choice":{"type":"any","disable_parallel_tool_use":true}})
+                .to_string()
+                .as_bytes(),
+        )
+        .unwrap();
+    assert!(matches!(
+        exactly_one.task.semantic.tool_choice(),
+        Some(ToolChoice::Required)
+    ));
+    let chat_wire = chat
+        .encode_request(&exactly_one, "m", &Contract::full())
+        .unwrap();
+    assert_eq!(chat_wire["tool_choice"], json!("required"));
+    assert_eq!(chat_wire["parallel_tool_calls"], false);
+    let none = chat::decode_generation(&json!({
+        "max_completion_tokens":64,
+        "messages":[{"role":"user","content":"go"}],
+        "tools":[{"type":"function","function":{"name":"read","strict":false,
+            "parameters":parameters}}],
+        "tool_choice":"none","parallel_tool_calls":false}))
+    .unwrap();
+    let envelope = GenerationRequestEnvelope::from_generation(none, "m").unwrap();
+    let messages_wire = TargetContract::new(Profile::AdaptiveTextTools, MessagesDialect::Standard)
+        .encode_request(&envelope, &ReplayTarget::new("synthetic", "m").unwrap())
+        .unwrap();
+    assert_eq!(messages_wire.value["tool_choice"], json!({"type":"none"}));
+}
+#[test]
+/// Input `function_call_output.status` is optional-nullable; output snapshots
+/// keep a required terminal status, so null normalization is input-only.
+/// https://github.com/openai/openai-python/blob/9b3458a2ef563493111a0a4265d4e9e7e14fe840/src/openai/types/responses/response_input_item_param.py
+fn responses_result_status_null_normalizes_only_on_input() {
+    use morphiecore::protocol::openai::{Dialect, GenerationCodec};
+    let input = json!({"input":[
+        {"type":"function_call","call_id":"c","name":"lookup","arguments":"{}"},
+        {"type":"function_call_output","call_id":"c","output":"ok","status":null}]});
+    let decoded = responses::decode_generation(&input).unwrap();
+    let Item::ToolResult(result) = &decoded.semantic.items()[1].1 else {
+        panic!("result")
+    };
+    assert_eq!(result.status, None);
+    let wire = json!({"id":"r","object":"response","created_at":0,"model":"m",
+        "status":"completed","output":[
+        {"id":"o","type":"function_call_output","call_id":"c","output":"ok","status":null}]});
+    assert!(
+        GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None)
+            .decode_response(wire.to_string().as_bytes())
+            .is_err()
+    );
+}
+
+#[test]
+/// A Responses source default (conditional strictness) resolves through the
+/// shared rule on a Messages target instead of a hard unsupported error; the
+/// explicit guarantee itself never weakens.
+fn responses_conditional_strictness_resolves_on_a_messages_target() {
+    use morphiecore::protocol::GenerationRequestEnvelope;
+    use morphiecore::protocol::anthropic::messages::{
+        Dialect as MessagesDialect, Profile, TargetContract as MessagesContract,
+    };
+    use morphiecore::protocol::native::ReplayTarget;
+    let strict_schema = json!({"type":"object","properties":{"q":{"type":"string"}},
+        "required":["q"],"additionalProperties":false});
+    let source = responses::decode_generation(&json!({
+        "input":"go","max_output_tokens":64,
+        "tools":[{"type":"function","name":"lookup","parameters":strict_schema}]}))
+    .unwrap();
+    assert!(source
+        .semantic
+        .function_tools()
+        .all(|t| t.strict == FunctionStrictness::Omitted(StrictDefault::Conditional)));
+    let envelope = GenerationRequestEnvelope::from_generation(source, "m").unwrap();
+    // Without a strict-tools carrier the shared rule records the documented
+    // conditional loss; a strict-capable contract resolves the same default up.
+    let mut contract =
+        MessagesContract::new(Profile::AdaptiveTextTools, MessagesDialect::Standard);
+    assert!(!contract.dispositions.native(Feature::StrictTools));
+    let lossy = contract
+        .encode_request(&envelope, &ReplayTarget::new("synthetic", "m").unwrap())
+        .unwrap();
+    assert_eq!(
+        lossy.value["tools"],
+        json!([{"name":"lookup","input_schema":strict_schema,"strict":false}])
+    );
+    assert!(lossy
+        .evidence
+        .contains_rule("openai.omit-conditional-tool-strictness.v1"));
+    contract
+        .dispositions
+        .set_native(Feature::StrictTools, true);
+    let strict = contract
+        .encode_request(&envelope, &ReplayTarget::new("synthetic", "m").unwrap())
+        .unwrap();
+    assert_eq!(
+        strict.value["tools"],
+        json!([{"name":"lookup","input_schema":strict_schema,"strict":true}])
+    );
+    assert!(!strict
+        .evidence
+        .contains_rule("openai.omit-conditional-tool-strictness.v1"));
+}
+
 fn expected_responses_history() -> Value {
     json!({"input":[
         {"type":"message","role":"user","content":[{"type":"input_text","text":"weather?"}]},

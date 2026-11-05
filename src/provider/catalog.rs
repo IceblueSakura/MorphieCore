@@ -125,6 +125,7 @@ macro_rules! providers {
 }
 providers! {
     openai => "openai", chatgpt => "chatgpt", grok => "grok", deepseek => "deepseek", xiaomi => "xiaomi",
+    deepseek_beta => "deepseek-beta",
     modelbest => "modelbest", openrouter => "openrouter", opencode_go => "opencode-go",
     nvidia => "nvidia", aliyun_dashscope_cn => "aliyun-dashscope-cn",
     aliyun_tokenplan_cn => "aliyun-tokenplan-cn", zhipu => "zhipu", google => "google",
@@ -136,7 +137,7 @@ mod tests {
     use crate::provider::GenerationOperation;
     #[test]
     fn metadata_preserves_trusted_targets_and_separate_service_authentication() {
-        assert_eq!(all().len(), 13);
+        assert_eq!(all().len(), 14);
         let go = opencode_go();
         assert_eq!(
             go.entry(ProviderOperation::Messages).unwrap().auth,
