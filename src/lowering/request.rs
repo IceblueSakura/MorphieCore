@@ -1748,7 +1748,7 @@ fn project_semantic_with_table<'a>(
             && let Some(ToolChoice::Allowed {
                 required,
                 tools: references,
-            }) = settings.tool_choice.clone()
+            }) = &settings.tool_choice
         {
             if references.iter().any(|r| r.namespace.is_some()) {
                 return Err(
@@ -1761,13 +1761,13 @@ fn project_semantic_with_table<'a>(
             // Allowed-set inventory filtering: the restriction and required
             // invocation survive while filtered definitions lose visibility.
             let filtered = super::tool_set::filter_allowed(
-                settings.tools.clone().unwrap_or_default(),
-                &references,
+                settings.tools.take().unwrap_or_default(),
+                references,
             );
             settings.tools = (!filtered.is_empty()).then_some(filtered);
             // An empty intersection keeps the required meaning instead of
             // silently becoming `auto`; revalidation rejects it.
-            settings.tool_choice = Some(if required {
+            settings.tool_choice = Some(if *required {
                 ToolChoice::Required
             } else {
                 ToolChoice::Auto

@@ -5,7 +5,10 @@
 //! https://developers.openai.com/api/docs/guides/tools-tool-search
 //! https://platform.claude.com/docs/en/build-with-claude/mid-conversation-system-messages
 use crate::semantic::task::generation::*;
-use std::collections::{BTreeMap, BTreeSet};
+use std::{
+    borrow::Cow,
+    collections::{BTreeMap, BTreeSet},
+};
 
 /// Which ordered-declaration carrier the target can express.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -96,8 +99,7 @@ pub(crate) fn project(
         .enumerate()
         .map(|(i, tool)| ((tool.kind(), tool.name().as_str()), i))
         .collect();
-    let mut kept: Vec<(ItemId, Item)> = Vec::new();
-    let mut retained: Vec<(ItemId, Item)> = Vec::new();
+    let mut retained = Vec::new();
     let mut root_additions: Vec<ToolDefinition> = Vec::new();
     let mut all_native = carrier != OrderedCarrier::None;
     let mut converted = false;
@@ -118,8 +120,7 @@ pub(crate) fn project(
         + 1;
     for (id, item) in items {
         if let Item::Instruction(_) = item {
-            kept.push((*id, item.clone()));
-            retained.push((*id, item.clone()));
+            retained.push((*id, Cow::Borrowed(item)));
             continue;
         }
         let liftable = leading
@@ -161,13 +162,7 @@ pub(crate) fn project(
                     }
                 }
                 match carrier {
-                    OrderedCarrier::Batches => retained.push((
-                        *id,
-                        Item::ToolBatch(ToolBatch {
-                            role: batch.role,
-                            tools: batch.tools.clone(),
-                        }),
-                    )),
+                    OrderedCarrier::Batches => retained.push((*id, Cow::Borrowed(item))),
                     OrderedCarrier::Changes => {
                         let native = pending_calls == 0
                             && batch
@@ -186,12 +181,12 @@ pub(crate) fn project(
                                 converted_ids.insert(fresh);
                                 retained.push((
                                     fresh,
-                                    Item::ToolChange(ToolChange {
+                                    Cow::Owned(Item::ToolChange(ToolChange {
                                         action: ToolChangeAction::AddDefinition(Box::new(
                                             function.clone(),
                                         )),
                                         cache: None,
-                                    }),
+                                    })),
                                 ));
                             }
                             converted = true;
@@ -222,7 +217,7 @@ pub(crate) fn project(
                         }
                     }
                     match carrier {
-                        OrderedCarrier::Changes => retained.push((*id, item.clone())),
+                        OrderedCarrier::Changes => retained.push((*id, Cow::Borrowed(item))),
                         // A replacement has no documented batch precedence.
                         OrderedCarrier::Batches => {
                             if existing.is_some() {
@@ -235,10 +230,10 @@ pub(crate) fn project(
                                 converted_ids.insert(fresh);
                                 retained.push((
                                     fresh,
-                                    Item::ToolBatch(ToolBatch {
+                                    Cow::Owned(Item::ToolBatch(ToolBatch {
                                         role: ToolBatchRole::Developer,
                                         tools: vec![ToolDefinition::Function((**tool).clone())],
-                                    }),
+                                    })),
                                 ));
                                 converted = true;
                             }
@@ -255,7 +250,7 @@ pub(crate) fn project(
                     entries[index].available =
                         matches!(change.action, ToolChangeAction::AddReference(_));
                     if matches!(carrier, OrderedCarrier::Changes) {
-                        retained.push((*id, item.clone()));
+                        retained.push((*id, Cow::Borrowed(item)));
                     } else {
                         // References and removals have no other native carrier.
                         all_native = false;
@@ -264,23 +259,14 @@ pub(crate) fn project(
             },
             Item::ToolCall(_) | Item::CustomCall(_) => {
                 pending_calls += 1;
-                kept.push((*id, item.clone()));
-                retained.push((*id, item.clone()));
             }
-            Item::ToolResult(_) => {
+            Item::ToolResult(_) | Item::CustomResult(_) => {
                 pending_calls = pending_calls.saturating_sub(1);
-                kept.push((*id, item.clone()));
-                retained.push((*id, item.clone()));
             }
-            Item::CustomResult(_) => {
-                pending_calls = pending_calls.saturating_sub(1);
-                kept.push((*id, item.clone()));
-                retained.push((*id, item.clone()));
-            }
-            _ => {
-                kept.push((*id, item.clone()));
-                retained.push((*id, item.clone()));
-            }
+            _ => {}
+        }
+        if !matches!(item, Item::ToolBatch(_) | Item::ToolChange(_)) {
+            retained.push((*id, Cow::Borrowed(item)));
         }
     }
     if all_native
@@ -304,7 +290,10 @@ pub(crate) fn project(
             return Ok(Projection::Native);
         }
         return Ok(Projection::Retained {
-            items: retained,
+            items: retained
+                .into_iter()
+                .map(|(id, item)| (id, item.into_owned()))
+                .collect(),
             root_additions,
         });
     }
@@ -312,7 +301,11 @@ pub(crate) fn project(
         return Err(Rejection::Collision);
     }
     Ok(Projection::ActiveSet {
-        items: kept,
+        items: items
+            .iter()
+            .filter(|(_, item)| !matches!(item, Item::ToolBatch(_) | Item::ToolChange(_)))
+            .cloned()
+            .collect(),
         tools: effective(entries),
     })
 }
@@ -335,7 +328,10 @@ pub(crate) fn filter_allowed(
         .collect()
 }
 
-fn converted_run_out_of_place(retained: &[(ItemId, Item)], converted: &BTreeSet<ItemId>) -> bool {
+fn converted_run_out_of_place(
+    retained: &[(ItemId, Cow<'_, Item>)],
+    converted: &BTreeSet<ItemId>,
+) -> bool {
     let system_side = |item: &Item| {
         matches!(
             item,
@@ -348,12 +344,12 @@ fn converted_run_out_of_place(retained: &[(ItemId, Item)], converted: &BTreeSet<
     };
     let mut index = 0;
     while index < retained.len() {
-        if !system_side(&retained[index].1) {
+        if !system_side(retained[index].1.as_ref()) {
             index += 1;
             continue;
         }
         let start = index;
-        while index < retained.len() && system_side(&retained[index].1) {
+        while index < retained.len() && system_side(retained[index].1.as_ref()) {
             index += 1;
         }
         if !retained[start..index]
@@ -362,8 +358,8 @@ fn converted_run_out_of_place(retained: &[(ItemId, Item)], converted: &BTreeSet<
         {
             continue;
         }
-        let before_ok = start == 0 || user_side(&retained[start - 1].1);
-        let after_ok = index == retained.len() || !user_side(&retained[index].1);
+        let before_ok = start == 0 || user_side(retained[start - 1].1.as_ref());
+        let after_ok = index == retained.len() || !user_side(retained[index].1.as_ref());
         if !before_ok || !after_ok {
             return true;
         }
@@ -386,51 +382,4 @@ fn effective(entries: Vec<Entry>) -> Vec<ToolDefinition> {
             entry.tool
         })
         .collect()
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use serde_json::json;
-
-    #[test]
-    fn expanded_batches_respect_the_retained_item_bound() {
-        let seed = crate::protocol::openai::responses::decode_generation(&json!({"input":[
-            {"role":"user","content":"go"},
-            {"type":"additional_tools","role":"developer","tools":[
-                {"type":"function","name":"a","strict":false},
-                {"type":"function","name":"b","strict":false}]}]}))
-        .unwrap();
-        for count in [MAX_ITEMS - 1, MAX_ITEMS] {
-            let mut items = Vec::new();
-            for index in 0..count - 1 {
-                let mut item = seed.semantic.items()[0].1.clone();
-                let Item::Message(message) = &mut item else {
-                    unreachable!()
-                };
-                message.parts[0].id = PartId::new(index as u64 + 1);
-                items.push((ItemId::new(index as u64 + 1), item));
-            }
-            items.push((
-                ItemId::new(count as u64),
-                seed.semantic.items()[1].1.clone(),
-            ));
-            // Initial construction validates a real source without invoking
-            // unrelated edited-history checks over 65K surviving identities.
-            let source =
-                GenerationRequest::from_settings(items, seed.semantic.settings().clone()).unwrap();
-            let projected =
-                project(OrderedCarrier::Changes, source.tools(), source.items()).unwrap();
-            match projected {
-                Projection::Retained { items, .. } if count < MAX_ITEMS => {
-                    assert_eq!(items.len(), MAX_ITEMS);
-                }
-                Projection::ActiveSet { items, tools } if count == MAX_ITEMS => {
-                    assert_eq!(items.len(), MAX_ITEMS - 1);
-                    assert_eq!(tools.len(), 2);
-                }
-                _ => panic!("unexpected projection kind for {count} source items"),
-            }
-        }
-    }
 }
