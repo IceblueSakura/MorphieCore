@@ -58,13 +58,13 @@ This page owns current scope, priorities, dependencies, and exit gates. [Archite
 
 ## Current status
 
-**Current focus (2026-11-05):** Finish the S3-T4 current-Agent exit. The nine Chat/Responses/Messages SDK directions now complete ordinary function call/result/answer/recall in JSON/SSE, including Responses stored/stateless history. Pi Chat strict read and Responses inline-tool continuation pass. Recovery/summary drift no longer reproduces with the current installed artifacts. Pi Messages now emits message-local effort and reaches the retained unsupported boundary; its contract needs selection. OpenCode Responses missing annotations remains postponed, without normalization or an acceptance waiver. S3-T4 remains open before AR5; Stage 4 resumes only after real Provider and installed-Agent acceptance.
+**Current focus (2026-11-05):** The S3-T4 connected SDK portion is delivered; the current-Agent exit remains open. The nine Chat/Responses/Messages SDK directions complete ordinary function call/result/answer/recall in JSON/SSE, including Responses stored/stateless history. Pi Chat strict read and Responses inline-tool continuation pass. Recovery/summary drift no longer reproduces with the current installed artifacts. Pi Messages now emits message-local effort and reaches the retained unsupported boundary; the user postponed that contract and repair on 2026-11-05. OpenCode Responses missing annotations also remains postponed, without normalization or an acceptance waiver. AR5 and Stage 4 remain gated.
 
 | Priority | Remaining work | Exit |
 |---|---|---|
 | Stage-3 tool core | Nine-direction connected SDK exit delivered; finish [S3-T4 current-Agent exit](#stage-3-core-packages) | Ordinary function loops and current-Agent tool defaults complete, with no hidden guarantee loss |
 | Conditional tool follow-ups | [S3-T5–S3-T7](#conditional-stage-3-follow-ups): namespace aliases, custom-text wrappers and examples projection | Separate policy selection and full affected-loop acceptance; not default prerequisites for AR5 |
-| Agent defaults | Select the current pi Messages message-local effort contract; revisit postponed OpenCode Responses annotations | Actual default reasoning/tool/history loops pass without compatibility opt-outs or input rewriting |
+| Agent defaults | Revisit postponed pi Messages message-local effort and OpenCode Responses annotations when selected | Actual default reasoning/tool/history loops pass without compatibility opt-outs or input rewriting |
 | Account acceptance | Provision fresh credentials, select actual Provider/model bindings, and complete AR5 | Bounded real Provider checks and installed-Agent exit on the rewritten account path |
 | API expansion | Select and implement Stage-4 operation contracts after AR5 | Per-operation lifecycle, protocol and SDK acceptance |
 | Downstream integration | Implement opt-in per-Agent JSONL session storage | Selected isolation and lifetime bounds |
@@ -122,7 +122,7 @@ The [native-default characterization](development.md#installed-client-synthetic-
 |---|---|---|---|
 | Pi Chat | Strict read passes through the qualified beta binding; current recovery/summary lanes pass again | Retain qualified binding and current-client evidence | Before fresh credentials |
 | Pi Responses | Current installed pi completes inline declarations, direct call/result, final answer and recall | Real SIWC endpoint acceptance remains separate from the synthetic CLI gate | AR5 |
-| Pi Messages | Current pi 1.5.0 uses root-low effort plus message-local medium markers; intake rejects before dispatch | Select the message-local request/history and target-projection contract; no client opt-out, root lifting or silent omission is selected | Before fresh credentials |
+| Pi Messages | Current pi 1.5.0 uses root-low effort plus message-local medium markers; intake rejects before dispatch | Postponed by the user on 2026-11-05; retain strict rejection and the open gate. No client opt-out, root lifting or silent omission is selected | Before fresh credentials |
 | OpenCode Responses | Recall omits required text annotations | Postponed for user consideration; retain strict intake, no inferred empty annotations | Deferred decision; acceptance remains open |
 | Responses client → OpenAI subscriptions, flat tools | SIWC inline `additional_tools` declarations and their direct call/result history are admitted; namespace requirements stay for root declarations | Real endpoint acceptance for the inline continuation path | Tool contract repair; real endpoint acceptance separate |
 | Chat upstream usage | Duplicate nonnull final reports | Qualify at emitter | Outside stabilization slices |
@@ -149,6 +149,8 @@ S3-T0–S3-T3 and the S3-T4 nine-direction SDK portion are delivered. Connected 
 | Package / dependency | Coherent slice | Exit check |
 |---|---|---|
 | **S3-T4 — Remaining current-Agent exit** / after message-local effort contract selection | Resolve the current pi Messages default boundary, refresh affected public-source characterization and rerun the installed-Agent exit | Pi Messages default call/result/answer/recall succeeds without compatibility opt-outs or input rewriting. Keep the completed nine-direction SDK exit passing; postponed OpenCode annotations stays separately reported. Real Provider evidence belongs to AR5 |
+
+**User scheduling decision, 2026-11-05:** Postpone message-local effort and retain the delivered connected SDK slice. S3-T4 stays open; the postponement does not waive default-Agent acceptance or authorize AR5 provisioning or Stage-4 implementation.
 
 #### Conditional Stage-3 follow-ups
 
@@ -361,7 +363,7 @@ Prerequisites for activating newly implemented codec carriers on public routes:
 |---|---|---|
 | Namespace aliases, custom text and examples | Conditional S3-T5–S3-T7 | Select each content/interface adaptation separately; do not make all three implicit core prerequisites |
 | OpenCode missing annotations | Postponed user decision; default-profile gate remains open | Keep strict intake until its separate history contract is selected; tool work does not normalize it |
-| Messages message-local effort | Current installed pi default emits it; contract unselected | Select request/history ownership and target projection before implementation; retain the pre-dispatch rejection meanwhile |
+| Messages message-local effort | Postponed by the user on 2026-11-05; contract unselected | Retain the pre-dispatch rejection and open S3-T4 gate; reconsider request/history ownership and target projection only when resumed |
 | Complete citations | Stage 5 | Retain local point-anchor owner; defer full citation model |
 | Execution controls | Paused | Enforce pre-dispatch validation; reject unsupported controls |
 | Google error envelopes | Paused | Maintain per-API classification; avoid speculative unified parsing |
