@@ -1,5 +1,7 @@
 //! Independent oracles for the function-tool migration, without providers or production routing.
 use crate::events_support::{apply, close, created, encode, envelope, metadata, start, terminal};
+use morphiecore::protocol::openai::Dialect;
+use morphiecore::{adapter::ClientAdapter, protocol::openai::GenerationCodec};
 use morphiecore::{
     protocol::{
         conversion::generation::RepresentationError,
@@ -526,12 +528,12 @@ fn tool_defaults_keep_non_strict_and_conditional_projection_distinct() {
 /// https://developers.openai.com/api/docs/guides/function-calling#tool-choice
 /// https://platform.claude.com/docs/en/agents-and-tools/tool-use/parallel-tool-use
 fn named_choice_cardinality_keeps_directional_meaning() {
+    use morphiecore::protocol::anthropic::messages::{Dialect as MessagesDialect, Profile};
     use morphiecore::protocol::{
-        GenerationRequestEnvelope, anthropic::messages::TargetContract, native::ReplayTarget,
+        GenerationRequestEnvelope,
+        anthropic::messages::TargetContract,
+        native::ReplayTarget,
         openai::{Dialect, GenerationCodec},
-    };
-    use morphiecore::protocol::anthropic::messages::{
-        Dialect as MessagesDialect, Profile,
     };
     let parameters = json!({"type":"object","properties":{"path":{"type":"string"}},
         "required":["path"],"additionalProperties":false});
@@ -573,14 +575,12 @@ fn named_choice_cardinality_keeps_directional_meaning() {
                 "messages":[{"role":"user","content":"go"}],
                 "tools":[{"name":"read","input_schema":parameters}],
                 "tool_choice":{"type":"tool","name":"read"}})
-                .to_string()
-                .as_bytes(),
+            .to_string()
+            .as_bytes(),
         )
         .unwrap();
     assert_eq!(named.task.semantic.parallel_tool_calls(), None);
-    let chat_wire = chat
-        .encode_request(&named, "m", &Contract::full())
-        .unwrap();
+    let chat_wire = chat.encode_request(&named, "m", &Contract::full()).unwrap();
     assert_eq!(
         chat_wire["tool_choice"],
         json!({"type":"allowed_tools","allowed_tools":{"mode":"required","tools":[
@@ -595,8 +595,8 @@ fn named_choice_cardinality_keeps_directional_meaning() {
                 "messages":[{"role":"user","content":"go"}],
                 "tools":[{"name":"read","input_schema":parameters}],
                 "tool_choice":{"type":"any","disable_parallel_tool_use":true}})
-                .to_string()
-                .as_bytes(),
+            .to_string()
+            .as_bytes(),
         )
         .unwrap();
     assert!(matches!(
@@ -661,15 +661,16 @@ fn responses_conditional_strictness_resolves_on_a_messages_target() {
         "input":"go","max_output_tokens":64,
         "tools":[{"type":"function","name":"lookup","parameters":strict_schema}]}))
     .unwrap();
-    assert!(source
-        .semantic
-        .function_tools()
-        .all(|t| t.strict == FunctionStrictness::Omitted(StrictDefault::Conditional)));
+    assert!(
+        source
+            .semantic
+            .function_tools()
+            .all(|t| t.strict == FunctionStrictness::Omitted(StrictDefault::Conditional))
+    );
     let envelope = GenerationRequestEnvelope::from_generation(source, "m").unwrap();
     // Without a strict-tools carrier the shared rule records the documented
     // conditional loss; a strict-capable contract resolves the same default up.
-    let mut contract =
-        MessagesContract::new(Profile::AdaptiveTextTools, MessagesDialect::Standard);
+    let mut contract = MessagesContract::new(Profile::AdaptiveTextTools, MessagesDialect::Standard);
     assert!(!contract.dispositions.native(Feature::StrictTools));
     let lossy = contract
         .encode_request(&envelope, &ReplayTarget::new("synthetic", "m").unwrap())
@@ -678,12 +679,12 @@ fn responses_conditional_strictness_resolves_on_a_messages_target() {
         lossy.value["tools"],
         json!([{"name":"lookup","input_schema":strict_schema,"strict":false}])
     );
-    assert!(lossy
-        .evidence
-        .contains_rule("openai.omit-conditional-tool-strictness.v1"));
-    contract
-        .dispositions
-        .set_native(Feature::StrictTools, true);
+    assert!(
+        lossy
+            .evidence
+            .contains_rule("openai.omit-conditional-tool-strictness.v1")
+    );
+    contract.dispositions.set_native(Feature::StrictTools, true);
     let strict = contract
         .encode_request(&envelope, &ReplayTarget::new("synthetic", "m").unwrap())
         .unwrap();
@@ -691,9 +692,380 @@ fn responses_conditional_strictness_resolves_on_a_messages_target() {
         strict.value["tools"],
         json!([{"name":"lookup","input_schema":strict_schema,"strict":true}])
     );
-    assert!(!strict
-        .evidence
-        .contains_rule("openai.omit-conditional-tool-strictness.v1"));
+    assert!(
+        !strict
+            .evidence
+            .contains_rule("openai.omit-conditional-tool-strictness.v1")
+    );
+}
+
+#[test]
+/// The effective active-set projection: a Chat target has no ordered carrier, so
+/// the final callable set becomes root declarations while historical calls and
+/// results keep their identity and raw arguments. The source request is not
+/// mutated and the collapse rule is recorded.
+/// https://developers.openai.com/api/docs/guides/tools-tool-search
+fn chat_targets_project_the_effective_tool_set_from_ordered_batches() {
+    let parameters = json!({"type":"object","properties":{"path":{"type":"string"}},
+        "required":["path"],"additionalProperties":false});
+    let source = GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None)
+        .decode_client_request(
+            json!({"model":"m","max_output_tokens":64,"input":[
+                {"role":"user","content":"go"},
+                {"type":"additional_tools","role":"developer","tools":[
+                    {"type":"function","name":"read","strict":false,"parameters":parameters}]}]})
+            .to_string()
+            .as_bytes(),
+        )
+        .unwrap();
+    let before = source.clone();
+    let (wire, rules) = GenerationCodec::new(GenerationApi::Chat, Dialect::Standard, None)
+        .encode_request_with_rules(&source, "m", &Contract::full())
+        .unwrap();
+    assert_eq!(
+        wire["tools"],
+        json!([{"type":"function","function":{
+            "name":"read","strict":false,"parameters":parameters}}])
+    );
+    assert_eq!(wire["messages"], json!([{"role":"user","content":"go"}]));
+    assert!(rules.contains(&"generation.collapse-tool-set.v1"));
+    assert_eq!(source.task, before.task);
+}
+
+#[test]
+/// Replacement history (V1 -> call -> V2) collapses to the final schema while
+/// the historical call keeps its original raw arguments; a forced choice over a
+/// removed tool is rejected at intake instead of surviving the projection.
+fn replacement_history_collapses_and_removed_tools_never_become_callable() {
+    let v1 = json!({"type":"object","properties":{"old":{"type":"integer"}},
+        "required":["old"],"additionalProperties":false});
+    let v2 = json!({"type":"object","properties":{"new":{"type":"string"}},
+        "required":["new"],"additionalProperties":false});
+    let body = json!({"model":"m","max_tokens":64,
+        "tools":[{"name":"f","input_schema":v1}],
+        "messages":[
+            {"role":"user","content":"go"},
+            {"role":"assistant","content":[
+                {"type":"tool_use","id":"c","name":"f","input":{"old":1}}]},
+            {"role":"user","content":[
+                {"type":"tool_result","tool_use_id":"c","content":"ok"}]},
+            {"role":"assistant","content":"done"},
+            {"role":"user","content":"again"},
+            {"role":"system","content":[
+                {"type":"tool_addition","tool":{"type":"tool_definition",
+                    "definition":{"name":"f","input_schema":v2}}}]}]});
+    let request = ClientAdapter::Messages
+        .decode_client_request(body.to_string().as_bytes())
+        .unwrap();
+    let before = request.clone();
+    let (wire, rules) = GenerationCodec::new(GenerationApi::Chat, Dialect::Standard, None)
+        .encode_request_with_rules(&request, "m", &Contract::full())
+        .unwrap();
+    assert_eq!(
+        wire["tools"],
+        json!([{"type":"function","function":{
+            "name":"f","parameters":v2}}])
+    );
+    let messages = wire["messages"].as_array().unwrap();
+    assert_eq!(
+        messages[1]["tool_calls"][0]["function"],
+        json!({"name":"f","arguments":"{\"old\":1}"})
+    );
+    assert_eq!(
+        messages[2],
+        json!({"role":"tool","tool_call_id":"c","content":"ok"})
+    );
+    assert_eq!(messages[3], json!({"role":"assistant","content":"done"}));
+    assert_eq!(messages[4], json!({"role":"user","content":"again"}));
+    assert!(rules.contains(&"generation.collapse-tool-set.v1"));
+    assert_eq!(request.task, before.task);
+    // A deferred tool never surfaced stays withheld; its reference surfaces it.
+    let deferred = json!({"model":"m","max_tokens":64,
+        "tools":[
+            {"name":"read","input_schema":{"type":"object"}},
+            {"name":"g","input_schema":{"type":"object"},"defer_loading":true}],
+        "messages":[
+            {"role":"user","content":"go"},
+            {"role":"system","content":[
+                {"type":"tool_removal","tool":{"type":"tool_reference","name":"read"}},
+                {"type":"tool_addition","tool":{"type":"tool_reference","name":"g"}}]}]});
+    let request = ClientAdapter::Messages
+        .decode_client_request(deferred.to_string().as_bytes())
+        .unwrap();
+    let (wire, _) = GenerationCodec::new(GenerationApi::Chat, Dialect::Standard, None)
+        .encode_request_with_rules(&request, "m", &Contract::full())
+        .unwrap();
+    let names: Vec<_> = wire["tools"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|t| t["function"]["name"].as_str().unwrap().to_owned())
+        .collect();
+    assert_eq!(names, vec!["g"]);
+    // Removing every declaration leaves no tools carrier at all.
+    let emptied = json!({"model":"m","max_tokens":64,
+        "tools":[{"name":"read","input_schema":{"type":"object"}}],
+        "messages":[
+            {"role":"user","content":"go"},
+            {"role":"system","content":[
+                {"type":"tool_removal","tool":{"type":"tool_reference","name":"read"}}]}]});
+    let request = ClientAdapter::Messages
+        .decode_client_request(emptied.to_string().as_bytes())
+        .unwrap();
+    let (wire, _) = GenerationCodec::new(GenerationApi::Chat, Dialect::Standard, None)
+        .encode_request_with_rules(&request, "m", &Contract::full())
+        .unwrap();
+    assert!(wire.get("tools").is_none());
+    // A forced choice over a removed declaration never reaches a target.
+    let conflicting = json!({"model":"m","max_tokens":64,
+        "tools":[{"name":"read","input_schema":{"type":"object"}}],
+        "tool_choice":{"type":"tool","name":"read"},
+        "messages":[
+            {"role":"user","content":"go"},
+            {"role":"system","content":[
+                {"type":"tool_removal","tool":{"type":"tool_reference","name":"read"}}]}]});
+    assert!(
+        ClientAdapter::Messages
+            .decode_client_request(conflicting.to_string().as_bytes())
+            .is_err()
+    );
+}
+
+#[test]
+/// A Messages source's ordered by-value additions keep a native carrier on a
+/// Responses target: pure additions become developer batches at their position,
+/// while replacements fall back to the effective active-set projection.
+fn responses_targets_retain_pure_additions_as_ordered_batches() {
+    let schema = json!({"type":"object","properties":{"x":{"type":"string"}},
+        "required":["x"],"additionalProperties":false});
+    let request = ClientAdapter::Messages
+        .decode_client_request(
+            json!({"model":"m","max_tokens":64,
+                "messages":[
+                    {"role":"user","content":"go"},
+                    {"role":"system","content":[
+                        {"type":"tool_addition","tool":{"type":"tool_definition",
+                            "definition":{"name":"write","input_schema":schema}}}]}]})
+            .to_string()
+            .as_bytes(),
+        )
+        .unwrap();
+    let before = request.clone();
+    let (wire, rules) = GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None)
+        .encode_request_with_rules(&request, "m", &Contract::full())
+        .unwrap();
+    let input = wire["input"].as_array().unwrap();
+    assert_eq!(input[1]["type"], "additional_tools");
+    assert_eq!(input[1]["role"], "developer");
+    assert_eq!(
+        input[1]["tools"],
+        // Responses materializes the non-strict default for omitted strictness.
+        json!([{"type":"function","name":"write","parameters":schema,"strict":false}])
+    );
+    assert!(rules.contains(&"generation.retain-ordered-additions.v1"));
+    assert_eq!(request.task, before.task);
+    // A same-name replacement has no documented batch precedence; the effective
+    // set projects at root instead of guessing a winner.
+    let replacing = json!({"model":"m","max_tokens":64,
+        "tools":[{"name":"f","input_schema":{"type":"object"}}],
+        "messages":[
+            {"role":"user","content":"go"},
+            {"role":"system","content":[
+                {"type":"tool_addition","tool":{"type":"tool_definition",
+                    "definition":{"name":"f","input_schema":schema}}}]}]});
+    let request = ClientAdapter::Messages
+        .decode_client_request(replacing.to_string().as_bytes())
+        .unwrap();
+    let (wire, rules) = GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None)
+        .encode_request_with_rules(&request, "m", &Contract::full())
+        .unwrap();
+    assert!(
+        !wire["input"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|item| item["type"] == "additional_tools")
+    );
+    assert_eq!(
+        wire["tools"],
+        json!([{"type":"function","name":"f","parameters":schema,"strict":false}])
+    );
+    assert!(rules.contains(&"generation.collapse-tool-set.v1"));
+}
+
+#[test]
+/// Messages targets keep native carriage where it exists: a leading developer
+/// batch lifts into root declarations, a legal mid-conversation addition
+/// converts to ordered `tool_addition` blocks, and an illegal position falls
+/// back to the effective active-set projection.
+/// https://platform.claude.com/docs/en/build-with-claude/mid-conversation-system-messages
+fn messages_targets_lift_leading_batches_and_convert_legal_additions() {
+    use morphiecore::protocol::anthropic::messages::{Dialect as MessagesDialect, Profile};
+    use morphiecore::protocol::{anthropic::messages::TargetContract, native::ReplayTarget};
+    let schema = json!({"type":"object","properties":{"path":{"type":"string"}},
+        "required":["path"],"additionalProperties":false});
+    let source = GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None)
+        .decode_client_request(
+            json!({"model":"m","max_output_tokens":64,"input":[
+                {"type":"additional_tools","role":"developer","tools":[
+                    {"type":"function","name":"read","strict":false,"parameters":schema}]},
+                {"role":"user","content":"go"}]})
+            .to_string()
+            .as_bytes(),
+        )
+        .unwrap();
+    let before = source.clone();
+    // A binding with native ordered changes keeps the lifted prefix native.
+    let mut contract = TargetContract::new(Profile::AdaptiveTextTools, MessagesDialect::Standard);
+    contract.dispositions.set_native(Feature::ToolChanges, true);
+    let target = ReplayTarget::new("synthetic", "m").unwrap();
+    let projected = contract.encode_request(&source, &target).unwrap();
+    let wire = &projected.value;
+    assert_eq!(
+        wire["tools"],
+        json!([{"name":"read","input_schema":schema,"strict":false}])
+    );
+    assert_eq!(
+        wire["messages"],
+        json!([{"role":"user","content":[{"type":"text","text":"go"}]}])
+    );
+    assert!(
+        projected
+            .evidence
+            .contains_rule("generation.retain-ordered-additions.v1")
+    );
+    assert_eq!(source.task, before.task);
+    // A batch following a user turn converts to an ordered native addition.
+    let source = GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None)
+        .decode_client_request(
+            json!({"model":"m","max_output_tokens":64,"input":[
+                {"role":"user","content":"go"},
+                {"type":"additional_tools","role":"developer","tools":[
+                    {"type":"function","name":"read","strict":false,"parameters":schema}]},
+                {"id":"item_1","type":"message","role":"assistant","status":"completed",
+                    "content":[{"type":"output_text","text":"done","annotations":[]}]},
+                {"role":"user","content":"again"}]})
+            .to_string()
+            .as_bytes(),
+        )
+        .unwrap();
+    let projected = contract.encode_request(&source, &target).unwrap();
+    let wire = &projected.value;
+    assert!(
+        wire.get("tools").is_none(),
+        "the ordered addition is not hoisted to root"
+    );
+    let messages = wire["messages"].as_array().unwrap();
+    assert_eq!(
+        messages[1],
+        json!({"role":"system","content":[
+            {"type":"tool_addition","tool":{"type":"tool_definition",
+                "definition":{"name":"read","input_schema":schema,"strict":false}}}]}),
+        "one ordered native addition"
+    );
+    assert!(
+        projected
+            .evidence
+            .contains_rule("generation.retain-ordered-additions.v1")
+    );
+    // An addition between two user turns has no legal system placement; the
+    // effective active set projects at root instead.
+    let source = GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None)
+        .decode_client_request(
+            json!({"model":"m","max_output_tokens":64,"input":[
+                {"role":"user","content":"go"},
+                {"type":"additional_tools","role":"developer","tools":[
+                    {"type":"function","name":"read","strict":false,"parameters":schema}]},
+                {"role":"user","content":"again"}]})
+            .to_string()
+            .as_bytes(),
+        )
+        .unwrap();
+    let projected = contract.encode_request(&source, &target).unwrap();
+    let wire = &projected.value;
+    assert_eq!(
+        wire["tools"],
+        json!([{"name":"read","input_schema":schema,"strict":false}])
+    );
+    // Consecutive user turns merge; no system content survives the fallback.
+    assert_eq!(
+        wire["messages"],
+        json!([{"role":"user","content":[
+            {"type":"text","text":"go"},{"type":"text","text":"again"}]}]),
+        "no system content survives an illegal converted position"
+    );
+    assert!(
+        projected
+            .evidence
+            .contains_rule("generation.collapse-tool-set.v1")
+    );
+}
+
+#[test]
+/// Allowed-set inventory filtering on a Messages target: the restriction and
+/// required invocation survive while filtered definitions lose visibility, and
+/// a namespace-qualified reference rejects instead of guessing.
+fn allowed_subsets_filter_inventory_on_messages_targets() {
+    use morphiecore::protocol::anthropic::messages::{Dialect as MessagesDialect, Profile};
+    use morphiecore::protocol::{anthropic::messages::TargetContract, native::ReplayTarget};
+    let schema = json!({"type":"object","properties":{"path":{"type":"string"}},
+        "required":["path"],"additionalProperties":false});
+    let source = GenerationCodec::new(GenerationApi::Chat, Dialect::Standard, None)
+        .decode_client_request(
+            json!({"model":"m","max_completion_tokens":64,
+                "messages":[{"role":"user","content":"go"}],
+                "tools":[
+                    {"type":"function","function":{"name":"read","parameters":schema}},
+                    {"type":"function","function":{"name":"write","parameters":schema}}],
+                "tool_choice":{"type":"allowed_tools","allowed_tools":{"mode":"required",
+                    "tools":[{"type":"function","function":{"name":"read"}}]}}})
+            .to_string()
+            .as_bytes(),
+        )
+        .unwrap();
+    let before = source.clone();
+    let contract = TargetContract::new(Profile::AdaptiveTextTools, MessagesDialect::Standard);
+    let target = ReplayTarget::new("m", "m").unwrap();
+    let projected = contract.encode_request(&source, &target).unwrap();
+    let wire = &projected.value;
+    let tools = wire["tools"].as_array().unwrap();
+    assert_eq!(tools.len(), 1);
+    assert_eq!(tools[0]["name"], "read");
+    assert_eq!(wire["tool_choice"], json!({"type":"any"}));
+    assert!(
+        projected
+            .evidence
+            .contains_rule("generation.filter-allowed-inventory.v1")
+    );
+    assert_eq!(source.task, before.task);
+    // Optional invocation keeps auto.
+    let mut optional = source.clone();
+    let mut settings = optional.task.semantic.settings().clone();
+    settings.tool_choice = Some(ToolChoice::Allowed {
+        required: false,
+        tools: vec![ToolReference {
+            kind: ToolKind::Function,
+            name: text("read"),
+            namespace: None,
+        }],
+    });
+    optional.task.semantic = optional.task.semantic.with_settings(settings).unwrap();
+    let projected = contract.encode_request(&optional, &target).unwrap();
+    assert_eq!(projected.value["tool_choice"], json!({"type":"auto"}));
+    // A namespace-qualified reference has no flat inventory meaning.
+    let qualified = optional;
+    let mut settings = qualified.task.semantic.settings().clone();
+    settings.tool_choice = Some(ToolChoice::Allowed {
+        required: true,
+        tools: vec![ToolReference {
+            kind: ToolKind::Function,
+            name: text("read"),
+            namespace: Some(text("ops")),
+        }],
+    });
+    // A namespace-qualified reference to a flat declaration is rejected by
+    // ordered-availability validation before any target encode.
+    assert!(qualified.task.semantic.with_settings(settings).is_err());
 }
 
 fn expected_responses_history() -> Value {

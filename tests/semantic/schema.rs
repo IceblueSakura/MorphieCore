@@ -254,7 +254,7 @@ mod schema_admission {
                 assert!(
                     projection
                         .evidence
-                        .contains_rule("messages.collapse-tool-changes.v1")
+                        .contains_rule("generation.collapse-tool-set.v1")
                 );
                 assert!(!projection.evidence.contains_rule(loss));
                 assert_eq!(removable, original);

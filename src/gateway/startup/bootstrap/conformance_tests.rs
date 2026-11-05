@@ -334,96 +334,96 @@ async fn observe_intake(
         && control == Control::Default;
     let beta_chat = binding == "deepseek-beta-chat";
     let handler = post(move |headers: HeaderMap, Json(body): Json<Value>| {
-            let calls = captured.clone();
-            let parameters = parameters.clone();
-            async move {
-                assert_eq!(
-                    headers[if upstream == Api::Messages {
-                        "x-api-key"
-                    } else {
-                        "authorization"
-                    }],
-                    if upstream == Api::Messages {
-                        "synthetic-upstream-key"
-                    } else if oauth.is_some() {
-                        "Bearer synthetic-oauth-access"
-                    } else {
-                        "Bearer synthetic-upstream-key"
-                    }
-                );
-                if oauth == Some("openai") {
-                    assert_eq!(body["stream"], true, "SIWC always streams upstream");
-                    assert_eq!(body["store"], false, "upstream stays stateless");
-                }
-                if thinking_fallback {
-                    assert_eq!(body["reasoning_effort"], "none");
-                }
-                if force_stream {
-                    assert_eq!(body["stream"], true, "experiment must reach SSE intake");
-                    if upstream == Api::Chat {
-                        assert_eq!(body["stream_options"]["include_usage"], true);
-                    }
-                }
-                if upstream == Api::Messages
-                    && client == Api::Messages
-                    && profile == Profile::Reasoning
-                    && control == Control::Default
-                {
-                    assert_eq!(body["thinking"]["type"], "adaptive");
-                    assert_eq!(body["output_config"]["effort"], "medium");
-                    assert!(body.get("temperature").is_none());
-                }
-                if control == Control::SummaryHistory {
-                    assert_eq!(body["reasoning"], json!({"effort":"low"}));
-                    assert!(body.get("include").is_none());
-                }
-                if let Some(parameters) = parameters {
-                    let tools = body["tools"].as_array().unwrap();
-                    assert_eq!(tools.len(), parameters.len());
-                    for (tool, parameters) in tools.iter().zip(parameters) {
-                        let tool = if upstream == Api::Chat {
-                            &tool["function"]
-                        } else {
-                            tool
-                        };
-                        assert_eq!(
-                            tool[if upstream == Api::Messages {
-                                "input_schema"
-                            } else {
-                                "parameters"
-                            }],
-                            parameters
-                        );
-                        if upstream == Api::Messages || upstream == Api::Chat && !bailian {
-                            assert_eq!(tool["strict"], false);
-                        } else {
-                            assert!(tool.get("strict").is_none());
-                        }
-                    }
-                }
-                let turn = {
-                    let mut calls = calls.lock().unwrap();
-                    let turn = calls.len();
-                    assert!(turn < 2, "no hidden retries");
-                    calls.push(body.clone());
-                    turn
-                };
-                let bytes = wire::upstream(
-                    upstream,
-                    profile,
-                    turn,
-                    body["stream"] == true,
-                    body["model"].as_str().unwrap(),
-                    control,
-                );
-                let content_type = if body["stream"] == true {
-                    "text/event-stream"
+        let calls = captured.clone();
+        let parameters = parameters.clone();
+        async move {
+            assert_eq!(
+                headers[if upstream == Api::Messages {
+                    "x-api-key"
                 } else {
-                    "application/json"
-                };
-                ([("content-type", content_type)], bytes).into_response()
+                    "authorization"
+                }],
+                if upstream == Api::Messages {
+                    "synthetic-upstream-key"
+                } else if oauth.is_some() {
+                    "Bearer synthetic-oauth-access"
+                } else {
+                    "Bearer synthetic-upstream-key"
+                }
+            );
+            if oauth == Some("openai") {
+                assert_eq!(body["stream"], true, "SIWC always streams upstream");
+                assert_eq!(body["store"], false, "upstream stays stateless");
             }
-        });
+            if thinking_fallback {
+                assert_eq!(body["reasoning_effort"], "none");
+            }
+            if force_stream {
+                assert_eq!(body["stream"], true, "experiment must reach SSE intake");
+                if upstream == Api::Chat {
+                    assert_eq!(body["stream_options"]["include_usage"], true);
+                }
+            }
+            if upstream == Api::Messages
+                && client == Api::Messages
+                && profile == Profile::Reasoning
+                && control == Control::Default
+            {
+                assert_eq!(body["thinking"]["type"], "adaptive");
+                assert_eq!(body["output_config"]["effort"], "medium");
+                assert!(body.get("temperature").is_none());
+            }
+            if control == Control::SummaryHistory {
+                assert_eq!(body["reasoning"], json!({"effort":"low"}));
+                assert!(body.get("include").is_none());
+            }
+            if let Some(parameters) = parameters {
+                let tools = body["tools"].as_array().unwrap();
+                assert_eq!(tools.len(), parameters.len());
+                for (tool, parameters) in tools.iter().zip(parameters) {
+                    let tool = if upstream == Api::Chat {
+                        &tool["function"]
+                    } else {
+                        tool
+                    };
+                    assert_eq!(
+                        tool[if upstream == Api::Messages {
+                            "input_schema"
+                        } else {
+                            "parameters"
+                        }],
+                        parameters
+                    );
+                    if upstream == Api::Messages || upstream == Api::Chat && !bailian {
+                        assert_eq!(tool["strict"], false);
+                    } else {
+                        assert!(tool.get("strict").is_none());
+                    }
+                }
+            }
+            let turn = {
+                let mut calls = calls.lock().unwrap();
+                let turn = calls.len();
+                assert!(turn < 2, "no hidden retries");
+                calls.push(body.clone());
+                turn
+            };
+            let bytes = wire::upstream(
+                upstream,
+                profile,
+                turn,
+                body["stream"] == true,
+                body["model"].as_str().unwrap(),
+                control,
+            );
+            let content_type = if body["stream"] == true {
+                "text/event-stream"
+            } else {
+                "application/json"
+            };
+            ([("content-type", content_type)], bytes).into_response()
+        }
+    });
     // The beta binding's account-rebuilt path differs from the standard lane.
     let router = if beta_chat {
         Router::new()
@@ -1319,7 +1319,10 @@ const BASIC_EXPECTATIONS: &[(&[&str], [&[&str]; 4])] = &[
             ACCEPT,
         ],
     ),
-    (&["deepseek-chat", "deepseek-beta-chat"], [ACCEPT, ACCEPT, ACCEPT, ACCEPT]),
+    (
+        &["deepseek-chat", "deepseek-beta-chat"],
+        [ACCEPT, ACCEPT, ACCEPT, ACCEPT],
+    ),
     (
         &[
             "dashscope-flash-responses",

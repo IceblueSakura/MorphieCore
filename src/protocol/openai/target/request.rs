@@ -497,9 +497,7 @@ mod tests {
             {"type":"function_call","call_id":"call_1","name":"weather","arguments":"{}"},
             {"type":"function_call_output","call_id":"call_1","output":"sunny","status":null},
             {"type":"message","role":"user","content":"thanks"}]});
-        let request = client
-            .decode_request(body.to_string().as_bytes())
-            .unwrap();
+        let request = client.decode_request(body.to_string().as_bytes()).unwrap();
         let wire = target
             .encode_request(&request, "selected-slug", &contract)
             .unwrap();
@@ -513,8 +511,10 @@ mod tests {
         let request = client
             .decode_request(unqualified.to_string().as_bytes())
             .unwrap();
-        assert!(target
-            .encode_request(&request, "selected-slug", &contract)
-            .is_err());
+        assert!(
+            target
+                .encode_request(&request, "selected-slug", &contract)
+                .is_err()
+        );
     }
 }

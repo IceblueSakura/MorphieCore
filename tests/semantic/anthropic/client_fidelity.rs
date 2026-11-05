@@ -2474,7 +2474,7 @@ fn client_tool_changes_keep_order_and_candidate_carriers() {
     assert!(
         collapsed
             .evidence
-            .contains_rule("messages.collapse-tool-changes.v1")
+            .contains_rule("generation.collapse-tool-set.v1")
     );
     assert_eq!(collapsed.value["tools"][0]["name"], "write");
     assert_eq!(collapsed.value["tools"].as_array().unwrap().len(), 1);
@@ -2657,7 +2657,7 @@ fn pi_haiku_profile_keeps_carriers_or_records_rules() {
         [
             "messages.omit-block-binding.v1",
             "messages.flatten-message-effort.v1",
-            "messages.collapse-tool-changes.v1"
+            "generation.collapse-tool-set.v1"
         ]
     );
     let wire = &flat.value;

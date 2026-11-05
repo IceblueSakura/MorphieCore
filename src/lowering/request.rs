@@ -243,14 +243,15 @@ impl<'a> Target<'a> {
         table.set_native(ToolChoice, self.declared().native(Tools));
         match self {
             Self::OpenAi(api, c) => {
-                table.set_native(
-                    ToolChanges,
-                    api == GenerationApi::Responses
-                        && !source
-                            .items()
-                            .iter()
-                            .any(|(_, item)| matches!(item, Item::ToolChange(_))),
-                );
+                // Responses carries ordered declarations natively; Chat admits
+                // them only through the selected active-set projection.
+                table.set_native(ToolChanges, api == GenerationApi::Responses);
+                if api == GenerationApi::Chat {
+                    table.set(
+                        ToolChanges,
+                        Disposition::Approximate(super::disposition::TOOL_CHANGES),
+                    );
+                }
                 let rules = &c.adaptation.rules;
                 if rules.thinking_controls || rules.bailian_requests {
                     table.set(ReasoningActivation, Disposition::Native);
@@ -460,15 +461,15 @@ impl<'a> Target<'a> {
                 );
                 table.set(
                     ToolChanges,
-                    if source.items().iter().any(|(_, item)| matches!(item, Item::ToolBatch(_))) {
-                        Disposition::Reject("the native Messages carrier cannot preserve a declaration batch without a selected history projection")
-                    } else if c.dispositions.native(ToolChanges) {
+                    if c.dispositions.native(ToolChanges) {
                         Disposition::Native
                     } else if source.features().contains_key(&ToolExamples) {
                         Disposition::Reject(
                             "tool-history collapse cannot preserve example-dependent tool versions",
                         )
                     } else {
+                        // Retained additions, the leading lifted prefix and the
+                        // active-set collapse share the selected bounded owner.
                         Disposition::Approximate(super::disposition::TOOL_CHANGES)
                     },
                 );
@@ -1073,6 +1074,12 @@ fn apply_presence<T>(
     Ok(())
 }
 
+fn ordered_tool_declarations(items: &[(ItemId, Item)]) -> bool {
+    items
+        .iter()
+        .any(|(_, item)| matches!(item, Item::ToolBatch(_) | Item::ToolChange(_)))
+}
+
 pub(crate) fn project_semantic<'a>(
     source: &'a GenerationRequest,
     target: Target<'_>,
@@ -1613,49 +1620,139 @@ fn project_semantic_with_table<'a>(
             .items()
             .iter()
             .any(|(_, item)| matches!(item, Item::ConfigurationUpdate(_)));
-        let collapse = matches!(table.get(Feature::ToolChanges), Disposition::Approximate(_))
-            && semantic
-                .items()
-                .iter()
-                .any(|(_, item)| matches!(item, Item::ToolChange(_)));
-        if semantic
-            .items()
-            .iter()
-            .any(|(_, item)| matches!(item, Item::ToolChange(_)))
-            && !table.accepts(Feature::ToolChanges)
-        {
-            return Err(
-                crate::protocol::conversion::generation::RepresentationError::Admission(
-                    Feature::ToolChanges,
-                )
-                .into(),
-            );
-        }
-        if flatten || collapse {
+        if flatten {
             let mut settings = semantic.settings().clone();
             let mut items = semantic.items().to_vec();
-            if flatten {
-                settings.effort = crate::protocol::anthropic::messages::carriers::flatten_effort(
-                    settings.effort,
-                    &items,
-                )?;
-                items.retain(|(_, item)| !matches!(item, Item::ConfigurationUpdate(_)));
-                evidence.push(
-                    super::disposition::MESSAGE_EFFORT.effect(ConversionBoundary::RequestProject),
+            settings.effort = crate::protocol::anthropic::messages::carriers::flatten_effort(
+                settings.effort,
+                &items,
+            )?;
+            items.retain(|(_, item)| !matches!(item, Item::ConfigurationUpdate(_)));
+            evidence.push(
+                super::disposition::MESSAGE_EFFORT.effect(ConversionBoundary::RequestProject),
+            );
+            semantic = Cow::Owned(
+                semantic
+                    .into_owned()
+                    .with_items_and_settings(items, settings)
+                    .map_err(CodecError::from)?,
+            );
+        }
+    }
+    // The selected bounded tool-set projections share one owner: retained
+    // native additions, the effective active-set collapse and allowed-set
+    // inventory filtering. Projections act on this candidate copy only.
+    let ordered = ordered_tool_declarations(semantic.items());
+    let allowed_choice = matches!(semantic.tool_choice(), Some(ToolChoice::Allowed { .. }));
+    if ordered && !table.accepts(Feature::ToolChanges) {
+        return Err(
+            crate::protocol::conversion::generation::RepresentationError::Admission(
+                Feature::ToolChanges,
+            )
+            .into(),
+        );
+    }
+    if ordered && matches!(target, Target::OpenAi(_, _) | Target::Messages(_))
+        || matches!(target, Target::Messages(_)) && allowed_choice
+    {
+        let carrier = match target {
+            Target::OpenAi(GenerationApi::Chat, _) => super::tool_set::OrderedCarrier::None,
+            Target::OpenAi(GenerationApi::Responses, _) => super::tool_set::OrderedCarrier::Batches,
+            Target::Messages(c) => {
+                let native = c.dispositions.native(Feature::ToolChanges);
+                if native && !allowed_choice {
+                    super::tool_set::OrderedCarrier::Changes
+                } else {
+                    super::tool_set::OrderedCarrier::None
+                }
+            }
+            _ => super::tool_set::OrderedCarrier::None,
+        };
+        let projection = match super::tool_set::project(carrier, semantic.tools(), semantic.items())
+        {
+            Ok(projection) => projection,
+            Err(super::tool_set::Rejection::Collision) => {
+                table.set(
+                    Feature::ToolChanges,
+                    Disposition::Reject(
+                        "an ordered redeclaration needs an unknown same-name winner",
+                    ),
+                );
+                return Err(
+                    crate::protocol::conversion::generation::RepresentationError::Admission(
+                        Feature::ToolChanges,
+                    )
+                    .into(),
                 );
             }
-            if collapse {
-                settings.tools = Some(
-                    crate::protocol::anthropic::messages::carriers::collapse_tools(
-                        semantic.tools(),
-                        &items,
-                    )?,
+            Err(super::tool_set::Rejection::UnknownChange) => {
+                return Err(CodecError::invalid().into());
+            }
+        };
+        let mut settings = semantic.settings().clone();
+        let mut items = semantic.items().to_vec();
+        match projection {
+            super::tool_set::Projection::Native => {}
+            super::tool_set::Projection::Retained {
+                items: projected,
+                root_additions,
+            } => {
+                items = projected;
+                if !root_additions.is_empty() {
+                    let mut tools = semantic.tools().to_vec();
+                    tools.extend(root_additions);
+                    settings.tools = Some(tools);
+                }
+                evidence.push(
+                    super::disposition::RETAIN_ORDERED_ADDITIONS
+                        .effect(ConversionBoundary::RequestProject),
                 );
-                items.retain(|(_, item)| !matches!(item, Item::ToolChange(_)));
+            }
+            super::tool_set::Projection::ActiveSet {
+                items: projected,
+                tools,
+            } => {
+                items = projected;
+                settings.tools = (!tools.is_empty()).then_some(tools);
                 evidence.push(
                     super::disposition::TOOL_CHANGES.effect(ConversionBoundary::RequestProject),
                 );
             }
+        }
+        if let Target::Messages(_) = target
+            && let Some(ToolChoice::Allowed {
+                required,
+                tools: references,
+            }) = settings.tool_choice.clone()
+        {
+            if references.iter().any(|r| r.namespace.is_some()) {
+                return Err(
+                    crate::protocol::conversion::generation::RepresentationError::Admission(
+                        Feature::ToolChoice,
+                    )
+                    .into(),
+                );
+            }
+            // Allowed-set inventory filtering: the restriction and required
+            // invocation survive while filtered definitions lose visibility.
+            let filtered = super::tool_set::filter_allowed(
+                settings.tools.clone().unwrap_or_default(),
+                &references,
+            );
+            settings.tools = (!filtered.is_empty()).then_some(filtered);
+            // An empty intersection keeps the required meaning instead of
+            // silently becoming `auto`; revalidation rejects it.
+            settings.tool_choice = Some(if required {
+                ToolChoice::Required
+            } else {
+                ToolChoice::Auto
+            });
+            evidence.push(
+                super::disposition::FILTER_ALLOWED_INVENTORY
+                    .effect(ConversionBoundary::RequestProject),
+            );
+        }
+        if semantic.items() != items.as_slice() || *semantic.settings() != settings {
             semantic = Cow::Owned(
                 semantic
                     .into_owned()

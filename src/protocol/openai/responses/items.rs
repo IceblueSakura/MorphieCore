@@ -261,10 +261,7 @@ pub(in crate::protocol::openai) fn tool_result(
         cache: None,
         name: optional("name", 128)?,
         output: output(b, o.get("output").ok_or(CodecError::invalid())?, response)?,
-        status: if o
-            .get("status")
-            .is_some_and(|v| !v.is_null())
-        {
+        status: if o.get("status").is_some_and(|v| !v.is_null()) {
             Some(status(o, ItemLifecycle::Completed)?)
         } else {
             None

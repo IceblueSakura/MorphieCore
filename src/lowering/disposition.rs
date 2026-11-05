@@ -504,7 +504,21 @@ pub(crate) const TOOL_ERROR: Rule = Rule::new(
     Change::Approximate,
 );
 pub(crate) const TOOL_CHANGES: Rule = Rule::new(
-    "messages.collapse-tool-changes.v1",
+    "generation.collapse-tool-set.v1",
+    Field::Tools,
+    Change::Approximate,
+);
+/// Ordered additions keep a native carrier while their cache markers and
+/// presentation change; source history stays untouched.
+pub(crate) const RETAIN_ORDERED_ADDITIONS: Rule = Rule::new(
+    "generation.retain-ordered-additions.v1",
+    Field::Tools,
+    Change::Approximate,
+);
+/// Allowed-set inventory filtering keeps the restriction and required
+/// invocation while filtered definitions lose visibility.
+pub(crate) const FILTER_ALLOWED_INVENTORY: Rule = Rule::new(
+    "generation.filter-allowed-inventory.v1",
     Field::Tools,
     Change::Approximate,
 );

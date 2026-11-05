@@ -449,7 +449,10 @@ pub(super) fn write_settings(
         );
     }
     if let Some(c) = &s.tool_choice {
-        o.insert("tool_choice".into(), write_choice(c, profile, s.parallel_tool_calls)?);
+        o.insert(
+            "tool_choice".into(),
+            write_choice(c, profile, s.parallel_tool_calls)?,
+        );
     }
     if let Some(v) = s.parallel_tool_calls {
         o.insert("parallel_tool_calls".into(), json!(v));
