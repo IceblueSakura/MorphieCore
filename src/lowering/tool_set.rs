@@ -5,6 +5,7 @@
 //! https://developers.openai.com/api/docs/guides/tools-tool-search
 //! https://platform.claude.com/docs/en/build-with-claude/mid-conversation-system-messages
 use crate::semantic::task::generation::*;
+use std::collections::{BTreeMap, BTreeSet};
 
 /// Which ordered-declaration carrier the target can express.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -53,17 +54,15 @@ struct Entry {
 
 impl Entry {
     fn offered(tool: &ToolDefinition) -> Self {
-        let available = !matches!(tool, ToolDefinition::Function(t) if t.dispatch.defer_loading)
-            && !matches!(tool, ToolDefinition::Custom(t) if t.dispatch.defer_loading);
         Self {
             tool: tool.clone(),
-            available,
+            available: offered(tool),
         }
     }
-    /// Declaration identity: namespaces key by container name, leaves by kind.
-    fn key(&self) -> (Option<ToolKind>, &str) {
-        (self.tool.kind(), self.tool.name().as_str())
-    }
+}
+fn offered(tool: &ToolDefinition) -> bool {
+    !matches!(tool, ToolDefinition::Function(t) if t.dispatch.defer_loading)
+        && !matches!(tool, ToolDefinition::Custom(t) if t.dispatch.defer_loading)
 }
 
 /// Project one candidate's ordered tool declarations onto the target carrier.
@@ -73,6 +72,15 @@ pub(crate) fn project(
     initial: &[ToolDefinition],
     items: &[(ItemId, Item)],
 ) -> Result<Projection, Rejection> {
+    // Native batch forwarding needs no schema winner or effective inventory.
+    // Source validation and target admission remain with the caller.
+    if carrier == OrderedCarrier::Batches
+        && !items
+            .iter()
+            .any(|(_, item)| matches!(item, Item::ToolChange(_)))
+    {
+        return Ok(Projection::Native);
+    }
     if !items
         .iter()
         .any(|(_, item)| matches!(item, Item::ToolBatch(_) | Item::ToolChange(_)))
@@ -82,12 +90,18 @@ pub(crate) fn project(
     // One availability walk feeds every mode: entries track the effective set
     // while `retained` tracks the per-position native representation.
     let mut entries: Vec<Entry> = initial.iter().map(Entry::offered).collect();
+    // Preserve first-declaration order separately from indexed identity lookup.
+    let mut positions: BTreeMap<_, _> = initial
+        .iter()
+        .enumerate()
+        .map(|(i, tool)| ((tool.kind(), tool.name().as_str()), i))
+        .collect();
     let mut kept: Vec<(ItemId, Item)> = Vec::new();
     let mut retained: Vec<(ItemId, Item)> = Vec::new();
     let mut root_additions: Vec<ToolDefinition> = Vec::new();
     let mut all_native = carrier != OrderedCarrier::None;
     let mut converted = false;
-    let mut converted_ids: Vec<ItemId> = Vec::new();
+    let mut converted_ids = BTreeSet::new();
     // Batch redeclarations have no documented precedence; native forwarding
     // needs no winner, but every projected fallback does.
     let mut collision = false;
@@ -120,19 +134,31 @@ pub(crate) fn project(
                     for tool in &batch.tools {
                         // A leading batch crossing a root name needs an
                         // unknown winner; lifting cannot resolve it.
-                        if collides(&entries, tool) {
+                        let key = (tool.kind(), tool.name().as_str());
+                        if positions.contains_key(&key) {
                             return Err(Rejection::Collision);
                         }
+                        positions.insert(key, entries.len());
                         entries.push(Entry::offered(tool));
                         root_additions.push(tool.clone());
                     }
                     converted = true;
                     continue;
                 }
-                let batch_collides = batch.tools.iter().any(|tool| collides(&entries, tool));
+                let batch_collides = batch
+                    .tools
+                    .iter()
+                    .any(|tool| positions.contains_key(&(tool.kind(), tool.name().as_str())));
                 collision |= batch_collides;
                 for tool in &batch.tools {
-                    push_entry(&mut entries, tool);
+                    let key = (tool.kind(), tool.name().as_str());
+                    match positions.get(&key) {
+                        Some(&index) => entries[index].available |= offered(tool),
+                        None => {
+                            positions.insert(key, entries.len());
+                            entries.push(Entry::offered(tool));
+                        }
+                    }
                 }
                 match carrier {
                     OrderedCarrier::Batches => retained.push((
@@ -157,7 +183,7 @@ pub(crate) fn project(
                                 };
                                 let fresh = ItemId::new(next_id);
                                 next_id += 1;
-                                converted_ids.push(fresh);
+                                converted_ids.insert(fresh);
                                 retained.push((
                                     fresh,
                                     Item::ToolChange(ToolChange {
@@ -181,30 +207,32 @@ pub(crate) fn project(
             Item::ToolChange(change) => match &change.action {
                 ToolChangeAction::AddDefinition(tool) => {
                     let name = tool.name.as_str();
-                    let existed = entries
-                        .iter()
-                        .any(|entry| entry.key() == (Some(ToolKind::Function), name));
-                    let next = Entry::offered(&ToolDefinition::Function((**tool).clone()));
-                    match entries
-                        .iter_mut()
-                        .find(|entry| entry.key() == (Some(ToolKind::Function), name))
-                    {
+                    let key = (Some(ToolKind::Function), name);
+                    let existing = positions.get(&key).copied();
+                    let next = Entry {
+                        available: !tool.dispatch.defer_loading,
+                        tool: ToolDefinition::Function((**tool).clone()),
+                    };
+                    match existing {
                         // By-value replacement is the documented Messages meaning.
-                        Some(entry) => *entry = next,
-                        None => entries.push(next),
+                        Some(index) => entries[index] = next,
+                        None => {
+                            positions.insert(key, entries.len());
+                            entries.push(next);
+                        }
                     }
                     match carrier {
                         OrderedCarrier::Changes => retained.push((*id, item.clone())),
                         // A replacement has no documented batch precedence.
                         OrderedCarrier::Batches => {
-                            if existed {
+                            if existing.is_some() {
                                 all_native = false;
                             } else {
                                 // A surviving id must keep its item kind; the
                                 // converted batch takes a fresh local identity.
                                 let fresh = ItemId::new(next_id);
                                 next_id += 1;
-                                converted_ids.push(fresh);
+                                converted_ids.insert(fresh);
                                 retained.push((
                                     fresh,
                                     Item::ToolBatch(ToolBatch {
@@ -220,13 +248,12 @@ pub(crate) fn project(
                 }
                 ToolChangeAction::AddReference(_) | ToolChangeAction::Remove(_) => {
                     let name = change.name();
-                    let Some(entry) = entries
-                        .iter_mut()
-                        .find(|entry| entry.key() == (Some(ToolKind::Function), name.as_str()))
+                    let Some(&index) = positions.get(&(Some(ToolKind::Function), name.as_str()))
                     else {
                         return Err(Rejection::UnknownChange);
                     };
-                    entry.available = matches!(change.action, ToolChangeAction::AddReference(_));
+                    entries[index].available =
+                        matches!(change.action, ToolChangeAction::AddReference(_));
                     if matches!(carrier, OrderedCarrier::Changes) {
                         retained.push((*id, item.clone()));
                     } else {
@@ -256,9 +283,20 @@ pub(crate) fn project(
             }
         }
     }
-    if all_native && converted_run_out_of_place(&retained, &converted_ids) {
-        // A converted change must keep a legal system placement: after a user
-        // turn, before an assistant turn or the end of the history.
+    if all_native
+        && (retained.len() > MAX_ITEMS
+            || declaration_count(
+                initial
+                    .iter()
+                    .chain(&root_additions)
+                    .map(ToolDeclaration::from),
+            )
+            .is_err()
+            || converted_run_out_of_place(&retained, &converted_ids))
+    {
+        // Retained carriage must fit both container bounds and legal system
+        // positions. Only these known representation failures select collapse;
+        // unknown schema winners still reject below.
         all_native = false;
     }
     if all_native {
@@ -297,25 +335,7 @@ pub(crate) fn filter_allowed(
         .collect()
 }
 
-fn collides(entries: &[Entry], tool: &ToolDefinition) -> bool {
-    entries
-        .iter()
-        .any(|entry| entry.key() == (tool.kind(), tool.name().as_str()))
-}
-
-fn push_entry(entries: &mut Vec<Entry>, tool: &ToolDefinition) {
-    match entries
-        .iter_mut()
-        .find(|entry| entry.key() == (tool.kind(), tool.name().as_str()))
-    {
-        // A batch does not select a same-name schema winner; availability keeps
-        // the name offered while `collision` blocks projected fallbacks.
-        Some(entry) => entry.available |= Entry::offered(tool).available,
-        None => entries.push(Entry::offered(tool)),
-    }
-}
-
-fn converted_run_out_of_place(retained: &[(ItemId, Item)], converted: &[ItemId]) -> bool {
+fn converted_run_out_of_place(retained: &[(ItemId, Item)], converted: &BTreeSet<ItemId>) -> bool {
     let system_side = |item: &Item| {
         matches!(
             item,
@@ -366,4 +386,51 @@ fn effective(entries: Vec<Entry>) -> Vec<ToolDefinition> {
             entry.tool
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn expanded_batches_respect_the_retained_item_bound() {
+        let seed = crate::protocol::openai::responses::decode_generation(&json!({"input":[
+            {"role":"user","content":"go"},
+            {"type":"additional_tools","role":"developer","tools":[
+                {"type":"function","name":"a","strict":false},
+                {"type":"function","name":"b","strict":false}]}]}))
+        .unwrap();
+        for count in [MAX_ITEMS - 1, MAX_ITEMS] {
+            let mut items = Vec::new();
+            for index in 0..count - 1 {
+                let mut item = seed.semantic.items()[0].1.clone();
+                let Item::Message(message) = &mut item else {
+                    unreachable!()
+                };
+                message.parts[0].id = PartId::new(index as u64 + 1);
+                items.push((ItemId::new(index as u64 + 1), item));
+            }
+            items.push((
+                ItemId::new(count as u64),
+                seed.semantic.items()[1].1.clone(),
+            ));
+            // Initial construction validates a real source without invoking
+            // unrelated edited-history checks over 65K surviving identities.
+            let source =
+                GenerationRequest::from_settings(items, seed.semantic.settings().clone()).unwrap();
+            let projected =
+                project(OrderedCarrier::Changes, source.tools(), source.items()).unwrap();
+            match projected {
+                Projection::Retained { items, .. } if count < MAX_ITEMS => {
+                    assert_eq!(items.len(), MAX_ITEMS);
+                }
+                Projection::ActiveSet { items, tools } if count == MAX_ITEMS => {
+                    assert_eq!(items.len(), MAX_ITEMS - 1);
+                    assert_eq!(tools.len(), 2);
+                }
+                _ => panic!("unexpected projection kind for {count} source items"),
+            }
+        }
+    }
 }

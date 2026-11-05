@@ -128,7 +128,6 @@ class ProtocolDefaultOracles(unittest.TestCase):
 
     def test_rejections_require_the_intended_boundary_and_zero_dispatch(self):
         failures = [
-            ("chat", True, {"planning_failure": {"reasons": ["admission.strict_tools"]}}),
             ("responses", True, {"failure": {"boundary": "request.decode",
                                              "code": "codec.unsupported.unavailable"}}),
             ("responses", False, {"failure": {"boundary": "request.decode",
@@ -144,8 +143,7 @@ class ProtocolDefaultOracles(unittest.TestCase):
                 ("stage", "intake", "default_rejection_stage"),
                 ("candidates", [{}], "default_gateway_completion"),
                 ("outcome", "complete", "default_gateway_completion"),
-                ("generation", {}, "default_strict_rejection_reason" if protocol == "chat"
-                 else "default_responses_rejection_reason"),
+                ("generation", {}, "default_responses_rejection_reason"),
             ]:
                 changed = copy.deepcopy(records)
                 changed[-1][key] = value
@@ -153,6 +151,15 @@ class ProtocolDefaultOracles(unittest.TestCase):
                     RuntimeError, "^" + error + "$"
                 ):
                     defaults.assert_diagnostics(changed, protocol, pi)
+
+    def test_pi_chat_requires_a_complete_strict_lane_not_a_rejection(self):
+        records = [{"outcome": "complete", "candidates": [{}],
+                    "ignored_request_field_count": 1} for _ in range(3)]
+        defaults.assert_diagnostics(records, "chat", True)
+        records[-1] = {"stage": "admission", "outcome": "error", "candidates": [],
+                       "generation": {"planning_failure": {"reasons": ["admission.strict_tools"]}}}
+        with self.assertRaisesRegex(RuntimeError, "^default_gateway_completion$"):
+            defaults.assert_diagnostics(records, "chat", True)
 
     def test_failed_continuation_cannot_claim_a_client_answer(self):
         failure = {"type": "error", "error": {"type": "provider.invalid-request", "status": 400}}

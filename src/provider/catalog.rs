@@ -136,6 +136,39 @@ mod tests {
     use super::*;
     use crate::provider::GenerationOperation;
     #[test]
+    fn beta_accounts_replace_the_complete_api_root() {
+        let provider = deepseek_beta();
+        assert_eq!(
+            provider
+                .entry(ProviderOperation::ChatCompletions)
+                .unwrap()
+                .path
+                .as_str(),
+            "/beta/chat/completions"
+        );
+        for (root, path) in [
+            ("https://api.deepseek.com/beta", "/beta/chat/completions"),
+            (
+                "https://relay.example/custom/beta",
+                "/custom/beta/chat/completions",
+            ),
+            (
+                "https://relay.example/custom/v1",
+                "/custom/v1/chat/completions",
+            ),
+        ] {
+            let overridden = provider.with_api_root(root).unwrap();
+            assert_eq!(
+                overridden
+                    .entry(ProviderOperation::ChatCompletions)
+                    .unwrap()
+                    .path
+                    .as_str(),
+                path
+            );
+        }
+    }
+    #[test]
     fn metadata_preserves_trusted_targets_and_separate_service_authentication() {
         assert_eq!(all().len(), 14);
         let go = opencode_go();

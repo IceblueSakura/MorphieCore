@@ -38,8 +38,28 @@ pub(in crate::semantic::task::generation) fn tools(
 ) -> Result<usize, GenerationError> {
     declarations(tools.iter().map(ToolDeclaration::from))
 }
+/// Capacity of one declaration carrier, including namespace containers/leaves.
+pub(crate) fn declaration_count<'a>(
+    tools: impl Iterator<Item = ToolDeclaration<'a>>,
+) -> Result<usize, GenerationError> {
+    let mut count = 0usize;
+    for tool in tools {
+        let leaves = match tool {
+            ToolDeclaration::Namespace(group) => group.tools.len(),
+            _ => 0,
+        };
+        count = count
+            .checked_add(1)
+            .and_then(|n| n.checked_add(leaves))
+            .ok_or(GenerationError::Limit)?;
+        if count > MAX_TOOLS {
+            return Err(GenerationError::Limit);
+        }
+    }
+    Ok(count)
+}
 pub(in crate::semantic::task::generation) fn declarations<'a>(
-    tools: impl ExactSizeIterator<Item = ToolDeclaration<'a>>,
+    tools: impl ExactSizeIterator<Item = ToolDeclaration<'a>> + Clone,
 ) -> Result<usize, GenerationError> {
     fn schema_bytes(total: &mut usize, bytes: usize) -> Result<(), GenerationError> {
         *total = total.checked_add(bytes).ok_or(GenerationError::Limit)?;
@@ -48,12 +68,9 @@ pub(in crate::semantic::task::generation) fn declarations<'a>(
         }
         Ok(())
     }
-    if tools.len() > MAX_TOOLS {
-        return Err(GenerationError::Limit);
-    }
+    declaration_count(tools.clone())?;
     let mut names = BTreeSet::new();
     let mut groups = BTreeSet::new();
-    let mut count = tools.len();
     let mut bytes = tools.len() * std::mem::size_of::<ToolDefinition>();
     for t in tools {
         let (n, kind) = match t {
@@ -71,12 +88,6 @@ pub(in crate::semantic::task::generation) fn declarations<'a>(
                 || group.tools.iter().any(|t| t.kind().is_none())
             {
                 return Err(GenerationError::InvalidToolDefinition);
-            }
-            count = count
-                .checked_add(group.tools.len())
-                .ok_or(GenerationError::Limit)?;
-            if count > MAX_TOOLS {
-                return Err(GenerationError::Limit);
             }
             charge(&mut bytes, self::tools(&group.tools)?)?;
             add(&mut bytes, &group.description)?;

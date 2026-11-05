@@ -252,6 +252,23 @@ fn responses_batch_presence_bounds_and_choice_follow_the_input_contract() {
         .map(|i| json!({"type":"function","name":format!("f{i}")}))
         .collect();
     assert!(responses::decode_generation(&json!({"input":[too_many]})).is_err());
+    // Namespace containers and their leaves share the declaration-carrier cap.
+    let leaves: Vec<_> = (0..MAX_TOOLS - 1)
+        .map(|i| json!({"type":"function","name":format!("f{i}"),"strict":false}))
+        .collect();
+    let mut scoped = json!({"input":[{"type":"additional_tools","role":"developer",
+        "tools":[{"type":"namespace","name":"ops","description":"Tools","tools":leaves}]}]});
+    responses::decode_generation(&scoped).unwrap();
+    scoped["input"][0]["tools"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!({"type":"function","name":"extra","strict":false}));
+    assert!(matches!(
+        responses::decode_generation(&scoped),
+        Err(morphiecore::protocol::CodecError::Semantic(
+            GenerationError::Limit
+        ))
+    ));
     assert!(responses::decode_generation(&json!({"input":[batch.clone(),batch]})).is_err());
     let empty = json!({"input":[{"type":"additional_tools","role":"developer","tools":[]}]});
     assert_eq!(
@@ -580,6 +597,17 @@ fn named_choice_cardinality_keeps_directional_meaning() {
         )
         .unwrap();
     assert_eq!(named.task.semantic.parallel_tool_calls(), None);
+    let projected = lower_request(
+        &named.task.semantic,
+        &named.task.fidelity,
+        GenerationApi::Chat,
+        Contract::full(),
+    )
+    .unwrap();
+    assert!(matches!(
+        projected.semantic().tool_choice(),
+        Some(ToolChoice::Allowed { required: true, tools }) if tools.len() == 1
+    ));
     let chat_wire = chat.encode_request(&named, "m", &Contract::full()).unwrap();
     assert_eq!(
         chat_wire["tool_choice"],
@@ -620,6 +648,43 @@ fn named_choice_cardinality_keeps_directional_meaning() {
         .encode_request(&envelope, &ReplayTarget::new("synthetic", "m").unwrap())
         .unwrap();
     assert_eq!(messages_wire.value["tool_choice"], json!({"type":"none"}));
+}
+#[test]
+fn bailian_rejects_unrepresentable_named_cardinality_before_encoding() {
+    let body = json!({"model":"m","max_tokens":64,"thinking":{"type":"disabled"},
+        "messages":[{"role":"user","content":"go"}],
+        "tools":[{"name":"read","description":"Read a file",
+            "input_schema":{"type":"object","properties":{}}}],
+        "tool_choice":{"type":"tool","name":"read"}});
+    let source = ClientAdapter::Messages
+        .decode_client_request(body.to_string().as_bytes())
+        .unwrap();
+    let before = source.clone();
+    let codec = GenerationCodec::new(GenerationApi::Chat, Dialect::Bailian, None);
+    let error = codec
+        .encode_request(&source, "qwen3.8-flash", &Contract::full())
+        .unwrap_err();
+    assert!(matches!(
+        error.cause,
+        morphiecore::protocol::conversion::ConversionCause::Representation(
+            RepresentationError::Admission(Feature::ToolChoice)
+        )
+    ));
+    // Exactly-one has a lawful forced carrier on this non-thinking target.
+    let mut serial = body;
+    serial["tool_choice"]["disable_parallel_tool_use"] = json!(true);
+    let serial = ClientAdapter::Messages
+        .decode_client_request(serial.to_string().as_bytes())
+        .unwrap();
+    let wire = codec
+        .encode_request(&serial, "qwen3.8-flash", &Contract::full())
+        .unwrap();
+    assert_eq!(
+        wire["tool_choice"],
+        json!({"type":"function","function":{"name":"read"}})
+    );
+    assert_eq!(wire["parallel_tool_calls"], false);
+    assert_eq!(source.task, before.task);
 }
 #[test]
 /// Input `function_call_output.status` is optional-nullable; output snapshots
@@ -1066,6 +1131,113 @@ fn allowed_subsets_filter_inventory_on_messages_targets() {
     // A namespace-qualified reference to a flat declaration is rejected by
     // ordered-availability validation before any target encode.
     assert!(qualified.task.semantic.with_settings(settings).is_err());
+}
+
+#[test]
+fn lifted_batches_use_active_set_when_the_root_carrier_is_full() {
+    use morphiecore::protocol::anthropic::messages::{Dialect as Md, Profile, TargetContract};
+    use morphiecore::protocol::native::ReplayTarget;
+    let mut contract = TargetContract::new(Profile::AdaptiveTextTools, Md::Standard);
+    contract.dispositions.set_native(Feature::ToolChanges, true);
+    let target = ReplayTarget::new("m", "m").unwrap();
+    for root_count in [MAX_TOOLS - 1, MAX_TOOLS] {
+        let tools: Vec<_> = (0..root_count)
+            .map(|i| {
+                json!({
+                    "type":"function","name":format!("deferred_{i}"),"strict":false,
+                    "defer_loading":true,"parameters":{"type":"object"}
+                })
+            })
+            .collect();
+        let source = GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None)
+            .decode_client_request(json!({"model":"m","max_output_tokens":64,
+                "tools":tools,"input":[
+                    {"type":"additional_tools","role":"developer","tools":[
+                        {"type":"function","name":"f","strict":false,"parameters":{"type":"object"}}]},
+                    {"role":"user","content":"go"}]}).to_string().as_bytes()).unwrap();
+        let before = source.clone();
+        let projected = contract.encode_request(&source, &target).unwrap();
+        if root_count == MAX_TOOLS {
+            assert_eq!(
+                projected.value["tools"],
+                json!([
+                    {"name":"f","input_schema":{"type":"object"},"strict":false}
+                ])
+            );
+            assert!(
+                projected
+                    .evidence
+                    .contains_rule("generation.collapse-tool-set.v1")
+            );
+        } else {
+            assert_eq!(
+                projected.value["tools"].as_array().unwrap().len(),
+                MAX_TOOLS
+            );
+            assert!(
+                projected
+                    .evidence
+                    .contains_rule("generation.retain-ordered-additions.v1")
+            );
+        }
+        assert_eq!(source.task, before.task);
+    }
+}
+
+#[test]
+#[ignore = "manual release-mode scaling probe; no wall-clock assertion"]
+fn ordered_declaration_scaling() {
+    use std::time::Instant;
+    for batches in [8, 16, 32, 64, 128] {
+        let mut input = vec![json!({"role":"user","content":"go"})];
+        for batch in 0..batches {
+            let tools: Vec<_> = (0..MAX_TOOLS)
+                .map(|i| {
+                    json!({
+                        "type":"function","name":format!("deferred_{batch}_{i}"),
+                        "strict":false,"defer_loading":true
+                    })
+                })
+                .collect();
+            input.push(json!({"type":"additional_tools","role":"developer","tools":tools}));
+        }
+        let codec = GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None);
+        let source = codec
+            .decode_client_request(
+                json!({"model":"m","max_output_tokens":64,"input":input})
+                    .to_string()
+                    .as_bytes(),
+            )
+            .unwrap();
+        let mut mixed = source.clone();
+        let mut items = mixed.task.semantic.items().to_vec();
+        items.push((
+            ItemId::new((batches + 2) as u64),
+            Item::ToolChange(ToolChange {
+                action: ToolChangeAction::Remove(text("deferred_0_0")),
+                cache: None,
+            }),
+        ));
+        mixed.task.semantic = mixed.task.semantic.with_items(items).unwrap();
+        for (kind, request) in [("native", &source), ("mixed", &mixed)] {
+            let start = Instant::now();
+            let wire = codec
+                .encode_request(request, "m", &Contract::full())
+                .unwrap();
+            let elapsed = start.elapsed();
+            if kind == "native" {
+                assert_eq!(wire["input"].as_array().unwrap().len(), batches + 1);
+            } else {
+                assert_eq!(wire["input"].as_array().unwrap().len(), 1);
+                assert!(wire.get("tools").is_none());
+            }
+            eprintln!(
+                "{kind}: definitions={}, elapsed_us={}",
+                batches * MAX_TOOLS,
+                elapsed.as_micros()
+            );
+        }
+    }
 }
 
 fn expected_responses_history() -> Value {

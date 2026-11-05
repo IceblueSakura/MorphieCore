@@ -1193,6 +1193,31 @@ fn project_semantic_with_table<'a>(
         semantic = Cow::Owned(copy);
     }
     let mut settings = semantic.settings().clone();
+    if matches!(target, Target::OpenAi(_, _)) && settings.parallel_tool_calls != Some(false) {
+        let reference = match &settings.tool_choice {
+            Some(ToolChoice::Specific(name)) => Some((ToolKind::Function, name)),
+            Some(ToolChoice::Custom(name)) => Some((ToolKind::Custom, name)),
+            _ => None,
+        };
+        if let Some((kind, name)) = reference {
+            // Resolve the one-or-more carrier before target admission. Writers
+            // must not introduce an unchecked allowed-subset spelling.
+            settings.tool_choice = Some(ToolChoice::Allowed {
+                required: true,
+                tools: vec![ToolReference {
+                    kind,
+                    name: name.clone(),
+                    namespace: None,
+                }],
+            });
+            if table.get(Feature::ToolChoice) == Disposition::Native {
+                table.set(Feature::ToolChoice, Disposition::Equivalent);
+            }
+            evidence.push(
+                super::disposition::NAMED_TOOL_SUBSET.effect(ConversionBoundary::RequestProject),
+            );
+        }
+    }
     if matches!(target, Target::OpenAi(_, contract) if contract.adaptation.rules.bailian_requests)
         && settings.text.format == Some(OutputConstraint::Text)
     {
@@ -1690,14 +1715,14 @@ fn project_semantic_with_table<'a>(
             }
         };
         let mut settings = semantic.settings().clone();
-        let mut items = semantic.items().to_vec();
+        let mut items = Cow::Borrowed(semantic.items());
         match projection {
             super::tool_set::Projection::Native => {}
             super::tool_set::Projection::Retained {
                 items: projected,
                 root_additions,
             } => {
-                items = projected;
+                items = Cow::Owned(projected);
                 if !root_additions.is_empty() {
                     let mut tools = semantic.tools().to_vec();
                     tools.extend(root_additions);
@@ -1712,7 +1737,7 @@ fn project_semantic_with_table<'a>(
                 items: projected,
                 tools,
             } => {
-                items = projected;
+                items = Cow::Owned(projected);
                 settings.tools = (!tools.is_empty()).then_some(tools);
                 evidence.push(
                     super::disposition::TOOL_CHANGES.effect(ConversionBoundary::RequestProject),
@@ -1752,7 +1777,8 @@ fn project_semantic_with_table<'a>(
                     .effect(ConversionBoundary::RequestProject),
             );
         }
-        if semantic.items() != items.as_slice() || *semantic.settings() != settings {
+        if semantic.items() != items.as_ref() || *semantic.settings() != settings {
+            let items = items.into_owned();
             semantic = Cow::Owned(
                 semantic
                     .into_owned()

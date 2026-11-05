@@ -149,6 +149,57 @@ fn pending_resolution(code: &str, dispatched: bool) -> &'static str {
 }
 
 // The initially probed bindings cover standard, Bailian, DeepSeek and native Messages.
+#[tokio::test]
+async fn unrepresentable_named_choice_never_dispatches_to_bailian() {
+    let calls = Arc::new(Mutex::new(0usize));
+    let observed = calls.clone();
+    let router = Router::new().route(
+        "/v1/chat/completions",
+        post(move || {
+            let calls = observed.clone();
+            async move {
+                *calls.lock().unwrap() += 1;
+                (axum::http::StatusCode::BAD_REQUEST, "unexpected dispatch")
+            }
+        }),
+    );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let origin = format!("http://{}/v1", listener.local_addr().unwrap());
+    let _server = Server(tokio::spawn(async move {
+        axum::serve(listener, router).await.unwrap();
+    }));
+    let mut config = service();
+    config["diagnostics"] = json!("events.jsonl");
+    let boot = Fixture::with_accounts(
+        config,
+        json!({"models":{"qwen3.8-flash":{"candidates":[{"binding":"dashscope-flash-chat"}]}}}),
+        &[("aliyun-dashscope-cn", "synthetic", "synthetic-upstream-key")],
+        json!({"version":1,"providers":{"aliyun-dashscope-cn":{"accounts":[{
+            "name":"synthetic","enabled":true,"credential":{"alias":"synthetic"},"base_url":origin
+        }]}}}),
+    )
+    .unwrap();
+    let body = json!({"model":"qwen3.8-flash","max_tokens":64,
+        "thinking":{"type":"disabled"},"messages":[{"role":"user","content":"go"}],
+        "tools":[{"name":"read","description":"Read","input_schema":{"type":"object"}}],
+        "tool_choice":{"type":"tool","name":"read"}});
+    let (status, _, failed) = send(
+        &boot,
+        Api::Messages,
+        body,
+        &[(
+            "anthropic-version",
+            crate::protocol::anthropic::messages::API_VERSION,
+        )],
+    )
+    .await;
+    assert_eq!(status, 400);
+    assert!(!failed);
+    assert_eq!(*calls.lock().unwrap(), 0);
+    let record = report(&boot, 1).await;
+    assert_eq!(disposition(&record), "planning:[\"admission.tool_choice\"]");
+}
+
 type Binding<'a> = (&'a str, &'a str, &'a str, &'a str, Api);
 const BINDINGS: &[Binding<'static>] = &[
     (
@@ -424,16 +475,15 @@ async fn observe_intake(
             ([("content-type", content_type)], bytes).into_response()
         }
     });
-    // The beta binding's account-rebuilt path differs from the standard lane.
-    let router = if beta_chat {
-        Router::new()
-            .route(upstream.path(), handler.clone())
-            .route("/v1/beta/chat/completions", handler)
+    let api_root = if beta_chat { "/beta" } else { "/v1" };
+    let path = if beta_chat {
+        "/beta/chat/completions"
     } else {
-        Router::new().route(upstream.path(), handler)
+        upstream.path()
     };
+    let router = Router::new().route(path, handler);
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let origin = format!("http://{}/v1", listener.local_addr().unwrap());
+    let origin = format!("http://{}{api_root}", listener.local_addr().unwrap());
     let _server = Server(tokio::spawn(async move {
         axum::serve(listener, router).await.unwrap();
     }));

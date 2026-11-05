@@ -508,6 +508,11 @@ pub(crate) const TOOL_CHANGES: Rule = Rule::new(
     Field::Tools,
     Change::Approximate,
 );
+pub(crate) const NAMED_TOOL_SUBSET: Rule = Rule::new(
+    "openai.named-tool-subset.v1",
+    Field::ToolChoice,
+    Change::Normalize,
+);
 /// Ordered additions keep a native carrier while their cache markers and
 /// presentation change; source history stays untouched.
 pub(crate) const RETAIN_ORDERED_ADDITIONS: Rule = Rule::new(

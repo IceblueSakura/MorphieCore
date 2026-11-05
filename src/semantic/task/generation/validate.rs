@@ -1,6 +1,7 @@
 //! Pure validation and bounded accounting shared by construction, transforms and lowering.
 mod controls;
 use crate::semantic::task::generation::*;
+pub(crate) use controls::declaration_count;
 pub(super) use controls::{output, tool_choice, tool_choice_shape, tools};
 use std::collections::{BTreeMap, BTreeSet};
 // Sized for long agent sessions that resend whole histories with inline media.

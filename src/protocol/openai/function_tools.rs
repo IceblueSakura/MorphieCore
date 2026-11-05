@@ -449,10 +449,7 @@ pub(super) fn write_settings(
         );
     }
     if let Some(c) = &s.tool_choice {
-        o.insert(
-            "tool_choice".into(),
-            write_choice(c, profile, s.parallel_tool_calls)?,
-        );
+        o.insert("tool_choice".into(), write_choice(c, profile)?);
     }
     if let Some(v) = s.parallel_tool_calls {
         o.insert("parallel_tool_calls".into(), json!(v));
@@ -567,36 +564,7 @@ pub(super) fn write_tool(t: &ToolDefinition, profile: GenerationApi) -> Result<V
         }
     })
 }
-pub(super) fn write_choice(
-    c: &ToolChoice,
-    profile: GenerationApi,
-    parallel: Option<bool>,
-) -> Result<Value, CodecError> {
-    // A named choice without the serial fact carries the source's one-or-more
-    // meaning; the forced spelling would strengthen it to exactly one call.
-    let named = match c {
-        ToolChoice::Specific(n) => Some(ToolReference {
-            kind: ToolKind::Function,
-            name: n.clone(),
-            namespace: None,
-        }),
-        ToolChoice::Custom(n) => Some(ToolReference {
-            kind: ToolKind::Custom,
-            name: n.clone(),
-            namespace: None,
-        }),
-        _ => None,
-    };
-    if let (Some(reference), None | Some(true)) = (&named, parallel) {
-        return write_choice(
-            &ToolChoice::Allowed {
-                required: true,
-                tools: vec![reference.clone()],
-            },
-            profile,
-            parallel,
-        );
-    }
+pub(super) fn write_choice(c: &ToolChoice, profile: GenerationApi) -> Result<Value, CodecError> {
     Ok(match c {
         ToolChoice::Auto => json!("auto"),
         ToolChoice::None => json!("none"),

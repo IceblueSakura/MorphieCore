@@ -138,7 +138,7 @@ class ChatState(DefaultState):
     def __init__(self, path, *, pi):
         super().__init__(False, path, pi=pi)
         # pi's strict lane dispatches through the DeepSeek beta endpoint binding.
-        self.upstream_endpoint_path = "/v1/beta/chat/completions" if pi else "/v1/chat/completions"
+        self.upstream_endpoint_path = "/beta/chat/completions" if pi else "/v1/chat/completions"
 
     def incoming(self, headers, body):
         assert_chat_profile(body, self.pi)
@@ -477,7 +477,7 @@ def main():
         origin = stack.enter_context(server(state, False))
         gateway_configuration(root, protocol == "messages", origin,
                               model=model_id, provider="openai" if protocol == "responses" else provider,
-                              binding=binding)
+                              binding=binding, api_root="/beta" if pi and protocol == "chat" else "/v1")
         gateway = stack.enter_context(Child([gateway_binary, "--config", str(root / "gateway.json"),
             "--credentials-dir", str(root / "credentials")], env, work))
         try:

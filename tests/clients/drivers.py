@@ -46,7 +46,8 @@ def private_json(path, value):
 def gateway_configuration(root, native, origin, *, credential_root=None,
                           recovery=None, accounts=("primary",),
                           total_timeout_ms=8000, exchange_timeout_ms=10000,
-                          concurrency=None, model=None, provider=None, binding=None):
+                          concurrency=None, model=None, provider=None, binding=None,
+                          api_root="/v1"):
     """Current production-loader inputs with explicitly local synthetic accounts."""
     target = urlsplit(origin)
     check(target.scheme == "http" and target.hostname == "127.0.0.1"
@@ -59,7 +60,7 @@ def gateway_configuration(root, native, origin, *, credential_root=None,
         "recovery": {"recovery_timeout_ms": 0, **(recovery or {})},
         "accounts": [{"name": name, "enabled": True,
                       "credential": {"alias": name},
-                      "base_url": origin + "/v1"} for name in accounts]}}})
+                      "base_url": origin + api_root} for name in accounts]}}})
     private_json(root / "auth.json", {"version": 1, "agents": [
         {"agent_id": "fixture-agent", "key": KEY}]})
     service = {"version": 1, "auth_file": "auth.json", "bind": "127.0.0.1:0",

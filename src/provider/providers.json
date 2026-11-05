@@ -31,7 +31,7 @@
     "endpoints": {
       "chat_completions": {
         "path": "/beta/chat/completions",
-        "suffix": "/beta/chat/completions"
+        "suffix": "/chat/completions"
       }
     },
     "sources": [
