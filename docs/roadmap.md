@@ -12,6 +12,9 @@ This page owns current scope, priorities, dependencies, and exit gates. [Archite
   - [Scope and boundaries](#scope-and-boundaries)
   - [Reference strategy](#reference-strategy)
   - [Agent-default production findings](#agent-default-production-findings)
+  - [Ordered effort root repair](#ordered-effort-root-repair)
+    - [Ordered work and checks](#ordered-work-and-checks)
+    - [Stability and exit evidence](#stability-and-exit-evidence)
   - [Tool protocol root repair](#tool-protocol-root-repair)
     - [Stage-3 core packages](#stage-3-core-packages)
     - [Conditional Stage-3 follow-ups](#conditional-stage-3-follow-ups)
@@ -58,13 +61,13 @@ This page owns current scope, priorities, dependencies, and exit gates. [Archite
 
 ## Current status
 
-**Current focus (2026-11-05):** The S3-T4 connected SDK portion is delivered; the current-Agent exit remains open. The nine Chat/Responses/Messages SDK directions complete ordinary function call/result/answer/recall in JSON/SSE, including Responses stored/stateless history. Pi Chat strict read and Responses inline-tool continuation pass. Recovery/summary drift no longer reproduces with the current installed artifacts. Pi Messages now emits message-local effort and reaches the retained unsupported boundary; the user postponed that contract and repair on 2026-11-05. OpenCode Responses missing annotations also remains postponed, without normalization or an acceptance waiver. AR5 and Stage 4 remain gated.
+**Current focus (2026-11-05):** The next work is [ordered effort root repair](#ordered-effort-root-repair), selected after the earlier same-day postponement. Complete semantic ownership, projection ordering and history/replay stability before closing S3-T4; opening the Messages decoder alone is not the exit. The nine Chat/Responses/Messages SDK directions already complete ordinary function call/result/answer/recall in JSON/SSE, including Responses stored/stateless history. Pi Chat strict read and Responses inline-tool continuation pass; recovery/summary drift no longer reproduces with the current installed artifacts. Pi Messages still rejects message-local effort before dispatch; implementation and renewed acceptance are pending. OpenCode Responses missing annotations remains separately postponed, without normalization or an acceptance waiver. AR5 and Stage 4 remain gated.
 
 | Priority | Remaining work | Exit |
 |---|---|---|
 | Stage-3 tool core | Nine-direction connected SDK exit delivered; finish [S3-T4 current-Agent exit](#stage-3-core-packages) | Ordinary function loops and current-Agent tool defaults complete, with no hidden guarantee loss |
 | Conditional tool follow-ups | [S3-T5–S3-T7](#conditional-stage-3-follow-ups): namespace aliases, custom-text wrappers and examples projection | Separate policy selection and full affected-loop acceptance; not default prerequisites for AR5 |
-| Agent defaults | Revisit postponed pi Messages message-local effort and OpenCode Responses annotations when selected | Actual default reasoning/tool/history loops pass without compatibility opt-outs or input rewriting |
+| Ordered effort / Agent defaults | Execute [ordered effort root repair](#ordered-effort-root-repair) within S3-T4; OpenCode Responses annotations remains a separate postponed decision | Shared temporal semantics, stable history and current default reasoning/tool/history loops, without compatibility opt-outs or input rewriting |
 | Account acceptance | Provision fresh credentials, select actual Provider/model bindings, and complete AR5 | Bounded real Provider checks and installed-Agent exit on the rewritten account path |
 | API expansion | Select and implement Stage-4 operation contracts after AR5 | Per-operation lifecycle, protocol and SDK acceptance |
 | Downstream integration | Implement opt-in per-Agent JSONL session storage | Selected isolation and lifetime bounds |
@@ -122,10 +125,44 @@ The [native-default characterization](development.md#installed-client-synthetic-
 |---|---|---|---|
 | Pi Chat | Strict read passes through the qualified beta binding; current recovery/summary lanes pass again | Retain qualified binding and current-client evidence | Before fresh credentials |
 | Pi Responses | Current installed pi completes inline declarations, direct call/result, final answer and recall | Real SIWC endpoint acceptance remains separate from the synthetic CLI gate | AR5 |
-| Pi Messages | Current pi 1.5.0 uses root-low effort plus message-local medium markers; intake rejects before dispatch | Postponed by the user on 2026-11-05; retain strict rejection and the open gate. No client opt-out, root lifting or silent omission is selected | Before fresh credentials |
+| Pi Messages | Current pi 1.5.0 uses root-low effort plus message-local medium markers; intake rejects before dispatch | [Root repair selected](#ordered-effort-root-repair); retain the current rejection until the coherent repair is implemented. No client opt-out, decode-time root lifting or silent omission | Before fresh credentials |
 | OpenCode Responses | Recall omits required text annotations | Postponed for user consideration; retain strict intake, no inferred empty annotations | Deferred decision; acceptance remains open |
 | Responses client → OpenAI subscriptions, flat tools | SIWC inline `additional_tools` declarations and their direct call/result history are admitted; namespace requirements stay for root declarations | Real endpoint acceptance for the inline continuation path | Tool contract repair; real endpoint acceptance separate |
 | Chat upstream usage | Duplicate nonnull final reports | Qualify at emitter | Outside stabilization slices |
+
+### Ordered effort root repair
+
+**Selected direction, 2026-11-05; implementation pending.** Resume message-local effort as a coherent S3-T4 repair across public intake, semantic ownership, target projection and history continuation. This supersedes the earlier same-day postponement, not the outstanding acceptance gates. [Architecture](architecture.md#ordered-effort-repair-direction) owns the accepted direction; concrete protocol differences and null/reset semantics still need qualification.
+
+**Scope:** Existing Chat, Responses and Messages Generation paths and their affected cross-protocol projections. Reuse `ConfigurationUpdate`, request settings, message envelopes, fidelity/replay, disposition tables and existing SDK/Agent harnesses. Do not assume the current IR or native helper is complete merely because it already carries effort. No new dependency, session registry, generic configuration framework or pair-specific adapters. Google expansion, `clear_at`, task budgets, new thinking modes, OpenCode annotation normalization, routing changes and Stage-4 APIs remain outside this repair.
+
+#### Ordered work and checks
+
+The steps below form one acceptance unit. Focused prototypes and tests may proceed together; an intake-only patch or a passing first pi request does not close it.
+
+| Order | Work | Check before advancing |
+|---|---|---|
+| **1 — Qualify temporal and presence contracts** | Pin current official Messages/Responses sources and refresh the installed pi artifact characterization. Distinguish effort scope from activation boundary, persistence, user-new-input versus tool-result continuation, root defaults, null/reset and empty controls. Compare existing public/native parsing and derive the target disposition cases. Record sourced findings in the existing [boundary note](refs/2026-10-27-client-ir-boundaries.md), and accepted semantics in Architecture | Independent source-derived examples distinguish active from pending updates. Resolve concrete structural ambiguity with a minimal counterexample and user selection; nullable SDK syntax alone cannot establish reset/no-op semantics. Unresolved forms stay explicit without blocking independently defined forms |
+| **2 — Establish one semantic owner and projection order** | Define a pure, bounded resolver over source IR and necessary existing message boundaries; derive effective/pending control rather than storing a second mutable setting. Preserve an equivalent ordered carrier or resolve the current effective value before target scope/level conversion. Add a protocol-independent boundary representation only if qualified source contracts cannot share the existing representation | Root defaults, historical changes, tool-result-only continuation and the next new-input turn have independent expectations. Target mapping cannot change source activation timing; no target needs to infer semantics from source protocol identity or an overloaded effort scope |
+| **3 — Integrate intake, targets and replay** | Share core known-field/role parsing across public and native Messages intake while retaining public unknown-field filtering. Integrate native retention and carrier-less projection through the shared owner, with named ladder rules and matching capability/preflight facts. Audit grouping, historical level changes and replay dependencies; reuse envelopes/fidelity before adding metadata | Independent wire→IR and IR→wire checks cover affected native/cross paths. Prepared history remains stable under append; lossy candidates record historical-boundary/prefix losses and obey existing replay policy. Source history and subsequent candidates remain unchanged |
+| **4 — Close connected and current-Agent acceptance** | Extend existing semantic, transport, SDK and installed-client cases; run the full offline baseline, applicable connected SDK gates and current installed-Agent exit. Refresh versions and characterization at execution time | Pi Messages completes default call/result/answer/recall without feature opt-outs or input rewriting. Preserve the completed nine-direction SDK exit and pi Chat/Responses checks. Report postponed OpenCode annotations separately; real Provider acceptance remains AR5 |
+
+**Immediate next step:** Step 1 starts with the [official Messages effort contract](https://platform.claude.com/docs/en/build-with-claude/effort), [preserved-thinking contract](https://platform.claude.com/docs/en/build-with-claude/preserved-thinking), pinned Responses configuration-update sources and current installed pi serialization. Inspect `src/protocol/anthropic/messages/{client/request.rs,wire/request.rs,carriers.rs}`, `src/semantic/task/generation/content/item.rs` and `src/lowering/request.rs` together. Produce the temporal/presence disposition and a minimal representation decision before changing public admission; do not assume all existing helper behavior is authoritative.
+
+#### Stability and exit evidence
+
+- The discriminating continuation is root-low → new user input → medium update → assistant tool call → tool-result-only input → high update. The continuing tool reply stays medium; a later new-input turn activates high. Check native history, carrier-less effective values and retained continuation separately, not only a round trip or the final field.
+- Retain historical and repeated effort markers where the native contract requires them. Check empty controls, legal/illegal placement, consecutive system grouping and mixed input/results against source expectations. Optional null, absent and empty forms must not acquire an inferred reset meaning.
+- Check signed/redacted thinking alongside changed effort, target limits and append-only continuation. Prefix-changing projection must follow the existing replay contract; `drop_block` is not a workaround for avoidable gateway rewrites.
+- Exercise two candidate projections and a bounded synthetic pre-publication failure/continuation to show no source-state leakage. Preserve owner/call/result identities, strict JSON, resource bounds, cancellation and terminal honesty; do not add live multi-provider failover requirements.
+- Reuse `tests/semantic/anthropic/client_fidelity.rs`, existing configuration-update/model-value tests, `tests/sdk/messages_tool_loop.rs`, `tests/sdk/openai_tool_history.rs` and installed-client drivers. Add independent cases for distinct failure mechanisms, not a new fixture framework or a redundant field-by-nine matrix.
+- Publication requires the [offline baseline](development.md#offline-baseline), affected [SDK gate](development.md#sdk-loopback-gate) and [installed-client synthetic gate](development.md#installed-client-synthetic-recovery). S3-T4 closes only after the semantic, projection and history checks plus the current-Agent exit; no synthetic result certifies upstream cache hits or real Provider acceptance.
+
+Risks that change the plan:
+
+- Different official activation rules require a minimal semantic distinction, not protocol tags inside IR or a new per-target evaluator. Show the distinguishing input before selecting the representation.
+- If regrouping loses a prefix-relevant boundary, repair its existing owner and verify reconstructed histories; do not store duplicate raw payloads. Root-level cache invalidation and message-prefix thinking validity are separate checks.
+- Unknown null/reset semantics or target temporal equivalence need explicit disposition. Preserve native forms where qualified; use named bounded approximation under the existing ladder, and seek selection before weakening content or explicit guarantees.
 
 ### Tool protocol root repair
 
@@ -148,9 +185,9 @@ S3-T0–S3-T3 and the S3-T4 nine-direction SDK portion are delivered. Connected 
 
 | Package / dependency | Coherent slice | Exit check |
 |---|---|---|
-| **S3-T4 — Remaining current-Agent exit** / after message-local effort contract selection | Resolve the current pi Messages default boundary, refresh affected public-source characterization and rerun the installed-Agent exit | Pi Messages default call/result/answer/recall succeeds without compatibility opt-outs or input rewriting. Keep the completed nine-direction SDK exit passing; postponed OpenCode annotations stays separately reported. Real Provider evidence belongs to AR5 |
+| **S3-T4 — Ordered effort and remaining current-Agent exit** / [repair direction selected](#ordered-effort-root-repair) | Complete the shared effort contract, intake/projection integration and history/replay stability, then refresh characterization and rerun the installed-Agent exit | All [effort exit checks](#stability-and-exit-evidence) plus pi Messages default call/result/answer/recall, without compatibility opt-outs or input rewriting. Keep the completed nine-direction SDK exit passing; postponed OpenCode annotations stays separately reported. Real Provider evidence belongs to AR5 |
 
-**User scheduling decision, 2026-11-05:** Postpone message-local effort and retain the delivered connected SDK slice. S3-T4 stays open; the postponement does not waive default-Agent acceptance or authorize AR5 provisioning or Stage-4 implementation.
+**User scheduling decision, 2026-11-05:** The [ordered effort repair](#ordered-effort-root-repair) supersedes the earlier postponement. Retain the delivered connected SDK slice; S3-T4 stays open until the coherent repair and current-Agent exit pass. This does not authorize AR5 provisioning or Stage-4 implementation.
 
 #### Conditional Stage-3 follow-ups
 
@@ -197,7 +234,7 @@ These L5 boundaries and invariant guards constrain the remaining work. Current a
 |---|---|
 | Chat → IR | `n > 1`, `web_search_options`, nonempty `logit_bias`, `store:true`, `moderation`, legacy `functions`/`function_call`/`role:function` |
 | Responses → IR | Hosted tools and items, unselected `include` families, background execution, active conversation/prompt/moderation and context-management operations, item references outside the managed store. Local `store`/`previous_response_id` stay supported through [managed ingress](../src/gateway/ingress/admission.rs) |
-| Messages → IR | `between_tools`, per-message configuration, `clear_at`, task budgets pending selection, `container`, `mcp_servers`, context management and compaction, server tools and non-direct callers, block-binding `"error"`, `inference_geo`, enabled citations, null output effort/format pending field evidence |
+| Messages → IR | `between_tools`, per-message configuration until the [ordered effort repair](#ordered-effort-root-repair) is delivered, `clear_at`, task budgets pending selection, `container`, `mcp_servers`, context management and compaction, server tools and non-direct callers, block-binding `"error"`, `inference_geo`, enabled citations, null output effort/format pending field evidence |
 | Request → target | Media, tools or explicit output constraints without a carrier; explicit strict guarantees without a carrier; `stop` without a carrier; compaction without a carrier; explicit history-read intent that cannot be carried |
 | IR → client | Chat custom-call SSE; Responses SSE cancellation; unknown Chat/Messages stop causes without an evidence-backed map; non-object Messages tool input other than an empty string; call ID or name lengths beyond the client limit; blocking safety reports; retraction of published accounting |
 | Invariants | Credential/origin/trust selection, replay origin and format trust, client file IDs, resource bounds, malformed known values, terminal honesty, incomplete tool input never executable |
@@ -227,11 +264,11 @@ Default reasoning/tool/history gateway success on all three client protocols is 
 
 ## Planned order
 
-Only remaining work is listed. The Stage-3 tool core precedes the outstanding default-profile gate and [AR5](#ordered-work-and-exit-gates); independent resolution of the postponed annotations decision can proceed alongside the core, but its gate is not waived. Stage 4 resumes after AR5; Stage 5 remains unscheduled.
+Only remaining work is listed. The next Stage-3 work is the [ordered effort root repair](#ordered-effort-root-repair) and S3-T4 current-Agent exit, before the outstanding default-profile gate and [AR5](#ordered-work-and-exit-gates). Independent resolution of the postponed annotations decision can proceed alongside the repair, but its gate is not waived. Stage 4 resumes after AR5; Stage 5 remains unscheduled.
 
 | Stage | Goal | Exit evidence |
 |---|---|---|
-| **3 — Tool-semantic core follow-up** | [S3-T0–S3-T4](#stage-3-core-packages): contracts, shared semantics, native/cross mappings, selected bounded projections and nine-direction acceptance | Nine ordinary function SDK/gateway loops, focused loss/invariant tests and current-Agent synthetic checks; no claim of live Provider acceptance |
+| **3 — Ordered effort and current-Agent exit** | [S3-T4](#stage-3-core-packages): shared temporal semantics, intake/target integration and history stability through the [ordered effort plan](#ordered-effort-root-repair) | Effort contract/projection/replay checks, retained nine-direction SDK loops and current-Agent synthetic exit; no claim of live Provider acceptance |
 | **3 — Conditional compatibility follow-ups** | [S3-T5–S3-T7](#conditional-stage-3-follow-ups): namespace aliases, plain custom wrappers and examples projection | Separate policy selection and affected full-loop verification; not default blockers for AR5 or Stage 4 |
 | **AR5 — Pre-Stage-4 acceptance gate** | After the core and default-profile gate: fresh credentials, actual model/binding selection and bounded real Provider/current-Agent checks | Real tool/history loops on the rewritten account path; unresolved or unavailable lanes reported honestly |
 | **4 — Modalities, Decision & file resources** | Decision, Embedding extensions, Audio (Speech/Transcription/Translation), Images, Files/Uploads, and Video at equal priority | Verified request/result contracts, media bounds, resource isolation, cancellation, and SDK loops |
@@ -363,7 +400,7 @@ Prerequisites for activating newly implemented codec carriers on public routes:
 |---|---|---|
 | Namespace aliases, custom text and examples | Conditional S3-T5–S3-T7 | Select each content/interface adaptation separately; do not make all three implicit core prerequisites |
 | OpenCode missing annotations | Postponed user decision; default-profile gate remains open | Keep strict intake until its separate history contract is selected; tool work does not normalize it |
-| Messages message-local effort | Postponed by the user on 2026-11-05; contract unselected | Retain the pre-dispatch rejection and open S3-T4 gate; reconsider request/history ownership and target projection only when resumed |
+| Ordered effort concrete semantics | Root-repair direction selected; protocol-specific temporal differences, null/reset meanings and any required IR distinction remain to qualify | Follow [Step 1](#ordered-work-and-checks); select unresolved structural/content/guarantee decisions from concrete counterexamples. Direction selection does not declare public admission implemented |
 | Complete citations | Stage 5 | Retain local point-anchor owner; defer full citation model |
 | Execution controls | Paused | Enforce pre-dispatch validation; reject unsupported controls |
 | Google error envelopes | Paused | Maintain per-API classification; avoid speculative unified parsing |

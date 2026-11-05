@@ -55,6 +55,7 @@ This page defines accepted principles, domain contracts, and architectural decis
     - [Messages terminal projection](#messages-terminal-projection)
   - [Reasoning controls](#reasoning-controls)
     - [Reasoning activation and effort scope](#reasoning-activation-and-effort-scope)
+      - [Ordered effort repair direction](#ordered-effort-repair-direction)
       - [Google response-effort projection](#google-response-effort-projection)
     - [Reasoning level calibration](#reasoning-level-calibration)
       - [Thinking-budget quantization](#thinking-budget-quantization)
@@ -621,6 +622,14 @@ The IR decouples reasoning activation from effort level and scope:
 - **Effort Control:** `EffortControl { scope, level }` with [`EffortScope::Reasoning`](file:///home/sakura/development/MorphieCore/src/semantic/task/generation/content/reasoning.rs#L27) (per-thought) or [`EffortScope::Response`](file:///home/sakura/development/MorphieCore/src/semantic/task/generation/content/reasoning.rs#L27) (turn-wide).
 - Explicit `disabled` reasoning takes precedence over response-wide effort settings.
 
+##### Ordered effort repair direction
+
+**Selected 2026-11-05; not yet implemented.** Repair ordered effort across intake, semantic ownership, target projection and history continuation as one coherent Generation slice. Root settings remain initial controls; ordered updates retain their positions. Define one pure, bounded interpretation of activation timing and persistence, independent of target scope/level conversion. Reuse `ConfigurationUpdate` and existing message boundaries; add a protocol-independent semantic distinction only when qualified contracts demonstrate that the current representation cannot distinguish required behavior. Effort scope must not implicitly stand for activation timing.
+
+Equivalent native carriers retain the ordered history. Carrier-less candidates derive the current effective control from source semantics before target mapping, record historical-boundary/prefix losses under named ladder rules, and leave source history unchanged. No decode-time flattening, last-marker shortcut, client opt-out or silent omission. Shared parsing does not erase the public boundary's unknown-field filtering or known-field validation. History grouping, target level projection and signed/replayed thinking must satisfy the existing candidate-local and replay contracts; prefix-mismatch dropping cannot substitute for stable reconstruction.
+
+This selects the repair direction, not unresolved null/reset semantics, cross-protocol temporal equivalence, new IR fields or weaker content/explicit guarantees. Concrete qualification, implementation order and acceptance belong to the [roadmap](roadmap.md#ordered-effort-root-repair).
+
 ##### Google response-effort projection
 
 `google.gemini-3.8-flash.response-effort-to-thinking.v1` maps response-scoped low/medium/high to Gemini thinking effort levels via [`ReasoningConversion::Scope`](file:///home/sakura/development/MorphieCore/src/protocol/reasoning.rs#L131).
@@ -1037,6 +1046,7 @@ Authoritative log of accepted architectural decisions and their systemic consequ
 | Bounded tool-set projection | 2026-11-05 | Delivered through one shared owner: effective active-set collapse, target-native retained additions (with fresh converted identities and legal-position/capacity checks) and allowed-set inventory filtering. Accept their explicit historical-definition/timing/cache losses, not weaker tool guarantees or guessed collision precedence. [Contract](#ordered-tool-availability); Native batches bypass effective-set construction; mixed histories use indexed lookup. S3-T4 acceptance remains |
 | DeepSeek strict binding qualification | 2026-11-05 | Delivered as an endpoint-scoped catalog binding: the model declares strict-tools, the standard binding's endpoint contract explicitly declines it, and a `deepseek-beta` provider chat path with an explicit models-file candidate/account activates it. pi 1.5.0's strict Chat read loop passes on it. Preserve the standard binding without implicit redirection; fresh-credential Provider acceptance remains AR5 and production activation remains separately approved |
 | Forced-choice cardinality normalization | 2026-11-05 | Directional call-count meaning is carried on existing semantic carriers: OpenAI forced choices decode onto the serial carrier, Messages one-or-more choices lower to the exact required subset before target admission, and writers only render that carrier, and vacuous seriality under `none` is omitted. Targets without a serial carrier reject instead of weakening; no new semantic dimension was added |
+| Ordered effort root repair | 2026-11-05 | Direction selected, implementation pending: one temporal semantic owner, source resolution before target mapping, shared intake rules and native/history/replay stability. Supersedes the earlier Messages effort postponement; an intake-only patch is not completion. Concrete null/reset and representation decisions remain qualified separately. [Direction](#ordered-effort-repair-direction); [execution](roadmap.md#ordered-effort-root-repair) |
 | Client/IR projection principles | 2026-10-28 | After semantic-equivalence handling, P1–P5 classify remaining projections: request-context deduction, carrier-less non-content omission, delivery closure, planning-time impossibility and conditional source defaults |
 | Responses strictness resolution | 2026-10-28 | Omitted `strict` resolves per tool and target by the documented compatibility rule; revised 2026-10-30: unknown compatibility and grammar overflow resolve non-strict, explicit strict stays guarded |
 | Ladder applications | 2026-10-30 | Nearest effort (ties upward), model-maximum clamp, thinking-off fallback for required Chat history, uncarried reasoning omission, Messages `end_turn`/`tool_use` derivations, `block_binding` levels; `stop` without carrier and unknown Chat/Messages stop causes remain rejections |
