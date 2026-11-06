@@ -56,12 +56,12 @@ This page owns current scope, priorities, dependencies, and exit gates. [Archite
 
 ## Current status
 
-**Current focus (2026-11-06):** AR5 pre-closure testing and joint repair planning on fresh accounts. Native Haiku, DeepSeek beta, Grok and OpenCode Luna loops pass. Additional Responses→Haiku/Interactions and Messages→Grok loops, both Agents' ordinary summaries, and real timing/cancellation/recovery pass. The [acceptance sweep](development.md#pre-closure-acceptance-sweep) separates remaining projection/upstream failures, profile admission, empty-carrier observer failures and unmet replay/failover prerequisites. No further repair policy is selected by these results; AR5 and Stage 4 remain gated.
+**Current focus (2026-11-06):** AR5 supplementary testing on fresh accounts. The user-requested [AR5 review](ar5-review.md) separately collects pending observations and passing-test evidence. Combined analysis, adaptation choices and repair ordering await further tests and joint review; AR5 and Stage 4 remain gated.
 
 | Priority | Remaining work | Exit |
 |---|---|---|
 | Conditional tool follow-ups | [S3-T5–S3-T7](#conditional-stage-3-follow-ups): namespace aliases, custom-text wrappers and examples projection | Separate policy selection and full affected-loop acceptance; not default prerequisites for AR5 |
-| Account acceptance | Select pre-closure repair policies and complete affected AR5 gates | Bounded real Provider checks and installed-Agent exit on the rewritten account path |
+| Account acceptance | Collect supplementary tests for joint AR5 review before selecting adaptations | Bounded real Provider checks and installed-Agent exit on the rewritten account path |
 | API expansion | Select and implement Stage-4 operation contracts after AR5 | Per-operation lifecycle, protocol and SDK acceptance |
 | Downstream integration | Implement opt-in per-Agent JSONL session storage | Selected isolation and lifetime bounds |
 | Production preparation | Decide diagnostic packaging and deferred observability scope | Explicit deployer selection |
@@ -91,18 +91,7 @@ Selected upstream lanes (2026-11-06):
 
 Fresh local provisioning, Google key replacement and account-reference validation are complete. The selected [Responses replay authority](architecture.md#reasoning-replay) is implemented. The DeepSeek publication keeps canonical/upstream `deepseek-flash`; its label does not pin that upstream alias.
 
-Pre-closure findings require joint repair planning, not automatic admission changes:
-
-| Work group | Required next decision or investigation |
-|---|---|
-| Readable-Chat replay projection | Locate the ownership/carriage failure behind `representation.replay_origin` at `event.project` for Haiku, Grok and Interactions, without bypassing origin validation. |
-| Google stateless attachments | Select a valid disposition for generateContent part-level signatures. Managed Responses and the tested Responses→Interactions lane work; neither authorizes silently dropping attachments elsewhere. |
-| Luna cross-protocol continuation | Identify the exact rejected upstream field for Chat feedback and Messages recall (`400`, `recovery.request`) before changing request projection. |
-| Empty carriers and history equivalence | Resolve Chat-derived empty text/message ownership versus installed-client normalization. Distinguish an unnecessary generated owner from a genuinely required history fact; preserve signed-prefix and identity checks. |
-| Actual client/profile qualification | Qualify Luna/Google strict requests, Google Messages adaptive/block-binding admission, and OpenCode's custom DeepSeek public-label registration. Preserve explicit guarantees and the public/canonical/upstream identity split. |
-| Real replay/failover prerequisites | Obtain an independently provisioned compatible account pair and a source case that actually returns opaque replay before claiming those gates. The attempted Luna JSON/SSE source cases returned no replay; no cross-target request was sent. Different-model switching is separate from compatible-account failover. |
-
-After selection, implement and verify coherent repairs, then rerun only affected real lanes and the required offline baseline. The current test-only sweep grants no new conversion policy, credential operation, deployment or Stage-4 implementation approval.
+Pending observations and concise passing results have one review home in [AR5 Review](ar5-review.md). Keep them separate from this execution plan and unrelated backlogs while supplementary testing continues. The record grants no new conversion policy, credential operation, deployment or Stage-4 implementation approval.
 
 ### Verification and operator handoff
 

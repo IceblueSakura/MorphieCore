@@ -3,7 +3,7 @@
 ## Project and sources of truth
 
 - MorphieCore hides Provider differences behind one typed IR. pi and opencode are the primary clients. Routing is cache-affine failover, not load balancing.
-- [README](README.md#documentation-map) is the document entry point. [Architecture](docs/architecture.md) owns accepted principles and decisions; [Roadmap](docs/roadmap.md) owns scope, execution dependencies and gates; [API expansion design](docs/api-expansion-design.md) owns unselected proposals; [Usage](docs/usage.md) and [Development](docs/development.md) own procedures. Code and tests describe current behavior, not authority over official protocols; read catalogs and startup code for current Providers, models and bindings.
+- [README](README.md#documentation-map) is the document entry point. [Architecture](docs/architecture.md) owns accepted principles and decisions; [Roadmap](docs/roadmap.md) owns scope, execution dependencies and gates; the user-requested [AR5 review](docs/ar5-review.md) separately owns observations awaiting joint analysis and concise passing-test evidence; [API expansion design](docs/api-expansion-design.md) owns unselected proposals; [Usage](docs/usage.md) and [Development](docs/development.md) own procedures. Code and tests describe current behavior, not authority over official protocols; read catalogs and startup code for current Providers, models and bindings.
 
 ## Working approach
 
@@ -50,6 +50,6 @@
 
 ## Documentation
 
-Keep the existing document set: `README.md`, `AGENTS.md`, `docs/{architecture,roadmap,usage,development,references}.md`, the [API expansion design](docs/api-expansion-design.md), the separately requested [Provider account plan](docs/provider-account-redesign-plan.md), `docs/openapi.json`, and sourced, dated protocol notes in `docs/refs/`. The Provider account plan collects requirements for a later rewrite, not implementation approval. Do not add run reports or history pages. Remove finished roadmap slices and record meaningful decisions in the architecture decision table.
+Keep the document set: `README.md`, `AGENTS.md`, `docs/{architecture,roadmap,usage,development,references}.md`, the user-requested [AR5 review](docs/ar5-review.md), the [API expansion design](docs/api-expansion-design.md), the separately requested [Provider account plan](docs/provider-account-redesign-plan.md), `docs/openapi.json`, and sourced, dated protocol notes in `docs/refs/`. The AR5 review remains a separate collection of pending observations and passing evidence until supplementary testing and joint review, not an approved adaptation or repair plan. The Provider account plan collects requirements for a later rewrite, not implementation approval. Do not add run reports or history pages. Remove finished roadmap slices and record meaningful decisions in the architecture decision table.
 
 Organize each document by domain with shared rules above specialized branches. Keep one authoritative home per topic and link to it instead of maintaining duplicate plans or specifications. Separate proposed design, accepted decisions, implementation status and acceptance evidence; a structural edit grants no approval. Preserve source dates in research notes and use [References](docs/references.md#research-notes) as their index.
