@@ -138,7 +138,7 @@ fn known_upstream_fields_stay_strict() {
 }
 
 #[test]
-fn client_text_history_shorthand_does_not_relax_annotations() {
+fn client_text_history_defaults_only_missing_annotations() {
     use morphiecore::{
         protocol::{
             CodecError,
@@ -149,11 +149,6 @@ fn client_text_history_shorthand_does_not_relax_annotations() {
     };
     let a = adapter(GenerationApi::Responses);
     let mut history = json!({"model":"m","input":[{"type":"message","id":"msg_1","status":"completed","role":"assistant","content":[{"type":"output_text","text":"hello"}]}]});
-    assert!(
-        a.decode_client_request(history.to_string().as_bytes())
-            .is_err()
-    );
-    history["input"][0]["content"][0]["annotations"] = json!([]);
     let decoded = a
         .decode_client_request(history.to_string().as_bytes())
         .unwrap();
@@ -176,6 +171,15 @@ fn client_text_history_shorthand_does_not_relax_annotations() {
     .unwrap();
     assert_eq!(decoded.task.semantic, expected);
     assert!(decoded.task.evidence.is_empty());
+    assert!(a.decode_request(history.to_string().as_bytes()).is_err());
+    history["input"][0]["content"][0]["annotations"] = json!([]);
+    assert_eq!(
+        a.decode_client_request(history.to_string().as_bytes())
+            .unwrap()
+            .task
+            .semantic,
+        expected
+    );
     // Independently constructed IR emits the official array, not the shorthand.
     let fidelity = FidelityRecords::default();
     let target = lower_request(
@@ -194,6 +198,8 @@ fn client_text_history_shorthand_does_not_relax_annotations() {
     for invalid in [
         Value::Null,
         json!({}),
+        json!(false),
+        json!(""),
         json!([{"type":"unregistered_annotation"}]),
     ] {
         history["input"][0]["content"][0]["annotations"] = invalid;

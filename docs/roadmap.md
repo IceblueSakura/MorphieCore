@@ -56,11 +56,10 @@ This page owns current scope, priorities, dependencies, and exit gates. [Archite
 
 ## Current status
 
-**Current focus (2026-11-06):** Resolve the separately postponed OpenCode Responses missing-annotations history contract before AR5. The Stage-3 tool/ordered-effort core (S3-T0–S3-T4) is delivered: source timing, native system boundaries and protected replay are integrated; nine SDK directions and current pi Chat/Responses/Messages default tool/history loops pass. [Development](development.md#installed-client-synthetic-recovery) owns verification evidence. OpenCode recall still rejects missing annotations, without normalization or an acceptance waiver. AR5 and Stage 4 remain gated.
+**Current focus (2026-11-06):** AR5 fresh credentials, actual Provider/model selection and real acceptance. The tool/ordered-effort core and offline default-profile gates are complete: current pi 1.5.0 and OpenCode 2.0.32 complete native Chat/Responses/Messages tool/result/answer/recall loops. Responses Client-history omission of an empty annotations collection uses the selected [L2 compatibility](architecture.md#semantic-equivalence-compatibility). [Development](development.md#installed-client-synthetic-recovery) owns synthetic verification evidence. Fresh-account Provider acceptance remains open; Stage 4 stays gated on AR5.
 
 | Priority | Remaining work | Exit |
 |---|---|---|
-| Default-profile gate | Select the OpenCode Responses missing-annotations history contract | Current default call/result/answer/recall completes under the selected contract before fresh credentials |
 | Conditional tool follow-ups | [S3-T5–S3-T7](#conditional-stage-3-follow-ups): namespace aliases, custom-text wrappers and examples projection | Separate policy selection and full affected-loop acceptance; not default prerequisites for AR5 |
 | Account acceptance | Provision fresh credentials, select actual Provider/model bindings, and complete AR5 | Bounded real Provider checks and installed-Agent exit on the rewritten account path |
 | API expansion | Select and implement Stage-4 operation contracts after AR5 | Per-operation lifecycle, protocol and SDK acceptance |
@@ -69,7 +68,7 @@ This page owns current scope, priorities, dependencies, and exit gates. [Archite
 
 ## Account rewrite execution order
 
-The remaining gate for the accepted [account specification](provider-account-redesign-plan.md) is real acceptance on fresh credentials and selected models. The user selected **offline three-protocol preparation before fresh credentials** on 2026-11-03; resolve the [default-profile blockers](#agent-default-production-findings) before AR5 provisioning. Setup uses the [Provider-owned, alias-only credential contract](provider-account-redesign-plan.md#credential-kind-and-header-placement). No compatibility mode, private-store migration or deployment is included.
+The remaining gate for the accepted [account specification](provider-account-redesign-plan.md) is real acceptance on fresh credentials and selected models. The user selected **offline three-protocol preparation before fresh credentials** on 2026-11-03; that default-profile preparation is complete. Setup uses the [Provider-owned, alias-only credential contract](provider-account-redesign-plan.md#credential-kind-and-header-placement). No compatibility mode, private-store migration or deployment is included.
 
 ### Ordered work and exit gates
 
@@ -77,7 +76,7 @@ The identifiers below belong only to planning and acceptance documentation, not 
 
 | Order | Work | Completion evidence |
 |---|---|---|
-| **AR5 — Fresh credentials, model selection and real acceptance** | Entry: the tool core is complete; the outstanding default-profile gate must close. The user provisions new API keys and any required OAuth sessions through the new loader/CLI. Validate configured accounts and select actual Provider/model bindings. Then run bounded serial Provider checks and the deferred full installed-Agent exit on the rewritten path. | Actual credential kinds and selected models are verified separately from synthetic recovery. Current installed pi/OpenCode complete default reasoning/tool/history loops across the three client protocols and selected cross-protocol lanes. Unavailable account combinations are reported as unverified, not inferred from mocks. Production activation remains separately approved. |
+| **AR5 — Fresh credentials, model selection and real acceptance** | Entry: offline tool/default-profile preparation is complete. The user provisions new API keys and any required OAuth sessions through the new loader/CLI. Validate configured accounts and select actual Provider/model bindings. Then run bounded serial Provider checks and the deferred full installed-Agent exit on the rewritten path. | Actual credential kinds and selected models are verified separately from synthetic recovery. Current installed pi/OpenCode complete default reasoning/tool/history loops across the three client protocols and selected cross-protocol lanes. Unavailable account combinations are reported as unverified, not inferred from mocks. Production activation remains separately approved. |
 
 ### Verification and operator handoff
 
@@ -113,12 +112,11 @@ Remaining stabilization covers the [default-profile findings](#agent-default-pro
 
 ### Agent-default production findings
 
-The [native-default characterization](development.md#installed-client-synthetic-recovery) exercises all three protocols with pi 1.5.0 and OpenCode 2.0.32. On 2026-11-04 the user expanded ordered-tool analysis to all nine Chat/Responses/Messages directions and accepted bounded approximation as a design direction. Missing-annotations repair remains postponed and unaccepted; neither postponement nor characterization waives the fresh-credential/default-Agent gates. Endpoint qualification and Chat usage-emitter work retain their separate scope.
+The [native-default characterization](development.md#installed-client-synthetic-recovery) exercises all three protocols with pi 1.5.0 and OpenCode 2.0.32. All six default tool/history loops pass, including OpenCode Responses under the selected empty-annotations history rule. These synthetic checks do not qualify fresh credentials or actual Provider/model endpoints. Endpoint qualification and Chat usage-emitter work retain their separate scope.
 
 | Lane | Remaining issue | Required resolution | Scope |
 |---|---|---|---|
 | Pi Responses | Current installed pi completes inline declarations, direct call/result, final answer and recall | Real SIWC endpoint acceptance remains separate from the synthetic CLI gate | AR5 |
-| OpenCode Responses | Recall omits required text annotations | Postponed for user consideration; retain strict intake, no inferred empty annotations | Deferred decision; acceptance remains open |
 | Responses client → OpenAI subscriptions, flat tools | SIWC inline `additional_tools` declarations and their direct call/result history are admitted; namespace requirements stay for root declarations | Real endpoint acceptance for the inline continuation path | Tool contract repair; real endpoint acceptance separate |
 | Chat upstream usage | Duplicate nonnull final reports | Qualify at emitter | Outside stabilization slices |
 
@@ -139,7 +137,7 @@ Verification is layered rather than every field multiplied by nine:
 - Extend existing semantic and SDK tool-history fixtures with independent wire→IR and IR→wire expectations. Nine ordinary loop cells cover route composition; family-specific tests cover distinct losses and failures, not redundant permutations.
 - Check JSON/SSE and retained-view agreement, partial arguments, raw-string authority, distinct item/call IDs, error results, cancellation, bounds, EOF and replay isolation. New alias/wrapper mapping must finish before publication and cannot depend on clients returning diagnostics.
 - Reuse `tests/sdk/openai_tool_history.rs`, `tests/sdk/messages_tool_loop.rs`, existing semantic tool/schema/stream cases and installed-client drivers. Keep official baseline assets and real SDK consumers; do not create a parallel fixture framework.
-- Current installed pi/OpenCode versions are recorded at execution time, without downgrade. Pi default Responses and the strict Chat tool case are positive goals. OpenCode Responses' postponed annotations case remains a separately reported known failure, not repaired by fixtures or waived by nine SDK loops.
+- Current installed pi/OpenCode versions are recorded at execution time, without downgrade. Preserve successful default tool/history loops, including strict Chat and Responses inline declarations. Client-history normalization belongs in the codec; fixtures and transparent forwarders must not repair request bodies.
 - Reuse the [offline baseline](development.md#offline-baseline) and [SDK gate](development.md#sdk-loopback-gate) per implementation slice. Real Provider/model checks remain AR5 with fresh credentials and separately bounded runs; synthetic acceptance does not certify endpoint behavior.
 
 Risks that change the plan:
@@ -147,15 +145,15 @@ Risks that change the plan:
 - Unknown root/inline precedence prevents computing a faithful source active set for colliding definitions; scope that approximation to known cases, while preserving native shapes when possible.
 - Missing custom-SSE carriers or lawful returned-role replay prevent complete advanced-family loops. Keep those boundaries explicit; ordinary function work need not wait for a speculative transport.
 - Explicit strict, selected-tool, cardinality or serial guarantees with no target carrier remain rejected unless that concrete guarantee downgrade is selected. Do not repair by schema deletion, automatic prompting or a new silent fallback.
-- S3-T5–S3-T7 require their own policy selection and affected-loop acceptance; historical annotations, media relocation and grammar-to-prose remain outside the scheduled packages.
+- S3-T5–S3-T7 require their own policy selection and affected-loop acceptance; textual tool-history annotations, media relocation and grammar-to-prose remain outside the scheduled packages.
 
-Tool discovery, hosted/programmatic execution, new endpoints, Google expansion and OpenCode annotation normalization remain outside this plan. Public capability metadata must describe conditional mappings honestly; general protocol or SDK presence is not a per-model promise.
+Tool discovery, hosted/programmatic execution, new endpoints and Google expansion remain outside these tool packages. Client-history annotations use their separate [L2 contract](architecture.md#semantic-equivalence-compatibility). Public capability metadata must describe conditional mappings honestly; general protocol or SDK presence is not a per-model promise.
 
 ### Conversion-ladder migration
 
 #### Remaining stabilization exit
 
-After the default-profile repairs, fresh credentials and model selection, run current-client characterization and default reasoning/tool/history gateway loops with installed pi and OpenCode across all three client protocols and selected cross-protocol lanes.
+With offline default-profile preparation complete, provision fresh credentials and select actual models, then run current-client characterization and default reasoning/tool/history gateway loops with installed pi and OpenCode across all three client protocols and selected cross-protocol lanes.
 
 Exit: gateway execution and replay pass within documented profiles on the rewritten account path and selected models. This exit is part of [AR5](#ordered-work-and-exit-gates), independent of offline regression and SDK gates. Interim verification uses focused offline and applicable SDK gates; dated acceptance does not qualify new account/model paths.
 
@@ -197,13 +195,12 @@ Default reasoning/tool/history gateway success on all three client protocols is 
 
 ## Planned order
 
-Only remaining work is listed. The tool/ordered-effort core is complete. Resolve the postponed [OpenCode annotations decision](#agent-default-production-findings), then complete [AR5](#ordered-work-and-exit-gates). Conditional tool compatibility packages require their own policy selection and are not default prerequisites. Stage 4 resumes after AR5; Stage 5 remains unscheduled.
+Only remaining work is listed. Offline tool/ordered-effort and default-profile preparation is complete; [AR5](#ordered-work-and-exit-gates) is next. Conditional tool compatibility packages require their own policy selection and are not default prerequisites. Stage 4 resumes after AR5; Stage 5 remains unscheduled.
 
 | Stage | Goal | Exit evidence |
 |---|---|---|
-| **3 — Remaining default-profile gate** | Select the OpenCode Responses missing-annotations history contract | Current default tool/history continuation succeeds under the selected contract, without silently rewriting input |
 | **3 — Conditional compatibility follow-ups** | [S3-T5–S3-T7](#conditional-stage-3-follow-ups): namespace aliases, plain custom wrappers and examples projection | Separate policy selection and affected full-loop verification; not default blockers for AR5 or Stage 4 |
-| **AR5 — Pre-Stage-4 acceptance gate** | After the core and default-profile gate: fresh credentials, actual model/binding selection and bounded real Provider/current-Agent checks | Real tool/history loops on the rewritten account path; unresolved or unavailable lanes reported honestly |
+| **AR5 — Pre-Stage-4 acceptance gate** | After completed offline preparation: fresh credentials, actual model/binding selection and bounded real Provider/current-Agent checks | Real tool/history loops on the rewritten account path; unresolved or unavailable lanes reported honestly |
 | **4 — Modalities, Decision & file resources** | Decision, Embedding extensions, Audio (Speech/Transcription/Translation), Images, Files/Uploads, and Video at equal priority | Verified request/result contracts, media bounds, resource isolation, cancellation, and SDK loops |
 | **5 — Unscheduled follow-ups** | Citations, tool discovery, hosted tools, server-side compaction, Batch, and Realtime | Requires explicit per-slice design selection and scheduling prior to implementation |
 
@@ -332,7 +329,6 @@ Prerequisites for activating newly implemented codec carriers on public routes:
 | Issue | Status | Action |
 |---|---|---|
 | Namespace aliases, custom text and examples | Conditional S3-T5–S3-T7 | Select each content/interface adaptation separately; do not make all three implicit core prerequisites |
-| OpenCode missing annotations | Postponed user decision; default-profile gate remains open | Keep strict intake until its separate history contract is selected; tool work does not normalize it |
 | Ordered control null/reset | Named-level effort repair is delivered; optional-null reset/default meanings remain unqualified | Qualify field-specific semantics before broadening admission; retain current null rejections |
 | Complete citations | Stage 5 | Retain local point-anchor owner; defer full citation model |
 | Execution controls | Paused | Enforce pre-dispatch validation; reject unsupported controls |

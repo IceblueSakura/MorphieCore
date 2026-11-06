@@ -329,7 +329,7 @@ Before activating each new content projection, select its concrete loss row; acc
 - **Recommended separately:** reversible namespace aliases, accepting altered model-facing grouping/names.
 - **Optional later:** plain custom-text wrappers and examples-in-description. Keep explicit custom grammar, media relocation and instruction-history synthesis outside the first package.
 
-The source facts still requiring qualification are Responses root/inline collision precedence, namespace-qualified choice spelling, lawful replay of non-developer returned additions, Chat custom SSE, and Messages repeated-definition grammar accounting. Resolve source semantics with official references; do not reject a carriable native request merely because upstream behavior is unassessed. Known unsupported guarantees stay explicit boundaries. OpenCode missing text annotations remains postponed and is unrelated to proposed textual tool-history annotations.
+The source facts still requiring qualification are Responses root/inline collision precedence, namespace-qualified choice spelling, lawful replay of non-developer returned additions, Chat custom SSE, and Messages repeated-definition grammar accounting. Resolve source semantics with official references; do not reject a carriable native request merely because upstream behavior is unassessed. Known unsupported guarantees stay explicit boundaries. The selected [Client-history empty-annotations compatibility](architecture.md#semantic-equivalence-compatibility) is separate from proposed textual tool-history annotations.
 
 #### First-package dispositions
 

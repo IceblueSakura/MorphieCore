@@ -21,7 +21,10 @@ pub(in crate::protocol::openai) fn read_existing(
     let text = Text::allowing_empty(string(o, "text")?, "text", MAX_TEXT_BYTES)
         .map_err(|_| CodecError::Limit)?;
     let annotations = match o.get("annotations") {
-        Some(v) if !v.is_null() => read_annotations(v, items, existing)?,
+        // Client history may omit an empty collection; explicit values and
+        // upstream snapshots still follow the official required-array contract.
+        None if items.direction.client() => vec![],
+        Some(v) => read_annotations(v, items, existing)?,
         _ => {
             return Err(CodecError::invalid());
         }

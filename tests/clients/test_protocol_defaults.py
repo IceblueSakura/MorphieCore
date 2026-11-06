@@ -1,6 +1,5 @@
 """Independent negative oracles for installed protocol-default characterization."""
 import copy
-import json
 from pathlib import Path
 import unittest
 
@@ -9,20 +8,6 @@ import protocol_defaults as defaults
 
 class ProtocolDefaultOracles(unittest.TestCase):
     path = Path("/synthetic/sample.txt")
-
-    def test_rejection_requires_the_sanitized_gateway_envelope(self):
-        payload = json.dumps({"error": {"type": "invalid_request_error", "code": "invalid_request",
-                                      "message": defaults.REJECTION_MESSAGE, "param": None}}).encode()
-        defaults.assert_rejection_response(400, "application/json", payload)
-        with self.assertRaises(json.JSONDecodeError):
-            defaults.assert_rejection_response(400, "application/json", payload[:-1])
-        for status, content_type, body, error in [
-            (502, "application/json", payload, "default_rejection_http"),
-            (400, "text/plain", payload, "default_rejection_http"),
-            (400, "application/json", b'{"error":{"code":"upstream_error"}}', "default_rejection_envelope"),
-        ]:
-            with self.assertRaisesRegex(RuntimeError, "^" + error + "$"):
-                defaults.assert_rejection_response(status, content_type, body)
 
     def responses_body(self, pi):
         tool = {"type": "function", "name": "read", "parameters": {
@@ -128,40 +113,29 @@ class ProtocolDefaultOracles(unittest.TestCase):
         body["input"][5]["content"][0]["annotations"] = []
         with self.assertRaisesRegex(RuntimeError, "^default_responses_annotations$"):
             defaults.assert_responses_history(body, 3, self.path)
+        defaults.assert_responses_history(body, 3, self.path, upstream=True)
         defaults.assert_responses_history(body, 3, self.path, pi=True)
         del body["input"][5]["content"][0]["annotations"]
         with self.assertRaisesRegex(RuntimeError, "^default_responses_annotations$"):
             defaults.assert_responses_history(body, 3, self.path, pi=True)
+        with self.assertRaisesRegex(RuntimeError, "^default_responses_annotations$"):
+            defaults.assert_responses_history(body, 3, self.path, upstream=True)
 
-    def test_rejections_require_the_intended_boundary_and_zero_dispatch(self):
-        final = {"stage": "admission", "outcome": "error", "candidates": [],
-                 "generation": {"failure": {"boundary": "request.decode",
-                                           "code": "codec.invalid.invalid_value"}}}
-        records = [{"outcome": "complete", "candidates": [{}]},
-                   {"outcome": "complete", "candidates": [{}]}, final]
+    def test_default_completion_requires_dispatch_and_no_ignored_controls(self):
+        records = [{"outcome": "complete", "candidates": [{}]} for _ in range(3)]
         defaults.assert_diagnostics(records, "responses", False)
         for key, value, error in [
-            ("stage", "intake", "default_rejection_stage"),
-            ("candidates", [{}], "default_gateway_completion"),
-            ("outcome", "complete", "default_gateway_completion"),
-            ("generation", {}, "default_responses_rejection_reason"),
+            ("candidates", [], "default_gateway_completion"),
+            ("candidates", [{}, {}], "default_gateway_completion"),
+            ("outcome", "error", "default_gateway_completion"),
+            ("ignored_request_field_count", 1, "default_gateway_ignored_fields"),
         ]:
             changed = copy.deepcopy(records)
             changed[-1][key] = value
             with self.subTest(key=key), self.assertRaisesRegex(RuntimeError, "^" + error + "$"):
                 defaults.assert_diagnostics(changed, "responses", False)
-        defaults.assert_diagnostics([{"outcome": "complete", "candidates": [{}]}] * 3, "responses", True)
-        with self.assertRaisesRegex(RuntimeError, "^default_gateway_completion$"):
-            defaults.assert_diagnostics(records, "responses", True)
-
-    def test_failed_continuation_cannot_claim_a_client_answer(self):
-        failure = {"type": "error", "error": {"type": "provider.invalid-request", "status": 400}}
-        defaults.assert_opencode_rejection([failure])
-        for events in ([], [{**failure, "error": {"type": "provider.invalid-output", "status": 502}}]):
-            with self.assertRaisesRegex(RuntimeError, "^default_responses_client_rejection$"):
-                defaults.assert_opencode_rejection(events)
-        with self.assertRaisesRegex(RuntimeError, "^default_responses_false_success$"):
-            defaults.assert_opencode_rejection([{"type": "text", "part": {"text": defaults.TEXT}}, failure])
+        with self.assertRaisesRegex(RuntimeError, "^default_gateway_request_count$"):
+            defaults.assert_diagnostics(records[:2], "responses", False)
 
 
 if __name__ == "__main__":

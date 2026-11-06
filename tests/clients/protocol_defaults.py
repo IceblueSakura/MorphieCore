@@ -20,17 +20,6 @@ PROFILES = {
     "chat": ("deepseek-flash", "deepseek", "deepseek-chat", "openai-completions"),
     "responses": ("gpt-6.1-sol", "opencode", "openai-sol-responses", "openai-responses"),
 }
-REJECTION_MESSAGE = "The request could not be completed (invalid_request)."
-
-
-def assert_rejection_response(status, content_type, payload, *, native=False):
-    check(status == 400 and content_type is not None
-          and content_type.split(";")[0] == "application/json", "default_rejection_http")
-    expected = {"type": "error", "error": {"type": "invalid_request_error", "message": REJECTION_MESSAGE}} if native else {
-        "error": {"type": "invalid_request_error", "code": "invalid_request",
-                  "message": REJECTION_MESSAGE, "param": None}}
-    check(json.loads(payload) == expected,
-          "default_rejection_envelope")
 
 
 class DefaultState(RecoveryState):
@@ -40,11 +29,9 @@ class DefaultState(RecoveryState):
         self.deliveries = []
 
     def observe_response(self, body, status, content_type, payload):
-        if status != 200:
-            assert_rejection_response(status, content_type, payload, native=self.native)
-        else:
-            check(content_type is not None and content_type.split(";")[0] == "text/event-stream",
-                  "default_delivery_content_type")
+        check(status == 200, "default_delivery_status")
+        check(content_type is not None and content_type.split(";")[0] == "text/event-stream",
+              "default_delivery_content_type")
         with self.lock:
             self.deliveries.append(status)
 
@@ -267,7 +254,7 @@ def assert_responses_profile(body, pi):
           and "path" in schema.get("required", []), "default_read_path_schema")
 
 
-def assert_responses_history(body, phase, path, *, pi=False):
+def assert_responses_history(body, phase, path, *, pi=False, upstream=False):
     items = body["input"]
     calls = [item for item in items if item.get("type") == "function_call"]
     results = [item for item in items if item.get("type") == "function_call_output"]
@@ -299,7 +286,7 @@ def assert_responses_history(body, phase, path, *, pi=False):
               and "".join(part["text"] for part in answer["content"]) == TEXT,
               "default_responses_final_history")
         check(answer.get("status") == "completed" and
-              all(part.get("annotations") == [] if pi else "annotations" not in part
+              all(part.get("annotations") == [] if pi or upstream else "annotations" not in part
                   for part in answer["content"]), "default_responses_annotations")
     reasoning = [item for item in items if item.get("type") == "reasoning"]
     check(len(reasoning) == phase - 1,
@@ -330,7 +317,7 @@ class ResponsesState(DefaultState):
               "default_upstream_credential")
         assert_responses_profile(body, self.pi)
         phase = responses_stage(body)
-        assert_responses_history(body, phase, self.path, pi=self.pi)
+        assert_responses_history(body, phase, self.path, pi=self.pi, upstream=True)
         with self.lock:
             self.attempts.append(phase)
             check(len(self.attempts) <= 3 and self.attempts == [1, 2, 3][:len(self.attempts)],
@@ -340,38 +327,20 @@ class ResponsesState(DefaultState):
     def finish(self):
         check(not self.errors, "default_authority_errors:" + ",".join(self.errors))
         check(self.ingress == [1, 2, 3]
-              and self.attempts == ([1, 2, 3] if self.pi else [1, 2]), "default_exchange_counts")
-        check(self.deliveries == ([200, 200, 200] if self.pi else [200, 200, 400]), "default_deliveries")
-
-
-def assert_opencode_rejection(events):
-    errors = [event["error"] for event in events if event.get("type") == "error"]
-    check(len(errors) == 1 and errors[0].get("type") == "provider.invalid-request"
-          and errors[0].get("status") == 400, "default_responses_client_rejection")
-    check(not any(event.get("type") in ("text", "tool_use") for event in events),
-          "default_responses_false_success")
+              and self.attempts == [1, 2, 3], "default_exchange_counts")
+        check(self.deliveries == [200, 200, 200], "default_deliveries")
 
 
 def assert_diagnostics(requests, protocol, pi):
     check(len(requests) == 3, "default_gateway_request_count")
-    for index, record in enumerate(requests):
-        rejected = not pi and protocol == "responses" and index == 2
-        check(record["outcome"] == ("error" if rejected else "complete")
-              and len(record["candidates"]) == (0 if rejected else 1),
+    for record in requests:
+        check(record["outcome"] == "complete" and len(record["candidates"]) == 1,
               "default_gateway_completion")
-        if not rejected:
-            # pi's builtin Chat profile carries a client-side `thinking` object
-            # the Chat union does not define; it is ignored, never interpreted.
-            expected_ignored = 1 if pi and protocol == "chat" else 0
-            check(record.get("ignored_request_field_count", 0) == expected_ignored,
-                  "default_gateway_ignored_fields")
-            continue
-        check(record["stage"] == "admission", "default_rejection_stage")
-        generation = record["generation"]
-        check(generation.get("failure") == {
-            "boundary": "request.decode",
-            "code": "codec.invalid.invalid_value"},
-            "default_responses_rejection_reason")
+        # pi's builtin Chat profile carries a client-side `thinking` object
+        # the Chat union does not define; it is ignored, never interpreted.
+        expected_ignored = 1 if pi and protocol == "chat" else 0
+        check(record.get("ignored_request_field_count", 0) == expected_ignored,
+              "default_gateway_ignored_fields")
 
 
 def run_pi(binary, env, root, work, origin, path, protocol):
@@ -432,16 +401,13 @@ def run_opencode(binary, env, root, work, origin, path, protocol):
           and TEXT in tools[0]["state"]["output"], "opencode_default_actual_read")
     resumed, _ = opencode_prompt(binary, env, work,
         f"{NEXT}: Repeat the answer without reading again.", "protocol-default", session,
-        model=f"{provider}/{model_id}",
-        **({"expected_status": 1, "check_output": assert_opencode_rejection}
-           if protocol == "responses" else {}))
+        model=f"{provider}/{model_id}")
     check(resumed == session, "opencode_default_session_changed")
     databases = list(Path(env["XDG_DATA_HOME"]).rglob("opencode.db"))
     check(len(databases) == 1, "opencode_database_count")
     with closing(sqlite3.connect(f"file:{databases[0]}?mode=ro", uri=True)) as database:
         check_opencode_session(database, session,
-            ["tool-calls", "stop", "error"] if protocol == "responses" else ["tool-calls", "stop", "stop"],
-            idle_outcome="failed" if protocol == "responses" else "succeeded")
+            ["tool-calls", "stop", "stop"])
 
 
 def main():
@@ -453,9 +419,7 @@ def main():
     path.write_text(TEXT + "\n", encoding="utf-8")
     protocol = case.split("-")[1]
     pi = case.startswith("pi-")
-    rejected = not pi and protocol == "responses"
     count = 3
-    attempts = 2 if rejected else 3
     model_id, provider, binding, _ = PROFILES[protocol]
     if pi and protocol == "chat":
         # pi's builtin strict read tool needs the beta endpoint binding.
@@ -500,10 +464,9 @@ def main():
             raise
     state.finish()
     print(json.dumps({"case": case, "version": version, "client_requests": count,
-        "upstream_attempts": attempts, "extra_client_requests": 0,
+        "upstream_attempts": count, "extra_client_requests": 0,
         "tool_history": True,
-        "default_rejection": rejected,
-        "next_turn_history": not rejected,
+        "next_turn_history": True,
         **({"default_headers": True, "beta_header_seen": state.beta_seen,
             "block_binding_seen": state.block_binding_seen} if protocol == "messages" else {})}))
 

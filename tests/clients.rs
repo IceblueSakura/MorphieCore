@@ -112,8 +112,8 @@ async fn opencode_messages_default_tool_history() {
 }
 
 #[tokio::test]
-#[ignore = "requires current installed OpenCode; native Responses loop then missing-annotation rejection"]
-async fn opencode_responses_default_continuation_rejection() {
+#[ignore = "requires current installed OpenCode; default native Responses tool/history through gateway"]
+async fn opencode_responses_default_tool_history() {
     installed_case(
         "protocol_defaults",
         "opencode-responses-default",
