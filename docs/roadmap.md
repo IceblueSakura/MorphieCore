@@ -7,6 +7,7 @@ This page owns current scope, priorities, dependencies, and exit gates. [Archite
 - [Current status](#current-status)
 - [Account rewrite execution order](#account-rewrite-execution-order)
   - [Ordered work and exit gates](#ordered-work-and-exit-gates)
+  - [Pre-Stage-4 real-Agent scenario sweep](#pre-stage-4-real-agent-scenario-sweep)
   - [Verification and operator handoff](#verification-and-operator-handoff)
 - [Three-protocol fidelity repair](#three-protocol-fidelity-repair)
   - [Scope and boundaries](#scope-and-boundaries)
@@ -56,12 +57,12 @@ This page owns current scope, priorities, dependencies, and exit gates. [Archite
 
 ## Current status
 
-**Current focus (2026-11-06):** AR5 supplementary testing on fresh accounts. The user-requested [AR5 review](ar5-review.md) separately collects pending observations and passing-test evidence. Combined analysis, adaptation choices and repair ordering await further tests and joint review; AR5 and Stage 4 remain gated.
+**Current focus (2026-11-06):** Complete the [pi-first real-Agent scenario sweep](#pre-stage-4-real-agent-scenario-sweep) before Stage 4, then jointly analyze the collected failures and perform concentrated root-cause repairs. The user-requested [AR5 review](ar5-review.md) separately collects pending observations and passing-test evidence; AR5 and Stage 4 remain gated.
 
 | Priority | Remaining work | Exit |
 |---|---|---|
 | Conditional tool follow-ups | [S3-T5–S3-T7](#conditional-stage-3-follow-ups): namespace aliases, custom-text wrappers and examples projection | Separate policy selection and full affected-loop acceptance; not default prerequisites for AR5 |
-| Account acceptance | Collect supplementary tests for joint AR5 review before selecting adaptations | Bounded real Provider checks and installed-Agent exit on the rewritten account path |
+| Account and Agent acceptance | Complete the pi-first real scenario sweep, then jointly select root-cause repairs | Bounded real Provider/current-Agent evidence, repaired-loop acceptance and explicit disposition of remaining gaps |
 | API expansion | Select and implement Stage-4 operation contracts after AR5 | Per-operation lifecycle, protocol and SDK acceptance |
 | Downstream integration | Implement opt-in per-Agent JSONL session storage | Selected isolation and lifetime bounds |
 | Production preparation | Decide diagnostic packaging and deferred observability scope | Explicit deployer selection |
@@ -76,7 +77,7 @@ The identifiers below belong only to planning and acceptance documentation, not 
 
 | Order | Work | Completion evidence |
 |---|---|---|
-| **AR5 — Fresh credentials, model selection and real acceptance** | Entry: offline tool/default-profile preparation is complete. The user provisions new API keys and any required OAuth sessions through the new loader/CLI. Validate configured accounts and select actual Provider/model bindings. Then run bounded serial Provider checks and the deferred full installed-Agent exit on the rewritten path. | Actual credential kinds and selected models are verified separately from synthetic recovery. Current installed pi/OpenCode complete default reasoning/tool/history loops across the three client protocols and selected cross-protocol lanes. Unavailable account combinations are reported as unverified, not inferred from mocks. Production activation remains separately approved. |
+| **AR5 — Fresh credentials, model selection and real acceptance** | Entry: offline tool/default-profile preparation is complete. The user provisions new API keys and any required OAuth sessions through the new loader/CLI. Validate configured accounts and select actual Provider/model bindings. Complete the pi-first real scenario sweep below, then jointly analyze findings and select concentrated repairs. | Current installed pi/OpenCode complete the selected real workflows on the rewritten account path, including affected-loop rechecks after repairs. Blocking findings and unavailable prerequisites receive an explicit joint disposition before closure. Production activation remains separately approved. |
 
 Selected upstream lanes (2026-11-06):
 
@@ -92,6 +93,34 @@ Selected upstream lanes (2026-11-06):
 Fresh local provisioning, Google key replacement and account-reference validation are complete. The selected [Responses replay authority](architecture.md#reasoning-replay) is implemented. The DeepSeek publication keeps canonical/upstream `deepseek-flash`; its label does not pin that upstream alias.
 
 Pending observations and concise passing results have one review home in [AR5 Review](ar5-review.md). Keep them separate from this execution plan and unrelated backlogs while supplementary testing continues. The record grants no new conversion policy, credential operation, deployment or Stage-4 implementation approval.
+
+### Pre-Stage-4 real-Agent scenario sweep
+
+**User-selected sequence (2026-11-06):** Test common coding-Agent workflows against real upstreams, primarily through pi, before selecting concentrated product repairs. Use OpenCode to cover distinct client serialization, history, compaction and error-handling behavior. Other Agents require a concrete intended workflow and their own admission prerequisites; this sweep does not implicitly activate deferred Claude Code acceptance.
+
+Coverage follows workflows and semantic boundaries, not a Cartesian product of every setting, client and Provider. Keep the selected upstream lanes above. First qualify default pi Chat, Responses and Messages profiles and each selected binding; retain Luna/Google and cross-protocol failures as blocked cells while independent scenarios continue. Reuse still-applicable passing evidence with its exact version/profile. Exercise shared workflows on successful representative lanes, and repeat where native reasoning, signatures or client behavior differ.
+
+| Scenario family | Required real coverage |
+|---|---|
+| Default delivery and controls | Ordinary streaming text, no-tool answers, actual model selection/public labels, default tool declarations and strictness, system/developer instructions, and same-session follow-up across the three client protocols. Qualify selected cross-protocol lanes separately. |
+| Thinking levels and reasoning summaries | Characterize the current client's exposed levels and actual wire first. On representative native reasoning families, exercise every exposed thinking level, including off/default where available, and an in-session change after tool history. Separately test absent/default and exposed `auto`/`concise`/`detailed` reasoning-summary controls on Responses. Use a labelled SDK companion for controls the Agent cannot emit; record admission/upstream failures without lowering the requested level. |
+| Real coding and tool repair | In a test-owned workspace, inspect multiple files, actually edit/write code, run a bounded local check, return a local tool failure, repair it and verify the result. Include repeated/multiple calls, argument fidelity, call/result identities, ordering and a final no-tool recall. Observe actual concurrency rather than requiring the model to emit parallel calls. |
+| Tool and instruction changes | Change active tools, instructions and effort using supported client operations after an initial tool round; verify subsequent declarations, retained historical controls/signatures and recall. Cover the real tool schemas and strict declarations used by the client rather than only a minimal read schema. |
+| Session history and user intervention | Multi-turn recall, persisted client-session restart/resume, legitimate earlier-turn edit/rewind or branch, steering/follow-up during work, and an explicit model switch with existing history. Use current client operations; observe incompatible replay boundaries without stripping returned state. Check separate-session isolation with interleaved conversations. |
+| Long sessions and compaction | Retain ordinary manual-summary evidence; add threshold-triggered automatic compaction, split-turn retention, a second compaction, and subsequent real tool/recall turns. Cover summary cancellation/failure and recovery where reachable within a bounded run. Use ordinary Generation summarization on the selected model; native compaction stays deferred. |
+| Cancellation, limits and recovery | Retain first-text cancellation; add cancellation during thinking, tool-argument generation and a safe local tool execution where observable, followed by same-session recovery with one gateway permit. Exercise a deliberately small output cap and incomplete tool input without execution. Record naturally encountered upstream errors and bounded error-path resubmissions. |
+| Existing input and settings boundaries | Exercise Unicode/multiline content, bounded larger file/tool results, actual cache/session carriers and reported usage, plus the already supported image-input/read path on a selected image-capable profile. SDK companions cover explicit structured-output/tool-choice controls absent from the Agent UI. New modality APIs, counting and hosted tools remain deferred. |
+| Replay and account boundaries | Recheck signed/readable/opaque history through actual continuations. Account-compatible replay/failover needs independent compatible accounts and observed replay; keep R09 prerequisites explicit. Different-model switching belongs to session behavior, not same-model failover acceptance. |
+
+Execution order and checks:
+
+1. **Characterize and inventory:** Record current unwrapped versions, exposed operations/settings, exact profiles and reusable evidence. Extend existing isolated drivers only where needed. Check actual client wire against public source or a synthetic authority before spending live requests.
+2. **Run the broad sweep:** Start with native/default controls and thinking/summary levels, then coding/tools, history changes, compaction and cancellation. Each run has fixed target, request/attempt budgets including auxiliary calls, output/wire limits and deadlines. Check filesystem/tool outcomes, client terminals, actual upstream controls and continuation history; keep SDK-only evidence separate.
+3. **Collect before repairing:** Add redacted findings and concise passes only to [AR5 Review](ar5-review.md). Distinguish observer/configuration errors, local admission, upstream rejection, delivery/replay failure and unmet prerequisites. Correct a broken test observer or test-owned configuration separately; do not patch product semantics, weaken guards or rewrite history to continue the sweep. Stop only the dependent cell and continue independent workflows.
+4. **Joint root-cause review:** Once independently runnable coverage is collected, group related symptoms by traced ownership boundary, choose minimal reproductions and agree adaptation/repair scope and ordering. Blocked downstream cells remain explicit follow-up coverage; testing scope alone grants no new semantic policy.
+5. **Concentrated repairs and exit:** Implement selected root-cause slices with focused regressions and required offline/SDK checks. Rerun affected real scenarios and previously blocked dependents. Close AR5 only after joint disposition of the scenario inventory, unresolved findings and missing prerequisites; then resume Stage 4.
+
+Risks that change execution: unavailable compatible accounts, no returned replay carrier, a client operation not exposed by the current version, or a required thinking/compaction budget exceeding the run's cap. Record these boundaries before selecting a separate bounded profile or an explicit deferral. A test-only reduced context threshold qualifies the trigger/rebuild path, not full model-context capacity. Do not induce throttling, rotate credentials or change host/deployed services for coverage. Controlled fault injection remains separately labelled from a naturally observed real-upstream failure.
 
 ### Verification and operator handoff
 
@@ -215,7 +244,7 @@ Only remaining work is listed. Offline tool/ordered-effort and default-profile p
 | Stage | Goal | Exit evidence |
 |---|---|---|
 | **3 — Conditional compatibility follow-ups** | [S3-T5–S3-T7](#conditional-stage-3-follow-ups): namespace aliases, plain custom wrappers and examples projection | Separate policy selection and affected full-loop verification; not default blockers for AR5 or Stage 4 |
-| **AR5 — Pre-Stage-4 acceptance gate** | After completed offline preparation: fresh credentials, actual model/binding selection and bounded real Provider/current-Agent checks | Real tool/history loops on the rewritten account path; unresolved or unavailable lanes reported honestly |
+| **AR5 — Pre-Stage-4 acceptance gate** | Complete the [pi-first real scenario sweep](#pre-stage-4-real-agent-scenario-sweep), joint root-cause review and selected concentrated repairs | Affected real workflows pass; remaining findings and unavailable prerequisites receive explicit joint disposition |
 | **4 — Modalities, Decision & file resources** | Decision, Embedding extensions, Audio (Speech/Transcription/Translation), Images, Files/Uploads, and Video at equal priority | Verified request/result contracts, media bounds, resource isolation, cancellation, and SDK loops |
 | **5 — Unscheduled follow-ups** | Citations, tool discovery, hosted tools, server-side compaction, Batch, and Realtime | Requires explicit per-slice design selection and scheduling prior to implementation |
 

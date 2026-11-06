@@ -2,6 +2,8 @@
 
 This user-requested record owns the current AR5 observations awaiting joint review and a concise summary of passing tests. It is separate from the implementation roadmap and unrelated backlogs. **Additional tests are still expected; combined analysis, adaptation choices and repair ordering are deferred until the user reviews the collected evidence.** No root-cause diagnosis or repair policy is finalized here.
 
+The user-selected [pre-Stage-4 pi-first real-Agent sweep](roadmap.md#pre-stage-4-real-agent-scenario-sweep) owns supplementary coverage and the collect → jointly analyze → concentrated root-cause repair sequence. The results below retain their original scope; the expanded scenario inventory is not yet completed.
+
 ## Contents
 
 - [Test context](#test-context)

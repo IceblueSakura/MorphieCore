@@ -17,6 +17,7 @@ This guide owns tooling, test procedures and evidence reporting. Use offline, sy
 - [Test selection and pruning](#test-selection-and-pruning)
 - [Online acceptance](#online-acceptance)
   - [Production-profile acceptance](#production-profile-acceptance)
+    - [Real-Agent scenario selection](#real-agent-scenario-selection)
   - [Installed-client default characterization](#installed-client-default-characterization)
   - [Installed-client synthetic recovery](#installed-client-synthetic-recovery)
   - [Installed-client synthetic summaries](#installed-client-synthetic-summaries)
@@ -475,6 +476,18 @@ For [remaining production acceptance](roadmap.md#ordered-work-and-exit-gates), b
 5. For incremental delivery, use a delayed synthetic upstream whose terminal/EOF follows actual client-visible content; separately record timing for a bounded no-tool live run. Do not remove the tool-validation guard to get a better timing result. After cancellation, verify release and no replay/success; connection closure does not prove that remote computation or billing stopped.
 
 Source-derived expectations are not fresh acceptance. Record exclusions, including unverified account-compatible replay and process-local Responses history across restart. Preserve existing version-continuity results without treating them as acceptance of newly exercised paths.
+
+#### Real-Agent scenario selection
+
+The [pre-Stage-4 scenario sweep](roadmap.md#pre-stage-4-real-agent-scenario-sweep) owns required coverage and sequencing. Reuse `tests/clients/drivers.py` for isolated processes/RPC, `protocol_defaults.py` for built-in-model characterization, and the existing live, summary and lifecycle runners for their specific boundaries. The common pi helper currently enables only `read` and disables persisted sessions; coding and restart cases must explicitly select their own tools and test-owned session storage. Use supported client operations, not serialized-body or returned-history patches.
+
+Before each run, name the scenario, exact Agent/API/model/binding, changed controls, client-request and upstream-attempt bounds, auxiliary-call allowance, output/request/response caps, exchange/route deadlines and overall process bound. Keep the existing 2048-token/120-second live baseline unless the scenario needs a separately declared profile; check thinking-budget/output compatibility before dispatch. Do not expand a budget after observing excess requests. Read-only oracles may reject an invalid test request before forwarding.
+
+For thinking/summary cases, inspect current public client source and scratch RPC/configuration first. Record the selected UI level, emitted client fields and prepared upstream fields separately, including defaults and omission. Use a short tool/result/follow-up story to check history after level changes. Distinguish reasoning-summary verbosity from conversation compaction. An SDK-emitted setting is SDK evidence; an unavailable client control is an explicit coverage boundary.
+
+Use synthetic files, a small local coding task and bounded test-owned tool commands. Check actual file changes, exit codes and model-issued call/result associations without prescribing incidental prose or exact tool counts the task does not require. Count all actual transmissions and require honest termination. For cancellation, synchronize on the observed phase; if it never occurs within the fixed run, record it as unexercised rather than cancel at a different phase and claim coverage.
+
+Keep a concise dated coverage inventory with the evidence in [AR5 Review](ar5-review.md): passed, observed failure with its boundary, or unexercised with its prerequisite. Reuse exact-profile evidence when applicable. Keep private captures temporary and redacted reporting body-free; use committed runners/oracles for reusable mechanics rather than turning private exchanges into protocol fixtures. During the collection phase, record product failures and continue independent cases; repair selection follows joint review.
 
 For the explicit readable Chat real-Agent gate, use the current installed unwrapped binary:
 
