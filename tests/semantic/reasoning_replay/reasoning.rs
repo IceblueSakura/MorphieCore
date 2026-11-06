@@ -18,6 +18,172 @@ fn reasoning(status: &str) -> Value {
 }
 
 #[test]
+fn pending_configuration_composes_ordered_cross_field_overrides() {
+    let off = ConfigurationUpdate {
+        boundary: ConfigurationBoundary::NewInputTurn,
+        activation: Some(ReasoningActivation::Disabled),
+        effort: None,
+    };
+    let effort = |scope| ConfigurationUpdate {
+        boundary: ConfigurationBoundary::NewInputTurn,
+        activation: None,
+        effort: Some(EffortControl {
+            scope,
+            level: EffortLevel::High,
+        }),
+    };
+    let high = effort(EffortScope::Reasoning);
+    let response_high = effort(EffortScope::Response);
+    let enabled = ConfigurationUpdate {
+        activation: Some(ReasoningActivation::Enabled),
+        ..off
+    };
+    for (updates, activation, expected_effort) in [
+        (vec![off, high], ReasoningActivation::Enabled, high.effort),
+        (vec![high, off], ReasoningActivation::Disabled, None),
+        (
+            vec![response_high, off],
+            ReasoningActivation::Disabled,
+            response_high.effort,
+        ),
+        (
+            vec![off, response_high],
+            ReasoningActivation::Disabled,
+            response_high.effort,
+        ),
+        (vec![off, high, off], ReasoningActivation::Disabled, None),
+        (vec![off, enabled], ReasoningActivation::Enabled, None),
+    ] {
+        let mut items: Vec<_> = updates
+            .into_iter()
+            .enumerate()
+            .map(|(index, update)| {
+                (
+                    ItemId::new(index as u64 + 1),
+                    Item::ConfigurationUpdate(update),
+                )
+            })
+            .collect();
+        let mut reasoning = ReasoningRequest::present(None);
+        reasoning.activation = Some(ReasoningActivation::Enabled);
+        let settings = GenerationSettings {
+            reasoning,
+            effort: Some(EffortControl {
+                scope: EffortScope::Reasoning,
+                level: EffortLevel::Low,
+            }),
+            ..Default::default()
+        };
+        let pending = GenerationRequest::from_settings(items.clone(), settings.clone()).unwrap();
+        let future = pending.resolved_configuration().pending.unwrap();
+        assert_eq!(future.activation, Some(activation));
+        assert_eq!(future.effort, expected_effort);
+        items.push((
+            ItemId::new(10),
+            Item::Message(Message {
+                role: MessageRole::User,
+                participant: None,
+                phase: None,
+                status: ItemLifecycle::Completed,
+                parts: vec![Part::new(
+                    PartId::new(1),
+                    ContentPart::Text(text("new").into()),
+                )],
+            }),
+        ));
+        let request = GenerationRequest::from_settings(items, settings).unwrap();
+        let resolved = request.resolved_configuration();
+        assert_eq!(resolved.active.activation, Some(activation));
+        assert_eq!(resolved.active.effort, expected_effort);
+        assert!(resolved.pending.is_none());
+        assert!(
+            lower_request(
+                &request,
+                &FidelityRecords::default(),
+                GenerationApi::Chat,
+                Contract::full()
+            )
+            .is_ok()
+        );
+    }
+}
+
+#[test]
+fn immediate_configuration_overrides_pending_without_restoring_cleared_effort() {
+    let mut source =
+        responses::decode_generation(&json!({"input":"new","reasoning":{"effort":"low"}}))
+            .unwrap()
+            .semantic;
+    let mut settings = source.settings().clone();
+    settings.reasoning.activation = Some(ReasoningActivation::Enabled);
+    source = source.with_settings(settings).unwrap();
+    let off = ConfigurationUpdate {
+        boundary: ConfigurationBoundary::NewInputTurn,
+        activation: Some(ReasoningActivation::Disabled),
+        effort: None,
+    };
+    let immediate_enabled = ConfigurationUpdate {
+        boundary: ConfigurationBoundary::FollowingResponse,
+        activation: Some(ReasoningActivation::Enabled),
+        effort: None,
+    };
+    let updates = vec![
+        (ItemId::new(10), Item::ConfigurationUpdate(off)),
+        (
+            ItemId::new(11),
+            Item::ConfigurationUpdate(immediate_enabled),
+        ),
+    ];
+    let pending = source
+        .clone()
+        .with_items(updates.clone())
+        .unwrap()
+        .resolved_configuration();
+    assert_eq!(pending.active.effort.unwrap().level, EffortLevel::Low);
+    assert_eq!(
+        pending.pending.unwrap(),
+        ConfigurationState {
+            activation: Some(ReasoningActivation::Enabled),
+            effort: None,
+        }
+    );
+    let mut items = updates;
+    items.extend_from_slice(source.items());
+    source = source.with_items(items).unwrap();
+    assert_eq!(
+        source.resolved_configuration(),
+        ResolvedConfiguration {
+            active: ConfigurationState {
+                activation: Some(ReasoningActivation::Enabled),
+                effort: None
+            },
+            pending: None,
+        }
+    );
+    let immediate_high = ConfigurationUpdate {
+        activation: None,
+        effort: Some(EffortControl {
+            scope: EffortScope::Reasoning,
+            level: EffortLevel::High,
+        }),
+        ..immediate_enabled
+    };
+    let overwritten = source
+        .with_items(vec![
+            (ItemId::new(10), Item::ConfigurationUpdate(off)),
+            (ItemId::new(11), Item::ConfigurationUpdate(immediate_high)),
+        ])
+        .unwrap()
+        .resolved_configuration();
+    assert_eq!(
+        overwritten.active.activation,
+        Some(ReasoningActivation::Enabled)
+    );
+    assert_eq!(overwritten.active.effort, immediate_high.effort);
+    assert!(overwritten.pending.is_none());
+}
+
+#[test]
 fn typed_disabled_summary_is_valid_semantics_without_a_responses_carrier() {
     let mut reasoning = ReasoningRequest::present(None);
     reasoning.presentation.visibility = Some(ReasoningDisplay::Omitted);
@@ -388,7 +554,7 @@ fn subsequent_response_effort_replaces_off_and_applies_to_tool_continuation() {
         .decode_client_request(wire.to_string().as_bytes())
         .unwrap();
     let resolved = source.task.semantic.resolved_configuration();
-    assert_eq!(resolved.effort.unwrap().level, EffortLevel::High);
+    assert_eq!(resolved.active.effort.unwrap().level, EffortLevel::High);
     assert!(resolved.pending.is_none());
     let native = codec
         .encode_request(&source, "m", &Contract::full())

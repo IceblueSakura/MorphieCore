@@ -1111,7 +1111,7 @@ pub(crate) fn project_semantic<'a>(
     model: &str,
 ) -> Result<Conversion<Cow<'a, GenerationRequest>>, ConversionFailure> {
     let mut table = target.table(source, model);
-    let projected = project_semantic_with_table(source, target, model, &mut table)?;
+    let projected = project_semantic_with_table(source, source, target, model, &mut table)?;
     target.projected_rows(projected.value.as_ref(), model, false, &mut table);
     table
         .check(projected.value.as_ref())
@@ -1121,6 +1121,7 @@ pub(crate) fn project_semantic<'a>(
 
 fn project_semantic_with_table<'a>(
     source: &'a GenerationRequest,
+    original: &GenerationRequest,
     target: Target<'_>,
     model: &str,
     table: &mut Dispositions,
@@ -1135,7 +1136,24 @@ fn project_semantic_with_table<'a>(
     }
     let mut evidence = EvidenceDelta::default();
     let mut semantic = Cow::Borrowed(source);
-    if !target.retains_configuration(source) {
+    // Responses has no source message-container carrier. Validate and project
+    // those relations before item conversions replace their members' identities.
+    if matches!(target, Target::OpenAi(GenerationApi::Responses, _))
+        && let Some(groups) = crate::protocol::openai::lowering::message_groups::project(
+            source.items(),
+            source.message_envelopes(),
+            GenerationApi::Responses,
+        )?
+    {
+        semantic = Cow::Owned(
+            source
+                .clone()
+                .with_message_envelopes(groups.value)
+                .map_err(CodecError::from)?,
+        );
+        evidence.extend(groups.evidence);
+    }
+    if !target.retains_configuration(source) || !original.configuration_timing_matches(source) {
         if matches!(target, Target::GenerateContent(_) | Target::Interactions(_)) {
             return Err(
                 crate::protocol::conversion::generation::RepresentationError::Admission(
@@ -1144,7 +1162,9 @@ fn project_semantic_with_table<'a>(
                 .into(),
             );
         }
-        let resolved = source.resolved_configuration();
+        // Carrier-dependent history omission cannot redefine source timing.
+        // Even a native marker must collapse if its activation interval changed.
+        let resolved = original.resolved_configuration().active;
         let mut settings = source.settings().clone();
         settings.effort = resolved.effort;
         settings.reasoning.activation = resolved.activation;
@@ -1165,8 +1185,8 @@ fn project_semantic_with_table<'a>(
             .cloned()
             .collect();
         semantic = Cow::Owned(
-            source
-                .clone()
+            semantic
+                .into_owned()
                 .with_items_and_settings(items, settings)
                 .map_err(CodecError::from)?,
         );
@@ -2197,7 +2217,13 @@ pub(crate) fn project<'a>(
     }
     let input = stripped.as_ref().unwrap_or(source);
     let mut table = target.table(&input.task.semantic, model);
-    let semantic = project_semantic_with_table(&input.task.semantic, target, model, &mut table)?;
+    let semantic = project_semantic_with_table(
+        &input.task.semantic,
+        &source.task.semantic,
+        target,
+        model,
+        &mut table,
+    )?;
     target.context_rows(source, &mut table)?;
     let mut evidence = semantic.evidence;
     let semantic = match semantic.value {

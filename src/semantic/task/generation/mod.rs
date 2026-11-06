@@ -39,7 +39,7 @@ pub use content::text::{
 };
 pub use contract::Feature;
 pub use error::GenerationError;
-pub use history::configuration::ResolvedConfiguration;
+pub use history::configuration::{ConfigurationState, ResolvedConfiguration};
 pub use history::continuation::{CallReference, Continuation};
 pub use history::envelope::{MessageEnvelope, MessageEnvelopeRole};
 pub use history::group::GroupId;

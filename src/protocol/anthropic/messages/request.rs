@@ -27,12 +27,29 @@ impl Profile {
     > {
         let mut contract = super::TargetContract::new(self, super::Dialect::Standard);
         contract.dispositions = self.representation_contract();
-        let projected = crate::lowering::request::project_semantic(
-            request,
-            crate::lowering::request::Target::Messages(&contract),
+        // Direct native entry keeps its strict issuer boundary, then shares the
+        // transfer/configuration ordering with routed requests.
+        fidelity.require_native_replay(request, &target.origin())?;
+        let request = crate::protocol::GenerationRequestEnvelope::from_generation(
+            DecodedRequest {
+                semantic: request.clone(),
+                fidelity: fidelity.clone(),
+                evidence: Default::default(),
+            },
             target.model(),
         )?;
-        let mut wire = self.encode_request_envelope(&projected.value, fidelity, target, &None)?;
+        let projected = crate::lowering::request::project(
+            &request,
+            crate::lowering::request::Target::Messages(&contract),
+            target.model(),
+            Some(target),
+        )?;
+        let mut wire = self.encode_request_envelope(
+            &projected.value.task.semantic,
+            &projected.value.task.fidelity,
+            target,
+            &None,
+        )?;
         wire.evidence.extend(projected.evidence);
         Ok(wire)
     }
@@ -43,24 +60,14 @@ impl Profile {
         target: &ReplayTarget,
         policy: &Option<crate::semantic::context::ServicePolicy>,
     ) -> Result<crate::protocol::conversion::generation::Conversion<Value>, CodecError> {
-        let (request, fidelity, transferred) = crate::protocol::native::native_reasoning_history(
-            request,
-            fidelity,
-            target,
-            &[
-                ReplayFormat::AnthropicMessagesThinking,
-                ReplayFormat::AnthropicMessagesRedactedThinking,
-            ],
-        )?;
+        // Rendering cannot delete history after configuration timing is checked.
+        fidelity.require_native_replay(request, &target.origin())?;
         let mut normalized = vec![];
         let mut omitted = vec![];
         let mut rules = std::collections::BTreeSet::new();
-        if transferred {
-            rules.insert(RequestRule::TransferVisibleHistory);
-        }
         let mut wire = project(
-            &request,
-            &fidelity,
+            request,
+            fidelity,
             target,
             &mut normalized,
             &mut omitted,
@@ -69,7 +76,7 @@ impl Profile {
         wire.service_policy = *policy;
         let value = self.encode_request(&wire)?;
         let mut evidence: crate::protocol::conversion::generation::EvidenceDelta =
-            rules.into_iter().map(|r| r.effect(&request)).collect();
+            rules.into_iter().map(|r| r.effect(request)).collect();
         for owner in normalized {
             evidence.push(
                 crate::protocol::conversion::generation::Effect::new(
@@ -202,8 +209,6 @@ pub enum RequestRule {
     /// Claude 5.x models reject non-default `temperature` and `top_p`.
     OmitSampling,
     ProjectCallIds,
-    /// Incompatible complete reasoning is omitted, retaining visible history.
-    TransferVisibleHistory,
     /// Explicit opt-in for unattributed readable reasoning, not foreign-state transfer.
     ReasoningAsText,
     /// A Messages output format has no name; OpenAI requires one as a label.
@@ -226,7 +231,6 @@ impl RequestRule {
             Self::ProjectCallIds => (Field::ToolCallIdentity, Change::Normalize),
             Self::ReasoningAsText => (Field::ReportedReasoning, Change::Approximate),
             Self::SummarizeReasoning => (Field::ReasoningSummary, Change::Approximate),
-            Self::TransferVisibleHistory => (Field::Replay, Change::Omit),
         };
         match self {
             Self::SummarizeReasoning => Effect::Summary {
@@ -247,9 +251,6 @@ impl RequestRule {
             Self::SummarizeReasoning => crate::lowering::disposition::MESSAGES_SUMMARY.id,
             Self::OmitSampling => "messages.omit-sampling.v1",
             Self::ProjectCallIds => "messages.project-call-ids.v1",
-            Self::TransferVisibleHistory => {
-                crate::lowering::disposition::TRANSFER_MESSAGES_HISTORY.id
-            }
             Self::ReasoningAsText => crate::lowering::disposition::MESSAGES_REASONING_AS_TEXT.id,
             Self::OmitSchemaName => crate::lowering::disposition::MESSAGES_SCHEMA_NAME.id,
         }

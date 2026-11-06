@@ -26,6 +26,201 @@ fn native_request(body: &serde_json::Value) -> morphiecore::protocol::Generation
 }
 
 #[test]
+fn omitted_assistant_reasoning_keeps_source_effort_timing_across_targets_and_append() {
+    use morphiecore::protocol::{anthropic::messages, native::ReplayTarget};
+    let body = json!({"model":"m","max_tokens":64,"output_config":{"effort":"low"},
+    "messages":[
+        {"role":"user","content":"go"},
+        {"role":"assistant","content":[{"type":"redacted_thinking","data":"synthetic"}]},
+        {"role":"system","content":[],"output_config":{"effort":"high"}}
+    ]});
+    let mut caps = messages::TargetContract::new(
+        messages::Profile::AdaptiveTextTools,
+        messages::Dialect::Standard,
+    );
+    caps.dispositions = messages::Profile::AdaptiveTextTools.representation_contract();
+    for continued in [false, true] {
+        let mut body = body.clone();
+        if continued {
+            body["messages"].as_array_mut().unwrap().extend([
+                json!({"role":"assistant","content":"done"}),
+                json!({"role":"user","content":"next"}),
+            ]);
+        }
+        let request = decode_client_request(body.to_string().as_bytes()).unwrap();
+        let before = request.clone();
+        let expected = if continued { "high" } else { "low" };
+        for api in [GenerationApi::Chat, GenerationApi::Responses] {
+            let codec = GenerationCodec::new(api, Dialect::Standard, None);
+            let (wire, rules) = codec
+                .encode_request_with_rules(
+                    &request,
+                    "m",
+                    &morphiecore::protocol::openai::TargetContract::full(),
+                )
+                .unwrap();
+            assert_eq!(
+                if api == GenerationApi::Chat {
+                    &wire["reasoning_effort"]
+                } else {
+                    &wire["reasoning"]["effort"]
+                },
+                expected
+            );
+            assert!(rules.contains(&"generation.collapse-configuration.v1"));
+        }
+        let projected = caps
+            .encode_request(&request, &ReplayTarget::new("synthetic", "m").unwrap())
+            .unwrap();
+        assert_eq!(projected.value["output_config"]["effort"], expected);
+        assert!(
+            projected.value["messages"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|message| message.get("output_config").is_none())
+        );
+        let rules = projected.evidence.rule_names();
+        assert!(rules.contains(&"generation.collapse-configuration.v1"));
+        assert!(rules.contains(&"generation.configuration-prefix-change.v1"));
+        assert_eq!(request, before);
+    }
+}
+
+#[test]
+fn native_history_transfer_checks_timing_before_rendering_and_protects_later_replay() {
+    use morphiecore::protocol::{anthropic::messages, native::ReplayTarget};
+    use morphiecore::semantic::value::Text;
+    let target = ReplayTarget::new("synthetic", "m").unwrap();
+    let profile = messages::Profile::AdaptiveTextTools;
+    let mut caps = messages::TargetContract::new(profile, messages::Dialect::Standard);
+    caps.dispositions = profile.representation_contract();
+    for protected in [false, true] {
+        let mut body = json!({"model":"m","max_tokens":64,
+        "output_config":{"effort":"low"},"thinking":{"type":"adaptive","block_binding":{"prefix_mismatch_behavior":"drop_block"}},
+        "messages":[
+            {"role":"user","content":"go"},
+            {"role":"assistant","content":[{"type":"redacted_thinking","data":"synthetic"}]},
+            {"role":"system","content":[],"output_config":{"effort":"high"}}
+        ]});
+        if protected {
+            body["messages"].as_array_mut().unwrap().extend([
+                json!({"role":"assistant","content":[
+                    {"type":"thinking","thinking":"plan","signature":"kept-signature"},
+                    {"type":"text","text":"answer"}]}),
+            ]);
+        }
+        body["messages"]
+            .as_array_mut()
+            .unwrap()
+            .push(json!({"role":"user","content":"next"}));
+        let mut source = native_request(&body);
+        let mut items = source.task.semantic.items().to_vec();
+        let (owner, item) = &mut items[1];
+        let Item::Reasoning(reasoning) = item else {
+            panic!("reasoning")
+        };
+        reasoning.replay = Some(ReplayValue::final_value(
+            ReplayFormat::GoogleGenerateContentPart,
+            Text::new("foreign-format", "fixture", 64).unwrap(),
+        ));
+        let origin = source.task.fidelity.replay_origin(*owner).cloned();
+        source
+            .task
+            .fidelity
+            .record_replay(*owner, reasoning, origin)
+            .unwrap();
+        source.task.semantic = source.task.semantic.with_items(items).unwrap();
+        let before = source.clone();
+        for direct in [false, true] {
+            let result = if direct {
+                profile.encode_generation_request(
+                    &source.task.semantic,
+                    &source.task.fidelity,
+                    &target,
+                )
+            } else {
+                caps.encode_request(&source, &target)
+            };
+            if protected {
+                assert!(
+                    matches!(
+                        result,
+                        Err(morphiecore::protocol::ConversionFailure {
+                            cause: morphiecore::protocol::ConversionCause::Codec(
+                                CodecError::Unsupported(
+                                    morphiecore::protocol::failure::CarrierReason::Reasoning
+                                )
+                            ),
+                            ..
+                        })
+                    ),
+                    "{result:?}"
+                );
+            } else {
+                let projection = result.unwrap();
+                assert_eq!(projection.value["output_config"]["effort"], "high");
+                assert!(
+                    projection.value["messages"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .all(|message| message.get("output_config").is_none())
+                );
+                assert!(
+                    projection
+                        .evidence
+                        .rule_names()
+                        .contains(&"generation.collapse-configuration.v1")
+                );
+            }
+        }
+        assert_eq!(source, before);
+    }
+}
+
+#[test]
+fn mixed_system_tool_conversion_projects_container_before_replacing_members() {
+    let body = json!({"model":"m","max_tokens":64,"messages":[
+        {"role":"user","content":"go"},
+        {"role":"system","content":[
+            {"type":"text","text":"before"},
+            {"type":"tool_addition","tool":{"type":"tool_definition","definition":{
+                "name":"f","strict":false,
+                "input_schema":{"type":"object","properties":{},"additionalProperties":false}
+            }}},
+            {"type":"text","text":"after"}
+        ]}
+    ]});
+    let codec = GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None);
+    for source in [
+        decode_client_request(body.to_string().as_bytes()).unwrap(),
+        native_request(&body),
+    ] {
+        let before = source.clone();
+        let (wire, rules) = codec
+            .encode_request_with_rules(
+                &source,
+                "m",
+                &morphiecore::protocol::openai::TargetContract::full(),
+            )
+            .unwrap();
+        let items = wire["input"].as_array().unwrap();
+        assert_eq!(items.len(), 4);
+        assert_eq!(items[0]["role"], "user");
+        assert_eq!(items[1]["role"], "developer");
+        assert_eq!(items[1]["content"], "before");
+        assert_eq!(items[2]["type"], "additional_tools");
+        assert_eq!(items[2]["role"], "developer");
+        assert_eq!(items[2]["tools"][0]["name"], "f");
+        assert_eq!(items[3]["role"], "developer");
+        assert_eq!(items[3]["content"], "after");
+        assert!(rules.contains(&"responses.omit-message-envelopes.v1"));
+        assert_eq!(source, before);
+    }
+}
+
+#[test]
 fn ordered_effort_resolves_source_turn_before_target_mapping_and_keeps_native_prefix() {
     use morphiecore::protocol::{anthropic::messages, native::ReplayTarget};
     let body = json!({"model":"m","max_tokens":64,"output_config":{"effort":"low"},
@@ -42,7 +237,7 @@ fn ordered_effort_resolves_source_turn_before_target_mapping_and_keeps_native_pr
     for source in [&request, &native] {
         let resolved = source.task.semantic.resolved_configuration();
         assert_eq!(
-            resolved.effort,
+            resolved.active.effort,
             Some(EffortControl {
                 scope: EffortScope::Response,
                 level: EffortLevel::Medium,
@@ -124,7 +319,7 @@ fn ordered_effort_resolves_source_turn_before_target_mapping_and_keeps_native_pr
         .push(json!({"type":"text","text":"new input with feedback"}));
     let mixed = decode_client_request(mixed.to_string().as_bytes()).unwrap();
     let resolved = mixed.task.semantic.resolved_configuration();
-    assert_eq!(resolved.effort.unwrap().level, EffortLevel::High);
+    assert_eq!(resolved.active.effort.unwrap().level, EffortLevel::High);
     assert!(resolved.pending.is_none());
     let mut next = body;
     next["messages"].as_array_mut().unwrap().extend([
@@ -133,7 +328,7 @@ fn ordered_effort_resolves_source_turn_before_target_mapping_and_keeps_native_pr
     ]);
     let next = decode_client_request(next.to_string().as_bytes()).unwrap();
     let resolved = next.task.semantic.resolved_configuration();
-    assert_eq!(resolved.effort.unwrap().level, EffortLevel::High);
+    assert_eq!(resolved.active.effort.unwrap().level, EffortLevel::High);
     assert!(resolved.pending.is_none());
     let continued = caps.encode_request(&next, &target).unwrap();
     assert_eq!(
