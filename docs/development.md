@@ -17,6 +17,7 @@ This guide owns tooling, test procedures and evidence reporting. Use offline, sy
 - [Test selection and pruning](#test-selection-and-pruning)
 - [Online acceptance](#online-acceptance)
   - [Production-profile acceptance](#production-profile-acceptance)
+    - [Pre-closure acceptance sweep](#pre-closure-acceptance-sweep)
   - [Installed-client default characterization](#installed-client-default-characterization)
   - [Installed-client synthetic recovery](#installed-client-synthetic-recovery)
   - [Installed-client synthetic summaries](#installed-client-synthetic-summaries)
@@ -490,7 +491,7 @@ This runner fixes `aliyun-tokenplan-cn-chat` / `qwen3.8-flash`, three Generation
 
 The first client command permits 250 seconds for its two sequential Generation requests; recall permits 130 seconds for one. Pi's RPC reader honors the command deadline without a shorter idle limit and wakes on EOF or reader failure. Both live clients accept surrounding final-answer whitespace without modifying delivery or replay bytes; synthetic final-answer checks remain exact. After OpenCode recall, the runner also reads only its scratch database, requiring assistant finishes `tool-calls`, `stop`, `stop` and a successful idle outcome. Missing or extra assistant terminals and failed idle state reject even when the displayed answer is correct.
 
-This remains a curated readable-Chat profile. AR5 still needs actual account/model selection, current default-profile characterization and the full three-protocol/selected cross-protocol installed-Agent exit; extending this runner by changing only the API name would not establish those contracts.
+This remains a curated readable-Chat profile, separate from the fresh-account default/cross-protocol evidence below. Extending this runner by changing only the API name would not establish those contracts.
 
 **Fresh-account partial acceptance, 2026-11-06:** the selected [upstream lanes](roadmap.md#ordered-work-and-exit-gates) use newly provisioned API keys and managed Grok OAuth through the real CLI loader. Five local account references validate. Serial real-gateway smoke checks complete for Haiku, Grok, DeepSeek beta and Luna, with one request/attempt each, a 2048-token cap and 120-second exchange/route deadline.
 
@@ -516,9 +517,52 @@ Google's replacement key is installed through `key replace --secret-file`; all f
 
 Two preliminary Gemini SSE observer attempts interrupted their exchanges because a reused synthetic-fixture assertion required absent `service_tier`; real Google reported `default`. Removing that fixture-only assumption, without changing gateway code or forwarding, yields the successful final loop. Capture verification uses the complete native boundaries; the first exchange's optional client SSE capture is partial, so no complete client-capture claim is made. Both existing Google SDK regression scenarios also pass against synthetic generateContent and Interactions authorities. These results qualify managed SDK continuation, not Gemini pi/OpenCode default stateless histories.
 
-This partial acceptance does not close AR5: Luna's pi default loop, Gemini Agent continuation, OpenCode's new DeepSeek public-label configuration, selected cross-protocol loops, summarization, timing/cancellation, cross-account replay and real failover remain unverified. No deployed service or host Agent configuration was changed. Disposable live runners and private captures are not public fixtures.
+The subsequent [pre-closure sweep](#pre-closure-acceptance-sweep) qualifies additional cross-protocol, summarization and lifecycle paths and records the remaining failures separately. AR5 remains open for [joint repair planning](roadmap.md#ordered-work-and-exit-gates). No deployed service or host Agent configuration was changed. Disposable live runners and private captures are not public fixtures.
 
 The public-label, standard service-tier and single-binding replay repairs pass the full offline baseline, all-target Clippy under `-D warnings`, formatting, production compilation, 20 pinned assets and all four Python suites. All 19 connected SDK scenarios and six native installed-client default gates also pass. Replay coverage includes distinct added/item-done/terminal tokens, next-request use of the item-done token, and exact failure guards for replay addition, incomplete replay changes, identity, summary and argument conflicts. These offline/synthetic checks remain independent of the preceding real-account results.
+
+#### Pre-closure acceptance sweep
+
+**2026-11-06, testing only:** current unwrapped pi **1.5.0**, OpenCode **2.0.32** and the pinned SDKs use isolated state and the project credential loader. Each real profile fixes its target and request budget before execution, with **2048 output tokens**, **120-second deadlines**, serial calls and no harness retries. Cross-protocol profiles reuse bundled model metadata with an explicitly selected client serializer; they do not qualify a native Google client API. Target-specific output defaults and serializer-native cap fields are configured before interpreting admission results.
+
+**Google Interactions SDK:** the isolated `google-gemini-3.8-flash-interactions` binding completes a JSON smoke plus JSON and SSE read/result/recall stories: **7 requests / 7 attempts / 7 complete deliveries**. Native execution stays stateless (`store:false`, `stream:true`, no `previous_interaction_id`). Safe native capture units verify **four unchanged thought signatures** in subsequent inputs and **two call/result associations**. Neither observed function call carries a signature, so signed-call replay is unqualified. The initial runner exits nonzero on an overbroad complete-capture assertion: optional capture excludes unsafe argument fragments. Post-run boundary verification establishes the preceding facts, not complete capture coverage.
+
+**Installed-client protocol matrix:** each successful cell below is a three-request read/result/final-answer/recall loop. Counts in failed cells are actual upstream attempts, not retries or synthetic acceptance. All Chat cells use the readable profile; Responses is standard. The existing native rows above remain valid.
+
+| Actual upstream | Chat / OpenCode | Responses / OpenCode | Messages / pi |
+|---|---|---|---|
+| Luna Responses | 2 attempts, 1 complete; feedback gets upstream `400 recovery.request` | 3/3 complete | 3 attempts, 2 complete; recall gets upstream `400 recovery.request` |
+| Go/Haiku Messages | 3 attempts, 2 complete; `representation.replay_origin` at `event.project` | 3/3 complete | 3/3 complete |
+| DeepSeek beta Chat | 3/3 complete on built-in `deepseek-flash` | 1 complete; next request stopped by empty-message history observer | 1 complete; next request stopped by empty-text-block history observer |
+| Gemini generateContent | 1 attempt, upstream 200; `codec.unsupported.replay` at projection | 1 attempt, upstream 200; `codec.unsupported.replay` at projection | Local admission rejects adaptive/block-binding profile; 0 attempts |
+| Gemini Interactions | 1 attempt, upstream 200; `representation.replay_origin` at projection | 3/3 complete | Local admission rejects adaptive/block-binding profile; 0 attempts |
+| Grok OAuth Responses | 1 attempt, upstream 200; `representation.replay_origin` at projection | 3/3 complete | 3/3 complete |
+
+The configured pi Responses lanes for Luna and both Google bindings reject locally with **zero upstream attempts** under native `strict:true`; no strict opt-out was used. The Google Messages profile carries adaptive thinking with `block_binding.prefix_mismatch_behavior:drop_block`; its exact admission cause remains to be qualified. OpenCode's isolated custom-model declaration for `deepseek-v4.1-flash-1017` fails with `provider.no-route` before reaching the gateway. Its canonical built-in success does not qualify that public-label configuration.
+
+The two DeepSeek observer failures are narrower than their original labels suggest. pi omits one unsigned `{"type":"text","text":""}` block; visible text, tool-call values and thinking blocks compare equal. OpenCode omits a zero-length assistant message before replaying the function call; the message/count guard stops later checks. Neither next request is forwarded. Empty-carrier equivalence and generated ownership remain unresolved; these results do not establish loss of nonempty reasoning or tool arguments. The original history guards were not relaxed.
+
+Some OpenCode error paths autonomously submit another request despite disabled SDK retries. The observer latches failure and rejects excess submissions before forwarding: no failing profile exceeds its three-attempt ceiling. Failed upstream/projection results, local admission and observer stops are distinct acceptance outcomes.
+
+**Ordinary summarization and rebuilt tools:** both Agents pass against real Go/Haiku Messages, without native-compaction operations or retry/nudge cases:
+
+| Agent | Requests / attempts / complete deliveries | Verified continuation |
+|---|---|---|
+| pi | 6 / 6 / 6 | Ordinary Generation summary preserves the file fact, retains the recent turn, replaces old tool history and completes another real read/result cycle in the same session |
+| OpenCode | 5 / 5 / 5 | Core `session.compact` produces one completed checkpoint; rebuilt history preserves the fact and completes another real read/result cycle in the same session |
+
+**Real visible-text cancellation:** each Agent uses three requests/attempts with gateway concurrency **1**, and records `complete → interrupted → complete`. pi uses `--no-tools`; OpenCode explicitly selects `tool_choice:none`. First visible text precedes normal completion; interrupt after first visible text produces an aborted pi assistant / user-interrupted OpenCode execution, a gateway interrupted receipt, and successful same-session recovery through the single permit.
+
+| Observation | pi RPC text delta | OpenCode core SSE text delta |
+|---|---|---|
+| Normal first text / assistant or core terminal | 1580 / 3685 ms | 1811 / 4453 ms |
+| First text in the interrupted request | 2769 ms | 1721 ms |
+
+These are individual client-clock observations, not latency thresholds or comparable transport benchmarks. Expected broken-pipe/reset notes belong to the cancelled forwarding connection. Remote computation and billing termination are not asserted.
+
+**Unexercised replay/failover:** separate JSON and SSE Luna→Grok isolation profiles each stop after one successful Luna source request because no opaque replay is returned. No Grok transfer request is sent and no isolation pass is claimed. No independently provisioned compatible account pair is available for same-model account replay or real failover; aliases of the same credential are not substitutes.
+
+**Independent synthetic evidence:** all **21** installed-client scenarios and **19** connected SDK scenarios pass, along with **8** session-history cases and the Interactions terminal service-tier regression. They cover controlled recovery, summaries and lifecycle behavior independently of the real-account results. Remaining work and policy selections belong in the [roadmap](roadmap.md#ordered-work-and-exit-gates), not in assumed successful mappings.
 
 #### Initial production-profile baseline
 
