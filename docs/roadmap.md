@@ -56,7 +56,7 @@ This page owns current scope, priorities, dependencies, and exit gates. [Archite
 
 ## Current status
 
-**Current focus (2026-11-06):** AR5 real acceptance on freshly provisioned accounts. Initial live Haiku, DeepSeek beta and Grok OAuth tool/history loops pass with current pi 1.5.0 and OpenCode 2.0.32. Luna now passes basic delivery and the OpenCode loop after the selected replay-authority repair; pi's native strict read remains blocked at local admission. Google rejects the supplied key. Remaining profile and cross-protocol gates stay open; Stage 4 remains gated on AR5. [Development](development.md#production-profile-acceptance) owns bounded live evidence and exclusions; [installed-client synthetic recovery](development.md#installed-client-synthetic-recovery) remains separate.
+**Current focus (2026-11-06):** AR5 real acceptance on freshly provisioned accounts. Initial live Haiku, DeepSeek beta and Grok OAuth tool/history loops pass with current pi 1.5.0 and OpenCode 2.0.32. Luna passes basic delivery and the OpenCode loop; pi's native strict read remains blocked at local admission. Gemini's replacement key works, and managed Responses SDK tool/history loops pass in JSON and SSE; stateless signed-history carriage and Agent exit remain open. Remaining profile and cross-protocol gates stay open; Stage 4 remains gated on AR5. [Development](development.md#production-profile-acceptance) owns bounded live evidence and exclusions; [installed-client synthetic recovery](development.md#installed-client-synthetic-recovery) remains separate.
 
 | Priority | Remaining work | Exit |
 |---|---|---|
@@ -88,7 +88,7 @@ Selected upstream lanes (2026-11-06):
 | `grok` | OAuth | `grok-4.7` | `grok-responses` |
 | `deepseek-beta` | API key | `deepseek-v4.1-flash-1017` | `deepseek-beta-chat` |
 
-Fresh local provisioning and account-reference validation are complete. Remaining work includes correcting the Google key, qualifying Luna's native strict-tools contract without weakening pi's explicit guarantee, and completing the affected actual-client/default and selected cross-protocol exits. The selected [Responses replay authority](architecture.md#reasoning-replay) is implemented. The DeepSeek publication keeps canonical/upstream `deepseek-flash`; its label does not pin that upstream alias.
+Fresh local provisioning, Google key replacement and account-reference validation are complete. Remaining work includes qualifying Gemini Agent continuation without discarding native signatures, qualifying Luna's native strict-tools contract without weakening pi's explicit guarantee, and completing the affected actual-client/default and selected cross-protocol exits. The selected [Responses replay authority](architecture.md#reasoning-replay) is implemented. The DeepSeek publication keeps canonical/upstream `deepseek-flash`; its label does not pin that upstream alias.
 
 ### Verification and operator handoff
 

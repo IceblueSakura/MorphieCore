@@ -782,9 +782,11 @@ Compacted conversation summaries are preserved as distinct `Compaction` items wi
 ### Stateful history
 
 Gateway-managed continuation via `previous_response_id` on OpenAI Responses is managed by [`protocol::openai::responses::managed`](file:///home/sakura/development/MorphieCore/src/protocol/openai/responses/managed.rs):
-- Stores delivered response projections and request contexts in process-local TTL memory (default 1 hour).
+- Stores delivered response projections, typed hidden replay attachments and request contexts in process-local TTL memory (default 1 hour).
 - Synchronous retrieval, deletion, and cursor-paginated input listing.
 - Upstream requests remain fully stateless (`store: false`).
+
+Google part/call thought signatures use this retained owner when the public protocol has no equivalent carrier. An explicit `store:true` and continuation through `previous_response_id` preserve them without exposing fabricated wire fields. Reconstructing stateless input from that signature-less wire view cannot restore those attachments; stateless delivery rejects rather than silently discarding replay authority.
 
 ### Agent session files
 
