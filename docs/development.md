@@ -492,6 +492,29 @@ The first client command permits 250 seconds for its two sequential Generation r
 
 This remains a curated readable-Chat profile. AR5 still needs actual account/model selection, current default-profile characterization and the full three-protocol/selected cross-protocol installed-Agent exit; extending this runner by changing only the API name would not establish those contracts.
 
+**Fresh-account partial acceptance, 2026-11-06:** the selected [upstream lanes](roadmap.md#ordered-work-and-exit-gates) use newly provisioned API keys and managed Grok OAuth through the real CLI loader. Five local account references validate. Serial real-gateway smoke checks complete for Haiku, Grok and DeepSeek beta, with one request/attempt each, a 2048-token cap and 120-second exchange/route deadline.
+
+Current unwrapped pi **1.5.0** and OpenCode **2.0.32** then complete the following real read/result/final-answer/same-session-recall loops. Each successful row uses exactly **three client requests / three upstream attempts**, the same cap/deadline, isolated state, no auxiliary calls or hidden retries, and unchanged forwarding. Observers check honest terminals, delivered call/result identities and argument values, signed/reasoning history at client replay, actual read execution, and session continuity.
+
+| Client | Real upstream | Exercised profile |
+|---|---|---|
+| pi | Go/Haiku Messages | Built-in adaptive thinking, default strict omission and signed content replay |
+| OpenCode | Go/Haiku Messages | Built-in adaptive thinking and signed content replay |
+| pi | DeepSeek beta Chat | `deepseek-v4.1-flash-1017`, cloned current built-in compatibility with only the public ID/output ceiling changed; actual alias-selected default effort is medium, strict read is true |
+| OpenCode | DeepSeek beta Chat | Built-in `deepseek-flash`, strict false; separate one-request smoke verifies the new public label |
+| pi | Grok OAuth Responses | Built-in `xai/grok-4.7`, medium/auto reasoning, strict omitted |
+| OpenCode | Grok OAuth Responses | Built-in `xai/grok-4.7`, HTTP transport, strict false |
+
+DeepSeek uses the explicit readable-Chat profile. Direct synthetic authorities characterize these client declarations/history first; negative admission checks reject a fourth request and an excessive cap before forwarding. The initial pi DeepSeek live observation sent one request before its overnarrow read-argument assertion rejected legal declared parameters; correcting that observer, without changing delivery, yields the three-request successful rerun. Only the final pi DeepSeek and Grok reruns include those disposable negative-admission checks.
+
+OpenAI's first two one-request checks fail on the legitimate opening `service_tier:auto` to terminal `default` resolution. A synthetic regression reproduces that failure; the standard lifecycle repair passes its seven focused report tests. A subsequent bounded real check reaches a different failure: the reasoning item's nonempty `encrypted_content` differs between `response.output_item.done` and `response.completed`, with matching owner and visible fields. Intake currently rejects it as `codec.invalid.snapshot_replay_changed`; no OpenAI Agent loop is claimed. Official [streaming guidance](https://developers.openai.com/api/reference/resources/responses/streaming-events) selects the item-done reasoning item for continuation; changing the existing repeated-snapshot rejection awaits explicit selection.
+
+Google's two gateway checks and two one-request native error classifications return HTTP 400; the final classification identifies `API_KEY_INVALID`. Each fixes the same target, cap and deadline without retries. Stop this lane until the key is corrected. Diagnostics emit only fixed categories, not raw upstream error bodies or credentials.
+
+This partial acceptance does not close AR5: Luna default loops, corrected Google access, OpenCode's new DeepSeek public-label configuration, selected cross-protocol loops, summarization, timing/cancellation, cross-account replay and real failover remain unverified. No deployed service or host Agent configuration was changed. Disposable live runners and private captures are not public fixtures.
+
+The public-label and standard service-tier repairs pass the full offline baseline, all-target Clippy under `-D warnings`, formatting, production compilation, 20 pinned assets and all four Python suites. All 19 connected SDK scenarios and six native installed-client default gates also pass. These offline/synthetic checks remain independent of the preceding real-account results.
+
 #### Initial production-profile baseline
 
 **Bounded live evidence, 2026-10-24/25:** host-installed pi 1.4.0 and OpenCode 2.0.32 completed the real `aliyun-tokenplan-cn-chat` / `qwen3.8-flash` reasoning/tool/history gate, each with three client requests and three attempts, 2048 output tokens per request and 120-second deadlines. This retains the earlier observation, not fresh acceptance of subsequent codec changes or a real-failover/summarization claim.

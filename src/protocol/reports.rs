@@ -12,7 +12,10 @@
 //! - **Reasoning Summary**: [`ReasoningSummary::Auto`] → [`ReasoningSummary::Detailed`].
 //! - **Reasoning Context**: Absent → [`ReasoningContext::AllTurns`].
 //! - **Reasoning Mode**: Absent → [`ReasoningMode::Standard`].
-//! - **Service Class**: [`ServiceClass::ConfiguredProcessing`] → [`ServiceClass::StandardProcessing`].
+//!
+//! Independently of reasoning resolutions, Responses may resolve service class
+//! from configured processing to standard processing at completion.
+//! Source: https://developers.openai.com/api/reference/resources/responses/methods/create
 //!
 //! All other setting mutations between opening and terminal snapshots reject with
 //! `ShapeReason::SettingsConflict`, and conflicting service class alterations reject
@@ -66,8 +69,7 @@ pub(crate) fn relation(reports: &ResponseReports, resolution: bool) -> Result<()
     if before.is_some()
         && after.is_some()
         && before != after
-        && !(resolution
-            && *before == Some(ServiceClass::ConfiguredProcessing)
+        && !(*before == Some(ServiceClass::ConfiguredProcessing)
             && *after == Some(ServiceClass::StandardProcessing))
     {
         return Err(CodecError::Invalid(ShapeReason::Metadata));

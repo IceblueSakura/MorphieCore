@@ -115,6 +115,21 @@ pub fn default_topology() -> Result<CompiledTopology, TopologyError> {
             merged.push(public);
         }
     }
+    let mut flash = merged
+        .iter()
+        .find(|model| model.id.as_str() == "deepseek-flash")
+        .ok_or(TopologyError::UnknownCanonicalModel)?
+        .clone();
+    let mut route = routes
+        .iter()
+        .find(|route| route.id == flash.route)
+        .ok_or(TopologyError::UnknownRoute)?
+        .clone();
+    flash.id = ModelId::new("deepseek-v4.1-flash-1017").expect("static public label");
+    route.id = RouteId::new("deepseek-v4.1-flash-1017-generation").expect("static route");
+    flash.route = route.id.clone();
+    merged.push(flash);
+    routes.push(route);
     compile(catalog::all(), endpoints, routes, merged, canonical_models)?
         .with_images(
             IMAGE_BINDINGS.iter().map(|b| b.operation()).collect(),

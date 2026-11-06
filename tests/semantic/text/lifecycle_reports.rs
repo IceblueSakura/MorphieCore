@@ -72,6 +72,46 @@ fn lifecycle() -> ResponseReports {
 }
 
 #[test]
+fn standard_responses_resolve_configured_service_only_at_completion() {
+    for dialect in [Dialect::Standard, Dialect::OpenRouter] {
+        let codec = GenerationCodec::new(GenerationApi::Responses, dialect, None);
+        let mut decoder = codec.event_decoder();
+        decoder
+            .push(&event("created", 0, json!({}), json!("auto")))
+            .unwrap();
+        decoder
+            .push(&event("completed", 1, json!({}), json!("default")))
+            .unwrap();
+        decoder.finish().unwrap();
+        let ResponseReports::Lifecycle {
+            opening: Some(opening),
+            terminal: Some(terminal),
+        } = &decoder.metadata().unwrap().context.reports
+        else {
+            panic!("both service observations must survive");
+        };
+        assert_eq!(
+            opening.service_class,
+            Some(ServiceClass::ConfiguredProcessing)
+        );
+        assert_eq!(
+            terminal.service_class,
+            Some(ServiceClass::StandardProcessing)
+        );
+
+        let mut same_phase = codec.event_decoder();
+        same_phase
+            .push(&event("created", 0, json!({}), json!("auto")))
+            .unwrap();
+        assert!(
+            same_phase
+                .push(&event("in_progress", 1, json!({}), json!("default")))
+                .is_err()
+        );
+    }
+}
+
+#[test]
 fn native_lifecycle_reports_preserve_whole_phase_observations() {
     let mut decoder = adapter().event_decoder();
     decoder
@@ -135,13 +175,8 @@ fn each_resolution_is_closed_phase_local_and_source_checked() {
             json!("default"),
             json!("default"),
         ),
-        (json!({}), json!({}), json!("auto"), json!("default")),
     ] {
-        let expected = if opening != terminal {
-            morphiecore::protocol::failure::ShapeReason::SettingsConflict
-        } else {
-            morphiecore::protocol::failure::ShapeReason::Metadata
-        };
+        let expected = morphiecore::protocol::failure::ShapeReason::SettingsConflict;
         let first = event("created", 0, opening, a);
         let last = event("completed", 1, terminal.clone(), b.clone());
         let mut decoder = adapter().event_decoder();

@@ -356,6 +356,8 @@ After the old process exits, reuse the same path. Valid records remain; a recogn
 
 Select a registered public label and its catalog endpoint IDs. Each candidate expands that Provider's enabled accounts in declaration order; account names, targets and credential references belong only in [accounts.json](#configure-accounts). Binding definitions are in [the catalog](../src/topology/catalog.rs). Omitted model controls inherit the binding's values.
 
+`deepseek-v4.1-flash-1017` is an additional registered public label for canonical `deepseek-flash`; upstream requests still use `deepseek-flash`. It accepts the existing DeepSeek bindings, including `deepseek-beta-chat` under Provider `deepseek-beta`. Select it explicitly to publish that name. The label does not pin the moving upstream alias to an immutable model revision.
+
 | Scope | Field | Meaning |
 |---|---|---|
 | File | `version` | Required current schema version, `1` |

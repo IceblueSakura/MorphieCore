@@ -10,6 +10,92 @@ use std::sync::{Arc, Mutex};
 use tower::ServiceExt;
 
 #[tokio::test]
+async fn public_label_preserves_upstream_identity_and_discovery() {
+    const LABEL: &str = "deepseek-v4.1-flash-1017";
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let root = format!("http://{}/beta", listener.local_addr().unwrap());
+    let upstream = tokio::spawn(async move {
+        axum::serve(
+            listener,
+            Router::new().route(
+                "/beta/chat/completions",
+                post(|Json(body): Json<Value>| async move {
+                    assert_eq!(body["model"], "deepseek-flash");
+                    let chunk = json!({
+                        "id":"synthetic-chat", "object":"chat.completion.chunk",
+                        "created":1, "model":"deepseek-flash",
+                        "choices":[{"index":0,"delta":{"role":"assistant","content":"healthy"},
+                            "finish_reason":"stop"}]
+                    });
+                    (
+                        [("content-type", "text/event-stream")],
+                        format!("data: {chunk}\n\ndata: [DONE]\n\n"),
+                    )
+                }),
+            ),
+        )
+        .await
+        .unwrap();
+    });
+    let mut boot = Fixture::with_accounts(
+        service(),
+        json!({"models":{
+            LABEL:{"candidates":[{"binding":"deepseek-beta-chat"}]},
+            "deepseek-flash":{"candidates":[{"binding":"deepseek-beta-chat"}]}
+        }}),
+        &[("deepseek-beta", "primary", "synthetic-key")],
+        json!({"version":1,"providers":{"deepseek-beta":{"accounts":[
+            {"name":"primary","enabled":true,"credential":{"alias":"primary"},"base_url":root}
+        ]}}}),
+    )
+    .unwrap();
+    boot.force_upstream_stream();
+    for path in ["/v1/models", "/v1/morphiecore/models"] {
+        let request = axum::http::Request::builder()
+            .uri(path)
+            .header(
+                "authorization",
+                "Bearer synthetic-gateway-client-token-0001",
+            )
+            .body(axum::body::Body::empty())
+            .unwrap();
+        let response = boot.gateway.router().oneshot(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let bytes = axum::body::to_bytes(response.into_body(), 65536)
+            .await
+            .unwrap();
+        let value: Value = serde_json::from_slice(&bytes).unwrap();
+        let rows = value["data"].as_array().unwrap();
+        assert_eq!(rows.len(), 2);
+        assert!(rows.iter().any(|row| row["id"] == LABEL));
+        assert!(rows.iter().any(|row| row["id"] == "deepseek-flash"));
+    }
+    let request = axum::http::Request::builder()
+        .method("POST")
+        .uri("/v1/responses")
+        .header(
+            "authorization",
+            "Bearer synthetic-gateway-client-token-0001",
+        )
+        .header("content-type", "application/json")
+        .body(axum::body::Body::from(
+            json!({"model":LABEL,"input":"go","store":false}).to_string(),
+        ))
+        .unwrap();
+    let response = boot.gateway.router().oneshot(request).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let bytes = axum::body::to_bytes(response.into_body(), 65536)
+        .await
+        .unwrap();
+    let value: Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(value["model"], LABEL);
+    assert_eq!(value["output"][0]["content"][0]["text"], "healthy");
+    boot.gateway.shutdown();
+    upstream.abort();
+    let _ = upstream.await;
+}
+
+#[tokio::test]
 async fn loader_binds_named_accounts_without_switching_after_dispatch() {
     let calls = Arc::new(Mutex::new(Vec::new()));
     let observed = calls.clone();

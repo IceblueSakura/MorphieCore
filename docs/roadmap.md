@@ -56,7 +56,7 @@ This page owns current scope, priorities, dependencies, and exit gates. [Archite
 
 ## Current status
 
-**Current focus (2026-11-06):** AR5 fresh credentials, actual Provider/model selection and real acceptance. The tool/ordered-effort core and offline default-profile gates are complete: current pi 1.5.0 and OpenCode 2.0.32 complete native Chat/Responses/Messages tool/result/answer/recall loops. Responses Client-history omission of an empty annotations collection uses the selected [L2 compatibility](architecture.md#semantic-equivalence-compatibility). [Development](development.md#installed-client-synthetic-recovery) owns synthetic verification evidence. Fresh-account Provider acceptance remains open; Stage 4 stays gated on AR5.
+**Current focus (2026-11-06):** AR5 real acceptance on freshly provisioned accounts. Initial live Haiku, DeepSeek beta and Grok OAuth tool/history loops pass with current pi 1.5.0 and OpenCode 2.0.32. Google rejects the supplied key; OpenAI exposes an opaque-replay terminal-snapshot difference. Remaining profile and cross-protocol gates stay open; Stage 4 remains gated on AR5. [Development](development.md#production-profile-acceptance) owns bounded live evidence and exclusions; [installed-client synthetic recovery](development.md#installed-client-synthetic-recovery) remains separate.
 
 | Priority | Remaining work | Exit |
 |---|---|---|
@@ -77,6 +77,18 @@ The identifiers below belong only to planning and acceptance documentation, not 
 | Order | Work | Completion evidence |
 |---|---|---|
 | **AR5 — Fresh credentials, model selection and real acceptance** | Entry: offline tool/default-profile preparation is complete. The user provisions new API keys and any required OAuth sessions through the new loader/CLI. Validate configured accounts and select actual Provider/model bindings. Then run bounded serial Provider checks and the deferred full installed-Agent exit on the rewritten path. | Actual credential kinds and selected models are verified separately from synthetic recovery. Current installed pi/OpenCode complete default reasoning/tool/history loops across the three client protocols and selected cross-protocol lanes. Unavailable account combinations are reported as unverified, not inferred from mocks. Production activation remains separately approved. |
+
+Selected upstream lanes (2026-11-06):
+
+| Provider | Credential kind | Public model | Upstream binding |
+|---|---|---|---|
+| `openai` | API key | `gpt-6-luna` | `openai-luna-responses` |
+| `opencode-go` | API key | `claude-haiku-5-5` | `opencode-go-haiku-messages` |
+| `google` | API key | `gemini-3.8-flash` | `google-gemini-3.8-flash-generate-content` |
+| `grok` | OAuth | `grok-4.7` | `grok-responses` |
+| `deepseek-beta` | API key | `deepseek-v4.1-flash-1017` | `deepseek-beta-chat` |
+
+Fresh local provisioning and account-reference validation are complete. Remaining work includes correcting the Google key, selecting the OpenAI repeated opaque-snapshot policy, and completing the affected actual-client/default and selected cross-protocol exits. The DeepSeek publication keeps canonical/upstream `deepseek-flash`; its label does not pin that upstream alias.
 
 ### Verification and operator handoff
 
