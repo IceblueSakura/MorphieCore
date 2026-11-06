@@ -583,7 +583,7 @@ async fn configured_messages_cache_projects_each_candidate_without_mutating_owne
 }
 
 #[test]
-fn native_binding_keeps_beta_carriers_without_public_activation() {
+fn native_binding_keeps_admitted_ordered_effort_and_tool_carriers() {
     let boot = configured_messages(&["opencode-go"]);
     let state = &boot.gateway.state;
     let entry = &state.entries[&(
@@ -622,7 +622,7 @@ fn native_binding_keeps_beta_carriers_without_public_activation() {
             &serde_json::to_vec(&rich).unwrap(),
             &crate::execution::report::Report::default(),
         )
-        .is_err()
+        .is_ok()
     );
     let native = crate::protocol::anthropic::messages::Profile::AdaptiveTextTools
         .decode_generation_request(

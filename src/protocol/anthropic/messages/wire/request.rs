@@ -170,25 +170,29 @@ impl InputMessage {
             MessageContent::Blocks(blocks) => !blocks.is_empty(),
         }
     }
-    fn read(v: &Value) -> Result<Self, CodecError> {
+    pub(in crate::protocol::anthropic::messages) fn read(v: &Value) -> Result<Self, CodecError> {
         let o = closed(v, &["role", "content", "output_config"])?;
-        let content = required(o, "content")?;
+        let role = Role::read(required(o, "role")?)?;
+        if o.contains_key("output_config") && role != Role::System {
+            return Err(CodecError::invalid());
+        }
         Ok(Self {
             effort: read_message_effort(o)?,
-            role: Role::read(required(o, "role")?)?,
-            content: if content.is_string() {
-                MessageContent::Text(string(content)?)
-            } else {
-                MessageContent::Blocks(
+            role,
+            content: match o.get("content") {
+                None if role == Role::System => MessageContent::Blocks(vec![]),
+                Some(content) if content.is_string() => MessageContent::Text(string(content)?),
+                Some(content) => MessageContent::Blocks(
                     list(content)?
                         .iter()
                         .map(|v| CacheMarked::read(v, Block::read))
                         .collect::<Result<_, _>>()?,
-                )
+                ),
+                None => return Err(CodecError::invalid()),
             },
         })
     }
-    fn bytes(&self) -> Result<usize, CodecError> {
+    pub(in crate::protocol::anthropic::messages) fn bytes(&self) -> Result<usize, CodecError> {
         let (bytes, has_content) = match &self.content {
             MessageContent::Text(s) => (text(s)?, !s.is_empty()),
             MessageContent::Blocks(a) => input_block_bytes(self.role, a)?,
@@ -251,14 +255,16 @@ pub(in crate::protocol::anthropic::messages) fn input_block_bytes(
     }
     Ok((bytes, has_content))
 }
-/// Absent, null, `{}` and a null effort all mean no per-message change.
+/// Empty controls carry no fields. Nullable SDK syntax supplies no reset contract.
 pub(in crate::protocol::anthropic::messages) fn read_message_effort(
     o: &Map<String, Value>,
 ) -> Result<Option<Effort>, CodecError> {
     match o.get("output_config") {
-        None | Some(Value::Null) => Ok(None),
+        None => Ok(None),
+        Some(Value::Null) => Err(CodecError::Unsupported(CarrierReason::Unavailable)),
         Some(config) => match closed(config, &["effort"])?.get("effort") {
-            None | Some(Value::Null) => Ok(None),
+            None => Ok(None),
+            Some(Value::Null) => Err(CodecError::Unsupported(CarrierReason::Unavailable)),
             Some(effort) => Effort::read(effort).map(Some),
         },
     }

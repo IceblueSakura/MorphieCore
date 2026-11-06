@@ -421,7 +421,11 @@ async fn observe_intake(
                 && control == Control::Default
             {
                 assert_eq!(body["thinking"]["type"], "adaptive");
-                assert_eq!(body["output_config"]["effort"], "medium");
+                assert_eq!(body["output_config"]["effort"], "low");
+                assert_eq!(
+                    body["messages"][1],
+                    json!({"role":"system","content":[],"output_config":{"effort":"medium"}})
+                );
                 assert!(body.get("temperature").is_none());
             }
             if control == Control::SummaryHistory {

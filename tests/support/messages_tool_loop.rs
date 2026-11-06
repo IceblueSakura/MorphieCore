@@ -33,14 +33,16 @@ impl Drop for Fixture {
 pub fn input(stream: bool) -> Value {
     json!({"model":"claude-haiku-5-5","max_tokens":2048,"stream":stream,
         "thinking":{"type":"adaptive","display":"summarized"},
-        "output_config":{"effort":"high"},
+        "output_config":{"effort":"low"},
         "system":[{"type":"text","text":"Synthetic Messages tool loop.","cache_control":{"type":"ephemeral","ttl":"1h"}}],
         "tools":[
             {"name":"lookup","strict":true,"eager_input_streaming":true,
              "input_schema":{"type":"object","properties":{"key":{"type":"string"}},"required":["key"],"additionalProperties":false},
              "cache_control":{"type":"ephemeral","ttl":"1h"}}
         ],
-        "messages":[{"role":"user","content":[{"type":"text","text":"lookup","cache_control":{"type":"ephemeral","ttl":"1h"}}]}]})
+        "messages":[
+            {"role":"user","content":[{"type":"text","text":"lookup","cache_control":{"type":"ephemeral","ttl":"1h"}}]},
+            {"role":"system","content":[],"output_config":{"effort":"medium"}}]})
 }
 
 pub fn snapshot(turn: usize) -> Value {
@@ -91,7 +93,8 @@ async fn answer(
         .count();
     assert!((1..=5).contains(&turn));
     let mut expected = json!([
-        {"role":"user","content":[{"type":"text","text":"lookup"}]}
+        {"role":"user","content":[{"type":"text","text":"lookup"}]},
+        {"role":"system","content":[],"output_config":{"effort":"medium"}}
     ]);
     let messages = expected.as_array_mut().unwrap();
     if turn >= 2 {
@@ -113,6 +116,7 @@ async fn answer(
             json!({"role":"user","content":[
                 {"type":"tool_result","tool_use_id":"call-second","content":"second-result","is_error":true},
                 {"type":"tool_result","tool_use_id":"call-lookup","content":"A","is_error":false}]}),
+            json!({"role":"system","content":[],"output_config":{"effort":"high"}}),
         ]);
     }
     if turn >= 3 {
@@ -120,6 +124,7 @@ async fn answer(
             json!({"role":"assistant","content":[{"type":"text","text":"A"}]}),
             json!({"role":"user","content":[{"type":"text","text":"inspect"}]}),
             json!({"role":"system","content":[{"type":"text","text":"Inspect mode."}]}),
+            json!({"role":"system","content":[],"output_config":{"effort":"low"}}),
         ]);
     }
     if turn >= 4 {
@@ -129,6 +134,7 @@ async fn answer(
                 {"type":"tool_use","id":"call-inspect","name":"inspect","input":{}}
             ]}),
             json!({"role":"user","content":[{"type":"tool_result","tool_use_id":"call-inspect","content":"B","is_error":true}]}),
+            json!({"role":"system","content":[],"output_config":{"effort":"high"}}),
         ]);
     }
     if turn == 5 {
@@ -149,7 +155,7 @@ async fn answer(
     // Independent of the client fixture: a changed stimulus must not redefine the oracle.
     let initial = json!({"model":"claude-haiku-5-5","max_tokens":2048,
         "thinking":{"type":"adaptive","display":"summarized"},
-        "output_config":{"effort":if turn < 3 {"high"} else {"low"}},
+        "output_config":{"effort":"low"},
         "system":[{"type":"text","text":"Synthetic Messages tool loop.",
             "cache_control":{"type":"ephemeral","ttl":"1h"}}],
         "tools":if turn < 3 {json!([{"name":"lookup","strict":true,"eager_input_streaming":true,
@@ -171,7 +177,10 @@ async fn answer(
         assert_eq!(body[key], initial[key], "native Messages {key}");
     }
     assert!(body.get("cache_control").is_none() && body.get("temperature").is_none());
-    assert!(!headers.contains_key("anthropic-beta"));
+    assert_eq!(
+        headers["anthropic-beta"],
+        "mid-conversation-output-config-2026-07-01"
+    );
     seen.lock().unwrap().push(body.clone());
     if let Some(recovery) = &recovery
         && let Some(failure) =

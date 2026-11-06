@@ -1,7 +1,10 @@
 //! Target-only assembly, never inferred native ownership.
 use crate::lowering::disposition::Rule;
 use crate::{
-    protocol::openai::{GenerationApi, lowering::RepresentationError},
+    protocol::{
+        conversion::generation::{Conversion, ConversionBoundary},
+        openai::{GenerationApi, lowering::RepresentationError},
+    },
     semantic::task::generation::*,
 };
 use std::collections::BTreeMap;
@@ -10,7 +13,14 @@ pub(crate) fn project(
     items: &[(ItemId, Item)],
     groups: &[MessageEnvelope],
     profile: GenerationApi,
-) -> Result<Option<(Vec<MessageEnvelope>, Rule)>, RepresentationError> {
+) -> Result<Option<Conversion<Vec<MessageEnvelope>>>, RepresentationError> {
+    let projection = |value, rule: Option<Rule>| Conversion {
+        value,
+        evidence: rule
+            .map(|rule| rule.effect(ConversionBoundary::RequestProject))
+            .into_iter()
+            .collect(),
+    };
     if profile == GenerationApi::Responses {
         if groups.is_empty() {
             return Ok(None);
@@ -33,19 +43,50 @@ pub(crate) fn project(
         // An unrelated reasoning owner survives envelope omission unchanged.
         // Final lowering still checks its scope and value.
         if items.iter().any(|(id, item)| {
-            matches!(item, Item::Reasoning(r) if r.replay.is_some()
+            matches!(item, Item::Reasoning(r) if r.replay.as_ref().is_some_and(|v|
+                v.format() != ReplayFormat::ResponsesEncrypted)
                 && groups.iter().any(|group| group.members().contains(id)))
         }) {
             return Err(RepresentationError::ReplayOrigin);
         }
-        return Ok(Some((vec![], Rule::OMIT_RESPONSES_MESSAGE_ENVELOPES)));
+        return Ok(Some(projection(
+            vec![],
+            Some(Rule::OMIT_RESPONSES_MESSAGE_ENVELOPES),
+        )));
     }
-    // Non-Chat native envelopes need their own target contract, not flattening.
-    for group in groups {
-        if crate::protocol::openai::chat::owners::owner(group, items).is_none() {
-            return Err(RepresentationError::MessageGrouping);
-        }
+    // Native containers without a Chat spelling lose only their grouping.
+    // Protected replay owners must first pass the existing history-transfer path.
+    let retained: Vec<_> = groups
+        .iter()
+        .filter(|group| crate::protocol::openai::chat::owners::owner(group, items).is_some())
+        .cloned()
+        .collect();
+    if items.iter().any(|(id, item)| {
+        matches!(item, Item::Reasoning(r) if r.replay.as_ref().is_some_and(|v|
+            v.format() != ReplayFormat::ResponsesEncrypted)
+            && groups.iter().any(|group| group.members().contains(id))
+            && !retained.iter().any(|group| group.members().contains(id)))
+    }) {
+        return Err(RepresentationError::ReplayOrigin);
     }
+    let removed = retained.len() != groups.len();
+    // A singleton user/instruction already has exactly one target message.
+    // Removing its redundant container is an equivalent representation.
+    let lossy = groups.iter().any(|group| {
+        crate::protocol::openai::chat::owners::owner(group, items).is_none()
+            && !(group.members().len() == 1
+                && items.iter().any(|(id, item)| {
+                    id == &group.members()[0]
+                        && matches!(
+                            item,
+                            Item::Message(Message {
+                                role: MessageRole::User,
+                                ..
+                            }) | Item::Instruction(_)
+                        )
+                }))
+    });
+    let groups = retained.as_slice();
     let owners = crate::protocol::openai::chat::owners::owners(items, groups);
     let mut projected = groups.to_vec();
     let mut current = None;
@@ -75,7 +116,8 @@ pub(crate) fn project(
         }
     }
     if additions.is_empty() {
-        return Ok(None);
+        return Ok(removed
+            .then(|| projection(projected, lossy.then_some(Rule::REGROUP_CHAT_MESSAGE_ITEMS))));
     }
     if items.iter().any(|(id, item)| {
         matches!(item, Item::Reasoning(r) if r.replay.is_some()
@@ -102,5 +144,8 @@ pub(crate) fn project(
             members,
         )?);
     }
-    Ok(Some((projected, Rule::REGROUP_CHAT_MESSAGE_ITEMS)))
+    Ok(Some(projection(
+        projected,
+        Some(Rule::REGROUP_CHAT_MESSAGE_ITEMS),
+    )))
 }

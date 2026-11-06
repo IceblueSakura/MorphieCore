@@ -86,13 +86,19 @@ with httpx.Client(trust_env=False, timeout=10,
                                            "content": "second-result", "is_error": True,
                                            "cache_control": {"type": "ephemeral", "ttl": "1h"}})
                 body["messages"].append({"role": "user", "content": next_blocks})
+                if turn in (1, 3):
+                    # Tool feedback does not activate this pending level. The
+                    # next genuine user input will; all markers stay in history.
+                    body["messages"].append({"role": "system", "content": [],
+                                             "output_config": {"effort": "high"}})
                 if turn == 2:
                     body["messages"].append({"role": "system", "content": [
                         {"type": "text", "text": "Inspect mode."},
                     ]})
+                    body["messages"].append({"role": "system", "content": [],
+                                             "output_config": {"effort": "low"}})
                     body["tools"] = [{"name": "inspect", "input_schema": {"type": "object"},
                         "eager_input_streaming": True, "cache_control": {"type": "ephemeral", "ttl": "1h"}}]
-                    body["output_config"] = {"effort": "low"}
 assert len(transmissions) == requests
 print(json.dumps({"requests": requests, "http_requests": len(transmissions),
                   "tool_changes": True, "ttl": "1h"}))

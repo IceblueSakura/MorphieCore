@@ -177,10 +177,13 @@ fn advance(body: &mut Value, content: Value, turn: usize) {
     let mut next = next;
     next["content"][0]["cache_control"] = json!({"type":"ephemeral","ttl":"1h"});
     messages.push(next);
+    if turn == 1 || turn == 3 {
+        messages.push(json!({"role":"system","content":[],"output_config":{"effort":"high"}}));
+    }
     if turn == 2 {
         messages.push(json!({"role":"system","content":[{"type":"text","text":"Inspect mode."}]}));
+        messages.push(json!({"role":"system","content":[],"output_config":{"effort":"low"}}));
         body["tools"] = json!([{"name":"inspect","input_schema":{"type":"object"},"eager_input_streaming":true,
             "cache_control":{"type":"ephemeral","ttl":"1h"}}]);
-        body["output_config"] = json!({"effort":"low"});
     }
 }

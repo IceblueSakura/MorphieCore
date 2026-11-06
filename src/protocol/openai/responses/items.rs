@@ -210,7 +210,8 @@ pub(in crate::protocol::openai) fn configuration_update(
             let reasoning = object(value)?;
             direction.fields(reasoning, &["effort"])?;
             match reasoning.get("effort") {
-                None | Some(Value::Null) => Ok(ConfigurationUpdate::default()),
+                None => Ok(ConfigurationUpdate::default()),
+                Some(Value::Null) => Err(CodecError::Unsupported(CarrierReason::Unavailable)),
                 Some(value) => crate::protocol::openai::reasoning::effort(
                     value.as_str().ok_or(CodecError::invalid())?,
                 ),
@@ -369,6 +370,7 @@ pub(in crate::protocol::openai) fn decode_items(
 ) -> Result<(), CodecError> {
     let response = side.response();
     let direction = b.direction;
+    let mut previous_update = false;
     for value in input {
         let o = object(value)?;
         let id = b.id()?;
@@ -376,6 +378,11 @@ pub(in crate::protocol::openai) fn decode_items(
             .get("type")
             .map(|v| v.as_str().ok_or(CodecError::invalid()))
             .transpose()?;
+        let update = typ == Some("configuration_update");
+        if previous_update && update {
+            return Err(CodecError::invalid());
+        }
+        previous_update = update;
         let item = match typ {
             Some("additional_tools") => Item::ToolBatch(tool_batch(o, response, direction)?),
             Some("function_call") => Item::ToolCall(tool_call(
@@ -694,7 +701,12 @@ pub(in crate::protocol::openai) fn decode_items(
         if !((response
             || matches!(
                 typ,
-                Some("compaction" | "function_call_output" | "additional_tools")
+                Some(
+                    "compaction"
+                        | "function_call_output"
+                        | "additional_tools"
+                        | "configuration_update"
+                )
             ))
             && o.get("id").is_some_and(Value::is_null))
         {
@@ -884,6 +896,9 @@ pub(in crate::protocol::openai) fn encode_items(
                 v
             }
             Item::ConfigurationUpdate(update) => {
+                if update.boundary != ConfigurationBoundary::FollowingResponse {
+                    return Err(CodecError::Unsupported(CarrierReason::Unavailable));
+                }
                 if response {
                     return Err(CodecError::Unsupported(CarrierReason::Unavailable));
                 }

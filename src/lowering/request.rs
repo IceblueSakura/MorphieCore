@@ -80,6 +80,34 @@ pub(crate) fn admit_source(source: &Request) -> Result<(), ConversionFailure> {
     Ok(())
 }
 impl<'a> Target<'a> {
+    fn retains_configuration(self, source: &GenerationRequest) -> bool {
+        let boundary = match self {
+            Self::OpenAi(GenerationApi::Responses, c)
+                if !c.adaptation.rules.bailian_requests && self.has_effort() =>
+            {
+                Some(ConfigurationBoundary::FollowingResponse)
+            }
+            Self::Messages(c) if c.dispositions.native(Feature::MessageEffort) => {
+                Some(ConfigurationBoundary::NewInputTurn)
+            }
+            _ => None,
+        };
+        source.items().iter().all(|(_, item)| match item {
+            Item::ConfigurationUpdate(update) => {
+                Some(update.boundary) == boundary
+                    && match self {
+                        Self::Messages(_) => update.activation.is_none() && update.effort.is_some(),
+                        Self::OpenAi(_, _) => match update.activation {
+                            Some(ReasoningActivation::Enabled) => update.effort.is_some(),
+                            Some(ReasoningActivation::Disabled) => update.effort.is_none(),
+                            None => true,
+                        },
+                        _ => false,
+                    }
+            }
+            _ => true,
+        })
+    }
     fn declared(self) -> &'a Dispositions {
         match self {
             Self::OpenAi(_, c) => &c.dispositions,
@@ -473,19 +501,6 @@ impl<'a> Target<'a> {
                         Disposition::Approximate(super::disposition::TOOL_CHANGES)
                     },
                 );
-                if !c.dispositions.native(MessageEffort) {
-                    table.set(
-                        MessageEffort,
-                        Disposition::Approximate(super::disposition::MESSAGE_EFFORT),
-                    );
-                    if source.items().iter().any(|(_, item)| {
-                        matches!(item, Item::ConfigurationUpdate(update)
-                        if update.activation.is_some())
-                    }) {
-                        table.set(ReasoningActivation, Disposition::Reject(
-                            "the selected native message carrier cannot preserve ordered activation changes"));
-                    }
-                }
             }
             Self::GenerateContent(c) => {
                 table.set_native(ReasoningActivation, true);
@@ -661,6 +676,16 @@ impl<'a> Target<'a> {
         {
             table.set(ReasoningActivation, Disposition::Reject("the selected always-thinking model cannot disable reasoning"));
         }
+        table.set(
+            Feature::MessageEffort,
+            if matches!(self, Self::GenerateContent(_) | Self::Interactions(_)) {
+                Disposition::Reject("ordered configuration projection to Google is not selected")
+            } else if self.retains_configuration(source) {
+                Disposition::Native
+            } else {
+                Disposition::Approximate(super::disposition::CONFIGURATION)
+            },
+        );
         table
     }
     fn projected_rows(
@@ -1086,7 +1111,7 @@ pub(crate) fn project_semantic<'a>(
     model: &str,
 ) -> Result<Conversion<Cow<'a, GenerationRequest>>, ConversionFailure> {
     let mut table = target.table(source, model);
-    let projected = project_semantic_with_table(source, target, &mut table)?;
+    let projected = project_semantic_with_table(source, target, model, &mut table)?;
     target.projected_rows(projected.value.as_ref(), model, false, &mut table);
     table
         .check(projected.value.as_ref())
@@ -1097,6 +1122,7 @@ pub(crate) fn project_semantic<'a>(
 fn project_semantic_with_table<'a>(
     source: &'a GenerationRequest,
     target: Target<'_>,
+    model: &str,
     table: &mut Dispositions,
 ) -> Result<Conversion<Cow<'a, GenerationRequest>>, ConversionFailure> {
     source.validate().map_err(CodecError::from)?;
@@ -1109,9 +1135,52 @@ fn project_semantic_with_table<'a>(
     }
     let mut evidence = EvidenceDelta::default();
     let mut semantic = Cow::Borrowed(source);
-    let mut initial = source.settings().clone();
+    if !target.retains_configuration(source) {
+        if matches!(target, Target::GenerateContent(_) | Target::Interactions(_)) {
+            return Err(
+                crate::protocol::conversion::generation::RepresentationError::Admission(
+                    Feature::MessageEffort,
+                )
+                .into(),
+            );
+        }
+        let resolved = source.resolved_configuration();
+        let mut settings = source.settings().clone();
+        settings.effort = resolved.effort;
+        settings.reasoning.activation = resolved.activation;
+        if resolved.activation.is_some() || resolved.effort.is_some() {
+            settings.reasoning.presence = ReasoningPresence::Present;
+        }
+        if resolved.activation == Some(ReasoningActivation::Disabled) {
+            settings.reasoning.mode = Presence::Absent;
+            settings.reasoning.budget_tokens = None;
+            if settings.reasoning.presentation.visibility == Some(ReasoningDisplay::Summary) {
+                settings.reasoning.presentation = ReasoningPresentation::default();
+            }
+        }
+        let items = source
+            .items()
+            .iter()
+            .filter(|(_, item)| !matches!(item, Item::ConfigurationUpdate(_)))
+            .cloned()
+            .collect();
+        semantic = Cow::Owned(
+            source
+                .clone()
+                .with_items_and_settings(items, settings)
+                .map_err(CodecError::from)?,
+        );
+        evidence.push(super::disposition::CONFIGURATION.effect(ConversionBoundary::RequestProject));
+        evidence.push(
+            super::disposition::CONFIGURATION_PREFIX.effect(ConversionBoundary::RequestProject),
+        );
+        // Admission of current controls sees source-effective values, not root
+        // defaults or pending/superseded historical controls.
+        *table = target.table(semantic.as_ref(), model);
+    }
+    let mut initial = semantic.settings().clone();
     if !table.accepts(Feature::ReasoningActivation)
-        && source
+        && semantic
             .features()
             .contains_key(&Feature::ReasoningActivation)
     {
@@ -1164,10 +1233,10 @@ fn project_semantic_with_table<'a>(
                 .effect(ConversionBoundary::RequestProject),
         );
     }
-    if &initial != source.settings() {
+    if &initial != semantic.settings() {
         semantic = Cow::Owned(
-            source
-                .clone()
+            semantic
+                .into_owned()
                 .with_settings(initial)
                 .map_err(CodecError::from)?,
         );
@@ -1532,10 +1601,6 @@ fn project_semantic_with_table<'a>(
             }
         }
     }
-    items.retain(|(_, item)| {
-        !matches!(item, Item::ConfigurationUpdate(update)
-        if update.activation.is_none() && update.effort.is_none())
-    });
     if let Disposition::Omit(rule) = table.get(Feature::ToolExecutionReport) {
         for (id, item) in &mut items {
             if let Item::ToolResult(result) | Item::CustomResult(result) = item
@@ -1636,33 +1701,6 @@ fn project_semantic_with_table<'a>(
             .with_cached_context(semantic.cached_context().cloned())
             .map_err(CodecError::from)?,
         );
-    }
-    if matches!(target, Target::Messages(_)) {
-        let flatten = matches!(
-            table.get(Feature::MessageEffort),
-            Disposition::Approximate(_)
-        ) && semantic
-            .items()
-            .iter()
-            .any(|(_, item)| matches!(item, Item::ConfigurationUpdate(_)));
-        if flatten {
-            let mut settings = semantic.settings().clone();
-            let mut items = semantic.items().to_vec();
-            settings.effort = crate::protocol::anthropic::messages::carriers::flatten_effort(
-                settings.effort,
-                &items,
-            )?;
-            items.retain(|(_, item)| !matches!(item, Item::ConfigurationUpdate(_)));
-            evidence.push(
-                super::disposition::MESSAGE_EFFORT.effect(ConversionBoundary::RequestProject),
-            );
-            semantic = Cow::Owned(
-                semantic
-                    .into_owned()
-                    .with_items_and_settings(items, settings)
-                    .map_err(CodecError::from)?,
-            );
-        }
     }
     // The selected bounded tool-set projections share one owner: retained
     // native additions, the effective active-set collapse and allowed-set
@@ -1826,7 +1864,7 @@ fn project_semantic_with_table<'a>(
         }
     }
     if let Target::OpenAi(profile, _) = target
-        && let Some((groups, rule)) = crate::protocol::openai::lowering::message_groups::project(
+        && let Some(groups) = crate::protocol::openai::lowering::message_groups::project(
             semantic.items(),
             semantic.message_envelopes(),
             profile,
@@ -1835,10 +1873,10 @@ fn project_semantic_with_table<'a>(
         semantic = Cow::Owned(
             semantic
                 .into_owned()
-                .with_message_envelopes(groups)
+                .with_message_envelopes(groups.value)
                 .map_err(CodecError::from)?,
         );
-        evidence.push(rule.effect(ConversionBoundary::RequestProject));
+        evidence.extend(groups.evidence);
     }
     if matches!(target, Target::OpenAi(_, _)) {
         semantic = with_schema_name(semantic)?.0;
@@ -1871,6 +1909,32 @@ fn project_semantic_with_table<'a>(
         semantic = copy;
         if changed && let Some(rule) = table.get(Feature::ToolResultError).rule() {
             evidence.push(rule.effect(ConversionBoundary::RequestProject));
+        }
+    }
+    let mut changed_prefix = false;
+    for (id, item) in source.items() {
+        match item {
+            Item::ConfigurationUpdate(_) => {
+                changed_prefix |= !semantic
+                    .items()
+                    .iter()
+                    .any(|(owner, projected)| owner == id && projected == item);
+            }
+            Item::Reasoning(reasoning)
+                if changed_prefix
+                    && reasoning.replay.as_ref().is_some_and(|value| {
+                        matches!(
+                            value.format(),
+                            ReplayFormat::AnthropicMessagesThinking
+                                | ReplayFormat::AnthropicMessagesRedactedThinking
+                        )
+                    }) =>
+            {
+                // A message-local marker belongs to subsequent thinking's prefix.
+                // A root-parameter change alone does not invalidate that prefix.
+                return Err(CodecError::Unsupported(CarrierReason::Reasoning).into());
+            }
+            _ => {}
         }
     }
     if let Some(policy) = applied_policy {
@@ -2133,8 +2197,8 @@ pub(crate) fn project<'a>(
     }
     let input = stripped.as_ref().unwrap_or(source);
     let mut table = target.table(&input.task.semantic, model);
+    let semantic = project_semantic_with_table(&input.task.semantic, target, model, &mut table)?;
     target.context_rows(source, &mut table)?;
-    let semantic = project_semantic_with_table(&input.task.semantic, target, &mut table)?;
     let mut evidence = semantic.evidence;
     let semantic = match semantic.value {
         Cow::Owned(value) => Some(value),

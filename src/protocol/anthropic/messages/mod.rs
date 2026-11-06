@@ -4,7 +4,6 @@
 //! terminal mappings are shared by those directions, not owned by a delivery front end.
 use crate::protocol::failure::CarrierReason;
 pub(crate) mod accounting;
-pub(crate) mod carriers;
 pub mod client;
 pub mod sse;
 pub use sse::{GenerationSseDecoder, MessageSseDecoder};

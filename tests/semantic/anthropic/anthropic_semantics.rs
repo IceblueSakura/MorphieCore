@@ -941,15 +941,6 @@ fn root_system_blocks_and_disabled_controls_have_independent_semantic_owners() {
             .value,
         serde_json::from_slice::<Value>(content_wire).unwrap()
     );
-    assert!(
-        morphiecore::protocol::openai::lowering::lower_request(
-            &manual,
-            &Default::default(),
-            morphiecore::protocol::openai::GenerationApi::Chat,
-            morphiecore::protocol::openai::TargetContract::full()
-        )
-        .is_err()
-    );
     let mut conflict: Value = serde_json::from_slice(content_wire).unwrap();
     conflict["cache_control"]["ttl"] = json!("1h");
     assert_eq!(

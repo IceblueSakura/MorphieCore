@@ -408,18 +408,20 @@ fn model_binding_and_local_delivery_prefs_cannot_be_bypassed_by_direct_native_ad
     let input = client(GenerationApi::Responses)
         .decode_client_request(wire.to_string().as_bytes())
         .unwrap();
-    assert!(matches!(
-        endpoint("dashscope-flash", GenerationProtocol::OpenAiResponses)
-            .encode_request_with_rules(&input),
-        Err(ConversionFailure {
-            cause: morphiecore::protocol::ConversionCause::Representation(
-                morphiecore::protocol::conversion::generation::RepresentationError::Admission(
-                    morphiecore::semantic::task::generation::Feature::Effort
-                )
-            ),
-            ..
-        })
-    ));
+    let before = input.clone();
+    let (projected, rules) = endpoint("dashscope-flash", GenerationProtocol::OpenAiResponses)
+        .encode_request_with_rules(&input)
+        .unwrap();
+    assert_eq!(projected["reasoning"]["effort"], "low");
+    assert!(
+        projected["input"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|item| item["type"] != "configuration_update")
+    );
+    assert!(rules.contains(&"generation.collapse-configuration.v1"));
+    assert_eq!(input, before);
     assert!(
         native(GenerationApi::Responses)
             .decode_client_request(wire.to_string().as_bytes())

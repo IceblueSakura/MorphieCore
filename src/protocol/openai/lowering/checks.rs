@@ -109,6 +109,14 @@ pub(super) fn represent_reasoning(
     {
         return Err(RepresentationError::Reasoning);
     }
+    if profile == GenerationApi::Responses
+        && items.windows(2).any(|pair| {
+            matches!(pair[0].1, Item::ConfigurationUpdate(_))
+                && matches!(pair[1].1, Item::ConfigurationUpdate(_))
+        })
+    {
+        return Err(RepresentationError::Reasoning);
+    }
     for (id, item) in items {
         // Replacement/reference/removal changes need a separate projection.
         if matches!(item, Item::ToolChange(_))
@@ -118,6 +126,7 @@ pub(super) fn represent_reasoning(
         }
         if let Item::ConfigurationUpdate(update) = item
             && (profile != GenerationApi::Responses
+                || update.boundary != ConfigurationBoundary::FollowingResponse
                 || crate::protocol::openai::reasoning::effort_label(update).is_err())
         {
             return Err(RepresentationError::Reasoning);

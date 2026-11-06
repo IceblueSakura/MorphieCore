@@ -108,8 +108,17 @@ pub enum Item {
 /// Ordered activation/effort update. It does not patch request settings.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct ConfigurationUpdate {
+    pub boundary: ConfigurationBoundary,
     pub activation: Option<ReasoningActivation>,
     pub effort: Option<EffortControl>,
+}
+/// Activation timing is independent of the scope of the updated control.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum ConfigurationBoundary {
+    #[default]
+    FollowingResponse,
+    /// Applies to the current new-input user turn, or waits for the next one.
+    NewInputTurn,
 }
 impl ConfigurationUpdate {
     pub fn validate(&self) -> Result<(), GenerationError> {

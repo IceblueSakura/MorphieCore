@@ -176,22 +176,7 @@ impl Profile {
             output_settings(config, &mut settings);
         }
         for message in &wire.messages {
-            match (&message.content, message.role) {
-                (MessageContent::Text(s), super::Role::System) => intake.system_message(
-                    &[super::CacheMarked {
-                        content: Block::Text(s.clone()),
-                        cache: None,
-                    }],
-                    message.effort,
-                )?,
-                (MessageContent::Blocks(blocks), super::Role::System) => {
-                    intake.system_message(blocks, message.effort)?
-                }
-                (MessageContent::Text(s), role) => {
-                    intake.message(role, &[Block::Text(s.clone())])?
-                }
-                (MessageContent::Blocks(blocks), role) => intake.request_message(role, blocks)?,
-            }
+            intake.input_message(message)?;
         }
         let semantic = GenerationRequest::from_resources(intake.items, settings, intake.resources)?
             .with_message_envelopes(intake.groups)?;
@@ -374,6 +359,7 @@ fn system_messages(run: &[&Item]) -> Result<Vec<InputMessage>, CodecError> {
                 cache: change.cache,
             }),
             Item::ConfigurationUpdate(ConfigurationUpdate {
+                boundary: ConfigurationBoundary::NewInputTurn,
                 activation: None,
                 effort: Some(effort),
             }) if effort.scope == EffortScope::Response => messages.push(InputMessage {
@@ -456,7 +442,13 @@ pub(in crate::protocol::anthropic::messages) fn project(
     let leading_instructions = request
         .items()
         .iter()
-        .take_while(|(_, item)| matches!(item, Item::Instruction(_)))
+        .take_while(|(id, item)| {
+            matches!(item, Item::Instruction(_))
+                && !request
+                    .message_envelopes()
+                    .iter()
+                    .any(|g| g.members().contains(id))
+        })
         .count();
     if leading_instructions > 0 {
         let mut parts = match system {
@@ -641,7 +633,13 @@ pub(in crate::protocol::anthropic::messages) fn project(
         .iter()
         .enumerate()
         .skip(leading_instructions)
-        .filter(|(_, (_, item))| system_side(item))
+        .filter(|(_, (id, item))| {
+            system_side(item)
+                && !request
+                    .message_envelopes()
+                    .iter()
+                    .any(|g| g.members().contains(id))
+        })
         .map(|(index, (_, item))| (index, item))
         .peekable();
     let mut previous_end = None;
@@ -669,6 +667,15 @@ pub(in crate::protocol::anthropic::messages) fn project(
         }
         messages.extend(system_messages(&run)?);
         previous_end = Some(last);
+        if group.role() == MessageEnvelopeRole::System {
+            let items = group
+                .members()
+                .iter()
+                .map(|id| &request.items()[position(id).expect("validated envelope")].1)
+                .collect::<Vec<_>>();
+            messages.extend(system_messages(&items)?);
+            continue;
+        }
         let role = match group.role() {
             MessageEnvelopeRole::User => Role::User,
             MessageEnvelopeRole::Assistant => Role::Assistant,
@@ -767,6 +774,7 @@ pub(in crate::protocol::anthropic::messages) fn project(
     let actual = request
         .message_envelopes()
         .iter()
+        .filter(|g| g.role() != MessageEnvelopeRole::System)
         .flat_map(|g| g.members())
         .copied()
         .collect::<Vec<_>>();

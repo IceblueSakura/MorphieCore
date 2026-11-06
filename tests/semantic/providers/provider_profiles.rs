@@ -305,7 +305,7 @@ fn zhipu_effort_lands_on_its_three_levels_by_a_named_rule() {
         assert_eq!(rules.contains(&"zhipu.glm-5.3.effort.v1"), effort != "high");
     }
     use morphiecore::semantic::task::generation::{
-        ConfigurationUpdate, Item, ItemId, ReasoningActivation,
+        ConfigurationBoundary, ConfigurationUpdate, Item, ItemId, ReasoningActivation,
     };
     for update in [false, true] {
         let client = GenerationCodec::new(GenerationApi::Chat, Dialect::Standard, None);
@@ -321,6 +321,7 @@ fn zhipu_effort_lands_on_its_three_levels_by_a_named_rule() {
                 (
                     ItemId::new(99),
                     Item::ConfigurationUpdate(ConfigurationUpdate {
+                        boundary: ConfigurationBoundary::FollowingResponse,
                         activation: Some(ReasoningActivation::Disabled),
                         effort: None,
                     }),

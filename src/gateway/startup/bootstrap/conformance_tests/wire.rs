@@ -110,7 +110,13 @@ pub(super) fn request(api: Api, profile: Profile, model: &str, stream: bool) -> 
 }
 fn cache(body: &mut Value) {
     without_cache(body);
-    body["messages"].as_array_mut().unwrap().last_mut().unwrap()["content"]
+    body["messages"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .rev()
+        .find(|message| message["role"] == "user")
+        .unwrap()["content"]
         .as_array_mut()
         .unwrap()
         .last_mut()

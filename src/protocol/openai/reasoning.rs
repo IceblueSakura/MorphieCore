@@ -169,6 +169,7 @@ pub(super) fn write_request(
         o.insert("include".into(), json!(["reasoning.encrypted_content"]));
     }
     let level = effort_label(&ConfigurationUpdate {
+        boundary: Default::default(),
         activation: value.activation.as_ref().copied(),
         effort: settings.effort.as_ref().copied(),
     })?;
@@ -356,11 +357,13 @@ fn optional_label<T>(
 pub(super) fn effort(value: &str) -> Result<ConfigurationUpdate, CodecError> {
     Ok(if value == "none" {
         ConfigurationUpdate {
+            boundary: Default::default(),
             activation: Some(ReasoningActivation::Disabled),
             effort: None,
         }
     } else {
         ConfigurationUpdate {
+            boundary: Default::default(),
             activation: None,
             effort: Some(EffortControl {
                 scope: EffortScope::Reasoning,

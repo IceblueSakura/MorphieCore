@@ -25,8 +25,8 @@ pub use content::citation::{
     TextUnit,
 };
 pub use content::item::{
-    ConfigurationUpdate, ContentPart, InputPart, Instruction, Item, Message, MessageRole, Part,
-    Phase, ToolBatch, ToolBatchRole, ToolChange, ToolChangeAction,
+    ConfigurationBoundary, ConfigurationUpdate, ContentPart, InputPart, Instruction, Item, Message,
+    MessageRole, Part, Phase, ToolBatch, ToolBatchRole, ToolChange, ToolChangeAction,
 };
 pub use content::reasoning::{
     EffortControl, EffortLevel, EffortScope, ReasoningActivation, ReasoningContent,
@@ -39,6 +39,7 @@ pub use content::text::{
 };
 pub use contract::Feature;
 pub use error::GenerationError;
+pub use history::configuration::ResolvedConfiguration;
 pub use history::continuation::{CallReference, Continuation};
 pub use history::envelope::{MessageEnvelope, MessageEnvelopeRole};
 pub use history::group::GroupId;

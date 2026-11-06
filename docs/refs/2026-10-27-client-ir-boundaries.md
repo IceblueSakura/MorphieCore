@@ -31,6 +31,7 @@ Reviewed on **2026-10-27** at **`1b4f828`**, after the five-slice request repair
 - [Nine-direction tool assessment (2026-11-04)](#nine-direction-tool-assessment-2026-11-04)
 - [Tool-contract qualification (2026-11-04)](#tool-contract-qualification-2026-11-04)
 - [Current-Agent tool exit recheck (2026-11-05)](#current-agent-tool-exit-recheck-2026-11-05)
+- [Ordered effort contract qualification (2026-11-05)](#ordered-effort-contract-qualification-2026-11-05)
 
 ## Scope and evidence
 
@@ -614,7 +615,7 @@ The connected gate fixes counts independently: one request/zero sends for each p
 
 ## Tool-protocol root-cause audit (2026-11-04)
 
-Inspected **`c520b13`** across Chat Completions, Responses, Messages and the existing upstream-only Google generateContent/Interactions paths. This is a field-family and ownership assessment, not full Provider/model qualification. [Architecture](../architecture.md#ordered-tool-availability) records the selected direction; [Roadmap](../roadmap.md#tool-protocol-root-repair) owns implementation and open decisions. OpenCode missing-annotations normalization was postponed; its current rejection remains.
+Inspected **`c520b13`** across Chat Completions, Responses, Messages and the existing upstream-only Google generateContent/Interactions paths. This is a field-family and ownership assessment, not full Provider/model qualification. [Architecture](../architecture.md#ordered-tool-availability) records the selected direction; [Roadmap](../roadmap.md#conditional-stage-3-follow-ups) owns implementation and open decisions. OpenCode missing-annotations normalization was postponed; its current rejection remains.
 
 The subsequent [nine-direction assessment](#nine-direction-tool-assessment-2026-11-04) broadens the proposed fallback scope to explicit lossy conversion. The findings below retain their original evidence; the earlier native-only repair restriction no longer limits the assessment.
 
@@ -699,7 +700,7 @@ No new lossy mapping is selected by this audit. Independent directional fixtures
 
 At **`40d005d`**, the user requested all three native and six cross-protocol Chat/Responses/Messages paths, accepting bounded semantic approximation as a design direction. Three independent read-only investigations were divided by target protocol and combined with shared-owner inspection and primary-source checks. No product source, tests, source pins, credentials or runtime state changed; no Provider calls or new executable probes ran. Earlier synthetic reproductions remain the evidence for the root-only choice and lost-serial defects.
 
-The [proposed matrix and loss policies](../api-expansion-design.md#three-protocol-tool-conversion-design) are the single design home; [Roadmap](../roadmap.md#tool-protocol-root-repair) owns execution. This extension is evidence and counterexamples, not another implementation queue.
+The [proposed matrix and loss policies](../api-expansion-design.md#three-protocol-tool-conversion-design) are the single design home; [Roadmap](../roadmap.md#conditional-stage-3-follow-ups) owns execution. This extension is evidence and counterexamples, not another implementation queue.
 
 ### Additional findings
 
@@ -709,7 +710,7 @@ The [proposed matrix and loss policies](../api-expansion-design.md#three-protoco
 4. **Native custom JSON is not proof of custom streaming.** The pinned [Chat chunk type](https://github.com/openai/openai-python/blob/e8a0fd28bbdc1699c97ff0f602b1af3dd378382d/src/openai/types/chat/chat_completion_chunk.py) allows only function tool deltas, while static custom calls have an input carrier. [Current Chat stream intake](../../src/protocol/openai/events/decode/chat.rs) rejects custom calls. Neither a generic wrapper nor a successful static round trip establishes a lawful Chat custom SSE contract.
 5. **Identity-preserving aliases need the return path.** Chat/Messages lack the Responses namespace carrier, and naive `namespace.name` spelling violates their function-name alphabets. `a.read` and `b.read` are a minimal collision example. Reversible aliases can preserve leaf schemas and selection better than one dispatch function, but only if [client delivery](../../src/adapter/downstream.rs), retained snapshots and subsequent source history restore the original kind/name/namespace. Mapping only active definitions loses removed historical calls; array-position aliases change when new tools are inserted.
 6. **Returned additions have a role asymmetry.** The pinned [output union](https://github.com/openai/openai-python/blob/e8a0fd28bbdc1699c97ff0f602b1af3dd378382d/src/openai/types/responses/response_output_item.py) permits eight reported roles; the [input union](https://github.com/openai/openai-python/blob/e8a0fd28bbdc1699c97ff0f602b1af3dd378382d/src/openai/types/responses/response_input_item_param.py) accepts only developer additions. Both output-item added/done events carry the output union. Native output support, lawful input replay and delivery to Chat/Messages are three separate checks. A returned declaration necessary to interpret a call cannot be treated as harmless metadata or promoted to developer authority.
-7. **Existing collapse has a narrow owner.** [Request projection](../../src/lowering/request.rs) applies collapse only for Messages targets, and [the helper](../../src/protocol/anthropic/messages/carriers.rs) handles single function definitions/references/removals, clears surfaced deferral and selects a final set. Generalizing it is structural work, not a declaration that Chat/Responses already support the proposed policy. Existing unconditional prefix-stability wording also needed qualification: a changing root inventory alters rendered history/cache reuse even when source IR is unchanged.
+7. **The reviewed collapse had a narrow owner.** Request projection applied collapse only for Messages targets, and the former `messages/carriers.rs` helper handled single function definitions/references/removals, cleared surfaced deferral and selected a final set. Its successor is the shared [tool-set owner](../../src/lowering/tool_set.rs). Generalizing it was structural work, not evidence that Chat/Responses already supported the proposed policy. Existing unconditional prefix-stability wording also needed qualification: a changing root inventory alters rendered history/cache reuse even when source IR is unchanged.
 8. **The mature adapter comparison supports reuse, not wholesale adoption.** Pinned [Vercel Chat conversion](https://github.com/vercel/ai/blob/594495a5af70547d9d7a13d6df334ae30db49622/packages/openai/src/chat/convert-to-openai-chat-messages.ts) turns explicit errors into textual JSON and serializes normalized tool inputs/results. Its function-oriented abstraction is useful precedent for bounded result wrapping and consumer tests. It does not preserve this gateway's full native input/history union; copying normalized-input repair or media descriptor serialization would lose required content.
 
 ### Discriminating counterexamples
@@ -751,7 +752,7 @@ The stable Python [input batch](https://github.com/openai/openai-python/blob/9b3
 
 ### Responsible owners and implementation constraints
 
-The findings below describe the reviewed `a22cf0d` source. Implemented repairs now live in [Architecture](../architecture.md#ordered-tool-availability); remaining gates live in [Roadmap](../roadmap.md#tool-protocol-root-repair).
+The findings below describe the reviewed `a22cf0d` source. Implemented repairs now live in [Architecture](../architecture.md#ordered-tool-availability); remaining gates live in [Roadmap](../roadmap.md#conditional-stage-3-follow-ups).
 
 - **Declarations versus selection:** settings validation and the Messages wire validator resolve choices from root definitions only. Shared declaration traversal must include batches and namespace leaves, while current callable availability stays distinct from historical call identity. An old call without its definition does not acquire today's schema.
 - **Batch and stream identity:** the current single-function `AddDefinition` cannot own one Responses batch containing two definitions and one wire ID. Input, returned items, added/done events and retained snapshots need the same typed owner; response-role observations cannot become instruction authority.
@@ -764,7 +765,7 @@ Collision-dependent transformations remain unqualified; collision-free native ba
 
 ## Current-Agent tool exit recheck (2026-11-05)
 
-Inspected the current installed public pi 1.5.0 package and OpenCode 2.0.32 against the production CLI loader at the S3-T4 working slice based on `058ab08`. All authorities, keys, homes and files are synthetic and test-owned; no personal configuration, credential caches or real Providers were read or called. [Development](../development.md#installed-client-synthetic-recovery) owns execution evidence; [Roadmap](../roadmap.md#stage-3-core-packages) owns the remaining exit.
+Inspected the current installed public pi 1.5.0 package and OpenCode 2.0.32 against the production CLI loader at the S3-T4 working slice based on `058ab08`. All authorities, keys, homes and files are synthetic and test-owned; no personal configuration, credential caches or real Providers were read or called. [Development](../development.md#installed-client-synthetic-recovery) owns execution evidence; [Roadmap](../roadmap.md#agent-default-production-findings) owns the remaining exit.
 
 ### Artifact-qualified producer changes
 
@@ -795,3 +796,76 @@ This is a contract counterexample, not a complete request fixture. Keeping only 
 The Responses serializer anchors developer `additional_tools` at the first transcript system position and reconstructs subsequent unqualified direct calls/results without invented namespace, asynchronous or programmatic context. The real CLI gateway now completes read, tool-result feedback, final answer and recall. Its final text history retains empty annotations and `final_answer` phase. OpenCode still omits required text annotations on recall and remains a separately postponed strict-intake failure.
 
 Recovery and summary failures previously recorded under the same pi version no longer reproduce with the inspected artifacts. This recheck establishes current synthetic behavior; it neither reconstructs every historical failure's cause nor qualifies a real Provider endpoint.
+
+## Ordered effort contract qualification (2026-11-05)
+
+Reviewed at `4d4076e` for the [ordered effort repair](../architecture.md#ordered-effort-repair-direction). This completes the source investigation, not the representation selection or implementation. No real Provider, private configuration or credential cache was used.
+
+### Sources and installed producer
+
+The existing SDK regression pins remain unchanged. The following current stable releases were resolved from public package metadata and immutable release tags, then their relevant definitions were read:
+
+| Source | Release / immutable revision | Qualified definition |
+|---|---|---|
+| Anthropic Python | `v2.5.0` / `dd18a659419fe4d83aa9109bdcdcf9a35d5c8ddb` | [System message](https://github.com/anthropics/anthropic-sdk-python/blob/dd18a659419fe4d83aa9109bdcdcf9a35d5c8ddb/src/anthropic/types/beta/beta_system_message_param.py), [message output configuration](https://github.com/anthropics/anthropic-sdk-python/blob/dd18a659419fe4d83aa9109bdcdcf9a35d5c8ddb/src/anthropic/types/beta/beta_system_message_output_config_param.py) |
+| Anthropic TypeScript | `sdk-v1.5.0` / `3cde979dcebea3450c508f7afc71315be09bf99a` | [`BetaSystemMessageParam` / `BetaSystemMessageOutputConfig`](https://github.com/anthropics/anthropic-sdk-typescript/blob/3cde979dcebea3450c508f7afc71315be09bf99a/src/resources/beta/messages/messages.ts) |
+| OpenAI Python | `v3.46.0` / `ea5d1606f441d80dca1e9e7f99b74581f41408f8` | [Configuration update](https://github.com/openai/openai-python/blob/ea5d1606f441d80dca1e9e7f99b74581f41408f8/src/openai/types/responses/response_configuration_update_item_param_param.py) |
+| OpenAI Node | `v7.51.0` / `738695092f2d8e9e092de7bd19f0994e0ba68e25` | [`ResponseConfigurationUpdateItemParam`](https://github.com/openai/openai-node/blob/738695092f2d8e9e092de7bd19f0994e0ba68e25/src/resources/responses/responses.ts) |
+
+The pinned Anthropic Python 2.1.0 / TypeScript 1.1.0 definitions already describe empty message-local configuration and nullable effort. The current definitions retain that distinction. Current Responses definitions also include ordered `text.format`; this source drift does not schedule ordered format implementation.
+
+The current host still reports pi **1.5.0** and OpenCode **2.0.32**. The three public pi-ai assets retain the BLAKE3 digests in the [earlier same-day characterization](#artifact-qualified-producer-changes). Rerunning `pi_default_shapes.mjs` against the installed package completes 13 intercepted synthetic requests without network access. The built-in Go/Haiku medium request still contains root-low effort, adaptive summarized thinking, `block_binding:drop_block`, and the final empty system message selecting medium. The existing `pi_messages_default_tool_history` positive gate fails again: one ingress request, zero upstream attempts, `request.decode / codec.unsupported.unavailable`.
+
+### Temporal and presence disposition
+
+The official [Messages effort guide](https://platform.claude.com/docs/en/build-with-claude/effort#change-effort-mid-conversation-beta) distinguishes activation from scope: a marker immediately after a user turn with new input sets that turn's reply; elsewhere it waits for the next user turn with new input. Tool-result-only turns do not activate it. Once active, it persists until another change. Root effort remains the initial setting.
+
+The official [Responses reasoning guide](https://developers.openai.com/api/docs/guides/reasoning#change-reasoning-mid-conversation) selects the next response and subsequent responses until replaced, while leaving root effort unchanged. It requires original update positions on manual replay; reported response effort still describes the request-level setting. Its example places the update before the next user message. Pinned [Codex effort recording](https://github.com/openai/codex/blob/6aaac694803004a63c6f393d153c96d22521a6b9/codex-rs/core/src/session/reasoning_effort.rs#L28-L90) and [sampling loop](https://github.com/openai/codex/blob/6aaac694803004a63c6f393d153c96d22521a6b9/codex-rs/core/src/session/turn.rs#L460-L575) support recording an override inside the sampling loop after accepted input, without requiring a fresh user turn. The exact tool-continuation placement below is inferred from these contracts and implementation, not observed against the service.
+
+| Ordered history prefix | Messages active / pending | Responses effective effort for next response |
+|---|---|---|
+| Root low → new user input | low / absent | low |
+| Append medium update | medium / absent | medium |
+| Append assistant tool call | medium / absent | medium |
+| Append tool-result-only input | medium / absent | medium |
+| Append high update | **medium / high** | **high**, under the next-response contract |
+| Append later new user input | high / absent | high |
+
+This is the minimal temporal counterexample: identical effort levels and positions need distinct activation boundaries. `EffortScope::Reasoning` versus `Response` describes what effort controls, not when it activates. A target scope conversion cannot supply the missing distinction.
+
+| Form | Qualified meaning or boundary | Repair disposition |
+|---|---|---|
+| Messages named local effort | System role only; activation/persistence as above | Implement ordered named levels after representation selection; preserve historical and repeated markers |
+| Messages absent local configuration | No local update | Keep distinct from a supplied control |
+| Messages `output_config:{}` | SDK comments explicitly accept it on a message carrying content; no content and no configuration fields is rejected | Preserve the source boundary; do not invent a reset. Exact empty-control retention remains an implementation concern |
+| Messages `output_config:null` or `effort:null` | SDK syntax permits null; inspected field documentation does not define reset/default/no-op behavior | Unresolved; do not broaden public admission or inherit the native helper's no-op claim |
+| Messages local `format`, task budget, or `clear_at` | Not selected by this repair | Retain existing boundaries |
+| Responses named effort | Subsequent-response persistence; `none` is an explicit control, not null | Keep activation independent from level/scope mapping |
+| Responses absent reasoning, `{}`, or `effort:null` | Optional/nullable SDK syntax; no qualified reset semantics | Existing decoder collapses them; do not treat that collapse as evidence or silently extend it |
+| Responses `reasoning:null` | Input SDK field is nonnullable | Retain malformed-known-field rejection |
+| Consecutive Responses updates | Official reasoning guide says directly adjacent updates reject | Preserve this source restriction when integrating the resolver; native Messages repeated markers are a separate contract |
+
+The Responses guide also excludes automatic compaction/truncation with updates. This does not activate compaction work. Root output effort/format nulls remain separately unresolved; nullable fallback-attempt configuration elsewhere in the SDK does not establish message-local semantics.
+
+### Boundary and projection findings
+
+The official [mid-conversation system guide](https://platform.claude.com/docs/en/build-with-claude/mid-conversation-system-messages) permits effort-only empty system messages anywhere. Consecutive systems are judged together for placement; this does not establish arbitrary regrouping as prefix-equivalent. Content-bearing runs follow a legal user turn, including tool results, and precede an assistant turn or end the array. Server-tool pause exceptions remain outside the ordinary-function scope.
+
+The official [preserved-thinking guide](https://platform.claude.com/docs/en/build-with-claude/preserved-thinking) separates root parameters from the checked `system` / `tools` / `messages` prefix. Changing root effort can invalidate prompt cache without invalidating thinking; rewriting earlier messages can invalidate later thinking. Appending messages preserves prior thinking. A successful local replay-token check alone does not establish stable message reconstruction.
+
+Confirmed local causes to repair after selection:
+
+- At `4d4076e`, [`ConfigurationUpdate`](../../src/semantic/task/generation/content/item.rs) had activation/effort but no activation boundary. [`lowering/request.rs`](../../src/lowering/request.rs) applied target reasoning policy and historical level/scope mapping before the Messages-only `flatten_effort` in the former `messages/carriers.rs`. That helper accepted response scope as an implicit Messages timing selector. Resolve source timing before target conversion.
+- Public [`Messages intake`](../../src/protocol/anthropic/messages/client/request.rs) rejects all local configuration and discards collected envelopes. Native [`system_message`](../../src/protocol/anthropic/messages/items/decode.rs) retains effort but not each original system container; [`system_messages`](../../src/protocol/anthropic/messages/request.rs) regroups consecutive instructions/changes until an effort closes a message. Existing user/assistant/tool envelopes cannot express system membership.
+- Native `content:""` effort-only intake creates an empty text instruction. Reconstruction writes a nonempty text-block array, which changes content classification and can make an otherwise legal effort-only placement fail. The public empty-string normalization already avoids that instruction.
+- Native `read_message_effort` labels absent/null/empty controls as equivalent without field-specific evidence. Responses intake similarly collapses unresolved empty/null controls before projection. These existing helpers are repair targets, not protocol oracles.
+
+### Minimal representation decision
+
+Recommendation recorded on 2026-11-05: extend `ConfigurationUpdate` with one protocol-independent activation boundary, `FollowingResponse` versus `NewInputTurn`. Keep persistence implicit until replacement. One pure bounded resolver derives effective and pending controls from source items and actual message boundaries; do not store another mutable effective setting. Equivalent targets retain ordered carriers; other targets resolve the effective source value before scope/level conversion and record the selected historical-boundary/pending/cache loss.
+
+Reuse the existing message-envelope owner for system membership rather than raw payload retention or a second grouping registry. Preserve source container boundaries where replay depends on them; target writers may derive their legal view independently. The concrete envelope extension and unresolved empty/null forms must be reviewed with that representation, not hidden by `drop_block`.
+
+An alternative was to keep the current IR and postpone non-equivalent temporal projections. Reusing `EffortScope` as a timing flag or flattening public intake cannot satisfy the source-before-target and native-history requirements.
+
+**Selected 2026-11-06:** the user chose explicit activation boundaries plus reuse of the existing message-envelope owner over postponing the IR extension. [Architecture](../architecture.md#ordered-effort-repair-direction) owns that decision and the implemented contract; the preceding 2026-11-05 findings retain their source date.

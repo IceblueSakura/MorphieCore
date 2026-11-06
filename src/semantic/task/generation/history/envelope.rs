@@ -4,6 +4,7 @@ use std::collections::BTreeSet;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum MessageEnvelopeRole {
+    System,
     User,
     Assistant,
     Tool,
@@ -112,6 +113,10 @@ impl MessageEnvelopes {
                     return Err(GenerationError::InvalidMessageGroup);
                 }
                 let valid = match (&group.role, &items[index].1) {
+                    (
+                        MessageEnvelopeRole::System,
+                        Item::Instruction(_) | Item::ToolChange(_) | Item::ConfigurationUpdate(_),
+                    ) => true,
                     (MessageEnvelopeRole::User, Item::Message(m)) => m.role == MessageRole::User,
                     (MessageEnvelopeRole::Assistant, Item::Message(m)) => {
                         m.role == MessageRole::Assistant

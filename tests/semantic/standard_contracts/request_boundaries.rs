@@ -367,7 +367,7 @@ fn responses_history_uses_complete_standard_union_shapes() {
 }
 
 #[test]
-fn stable_messages_filters_extras_without_enabling_beta_semantics() {
+fn messages_filters_extras_and_retains_unselected_control_boundaries() {
     let base = json!({"model":"m","max_tokens":32,"messages":[{"role":"user","content":"x"}],"tool_choice":{"type":"auto"}});
     let expected = decode_client_request(base.to_string().as_bytes()).unwrap();
     let mut extra = base.clone();
@@ -381,7 +381,6 @@ fn stable_messages_filters_extras_without_enabling_beta_semantics() {
     );
     for fields in [
         json!({"thinking":{"type":"adaptive","block_binding":{"prefix_mismatch_behavior":"error"}}}),
-        json!({"messages":[{"role":"user","content":"x"},{"role":"system","content":[],"output_config":{"effort":"low"}}]}),
         json!({"messages":[{"role":"user","content":[{"type":"tool_removal","tool":{"type":"tool_reference","name":"f"}}]}]}),
     ] {
         let mut body = base.clone();

@@ -176,20 +176,9 @@ pub(crate) fn group_client_history(
     let actual: Vec<_> = request
         .message_envelopes()
         .iter()
+        .filter(|group| group.role() != MessageEnvelopeRole::System)
         .flat_map(|group| group.members().iter().copied())
         .collect();
-    if actual == expected {
-        return Ok(request.clone());
-    }
-    // Preserve known container boundaries when only part of the history has
-    // envelopes. Empty containers need their explicit anchor, not guessed regrouping.
-    if request
-        .message_envelopes()
-        .iter()
-        .any(|g| g.members().is_empty())
-    {
-        return Err(CodecError::Unsupported(CarrierReason::Unavailable));
-    }
     let positions: std::collections::BTreeMap<_, _> = request
         .items()
         .iter()
@@ -211,6 +200,17 @@ pub(crate) fn group_client_history(
             previous = Some(position);
             member_position = Some(position);
         }
+    }
+    if actual == expected {
+        return Ok(request.clone());
+    }
+    // Empty containers need their explicit anchor, not guessed regrouping.
+    if request
+        .message_envelopes()
+        .iter()
+        .any(|g| g.members().is_empty())
+    {
+        return Err(CodecError::Unsupported(CarrierReason::Unavailable));
     }
     let starts: std::collections::BTreeSet<_> = request
         .message_envelopes()
@@ -248,7 +248,7 @@ pub(crate) fn group_client_history(
         }
         boundary = ends.contains(id);
     }
-    let groups = groups
+    let mut groups: Vec<MessageEnvelope> = groups
         .into_iter()
         .map(|(role, members)| {
             MessageEnvelope::new(
@@ -258,5 +258,24 @@ pub(crate) fn group_client_history(
             )
         })
         .collect::<Result<_, _>>()?;
+    if ordered_system {
+        groups.extend(
+            request
+                .message_envelopes()
+                .iter()
+                .filter(|group| group.role() == MessageEnvelopeRole::System)
+                .cloned(),
+        );
+        groups.sort_by_key(|group| positions[&group.members()[0]]);
+        // These are candidate-local groups; membership, not regenerated IDs,
+        // carries the original message boundary.
+        for (index, group) in groups.iter_mut().enumerate() {
+            *group = MessageEnvelope::new(
+                GroupId::new(group.members()[0].scope(), index as u64 + 1),
+                group.role(),
+                group.members().to_vec(),
+            )?;
+        }
+    }
     Ok(request.clone().with_message_envelopes(groups)?)
 }

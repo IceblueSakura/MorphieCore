@@ -283,9 +283,9 @@ fn google_scope_mapping_approximates_levels_without_weakening_activation_or_hist
         assert!(
             morphiecore::adapter::ClientAdapter::Messages
                 .decode_client_request(body.to_string().as_bytes())
-                .is_err()
+                .is_ok()
         );
-        // This tests trusted native beta lowering, not the stable Client surface.
+        // Public admission does not activate ordered Google projections.
         let decoded = morphiecore::protocol::anthropic::messages::Profile::AdaptiveTextTools
             .decode_generation_request(
                 body.to_string().as_bytes(),

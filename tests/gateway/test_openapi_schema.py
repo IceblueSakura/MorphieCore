@@ -77,6 +77,19 @@ class OpenApiSchemaTests(unittest.TestCase):
             validator(schema).validate({**body, **valid})
             self.assertFalse(validator(schema).is_valid({**body, **invalid}))
         self.assertFalse(validator("ResponsesRequest").is_valid({**responses, "text": None}))
+        request = validator("MessagesRequest")
+        request.validate({**messages, "messages": [
+            {"role": "user", "content": "go"},
+            {"role": "system", "output_config": {"effort": "medium"}},
+        ]})
+        for message in (
+            {"role": "user", "content": "go", "output_config": {"effort": "high"}},
+            {"role": "assistant", "content": "answer", "output_config": {}},
+            {"role": "system", "content": [], "output_config": {"effort": None}},
+            {"role": "system", "content": [], "output_config": None},
+            {"role": "system", "content": "go", "output_config": {"format": {}}},
+        ):
+            self.assertFalse(request.is_valid({**messages, "messages": [message]}))
 
     def test_native_thinking_carriers_are_typed_without_an_extension_bag(self):
         chat = {"model": "synthetic", "messages": []}

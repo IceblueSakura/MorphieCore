@@ -493,10 +493,16 @@ pub(crate) const INTERACTIONS_SCHEMA_NAME: Rule = Rule::new(
     Field::SchemaName,
     Change::Omit,
 );
-pub(crate) const MESSAGE_EFFORT: Rule = Rule::new(
-    "messages.flatten-message-effort.v1",
+pub(crate) const CONFIGURATION: Rule = Rule::new(
+    "generation.collapse-configuration.v1",
     Field::Effort,
-    Change::Omit,
+    Change::Approximate,
+);
+/// Removing ordered controls changes historical boundaries and cache prefixes.
+pub(crate) const CONFIGURATION_PREFIX: Rule = Rule::new(
+    "generation.configuration-prefix-change.v1",
+    Field::MessageEnvelopes,
+    Change::Approximate,
 );
 pub(crate) const TOOL_ERROR: Rule = Rule::new(
     "openai.wrap-tool-result-errors.v1",

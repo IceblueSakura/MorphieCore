@@ -4,8 +4,7 @@ use crate::{
     protocol::{
         CodecError, DecodedRequest, GenerationRequestEnvelope as Request,
         anthropic::messages::{
-            Block, OutputConfig, Role, Selection, TextContent as WireText, Tool,
-            ToolChoice as WireChoice,
+            OutputConfig, Selection, TextContent as WireText, Tool, ToolChoice as WireChoice,
             items::{Intake, text},
             service, settings,
             shape::{self, label, object, parse, required, string},
@@ -414,70 +413,23 @@ pub fn decode_client_request(bytes: &[u8]) -> Result<Request, CodecError> {
         if message.get("clear_at").is_some_and(|v| !v.is_null()) {
             return Err(CodecError::Unsupported(CarrierReason::Unavailable));
         }
-        if message.get("output_config").is_some() {
-            return Err(CodecError::Unsupported(CarrierReason::Unavailable));
+        keep(
+            &mut message,
+            &["role", "content", "output_config"],
+            &mut ignored,
+        );
+        if let Some(config) = message.get_mut("output_config") {
+            keep(config, &["effort", "format", "task_budget"], &mut ignored);
         }
-        keep(&mut message, &["role", "content"], &mut ignored);
-        let m = object(&message)?;
-        let role = Role::read(required(m, "role")?)?;
-        let content = required(m, "content")?;
-        let effort = None;
-        if role == Role::System {
-            // An empty string renders nothing, as an empty block list does.
-            let parsed: Vec<_> = if content.is_string() {
-                let s = string(content)?;
-                (!s.is_empty())
-                    .then(|| wire::request::CacheMarked {
-                        content: Block::Text(s),
-                        cache: None,
-                    })
-                    .into_iter()
-                    .collect()
-            } else {
-                let mut content = content.clone();
-                blocks(&mut content, &mut ignored)?;
-                content
-                    .as_array()
-                    .ok_or(CodecError::invalid())?
-                    .iter()
-                    .map(|v| wire::request::CacheMarked::read(v, Block::read))
-                    .collect::<Result<_, _>>()?
-            };
-            roles.push((role, !parsed.is_empty()));
-            wire::request::input_block_bytes(role, &parsed)?;
-            intake.system_message(&parsed, effort)?;
-            parsed_messages.push(wire::request::InputMessage {
-                role,
-                content: wire::request::MessageContent::Blocks(parsed),
-                effort,
-            });
-            continue;
+        if let Some(content) = message.get_mut("content")
+            && !content.is_string()
+        {
+            blocks(content, &mut ignored)?;
         }
-        roles.push((role, true));
-        let parsed = if content.is_string() {
-            vec![wire::request::CacheMarked {
-                content: Block::Text(string(content)?),
-                cache: None,
-            }]
-        } else {
-            let mut content = content.clone();
-            blocks(&mut content, &mut ignored)?;
-            content
-                .as_array()
-                .ok_or(CodecError::invalid())?
-                .iter()
-                .map(|v| wire::request::CacheMarked::read(v, Block::read))
-                .collect::<Result<_, _>>()?
-        };
-        if !wire::request::input_block_bytes(role, &parsed)?.1 {
-            return Err(CodecError::invalid());
-        }
-        intake.request_message(role, &parsed)?;
-        parsed_messages.push(wire::request::InputMessage {
-            role,
-            content: wire::request::MessageContent::Blocks(parsed),
-            effort,
-        });
+        let parsed = wire::request::InputMessage::read(&message)?;
+        roles.push((parsed.role, parsed.carries_content()));
+        intake.input_message(&parsed)?;
+        parsed_messages.push(parsed);
     }
     wire::request::validate_system_placement(&roles)?;
     let selection = settings.tool_choice.as_ref().map(|c| match c {
@@ -492,8 +444,6 @@ pub fn decode_client_request(bytes: &[u8]) -> Result<Request, CodecError> {
         selection.as_ref(),
         false,
     )?;
-    // Messages turns are not kept as envelopes: each target regroups items its own
-    // way (native by role, Chat by assistant text and calls).
     // Calls carry their input as raw JSON text, as every client protocol's calls do.
     let items = intake
         .items
@@ -508,7 +458,8 @@ pub fn decode_client_request(bytes: &[u8]) -> Result<Request, CodecError> {
         })
         .collect();
     let mut fidelity = FidelityRecords::default();
-    let semantic = GenerationRequest::from_resources(items, settings, intake.resources)?;
+    let semantic = GenerationRequest::from_resources(items, settings, intake.resources)?
+        .with_message_envelopes(intake.groups)?;
     crate::protocol::anthropic::messages::items::validate_cache(&semantic)?;
     fidelity.bind_replay_origin(&crate::protocol::replay_envelope::CLIENT_ORIGIN)?;
     let mut request = Request::from_generation(

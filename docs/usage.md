@@ -622,7 +622,9 @@ On native Messages candidates, tool definitions, system blocks and supported con
 
 Public Messages intake accepts ordered `tool_addition`/`tool_removal` blocks only in valid mid-conversation system positions. Additions carry a declared reference or an inline function definition; removals carry a reference. Candidate dispositions retain native changes, collapse them under the existing named rule where admitted, or reject history whose model-visible examples cannot survive collapse. Known tool names, schemas, cache conflicts, call/result links and resource bounds remain strict.
 
-Adaptive `thinking.block_binding` accepts `null`/`{}` exactly and omits `prefix_mismatch_behavior:"drop_block"` under `messages.omit-block-binding.v1`; this never bypasses gateway signature/origin checks. Explicit `"error"` rejects because public intake cannot promise that enforcement. Per-message `output_config` and `clear_at` remain unsupported.
+System messages may set `"output_config":{"effort":"medium"}` with empty or omitted content. Keep root effort unchanged and replay historical markers in their original positions. A marker after new user input selects that reply; a marker after tool-result-only feedback waits for the next new-input turn. Native candidates preserve system boundaries; other candidates use the [ordered effort projection contract](architecture.md#ordered-effort-repair-direction). Local controls on user/assistant messages, null local configuration/effort, local format/task budgets and `clear_at` remain unsupported.
+
+Adaptive `thinking.block_binding` accepts `null`/`{}` exactly and omits `prefix_mismatch_behavior:"drop_block"` under `messages.omit-block-binding.v1`; this never bypasses gateway signature/origin or historical-prefix checks. Explicit `"error"` rejects because public intake cannot promise that enforcement.
 
 ### Chat custom tools
 

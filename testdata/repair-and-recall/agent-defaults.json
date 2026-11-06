@@ -662,8 +662,8 @@
     "opencode_go_haiku": {
       "resolver": "getBuiltinModel",
       "source_files": {
-        "dist/providers/data/opencode-go.json": "daed1626c48d9cec6da77f53a163aec917d5d5fc8d6e4d53c23f448f99463328",
-        "dist/api/anthropic-messages.js": "d25004b2882902b7d86b2e5ba82be45cfd94010244173b2d3e3515431721af89"
+        "dist/providers/data/opencode-go.json": "4bcb5654cf87954f134f3fbe45e88feec57054cadee25a425aff6d7b3c6f68c2",
+        "dist/api/anthropic-messages.js": "75c5b2a6ba875761cb2c2a35619c3a4318fd5f70a9595394562ac5319b187420"
       },
       "model": {
         "id": "claude-haiku-5-5",
@@ -699,7 +699,8 @@
         },
         "compat": {
           "forceAdaptiveThinking": true,
-          "supportsTemperature": false
+          "supportsTemperature": false,
+          "supportsMidConvoEffort": true
         },
         "inputLimits": {
           "images": {
@@ -866,6 +867,13 @@
                   }
                 }
               ]
+            },
+            {
+              "role": "system",
+              "content": [],
+              "output_config": {
+                "effort": "medium"
+              }
             }
           ],
           "max_tokens": 128000,
@@ -954,25 +962,28 @@
           ],
           "thinking": {
             "type": "adaptive",
-            "display": "summarized"
+            "display": "summarized",
+            "block_binding": {
+              "prefix_mismatch_behavior": "drop_block"
+            }
           },
           "output_config": {
-            "effort": "medium"
+            "effort": "low"
           }
         }
       },
       "headers": {
         "text": {
           "anthropic-version": "2023-06-01",
-          "anthropic-beta": null
+          "anthropic-beta": "mid-conversation-output-config-2026-07-01,thinking-binding-controls-2026-08-01"
         },
         "tools": {
           "anthropic-version": "2023-06-01",
-          "anthropic-beta": null
+          "anthropic-beta": "mid-conversation-output-config-2026-07-01,thinking-binding-controls-2026-08-01"
         },
         "reasoning": {
           "anthropic-version": "2023-06-01",
-          "anthropic-beta": null
+          "anthropic-beta": "mid-conversation-output-config-2026-07-01,thinking-binding-controls-2026-08-01"
         }
       }
     }

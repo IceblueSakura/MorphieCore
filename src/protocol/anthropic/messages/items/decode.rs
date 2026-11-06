@@ -60,6 +60,35 @@ impl Intake {
             description: resource.description,
         })
     }
+    /// Public filtering and native decoding share role/known-field validation and
+    /// empty system normalization before creating semantic items.
+    pub(in crate::protocol::anthropic::messages) fn input_message(
+        &mut self,
+        message: &crate::protocol::anthropic::messages::wire::request::InputMessage,
+    ) -> Result<(), CodecError> {
+        use crate::protocol::anthropic::messages::wire::request::MessageContent;
+        message.bytes()?;
+        let blocks;
+        let content = match &message.content {
+            MessageContent::Blocks(content) => content.as_slice(),
+            MessageContent::Text(text) => {
+                blocks = if message.role == Role::System && text.is_empty() {
+                    vec![]
+                } else {
+                    vec![crate::protocol::anthropic::messages::CacheMarked {
+                        content: Block::Text(text.clone()),
+                        cache: None,
+                    }]
+                };
+                &blocks
+            }
+        };
+        if message.role == Role::System {
+            self.system_message(content, message.effort)
+        } else {
+            self.request_message(message.role, content)
+        }
+    }
     /// A mid-conversation system message becomes one ordered, text-only instruction.
     pub(in crate::protocol::anthropic::messages) fn instruction(
         &mut self,
@@ -117,6 +146,7 @@ impl Intake {
         if blocks.is_empty() && effort.is_none() {
             return Err(CodecError::invalid());
         }
+        let start = self.items.len();
         let mut text_run = vec![];
         for block in blocks {
             let action = match &block.content {
@@ -151,6 +181,7 @@ impl Intake {
         }
         if let Some(effort) = effort {
             self.push(Item::ConfigurationUpdate(ConfigurationUpdate {
+                boundary: ConfigurationBoundary::NewInputTurn,
                 activation: None,
                 effort: Some(EffortControl {
                     scope: EffortScope::Response,
@@ -158,7 +189,10 @@ impl Intake {
                 }),
             }))?;
         }
-        Ok(())
+        self.envelope(
+            Role::System,
+            self.items[start..].iter().map(|(id, _)| *id).collect(),
+        )
     }
     pub(in crate::protocol::anthropic::messages) fn block(
         &mut self,
@@ -342,10 +376,10 @@ impl Intake {
         members: Vec<ItemId>,
     ) -> Result<(), CodecError> {
         let id = GroupId::new(self.scope, self.groups.len() as u64 + 1);
-        let role = if role == Role::User {
-            MessageEnvelopeRole::User
-        } else {
-            MessageEnvelopeRole::Assistant
+        let role = match role {
+            Role::User => MessageEnvelopeRole::User,
+            Role::Assistant => MessageEnvelopeRole::Assistant,
+            Role::System => MessageEnvelopeRole::System,
         };
         self.groups.push(if members.is_empty() {
             MessageEnvelope::empty(id, role, None)

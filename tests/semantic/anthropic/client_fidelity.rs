@@ -25,6 +25,274 @@ fn native_request(body: &serde_json::Value) -> morphiecore::protocol::Generation
     GenerationRequestEnvelope::from_generation(decoded, "m").unwrap()
 }
 
+#[test]
+fn ordered_effort_resolves_source_turn_before_target_mapping_and_keeps_native_prefix() {
+    use morphiecore::protocol::{anthropic::messages, native::ReplayTarget};
+    let body = json!({"model":"m","max_tokens":64,"output_config":{"effort":"low"},
+    "tools":[{"name":"read","input_schema":{"type":"object"}}],
+    "messages":[
+        {"role":"user","content":"read"},
+        {"role":"system","content":[],"output_config":{"effort":"medium"}},
+        {"role":"assistant","content":[{"type":"tool_use","id":"call","name":"read","input":{}}]},
+        {"role":"user","content":[{"type":"tool_result","tool_use_id":"call","content":"result"}]},
+        {"role":"system","content":"","output_config":{"effort":"high"}}
+    ]});
+    let request = decode_client_request(body.to_string().as_bytes()).unwrap();
+    let native = native_request(&body);
+    for source in [&request, &native] {
+        let resolved = source.task.semantic.resolved_configuration();
+        assert_eq!(
+            resolved.effort,
+            Some(EffortControl {
+                scope: EffortScope::Response,
+                level: EffortLevel::Medium,
+            })
+        );
+        assert_eq!(
+            resolved.pending.unwrap().effort.unwrap().level,
+            EffortLevel::High
+        );
+        assert!(
+            source
+                .task
+                .semantic
+                .items()
+                .iter()
+                .all(|(_, item)| match item {
+                    Item::ConfigurationUpdate(update) =>
+                        update.boundary == ConfigurationBoundary::NewInputTurn,
+                    Item::Instruction(_) => false,
+                    _ => true,
+                })
+        );
+    }
+    let before = request.clone();
+    let target = ReplayTarget::new("synthetic", "m").unwrap();
+    let mut caps = messages::TargetContract::new(
+        messages::Profile::AdaptiveTextTools,
+        messages::Dialect::Standard,
+    );
+    caps.dispositions = messages::Profile::AdaptiveTextTools.representation_contract();
+    let retained = caps.encode_request(&request, &target).unwrap();
+    assert_eq!(retained.value["output_config"], json!({"effort":"low"}));
+    assert_eq!(retained.value["messages"][1], body["messages"][1]);
+    assert_eq!(
+        retained.value["messages"][4],
+        json!({"role":"system","content":[],"output_config":{"effort":"high"}})
+    );
+    for api in [GenerationApi::Chat, GenerationApi::Responses] {
+        let codec = GenerationCodec::new(api, Dialect::Standard, None);
+        let mut limited = morphiecore::protocol::openai::TargetContract::full();
+        limited.model_limits.allowed_effort =
+            Some(vec![EffortLevel::Low, EffortLevel::Medium].into());
+        let (wire, rules) = codec
+            .encode_request_with_rules(&request, "m", &limited)
+            .unwrap();
+        assert_eq!(
+            if api == GenerationApi::Chat {
+                &wire["reasoning_effort"]
+            } else {
+                &wire["reasoning"]["effort"]
+            },
+            "medium"
+        );
+        assert!(rules.contains(&"generation.collapse-configuration.v1"));
+        assert!(rules.contains(&"generation.configuration-prefix-change.v1"));
+        if api == GenerationApi::Responses {
+            assert!(
+                wire["input"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .all(|v| v["type"] != "configuration_update")
+            );
+        }
+    }
+    caps.model_limits.allowed_effort = Some(vec![].into());
+    assert!(caps.encode_request(&request, &target).is_err());
+    caps.model_limits.allowed_effort = None;
+    assert_eq!(
+        caps.encode_request(&request, &target).unwrap().value,
+        retained.value
+    );
+    assert_eq!(request, before);
+
+    let mut mixed = body.clone();
+    mixed["messages"][3]["content"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!({"type":"text","text":"new input with feedback"}));
+    let mixed = decode_client_request(mixed.to_string().as_bytes()).unwrap();
+    let resolved = mixed.task.semantic.resolved_configuration();
+    assert_eq!(resolved.effort.unwrap().level, EffortLevel::High);
+    assert!(resolved.pending.is_none());
+    let mut next = body;
+    next["messages"].as_array_mut().unwrap().extend([
+        json!({"role":"assistant","content":"done"}),
+        json!({"role":"user","content":"next"}),
+    ]);
+    let next = decode_client_request(next.to_string().as_bytes()).unwrap();
+    let resolved = next.task.semantic.resolved_configuration();
+    assert_eq!(resolved.effort.unwrap().level, EffortLevel::High);
+    assert!(resolved.pending.is_none());
+    let continued = caps.encode_request(&next, &target).unwrap();
+    assert_eq!(
+        &continued.value["messages"].as_array().unwrap()[..5],
+        retained.value["messages"].as_array().unwrap()
+    );
+    assert_eq!(continued.value["output_config"], json!({"effort":"low"}));
+}
+
+#[test]
+fn system_effort_containers_and_known_fields_survive_shared_intake() {
+    use morphiecore::protocol::{anthropic::messages, native::ReplayTarget};
+    let body = json!({"model":"m","max_tokens":64,"messages":[
+        {"role":"user","content":"go"},
+        {"role":"system","content":[{"type":"text","text":"mode"}]},
+        {"role":"system","content":[],"output_config":{"effort":"medium"}},
+        {"role":"system","content":[],"output_config":{"effort":"medium"}},
+        {"role":"assistant","content":"answer"},
+        {"role":"system","output_config":{"effort":"high"}},
+        {"role":"user","content":"next"}
+    ]});
+    let mut caps = messages::TargetContract::new(
+        messages::Profile::AdaptiveTextTools,
+        messages::Dialect::Standard,
+    );
+    caps.dispositions = messages::Profile::AdaptiveTextTools.representation_contract();
+    let target = ReplayTarget::new("synthetic", "m").unwrap();
+    for request in [
+        decode_client_request(body.to_string().as_bytes()).unwrap(),
+        native_request(&body),
+    ] {
+        let wire = caps.encode_request(&request, &target).unwrap().value;
+        assert_eq!(
+            &wire["messages"].as_array().unwrap()[1..4],
+            &body["messages"].as_array().unwrap()[1..4]
+        );
+        assert_eq!(
+            wire["messages"][5],
+            json!({"role":"system","content":[],"output_config":{"effort":"high"}})
+        );
+    }
+    let mut extended = body.clone();
+    extended["messages"][2]["output_config"]["unknown_extension"] = json!(true);
+    assert!(decode_client_request(extended.to_string().as_bytes()).is_ok());
+    for config in [
+        serde_json::Value::Null,
+        json!({"effort":null}),
+        json!({"effort":4}),
+        json!({"effort":"unknown"}),
+        json!({}),
+    ] {
+        let mut invalid = body.clone();
+        invalid["messages"][2]["output_config"] = config;
+        assert!(decode_client_request(invalid.to_string().as_bytes()).is_err());
+        assert!(
+            messages::Profile::AdaptiveTextTools
+                .decode_request(invalid.to_string().as_bytes())
+                .is_err()
+        );
+    }
+    for role in ["user", "assistant"] {
+        let mut invalid = body.clone();
+        invalid["messages"][2] =
+            json!({"role":role,"content":"text","output_config":{"effort":"low"}});
+        assert!(decode_client_request(invalid.to_string().as_bytes()).is_err());
+    }
+}
+
+#[test]
+fn effort_projection_protects_signed_prefix_and_validates_system_envelope_order() {
+    use morphiecore::protocol::{anthropic::messages, native::ReplayTarget};
+    let body = json!({"model":"m","max_tokens":64,
+    "thinking":{"type":"adaptive"},"output_config":{"effort":"low"},
+    "messages":[
+        {"role":"user","content":"first"},
+        {"role":"system","content":[{"type":"text","text":"mode"}],"output_config":{}},
+        {"role":"system","content":[],"output_config":{"effort":"medium"}},
+        {"role":"assistant","content":[
+            {"type":"thinking","thinking":"plan","signature":"synthetic-signature"},
+            {"type":"redacted_thinking","data":"synthetic-redacted"},
+            {"type":"text","text":"answer"}]},
+        {"role":"user","content":"next"},
+        {"role":"system","content":[],"output_config":{"effort":"high"}}
+    ]});
+    assert!(decode_client_request(body.to_string().as_bytes()).is_ok());
+    let request = native_request(&body);
+    let before = request.clone();
+    let target = ReplayTarget::new("synthetic", "m").unwrap();
+    let mut caps = messages::TargetContract::new(
+        messages::Profile::AdaptiveTextTools,
+        messages::Dialect::Standard,
+    );
+    caps.dispositions = messages::Profile::AdaptiveTextTools.representation_contract();
+    let exact = caps.encode_request(&request, &target).unwrap();
+    assert_eq!(exact.value["messages"][3], body["messages"][3]);
+    let mut later = body.clone();
+    later["messages"].as_array_mut().unwrap().extend([
+        json!({"role":"assistant","content":"later answer"}),
+        json!({"role":"user","content":"another turn"}),
+    ]);
+    let continued = caps
+        .encode_request(&native_request(&later), &target)
+        .unwrap();
+    assert_eq!(
+        &continued.value["messages"].as_array().unwrap()[..6],
+        exact.value["messages"].as_array().unwrap()
+    );
+    caps.dispositions.set_native(Feature::MessageEffort, false);
+    assert!(caps.encode_request(&request, &target).is_err());
+    caps.dispositions.set_native(Feature::MessageEffort, true);
+    caps.model_limits.allowed_effort = Some(vec![EffortLevel::Low, EffortLevel::High].into());
+    assert!(caps.encode_request(&request, &target).is_err());
+    caps.model_limits.allowed_effort = None;
+    assert_eq!(
+        caps.encode_request(&request, &target).unwrap().value,
+        exact.value
+    );
+    assert_eq!(request, before);
+
+    // A change after protected thinking may collapse without invalidating it.
+    let mut after = body.clone();
+    after["messages"].as_array_mut().unwrap().remove(2);
+    let after = native_request(&after);
+    caps.dispositions.set_native(Feature::MessageEffort, false);
+    let flat = caps.encode_request(&after, &target).unwrap();
+    assert_eq!(flat.value["messages"][2], body["messages"][3]);
+    caps.dispositions.set_native(Feature::MessageEffort, true);
+
+    let mut groups = request.task.semantic.message_envelopes().to_vec();
+    let moved = groups.remove(1);
+    groups.push(moved);
+    let mut reordered = request.clone();
+    reordered.task.semantic = reordered
+        .task
+        .semantic
+        .with_message_envelopes(groups)
+        .unwrap();
+    assert!(caps.encode_request(&reordered, &target).is_err());
+
+    // Increasing but noncontiguous System membership must not cross an assistant.
+    let groups = request.task.semantic.message_envelopes();
+    let mut gapped = groups.to_vec();
+    let late = gapped.pop().unwrap();
+    let early = gapped.remove(1);
+    let mut members = early.members().to_vec();
+    members.extend_from_slice(late.members());
+    gapped.insert(
+        1,
+        MessageEnvelope::new(early.id(), MessageEnvelopeRole::System, members).unwrap(),
+    );
+    let mut invalid = request.clone();
+    invalid.task.semantic = invalid
+        .task
+        .semantic
+        .with_message_envelopes(gapped)
+        .unwrap();
+    assert!(caps.encode_request(&invalid, &target).is_err());
+}
+
 fn response() -> DecodedResponse {
     // Orthogonal content/usage fixtures carry an explicit, representable terminal.
     DecodedResponse {
@@ -711,7 +979,7 @@ fn leading_instructions_compose_once_and_effort_boundaries_split_same_role_histo
     assert!(
         flattened
             .evidence
-            .contains_rule("messages.flatten-message-effort.v1")
+            .contains_rule("generation.collapse-configuration.v1")
     );
     assert_eq!(request, original);
     let body = json!({"model":"m","max_tokens":32,"messages":[
@@ -2547,6 +2815,7 @@ fn pi_haiku_profile_keeps_carriers_or_records_rules() {
     );
     let effort = |level| {
         Item::ConfigurationUpdate(ConfigurationUpdate {
+            boundary: ConfigurationBoundary::NewInputTurn,
             activation: None,
             effort: Some(EffortControl {
                 scope: EffortScope::Response,
@@ -2594,9 +2863,9 @@ fn pi_haiku_profile_keeps_carriers_or_records_rules() {
     assert_eq!(wire["thinking"], body["thinking"]);
     assert_eq!(wire["tools"], body["tools"]);
     assert_eq!(wire["output_config"], json!({"effort":"high"}));
-    // One system section shares a message; its effort rides on that message.
+    // Each native system container keeps its own boundary.
     let messages = wire["messages"].as_array().unwrap();
-    assert_eq!(messages.len(), 7);
+    assert_eq!(messages.len(), 8);
     assert_eq!(
         messages[1],
         json!({"role":"system","content":[],"output_config":{"effort":"low"}})
@@ -2604,9 +2873,9 @@ fn pi_haiku_profile_keeps_carriers_or_records_rules() {
     assert_eq!(
         messages[6],
         json!({"role":"system","content":[{"type":"text","text":"Write mode."},
-                body["messages"][6]["content"][1], body["messages"][6]["content"][2]],
-                "output_config":{"effort":"medium"}})
+                body["messages"][6]["content"][1], body["messages"][6]["content"][2]]})
     );
+    assert_eq!(messages[7], body["messages"][7]);
 
     // A retained historical level must satisfy the binding even when the reply's
     // level is allowed. Missing-carrier flattening is checked on its final value.
@@ -2632,7 +2901,7 @@ fn pi_haiku_profile_keeps_carriers_or_records_rules() {
     assert!(
         flattened
             .evidence
-            .contains_rule("messages.flatten-message-effort.v1")
+            .contains_rule("generation.collapse-configuration.v1")
     );
     assert_eq!(decoded, before);
 
@@ -2655,8 +2924,9 @@ fn pi_haiku_profile_keeps_carriers_or_records_rules() {
     assert_eq!(
         rules,
         [
+            "generation.collapse-configuration.v1",
+            "generation.configuration-prefix-change.v1",
             "messages.omit-block-binding.v1",
-            "messages.flatten-message-effort.v1",
             "generation.collapse-tool-set.v1"
         ]
     );

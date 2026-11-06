@@ -254,14 +254,16 @@ fn configuration_update_is_an_ordered_effort_item_not_a_settings_patch() {
                 .is_err()
         );
     }
-    assert!(
-        lower_request(
-            &decoded.semantic,
-            &decoded.fidelity,
-            GenerationApi::Chat,
-            contract()
-        )
-        .is_err()
+    let chat = lower_request(
+        &decoded.semantic,
+        &decoded.fidelity,
+        GenerationApi::Chat,
+        contract(),
+    )
+    .unwrap();
+    assert_eq!(
+        morphiecore::protocol::openai::chat::encode_generation(&chat).unwrap()["reasoning_effort"],
+        "low"
     );
     let mut idless = json!({"type":"configuration_update","reasoning":{"effort":"max"}});
     assert!(responses::decode_response(&envelope("completed", json!([idless.clone()]))).is_err());
@@ -350,4 +352,58 @@ fn configuration_update_is_an_ordered_effort_item_not_a_settings_patch() {
             if update.effort.unwrap().scope == EffortScope::Response)
     );
     assert_eq!(request, before);
+}
+
+#[test]
+fn subsequent_response_effort_replaces_off_and_applies_to_tool_continuation() {
+    use morphiecore::protocol::openai::{Dialect, GenerationCodec};
+    let codec = GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None);
+    let chat = GenerationCodec::new(GenerationApi::Chat, Dialect::Standard, None);
+    let mut target = Contract::full();
+    // Exercise the ordinary catalog's activation defaults, not the all-native table.
+    target.dispositions = morphiecore::lowering::disposition::Dispositions::text_images();
+    for (initial, updated, expected) in [("low", "none", "none"), ("none", "high", "high")] {
+        let wire = json!({"model":"m","reasoning":{"effort":initial},"input":[
+            {"role":"user","content":"go"},
+            {"type":"configuration_update","id":null,"reasoning":{"effort":updated}}
+        ]});
+        let source = codec
+            .decode_client_request(wire.to_string().as_bytes())
+            .unwrap();
+        let before = source.clone();
+        assert_eq!(
+            chat.encode_request(&source, "m", &target).unwrap()["reasoning_effort"],
+            expected
+        );
+        assert_eq!(source, before);
+    }
+    let wire = json!({"model":"m","reasoning":{"effort":"low"},"input":[
+        {"role":"user","content":"go"},
+        {"type":"configuration_update","reasoning":{"effort":"medium"}},
+        {"type":"function_call","call_id":"call","name":"read","arguments":"{}"},
+        {"type":"function_call_output","call_id":"call","output":"result"},
+        {"type":"configuration_update","reasoning":{"effort":"high"}}
+    ]});
+    let source = codec
+        .decode_client_request(wire.to_string().as_bytes())
+        .unwrap();
+    let resolved = source.task.semantic.resolved_configuration();
+    assert_eq!(resolved.effort.unwrap().level, EffortLevel::High);
+    assert!(resolved.pending.is_none());
+    let native = codec
+        .encode_request(&source, "m", &Contract::full())
+        .unwrap();
+    assert_eq!(native["reasoning"]["effort"], "low");
+    assert_eq!(native["input"][4]["reasoning"]["effort"], "high");
+    for invalid in [
+        json!([{"type":"configuration_update","reasoning":{"effort":"low"}},
+            {"type":"configuration_update","reasoning":{"effort":"high"}}]),
+        json!([{"type":"configuration_update","reasoning":{"effort":null}}]),
+    ] {
+        assert!(
+            codec
+                .decode_client_request(json!({"model":"m","input":invalid}).to_string().as_bytes())
+                .is_err()
+        );
+    }
 }
