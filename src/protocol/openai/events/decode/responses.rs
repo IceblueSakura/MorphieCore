@@ -1,4 +1,4 @@
-//! Responses event grammar and exact terminal snapshot verification.
+//! Responses event grammar and field-contract terminal snapshot verification.
 use super::*;
 use crate::protocol::{
     failure::{CarrierReason, ShapeReason},
@@ -14,61 +14,80 @@ pub(super) struct State {
     pub(super) queued_creation_pending: bool,
 }
 
-// Fixed structural failure labels only; never include IDs, text or ciphertext.
-fn terminal_snapshot_difference(actual: &[Value], expected: &[Value]) -> ShapeReason {
+// Both inputs have already passed native decoding. Item-done owns completed
+// reasoning replay; the terminal response is a consistency witness, not a writer.
+// https://developers.openai.com/api/reference/resources/responses/streaming-events
+fn verify_terminal_snapshot(actual: &[Value], expected: &[Value]) -> Result<(), ShapeReason> {
     if actual.len() != expected.len() {
-        return ShapeReason::SnapshotShape;
+        return Err(ShapeReason::SnapshotShape);
     }
     for (a, e) in actual.iter().zip(expected) {
         if a == e {
             continue;
         }
         if a["id"] != e["id"] || a["type"] != e["type"] {
-            return ShapeReason::SnapshotIdentity;
+            return Err(ShapeReason::SnapshotIdentity);
         }
         if a["status"] != e["status"] {
-            return ShapeReason::SnapshotLifecycle;
+            return Err(ShapeReason::SnapshotLifecycle);
         }
         if a["phase"] != e["phase"] {
-            return ShapeReason::SnapshotPhase;
+            return Err(ShapeReason::SnapshotPhase);
         }
         if a["encrypted_content"] != e["encrypted_content"] {
-            return match (
+            match (
                 a["encrypted_content"].is_null(),
                 e["encrypted_content"].is_null(),
             ) {
-                (false, true) => ShapeReason::SnapshotReplayAdded,
-                (true, false) => ShapeReason::SnapshotReplayRemoved,
-                _ => ShapeReason::SnapshotReplayChanged,
-            };
+                (false, true) => return Err(ShapeReason::SnapshotReplayAdded),
+                (true, false) => return Err(ShapeReason::SnapshotReplayRemoved),
+                (false, false)
+                    if e["type"] == "reasoning"
+                        && e["status"] == "completed"
+                        && a["encrypted_content"]
+                            .as_str()
+                            .is_some_and(|v| !v.is_empty())
+                        && e["encrypted_content"]
+                            .as_str()
+                            .is_some_and(|v| !v.is_empty()) => {}
+                _ => return Err(ShapeReason::SnapshotReplayChanged),
+            }
         }
         if a["summary"] != e["summary"] {
-            return ShapeReason::SnapshotSummary;
+            return Err(ShapeReason::SnapshotSummary);
         }
         if let (Some(ap), Some(ep)) = (a["content"].as_array(), e["content"].as_array()) {
             if ap.len() != ep.len() {
-                return ShapeReason::SnapshotShape;
+                return Err(ShapeReason::SnapshotShape);
             }
             for (p, q) in ap.iter().zip(ep) {
                 if p["text"] != q["text"] {
-                    return ShapeReason::SnapshotText;
+                    return Err(ShapeReason::SnapshotText);
                 }
                 if p["annotations"] != q["annotations"] {
-                    return ShapeReason::SnapshotAnnotations;
+                    return Err(ShapeReason::SnapshotAnnotations);
                 }
                 if p["logprobs"] != q["logprobs"] {
                     let empty = |v: &Value| v.is_null() || v.as_array().is_some_and(Vec::is_empty);
-                    return if empty(&p["logprobs"]) && empty(&q["logprobs"]) {
+                    return Err(if empty(&p["logprobs"]) && empty(&q["logprobs"]) {
                         ShapeReason::SnapshotProbabilityPresence
                     } else {
                         ShapeReason::SnapshotProbabilities
-                    };
+                    });
                 }
             }
         }
-        return ShapeReason::TerminalSnapshot;
+        let actual = a.as_object().expect("normalized output item");
+        let expected = e.as_object().expect("normalized output item");
+        if actual.len() != expected.len()
+            || actual
+                .iter()
+                .any(|(key, value)| key != "encrypted_content" && expected.get(key) != Some(value))
+        {
+            return Err(ShapeReason::TerminalSnapshot);
+        }
     }
-    ShapeReason::TerminalSnapshot
+    Ok(())
 }
 
 impl EventDecoder {
@@ -1231,11 +1250,7 @@ impl EventDecoder {
                 value["created_by"] = actor.clone();
             }
         }
-        if actual != expected {
-            return Err(CodecError::Invalid(terminal_snapshot_difference(
-                &actual, &expected,
-            )));
-        }
+        verify_terminal_snapshot(&actual, &expected).map_err(CodecError::Invalid)?;
         if let Some(usage) = decoded.semantic.usage() {
             self.emit(StreamEvent::Usage(usage), out)?;
         }

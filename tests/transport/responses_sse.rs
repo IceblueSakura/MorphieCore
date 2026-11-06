@@ -175,16 +175,108 @@ fn audit_repeated_citations_ignore_extensions_but_reject_changed_evidence() {
 }
 
 #[test]
+fn completed_reasoning_binds_item_done_replay_not_terminal_ciphertext() {
+    use morphiecore::{
+        protocol::openai::{Dialect, GenerationCodec},
+        semantic::task::generation::Item,
+    };
+    let mut values = wire::events(1);
+    let added = values
+        .iter_mut()
+        .find(|value| {
+            value["type"] == "response.output_item.added" && value["item"]["type"] == "reasoning"
+        })
+        .unwrap();
+    added["item"]["encrypted_content"] = json!("synthetic-partial-token");
+    values.last_mut().unwrap()["response"]["output"][0]["encrypted_content"] =
+        json!("synthetic-terminal-token");
+    let bytes: Vec<_> = values
+        .iter()
+        .flat_map(|value| encode_frame(value, SseLimits::default().max_event_bytes).unwrap())
+        .collect();
+    for size in [1, 17, bytes.len()] {
+        let mut d = decoder(SseLimits::default());
+        consume_all(&mut d, &bytes, size);
+        d.finish().unwrap();
+        let response = d.materialize().unwrap();
+        assert!(
+            matches!(&response.semantic.items()[0].1, Item::Reasoning(reasoning)
+            if reasoning.replay.as_ref().and_then(|value| value.replay_token())
+                == Some("synthetic-final-token"))
+        );
+        let mut contract = TargetContract::full();
+        contract.replay_origin = Some(origin());
+        let encoded =
+            GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, Some(origin()))
+                .encode_response(&response, &contract)
+                .unwrap();
+        assert_eq!(
+            encoded["output"][0]["encrypted_content"],
+            "synthetic-final-token"
+        );
+    }
+}
+
+#[test]
 fn opaque_replay_cannot_be_promoted_by_missing_done_conflicting_terminal_or_eof() {
-    for failure in ["missing_item_done", "conflicting_token", "missing_terminal"] {
+    for failure in [
+        "missing_item_done",
+        "conflicting_summary",
+        "missing_terminal",
+        "missing_replay",
+        "malformed_replay",
+        "added_replay",
+        "incomplete_replay",
+        "conflicting_identity",
+        "conflicting_arguments",
+    ] {
         let mut values = wire::events(1);
         match failure {
             "missing_item_done" => values.retain(|v| {
                 !(v["type"] == "response.output_item.done" && v["item"]["type"] == "reasoning")
             }),
-            "conflicting_token" => {
+            "conflicting_summary" => {
                 values.last_mut().unwrap()["response"]["output"][0]["encrypted_content"] =
-                    json!("different-synthetic-token")
+                    json!("different-synthetic-token");
+                values.last_mut().unwrap()["response"]["output"][0]["summary"][0]["text"] =
+                    json!("changed");
+            }
+            "missing_replay" => {
+                values.last_mut().unwrap()["response"]["output"][0]
+                    .as_object_mut()
+                    .unwrap()
+                    .remove("encrypted_content");
+            }
+            "malformed_replay" => {
+                values.last_mut().unwrap()["response"]["output"][0]["encrypted_content"] = json!(7);
+            }
+            "added_replay" => {
+                for value in &mut values {
+                    if value["item"]["type"] == "reasoning" {
+                        value["item"]
+                            .as_object_mut()
+                            .unwrap()
+                            .remove("encrypted_content");
+                    }
+                }
+            }
+            "incomplete_replay" => {
+                let mut response = wire::response(1);
+                response["status"] = json!("incomplete");
+                response["incomplete_details"] = json!({"reason":"max_output_tokens"});
+                response["output"][0]["status"] = json!("incomplete");
+                values = wire::response_events(response);
+                values.last_mut().unwrap()["response"]["output"][0]["encrypted_content"] =
+                    json!("different-synthetic-token");
+            }
+            "conflicting_identity" | "conflicting_arguments" => {
+                let output = &mut values.last_mut().unwrap()["response"]["output"];
+                output[0]["encrypted_content"] = json!("different-synthetic-token");
+                if failure == "conflicting_identity" {
+                    output[0]["id"] = json!("other-reasoning");
+                } else {
+                    output[2]["arguments"] = json!("{\"n\":2}");
+                }
             }
             _ => {
                 values.pop();
@@ -215,13 +307,25 @@ fn opaque_replay_cannot_be_promoted_by_missing_done_conflicting_terminal_or_eof(
                             rest = &rest[used..];
                         }
                         Err(error) => {
-                            if failure == "conflicting_token" {
-                                assert!(matches!(
-                                    error,
-                                    morphiecore::protocol::stream::SseError::Codec(
-                                        morphiecore::protocol::CodecError::Invalid(morphiecore::protocol::failure::ShapeReason::SnapshotReplayChanged)
-                                    )
-                                ));
+                            use morphiecore::protocol::failure::ShapeReason;
+                            let expected = match failure {
+                                "conflicting_summary" => Some(ShapeReason::SnapshotSummary),
+                                "added_replay" => Some(ShapeReason::SnapshotReplayAdded),
+                                "incomplete_replay" => Some(ShapeReason::SnapshotReplayChanged),
+                                "conflicting_identity" => Some(ShapeReason::SnapshotIdentity),
+                                "conflicting_arguments" => Some(ShapeReason::TerminalSnapshot),
+                                _ => None,
+                            };
+                            if let Some(expected) = expected {
+                                assert!(
+                                    matches!(
+                                        error,
+                                        morphiecore::protocol::stream::SseError::Codec(
+                                            morphiecore::protocol::CodecError::Invalid(reason)
+                                        ) if reason == expected
+                                    ),
+                                    "{failure}"
+                                );
                             }
                             rejected = true;
                             break 'input;
@@ -481,7 +585,7 @@ fn empty_terminal_summary_requires_real_closed_items_and_exact_nonempty_snapshot
     }
 }
 #[test]
-fn subscription_dialects_keep_raw_call_fragments_final_replay_and_strict_eof() {
+fn subscription_dialects_keep_raw_call_fragments_item_done_replay_and_strict_eof() {
     use morphiecore::{
         protocol::openai::{Dialect, GenerationCodec},
         semantic::task::generation::*,
@@ -541,7 +645,11 @@ fn subscription_dialects_keep_raw_call_fragments_final_replay_and_strict_eof() {
             }
             assert!(d.materialize().is_err());
             valid = valid && d.finish().is_ok();
-            assert_eq!(valid, failure == "none", "{dialect:?} {failure}");
+            assert_eq!(
+                valid,
+                matches!(failure, "none" | "cipher"),
+                "{dialect:?} {failure}"
+            );
             if valid {
                 let response = d.materialize().unwrap();
                 assert_eq!(response.semantic.outcome(), Outcome::Completed);

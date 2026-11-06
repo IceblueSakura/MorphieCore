@@ -274,6 +274,11 @@ async fn handle(State(state): State<Suite>, headers: HeaderMap, body: Bytes) -> 
                 }
             }
         }
+        if turn == 1 && !state.1 && payload["type"] == "response.completed" {
+            // The completed item owns replay; the full response can encode it again.
+            payload["response"]["output"][0]["encrypted_content"] =
+                Value::from("synthetic-terminal-token");
+        }
         if payload["type"] == "response.created" || payload["type"] == "response.completed" {
             payload["response"]["created_at"] = 1.into();
             payload["response"]["completed_at"] = if payload["type"] == "response.created" {

@@ -217,7 +217,7 @@ impl FidelityRecords {
         self.response_extras = source.response_extras.clone();
         self.routing_extras = source.routing_extras.clone();
     }
-    /// Intake only, after independent native snapshot equality and terminal materialization.
+    /// Intake only, after native field-contract verification and terminal materialization.
     /// Local source IDs may differ between static and interleaved event parsing.
     pub(crate) fn bind_verified_snapshot_records(
         &mut self,
