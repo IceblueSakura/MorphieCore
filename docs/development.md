@@ -467,7 +467,7 @@ Record the tested binary version separately from the pinned source revision. Mai
 
 ### Production-profile acceptance
 
-For [remaining production acceptance](roadmap.md#ordered-work-and-exit-gates), begin with the actual intended client profile, not an assumption that the earlier reduced acceptance configuration is its default. Keep the existing scratch-state, unwrapped-binary, loader and redaction boundaries; reuse the existing test layout rather than another harness framework.
+For [remaining production acceptance](roadmap.md#remaining-agent-qualification), begin with the actual intended client profile, not an assumption that the earlier reduced acceptance configuration is its default. Keep the existing scratch-state, unwrapped-binary, loader and redaction boundaries; reuse the existing test layout rather than another harness framework.
 
 1. Record client version, API/model/compat flags, tool and strictness declarations, cache/session options, compaction mode/model, retries and auxiliary-request settings. Inspect only public source and test-owned configuration, never host credentials or private agent state.
 2. Characterize request shapes and internal retries against a synthetic upstream first. The [client source guide](refs/2026-10-27-client-and-proxy-sources.md#pi-actual-consumer-and-history-behavior) identifies pi's independent strict-tool downgrade and compaction behavior; its dated OpenCode observations distinguish native compaction and summary nudges. Count client transmissions separately from gateway attempts; a single command or disabled SDK retry does not establish a single request. A downgraded strict request does not pass the stricter profile.
@@ -479,7 +479,7 @@ Source-derived expectations are not fresh acceptance. Record exclusions, includi
 
 #### Real-Agent scenario selection
 
-The [pre-Stage-4 scenario sweep](roadmap.md#pre-stage-4-real-agent-scenario-sweep) owns the collection inventory; the [repair plan](roadmap.md#concentrated-repair-plan) owns current affected-path checks and deferrals. Reuse `tests/clients/drivers.py` for isolated processes/RPC, `protocol_defaults.py` for built-in-model characterization, and the existing live, summary and lifecycle runners for their specific boundaries. The common pi helper currently enables only `read` and disables persisted sessions; coding and restart cases must explicitly select their own tools and test-owned session storage. Use supported client operations, not serialized-body or returned-history patches.
+[AR5 Review](ar5-review.md) owns dated coverage; [Roadmap](roadmap.md#remaining-observation-dispositions) owns remaining qualification and deferrals. Reuse `tests/clients/drivers.py` for isolated processes/RPC, `protocol_defaults.py` for built-in-model characterization, and the existing live, summary and lifecycle runners for their specific boundaries. The common pi helper currently enables only `read` and disables persisted sessions; coding and restart cases must explicitly select their own tools and test-owned session storage. Use supported client operations, not serialized-body or returned-history patches.
 
 Before each run, name the scenario, exact Agent/API/model/binding, changed controls, client-request and upstream-attempt bounds, auxiliary-call allowance, output/request/response caps, exchange/route deadlines and overall process bound. Keep the existing 2048-token/120-second live baseline unless the scenario needs a separately declared profile; check thinking-budget/output compatibility before dispatch. Do not expand a budget after observing excess requests. Read-only oracles may reject an invalid test request before forwarding.
 
@@ -507,7 +507,7 @@ The first client command permits 250 seconds for its two sequential Generation r
 
 This remains a curated readable-Chat profile, separate from the fresh-account default/cross-protocol evidence below. Extending this runner by changing only the API name would not establish those contracts.
 
-**Fresh-account partial acceptance, 2026-11-06:** the selected [upstream lanes](roadmap.md#ordered-work-and-exit-gates) use newly provisioned API keys and managed Grok OAuth through the real CLI loader. Five local account references validate. Serial real-gateway smoke checks complete for Haiku, Grok, DeepSeek beta and Luna, with one request/attempt each, a 2048-token cap and 120-second exchange/route deadline.
+**Fresh-account partial acceptance, 2026-11-06:** the selected [upstream profiles](ar5-review.md#passing-tests) use newly provisioned API keys and managed Grok OAuth through the real CLI loader. Five local account references validate. Serial real-gateway smoke checks complete for Haiku, Grok, DeepSeek beta and Luna, with one request/attempt each, a 2048-token cap and 120-second exchange/route deadline.
 
 Current unwrapped pi **1.5.0** and OpenCode **2.0.32** then complete the following real read/result/final-answer/same-session-recall loops. Each successful row uses exactly **three client requests / three upstream attempts**, the same cap/deadline, isolated state, no auxiliary calls or hidden retries, and unchanged forwarding. Observers check honest terminals, delivered call/result identities and argument values, signed/reasoning history at client replay, actual read execution, and session continuity.
 
@@ -525,7 +525,7 @@ DeepSeek uses the explicit readable-Chat profile. Direct synthetic authorities c
 
 OpenAI's initial checks exposed legitimate `service_tier:auto` to terminal `default` resolution and different nonempty reasoning ciphertext at item-done and response completion. Independent synthetic regressions reproduced both failures. The selected [single-binding replay authority](architecture.md#reasoning-replay) now retains item-done replay and checks terminal field contracts. A subsequent bounded smoke completes, and OpenCode completes the real three-request loop above.
 
-Current client/profile qualification gaps are recorded separately in [AR5 Review](ar5-review.md#pending-observations), with repair and next-stage dispositions in the [roadmap](roadmap.md#concentrated-repair-plan).
+Current client/profile qualification gaps are recorded separately in [AR5 Review](ar5-review.md#pending-observations), with repair and next-stage dispositions in the [roadmap](roadmap.md#remaining-observation-dispositions).
 
 Google's replacement key is installed through `key replace --secret-file`; all five account references validate. The supported [managed continuation](architecture.md#stateful-history) path passes a one-request smoke and real OpenAI SDK read/result/answer/recall loops in both JSON and SSE, each with exactly three requests/attempts, a 2048-token ceiling, 120-second deadlines and no retries. The final SSE run's complete native capture verifies unchanged signed-call and signed-text attachments in subsequent upstream requests.
 

@@ -13,7 +13,7 @@ MorphieCore is a local gateway that hides LLM Provider differences behind a sing
 | Planned work | [Roadmap](docs/roadmap.md) | Current scope, work packages, dependencies, and exit gates |
 | AR5 evidence | [AR5 review](docs/ar5-review.md) | Observations and concise passing-test evidence; repair/defer decisions and partial-delivery gates live in the Roadmap |
 | Proposed designs | [API expansion design](docs/api-expansion-design.md) | Operation proposals and future candidates |
-| Account redesign | [Provider account redesign plan](docs/provider-account-redesign-plan.md) | Accepted account/recovery contract and fully breaking setup; [remaining acceptance](docs/roadmap.md#account-rewrite-execution-order) requires fresh credentials and selected models |
+| Account redesign | [Provider account redesign plan](docs/provider-account-redesign-plan.md) | Accepted account/recovery contract and fully breaking setup; [remaining qualification](docs/roadmap.md#remaining-agent-qualification) tracks scoped limitations and prerequisites |
 | Develop and verify | [Development](docs/development.md) | Tooling, offline checks, SDK gates, and acceptance procedures |
 | Sources and evidence | [References](docs/references.md) | Pinned sources, licenses, and dated research notes |
 | Implemented HTTP surface | [OpenAPI](docs/openapi.json) | OpenAPI specification of supported HTTP endpoints |

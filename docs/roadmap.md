@@ -5,26 +5,18 @@ This page owns current scope, priorities, dependencies, and exit gates. [Archite
 ## Contents
 
 - [Current status](#current-status)
-- [Account rewrite execution order](#account-rewrite-execution-order)
-  - [Ordered work and exit gates](#ordered-work-and-exit-gates)
-  - [Pre-Stage-4 real-Agent scenario sweep](#pre-stage-4-real-agent-scenario-sweep)
-  - [Concentrated repair plan](#concentrated-repair-plan)
-    - [Boundary-based analysis queue](#boundary-based-analysis-queue)
+- [Remaining Agent qualification](#remaining-agent-qualification)
+  - [Remaining observation dispositions](#remaining-observation-dispositions)
+    - [Scoped limitations](#scoped-limitations)
     - [Next-stage analysis](#next-stage-analysis)
     - [Paused Provider and model observations](#paused-provider-and-model-observations)
     - [Partial-delivery exit](#partial-delivery-exit)
-  - [Verification and operator handoff](#verification-and-operator-handoff)
-- [Three-protocol fidelity repair](#three-protocol-fidelity-repair)
-  - [Scope and boundaries](#scope-and-boundaries)
-  - [Reference strategy](#reference-strategy)
-  - [Agent-default production findings](#agent-default-production-findings)
+- [Deferred protocol follow-ups](#deferred-protocol-follow-ups)
+  - [Endpoint qualification and emitter follow-ups](#endpoint-qualification-and-emitter-follow-ups)
   - [Conditional Stage-3 follow-ups](#conditional-stage-3-follow-ups)
     - [Tool verification and scope gates](#tool-verification-and-scope-gates)
-  - [Conversion-ladder migration](#conversion-ladder-migration)
-    - [Remaining stabilization exit](#remaining-stabilization-exit)
   - [Retained rejections](#retained-rejections)
   - [Remaining issue dispositions](#remaining-issue-dispositions)
-  - [Closure boundary](#closure-boundary)
 - [Planned order](#planned-order)
   - [Execution sequence and work-package rules](#execution-sequence-and-work-package-rules)
   - [Stage 4 scope](#stage-4-scope)
@@ -62,89 +54,35 @@ This page owns current scope, priorities, dependencies, and exit gates. [Archite
 
 ## Current status
 
-**Current focus (2026-11-07):** Selected AR5 repairs meet the [partial-delivery exit](#partial-delivery-exit); Stage 4 may resume. Keep the [remaining scoped limitations](#boundary-based-analysis-queue), **R09** prerequisites and paused **R13/R18/R19/R21** explicit. [AR5 Review](ar5-review.md#repair-verification-2026-11-07) owns passing evidence; remaining boundaries are not a new all-observations closure gate.
+**Current focus (2026-11-07):** Select the next [Stage-4 operation contracts](#stage-4-scope). Retain the [scoped limitations](#scoped-limitations), **R09** prerequisites and paused **R13/R18/R19/R21** without making them a new all-observations closure gate. [AR5 Review](ar5-review.md) owns observations and passing evidence; production activation remains separately approved.
 
 | Priority | Remaining work | Exit |
 |---|---|---|
-| Conditional tool follow-ups | [S3-T5–S3-T7](#conditional-stage-3-follow-ups): namespace aliases, custom-text wrappers and examples projection | Separate policy selection and full affected-loop acceptance; not default prerequisites for AR5 |
-| Account and Agent acceptance | Retain scoped AR5 limitations and qualify a dependent profile only when selected | Delivered slices meet the partial-delivery exit; remaining guards and prerequisites stay explicit |
-| API expansion | Select and implement Stage-4 operation contracts after AR5 | Per-operation lifecycle, protocol and SDK acceptance |
+| Conditional tool follow-ups | [S3-T5–S3-T7](#conditional-stage-3-follow-ups): namespace aliases, custom-text wrappers and examples projection | Separate policy selection and full affected-loop acceptance; not default prerequisites for Stage 4 |
+| Optional Agent qualification | Qualify a remaining dependent profile only when selected | Preserve its explicit guarantees, replay guards and prerequisites |
+| API expansion | Select and implement Stage-4 operation contracts | Per-operation lifecycle, protocol and SDK acceptance |
 | Downstream integration | Implement opt-in per-Agent JSONL session storage | Selected isolation and lifetime bounds |
 | Production preparation | Decide diagnostic packaging and deferred observability scope | Explicit deployer selection |
 
-## Account rewrite execution order
+## Remaining Agent qualification
 
-The accepted [account specification](provider-account-redesign-plan.md) uses the [Provider-owned, alias-only credential contract](provider-account-redesign-plan.md#credential-kind-and-header-placement). Remaining acceptance follows the scoped repair and deferral gates below. No compatibility mode, private-store migration or deployment is included.
+The remaining boundaries below may be selected alongside relevant Stage-4 work. [AR5 Review](ar5-review.md#pending-observations) owns their evidence; [Architecture](architecture.md) owns accepted contracts, and [Development](development.md#production-profile-acceptance) owns bounded qualification procedures. No broad Provider sweep, credential reprovisioning or account rewrite is scheduled.
 
-### Ordered work and exit gates
+### Remaining observation dispositions
 
-The identifiers below belong only to planning and acceptance documentation, not production modules or test names.
+There are **12 retained observations: seven scoped limitations/follow-ups, one unavailable prerequisite and four paused observations**. No deployment, binding activation or additional content/signature loss is selected.
 
-| Order | Work | Completion evidence |
-|---|---|---|
-| **AR5 — Fresh credentials, model selection and real acceptance** | Apply the [concentrated repair plan](#concentrated-repair-plan), using focused investigation for unresolved boundaries and rechecking changed workflows. | Meet the [partial-delivery exit](#partial-delivery-exit): principal workflows work, losses are recorded, affected paths are verified, and remaining gaps have explicit next-stage dispositions. Production activation remains separately approved. |
+Use the existing lowering, replay/projection owners, reducers and client drivers for separately selected follow-ups. No new dependency, replay store, retry layer or diagnostic platform is planned.
 
-Selected upstream lanes (2026-11-06; Bailian added 2026-11-07):
-
-| Provider | Credential kind | Public model | Upstream binding |
-|---|---|---|---|
-| `openai` | API key | `gpt-6-luna` | `openai-luna-responses` |
-| `opencode-go` | API key | `claude-haiku-5-5` | `opencode-go-haiku-messages` |
-| `google` | API key | `gemini-3.8-flash` | `google-gemini-3.8-flash-generate-content` |
-| `google` | API key | `gemini-3.8-flash` | `google-gemini-3.8-flash-interactions` (isolated acceptance lane) |
-| `grok` | OAuth | `grok-4.7` | `grok-responses` |
-| `deepseek-beta` | API key | `deepseek-v4.1-flash-1017` | `deepseek-beta-chat` |
-| `aliyun-dashscope-cn` | API key | `qwen3.8-flash` | `dashscope-flash-chat`, `dashscope-flash-responses` |
-| `aliyun-dashscope-cn` | API key | `glm-5.3` | `dashscope-glm-chat`, `dashscope-glm-responses` |
-| `aliyun-dashscope-cn` | API key | `deepseek-v4.1-flash-1017` | `dashscope-deepseek-chat`, `dashscope-deepseek-responses` |
-
-Observations and concise passing results have one evidence home in [AR5 Review](ar5-review.md). This roadmap owns their execution/defer dispositions; [Architecture](architecture.md#conversion-ladder) owns accepted conversion policy. Historical samples retain their original scope as repairs and focused supplementary checks proceed.
-
-The user selected a separate six-cell [Bailian model/protocol sweep](ar5-review.md#bailian-model-and-protocol-coverage-2026-11-07), retaining model-specific controls rather than a Provider-wide support assumption, and subsequently selected the three missing catalog bindings. [Independent rechecks](ar5-review.md#binding-and-independent-rechecks-2026-11-07) qualify DeepSeek Chat; [repair verification](ar5-review.md#repair-verification-2026-11-07) separately qualifies the affected Responses paths. Production deployment remains separately approved.
-
-### Pre-Stage-4 real-Agent scenario sweep
-
-**User-selected sequence (2026-11-06):** Test common coding-Agent workflows against real upstreams, primarily through pi, before selecting concentrated product repairs. Use OpenCode to cover distinct client serialization, history, compaction and error-handling behavior. Other Agents require a concrete intended workflow and their own admission prerequisites; this sweep does not implicitly activate deferred Claude Code acceptance.
-
-Coverage follows workflows and semantic boundaries, not a Cartesian product of every setting, client and Provider. The inventory below guided the initial collection; remaining gaps now take the [repair or deferral dispositions](#concentrated-repair-plan), rather than requiring another complete sweep before repairs. Keep the selected upstream lanes above and reuse still-applicable passing evidence with its exact version/profile. Exercise shared workflows on successful representative lanes, and repeat where a change affects native reasoning, signatures or client behavior.
-
-| Scenario family | Required real coverage |
-|---|---|
-| Default delivery and controls | Ordinary streaming text, no-tool answers, actual model selection/public labels, default tool declarations and strictness, system/developer instructions, and same-session follow-up across the three client protocols. Qualify selected cross-protocol lanes separately. |
-| Thinking levels and reasoning summaries | Characterize the current client's exposed levels and actual wire first. On representative native reasoning families, exercise every exposed thinking level, including off/default where available, and an in-session change after tool history. Separately test absent/default and exposed `auto`/`concise`/`detailed` reasoning-summary controls on Responses. Use a labelled SDK companion for controls the Agent cannot emit; record admission/upstream failures without lowering the requested level. |
-| Real coding and tool repair | In a test-owned workspace, inspect multiple files, actually edit/write code, run a bounded local check, return a local tool failure, repair it and verify the result. Include repeated/multiple calls, argument fidelity, call/result identities, ordering and a final no-tool recall. Observe actual concurrency rather than requiring the model to emit parallel calls. |
-| Tool and instruction changes | Change active tools, instructions and effort using supported client operations after an initial tool round; verify subsequent declarations, retained historical controls/signatures and recall. Cover the real tool schemas and strict declarations used by the client rather than only a minimal read schema. |
-| Session history and user intervention | Multi-turn recall, persisted client-session restart/resume, legitimate earlier-turn edit/rewind or branch, steering/follow-up during work, and an explicit model switch with existing history. Use current client operations; observe incompatible replay boundaries without stripping returned state. Check separate-session isolation with interleaved conversations. |
-| Long sessions and compaction | Retain ordinary manual-summary evidence; add threshold-triggered automatic compaction, split-turn retention, a second compaction, and subsequent real tool/recall turns. Cover summary cancellation/failure and recovery where reachable within a bounded run. Use ordinary Generation summarization on the selected model; native compaction stays deferred. |
-| Cancellation, limits and recovery | Retain first-text cancellation; add cancellation during thinking, tool-argument generation and a safe local tool execution where observable, followed by same-session recovery with one gateway permit. Exercise a deliberately small output cap and incomplete tool input without execution. Record naturally encountered upstream errors and bounded error-path resubmissions. |
-| Existing input and settings boundaries | Exercise Unicode/multiline content, bounded larger file/tool results, actual cache/session carriers and reported usage, plus the already supported image-input/read path on a selected image-capable profile. SDK companions cover explicit structured-output/tool-choice controls absent from the Agent UI. New modality APIs, counting and hosted tools remain deferred. |
-| Replay and account boundaries | Recheck signed/readable/opaque history through actual continuations. Account-compatible replay/failover needs independent compatible accounts and observed replay; keep R09 prerequisites explicit. Different-model switching belongs to session behavior, not same-model failover acceptance. |
-
-Execution order and checks:
-
-1. **Characterize and inventory:** Record current unwrapped versions, exposed operations/settings, exact profiles and reusable evidence. Extend existing isolated drivers only where needed. Check actual client wire against public source or a synthetic authority before spending live requests.
-2. **Run the broad sweep:** Start with native/default controls and thinking/summary levels, then coding/tools, history changes, compaction and cancellation. Each run has fixed target, request/attempt budgets including auxiliary calls, output/wire limits and deadlines. Check filesystem/tool outcomes, client terminals, actual upstream controls and continuation history; keep SDK-only evidence separate.
-3. **Collect before repairing:** Add redacted findings and concise passes only to [AR5 Review](ar5-review.md). Distinguish observer/configuration errors, local admission, upstream rejection, delivery/replay failure and unmet prerequisites. Correct a broken test observer or test-owned configuration separately; do not patch product semantics, weaken guards or rewrite history to continue the sweep. Stop only the dependent cell and continue independent workflows.
-4. **Joint root-cause review:** Follow the boundary-based analysis queue below; paused observations are outside the current investigation. Resolve field/event ambiguities locally and obtain any required semantic selection, without making one uncertain branch a global entry gate.
-5. **Selected repairs and exit:** After analysis and required selections, implement bounded slices with focused regressions and required offline/SDK checks. Rerun affected real scenarios and newly reachable dependents. Use the partial-delivery exit; unresolved cells may retain a limited profile or explicit deferral.
-
-Risks that change execution: unavailable compatible accounts, no returned replay carrier, a client operation not exposed by the current version, or a required thinking/compaction budget exceeding the run's cap. Record these boundaries before selecting a separate bounded profile or an explicit deferral. A test-only reduced context threshold qualifies the trigger/rebuild path, not full model-context capacity. Do not induce throttling, rotate credentials or change host/deployed services for coverage. Controlled fault injection remains separately labelled from a naturally observed real-upstream failure.
-
-### Concentrated repair plan
-
-**Repair handoff, 2026-11-07:** the user selected the bounded repairs and repeated affected-path acceptance. Delivered contracts live in [Architecture](architecture.md#delivery-and-evidence-decisions); concise passing evidence lives in [AR5 Review](ar5-review.md#repair-verification-2026-11-07). There are **12 retained observations: seven scoped limitations/follow-ups, one unavailable prerequisite and four paused observations**. No deployment, binding activation or additional content/signature loss is selected.
-
-The partial-delivery exit permits Stage 4 to resume with the dispositions below. Use the existing lowering, replay/projection owners, reducers and client drivers for any separately selected follow-up; no new dependency, replay store, retry layer or diagnostic platform is planned.
-
-#### Boundary-based analysis queue
+#### Scoped limitations
 
 The remaining boundaries are qualified limitations or next-stage analysis, not prerequisites requiring another broad sweep. Re-enter only the selected dependent branch.
 
 | Boundary / observations | Current disposition | Re-entry condition |
 |---|---|---|
-| **Returned-history representation — R04** | The remaining OpenCode Responses case omits a whole zero-length assistant owner; keep its identity/count guard. The exact-empty Messages block comparison is qualified separately. | Establish whether the owner has identity, phase, lifecycle or binding significance before selecting any production omission. Preserve whitespace, nonempty content, signatures and tool links. |
+| **Returned-history representation — R04** | OpenCode Responses omits a whole zero-length assistant owner; keep its identity/count guard. | Establish whether the owner has identity, phase, lifecycle or binding significance before selecting any production omission. Preserve whitespace, nonempty content, signatures and tool links. |
 | **Replay carriers — R01/R02** | Readable Chat has no signed-reasoning carrier; stateless Google text/call attachments likewise lack a selected carrier. Use existing Messages/Responses reasoning carriers and managed Google Responses continuation. Origin/signature guards remain intact. | A client-retainable carrier or a concrete content/replay-loss disposition must be selected. Whole-owner reasoning omission and bounded publication remain unselected for Readable Chat. |
-| **Original strict profiles / remaining Google qualification — R05/R06/R17** | Keep explicit strict rejection on Google and GLM. Google Messages now reaches upstream; generateContent's signed stateless path remains limited. Interactions has bounded original-profile loop evidence, while unobserved signed-call shapes remain unqualified. | Qualify a supported profile without strict opt-outs or select a genuinely equivalent guarantee/carrier. Further Google loops need their own fixed budgets; root projection is not permission to delete returned signatures. |
+| **Original strict profiles / remaining Google qualification — R05/R06/R17** | Keep explicit strict rejection on Google and GLM. generateContent's signed stateless path and unobserved Interactions signed-call shapes remain limited. | Qualify a supported profile without strict opt-outs or select a genuinely equivalent guarantee/carrier. Further Google loops need their own fixed budgets; root projection is not permission to delete returned signatures. |
 | **Client post-error submissions — R08** | Retain the observed OpenCode application resubmission and the authority's forwarding ceiling. No gateway retry or deduplication repair is selected. | Investigate only new evidence assigning a fault to gateway behavior; distinguish client submissions, transport retries and observer completion timing. |
 
 Retain the exact profile, first divergent field/event, responsible owner and disposition for any follow-up. Use known field paths, event/block kinds, terminal classes and recognized error categories; private exchanges are not public fixtures. If fresh Provider evidence is necessary, fix target, operation, request/attempt budget, output/wire caps and deadline first, run serially without hidden retries, and use at most three independent scenarios per observation in that selected run.
@@ -153,12 +91,12 @@ Stop a branch when its prerequisite or semantic selection is unavailable. A late
 
 #### Next-stage analysis
 
-These entries are unavailable prerequisites or separately selected qualification, outside the executable analysis queue. They do not require another broad sweep or block the partial-delivery exit.
+These entries require unavailable prerequisites or separately selected qualification. They do not require another broad sweep or block the partial-delivery exit.
 
 | Scope | Retained boundary and re-entry condition |
 |---|---|
 | **R09 — Replay isolation / account-compatible failover** | Replay transfer needs observed source opaque replay; same-model/account-compatible failover additionally needs independent compatible accounts. Resume only a cell whose prerequisites are met. Do not substitute aliases or a different-model switch. Existing source-only observations do not exercise transfer or qualify failover. |
-| **Remaining real qualification** | Luna SIWC/router endpoints, effective non-Qwen Bailian reply-ceiling enforcement and Haiku same-process cap-switch recovery remain unqualified. Existing native-ceiling preparation receipts and successful GLM JSON smoke do not close those profile-specific checks. Schedule them only when selected. |
+| **Remaining real qualification** | Luna router endpoints, effective non-Qwen Bailian reply-ceiling enforcement and Haiku same-process cap-switch recovery remain unqualified. SIWC qualification has its own [endpoint follow-up](#endpoint-qualification-and-emitter-follow-ups). Existing native-ceiling preparation receipts and successful GLM JSON smoke do not close those profile-specific checks. Schedule them only when selected. |
 
 #### Paused Provider and model observations
 
@@ -176,56 +114,25 @@ These entries are unavailable prerequisites or separately selected qualification
 **User-approved 2026-11-07:** principal workflows are usable, selected low-loss conversions record their losses, affected paths are verified, and remaining difficulties have explicit scope for next-stage analysis.
 
 1. Preserve the representative real tool/history paths across Haiku Messages, DeepSeek readable Chat and Grok Responses, plus the existing Qwen Responses coding path. Use installed pi/OpenCode for their affected client boundaries; reuse still-applicable evidence rather than requiring every client × model × protocol combination.
-2. Complete and verify the delivered repair slices. A new ambiguity can defer the dependent subcase, with its retained behavior stated; it does not justify reporting an unverified repair as complete or delaying unrelated slices.
+2. Verify each selected repair before claiming it complete. A new ambiguity may defer its dependent subcase without delaying unrelated slices.
 3. Apply required offline and applicable SDK gates before publishing implementation. Recheck changed real workflows, including honest incomplete/cancelled delivery and continuation where affected. No broad re-sweep is required merely to preserve test counts.
 4. Classify each remaining observation as resolved, a scoped limitation, next-stage analysis, or an unavailable prerequisite. A recorded deferral is sufficient disposition; closing every R identifier is not an exit condition.
-5. Resume Stage 4 after this handoff. Deferred AR5 analysis may be scheduled alongside relevant next-stage work and does not make Stage 5 features or production activation implicit.
+5. Deferred AR5 analysis may be scheduled alongside relevant Stage-4 work; it does not make Stage 5 features or production activation implicit.
 
-### Verification and operator handoff
+## Deferred protocol follow-ups
 
-- Deliver current configuration examples, human-readable validation/status and explicit setup commands; secret values do not appear in source, command logs or reports. OAuth provisioning is an interactive managed login, not token copying.
-- Keep [installed-client synthetic recovery](development.md#installed-client-synthetic-recovery) distinct from real Provider/default-Agent acceptance. Use currently installed Agents with isolated state, never downgrade them to source pins or alter their personal credentials.
-- Fix target, request count, output cap and timeout before each real run, use the project loader and redacted reporting, and run serially without hidden harness retries. Use the [production-profile acceptance procedure](development.md#production-profile-acceptance).
-- Do not stop/restart deployed services, overwrite old credential stores, revoke sessions or activate new bindings as a side effect of code acceptance. Deployment and any destructive private-data operation remain separately approved.
-- Resolve Provider/profile-specific restrictions at their contract owner using source inspection and focused reproductions. Apply selected semantic/low-loss conversions rather than blanket admission bypasses or speculative compatibility layers; credential-publication failures retain their independent security boundary.
+Only unresolved endpoint qualification and protocol compatibility follow-ups are listed here. Apply the accepted [conversion ladder](architecture.md#conversion-ladder), [field handling](architecture.md#field-handling), [projection principles](architecture.md#clientir-projection-principles) and [stream normalization](architecture.md#semantic-stream-normalization).
 
-AR5 closure resumes the existing Stage-4 sequence, not a new API expansion.
+### Endpoint qualification and emitter follow-ups
 
-## Three-protocol fidelity repair
-
-Remaining stabilization covers the [default-profile findings](#agent-default-production-findings) and [fresh-account exit](#remaining-stabilization-exit) across standard Chat Completions, Responses and Messages. The tool/ordered-effort core is implemented. Authoritative contracts: [conversion ladder](architecture.md#conversion-ladder), [field handling](architecture.md#field-handling), [projection principles](architecture.md#clientir-projection-principles), and [stream normalization](architecture.md#semantic-stream-normalization).
-
-### Scope and boundaries
-
-- **Protocols:** Covers all three same-protocol paths and six cross-protocol directions across request decoding, IR ownership, target request encoding, upstream decoding, delivery, and history replay.
-- **Domain:** Generation Text (instructions/roles, text/refusal, function tools/results, structured output, reasoning/replay, presence/settings, usage, errors, and terminal events).
-- **Extension properties:** Unknown extension fields are accepted and discarded at legal positions; known fields follow the conversion ladder; unscheduled capabilities keep [retained rejections](#retained-rejections).
-- **Precedence:** Plain-text token-cap output may omit item status under named rules; Responses metadata echoes the admitted request only when upstream metadata is omitted.
-- **Budget direction:** Apply [output-ceiling adaptation](architecture.md#output-ceiling-adaptation); broader thinking-budget adjustment formulas remain unselected.
-
-### Reference strategy
-
-| Reference family | Target contracts |
-|---|---|
-| OpenAI and Anthropic official specs & SDKs (Python / TypeScript) | Request/history unions, presence vs null defaults, tool arguments, signatures, stream accumulation, and terminal events |
-| WHATWG HTML EventSource & RFC 8259 | SSE framing, multi-line events, UTF-8/JSON boundaries, EOF, and resource bounds |
-| LiteLLM & CLIProxyAPI | OpenAI/Anthropic bridge mechanics, output-index mapping, block scheduling, and usage provenance |
-| Vercel AI SDK & OpenAI Agents SDK | Typed stream consumers, incremental tool assembly, and history materialization |
-| Installed pi and OpenCode | Real-world CLI/TUI serialization, SDK event consumption, and signature replay |
-
-### Agent-default production findings
-
-The [native-default characterization](development.md#installed-client-synthetic-recovery) exercises all three protocols with pi 1.5.0 and OpenCode 2.0.32. All six default tool/history loops pass, including OpenCode Responses under the selected empty-annotations history rule. These synthetic checks do not qualify fresh credentials or actual Provider/model endpoints. Endpoint qualification and Chat usage-emitter work retain their separate scope.
-
-| Lane | Remaining issue | Required resolution | Scope |
-|---|---|---|---|
-| Pi Responses | Current installed pi completes inline declarations, direct call/result, final answer and recall | Real SIWC endpoint acceptance remains separate from the synthetic CLI gate | AR5 |
-| Responses client → OpenAI subscriptions, flat tools | SIWC inline `additional_tools` declarations and their direct call/result history are admitted; namespace requirements stay for root declarations | Real endpoint acceptance for the inline continuation path | Tool contract repair; real endpoint acceptance separate |
-| Chat upstream usage | Duplicate nonnull final reports | Qualify at emitter | Outside stabilization slices |
+| Boundary | Remaining work | Entry condition |
+|---|---|---|
+| SIWC Responses inline-tool continuation | Real endpoint acceptance for inline declarations and direct call/result history | Select the endpoint/profile and a bounded full-loop run; retain root namespace requirements |
+| Chat upstream usage | Qualify duplicate nonnull final reports at the emitter | A concrete upstream profile and independently observed report sequence |
 
 ### Conditional Stage-3 follow-ups
 
-These existing-tool compatibility improvements belong to Stage 3, not modality expansion or hosted execution. They remain **conditionally scheduled after the core**, requiring separate policy selection. They do not block AR5 or Stage 4 by default; if a selected acceptance lane requires one, make that package an explicit prerequisite for that lane. Deferred packages remain here rather than being silently activated or treated as complete.
+These existing-tool compatibility improvements belong to Stage 3, not modality expansion or hosted execution. They remain **conditionally scheduled after the core**, requiring separate policy selection. They do not block Stage 4 or optional Agent qualification by default; if a selected acceptance lane requires one, make that package an explicit prerequisite for that lane. Deferred packages remain here rather than being silently activated or treated as complete.
 
 | Package / entry | Scope | Exit check |
 |---|---|---|
@@ -241,7 +148,7 @@ Verification is layered rather than every field multiplied by nine:
 - Check JSON/SSE and retained-view agreement, partial arguments, raw-string authority, distinct item/call IDs, error results, cancellation, bounds, EOF and replay isolation. New alias/wrapper mapping must finish before publication and cannot depend on clients returning diagnostics.
 - Reuse `tests/sdk/openai_tool_history.rs`, `tests/sdk/messages_tool_loop.rs`, existing semantic tool/schema/stream cases and installed-client drivers. Keep official baseline assets and real SDK consumers; do not create a parallel fixture framework.
 - Current installed pi/OpenCode versions are recorded at execution time, without downgrade. Preserve successful default tool/history loops, including strict Chat and Responses inline declarations. Client-history normalization belongs in the codec; fixtures and transparent forwarders must not repair request bodies.
-- Reuse the [offline baseline](development.md#offline-baseline) and [SDK gate](development.md#sdk-loopback-gate) per implementation slice. Real Provider/model checks remain AR5 with fresh credentials and separately bounded runs; synthetic acceptance does not certify endpoint behavior.
+- Reuse the [offline baseline](development.md#offline-baseline) and [SDK gate](development.md#sdk-loopback-gate) per implementation slice. Real Provider/model qualification is separately selected and bounded; synthetic acceptance does not certify endpoint behavior.
 
 Risks that change the plan:
 
@@ -252,17 +159,9 @@ Risks that change the plan:
 
 Tool discovery, hosted/programmatic execution, new endpoints and Google expansion remain outside these tool packages. Client-history annotations use their separate [L2 contract](architecture.md#semantic-equivalence-compatibility). Public capability metadata must describe conditional mappings honestly; general protocol or SDK presence is not a per-model promise.
 
-### Conversion-ladder migration
-
-#### Remaining stabilization exit
-
-Offline default-profile preparation, fresh-account setup and the initial real sweep have their recorded evidence. Remaining work is the [concentrated repair plan](#concentrated-repair-plan) and affected current-client loops.
-
-Use the [partial-delivery exit](#partial-delivery-exit) for AR5 closure. Offline regression, SDK consumption and real-account acceptance remain separate; dated evidence is reused only for unchanged relevant contracts.
-
 ### Retained rejections
 
-These L5 boundaries and invariant guards constrain the remaining work. Current additional blockers and their scope are tracked in the [findings table](#agent-default-production-findings).
+These L5 boundaries and invariant guards constrain future work. Endpoint-specific qualification follows the [remaining scope](#endpoint-qualification-and-emitter-follow-ups).
 
 | Boundary | Retained |
 |---|---|
@@ -277,7 +176,7 @@ The [pinned Anthropic SDK](../tests/upstream/sources.lock.json) types already in
 
 ### Remaining issue dispositions
 
-The [2026-10-28 source and feasibility recheck](refs/2026-10-27-client-ir-boundaries.md#follow-up-source-and-feasibility-review-2026-10-28) supports these dispositions; the ladder migration owns the active work.
+The [2026-10-28 source and feasibility recheck](refs/2026-10-27-client-ir-boundaries.md#follow-up-source-and-feasibility-review-2026-10-28) supports these retained dispositions. Reopen only a selected target or field with a concrete unmet contract.
 
 | Issue | Current disposition | Reopen or complete when |
 |---|---|---|
@@ -290,18 +189,13 @@ The [2026-10-28 source and feasibility recheck](refs/2026-10-27-client-ir-bounda
 | Messages custom-input wrapping | Conditional Stage-3 follow-up S3-T6; not a core exit prerequisite | Declaration, arguments, return/history mapping and client execution expectations are selected together |
 | Token scope and SDK drift | Investigate only the selected target/field; no automatic source-pin promotion | A bounded budget rule or reviewed version change has independent expectations and a reachable target path |
 
-### Closure boundary
-
-Close the current Client/IR stabilization slice at the [partial-delivery exit](#partial-delivery-exit). Discovery must agree with implemented dispositions; unresolved cross-protocol cells may retain explicit next-stage limitations rather than requiring a new rejection policy or complete support before handoff. Deployer-selected public model profiles (e.g. `readable_reasoning`) remain configuration.
-
 ## Planned order
 
-Only remaining work is listed. Offline tool/ordered-effort and default-profile preparation is complete; [AR5](#ordered-work-and-exit-gates) is next. Conditional tool compatibility packages require their own policy selection and are not default prerequisites. Stage 4 resumes after AR5; Stage 5 remains unscheduled.
+Stage-4 API families have equal priority and advance as their operation contracts are selected. Conditional compatibility packages need their own policy selection and are not default prerequisites. Remaining Agent limitations may be qualified alongside relevant work; Stage 5 remains unscheduled.
 
 | Stage | Goal | Exit evidence |
 |---|---|---|
-| **3 — Conditional compatibility follow-ups** | [S3-T5–S3-T7](#conditional-stage-3-follow-ups): namespace aliases, plain custom wrappers and examples projection | Separate policy selection and affected full-loop verification; not default blockers for AR5 or Stage 4 |
-| **AR5 — Pre-Stage-4 acceptance gate** | Deliver the [concentrated repair plan](#concentrated-repair-plan) following the collected sweep and joint review | Meet the [partial-delivery exit](#partial-delivery-exit), with explicit next-stage dispositions rather than all-observation closure |
+| **3 — Conditional compatibility follow-ups** | [S3-T5–S3-T7](#conditional-stage-3-follow-ups): namespace aliases, plain custom wrappers and examples projection | Separate policy selection and affected full-loop verification; not default blockers for Stage 4 or optional Agent qualification |
 | **4 — Modalities, Decision & file resources** | Decision, Embedding extensions, Audio (Speech/Transcription/Translation), Images, Files/Uploads, and Video at equal priority | Verified request/result contracts, media bounds, resource isolation, cancellation, and SDK loops |
 | **5 — Unscheduled follow-ups** | Citations, tool discovery, hosted tools, server-side compaction, Batch, and Realtime | Requires explicit per-slice design selection and scheduling prior to implementation |
 
@@ -389,9 +283,9 @@ Safe-to-ignore diagnostic extensions may be added without dedicated extension te
 
 ### Temporary routing freeze
 
-The [accepted account contract](provider-account-redesign-plan.md) and [routing decisions](architecture.md#routing-and-security-decisions) constrain the remaining acceptance work. Provision fresh credentials and select models, complete the installed-Agent exit, then resume Stage 4. Implementation does not authorize changing deployed credentials or activation.
+The [accepted account contract](provider-account-redesign-plan.md) and [routing decisions](architecture.md#routing-and-security-decisions) constrain future work. Further implementation does not authorize changing deployed credentials or activation.
 
-Until AR5 closes, unrelated codec and protocol work must not alter the [stable routing baseline](architecture.md#failover):
+The [stable routing baseline](architecture.md#failover) remains frozen unless its own change is explicitly selected. Unrelated codec and protocol work must not alter:
 - Account membership, health probes, or target ordering.
 - Conversation cache affinity or cooldown thresholds.
 - Route selection based on projected loss or codec capability.
@@ -430,7 +324,7 @@ Prerequisites for activating newly implemented codec carriers on public routes:
 | Issue | Status | Action |
 |---|---|---|
 | Namespace aliases, custom text and examples | Conditional S3-T5–S3-T7 | Select each content/interface adaptation separately; do not make all three implicit core prerequisites |
-| Ordered control null/reset | Named-level effort repair is delivered; optional-null reset/default meanings remain unqualified | Qualify field-specific semantics before broadening admission; retain current null rejections |
+| Ordered control null/reset | Optional-null reset/default meanings remain unqualified | Qualify field-specific semantics before broadening admission; retain current null rejections |
 | Complete citations | Stage 5 | Retain local point-anchor owner; defer full citation model |
 | Execution controls | Paused | Enforce pre-dispatch validation; reject unsupported controls |
 | Google error envelopes | Paused | Maintain per-API classification; avoid speculative unified parsing |
@@ -444,7 +338,7 @@ Prerequisites for activating newly implemented codec carriers on public routes:
 | Models discovery extensions | Generation Text active; other modalities schema-only | Discovery endpoint only |
 | Cache prewarming | Deferred; requires dedicated contract selection | Operation-specific |
 | Token counting | Deferred; upstream-first policy selected | `POST /v1/messages/count_tokens` |
-| API expansion | Stage 4 paused until AR5, then equal priority; Stage 5 unscheduled | Specific modalities |
+| API expansion | Stage-4 families have equal priority; Stage 5 remains unscheduled | Specific modalities |
 | Files & multipart uploads | Stage 4 priority; requires storage authority selection | File resource endpoints |
 
 ## Deferred work

@@ -1,8 +1,8 @@
 # AR5 Review
 
-This user-requested record owns remaining AR5 observations and concise passing-test evidence. Completed repairs and their acceptance narratives are removed; Git preserves their history. The [concentrated repair plan](roadmap.md#concentrated-repair-plan) and user-approved [partial-delivery exit](roadmap.md#partial-delivery-exit) own repair/defer scope; [Architecture](architecture.md#conversion-ladder) owns accepted conversion policy.
+This user-requested record owns remaining AR5 observations and concise passing-test evidence. Completed repairs and their acceptance narratives are removed; Git preserves their history. The [remaining observation dispositions](roadmap.md#remaining-observation-dispositions) and user-approved [partial-delivery exit](roadmap.md#partial-delivery-exit) own repair/defer scope; [Architecture](architecture.md#conversion-ladder) owns accepted conversion policy.
 
-The [pre-Stage-4 pi-first real-Agent sweep](roadmap.md#pre-stage-4-real-agent-scenario-sweep) retains the collection inventory. Further testing is focused on affected repairs or a concrete unresolved boundary; the remaining inventory can receive explicit next-stage dispositions rather than blocking independent delivery.
+This record retains the dated scenario coverage. Further qualification follows [real-Agent scenario selection](development.md#real-agent-scenario-selection) and the [remaining dispositions](roadmap.md#remaining-observation-dispositions), without repeating the completed broad sweep.
 
 ## Contents
 
@@ -33,11 +33,11 @@ The subsequent user-selected Bailian sweep separately covers `qwen3.8-flash`, `g
 
 Cross-protocol profiles reuse bundled model metadata with an explicitly selected serializer. They do not qualify native Google client APIs. DeepSeek uses `deepseek-beta-chat`: public `deepseek-v4.1-flash-1017`, canonical/upstream `deepseek-flash`; OpenCode's passing built-in profile uses the canonical label.
 
-Collection totals retain their original execution scope when resolved entries are removed. Counts below are scoped to the stated tests. Local admission, client configuration, observer failures, upstream rejections and unexercised prerequisites remain distinct. [Development](development.md#production-profile-acceptance) retains the detailed baseline and verification procedures; [Roadmap](roadmap.md#ordered-work-and-exit-gates) owns AR5's exit boundary.
+Collection totals retain their original execution scope when resolved entries are removed. Counts below are scoped to the stated tests. Local admission, client configuration, observer failures, upstream rejections and unexercised prerequisites remain distinct. [Development](development.md#production-profile-acceptance) retains the detailed baseline and verification procedures; [Roadmap](roadmap.md#partial-delivery-exit) owns AR5's exit boundary.
 
 ## Pending observations
 
-Entries retain unresolved boundaries and their scoped evidence, not an implementation queue. The roadmap owns the [boundary-based analysis queue](roadmap.md#boundary-based-analysis-queue), [unavailable prerequisites](roadmap.md#next-stage-analysis) and [temporarily paused observations](roadmap.md#paused-provider-and-model-observations). Retained entries may therefore be outside the current work scope. A passing sample closes only its exercised boundary; remove completed portions without renumbering the remaining identifiers.
+Entries retain unresolved boundaries and their scoped evidence, not an implementation queue. The roadmap owns the [scoped limitations](roadmap.md#scoped-limitations), [unavailable prerequisites](roadmap.md#next-stage-analysis) and [temporarily paused observations](roadmap.md#paused-provider-and-model-observations). Retained entries may therefore be outside the current work scope. A passing sample closes only its exercised boundary; remove completed portions without renumbering the remaining identifiers.
 
 | ID | Observation and affected path | Current evidence and unresolved boundary |
 |---|---|---|
@@ -249,10 +249,10 @@ Two earlier post-fix Chat stories each complete two attempts, then the test auth
 
 The final offline baseline passes **436 library, 418 semantic, 96 transport and 30 gateway tests**, all-target Clippy under `-D warnings`, formatting, production-only compilation and **20 pinned assets**. Separate Python suites pass **8 upstream, 17 OpenAPI, 16 SDK-oracle and 45 client-oracle tests**. All **19 connected SDK scenarios** and **22 isolated installed-Agent scenarios** pass, including native defaults, queued stored/stateless Responses history, recovery, cancellation and summaries.
 
-Private exchange files are deleted with each scenario; body-free evidence is retained locally. No deployment, account replacement or new binding activation occurs. Remaining repair/defer dispositions and the partial-delivery handoff belong to [Roadmap](roadmap.md#concentrated-repair-plan).
+Private exchange files are deleted with each scenario; body-free evidence is retained locally. No deployment, account replacement or new binding activation occurs. Remaining repair/defer dispositions and the partial-delivery handoff belong to [Roadmap](roadmap.md#remaining-observation-dispositions).
 
 ## Updating this record
 
 Append evidence to the relevant observation or add an identifier for a distinct phenomenon. Record the date, actual client version, selected model/binding/protocol, bounds, counts and failure boundary; retain only redacted summaries, not credentials or private payloads. Remove repaired and accepted entries and their obsolete failure/verification narratives; retain unresolved portions of mixed entries. Keep unmet prerequisites explicit.
 
-Do not infer a product defect from an observer/configuration failure, silently relax a guard to obtain a pass, or promote a passing sample into broader acceptance. Add focused evidence as repairs proceed and retain explicit unknowns. Accepted design decisions belong in [Architecture](architecture.md), while repair ordering, deferrals and the partial-delivery exit belong in [Roadmap](roadmap.md#concentrated-repair-plan).
+Do not infer a product defect from an observer/configuration failure, silently relax a guard to obtain a pass, or promote a passing sample into broader acceptance. Add focused evidence as repairs proceed and retain explicit unknowns. Accepted design decisions belong in [Architecture](architecture.md), while repair ordering, deferrals and the partial-delivery exit belong in [Roadmap](roadmap.md#remaining-observation-dispositions).

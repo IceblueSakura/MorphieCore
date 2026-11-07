@@ -1,6 +1,6 @@
 # Client and IR protocol boundary review
 
-Reviewed on **2026-10-27** at **`1b4f828`**, after the five-slice request repair. This is a source-backed review and capability inventory, not implementation approval, a new work queue or a conformance certificate. [Architecture](../architecture.md#field-handling) owns the clarified rules; [Roadmap](../roadmap.md#three-protocol-fidelity-repair) owns subsequent scope. The earlier [request review](2026-10-26-standard-request-boundaries.md) retains its original date and repair disposition.
+Reviewed on **2026-10-27** at **`1b4f828`**, after the five-slice request repair. This is a source-backed review and capability inventory, not implementation approval, a new work queue or a conformance certificate. [Architecture](../architecture.md#field-handling) owns the clarified rules; [Roadmap](../roadmap.md#deferred-protocol-follow-ups) owns subsequent scope. The earlier [request review](2026-10-26-standard-request-boundaries.md) retains its original date and repair disposition.
 
 ## Contents
 
@@ -287,7 +287,7 @@ Legacy `role:function` results identify a name rather than a modern call ID; two
 
 ## Agent-default production probe (2026-10-28)
 
-Rechecked implementation **`b5094d6`** with disposable, uncommitted probes; no Provider calls. [Roadmap](../roadmap.md#agent-default-production-findings) owns the resulting dispositions and order; selections remain pending.
+Rechecked implementation **`b5094d6`** with disposable, uncommitted probes; no Provider calls. [Roadmap](../roadmap.md#endpoint-qualification-and-emitter-follow-ups) owns the resulting dispositions and order; selections remain pending.
 
 ### Method
 
@@ -494,7 +494,7 @@ The structural causes are test-side:
 
 ## Conversion-ladder inventory (2026-10-30)
 
-Code-traced at **`61d478d`** by three read-only sweeps (client intake, planning/target encoding, delivery/history), with key sites spot-checked. No probes, tests or Provider calls were run; tiers are classifications for the [migration](../roadmap.md#conversion-ladder-migration), not verified behavior. [Architecture](../architecture.md#conversion-ladder) owns the ladder; opencode observations come from a 2026-10-11 source clone, not the installed 2.0.32 binary.
+Code-traced at **`61d478d`** by three read-only sweeps (client intake, planning/target encoding, delivery/history), with key sites spot-checked. No probes, tests or Provider calls were run; tiers are classifications for the [migration](../roadmap.md#remaining-issue-dispositions), not verified behavior. [Architecture](../architecture.md#conversion-ladder) owns the ladder; opencode observations come from a 2026-10-11 source clone, not the installed 2.0.32 binary.
 
 ### Structural causes
 
@@ -511,7 +511,7 @@ The [bounded execution reuse](../architecture.md#request-conversion-reuse) now c
 
 An interim byte-cache implementation exposed two regressions with the locked `serde_json` 1.0.154 features: generic `Value` reconstruction rejected a schema annotation `{"$serde_json::private::Number":"not-a-number"}`, and reconstructed `{"$serde_json::private::Number":"1"}` as numeric `1`, colliding with a genuinely numeric annotation in prefix hashing. The [existing exact-number parser check](../../src/protocol/json.rs) already preserves such ordinary object keys. New preparation and affinity regressions reproduced both failures before reconstruction was removed; final bytes, header projections and digests are derived while the original encoded `Value` still exists, without adding another parser or narrower intake limits.
 
-The retention audit also reproduced an undercharge after filtering effects left spare vector slots. [Evidence accounting](../../src/protocol/conversion/generation/evidence.rs) now includes that capacity. Focused checks cover the exact spare-capacity miss, retention exhaustion across 64 admitted candidates, cached/recomputed preparation agreement, candidate/credential/evidence pairing after reordering and unchanged source requests. The [verification record](../development.md#sdk-loopback-gate) includes the full offline, SDK and installed-client gates. This completes execution reuse only; the [R1 owner and field migration](../roadmap.md#conversion-ladder-migration) remain open.
+The retention audit also reproduced an undercharge after filtering effects left spare vector slots. [Evidence accounting](../../src/protocol/conversion/generation/evidence.rs) now includes that capacity. Focused checks cover the exact spare-capacity miss, retention exhaustion across 64 admitted candidates, cached/recomputed preparation agreement, candidate/credential/evidence pairing after reordering and unchanged source requests. The [verification record](../development.md#sdk-loopback-gate) includes the full offline, SDK and installed-client gates. This completes execution reuse only; the [R1 owner and field migration](../roadmap.md#remaining-issue-dispositions) remain open.
 
 ### Reachable sites by slice
 
@@ -601,7 +601,7 @@ Independent wire-to-IR and IR-to-wire checks cover null/default normalization, e
 
 ## Native-default installed-Agent characterization (2026-11-03)
 
-Scope: current installed pi/pi-ai **1.5.0** and OpenCode **2.0.32**, isolated test-owned homes and synthetic authorities through the real gateway CLI/account loader. No personal Agent state, private credentials or real Provider was inspected. These client versions remain independent of protocol source pins. The [procedure and observed lane table](../development.md#installed-client-synthetic-recovery) distinguish full loops from reproduced blockers; [Roadmap](../roadmap.md#account-rewrite-execution-order) owns remaining work.
+Scope: current installed pi/pi-ai **1.5.0** and OpenCode **2.0.32**, isolated test-owned homes and synthetic authorities through the real gateway CLI/account loader. No personal Agent state, private credentials or real Provider was inspected. These client versions remain independent of protocol source pins. The [procedure and observed lane table](../development.md#installed-client-synthetic-recovery) distinguish full loops from reproduced blockers; [Roadmap](../roadmap.md#remaining-agent-qualification) owns remaining work.
 
 The public installed pi sources inspected were `pi-coding-agent/dist/core/{defaults,tools/read}.js`, `pi-ai/dist/providers/data/{deepseek,opencode,opencode-go}.json`, `pi-ai/dist/models.js` and `pi-ai/dist/api/{constrained-sampling,openai-completions,openai-responses,openai-responses-shared}.js`. OpenCode's public bundled model snapshot and native DeepSeek/OpenAI serializers were inspected in its installed executable, then exercised without variants or request rewriting. Only transport selection changes OpenCode Responses from its built-in WebSocket default to the gateway's HTTP ingress.
 
@@ -765,7 +765,7 @@ Collision-dependent transformations remain unqualified; collision-free native ba
 
 ## Current-Agent tool exit recheck (2026-11-05)
 
-Inspected the current installed public pi 1.5.0 package and OpenCode 2.0.32 against the production CLI loader at the S3-T4 working slice based on `058ab08`. All authorities, keys, homes and files are synthetic and test-owned; no personal configuration, credential caches or real Providers were read or called. [Development](../development.md#installed-client-synthetic-recovery) owns execution evidence; [Roadmap](../roadmap.md#agent-default-production-findings) owns the remaining exit.
+Inspected the current installed public pi 1.5.0 package and OpenCode 2.0.32 against the production CLI loader at the S3-T4 working slice based on `058ab08`. All authorities, keys, homes and files are synthetic and test-owned; no personal configuration, credential caches or real Providers were read or called. [Development](../development.md#installed-client-synthetic-recovery) owns execution evidence; [Roadmap](../roadmap.md#endpoint-qualification-and-emitter-follow-ups) owns the remaining exit.
 
 ### Artifact-qualified producer changes
 

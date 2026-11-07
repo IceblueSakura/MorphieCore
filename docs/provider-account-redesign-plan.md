@@ -1,10 +1,10 @@
 # Provider account redesign plan
 
-**Status: design finalized on 2026-11-02. The user accepted a fully breaking account-system rewrite, fresh manual credential provisioning and subsequent implementation; [Roadmap](roadmap.md#account-rewrite-execution-order) owns current execution status. Production deployment remains separately approved.**
+**Status: design finalized on 2026-11-02. The user accepted a fully breaking account-system rewrite, fresh manual credential provisioning and subsequent implementation; [Roadmap](roadmap.md#remaining-agent-qualification) owns remaining qualification. Production deployment remains separately approved.**
 
 This document owns the finalized account-redesign specification. It supersedes the earlier multi-target retry/fallback draft and interim single-send choice with request-boundary account selection and at most one bounded same-target retry. Final review selected conservative retry eligibility, a 30 s recovery budget, merged health evidence, material-aware OAuth recovery and short advisory `Retry-After` without `x-should-retry`. File/field names and implementation structure remain engineering choices within this contract, not new behavior decisions.
 
-[Architecture](architecture.md#routing-and-security-decisions) records the accepted decisions and links here for their detailed contract. [Roadmap](roadmap.md#account-rewrite-execution-order) owns execution order, dependencies and gates; its [routing boundary](roadmap.md#temporary-routing-freeze) separates this work from unrelated changes. [Usage](usage.md#prepare-credentials) describes currently implemented configuration. Development uses fresh test-owned state without modifying private credentials or deployed bindings.
+[Architecture](architecture.md#routing-and-security-decisions) records the accepted decisions and links here for their detailed contract. [Roadmap](roadmap.md#remaining-agent-qualification) owns remaining qualification and prerequisites; its [routing boundary](roadmap.md#temporary-routing-freeze) separates this work from unrelated changes. [Usage](usage.md#prepare-credentials) describes currently implemented configuration. Development uses fresh test-owned state without modifying private credentials or deployed bindings.
 
 ## Contents
 
@@ -40,7 +40,7 @@ An account name identifies a configured execution identity. Two keys are not nec
 
 ## Current implementation and rewrite boundary
 
-The shared account-source cutover separates private declarations, secret persistence, effective target binding and execution. [Roadmap](roadmap.md#ordered-work-and-exit-gates) owns implementation status and remaining gates:
+The shared account-source cutover separates private declarations, secret persistence, effective target binding and execution. [Roadmap](roadmap.md#remaining-agent-qualification) owns remaining qualification and prerequisites:
 
 | Owner | Current behavior | Rewrite boundary |
 |---|---|---|
@@ -125,7 +125,7 @@ Credential kind remains distinct from endpoint header placement and fixed reques
 
 Binding, validation, provisioning and diagnostics derive kind/profile from the same catalog definition before credential access. Reject obsolete account-level `kind`/`profile` fields rather than inferring intent or supporting both schemas. Preserve separate API-key and OAuth lifecycle types, verified identity, trusted origins and replay provenance; this decision does not unify their lifecycle machinery or change credential-store namespaces, formats or encryption.
 
-The shared account loader, startup, provisioning and diagnostics implement this alias-only contract. [Usage](usage.md#configure-accounts) owns current declarations and setup commands; [Roadmap](roadmap.md#ordered-work-and-exit-gates) owns the remaining fresh-credential acceptance gate.
+The shared account loader, startup, provisioning and diagnostics implement this alias-only contract. [Usage](usage.md#configure-accounts) owns current declarations and setup commands; [Roadmap](roadmap.md#remaining-agent-qualification) owns remaining profile qualification and prerequisites.
 
 ### Targets and trust
 
@@ -475,16 +475,16 @@ These do not reopen the finalized account/execution contract or block its design
 
 | Decision | Boundary |
 |---|---|
-| Implementation start and deployment | The [execution plan](roadmap.md#account-rewrite-execution-order) covers the accepted breaking scope. Start implementation on the user's execution request. Real acceptance waits for fresh credentials and selected models; production activation remains separately approved |
+| Production activation | Requires separate approval; development acceptance and the accepted account contract do not activate deployed services or credentials |
 | Optional restart continuity | Persistence remains excluded from the first rewrite. If later selected, decide opt-in, corruption handling, privacy, stale identities and shutdown behavior under [Optional restart continuity](#optional-restart-continuity) |
 
-Keep this document as the detailed redesign specification, linked from Architecture's accepted decisions. Roadmap owns the accepted-scope execution plan and its gates; do not duplicate that sequence here. Update Usage when behavior is implemented.
+Keep this document as the detailed redesign specification, linked from Architecture's accepted decisions. Roadmap owns remaining qualification and prerequisites; Usage owns implemented configuration and procedures.
 
 ## Design acceptance criteria
 
 The design must explain deterministic request-boundary selection, at most one bounded same-target retry, configurable wait/recovery/time bounds, cooldown and affinity lifetimes, and honest behavior before and after publication. Identity, trusted targets, replay isolation, cancellation and credential lifecycle protections remain mandatory.
 
-The final review has settled the policy choices. Roadmap now owns [rewrite sequencing and exit conditions](roadmap.md#account-rewrite-execution-order) within the shared-binding and Generation-first boundary. The project's existing [verification requirements](development.md#verification-gates) remain applicable; design and planning supply no runtime acceptance evidence.
+The final review has settled the policy choices. Roadmap now owns [remaining qualification and prerequisites](roadmap.md#remaining-agent-qualification) within the shared-binding and Generation-first boundary. The project's existing [verification requirements](development.md#verification-gates) remain applicable; design and planning supply no runtime acceptance evidence.
 
 ## Reference observations
 
