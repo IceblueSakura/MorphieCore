@@ -191,9 +191,13 @@ impl GrokAuthority {
             return Err(Error::Protocol);
         }
         let deadline = started + Duration::from_secs(wire.expires_in.min(LOGIN_TIMEOUT.as_secs()));
+        let mut verification_uri = verification_uri(&wire.verification_uri)?;
+        verification_uri
+            .query_pairs_mut()
+            .append_pair("user_code", &wire.user_code);
         Ok(DeviceGrant {
             prompt: DevicePrompt {
-                verification_uri: verification_uri(&wire.verification_uri)?,
+                verification_uri: verification_uri.to_string(),
                 user_code: wire.user_code,
             },
             device_code: Secret::new(wire.device_code)?,
@@ -319,7 +323,7 @@ impl GrokAuthority {
         }
     }
 }
-pub(in crate::credential) fn verification_uri(raw: &str) -> Result<String, Error> {
+pub(in crate::credential) fn verification_uri(raw: &str) -> Result<url::Url, Error> {
     if raw.len() > 2048 || raw.chars().any(char::is_control) {
         return Err(Error::Protocol);
     }
@@ -334,8 +338,8 @@ pub(in crate::credential) fn verification_uri(raw: &str) -> Result<String, Error
     {
         return Err(Error::Protocol);
     }
-    // Deliberately use the base URI, not verification_uri_complete with opaque query data.
-    Ok(url.to_string())
+    // Accept only the base URI; device() adds the validated user code locally.
+    Ok(url)
 }
 pub(in crate::credential) fn next_interval(interval: Duration) -> Result<Duration, Error> {
     interval

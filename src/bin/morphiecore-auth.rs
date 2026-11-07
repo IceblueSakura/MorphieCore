@@ -154,7 +154,7 @@ fn secret(path: &Path) -> Result<Secret, Error> {
 fn prompt(prompt: &LoginPrompt) {
     match prompt {
         LoginPrompt::Device(p) => eprintln!(
-            "Open {} and enter {}. Approve only the login you initiated.",
+            "Open {} and confirm code {}. Approve only the login you initiated.",
             p.verification_uri, p.user_code
         ),
         LoginPrompt::Browser(p) => eprintln!(

@@ -151,6 +151,7 @@ morphiecore-auth --accounts "$ROOT/accounts.json" --store "$ROOT/credentials" \
 ```
 
 - Use `--provider grok` for Grok. It defaults to device login; `--method browser` selects browser login. SIWC defaults to browser login.
+- Grok device links prefill the code with `user_code`; confirm that it matches the CLI before approving.
 - `--consent` explicitly requests ChatGPT plan consent during login.
 - `--callback-port` sets the loopback callback port. Grok also accepts `--client-id`.
 - `logout --revoke` requests upstream revocation.

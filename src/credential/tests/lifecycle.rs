@@ -46,7 +46,10 @@ pub(in crate::credential) fn login_steps(subject: &str) -> Vec<Step> {
 pub(in crate::credential) async fn login(pool: &CredentialManager, account: &str) -> AccountStatus {
     pool.login_grok(account, "synthetic-client", |prompt| {
         assert_eq!(prompt.user_code, "ABCD-1234");
-        assert_eq!(prompt.verification_uri, "https://accounts.x.ai/device");
+        assert_eq!(
+            prompt.verification_uri,
+            "https://accounts.x.ai/device?user_code=ABCD-1234"
+        );
         assert!(!format!("{prompt:?}").contains("secret-device"));
     })
     .await
