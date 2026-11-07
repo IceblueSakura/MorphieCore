@@ -18,6 +18,7 @@ fn openai(profile: GenerationApi) -> UpstreamAdapter {
 fn messages(model: &str) -> UpstreamAdapter {
     UpstreamAdapter::AnthropicMessages {
         profile: MessagesProfile::AdaptiveTextTools,
+        dialect: morphiecore::protocol::anthropic::messages::Dialect::Standard,
         target: ReplayTarget::new("public-fixture", model).unwrap(),
     }
 }

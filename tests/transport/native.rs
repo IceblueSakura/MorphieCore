@@ -445,7 +445,9 @@ mod native_bindings {
         ));
         let body = br#"{"id":"r","type":"message","role":"assistant","model":"synthetic-model","content":[{"type":"text","text":"answer"}],"stop_reason":"end_turn","usage":{"input_tokens":1,"output_tokens":2}}"#;
         let attempt = || Attempt::new(native.adapter().unwrap(), 4096, SseLimits::default());
-        let UpstreamAdapter::AnthropicMessages { profile, target } = native.adapter().unwrap()
+        let UpstreamAdapter::AnthropicMessages {
+            profile, target, ..
+        } = native.adapter().unwrap()
         else {
             unreachable!()
         };

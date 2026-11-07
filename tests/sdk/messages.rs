@@ -234,6 +234,7 @@ async fn handle(
     let mut attempt = Attempt::new(
         UpstreamAdapter::AnthropicMessages {
             profile: Profile::AdaptiveTextTools,
+            dialect: morphiecore::protocol::anthropic::messages::Dialect::Standard,
             target,
         },
         1 << 20,

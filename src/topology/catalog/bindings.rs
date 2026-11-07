@@ -199,7 +199,7 @@ impl ApiKeyBinding {
         if history.next().is_some() {
             return Err(TopologyError::InvalidModelBinding);
         }
-        let contract = TargetContract {
+        let mut contract = TargetContract {
             reasoning_history,
             dispositions: self
                 .endpoint_slice
@@ -223,6 +223,14 @@ impl ApiKeyBinding {
             model_limits: models::planning_limits(self.canonical_model, provider.id.as_str()),
             ..TargetContract::full()
         };
+        if self.dialect == Dialect::OpenRouter && self.canonical_model == "gpt-6-luna" {
+            // The router carries strict, but its endpoint inventory does not
+            // assess this nested guarantee. Let require_parameters qualify it.
+            contract.dispositions.set(
+                crate::semantic::task::generation::Feature::StrictTools,
+                crate::lowering::disposition::Disposition::Delegate,
+            );
+        }
         Ok(Endpoint {
             bound_replay_scope: None,
             id: self.endpoint_id(protocol),

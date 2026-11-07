@@ -81,6 +81,7 @@ impl Dialect {
             Self::DeepSeek => (
                 "deepseek-v1",
                 WireRules {
+                    legacy_max_tokens: profile == GenerationApi::Chat,
                     chat_finish_reasons: &[
                         (
                             "insufficient_system_resource",

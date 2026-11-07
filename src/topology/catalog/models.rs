@@ -110,12 +110,13 @@ pub const MODELS: &[ModelDefinition] = &[
         developer: "Xiaomi",
     },
     // Publication: https://openai.com/index/introducing-gpt-6-sol-and-luna/ (2026-09-22).
-    // Admission: https://openrouter.ai/api/v1/models/openai/gpt-6-luna/endpoints
+    // Native function strictness uses the official OpenAI carrier; endpoint
+    // inventories must not impose another Provider's assessment on this model.
     ModelDefinition {
         id: "gpt-6-luna",
         images: true,
         files: true,
-        strict_tools: false,
+        strict_tools: true,
         released_at: 1_790_035_200,
         developer: "OpenAI",
     },

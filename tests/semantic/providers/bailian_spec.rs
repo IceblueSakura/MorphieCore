@@ -456,6 +456,35 @@ fn response_request() -> Value {
             "tools":[{"type":"function","name":"lookup","description":"lookup value","parameters":{"type":"object"}}]})
 }
 #[test]
+fn chat_strictness_is_rendered_from_the_effective_binding_contract() {
+    let target = endpoint("dashscope-flash", GenerationProtocol::OpenAiChat);
+    for strict in [Some(true), Some(false), None] {
+        let mut body = chat();
+        body["tools"] = json!([{"type":"function","function":{
+            "name":"lookup","description":"Look up a value",
+            "parameters":{"type":"object","properties":{"key":{"type":"string"}},"required":["key"],"additionalProperties":false}
+        }}]);
+        if let Some(strict) = strict {
+            body["tools"][0]["function"]["strict"] = json!(strict);
+        }
+        let source = client(GenerationApi::Chat)
+            .decode_client_request(body.to_string().as_bytes())
+            .unwrap();
+        let before = source.clone();
+        let (wire, rules) = target.encode_request_with_rules(&source).unwrap();
+        assert_eq!(wire["tools"], body["tools"]);
+        assert!(rules.is_empty());
+        assert_eq!(source, before);
+    }
+    let source = client(GenerationApi::Responses).decode_client_request(
+        br#"{"model":"public","input":"go","tools":[{"type":"function","name":"lookup","description":"lookup",
+            "parameters":{"type":"object","properties":{},"required":[],"additionalProperties":false}}]}"#
+    ).unwrap();
+    let (wire, _) = target.encode_request_with_rules(&source).unwrap();
+    assert_eq!(wire["tools"][0]["function"]["strict"], true);
+}
+
+#[test]
 fn responses_non_strict_defaults_and_single_function_selection_have_native_oracles() {
     let native_request = native(GenerationApi::Responses)
         .decode_request(response_request().to_string().as_bytes())
@@ -658,6 +687,59 @@ fn responses_presentation_projects_without_changing_computation_or_source() {
 }
 
 #[test]
+fn responses_ceiling_scope_projects_usefully_without_changing_source() {
+    let codec = native(GenerationApi::Responses);
+    assert!(
+        codec
+            .decode_request(br#"{"model":"glm-5.3","input":"go","max_output_tokens":64}"#)
+            .is_err(),
+        "native reply-only input must not become an unevidenced total-output ceiling"
+    );
+    for (model, disabled, cap, expected_cap, expected_rule) in [
+        (
+            "glm-5.3",
+            false,
+            64,
+            Some(64),
+            Some("generation.reply-only-output-ceiling.v1"),
+        ),
+        (
+            "glm-5.3",
+            false,
+            15,
+            None,
+            Some("generation.omit-max-output-tokens.v1"),
+        ),
+        ("qwen3.8-flash", false, 64, Some(64), None),
+        ("deepseek-v4.1-flash-1017", true, 64, Some(64), None),
+    ] {
+        let mut body = json!({"model":"public","input":"go","max_output_tokens":cap});
+        if disabled {
+            body["reasoning"] = json!({"effort":"none"});
+        }
+        let input = client(GenerationApi::Responses)
+            .decode_client_request(body.to_string().as_bytes())
+            .unwrap();
+        let before = input.clone();
+        let (wire, rules) = codec
+            .encode_request_with_rules(&input, model, &TargetContract::full())
+            .unwrap();
+        assert_eq!(
+            wire.get("max_output_tokens").and_then(Value::as_u64),
+            expected_cap
+        );
+        assert_eq!(
+            rules.contains(&"generation.reply-only-output-ceiling.v1"),
+            expected_rule == Some("generation.reply-only-output-ceiling.v1")
+        );
+        if let Some(rule) = expected_rule {
+            assert!(rules.contains(&rule), "{rules:?}");
+        }
+        assert_eq!(input, before);
+    }
+}
+
+#[test]
 fn responses_unlisted_guarantees_reject_without_weakening_constraints() {
     let target = endpoint("dashscope-flash", GenerationProtocol::OpenAiResponses);
     for patch in [
@@ -702,12 +784,26 @@ fn responses_unlisted_guarantees_reject_without_weakening_constraints() {
     GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None)
         .encode_request(&strict, "synthetic", &TargetContract::full())
         .expect("valid strict schema has a standard carrier");
+    let mut direct_contract = TargetContract::full();
+    direct_contract.adaptation = native(GenerationApi::Responses).adaptation;
+    assert!(
+        morphiecore::protocol::openai::lowering::lower_request(
+            &strict.task.semantic,
+            &strict.task.fidelity,
+            GenerationApi::Responses,
+            direct_contract,
+        )
+        .is_err(),
+        "direct lowering must enforce the same strict guarantee boundary"
+    );
     assert!(matches!(
         target.encode_request_with_rules(&strict),
         Err(ConversionFailure {
-            cause: morphiecore::protocol::ConversionCause::Codec(CodecError::Unsupported(
-                morphiecore::protocol::failure::CarrierReason::Unavailable
-            )),
+            cause: morphiecore::protocol::ConversionCause::Representation(
+                morphiecore::protocol::conversion::generation::RepresentationError::Admission(
+                    Feature::StrictTools
+                )
+            ),
             ..
         })
     ));

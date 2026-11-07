@@ -665,7 +665,16 @@ fn assess_case(entry: &BoundEntry, modes: &[&str], case: Case) -> (Capability, C
                     },
                     rules,
                 };
-                let effective = if ineffective {
+                let delegated_strict = matches!(case, Case::Tools(true))
+                    && candidate
+                        .endpoint
+                        .representation
+                        .dispositions()
+                        .get(crate::semantic::task::generation::Feature::StrictTools)
+                        == crate::lowering::disposition::Disposition::Delegate;
+                let effective = if delegated_strict {
+                    Capability::new(State::NotAssessed)
+                } else if ineffective {
                     Capability::new(State::Unavailable)
                 } else {
                     admission.clone()

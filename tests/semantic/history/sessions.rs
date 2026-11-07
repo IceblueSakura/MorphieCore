@@ -70,6 +70,7 @@ impl Api {
             Self::Chat | Self::Responses => self.openai().into(),
             Self::Messages => UpstreamAdapter::AnthropicMessages {
                 profile: messages::Profile::AdaptiveTextTools,
+                dialect: morphiecore::protocol::anthropic::messages::Dialect::Standard,
                 target: self.target(),
             },
             Self::GenerateContent => UpstreamAdapter::GoogleGenerateContent {

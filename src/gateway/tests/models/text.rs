@@ -463,7 +463,7 @@ fn text_contract_uses_actual_dialect_checks_and_does_not_advertise_omitted_contr
     let value = descriptor(entry.clone());
     assert_eq!(
         value["features"]["strict_tool_schema"],
-        json!({"state":"unavailable"})
+        json!({"state":"faithful"})
     );
     assert_eq!(
         value["features"]["function_tools"],
@@ -472,6 +472,23 @@ fn text_contract_uses_actual_dialect_checks_and_does_not_advertise_omitted_contr
     assert_eq!(
         value["features"]["named_tool_choice"],
         json!({"state":"unavailable"})
+    );
+    let mut delegated = entry.clone();
+    let mut candidate = delegated.candidates[0].as_ref().clone();
+    candidate
+        .endpoint
+        .representation
+        .openai_mut()
+        .unwrap()
+        .dispositions
+        .set(
+            crate::semantic::task::generation::Feature::StrictTools,
+            crate::lowering::disposition::Disposition::Delegate,
+        );
+    delegated.candidates = vec![Arc::new(candidate)];
+    assert_eq!(
+        descriptor(delegated)["features"]["strict_tool_schema"],
+        json!({"state":"not_assessed"})
     );
     let mut candidate = entry.candidates[0].as_ref().clone();
     candidate

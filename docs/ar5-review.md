@@ -1,6 +1,6 @@
 # AR5 Review
 
-This user-requested record owns AR5 observations and concise passing-test evidence. Historical samples retain their original scope; unresolved entries are not an implementation queue. **The 2026-11-07 joint review now has a [concentrated repair plan](roadmap.md#concentrated-repair-plan) and user-approved [partial-delivery exit](roadmap.md#partial-delivery-exit).** Accepted conversion policy belongs to [Architecture](architecture.md#conversion-ladder); this evidence record does not claim those repairs are implemented.
+This user-requested record owns AR5 observations and concise passing-test evidence. Historical samples retain their original scope; unresolved entries are not an implementation queue. **The 2026-11-07 joint review has a [concentrated repair plan](roadmap.md#concentrated-repair-plan) and user-approved [partial-delivery exit](roadmap.md#partial-delivery-exit).** Accepted conversion policy belongs to [Architecture](architecture.md#conversion-ladder); the [priority-repair verification](#priority-repair-verification-2026-11-07) separates implemented behavior, passing checks and deferred real acceptance.
 
 The [pre-Stage-4 pi-first real-Agent sweep](roadmap.md#pre-stage-4-real-agent-scenario-sweep) retains the collection inventory. Further testing is focused on affected repairs or a concrete unresolved boundary; the remaining inventory can receive explicit next-stage dispositions rather than blocking independent delivery.
 
@@ -15,6 +15,7 @@ The [pre-Stage-4 pi-first real-Agent sweep](roadmap.md#pre-stage-4-real-agent-sc
   - [Passing workflows](#passing-workflows)
   - [Diagnostic and failed samples](#diagnostic-and-failed-samples)
 - [Grok supplementary coverage, 2026-11-07](#grok-supplementary-coverage-2026-11-07)
+- [Priority repair verification, 2026-11-07](#priority-repair-verification-2026-11-07)
 - [Updating this record](#updating-this-record)
 
 ## Test context
@@ -186,7 +187,19 @@ Diagnostic and failed samples:
 
 The fresh-context failures leave the exact-label recovery oracle unqualified as a cancellation-specific check. Tools remain declared in the tool stories and no explicit no-tool API guarantee is requested. R21 retains the observed content/tool behavior without assigning a gateway defect or selecting an adaptation. Gateway single-permit release and honest interruption are observed; remote computation/billing termination is not measured. R09's compatible-account/replay prerequisites and the other blocked protocol lanes remain open.
 
-Private captures are deleted with each case; body-free verdicts and complete runner logs are saved locally. No deployment, binding activation or account replacement is performed by this sweep. Findings still await joint analysis before repairs.
+Private captures are deleted with each case; body-free verdicts and complete runner logs are saved locally. No deployment, binding activation or account replacement is performed by this sweep. The subsequent joint review and repair verification below retain these original sample verdicts.
+
+## Priority repair verification, 2026-11-07
+
+The first three selected repair slices are implemented. These checks used synthetic authorities, pinned SDK consumers and current unwrapped pi **1.5.0** / OpenCode **2.0.32**. No new real Provider request was sent: the default account path failed read-only project-CLI validation, and the user selected delivery with real rechecks deferred. Historical failures above retain their scope.
+
+| Boundary | Passing verification and remaining scope |
+|---|---|
+| **R11/R15 and ceiling scope** | New directional regressions failed on the original DeepSeek cap spelling and discarded Bailian cap, then pass after repair. DeepSeek/beta preparation preserves `max_tokens:1` and standard off; Standard Chat remains independent. Bailian total-to-reply adaptation retains 64 with a scope-loss receipt; an unexpressible value takes named omission. The actual installed pi serializer emits standard off and high with the shipped gateway override, without `thinking`. The complete installed-pi profile loader/tool/history loop passes 3 requests / 3 synthetic attempts with zero ignored control fields. Native disablement and real small-cap terminals await recheck. |
+| **R20** | Trusted Go intake accepts the source-shaped missing-block-stop unfinished object, emitting incomplete tool status with exact bytes and identity. Standard intake, malformed/duplicate/non-object prefixes, wrong terminals and incomplete EOF retain rejection. The gateway checks Chat/Responses JSON/SSE and stored retrieval. A separate bounded current-pi synthetic story completes length → answer → follow-up in 3 requests / 3 attempts with concurrency 1 and no partial or late write file. Its first observer run missed the test server's acceptance-event attribute; the corrected independent rerun passes without that observer exception. R14 remains separately unclassified. |
+| **R05/R17/R18 admission ownership** | Native/SIWC/router Luna strict namespace requests reach the actual writers unchanged. Qwen Chat explicit true/false/omitted forms and conditional closed-schema projection pass; Bailian Responses explicit true rejects at shared admission, including direct library lowering. Discovery distinguishes router delegation from assessed support. These checks qualify carriage and admission, not new upstream strict/schema guarantees. Google controls and GLM's known strict limitation retain their separate dispositions. |
+
+The full Rust offline suite passes, including **431 library, 414 semantic, 94 transport and 29 gateway tests**; all-target Clippy under `-D warnings`, formatting, production-only check/build, 20 pinned assets and four Python suites (**8/16/44/17**) pass. All **19** connected SDK scenarios and **22** installed-Agent scenarios pass. The latter includes the new shipped-profile case; its three requests are synthetic and do not add to the earlier real collection totals.
 
 ## Updating this record
 

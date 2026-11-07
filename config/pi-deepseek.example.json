@@ -1,0 +1,19 @@
+{
+  "providers": {
+    "deepseek": {
+      "baseUrl": "http://127.0.0.1:8080/v1",
+      "apiKey": "$MORPHIECORE_API_KEY",
+      "modelOverrides": {
+        "deepseek-flash": {
+          "thinkingLevelMap": {
+            "off": "none"
+          },
+          "compat": {
+            "thinkingFormat": "openai",
+            "supportsReasoningEffort": true
+          }
+        }
+      }
+    }
+  }
+}

@@ -2,7 +2,7 @@
 use crate::{
     protocol::{
         CodecError, ResponseMetadata,
-        anthropic::messages::{Block, Delta, Event, Message, sse::MessageSseDecoder},
+        anthropic::messages::{Block, Delta, Dialect, Event, Message, sse::MessageSseDecoder},
         failure::{RecognitionBasis, SourceFailureEvidence},
         fidelity::FidelityRecords,
         native::ReplayTarget,
@@ -35,8 +35,18 @@ impl GenerationSseDecoder {
         scope: LocalScope,
         target: ReplayTarget,
     ) -> Result<Self, SseError> {
+        Self::with_dialect(status, media, limits, scope, target, Dialect::Standard)
+    }
+    pub(crate) fn with_dialect(
+        status: u16,
+        media: &str,
+        limits: SseLimits,
+        scope: LocalScope,
+        target: ReplayTarget,
+        dialect: Dialect,
+    ) -> Result<Self, SseError> {
         Ok(Self {
-            wire: MessageSseDecoder::new(status, media, limits)?,
+            wire: MessageSseDecoder::with_dialect(status, media, limits, dialect)?,
             scope,
             target,
             metadata: None,
@@ -65,16 +75,82 @@ impl GenerationSseDecoder {
         }
         let result = (|| {
             let (used, event) = self.wire.consume_event(bytes)?;
-            let events = match event {
-                Some(event) => self.map(event)?,
-                None => vec![],
-            };
+            let mut events = vec![];
+            if let Some(reduced) = event {
+                if let Some(index) = reduced.closed_block {
+                    self.map_closed_block(index, &mut events)?;
+                }
+                events.extend(self.map(reduced.event)?);
+            }
             Ok((used, events))
         })();
         if result.is_err() {
             self.rejected = true;
         }
         result
+    }
+    fn map_closed_block(&mut self, index: u64, out: &mut Vec<StreamEvent>) -> Result<(), SseError> {
+        let (item, part) = self.ids(index);
+        let block = &self.wire.message().ok_or(CodecError::invalid())?.content[index as usize];
+        let partial = matches!(block, Block::PartialToolUse { .. });
+        if let Block::ToolUse { input, .. } = block
+            && !self.json_delta
+        {
+            out.push(StreamEvent::Delta {
+                item,
+                part,
+                fragment: input.value().to_string(),
+                logprobs: vec![],
+            });
+        }
+        if self.part_started && !partial {
+            out.push(StreamEvent::ValueFinished { item, part });
+            out.push(StreamEvent::PartFinished { item, part });
+        }
+        let opaque = match block {
+            Block::Thinking {
+                thinking,
+                signature,
+            } => Some((
+                ReplayFormat::AnthropicMessagesThinking,
+                signature,
+                thinking.as_str(),
+            )),
+            Block::RedactedThinking(data) => {
+                Some((ReplayFormat::AnthropicMessagesRedactedThinking, data, ""))
+            }
+            _ => None,
+        };
+        let replay = if let Some((format, value, thinking)) = opaque {
+            let replay = ReplayValue::final_value(format, text(value)?);
+            let reasoning = ReasoningItem {
+                parts: if thinking.is_empty() {
+                    vec![]
+                } else {
+                    vec![(part, ReasoningContent::Summary(text(thinking)?))]
+                },
+                status: ItemLifecycle::Completed,
+                replay: Some(replay.clone()),
+            };
+            self.fidelity
+                .record_replay(item, &reasoning, Some(self.target.origin()))?;
+            Some(ItemReplay {
+                value: replay,
+                origin: Some(self.target.origin()),
+            })
+        } else {
+            None
+        };
+        out.push(StreamEvent::ItemFinished {
+            item,
+            status: if partial {
+                ItemLifecycle::Incomplete
+            } else {
+                ItemLifecycle::Completed
+            },
+            replay,
+        });
+        Ok(())
     }
     fn map(&mut self, event: Event) -> Result<Vec<StreamEvent>, SseError> {
         let mut out = vec![];
@@ -190,69 +266,7 @@ impl GenerationSseDecoder {
                     logprobs: vec![],
                 });
             }
-            Event::BlockStop { index } => {
-                let (item, part) = self.ids(index);
-                let block =
-                    &self.wire.message().ok_or(CodecError::invalid())?.content[index as usize];
-                let partial = matches!(block, Block::PartialToolUse { .. });
-                if let Block::ToolUse { input, .. } = block
-                    && !self.json_delta
-                {
-                    out.push(StreamEvent::Delta {
-                        item,
-                        part,
-                        fragment: input.value().to_string(),
-                        logprobs: vec![],
-                    });
-                }
-                if self.part_started && !partial {
-                    out.push(StreamEvent::ValueFinished { item, part });
-                    out.push(StreamEvent::PartFinished { item, part });
-                }
-                let opaque = match block {
-                    Block::Thinking {
-                        thinking,
-                        signature,
-                    } => Some((
-                        ReplayFormat::AnthropicMessagesThinking,
-                        signature,
-                        thinking.as_str(),
-                    )),
-                    Block::RedactedThinking(data) => {
-                        Some((ReplayFormat::AnthropicMessagesRedactedThinking, data, ""))
-                    }
-                    _ => None,
-                };
-                let replay = if let Some((format, value, thinking)) = opaque {
-                    let replay = ReplayValue::final_value(format, text(value)?);
-                    let reasoning = ReasoningItem {
-                        parts: if thinking.is_empty() {
-                            vec![]
-                        } else {
-                            vec![(part, ReasoningContent::Summary(text(thinking)?))]
-                        },
-                        status: ItemLifecycle::Completed,
-                        replay: Some(replay.clone()),
-                    };
-                    self.fidelity
-                        .record_replay(item, &reasoning, Some(self.target.origin()))?;
-                    Some(ItemReplay {
-                        value: replay,
-                        origin: Some(self.target.origin()),
-                    })
-                } else {
-                    None
-                };
-                out.push(StreamEvent::ItemFinished {
-                    item,
-                    status: if partial {
-                        ItemLifecycle::Incomplete
-                    } else {
-                        ItemLifecycle::Completed
-                    },
-                    replay,
-                });
-            }
+            Event::BlockStop { .. } => {}
             Event::MessageStop => {
                 let message = self.wire.message().ok_or(CodecError::invalid())?;
                 let members: Vec<_> = (0..message.content.len())

@@ -121,4 +121,38 @@ assert.deepEqual(resolved.requests.reasoning.messages.at(-1), {
   role: "system", content: [], output_config: { effort: "medium" },
 });
 assert(!Object.hasOwn(resolved.requests.reasoning, "temperature"));
+// Exercise the shipped gateway override through the installed real serializer.
+// Native built-in characterization above remains independent.
+const gatewayProfile = JSON.parse(readFileSync(
+  new URL("../../config/pi-deepseek.example.json", import.meta.url), "utf8",
+)).providers.deepseek.modelOverrides["deepseek-flash"];
+const deepseek = getBuiltinModel("deepseek", "deepseek-flash");
+assert(deepseek);
+for (const level of ["off", "high"]) {
+  let calls = 0;
+  const model = {
+    ...deepseek, baseUrl: "http://127.0.0.1:1/v1",
+    compat: { ...deepseek.compat, ...gatewayProfile.compat },
+    thinkingLevelMap: { ...deepseek.thinkingLevelMap, ...gatewayProfile.thinkingLevelMap },
+  };
+  const stream = streamSimple(model, {
+    messages: [{ role: "user", content: "Compute 1+1.", timestamp: 0 }],
+  }, {
+    apiKey: "synthetic-key", env: {}, reasoning: level, maxTokens: 1,
+    maxRetries: 0, timeoutMs: 2000,
+    fetch: async (url, init) => {
+      assert.equal(new URL(url).origin, "http://127.0.0.1:1");
+      calls++;
+      const body = JSON.parse(init.body);
+      assert.equal(body.max_tokens, 1);
+      assert.equal(body.reasoning_effort, level === "off" ? "none" : "high");
+      assert(!Object.hasOwn(body, "thinking"));
+      return new Response(JSON.stringify({ error: { message: "Synthetic capture complete" } }), {
+        status: 400, headers: { "content-type": "application/json" },
+      });
+    },
+  });
+  assert.equal((await stream.result()).stopReason, "error");
+  assert.equal(calls, 1);
+}
 console.log(JSON.stringify(result, null, 2));

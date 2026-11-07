@@ -93,6 +93,7 @@ async fn handle(
         (
             UpstreamAdapter::AnthropicMessages {
                 profile: MessagesProfile::AdaptiveTextTools,
+                dialect: morphiecore::protocol::anthropic::messages::Dialect::Standard,
                 target: ReplayTarget::new("public-fixture", native_model).unwrap(),
             },
             messages_with_delimiter(source),

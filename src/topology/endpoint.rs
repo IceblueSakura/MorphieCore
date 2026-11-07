@@ -88,6 +88,7 @@ impl Endpoint {
             (GenerationProtocol::AnthropicMessages, TargetContract::AnthropicMessages(caps)) => {
                 UpstreamAdapter::AnthropicMessages {
                     profile: caps.profile,
+                    dialect: caps.dialect,
                     target: crate::protocol::native::ReplayTarget::new(
                         self.provider.as_str(),
                         &self.upstream_model,

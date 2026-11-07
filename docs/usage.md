@@ -573,6 +573,21 @@ When an admitted request includes `metadata`, Responses delivery can echo it if 
 {"model":"configured-public-model","messages":[{"role":"user","content":"Reply with exactly pong."}],"max_completion_tokens":64}
 ```
 
+For pi's DeepSeek gateway profile, merge the provider entry from
+[`pi-deepseek.example.json`](../config/pi-deepseek.example.json) into test-owned or
+operator-managed pi `models.json`. Set the gateway origin and resolve the Agent
+key through the client's environment. Publish `deepseek-flash` in MorphieCore
+when using this built-in model override; a different public label needs its own
+client model declaration with the same compatibility settings.
+
+The override preserves pi's built-in model metadata and enabled effort levels.
+Both `compat.thinkingFormat:"openai"` and `thinkingLevelMap.off:"none"` are
+required: pi 1.5.0 then sends standard `reasoning_effort:"none"` for off, without
+the native `thinking` extension discarded by public Chat intake. DeepSeek's
+upstream adapter separately chooses native `max_tokens`. Workstation extensions
+that generate model declarations should apply the same profile; installing or
+activating such an extension remains an operator action.
+
 ### Messages
 
 Send exactly one `anthropic-version: 2023-06-01` or `anthropic-version: 2026-10-21` header. Both use the current body grammar. Missing, duplicate, combined and unsupported versions return 400 before body collection. `anthropic-beta` headers are ignored; supported body fields and trusted upstream beta selection remain independent. Legacy `temperature`/`top_p` values in `[0,1]` and mathematically integral `top_k` in `[0,18446744073709551615]` are validated exactly, then omitted with named evidence. Equivalent decimal/exponent spellings such as `top_k:1.0` and `top_k:1e0` are accepted; no floating-point rounding can admit an out-of-range value. Null sampling defaults normalize without a loss receipt; malformed values still reject.

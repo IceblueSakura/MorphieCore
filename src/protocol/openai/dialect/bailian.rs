@@ -1,4 +1,4 @@
-//! Documented Bailian request carriers and fail-closed model constraints.
+//! Documented Bailian wire carriers; effective admission belongs to target dispositions.
 //! OpenAI-compatible Chat/Responses, not the native DashScope RPC protocol.
 use crate::{
     protocol::{
@@ -46,6 +46,18 @@ pub(in crate::protocol::openai) fn source(
         };
         if matches!(model, "kimi-k3" | "glm-5.3" | "glm-5.3-prime")
             && effort.is_some_and(|v| v.as_str() == Some("none"))
+        {
+            return Err(CodecError::Unsupported(CarrierReason::Unavailable));
+        }
+        // The IR ceiling counts total output. A native reply-only source cap
+        // cannot be reinterpreted as that stronger bound without a selected
+        // source-direction conversion. Target approximation is separate.
+        if profile == GenerationApi::Responses
+            && !model.is_empty()
+            && !matches!(model, "qwen3.8-flash" | "qwen3.8-max")
+            && o.get("max_output_tokens").is_some_and(|v| !v.is_null())
+            && o.get("enable_thinking") != Some(&json!(false))
+            && effort.and_then(Value::as_str) != Some("none")
         {
             return Err(CodecError::Unsupported(CarrierReason::Unavailable));
         }
@@ -403,11 +415,6 @@ pub(in crate::protocol::openai) fn check_semantic(
             if tool.description.is_none()
                 || tool.output_schema.is_some()
                 || !tool.dispatch.is_inactive()
-                || !matches!(
-                    tool.strict,
-                    FunctionStrictness::Explicit(false)
-                        | FunctionStrictness::Omitted(StrictDefault::NonStrict)
-                )
             {
                 return Err(CodecError::Unsupported(CarrierReason::Unavailable));
             }
@@ -438,9 +445,7 @@ pub(in crate::protocol::openai) fn check_semantic(
         {
             return Err(CodecError::Unsupported(CarrierReason::Unavailable));
         }
-        if c.max_output_tokens
-            .is_some_and(|n| n < 16 || !model.is_empty() && !qwen && !disabled)
-        {
+        if c.max_output_tokens.is_some_and(|n| n < 16) {
             return Err(CodecError::Unsupported(CarrierReason::Unavailable));
         }
         let tools = semantic.tools();
@@ -448,15 +453,7 @@ pub(in crate::protocol::openai) fn check_semantic(
             let ToolDefinition::Function(t) = tool else {
                 return Err(CodecError::Unsupported(CarrierReason::Unavailable));
             };
-            if t.description.is_none()
-                || t.output_schema.is_some()
-                || !t.dispatch.is_inactive()
-                || !matches!(
-                    t.strict,
-                    FunctionStrictness::Explicit(false)
-                        | FunctionStrictness::Omitted(StrictDefault::NonStrict)
-                )
-            {
+            if t.description.is_none() || t.output_schema.is_some() || !t.dispatch.is_inactive() {
                 return Err(CodecError::Unsupported(CarrierReason::Unavailable));
             }
         }
@@ -502,8 +499,8 @@ pub(in crate::protocol::openai) fn check_semantic(
     Ok(())
 }
 
-/// Responses has no strict-schema guarantee. Never serialize a strict request
-/// as a non-strict definition; the checker above requires explicit non-strict intent.
+/// Shared lowering has already resolved strictness against the API contract.
+/// Chat carries explicit strictness; Responses only receives non-strict tools.
 pub(in crate::protocol::openai) fn write_tools(
     s: &GenerationSettings,
     o: &mut Map<String, Value>,
@@ -515,14 +512,7 @@ pub(in crate::protocol::openai) fn write_tools(
             let ToolDefinition::Function(t) = tool else {
                 return Err(CodecError::Unsupported(CarrierReason::Unavailable));
             };
-            if t.output_schema.is_some()
-                || !t.dispatch.is_inactive()
-                || !matches!(
-                    t.strict,
-                    FunctionStrictness::Explicit(false)
-                        | FunctionStrictness::Omitted(StrictDefault::NonStrict)
-                )
-            {
+            if t.output_schema.is_some() || !t.dispatch.is_inactive() {
                 return Err(CodecError::Unsupported(CarrierReason::Unavailable));
             }
             let mut value = json!({"type":"function","name":t.name.as_str(),"description":t.description.as_ref().ok_or(CodecError::invalid())?});
@@ -530,6 +520,9 @@ pub(in crate::protocol::openai) fn write_tools(
                 value["parameters"] = schema.root().clone();
             }
             values.push(if profile == GenerationApi::Chat {
+                if let FunctionStrictness::Explicit(strict) = t.strict {
+                    value["strict"] = json!(strict);
+                }
                 value
                     .as_object_mut()
                     .expect("function")

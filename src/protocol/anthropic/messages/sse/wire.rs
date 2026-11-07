@@ -1,5 +1,7 @@
 //! Shared native wire reducer; only strict EOF exposes the complete aggregated message.
-use crate::protocol::anthropic::messages::{Block, Delta, Event, Message, shape};
+use crate::protocol::anthropic::messages::{
+    Block, Delta, Dialect, Event, Message, StopReason, shape,
+};
 use crate::protocol::failure::{RecognitionBasis, ShapeReason, SourceFailureEvidence};
 use crate::{
     protocol::{
@@ -19,7 +21,12 @@ struct OpenBlock {
     json: Option<String>,
     signature_started: bool,
 }
+pub(super) struct ReducedEvent {
+    pub event: Event,
+    pub closed_block: Option<u64>,
+}
 pub struct MessageSseDecoder {
+    dialect: Dialect,
     framing: SseDecoder,
     limits: SseLimits,
     wire_bytes: usize,
@@ -63,9 +70,18 @@ fn append(target: &mut String, value: &str) -> Result<(), SseError> {
 }
 impl MessageSseDecoder {
     pub fn new(status: u16, content_type: &str, limits: SseLimits) -> Result<Self, SseError> {
+        Self::with_dialect(status, content_type, limits, Dialect::Standard)
+    }
+    pub(crate) fn with_dialect(
+        status: u16,
+        content_type: &str,
+        limits: SseLimits,
+        dialect: Dialect,
+    ) -> Result<Self, SseError> {
         limits.validate()?;
         crate::protocol::stream::validate_http(status, content_type)?;
         Ok(Self {
+            dialect,
             framing: SseDecoder::new(limits.max_event_bytes),
             limits,
             wire_bytes: 0,
@@ -87,7 +103,7 @@ impl MessageSseDecoder {
     pub(super) fn consume_event(
         &mut self,
         chunk: &[u8],
-    ) -> Result<(usize, Option<Event>), SseError> {
+    ) -> Result<(usize, Option<ReducedEvent>), SseError> {
         if self.closed || self.rejected {
             return Err(SseError::Closed);
         }
@@ -107,7 +123,7 @@ impl MessageSseDecoder {
         }
         result
     }
-    fn frame(&mut self, frame: SseEvent) -> Result<Option<Event>, SseError> {
+    fn frame(&mut self, frame: SseEvent) -> Result<Option<ReducedEvent>, SseError> {
         if self.stopped {
             return Err(SseError::Closed);
         }
@@ -141,8 +157,11 @@ impl MessageSseDecoder {
             );
             return Err(CodecError::StreamFailure(source).into());
         }
-        self.event(event.clone())?;
-        Ok(Some(event))
+        let closed_block = self.event(event.clone())?;
+        Ok(Some(ReducedEvent {
+            event,
+            closed_block,
+        }))
     }
     pub(super) fn message(&self) -> Option<&Message> {
         self.message.as_ref()
@@ -154,7 +173,75 @@ impl MessageSseDecoder {
         }
         Ok(())
     }
-    fn event(&mut self, event: Event) -> Result<(), SseError> {
+    fn close_block(&mut self, index: u64, truncated: bool) -> Result<(), SseError> {
+        let message = self.message.as_mut().ok_or_else(invalid)?;
+        if index as usize != message.content.len() {
+            return Err(invalid());
+        }
+        let mut open = self.open.take().ok_or_else(invalid)?;
+        if let Block::ToolUse { input, .. } = &mut open.block
+            && let Some(json) = open.json
+        {
+            // This dialect rule covers an interrupted object, not an absent
+            // value: standalone whitespace has no portable partial carrier.
+            if truncated && !json.trim_start().starts_with('{') {
+                return Err(invalid());
+            }
+            match parse_json(json.as_bytes(), JsonLimits::STRUCTURED) {
+                Ok(value) => {
+                    if truncated {
+                        return Err(invalid());
+                    }
+                    if !value.is_object() {
+                        return Err(CodecError::invalid().into());
+                    }
+                    *input = StructuredValue::new(value).map_err(CodecError::from)?;
+                }
+                Err(crate::semantic::value::JsonError::Limit(resource)) => {
+                    return Err(crate::protocol::CodecError::from(
+                        crate::semantic::value::JsonError::Limit(resource),
+                    )
+                    .into());
+                }
+                Err(crate::semantic::value::JsonError::Invalid) => {
+                    if json.trim_start().chars().next().is_some_and(|c| c != '{') {
+                        return Err(CodecError::invalid().into());
+                    }
+                    crate::semantic::value::validate_json_prefix(
+                        json.as_bytes(),
+                        JsonLimits::STRUCTURED,
+                    )
+                    .map_err(|error| match error {
+                        crate::semantic::value::JsonError::Limit(resource) => {
+                            SseError::Codec(crate::protocol::CodecError::from(
+                                crate::semantic::value::JsonError::Limit(resource),
+                            ))
+                        }
+                        crate::semantic::value::JsonError::Invalid => {
+                            CodecError::Invalid(ShapeReason::Json).into()
+                        }
+                    })?;
+                    let Block::ToolUse {
+                        id, name, caller, ..
+                    } = open.block
+                    else {
+                        unreachable!("tool input owner")
+                    };
+                    open.block = Block::PartialToolUse {
+                        id,
+                        name,
+                        caller,
+                        input: json,
+                    };
+                }
+            }
+        }
+        open.block.bytes(false)?;
+        message.content.push(open.block);
+        Ok(())
+    }
+    fn event(&mut self, event: Event) -> Result<Option<u64>, SseError> {
+        let mut closed_block = None;
         match event {
             Event::Ping => {}
             Event::Error { kind, message } => {
@@ -237,62 +324,8 @@ impl MessageSseDecoder {
                 }
             }
             Event::BlockStop { index } => {
-                let message = self.message.as_mut().ok_or_else(invalid)?;
-                if index as usize != message.content.len() {
-                    return Err(invalid());
-                }
-                let mut open = self.open.take().ok_or_else(invalid)?;
-                if let Block::ToolUse { input, .. } = &mut open.block
-                    && let Some(json) = open.json
-                {
-                    match parse_json(json.as_bytes(), JsonLimits::STRUCTURED) {
-                        Ok(value) => {
-                            if !value.is_object() {
-                                return Err(CodecError::invalid().into());
-                            }
-                            *input = StructuredValue::new(value).map_err(CodecError::from)?;
-                        }
-                        Err(crate::semantic::value::JsonError::Limit(resource)) => {
-                            return Err(crate::protocol::CodecError::from(
-                                crate::semantic::value::JsonError::Limit(resource),
-                            )
-                            .into());
-                        }
-                        Err(crate::semantic::value::JsonError::Invalid) => {
-                            if json.trim_start().chars().next().is_some_and(|c| c != '{') {
-                                return Err(CodecError::invalid().into());
-                            }
-                            crate::semantic::value::validate_json_prefix(
-                                json.as_bytes(),
-                                JsonLimits::STRUCTURED,
-                            )
-                            .map_err(|error| match error {
-                                crate::semantic::value::JsonError::Limit(resource) => {
-                                    SseError::Codec(crate::protocol::CodecError::from(
-                                        crate::semantic::value::JsonError::Limit(resource),
-                                    ))
-                                }
-                                crate::semantic::value::JsonError::Invalid => {
-                                    CodecError::Invalid(ShapeReason::Json).into()
-                                }
-                            })?;
-                            let Block::ToolUse {
-                                id, name, caller, ..
-                            } = open.block
-                            else {
-                                unreachable!("tool input owner")
-                            };
-                            open.block = Block::PartialToolUse {
-                                id,
-                                name,
-                                caller,
-                                input: json,
-                            };
-                        }
-                    }
-                }
-                open.block.bytes(false)?;
-                message.content.push(open.block);
+                self.close_block(index, false)?;
+                closed_block = Some(index);
             }
             Event::MessageDelta {
                 stop_reason,
@@ -302,7 +335,18 @@ impl MessageSseDecoder {
                 input_transformations,
             } => {
                 if self.open.is_some() {
-                    return Err(invalid());
+                    if self.dialect != Dialect::OpenCodeGo
+                        || stop_reason
+                            != crate::semantic::value::Presence::Value(StopReason::MaxTokens)
+                        || !self.open.as_ref().is_some_and(|open| {
+                            matches!(open.block, Block::ToolUse { .. }) && open.json.is_some()
+                        })
+                    {
+                        return Err(invalid());
+                    }
+                    let index = self.message.as_ref().ok_or_else(invalid)?.content.len() as u64;
+                    self.close_block(index, true)?;
+                    closed_block = Some(index);
                 }
                 let old = self
                     .message
@@ -366,7 +410,7 @@ impl MessageSseDecoder {
                 self.stopped = true;
             }
         }
-        Ok(())
+        Ok(closed_block)
     }
     /// Strict transport closure, not message_stop alone, releases the final value.
     pub fn finish(&mut self) -> Result<Message, SseError> {

@@ -21,6 +21,7 @@ pub enum UpstreamAdapter {
     /// Native intake labels opaque values with the trusted Provider/model binding.
     AnthropicMessages {
         profile: anthropic::messages::Profile,
+        dialect: anthropic::messages::Dialect,
         target: crate::protocol::native::ReplayTarget,
     },
     GoogleGenerateContent {
@@ -94,13 +95,18 @@ impl UpstreamAdapter {
                     )?)
                 }
             },
-            Self::AnthropicMessages { profile, target } => GenerationDecoder::Messages {
-                decoder: anthropic::messages::GenerationSseDecoder::new(
+            Self::AnthropicMessages {
+                profile,
+                dialect,
+                target,
+            } => GenerationDecoder::Messages {
+                decoder: anthropic::messages::GenerationSseDecoder::with_dialect(
                     status,
                     content_type,
                     native_limits,
                     NATIVE_SCOPE,
                     target.clone(),
+                    *dialect,
                 )?,
                 profile: *profile,
                 target: target.clone(),

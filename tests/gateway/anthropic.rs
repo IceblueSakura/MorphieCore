@@ -179,7 +179,7 @@ async fn answer(
                 "content_block":{"type":"tool_use","id":"partial-call","name":"lookup","input":{}}}),
             json!({"type":"content_block_delta","index":0,
                 "delta":{"type":"input_json_delta","partial_json":" \n{\"key\":\"unfinished\\u0"}}),
-            json!({"type":"content_block_stop","index":0}),
+            // Go/Haiku may truncate tool input without a block-stop event.
             json!({"type":"message_delta","delta":{"stop_reason":"max_tokens","stop_sequence":null},
                 "usage":{"output_tokens":2}}),
             json!({"type":"message_stop"}),

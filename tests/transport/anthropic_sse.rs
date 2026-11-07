@@ -14,6 +14,7 @@ fn native_attempt(target: ReplayTarget) -> Attempt {
     Attempt::new(
         UpstreamAdapter::AnthropicMessages {
             profile: Profile::AdaptiveTextTools,
+            dialect: morphiecore::protocol::anthropic::messages::Dialect::Standard,
             target,
         },
         2 << 20,
@@ -1039,6 +1040,7 @@ fn input_transformations_are_validated_then_omitted_with_a_receipt() {
         let mut decoder = morphiecore::execution::Attempt::new(
             morphiecore::adapter::UpstreamAdapter::AnthropicMessages {
                 profile: Profile::AdaptiveTextTools,
+                dialect: morphiecore::protocol::anthropic::messages::Dialect::Standard,
                 target: target.clone(),
             },
             2 << 20,
@@ -1199,6 +1201,92 @@ fn eager_partial_arguments_keep_exact_bytes_only_on_incomplete_native_sse() {
             )
             .is_err()
         );
+    }
+}
+
+#[test]
+fn go_truncated_tool_closure_is_incomplete_and_preserves_baseline_rejections() {
+    for dialect in [
+        morphiecore::protocol::anthropic::messages::Dialect::Standard,
+        morphiecore::protocol::anthropic::messages::Dialect::OpenCodeGo,
+    ] {
+        for (fragment, stop, close, accepted) in [
+            (" \n{\"key\":\"unfinished\\u0", "max_tokens", true, true),
+            (" \n", "max_tokens", true, false),
+            ("{\"key\":1}", "max_tokens", true, false),
+            ("{\"x\":1,\"x\":2", "max_tokens", true, false),
+            ("{\"x\":\"\\uG", "max_tokens", true, false),
+            ("[1,", "max_tokens", true, false),
+            ("{\"key\":", "tool_use", true, false),
+            ("{\"key\":", "max_tokens", false, false),
+        ] {
+            let mut input = frames();
+            input[11]["delta"]["partial_json"] = json!(fragment);
+            input.remove(12);
+            input.remove(12); // No content_block_stop.
+            input.remove(12); // No earlier message_delta without a terminal.
+            input[12]["delta"]["stop_reason"] = json!(stop);
+            if !close {
+                input.pop();
+            }
+            let mut attempt = Attempt::new(
+                UpstreamAdapter::AnthropicMessages {
+                    profile: Profile::AdaptiveTextTools,
+                    dialect,
+                    target: ReplayTarget::new("synthetic-provider", "synthetic-model").unwrap(),
+                },
+                2 << 20,
+                SseLimits::default(),
+            );
+            attempt.begin(200, "text/event-stream").unwrap();
+            let result = (|| {
+                let bytes = wire(&input);
+                let mut rest = bytes.as_slice();
+                let mut events = vec![];
+                while !rest.is_empty() {
+                    let (used, batch) = attempt.push(rest)?;
+                    rest = &rest[used..];
+                    events.extend(batch);
+                }
+                let response = attempt.finish()?.clone();
+                use morphiecore::semantic::task::generation::*;
+                let call = response
+                    .semantic
+                    .items()
+                    .iter()
+                    .find_map(|(_, item)| match item {
+                        Item::ToolCall(call) => Some(call),
+                        _ => None,
+                    })
+                    .unwrap();
+                assert_eq!(call.call_id.as_str(), "toolu_one");
+                assert_eq!(call.status, ItemLifecycle::Incomplete);
+                assert_eq!(
+                    call.arguments,
+                    ToolArguments::StructuredPartial(fragment.into())
+                );
+                assert!(events.iter().any(|event| matches!(
+                    event,
+                    StreamEvent::ItemFinished {
+                        status: ItemLifecycle::Incomplete,
+                        ..
+                    }
+                )));
+                assert!(
+                    !events
+                        .iter()
+                        .any(|event| matches!(event, StreamEvent::Terminal { .. }))
+                );
+                assert_eq!(response.semantic.outcome(), Outcome::Incomplete);
+                Ok::<_, morphiecore::execution::AttemptError>(())
+            })();
+            assert_eq!(
+                result.is_ok(),
+                accepted
+                    && dialect == morphiecore::protocol::anthropic::messages::Dialect::OpenCodeGo,
+                "{dialect:?}: {fragment:?} {stop} {close}: {result:?}"
+            );
+        }
     }
 }
 

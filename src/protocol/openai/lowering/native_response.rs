@@ -348,6 +348,7 @@ mod tests {
             let mut attempt = crate::execution::Attempt::new(
                 crate::adapter::UpstreamAdapter::AnthropicMessages {
                     profile: anthropic::messages::Profile::AdaptiveTextTools,
+                    dialect: crate::protocol::anthropic::messages::Dialect::Standard,
                     target: crate::protocol::native::ReplayTarget::new("provider", "model")
                         .unwrap(),
                 },

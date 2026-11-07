@@ -363,6 +363,11 @@ pub(crate) const OMIT_MESSAGES_REASONING: Rule = Rule::new(
     Field::ReasoningContent,
     Change::Omit,
 );
+pub(crate) const REPLY_ONLY_OUTPUT_CEILING: Rule = Rule::new(
+    "generation.reply-only-output-ceiling.v1",
+    Field::MaximumOutput,
+    Change::Approximate,
+);
 pub(crate) const OMIT_IDENTITY_HINTS: Rule = Rule::new(
     "generation.omit-identity-hints.v1",
     Field::Identity,

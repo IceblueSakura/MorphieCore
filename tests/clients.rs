@@ -148,6 +148,18 @@ async fn pi_chat_default_strict_guarantee() {
 }
 
 #[tokio::test]
+#[ignore = "requires current installed pi; shipped gateway profile and strict tool/history loop"]
+async fn pi_chat_gateway_profile() {
+    installed_case(
+        "protocol_defaults",
+        "pi-chat-gateway-profile",
+        "MORPHIECORE_PI_BIN",
+        &[],
+    )
+    .await;
+}
+
+#[tokio::test]
 #[ignore = "requires current installed pi; builtin Responses inline tools and direct-call history"]
 async fn pi_responses_default_tool_history() {
     installed_case(

@@ -97,14 +97,14 @@ class MessagesState(DefaultState):
         check(self.deliveries == [200, 200, 200], "default_deliveries")
 
 
-def assert_chat_profile(body, pi, *, upstream=False):
+def assert_chat_profile(body, pi, *, upstream=False, gateway_profile=False):
     check(body["model"] == "deepseek-flash" and body["stream"] is True, "default_chat_model")
-    cap = "max_completion_tokens" if upstream else "max_tokens"
+    cap = "max_tokens"
     check(body[cap] == 2048,
           "default_operational_output_cap")
     check("store" not in body and body.get("stream_options") == {"include_usage": True},
           "default_chat_storage_and_usage")
-    check(body.get("thinking") == {"type": "enabled"} if pi and not upstream
+    check(body.get("thinking") == {"type": "enabled"} if pi and not upstream and not gateway_profile
           else "thinking" not in body, "default_chat_thinking")
     check(body.get("reasoning_effort") == "high" if pi else "reasoning_effort" not in body,
           "default_effort")
@@ -120,13 +120,14 @@ def assert_chat_profile(body, pi, *, upstream=False):
 
 
 class ChatState(DefaultState):
-    def __init__(self, path, *, pi):
+    def __init__(self, path, *, pi, gateway_profile=False):
         super().__init__(False, path, pi=pi)
+        self.gateway_profile = gateway_profile
         # pi's strict lane dispatches through the DeepSeek beta endpoint binding.
         self.upstream_endpoint_path = "/beta/chat/completions" if pi else "/v1/chat/completions"
 
     def incoming(self, headers, body):
-        assert_chat_profile(body, self.pi)
+        assert_chat_profile(body, self.pi, gateway_profile=self.gateway_profile)
         phase = stage(body)
         assert_history(body, phase, False, self.path, profile=False)
         with self.lock:
@@ -331,25 +332,30 @@ class ResponsesState(DefaultState):
         check(self.deliveries == [200, 200, 200], "default_deliveries")
 
 
-def assert_diagnostics(requests, protocol, pi):
+def assert_diagnostics(requests, protocol, pi, *, gateway_profile=False):
     check(len(requests) == 3, "default_gateway_request_count")
     for record in requests:
         check(record["outcome"] == "complete" and len(record["candidates"]) == 1,
               "default_gateway_completion")
         # pi's builtin Chat profile carries a client-side `thinking` object
         # the Chat union does not define; it is ignored, never interpreted.
-        expected_ignored = 1 if pi and protocol == "chat" else 0
+        expected_ignored = 1 if pi and protocol == "chat" and not gateway_profile else 0
         check(record.get("ignored_request_field_count", 0) == expected_ignored,
               "default_gateway_ignored_fields")
 
 
-def run_pi(binary, env, root, work, origin, path, protocol):
+def run_pi(binary, env, root, work, origin, path, protocol, *, gateway_profile=False):
     model_id, provider, _, api = PROFILES[protocol]
     agent = root / "pi-agent"
     agent.mkdir(mode=0o700)
+    override = {"maxTokens": 2048}
+    if gateway_profile:
+        profile = json.loads((Path(__file__).resolve().parents[2] /
+                              "config/pi-deepseek.example.json").read_text())
+        override.update(profile["providers"]["deepseek"]["modelOverrides"][model_id])
     private_json(agent / "models.json", {"providers": {provider: {
         "baseUrl": origin if protocol == "messages" else origin + "/v1", "apiKey": "$INGRESS_KEY",
-        "modelOverrides": {model_id: {"maxTokens": 2048}}}}})
+        "modelOverrides": {model_id: override}}}})
     private_json(agent / "settings.json", {"retry": {"enabled": False,
         "provider": {"maxRetries": 0, "timeoutMs": 5000}},
         "compaction": {"enabled": False}, "cacheWarming": "off"})
@@ -419,12 +425,14 @@ def main():
     path.write_text(TEXT + "\n", encoding="utf-8")
     protocol = case.split("-")[1]
     pi = case.startswith("pi-")
+    gateway_profile = case == "pi-chat-gateway-profile"
     count = 3
     model_id, provider, binding, _ = PROFILES[protocol]
     if pi and protocol == "chat":
         # pi's builtin strict read tool needs the beta endpoint binding.
         provider, binding = "deepseek-beta", "deepseek-beta-chat"
-    state = {"messages": MessagesState, "chat": ChatState, "responses": ResponsesState}[protocol](path, pi=pi)
+    state = (ChatState(path, pi=pi, gateway_profile=gateway_profile) if protocol == "chat" else
+             {"messages": MessagesState, "responses": ResponsesState}[protocol](path, pi=pi))
     env = environment(root)
     with Child([binary, "--version"], env, work) as client:
         version = client.wait(timeout=5).decode().strip()
@@ -446,14 +454,15 @@ def main():
         ingress = stack.enter_context(server(state, True))
         try:
             (run_pi if case.startswith("pi-") else run_opencode)(
-                binary, env, root, work, ingress, path, protocol)
+                binary, env, root, work, ingress, path, protocol,
+                **({"gateway_profile": gateway_profile} if pi else {}))
             gateway.process.send_signal(signal.SIGINT)
             gateway.wait(timeout=5)
             records = [json.loads(line) for line in (root / "diagnostics.jsonl").read_text().splitlines()]
             check(all(r.get("event") in ("file", "request", "log", "span") for r in records),
                   "default_gateway_logging_loss")
             requests = [r for r in records if r.get("event") == "request"]
-            assert_diagnostics(requests, protocol, pi)
+            assert_diagnostics(requests, protocol, pi, gateway_profile=gateway_profile)
         except Exception:
             shutdown_gateway(gateway, failed=True)
             records = [json.loads(line) for line in (root / "diagnostics.jsonl").read_text().splitlines()]

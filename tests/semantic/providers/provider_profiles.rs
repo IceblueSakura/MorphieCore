@@ -18,6 +18,79 @@ fn body() -> Value {
 }
 
 #[test]
+fn deepseek_chat_preserves_the_native_cap_and_standard_thinking_off_control() {
+    use morphiecore::topology::{GenerationProtocol, catalog::API_KEY_BINDINGS};
+    let source = GenerationCodec::new(GenerationApi::Chat, Dialect::Standard, None)
+        .decode_client_request(
+            br#"{"model":"public","messages":[{"role":"user","content":"go"}],
+                "max_tokens":1,"reasoning_effort":"none"}"#,
+        )
+        .unwrap();
+    let before = source.clone();
+    for prefix in ["deepseek", "deepseek-beta"] {
+        let endpoint = API_KEY_BINDINGS
+            .iter()
+            .find(|b| b.endpoint_prefix == prefix)
+            .unwrap()
+            .endpoint(GenerationProtocol::OpenAiChat)
+            .unwrap();
+        let (wire, rules) = endpoint.encode_request_with_rules(&source).unwrap();
+        assert_eq!(wire["max_tokens"], 1);
+        assert!(wire.get("max_completion_tokens").is_none());
+        assert_eq!(wire["reasoning_effort"], "none");
+        assert!(wire.get("thinking").is_none());
+        assert!(rules.is_empty());
+    }
+    assert_eq!(source, before);
+    let standard = GenerationCodec::new(GenerationApi::Chat, Dialect::Standard, None)
+        .encode_request(&source, "m", &Contract::full())
+        .unwrap();
+    assert_eq!(standard["max_completion_tokens"], 1);
+}
+
+#[test]
+fn luna_strict_namespaced_tools_reach_native_subscription_and_router_writers() {
+    use morphiecore::topology::{
+        GenerationProtocol,
+        catalog::{API_KEY_BINDINGS, SUBSCRIPTION_BINDINGS},
+    };
+    let source = GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None)
+        .decode_client_request(br#"{"model":"public","input":"go","tools":[{
+            "type":"namespace","name":"ops","description":"operations","tools":[{"type":"function","name":"lookup","strict":true,
+            "parameters":{"type":"object","properties":{},"required":[],"additionalProperties":false}}]}]}"#)
+        .unwrap();
+    let before = source.clone();
+    let endpoints = API_KEY_BINDINGS
+        .iter()
+        .filter(|b| b.canonical_model == "gpt-6-luna")
+        .map(|b| b.endpoint(GenerationProtocol::OpenAiResponses).unwrap())
+        .chain(
+            SUBSCRIPTION_BINDINGS
+                .iter()
+                .filter(|b| b.model == "gpt-6-luna")
+                .map(|b| b.endpoint()),
+        );
+    let inline = GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None)
+        .decode_client_request(br#"{"model":"public","input":[
+            {"type":"additional_tools","role":"developer","tools":[{"type":"function","name":"lookup","strict":true,
+                "parameters":{"type":"object","properties":{},"required":[],"additionalProperties":false}}]},
+            {"role":"user","content":"go"}]}"#).unwrap();
+    let inline_before = inline.clone();
+    for endpoint in endpoints {
+        let (wire, _) = endpoint.encode_request_with_rules(&source).unwrap();
+        assert_eq!(wire["tools"][0]["tools"][0]["strict"], true);
+        assert_eq!(
+            wire["tools"][0]["tools"][0]["parameters"]["additionalProperties"],
+            false
+        );
+        let (wire, _) = endpoint.encode_request_with_rules(&inline).unwrap();
+        assert_eq!(wire["input"][0]["tools"][0]["strict"], true);
+    }
+    assert_eq!(source, before);
+    assert_eq!(inline, inline_before);
+}
+
+#[test]
 fn application_instruction_carriers_are_dialect_local_and_never_become_user() {
     use morphiecore::{
         execution::attempt::prepare_with_rules,

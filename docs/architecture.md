@@ -369,6 +369,8 @@ Four decoupled responsibilities:
 3. **Target encoding:** Validates target-specific constraints and formats native requests.
 4. **Provider egress dialect:** Translates standard target requests to vendor wire formats where required.
 
+Strict-tool admission follows the effective binding/API disposition in shared request projection, including direct library lowering; writers render that decision. Native OpenAI/SIWC Luna uses the strict carrier. OpenRouter Luna delegates its unassessed endpoint guarantee and discovery reports `not_assessed`. Qwen Bailian Chat carries explicit strictness and resolves conditional defaults through the same owner; Bailian Responses has no equivalent strict-function carrier and rejects explicit true there. GLM's strict restriction remains model-qualified. These carrier decisions do not attest arbitrary-schema enforcement.
+
 #### Protocol tree ownership
 
 Module layout mirrors `vendor / api / responsibility`:
@@ -380,7 +382,7 @@ Module layout mirrors `vendor / api / responsibility`:
 
 DashScope and Aliyun TokenPlan share the `Bailian` wire dialect for Chat and Responses:
 - Readable reasoning mapped to `reasoning_content` with `preserve_thinking`.
-- Total output ceilings mapped to `max_completion_tokens`.
+- Chat total output ceilings mapped to `max_completion_tokens`; Responses uses `max_output_tokens` with the model-specific scope in [output-ceiling adaptation](#output-ceiling-adaptation).
 
 ##### Subscription Responses
 
@@ -487,7 +489,7 @@ Existing rule families remain valid ladder applications:
 
 #### Output-ceiling adaptation
 
-**Selected 2026-11-07; implementation follow-up is in the [AR5 repair plan](roadmap.md#concentrated-repair-plan).** A client output ceiling is an adaptable generation control. Prefer retaining useful control over rejecting a request because the target cannot express exactly the same ceiling:
+**Selected and implemented 2026-11-07; verification scope is in [AR5 Review](ar5-review.md#priority-repair-verification-2026-11-07).** A client output ceiling is an adaptable generation control. Prefer retaining useful control over rejecting a request because the target cannot express exactly the same ceiling:
 
 | Target carrier | Disposition |
 |---|---|
@@ -499,7 +501,9 @@ Existing rule families remain valid ladder applications:
 
 Resolve spelling, scope and supported values for the actual binding/API, not a shared model label. Record approximations and omissions through the existing conversion evidence; no client echo is required. Preserve original intent on the source request, including absence versus a ceiling omitted by projection, so default insertion cannot overwrite it.
 
-Gateway request/response byte limits, deadlines, model bounds and honest terminal reporting remain independent. The adaptation does not introduce gateway-side token counting, fabricated length termination or a general formula for increasing thinking budgets. Existing exact mappings, maximum clamps and carrier-less omission remain; the broader scope approximation is selected policy awaiting implementation.
+`generation.reply-only-output-ceiling.v1` records total-to-reply scope adaptation on thinking-enabled non-Qwen Bailian Responses targets. Values below that API's minimum take the existing ceiling-omission rule. Native source decoding retains its separate scope restriction: reply-only source values are not silently reinterpreted as total-output ceilings. DeepSeek Chat uses native `max_tokens`; Standard Chat keeps its own spelling.
+
+Gateway request/response byte limits, deadlines, model bounds and honest terminal reporting remain independent. The adaptation introduces neither gateway-side token counting nor fabricated length termination or a general formula for increasing thinking budgets.
 
 #### Semantic-equivalence compatibility
 
@@ -845,6 +849,8 @@ Request-wide automatic caching is enabled on native Messages targets with verifi
 - Block start order preserves source item ordering.
 - Streaming argument fragments are buffered during whitespace prefixes to maintain valid JSON grammar for accumulators.
 
+Selected and implemented on 2026-11-07: trusted OpenCode Go/Haiku intake may close an open tool-input block at an explicit `max_tokens` message delta when the received bytes form a valid unfinished object prefix. Aggregate and incremental decoding share that closure, preserve exact bytes and identity, and mark the call incomplete without executable completion. The rule requires a started object, subsequent `message_stop` and strict EOF; public Standard Messages decoding retains its baseline ordering. It does not infer closure for complete JSON, other block kinds or unrelated terminals.
+
 ## Runtime and trust
 
 ### Failover
@@ -1002,6 +1008,7 @@ Authoritative log of accepted architectural decisions and their systemic consequ
 | Standard request boundary | 2026-10-26 | Client intake enforces official protocol grammar; Provider dialects isolated to egress |
 | Conversion ladder | 2026-10-30 | Same-name → same-semantic → partial lossy → omit → reject only when omission would misrepresent the response; unknown target facts delegate to upstream validation; one request-side and one delivery-side disposition owner |
 | Candidate request dispositions | 2026-10-31 | One `Feature` vocabulary and target disposition owner replace separate admission/target feature gates, including presentation and parallel permission; conditional strict inference requires a known closed vocabulary, explicit strict keeps upstream delegation, and native assertions keep grammar and replay identity |
+| Binding/API strict-tool ownership | 2026-11-07 | Remove blanket Bailian writer vetoes; shared lowering owns explicit/conditional admission across codec and direct entry points. Qwen Chat and native Luna carry strict, Bailian Responses declines it, and unassessed router Luna delegates with honest discovery |
 | Delivery dispositions | 2026-11-01 | One adapter-owned event projection selects client facts; SSE renders events and JSON/retained views reduce them. Replaced snapshot checks and encoder terminal lowering are removed; execution aliases and wire-only closure preserve identity/lifecycle |
 | Client semantic boundary | 2026-10-27 | Unknown extension fields discarded; revised 2026-10-30: known fields enter the conversion ladder instead of fail-closed rejection |
 | Three-protocol fidelity | 2026-10-27 | Semantic fidelity across Chat, Responses, and Messages with stream normalization |
@@ -1027,6 +1034,7 @@ Authoritative log of accepted architectural decisions and their systemic consequ
 | Thinking budget ceiling guard | 2026-10-20 | P3b rejects requests where thinking budget exceeds client output ceiling |
 | Bounded token-budget adaptation | 2026-10-28 | Allows target-qualified review of gateway-derived defaults/presets to preserve functionality; concrete adjustment rules remain unselected |
 | Low-loss output ceilings | 2026-11-07 | Prefer equivalent controls, then useful narrower-scope limits, then omission with loss; unsupported ceilings alone do not require request rejection. Keep runtime bounds and reported terminals independent. [Contract](#output-ceiling-adaptation) |
+| Go truncated tool-stream closure | 2026-11-07 | Carry trusted Messages dialect into intake; explicit max-token termination closes the observed unfinished object prefix as incomplete with exact bytes, identity and strict final EOF. Standard decoding and partial-tool non-execution remain protected. [Response rules](#response-rules) |
 | Messages missing ceiling default | 2026-10-20 | Go/Haiku injects `32000` default output tokens when client ceiling is omitted |
 | Tool-result error wrapping | 2026-10-20 | Prefixes tool results with boolean status text for targets lacking native flags |
 | Google terminal projection | 2026-10-21 | Gemini 3.8 Flash completions map to Messages `tool_use` or `end_turn` |

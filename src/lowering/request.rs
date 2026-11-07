@@ -349,6 +349,12 @@ impl<'a> Target<'a> {
                     }
                 }
                 if rules.bailian_requests {
+                    // Unlisted Responses fields are ignored upstream, so strict
+                    // tools have no guarantee carrier. All lowering entry points
+                    // derive this API disposition here before rendering.
+                    if api == GenerationApi::Responses {
+                        table.set_native(StrictTools, false);
+                    }
                     if matches!(model, "glm-5.3" | "glm-5.3-prime")
                         && source.reasoning().activation.as_ref()
                             == Some(
@@ -360,10 +366,22 @@ impl<'a> Target<'a> {
                             Disposition::Reject("this model has no thinking-off carrier"),
                         );
                     }
-                    if api == GenerationApi::Responses && controls.max_output_tokens.is_some_and(|n|
-                        n < 16 || !model.is_empty() && !matches!(model, "qwen3.8-flash" | "qwen3.8-max")
-                            && source.reasoning().activation.as_ref() != Some(&crate::semantic::task::generation::ReasoningActivation::Disabled)
-                    ) { omit(&mut table, MaxOutputTokens); }
+                    if api == GenerationApi::Responses {
+                        if controls.max_output_tokens.is_some_and(|n| n < 16) {
+                            omit(&mut table, MaxOutputTokens);
+                        } else if !model.is_empty()
+                            && !matches!(model, "qwen3.8-flash" | "qwen3.8-max")
+                            && source.reasoning().activation.as_ref()
+                                != Some(&crate::semantic::task::generation::ReasoningActivation::Disabled)
+                        {
+                            table.set(
+                                MaxOutputTokens,
+                                Disposition::Approximate(
+                                    super::disposition::REPLY_ONLY_OUTPUT_CEILING,
+                                ),
+                            );
+                        }
+                    }
                     for feature in [Metadata, ServicePolicy, Verbosity] {
                         omit(&mut table, feature);
                     }
@@ -1550,6 +1568,11 @@ fn project_semantic_with_table<'a>(
         table,
         &mut evidence,
     );
+    if controls.max_output_tokens.is_some()
+        && let Disposition::Approximate(rule) = table.get(Feature::MaxOutputTokens)
+    {
+        evidence.push(rule.effect(ConversionBoundary::RequestProject));
+    }
     if settings
         .reasoning
         .budget_tokens
@@ -1863,10 +1886,7 @@ fn project_semantic_with_table<'a>(
                             schema.root(),
                         )
                 }
-                Target::OpenAi(_, contract) => {
-                    table.native(Feature::StrictTools)
-                        && !contract.adaptation.rules.bailian_requests
-                }
+                Target::OpenAi(_, _) => table.native(Feature::StrictTools),
                 _ => false,
             },
             |request| {
