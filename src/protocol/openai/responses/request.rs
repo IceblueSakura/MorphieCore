@@ -133,9 +133,11 @@ pub fn encode_generation(target: &RequestRepresentation<'_>) -> Result<Value, Co
         target.semantic.resources(),
         GenerationApi::Responses,
     )?;
-    target
-        .fidelity
-        .check_wire_item_ids(target.semantic.items(), false)?;
+    target.fidelity.check_wire_item_ids(
+        target.semantic.items(),
+        false,
+        GenerationApi::Responses,
+    )?;
     let mut input = encode_items(
         target.semantic.items(),
         target.fidelity,

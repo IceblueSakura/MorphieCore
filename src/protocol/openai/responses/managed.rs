@@ -69,10 +69,11 @@ pub fn decode(
         &serde_json::to_vec(&value).map_err(|_| CodecError::invalid())?,
         history,
     )?;
-    request
-        .task
-        .fidelity
-        .check_wire_item_ids(request.task.semantic.items(), false)?;
+    request.task.fidelity.check_wire_item_ids(
+        request.task.semantic.items(),
+        false,
+        GenerationApi::Responses,
+    )?;
     Ok((request, options))
 }
 

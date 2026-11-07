@@ -27,6 +27,12 @@ fn independently_constructed_text_ir_encodes_expected_boundaries_and_refusal() {
         wire.last().unwrap()["response"]["output"][0]["content"],
         json!([{"type":"output_text","text":"","annotations":[]},{"type":"refusal","refusal":"Cannot comply"}])
     );
+    let id = wire.last().unwrap()["response"]["output"][0]["id"]
+        .as_str()
+        .unwrap();
+    assert!(id.starts_with("msg_"));
+    assert!(wire.iter().any(|event|
+        event["type"] == "response.output_item.added" && event["item"]["id"] == id));
     assert!(
         wire.iter()
             .any(|v| v["type"] == "response.refusal.delta" && v["delta"] == "Cannot comply")
@@ -86,6 +92,15 @@ fn queued_lifecycle_has_no_chat_projection() {
     let v = responses
         .encode(&StreamEvent::Queued, &FidelityRecords::default())
         .unwrap();
-    assert_eq!(v[0]["type"], json!("response.queued"));
+    assert_eq!(v[0]["type"], json!("response.created"));
     assert_eq!(v[0]["response"]["status"], json!("queued"));
+    assert_eq!(v[0]["sequence_number"], 0);
+    let progress = responses
+        .encode(&StreamEvent::Started, &FidelityRecords::default())
+        .unwrap();
+    assert_eq!(progress.len(), 1);
+    assert_eq!(progress[0]["type"], "response.in_progress");
+    assert_eq!(progress[0]["response"]["status"], "in_progress");
+    assert_eq!(progress[0]["response"]["id"], v[0]["response"]["id"]);
+    assert_eq!(progress[0]["sequence_number"], 1);
 }

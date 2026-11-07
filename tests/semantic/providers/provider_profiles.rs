@@ -49,6 +49,66 @@ fn deepseek_chat_preserves_the_native_cap_and_standard_thinking_off_control() {
 }
 
 #[test]
+fn cross_protocol_assistant_history_mints_responses_message_ids() {
+    let codec = GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None);
+    let bodies = [
+        morphiecore::adapter::ClientAdapter::openai(
+            GenerationCodec::new(GenerationApi::Chat, Dialect::Standard, None),
+            Contract::full(),
+        ),
+        morphiecore::adapter::ClientAdapter::Messages,
+    ];
+    for client in bodies {
+        let request = client
+            .decode_client_request(
+                br#"{
+            "model":"public","max_tokens":64,"messages":[
+                {"role":"user","content":"go"},
+                {"role":"assistant","content":"answer"},
+                {"role":"user","content":"next"}]}"#,
+            )
+            .unwrap();
+        let before = request.clone();
+        let wire = codec
+            .encode_request(&request, "m", &Contract::full())
+            .unwrap();
+        let message = &wire["input"][1];
+        assert_eq!(message["type"], "message");
+        assert_eq!(message["role"], "assistant");
+        assert!(message["id"].as_str().unwrap().starts_with("msg_"));
+        assert_eq!(message["content"][0]["text"], "answer");
+        assert_eq!(request, before);
+    }
+}
+
+#[test]
+fn generated_message_id_collisions_are_checked_only_on_responses_wire() {
+    let responses = GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None);
+    let request = responses
+        .decode_client_request(
+            br#"{"model":"m","input":[
+        {"type":"message","id":"msg_3","role":"assistant","status":"completed",
+            "content":[{"type":"output_text","text":"A","annotations":[]}]},
+        {"role":"user","content":"next"},
+        {"role":"assistant","content":"B"},
+        {"role":"user","content":"continue"}]}"#,
+        )
+        .unwrap();
+    let before = request.clone();
+    let chat = GenerationCodec::new(GenerationApi::Chat, Dialect::Standard, None)
+        .encode_request(&request, "m", &Contract::full())
+        .unwrap();
+    assert_eq!(chat["messages"][0]["content"], "A");
+    assert_eq!(chat["messages"][2]["content"], "B");
+    assert!(
+        responses
+            .encode_request(&request, "m", &Contract::full())
+            .is_err()
+    );
+    assert_eq!(request, before);
+}
+
+#[test]
 fn luna_strict_namespaced_tools_reach_native_subscription_and_router_writers() {
     use morphiecore::topology::{
         GenerationProtocol,
@@ -643,17 +703,18 @@ fn unversioned_readable_views_are_closed_and_never_restore_deleted_reasoning() {
 }
 
 #[test]
-fn queued_creation_cannot_mask_missing_progress_or_relax_standard_events() {
+fn queued_creation_requires_real_progress_and_complete_opening() {
     let provider = GenerationCodec::new(GenerationApi::Responses, Dialect::Bailian, None);
     let source = crate::wire::events(2);
     let mut queued = source[0].clone();
     queued["response"]["status"] = json!("queued");
-    assert!(
-        GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None)
-            .event_decoder()
-            .push(&queued)
-            .is_err()
+    let mut standard =
+        GenerationCodec::new(GenerationApi::Responses, Dialect::Standard, None).event_decoder();
+    assert_eq!(
+        standard.push(&queued).unwrap(),
+        [morphiecore::semantic::task::generation::StreamEvent::Queued]
     );
+    assert!(standard.finish().is_err());
     for next in [
         queued.clone(),
         source[0].clone(),
@@ -733,6 +794,82 @@ fn reasoning_event_alias_rejects_incomplete_or_conflicting_summary_snapshots() {
         assert!(decoder.finish().is_err());
         assert!(decoder.materialize().is_err());
     }
+}
+
+#[test]
+fn reasoning_event_alias_cannot_reclassify_content_snapshots_as_summary() {
+    use morphiecore::protocol::{CodecError, failure::ShapeReason};
+    use morphiecore::semantic::task::generation::Item;
+    let (_, mut events) = summary_alias_fixture();
+    let content = json!([{"type":"reasoning_text","text":"brief"}]);
+    events[4]["item"]["summary"] = json!([]);
+    events[4]["item"]["content"] = content.clone();
+    let terminal = events.last_mut().unwrap();
+    terminal["response"]["output"][0]["summary"] = json!([]);
+    terminal["response"]["output"][0]["content"] = content;
+
+    let provider = GenerationCodec::new(GenerationApi::Responses, Dialect::Bailian, None);
+    let mut decoder = provider.event_decoder();
+    for event in &events[..4] {
+        decoder.push(event).unwrap();
+    }
+    assert!(matches!(
+        decoder.push(&events[4]),
+        Err(CodecError::Invalid(ShapeReason::SnapshotSummary))
+    ));
+    assert!(decoder.materialize().is_err());
+
+    let endpoint = morphiecore::topology::catalog::API_KEY_BINDINGS
+        .iter()
+        .find(|binding| binding.endpoint_prefix == "dashscope-deepseek")
+        .unwrap()
+        .endpoint(morphiecore::topology::GenerationProtocol::OpenAiResponses)
+        .unwrap();
+    let morphiecore::adapter::UpstreamAdapter::OpenAi(content_provider) =
+        endpoint.adapter().unwrap()
+    else {
+        panic!("Responses adapter")
+    };
+    let mut decoder = content_provider.event_decoder();
+    for event in events {
+        decoder.push(&event).unwrap();
+    }
+    decoder.finish().unwrap();
+    let response = decoder.materialize().unwrap();
+    let Item::Reasoning(reasoning) = &response.semantic.items()[0].1 else {
+        panic!("reasoning owner")
+    };
+    assert!(matches!(
+        &reasoning.parts[0].1,
+        morphiecore::semantic::task::generation::ReasoningContent::Text(text)
+            if text.as_str() == "brief"
+    ));
+    let endpoint = morphiecore::topology::catalog::API_KEY_BINDINGS
+        .iter()
+        .find(|binding| binding.endpoint_prefix == "dashscope-flash")
+        .unwrap()
+        .endpoint(morphiecore::topology::GenerationProtocol::OpenAiResponses)
+        .unwrap();
+    let morphiecore::adapter::UpstreamAdapter::OpenAi(summary_provider) =
+        endpoint.adapter().unwrap()
+    else {
+        panic!("Responses adapter")
+    };
+    let (_, events) = summary_alias_fixture();
+    let mut decoder = summary_provider.event_decoder();
+    for event in events {
+        decoder.push(&event).unwrap();
+    }
+    decoder.finish().unwrap();
+    let response = decoder.materialize().unwrap();
+    let Item::Reasoning(reasoning) = &response.semantic.items()[0].1 else {
+        panic!("reasoning owner")
+    };
+    assert!(matches!(
+        &reasoning.parts[0].1,
+        morphiecore::semantic::task::generation::ReasoningContent::Summary(text)
+            if text.as_str() == "brief"
+    ));
 }
 
 #[test]

@@ -290,14 +290,14 @@ fn independent_semantic_events_encode_native_subscription_sse() {
             .flat_map(|event| encoder.encode(event, &FidelityRecords::default()).unwrap())
             .collect::<Vec<_>>();
         encoder.finish().unwrap();
-        let expected = json!({"id":"item_1","type":"message","role":"assistant","phase":"final_answer",
+        let expected = json!({"id":"msg_1","type":"message","role":"assistant","phase":"final_answer",
                 "status":"completed","content":[{"type":"output_text","text":"done 🧪","annotations":[]}]});
         let delta = values
             .iter()
             .find(|e| e["type"] == "response.output_text.delta")
             .unwrap();
         assert_eq!(delta["delta"], "done 🧪");
-        assert_eq!(delta["item_id"], "item_1");
+        assert_eq!(delta["item_id"], "msg_1");
         let terminal = &values.last().unwrap()["response"];
         assert_eq!(terminal["output"], json!([expected]));
         assert_eq!(terminal["status"], "completed");

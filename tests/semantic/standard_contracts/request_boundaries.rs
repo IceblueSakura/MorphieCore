@@ -359,7 +359,7 @@ fn responses_history_uses_complete_standard_union_shapes() {
         .encode_request(&request, "m", &TargetContract::full())
         .unwrap()["input"][0];
     assert_eq!(item["status"], "completed");
-    assert_eq!(item["id"], "item_1");
+    assert_eq!(item["id"], "msg_1");
     assert_eq!(
         item["content"],
         json!([{"type":"output_text","text":"A","annotations":[]}])

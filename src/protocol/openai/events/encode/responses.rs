@@ -90,18 +90,22 @@ impl EventEncoder {
                 return Err(CodecError::Unsupported(CarrierReason::Unavailable));
             }
             StreamEvent::Queued => {
-                vec![json!({"type":"response.queued","response":self.envelope("queued",vec![])?})]
+                vec![json!({"type":"response.created","response":self.envelope("queued",vec![])?})]
             }
-            StreamEvent::Started => vec![
-                json!({
-                    "type": "response.created",
-                    "response": self.envelope("in_progress", vec![])?,
-                }),
-                json!({
+            StreamEvent::Started => {
+                let mut values = vec![];
+                if self.sequence == 0 {
+                    values.push(json!({
+                        "type": "response.created",
+                        "response": self.envelope("in_progress", vec![])?,
+                    }));
+                }
+                values.push(json!({
                     "type": "response.in_progress",
                     "response": self.envelope("in_progress", vec![])?,
-                }),
-            ],
+                }));
+                values
+            }
             StreamEvent::ItemStarted { item, kind, replay } => {
                 let id = self
                     .fidelity

@@ -169,7 +169,7 @@ pub(crate) fn validate_response(
     {
         return Err(RepresentationError::Metadata);
     }
-    validate_wire_ids(r.items(), fidelity, true)?;
+    validate_wire_ids(r.items(), fidelity, true, profile)?;
     Ok(())
 }
 /// Explicit normalization: a contiguous run of independent calls is one Chat call message.

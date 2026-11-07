@@ -158,6 +158,14 @@ impl ApiKeyBinding {
         };
         let scope = crate::protocol::replay_envelope::issuer(provider.id.as_str(), self.upstream);
         let mut adapter = GenerationCodec::new(family, self.dialect, Some(scope.clone()));
+        // This binding emits reasoning_text in reasoning.content, unlike the
+        // Qwen summary alias. Keep the event and final snapshot domains equal.
+        if self.dialect == Dialect::Bailian
+            && family == crate::protocol::openai::GenerationApi::Responses
+            && self.upstream == "deepseek-v4.1-flash-1017"
+        {
+            adapter.adaptation.rules.responses_summary_text_alias = false;
+        }
         // This hosted model's published Chat contract permits one initial string
         // system message. Do not extend it to Responses or other NVIDIA models.
         // https://docs.api.nvidia.com/nim/reference/nvidia-nemotron-3-super-120b-a12b-infer

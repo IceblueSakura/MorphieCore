@@ -588,6 +588,12 @@ impl<'a> Target<'a> {
                 );
             }
         }
+        if matches!(self, Self::GenerateContent(_) | Self::Interactions(_)) {
+            table.set(
+                ToolChanges,
+                Disposition::Approximate(super::disposition::TOOL_CHANGES),
+            );
+        }
         self.presentation_rows(source.settings(), &mut table);
         table.set(
             Effort,
@@ -696,9 +702,7 @@ impl<'a> Target<'a> {
         }
         table.set(
             Feature::MessageEffort,
-            if matches!(self, Self::GenerateContent(_) | Self::Interactions(_)) {
-                Disposition::Reject("ordered configuration projection to Google is not selected")
-            } else if self.retains_configuration(source) {
+            if self.retains_configuration(source) {
                 Disposition::Native
             } else {
                 Disposition::Approximate(super::disposition::CONFIGURATION)
@@ -1172,14 +1176,6 @@ fn project_semantic_with_table<'a>(
         evidence.extend(groups.evidence);
     }
     if !target.retains_configuration(source) || !original.configuration_timing_matches(source) {
-        if matches!(target, Target::GenerateContent(_) | Target::Interactions(_)) {
-            return Err(
-                crate::protocol::conversion::generation::RepresentationError::Admission(
-                    Feature::MessageEffort,
-                )
-                .into(),
-            );
-        }
         // Carrier-dependent history omission cannot redefine source timing.
         // Even a native marker must collapse if its activation interval changed.
         let resolved = original.resolved_configuration().active;
@@ -1758,9 +1754,7 @@ fn project_semantic_with_table<'a>(
             .into(),
         );
     }
-    if ordered && matches!(target, Target::OpenAi(_, _) | Target::Messages(_))
-        || matches!(target, Target::Messages(_)) && allowed_choice
-    {
+    if ordered || matches!(target, Target::Messages(_)) && allowed_choice {
         let carrier = match target {
             Target::OpenAi(GenerationApi::Chat, _) => super::tool_set::OrderedCarrier::None,
             Target::OpenAi(GenerationApi::Responses, _) => super::tool_set::OrderedCarrier::Batches,

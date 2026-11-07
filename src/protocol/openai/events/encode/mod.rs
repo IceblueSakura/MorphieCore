@@ -138,11 +138,20 @@ impl EventEncoder {
                 boundary: crate::protocol::conversion::generation::ConversionBoundary::EventProject,
                 cause,
             })?;
-            if let StreamEvent::ItemStarted { item, .. } = event {
+            if let StreamEvent::ItemStarted { item, kind, .. } = event {
                 let id = source
                     .response_item_id(*item)
                     .map(str::to_owned)
-                    .unwrap_or_else(|| crate::protocol::fidelity::generated_item_id(*item));
+                    .unwrap_or_else(|| {
+                        crate::protocol::fidelity::generated_item_id(
+                            *item,
+                            if matches!(kind, ItemKind::Message { .. }) {
+                                "msg"
+                            } else {
+                                "item"
+                            },
+                        )
+                    });
                 if self
                     .state()?
                     .items()

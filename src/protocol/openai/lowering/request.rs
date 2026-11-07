@@ -227,7 +227,7 @@ pub(crate) fn render_request<'a>(
             return Err(RepresentationError::TextMetadata);
         }
     }
-    validate_wire_ids(r.items(), fidelity, false)?;
+    validate_wire_ids(r.items(), fidelity, false, profile)?;
     Ok(RequestRepresentation {
         adaptation: c.adaptation,
         semantic,

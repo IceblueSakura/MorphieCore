@@ -940,7 +940,14 @@ pub(in crate::protocol::openai) fn encode_items(
                 fidelity
                     .response_item_id(*id)
                     .map(str::to_owned)
-                    .unwrap_or_else(|| crate::protocol::fidelity::generated_item_id(*id))
+                    .unwrap_or_else(|| crate::protocol::fidelity::generated_item_id(
+                        *id,
+                        if matches!(item, Item::Message(_) | Item::Instruction(_)) {
+                            "msg"
+                        } else {
+                            "item"
+                        }
+                    ))
             );
             if let Some(s) = item.lifecycle() {
                 v["status"] = json!(status_label(s));
@@ -963,7 +970,14 @@ pub(in crate::protocol::openai) fn encode_items(
             ) {
                 // Typed snapshots require identity; fresh task items assign it. An input
                 // instruction message has no `id` field, so none is minted for it.
-                v["id"] = json!(crate::protocol::fidelity::generated_item_id(*id));
+                v["id"] = json!(crate::protocol::fidelity::generated_item_id(
+                    *id,
+                    if matches!(item, Item::Message(_) | Item::Instruction(_)) {
+                        "msg"
+                    } else {
+                        "item"
+                    }
+                ));
             }
             if item.lifecycle().is_some_and(|s| {
                 s != ItemLifecycle::Completed

@@ -185,7 +185,6 @@ impl Dialect {
                     responses_billing_view: true,
                     responses_text_usage: true,
                     responses_image_usage: true,
-                    responses_queued_creation: true,
                     responses_summary_text_alias: true,
                     ..Default::default()
                 },

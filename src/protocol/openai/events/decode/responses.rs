@@ -122,8 +122,7 @@ impl EventDecoder {
                 event_fields(o, &["type", "response"])?;
                 let r = object(o.get("response").ok_or(CodecError::invalid())?)?;
                 crate::protocol::openai::responses::envelope::response_fields(r)?;
-                let queued_creation = self.adaptation.rules.responses_queued_creation
-                    && typ == "response.created"
+                let queued_creation = typ == "response.created"
                     && r.get("status").and_then(Value::as_str) == Some("queued");
                 let initial_status = if typ == "response.queued" || queued_creation {
                     "queued"
@@ -1082,7 +1081,12 @@ impl EventDecoder {
             normalized[0]["created_by"] = actor.clone();
         }
         if normalized.first() != Some(&expected) {
-            return Err(CodecError::Invalid(ShapeReason::ItemSnapshot));
+            // Classify only: terminal comparison permits a completed replay
+            // refresh, while item-done snapshots must still agree exactly.
+            let reason = verify_terminal_snapshot(&normalized, &[expected])
+                .err()
+                .unwrap_or(ShapeReason::ItemSnapshot);
+            return Err(CodecError::Invalid(reason));
         }
         Ok(())
     }

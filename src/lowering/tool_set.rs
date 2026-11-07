@@ -13,7 +13,7 @@ use std::{
 /// Which ordered-declaration carrier the target can express.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum OrderedCarrier {
-    /// Chat has no ordered declaration carrier; only the effective set fits.
+    /// Targets without ordered declarations carry only the effective set.
     None,
     /// Responses carries developer batches; by-value replacement changes are
     /// native only as pure additions.

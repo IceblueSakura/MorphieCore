@@ -50,6 +50,10 @@ pub fn batch_snapshot(turn: usize) -> Value {
 }
 pub fn batch_events(turn: usize) -> Vec<Value> {
     let mut values = events(turn);
+    let mut queued = values[0].clone();
+    queued["response"]["status"] = json!("queued");
+    values[0]["type"] = json!("response.in_progress");
+    values.insert(0, queued);
     if turn == 1 {
         let terminal = values.pop().unwrap();
         let mut opening = returned_batch();

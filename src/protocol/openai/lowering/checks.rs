@@ -470,9 +470,10 @@ pub(super) fn validate_wire_ids(
     items: &[(ItemId, Item)],
     fidelity: &FidelityRecords,
     generate: bool,
+    profile: GenerationApi,
 ) -> Result<(), RepresentationError> {
     fidelity
-        .check_wire_item_ids(items, generate)
+        .check_wire_item_ids(items, generate, profile)
         .map_err(|_| RepresentationError::Metadata)
 }
 pub(super) fn check_tool_selection(choice: Option<&ToolChoice>) -> Result<(), RepresentationError> {

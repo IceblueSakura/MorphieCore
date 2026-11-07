@@ -285,7 +285,7 @@ fn google_scope_mapping_approximates_levels_without_weakening_activation_or_hist
                 .decode_client_request(body.to_string().as_bytes())
                 .is_ok()
         );
-        // Public admission does not activate ordered Google projections.
+        // Source-timed controls collapse only on the candidate copy.
         let decoded = morphiecore::protocol::anthropic::messages::Profile::AdaptiveTextTools
             .decode_generation_request(
                 body.to_string().as_bytes(),
@@ -304,10 +304,152 @@ fn google_scope_mapping_approximates_levels_without_weakening_activation_or_hist
                 .any(|(_, item)| matches!(item, Item::ConfigurationUpdate(_)))
         );
         assert!(morphiecore::execution::admit(&binding.public_model(), &request).is_ok());
+        let (wire, rules) = projected(&endpoint, &request);
+        assert!(rules.contains(&"generation.collapse-configuration.v1"));
+        assert!(rules.contains(&"generation.configuration-prefix-change.v1"));
+        if endpoint.protocol == morphiecore::topology::GenerationProtocol::GoogleGenerateContent {
+            assert_eq!(
+                wire["generationConfig"]["thinkingConfig"]["thinkingLevel"],
+                "LOW"
+            );
+        } else {
+            assert_eq!(wire["generation_config"]["thinking_level"], "low");
+        }
+    }
+}
+
+#[test]
+fn google_ordered_effort_uses_source_activation_not_the_last_marker() {
+    let binding = &GOOGLE_BINDINGS[0];
+    let body = json!({"model":binding.model,"max_tokens":2048,
+    "output_config":{"effort":"low"},
+    "tools":[{"name":"read","input_schema":{"type":"object"}}],
+    "messages":[
+        {"role":"user","content":"read"},
+        {"role":"system","content":"","output_config":{"effort":"medium"}},
+        {"role":"assistant","content":[{"type":"tool_use","id":"call","name":"read","input":{}}]},
+        {"role":"user","content":[{"type":"tool_result","tool_use_id":"call","content":"result"}]},
+        {"role":"system","content":"","output_config":{"effort":"high"}}
+    ]});
+    for next_input in [false, true] {
+        let mut body = body.clone();
+        if next_input {
+            body["messages"].as_array_mut().unwrap().extend([
+                json!({"role":"assistant","content":"done"}),
+                json!({"role":"user","content":"next"}),
+            ]);
+        }
+        let request = messages(body);
+        for endpoint in [binding.endpoint(), binding.interactions_endpoint()] {
+            let (wire, rules) = projected(&endpoint, &request);
+            assert!(rules.contains(&"generation.collapse-configuration.v1"));
+            assert!(rules.contains(&"generation.configuration-prefix-change.v1"));
+            if endpoint.protocol == morphiecore::topology::GenerationProtocol::GoogleGenerateContent
+            {
+                assert_eq!(
+                    wire["generationConfig"]["thinkingConfig"]["thinkingLevel"],
+                    if next_input { "HIGH" } else { "MEDIUM" }
+                );
+                assert_eq!(
+                    wire["contents"].as_array().unwrap().len(),
+                    if next_input { 5 } else { 3 }
+                );
+            } else {
+                assert_eq!(
+                    wire["generation_config"]["thinking_level"],
+                    if next_input { "high" } else { "medium" }
+                );
+                assert_eq!(
+                    wire["input"].as_array().unwrap().len(),
+                    if next_input { 5 } else { 3 }
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn google_effective_tools_preserve_old_calls_and_explicit_guarantees() {
+    let binding = &GOOGLE_BINDINGS[0];
+    let old = json!({"type":"object","properties":{"old":{"type":"integer"}},
+        "required":["old"],"additionalProperties":false});
+    let current = json!({"type":"object","properties":{"new":{"type":"string"}},
+        "required":["new"],"additionalProperties":false});
+    let body = json!({"model":binding.model,"max_tokens":2048,
+    "tools":[{"name":"f","input_schema":old}],
+    "messages":[
+        {"role":"user","content":"go"},
+        {"role":"assistant","content":[{"type":"tool_use","id":"call","name":"f","input":{"old":1}}]},
+        {"role":"user","content":[{"type":"tool_result","tool_use_id":"call","content":"ok"}]},
+        {"role":"assistant","content":"done"},
+        {"role":"user","content":"again"},
+        {"role":"system","content":[{"type":"tool_addition","tool":{"type":"tool_definition",
+            "definition":{"name":"f","input_schema":current}}}]}
+    ]});
+    for endpoint in [binding.endpoint(), binding.interactions_endpoint()] {
+        let (wire, rules) = projected(&endpoint, &messages(body.clone()));
+        assert!(rules.contains(&"generation.collapse-tool-set.v1"));
+        if endpoint.protocol == morphiecore::topology::GenerationProtocol::GoogleGenerateContent {
+            assert_eq!(
+                wire["tools"],
+                json!([{"functionDeclarations":[{"name":"f","parametersJsonSchema":current}]}])
+            );
+            assert_eq!(
+                wire["contents"][1]["parts"][0]["functionCall"]["args"],
+                json!({"old":1})
+            );
+            assert_eq!(
+                wire["contents"][2]["parts"][0]["functionResponse"]["name"],
+                "f"
+            );
+        } else {
+            assert_eq!(
+                wire["tools"],
+                json!([{"type":"function","name":"f","parameters":current}])
+            );
+            assert_eq!(wire["input"][1]["arguments"], json!({"old":1}));
+            assert_eq!(wire["input"][2]["call_id"], "call");
+        }
+        let mut strict = body.clone();
+        strict["messages"][5]["content"][0]["tool"]["definition"]["strict"] = json!(true);
         assert_eq!(
-            representable(&endpoint, &request),
-            Err(RejectionReason::Semantic(Feature::MessageEffort))
+            representable(&endpoint, &messages(strict)),
+            Err(RejectionReason::Semantic(Feature::StrictTools))
         );
+        let mut serial = body.clone();
+        serial["tool_choice"] = json!({"type":"auto","disable_parallel_tool_use":true});
+        assert!(representable(&endpoint, &messages(serial)).is_err());
+    }
+
+    let deferred = messages(json!({"model":binding.model,"max_tokens":2048,
+        "tool_choice":{"type":"tool","name":"ls"},
+        "tools":[{"name":"read","input_schema":{"type":"object"}},
+            {"name":"ls","input_schema":{"type":"object"},"defer_loading":true}],
+        "messages":[{"role":"user","content":"go"},
+            {"role":"system","content":[
+                {"type":"tool_removal","tool":{"type":"tool_reference","name":"read"}},
+                {"type":"tool_addition","tool":{"type":"tool_reference","name":"ls"}}]}]}));
+    for endpoint in [binding.endpoint(), binding.interactions_endpoint()] {
+        let (wire, _) = projected(&endpoint, &deferred);
+        if endpoint.protocol == morphiecore::topology::GenerationProtocol::GoogleGenerateContent {
+            assert_eq!(
+                wire["tools"],
+                json!([{"functionDeclarations":[{"name":"ls","parametersJsonSchema":{"type":"object"}}]}])
+            );
+            assert_eq!(
+                wire["toolConfig"]["functionCallingConfig"],
+                json!({"mode":"ANY","allowedFunctionNames":["ls"]})
+            );
+        } else {
+            assert_eq!(
+                wire["tools"],
+                json!([{"type":"function","name":"ls","parameters":{"type":"object"}}])
+            );
+            assert_eq!(
+                wire["generation_config"]["tool_choice"],
+                json!({"allowed_tools":{"mode":"any","tools":["ls"]}})
+            );
+        }
     }
 }
 

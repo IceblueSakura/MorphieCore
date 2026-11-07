@@ -145,7 +145,7 @@ pub fn encode(target: &ResponseRepresentation<'_>) -> Result<Value, CodecError> 
     };
     target
         .fidelity
-        .check_wire_item_ids(target.semantic.items(), true)?;
+        .check_wire_item_ids(target.semantic.items(), true, GenerationApi::Responses)?;
     check_message_carriers(
         target.semantic.items(),
         target.semantic.message_envelopes(),

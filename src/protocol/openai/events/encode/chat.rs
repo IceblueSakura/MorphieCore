@@ -232,7 +232,7 @@ impl EventEncoder {
                     .fidelity
                     .response_item_id(*item)
                     .map(str::to_owned)
-                    .unwrap_or_else(|| crate::protocol::fidelity::generated_item_id(*item));
+                    .unwrap_or_else(|| crate::protocol::fidelity::generated_item_id(*item, "item"));
                 let detail = json!({
                     "type": "reasoning.encrypted",
                     "data": replay.value.as_str(),

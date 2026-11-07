@@ -154,7 +154,7 @@ pub fn encode(target: &ResponseRepresentation<'_>) -> Result<Value, CodecError> 
     check_item_carriers(target.semantic.items())?;
     target
         .fidelity
-        .check_wire_item_ids(target.semantic.items(), true)?;
+        .check_wire_item_ids(target.semantic.items(), true, GenerationApi::Chat)?;
     let finish = chat_finish(&target.semantic)?;
     check_message_carriers(
         target.semantic.items(),

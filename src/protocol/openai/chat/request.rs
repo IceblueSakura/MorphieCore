@@ -262,7 +262,7 @@ pub fn encode_generation(target: &RequestRepresentation<'_>) -> Result<Value, Co
     )?;
     target
         .fidelity
-        .check_wire_item_ids(target.semantic.items(), false)?;
+        .check_wire_item_ids(target.semantic.items(), false, GenerationApi::Chat)?;
     let unrepresentable_result = |item: &Item| match item {
         Item::ToolResult(result) | Item::CustomResult(result) => {
             result.execution.is_some() || result.is_error.is_some() || !result.output.is_text_only()

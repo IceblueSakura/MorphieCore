@@ -16,11 +16,11 @@ use serde_json::{Map, Value};
 use std::collections::BTreeMap;
 const RESPONSE_EXTRAS_BUDGET: usize = 4096;
 /// Outgoing carrier identity, not an upstream-reported fact or persistent key.
-pub(crate) fn generated_item_id(owner: ItemId) -> String {
+pub(crate) fn generated_item_id(owner: ItemId, prefix: &str) -> String {
     if owner.scope() == LocalScope::ROOT {
-        format!("item_{}", owner.get())
+        format!("{prefix}_{}", owner.get())
     } else {
-        format!("item_{}_{}", owner.scope().get(), owner.get())
+        format!("{prefix}_{}_{}", owner.scope().get(), owner.get())
     }
 }
 pub(crate) const RESPONSE_EXTRA_FIELDS: &[&str] =
@@ -232,19 +232,39 @@ impl FidelityRecords {
         &self,
         items: &[(ItemId, Item)],
         response: bool,
+        profile: GenerationApi,
     ) -> Result<(), CodecError> {
         let mut aliases = std::collections::BTreeSet::new();
         for (owner, item) in items {
-            let generated = response
+            let generated = (response
                 || matches!(
                     item,
-                    Item::Reasoning(_) | Item::Program(_) | Item::ProgramOutput(_)
+                    Item::Reasoning(_)
+                        | Item::Program(_)
+                        | Item::ProgramOutput(_)
+                        | Item::Message(Message {
+                            role: MessageRole::Assistant,
+                            ..
+                        })
                 )
-                || matches!(item, Item::Instruction(instruction) if instruction.status.is_some());
+                || matches!(item, Item::Instruction(instruction) if instruction.status.is_some()))
+                && (profile == GenerationApi::Responses
+                    || !matches!(item, Item::Message(_) | Item::Instruction(_)));
             let alias = self
                 .response_item_id(*owner)
                 .map(str::to_owned)
-                .or_else(|| generated.then(|| generated_item_id(*owner)));
+                .or_else(|| {
+                    generated.then(|| {
+                        generated_item_id(
+                            *owner,
+                            if matches!(item, Item::Message(_) | Item::Instruction(_)) {
+                                "msg"
+                            } else {
+                                "item"
+                            },
+                        )
+                    })
+                });
             if alias.is_some_and(|alias| !aliases.insert(alias)) {
                 return Err(CodecError::invalid());
             }

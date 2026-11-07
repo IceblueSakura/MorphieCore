@@ -15,7 +15,10 @@ use crate::{
         openai::obfuscation::Obfuscation,
         stream::SseLimits,
     },
-    semantic::{context::StreamOptions, task::generation::StreamEvent},
+    semantic::{
+        context::StreamOptions,
+        task::generation::{Item, ItemKind, StreamEvent},
+    },
 };
 use bytes::Bytes;
 pub use coalescing::DeltaCoalescing;
@@ -28,6 +31,7 @@ fn delivery_item_id(
     model: &str,
     response: &str,
     owner: crate::semantic::task::generation::ItemId,
+    prefix: &str,
 ) -> String {
     let mut hash = Sha256::new();
     for value in [model, response] {
@@ -41,7 +45,7 @@ fn delivery_item_id(
         .collect();
     format!(
         "{}_{digest}",
-        crate::protocol::fidelity::generated_item_id(owner)
+        crate::protocol::fidelity::generated_item_id(owner, prefix)
     )
 }
 
@@ -407,7 +411,7 @@ impl ResponseDelivery {
             &crate::protocol::replay_envelope::CLIENT_ORIGIN,
         )?;
         if self.client.protocol() == ClientProtocol::Responses || attempt.is_native() {
-            for (owner, _) in decoded.semantic.items() {
+            for (owner, item) in decoded.semantic.items() {
                 if decoded.fidelity.response_item_id(*owner).is_none() {
                     decoded.fidelity.record_response_item_id(
                         *owner,
@@ -415,6 +419,11 @@ impl ResponseDelivery {
                             &self.public_label,
                             decoded.metadata.required_id()?,
                             *owner,
+                            if matches!(item, Item::Message(_) | Item::Instruction(_)) {
+                                "msg"
+                            } else {
+                                "item"
+                            },
                         ),
                     )?;
                 }
@@ -829,13 +838,18 @@ impl ResponseDelivery {
             && (self.client.protocol() == ClientProtocol::Responses || attempt.is_native())
         {
             for event in events {
-                if let StreamEvent::ItemStarted { item, .. } = event
+                if let StreamEvent::ItemStarted { item, kind, .. } = event
                     && context.fidelity.response_item_id(*item).is_none()
                 {
                     let id = delivery_item_id(
                         &self.public_label,
                         context.metadata.required_id()?,
                         *item,
+                        if matches!(kind, ItemKind::Message { .. }) {
+                            "msg"
+                        } else {
+                            "item"
+                        },
                     );
                     let context = Arc::make_mut(&mut context);
                     context.accounted_bytes = Default::default();

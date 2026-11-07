@@ -83,6 +83,21 @@ fn omitted_assistant_reasoning_keeps_source_effort_timing_across_targets_and_app
         let rules = projected.evidence.rule_names();
         assert!(rules.contains(&"generation.collapse-configuration.v1"));
         assert!(rules.contains(&"generation.configuration-prefix-change.v1"));
+        let binding = &morphiecore::topology::catalog::GOOGLE_BINDINGS[0];
+        for endpoint in [binding.endpoint(), binding.interactions_endpoint()] {
+            let (wire, rules) = endpoint.encode_request_with_rules(&request).unwrap();
+            assert!(rules.contains(&"generation.collapse-configuration.v1"));
+            assert!(rules.contains(&"generation.configuration-prefix-change.v1"));
+            if endpoint.protocol == morphiecore::topology::GenerationProtocol::GoogleGenerateContent
+            {
+                assert_eq!(
+                    wire["generationConfig"]["thinkingConfig"]["thinkingLevel"],
+                    if continued { "HIGH" } else { "LOW" }
+                );
+            } else {
+                assert_eq!(wire["generation_config"]["thinking_level"], expected);
+            }
+        }
         assert_eq!(request, before);
     }
 }

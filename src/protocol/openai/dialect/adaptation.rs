@@ -141,9 +141,6 @@ pub struct WireRules {
     /// Explicit typed text-token positions beyond the fixed Responses schema.
     /// MorphieCore uses canonical detail slots; billing-view profiles own their wire.
     pub responses_text_usage: bool,
-    /// A created/queued snapshot emits Queued, not Started. Only a subsequent
-    /// in_progress event starts it; absent progress cannot be synthesized.
-    pub responses_queued_creation: bool,
     /// This wire names summary deltas/done reasoning_text and indexes them by
     /// content_index. Preserve Summary semantics and validate final snapshots.
     /// Source: <https://help.aliyun.com/zh/model-studio/qwen-api-via-openai-responses>.

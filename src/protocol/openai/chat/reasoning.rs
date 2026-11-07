@@ -348,7 +348,7 @@ fn wire(id: ItemId, item: &ReasoningItem, fidelity: &FidelityRecords, details: &
         let wire_id = fidelity
             .response_item_id(id)
             .map(str::to_owned)
-            .unwrap_or_else(|| crate::protocol::fidelity::generated_item_id(id));
+            .unwrap_or_else(|| crate::protocol::fidelity::generated_item_id(id, "item"));
         details.push(json!({
             "format": "openai-responses-v1",
             "index": details.len(),
