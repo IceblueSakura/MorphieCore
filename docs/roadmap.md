@@ -132,7 +132,7 @@ Risks that change execution: unavailable compatible accounts, no returned replay
 
 ### Concentrated repair plan
 
-**Revised with the user on 2026-11-07.** The first three priority slices are complete within the [recorded verification scope](ar5-review.md#priority-repair-verification-2026-11-07); their accepted behavior belongs to Architecture. The user explicitly deferred changed-profile real Provider rechecks. Prefer existing conversion/projection owners and stream reducers for the remaining work; no new capability framework, replay store, retry layer or diagnostic platform is planned.
+**Revised with the user on 2026-11-07.** The first three priority slices are complete within the [recorded verification scope](ar5-review.md#priority-repair-verification-2026-11-07); their accepted behavior belongs to Architecture. The subsequently requested [real Provider recheck](ar5-review.md#real-provider-recheck) passes selected DeepSeek small-cap/off, Haiku truncated-tool/persisted-session recovery and native Luna/Qwen strict workflows. The DeepSeek profile remains opt-in; deployment and workstation declarations remain operator-managed. Prefer existing conversion/projection owners and stream reducers for the remaining work; no new capability framework, replay store, retry layer or diagnostic platform is planned.
 
 Only the remaining bounded extensions are listed. Complete a clear, locally supported mapping or carry its unresolved portion forward without delaying delivered work. Investigation for one slice must not gate the others.
 
@@ -149,7 +149,6 @@ These entries are deferred investigation or activation scope, not failed prerequ
 
 | Observations | Retained boundary and next action |
 |---|---|
-| **Changed-profile real acceptance — R05/R11/R15/R17/R20** | User-selected deferral after the default account path failed project-CLI validation. Recheck small-cap/off DeepSeek JSON/SSE, current-pi Haiku tool-limit recovery and affected Luna/Qwen strict workflows through the project loader once explicit account/store paths are available. No new Provider request was sent for this repair delivery. The shipped pi profile is opt-in; workstation-generated declarations and deployment remain operator-managed. |
 | **R02; unresolved R01/R05/R06 portions** | Keep managed Google continuation available. Stateless part/call signatures need a selected client-retainable carrier; do not discard attachments or fabricate reasoning owners. Revisit the profile/ordered-projection decisions independently of other Generation work. |
 | **R03/R14/R19** | Unknown Luna rejected field, intermittent recovery decoder failure and the remaining Bailian response rejection need a precise field/event boundary. R19 already has schema-alias handling: add a successful directional control and isolate the remaining shape before changing it. Existing native Luna/Haiku and Qwen workflows retain their recorded scope. |
 | **R07** | Qualify the current OpenCode public-label declaration and full redacted client error before changing gateway model routing; the canonical-label workflow is already available. |
