@@ -57,7 +57,7 @@ This page owns current scope, priorities, dependencies, and exit gates. [Archite
 
 ## Current status
 
-**Current focus (2026-11-07):** The first [pi-first real-Agent scenario sweep](#pre-stage-4-real-agent-scenario-sweep) and [targeted follow-up](ar5-review.md#targeted-follow-up-2026-11-07) have collected real workflow evidence and narrowed admission, output-control, tool-selection and stream-closure observations. Remaining work is joint review of findings and missing prerequisites, then selected concentrated root-cause repairs and affected-loop rechecks. Grok's user-approved device reauthorization expired; supplementary testing still needs completed interactive authorization. AR5 and Stage 4 remain gated.
+**Current focus (2026-11-07):** The first [pi-first real-Agent scenario sweep](#pre-stage-4-real-agent-scenario-sweep), [targeted follow-up](ar5-review.md#targeted-follow-up-2026-11-07) and post-authorization [Grok sweep](ar5-review.md#grok-supplementary-coverage-2026-11-07) have collected real workflow evidence and narrowed admission, output-control, tool-selection and stream-closure observations. Grok thinking, coding and summary loops pass; recovery-content assertions and their fresh-context controls remain R21 observations. Remaining work is joint review of findings and missing prerequisites, then selected concentrated root-cause repairs and affected-loop rechecks. AR5 and Stage 4 remain gated.
 
 | Priority | Remaining work | Exit |
 |---|---|---|
