@@ -9,7 +9,7 @@ This page owns current scope, priorities, dependencies, and exit gates. [Archite
   - [Remaining observation dispositions](#remaining-observation-dispositions)
     - [Scoped limitations](#scoped-limitations)
     - [Next-stage analysis](#next-stage-analysis)
-    - [Paused Provider and model observations](#paused-provider-and-model-observations)
+    - [Reopened Provider and model observations](#reopened-provider-and-model-observations)
     - [Partial-delivery exit](#partial-delivery-exit)
 - [Deferred protocol follow-ups](#deferred-protocol-follow-ups)
   - [Endpoint qualification and emitter follow-ups](#endpoint-qualification-and-emitter-follow-ups)
@@ -54,23 +54,23 @@ This page owns current scope, priorities, dependencies, and exit gates. [Archite
 
 ## Current status
 
-**Current focus (2026-11-07):** Select the next [Stage-4 operation contracts](#stage-4-scope). Retain the [scoped limitations](#scoped-limitations), **R09** prerequisites and paused **R13/R18/R19/R21** without making them a new all-observations closure gate. [AR5 Review](ar5-review.md) owns observations and passing evidence; production activation remains separately approved.
+**Current focus (2026-11-08):** Reopen AR5 follow-up analysis, including **R13/R18/R19/R21**, and retain selection of the next [Stage-4 operation contracts](#stage-4-scope). Inventory the remaining boundaries before selecting bounded investigations or repairs. The [scoped limitations](#scoped-limitations), **R09** prerequisites and [partial-delivery exit](#partial-delivery-exit) remain; closing every observation is not a new gate. [AR5 Review](ar5-review.md) owns observations and passing evidence; production activation remains separately approved.
 
 | Priority | Remaining work | Exit |
 |---|---|---|
 | Conditional tool follow-ups | [S3-T5–S3-T7](#conditional-stage-3-follow-ups): namespace aliases, custom-text wrappers and examples projection | Separate policy selection and full affected-loop acceptance; not default prerequisites for Stage 4 |
-| Optional Agent qualification | Qualify a remaining dependent profile only when selected | Preserve its explicit guarantees, replay guards and prerequisites |
+| AR5 follow-ups | Reopened observation inventory; select bounded investigations, repairs or dependent-profile qualification | Preserve explicit guarantees, replay guards, prerequisites and affected-path acceptance |
 | API expansion | Select and implement Stage-4 operation contracts | Per-operation lifecycle, protocol and SDK acceptance |
 | Downstream integration | Implement opt-in per-Agent JSONL session storage | Selected isolation and lifetime bounds |
 | Production preparation | Decide diagnostic packaging and deferred observability scope | Explicit deployer selection |
 
 ## Remaining Agent qualification
 
-The remaining boundaries below may be selected alongside relevant Stage-4 work. [AR5 Review](ar5-review.md#pending-observations) owns their evidence; [Architecture](architecture.md) owns accepted contracts, and [Development](development.md#production-profile-acceptance) owns bounded qualification procedures. No broad Provider sweep, credential reprovisioning or account rewrite is scheduled.
+The remaining AR5 boundaries are open for analysis and may be selected alongside relevant Stage-4 work. [AR5 Review](ar5-review.md#pending-observations) owns their evidence; [Architecture](architecture.md) owns accepted contracts, and [Development](development.md#production-profile-acceptance) owns bounded qualification procedures. No broad Provider sweep, credential reprovisioning or account rewrite is scheduled.
 
 ### Remaining observation dispositions
 
-There are **12 retained observations: seven scoped limitations/follow-ups, one unavailable prerequisite and four paused observations**. No deployment, binding activation or additional content/signature loss is selected.
+There are **12 retained observations: seven scoped limitations/follow-ups, one unavailable prerequisite and four reopened Provider/model observations**. No deployment, binding activation or additional content/signature loss is selected.
 
 Use the existing lowering, replay/projection owners, reducers and client drivers for separately selected follow-ups. No new dependency, replay store, retry layer or diagnostic platform is planned.
 
@@ -98,11 +98,11 @@ These entries require unavailable prerequisites or separately selected qualifica
 | **R09 — Replay isolation / account-compatible failover** | Replay transfer needs observed source opaque replay; same-model/account-compatible failover additionally needs independent compatible accounts. Resume only a cell whose prerequisites are met. Do not substitute aliases or a different-model switch. Existing source-only observations do not exercise transfer or qualify failover. |
 | **Remaining real qualification** | Luna router endpoints, effective non-Qwen Bailian reply-ceiling enforcement and Haiku same-process cap-switch recovery remain unqualified. SIWC qualification has its own [endpoint follow-up](#endpoint-qualification-and-emitter-follow-ups). Existing native-ceiling preparation receipts and successful GLM JSON smoke do not close those profile-specific checks. Schedule them only when selected. |
 
-#### Paused Provider and model observations
+#### Reopened Provider and model observations
 
-**User-selected temporary pause, 2026-11-07:** no new analysis, Provider retests or repairs for these four observations until the user reschedules them. Keep their [AR5 evidence](ar5-review.md#pending-observations) and current guards; they are neither deleted nor declared repaired. They do not gate the current analysis or partial delivery. Ordinary safety and affected standard regression checks remain required for other slices.
+**User-selected reopening, 2026-11-08:** the temporary pause on analysis, Provider retests and repairs for **R13/R18/R19/R21** is lifted. First inventory their [AR5 evidence](ar5-review.md#pending-observations) and unresolved attribution; select each investigation or repair with the bounded qualification rules above. Reopening does not select content/signature loss, weaker explicit guarantees, new bindings or deployment. Preserve current guards and the partial-delivery exit. The routing freeze and general Google API expansion pause remain outside this reopening.
 
-| Observation | Entire paused boundary |
+| Observation | Reopened boundary |
 |---|---|
 | **R13** | Dynamic-tool/instruction literal-label recall and its unresolved prepared/native/delivered attribution |
 | **R18** | Provider-specific forced-tool selection, strict arguments and tool-call terminal behavior |

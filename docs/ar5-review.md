@@ -37,7 +37,7 @@ Collection totals retain their original execution scope when resolved entries ar
 
 ## Pending observations
 
-Entries retain unresolved boundaries and their scoped evidence, not an implementation queue. The roadmap owns the [scoped limitations](roadmap.md#scoped-limitations), [unavailable prerequisites](roadmap.md#next-stage-analysis) and [temporarily paused observations](roadmap.md#paused-provider-and-model-observations). Retained entries may therefore be outside the current work scope. A passing sample closes only its exercised boundary; remove completed portions without renumbering the remaining identifiers.
+Entries retain unresolved boundaries and their scoped evidence, not an implementation queue. The roadmap owns the [scoped limitations](roadmap.md#scoped-limitations), [unavailable prerequisites](roadmap.md#next-stage-analysis) and [reopened Provider/model observations](roadmap.md#reopened-provider-and-model-observations). Reopening permits follow-up analysis; each repair or qualification still follows its boundary-specific selection and prerequisites. A passing sample closes only its exercised boundary; remove completed portions without renumbering the remaining identifiers.
 
 | ID | Observation and affected path | Current evidence and unresolved boundary |
 |---|---|---|
