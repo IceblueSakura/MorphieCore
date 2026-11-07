@@ -1,8 +1,8 @@
 # AR5 Review
 
-This user-requested record owns the current AR5 observations awaiting joint review and a concise summary of passing tests. It is separate from the implementation roadmap and unrelated backlogs. **Additional tests are still expected; combined analysis, adaptation choices and repair ordering are deferred until the user reviews the collected evidence.** No root-cause diagnosis or repair policy is finalized here.
+This user-requested record owns AR5 observations and concise passing-test evidence. Historical samples retain their original scope; unresolved entries are not an implementation queue. **The 2026-11-07 joint review now has a [concentrated repair plan](roadmap.md#concentrated-repair-plan) and user-approved [partial-delivery exit](roadmap.md#partial-delivery-exit).** Accepted conversion policy belongs to [Architecture](architecture.md#conversion-ladder); this evidence record does not claim those repairs are implemented.
 
-The user-selected [pre-Stage-4 pi-first real-Agent sweep](roadmap.md#pre-stage-4-real-agent-scenario-sweep) owns supplementary coverage and the collect → jointly analyze → concentrated root-cause repair sequence. The results below retain their original scope; the expanded scenario inventory is not yet completed.
+The [pre-Stage-4 pi-first real-Agent sweep](roadmap.md#pre-stage-4-real-agent-scenario-sweep) retains the collection inventory. Further testing is focused on affected repairs or a concrete unresolved boundary; the remaining inventory can receive explicit next-stage dispositions rather than blocking independent delivery.
 
 ## Contents
 
@@ -33,7 +33,7 @@ Counts below are scoped to the stated tests. Local admission, client configurati
 
 ## Pending observations
 
-All entries are **awaiting joint analysis**, not an implementation queue. Identifiers are for this review record only.
+Entries preserve the collected evidence and its unresolved boundaries. The [roadmap](roadmap.md#concentrated-repair-plan) owns current repair/defer dispositions; a later passing sample or plan does not erase an earlier failure. Identifiers are for this review record only.
 
 | ID | Observation and affected path | Current evidence and unresolved boundary |
 |---|---|---|
@@ -192,4 +192,4 @@ Private captures are deleted with each case; body-free verdicts and complete run
 
 Append evidence to the relevant observation or add an identifier for a distinct phenomenon. Record the date, actual client version, selected model/binding/protocol, bounds, counts and failure boundary; retain only redacted summaries, not credentials or private payloads. Keep passing tests separate from unresolved findings and mark unmet prerequisites explicitly.
 
-Do not infer a product defect from an observer/configuration failure, silently relax a guard to obtain a pass, or promote a passing sample into broader acceptance. Once supplementary testing is complete, review the observations together before selecting adaptations or repairs. Accepted design decisions belong in [Architecture](architecture.md), and approved execution sequencing belongs in [Roadmap](roadmap.md).
+Do not infer a product defect from an observer/configuration failure, silently relax a guard to obtain a pass, or promote a passing sample into broader acceptance. Add focused evidence as repairs proceed and retain explicit unknowns. Accepted design decisions belong in [Architecture](architecture.md), while repair ordering, deferrals and the partial-delivery exit belong in [Roadmap](roadmap.md#concentrated-repair-plan).

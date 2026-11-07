@@ -42,6 +42,7 @@ This page defines accepted principles, domain contracts, and architectural decis
     - [Model-effective values](#model-effective-values)
   - [Request and reported meaning](#request-and-reported-meaning)
     - [Conversion ladder](#conversion-ladder)
+    - [Output-ceiling adaptation](#output-ceiling-adaptation)
     - [Semantic-equivalence compatibility](#semantic-equivalence-compatibility)
     - [Client/IR projection principles](#clientir-projection-principles)
     - [Downstream schema completion](#downstream-schema-completion)
@@ -434,6 +435,8 @@ Accepted on 2026-10-30; it replaces the earlier exact-first fallback and the fai
 
 **Unknown facts.** When a target fact is unknown, such as an unassessed binding history contract or unknown schema compatibility, the gateway sends the carriable form and lets upstream validation decide (delegation). Delegation never applies to trust, replay origin or credentials.
 
+**Low-loss priority, reaffirmed 2026-11-07.** Field spelling or shape differences, incomplete capability assessment and missing optional controls are not independent rejection reasons. Prefer semantic matching, then a useful approximation, then omission with existing loss evidence. Apply these choices at the responsible projection/dialect boundary; ordinary L2–L4 rules need no new per-rule approval. Content or explicit-guarantee downgrades still need their concrete disposition selected. Unresolved cases may remain limited while independently useful workflows ship under the [partial-delivery exit](roadmap.md#partial-delivery-exit).
+
 **Timing.** Request-side levels are resolved per candidate during planning, on candidate-local copies, so request-determined impossibility fails before dispatch (P4). After dispatch the upstream has already generated output; report and metadata facts bottom out at L4, and only content or outcome that would be misrepresented may fail delivery.
 
 **Invariants outside the ladder:** credentials, auth, origin and trusted target selection; replay signature, origin and format trust; resource and time bounds; malformed known values and strict JSON; terminal honesty and validated EOF; call identity; no executable claim for incomplete tool input; explicit history-read intent; already-published accounting; candidate-local projection over immutable source IR; the routing freeze. No level invents content, forges signatures or fabricates success.
@@ -452,7 +455,7 @@ Applications selected on 2026-10-30 are implemented, including request strictnes
 |---|---|
 | Explicit `strict:true` without an equivalent carrier | L5. Conditional (omitted) strictness is always resolvable without a compatibility classifier: an already-closed schema on a target with an equivalent strict carrier stays strict, every other case resolves non-strict under the conditional-default loss (L3); a request-wide strict grammar overflow resolves all conditional definitions non-strict, and rejects only when explicit strict tools alone overflow |
 | Effort | Nearest supported level, ties upward, across Reasoning/Response scopes at the same level (L3); manual budgets on adaptive-only bindings convert to adaptive plus effort. When an explicit effort already exists, preserve it rather than replacing it with a budget-derived level; omit the uncarriable numeric budget under a named loss |
-| Output ceilings | Clamp to a known model maximum (L3); targets without a ceiling carrier omit it (L4) |
+| Output ceilings | Preserve equivalent carriers; clamp to a known model maximum or retain a narrower accounting scope with loss (L3); omit when no useful carrier exists (L4). See [output-ceiling adaptation](#output-ceiling-adaptation) |
 | `required_with_tools` history with a Standard Chat client | Deployers select `readable_reasoning` on such public models; otherwise a candidate with a thinking-off carrier disables thinking under a named loss (L3), and one without rejects at planning. Not delegated, because the next turn is known to fail upstream |
 | Uncarried reasoning in delivery or history | Omit the owner, keep visible content and tool links (L3); applies to opaque reasoning on Standard Chat and unsigned reasoning on Messages; never forged |
 | Messages reasoning publication | An undecided summary waits for its actual signature in the bounded schedule. An irreversibly uncarriable shape discards its payload immediately and retains only bounded lifecycle tracking; invisible owners do not block visible successors. Summary interruption stays an interruption and cannot supply item or response completion |
@@ -475,12 +478,28 @@ Existing rule families remain valid ladder applications:
 | Tool-result errors | Preserve native error flag; wrap in `[tool result is_error=...]` if target lacks boolean carrier |
 | Chat JSON grouping | Concatenate contiguous plain assistant text before function/custom calls, preserving call identity, order and raw arguments/input. Do not flatten rich/replay-bearing parts or reorder text across calls; custom SSE remains unsupported |
 | Instruction roles | Canonical Developer mapping; preserve root vs. ordered lifetimes |
-| Output ceilings | Preserve explicit ceilings up to the model maximum; insert target default only when client ceiling is absent |
+| Output ceilings | Use the [output-ceiling disposition](#output-ceiling-adaptation); insert a target default only when the original client ceiling is absent |
 | Terminal stops | Coarsen natural/stop-sequence causes to `stop` or `end_turn` under named rules |
 | SIWC failed-response codes | `responses.coarsen-provider-error-code.v1` maps confirmed quota to `rate_limit_exceeded`, unsupported capability to `invalid_prompt`, and service/auth/permission codes to `server_error`; failed outcome and original source evidence remain intact |
 
 - `chat.omit-text-item-status.v1`: Plain-text incomplete message items omit individual item status when overall finish reason is `length`.
 (See [`Rule`](../src/lowering/disposition.rs) for request rules and the [delivery projection owner](#delivery-projection-ownership) for client dispositions.)
+
+#### Output-ceiling adaptation
+
+**Selected 2026-11-07; implementation follow-up is in the [AR5 repair plan](roadmap.md#concentrated-repair-plan).** A client output ceiling is an adaptable generation control. Prefer retaining useful control over rejecting a request because the target cannot express exactly the same ceiling:
+
+| Target carrier | Disposition |
+|---|---|
+| Same accounting scope under another field name | L2: preserve the value and use the target spelling |
+| Equivalent ceiling above a known model maximum | L3: clamp to that maximum under the existing rule |
+| Only a reply-token ceiling for a total-output request | L3: retain the same numeric value as a reply-token ceiling and record the accounting-scope loss; do not report that thinking tokens were bounded by it |
+| No useful ceiling carrier or no expressible value | L4: omit the ceiling and record the loss; do not invent a tokenizer-based limit or silently raise the requested value |
+| Carrier exists but model acceptance is unassessed | Delegate upstream validation rather than pre-reject solely for missing qualification |
+
+Resolve spelling, scope and supported values for the actual binding/API, not a shared model label. Record approximations and omissions through the existing conversion evidence; no client echo is required. Preserve original intent on the source request, including absence versus a ceiling omitted by projection, so default insertion cannot overwrite it.
+
+Gateway request/response byte limits, deadlines, model bounds and honest terminal reporting remain independent. The adaptation does not introduce gateway-side token counting, fabricated length termination or a general formula for increasing thinking budgets. Existing exact mappings, maximum clamps and carrier-less omission remain; the broader scope approximation is selected policy awaiting implementation.
 
 #### Semantic-equivalence compatibility
 
@@ -656,7 +675,7 @@ When targets require discrete qualitative levels, numeric token budgets are quan
 
 Selected on **2026-10-28**: functionality may take precedence over conservative gateway-derived token defaults or presets through bounded, target-qualified adaptation. Prefer exact native controls; distinguish original client intent, derived allocation and actual model limits.
 
-This direction does not select an adjustment formula or change current validation. A concrete rule must name the changed guarantee, target, finite bound, useful answer reserve and evidence. Explicit client ceilings or numeric thinking intent are not silently overridden; any relaxation of them needs its own selected rule. The 2026-10-30 [model-maximum clamp](#model-effective-values) is such a rule: it only lowers a ceiling the model cannot exceed. Source protocol validity, model maxima, memory/wire limits, timeouts and terminal honesty remain enforced. Unknown capacity is not unlimited capacity. The [budget proposal](api-expansion-design.md#independent-output-ceilings-unselected) owns unresolved alternatives.
+This direction does not select a general adjustment formula or change thinking-budget validation. The [output-ceiling adaptation](#output-ceiling-adaptation) separately selects equivalent spelling, model-maximum clamp, narrower-scope approximation and carrier-less omission with loss evidence. Other allocation changes must name the changed intent, target, finite bound, useful answer reserve and evidence; numeric thinking intent is not silently overridden. Source protocol validity, model maxima, memory/wire limits, timeouts and terminal honesty remain enforced. Unknown capacity is not unlimited capacity. The [budget proposal](api-expansion-design.md#independent-output-ceilings-unselected) owns unresolved alternatives.
 
 ##### Initial mapping plan
 
@@ -972,6 +991,7 @@ Authoritative log of accepted architectural decisions and their systemic consequ
 | Shared Aliyun dialect | 2026-10-19 | Shared `Bailian` dialect for DashScope and TokenPlan |
 | Dual-SDK Decision direction | 2026-10-23 | Shared Decision IR supporting TypeSafe and OpenAI Decision SDKs |
 | Stage-4 equal priority | 2026-10-25 | Decision, Embedding, Audio, Images, Files/Uploads, and Video advance at equal priority |
+| AR5 partial delivery | 2026-11-07 | Deliver usable principal workflows, recorded low-loss conversions and verified affected paths; explicitly defer unresolved boundaries and missing prerequisites to next-stage analysis instead of requiring every review observation to close. [Exit criteria](roadmap.md#partial-delivery-exit) |
 | Independent Embedding | 2026-10-23 | Decoupled Embedding on `POST /v1/embeddings`; float/Base64 compatibility |
 | Grok Imagine static scope | 2026-10-22 | Static image codec (`grok-imagine-image-2.0`); video deferred to async API |
 
@@ -1006,6 +1026,7 @@ Authoritative log of accepted architectural decisions and their systemic consequ
 | Explicit effort precedence | 2026-10-31 | Preserve explicit effort over a conflicting numeric budget; omit an uncarriable budget with its named receipt, and quantize only when effort is absent |
 | Thinking budget ceiling guard | 2026-10-20 | P3b rejects requests where thinking budget exceeds client output ceiling |
 | Bounded token-budget adaptation | 2026-10-28 | Allows target-qualified review of gateway-derived defaults/presets to preserve functionality; concrete adjustment rules remain unselected |
+| Low-loss output ceilings | 2026-11-07 | Prefer equivalent controls, then useful narrower-scope limits, then omission with loss; unsupported ceilings alone do not require request rejection. Keep runtime bounds and reported terminals independent. [Contract](#output-ceiling-adaptation) |
 | Messages missing ceiling default | 2026-10-20 | Go/Haiku injects `32000` default output tokens when client ceiling is omitted |
 | Tool-result error wrapping | 2026-10-20 | Prefixes tool results with boolean status text for targets lacking native flags |
 | Google terminal projection | 2026-10-21 | Gemini 3.8 Flash completions map to Messages `tool_use` or `end_turn` |
