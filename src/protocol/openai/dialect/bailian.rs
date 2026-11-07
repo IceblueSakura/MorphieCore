@@ -444,7 +444,7 @@ pub(in crate::protocol::openai) fn check_semantic(
     } else {
         if c.has_extended_controls()
             || c.truncation.is_some()
-            || !s.text.presence.is_none()
+            || s.text.verbosity.is_some()
             || s.parallel_tool_calls.is_some()
             || r.encrypted_output()
             || r.budget_tokens.is_some()

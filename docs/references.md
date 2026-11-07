@@ -99,7 +99,7 @@ Keep dated evidence that is not better owned by a current source guide, accepted
 | [Instruction authority, 2026-10-25](refs/2026-10-25-instruction-authority.md) | Application versus vendor authority, legacy roles and Provider/Vercel comparisons |
 | [Model discovery, 2026-10-26](refs/2026-10-26-model-discovery.md) | Capacity source/applicability, unknown limits and pi image carriers |
 | [Chat custom tools, 2026-10-16](refs/2026-10-16-chat-custom-tools.md) | Original complete-value carriers; later SSE disagreement linked separately |
-| [Bailian compatible requests, 2026-10-19](refs/2026-10-19-bailian-compatible-requests.md) | Model-specific ceilings, ignored controls, aliases and compatible-versus-RPC distinctions |
+| [Bailian compatible requests, 2026-10-19](refs/2026-10-19-bailian-compatible-requests.md) | Model-specific ceilings, ignored controls, aliases and compatible-versus-RPC distinctions; 2026-11-08 output-format/source refresh |
 
 ### Independent operations and future design inputs
 

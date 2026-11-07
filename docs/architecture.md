@@ -387,6 +387,7 @@ Module layout mirrors `vendor / api / responsibility`:
 DashScope and Aliyun TokenPlan share the `Bailian` wire dialect for Chat and Responses:
 - Readable reasoning mapped to `reasoning_content` with `preserve_thinking`.
 - Chat total output ceilings mapped to `max_completion_tokens`; Responses uses `max_output_tokens` with the model-specific scope in [output-ceiling adaptation](#output-ceiling-adaptation).
+- Responses output constraints use the existing standard `text.format` carrier, preserving schema, name, description and explicit strictness. Do not reject the whole text configuration because verbosity lacks a native carrier. The [source refresh](refs/2026-10-19-bailian-compatible-requests.md#responses-output-format-refresh-2026-11-08) distinguishes documented layouts, observed SDK-flat carriage and model-specific qualification.
 
 ##### Subscription Responses
 
@@ -1003,6 +1004,7 @@ Authoritative log of accepted architectural decisions and their systemic consequ
 | Canonical accounting | 2026-10-23 | Scoped modality breakdowns; single reasoning presentation owner |
 | Five-stage order | 2026-10-20 | Stage 1 (Lossless Codecs), 2 (Agent Tools), 3 (Stability/Counting), 4 (Modalities/Decision/Files), 5 (Backlog) |
 | Shared Aliyun dialect | 2026-10-19 | Shared `Bailian` dialect for DashScope and TokenPlan |
+| Bailian Responses output formats | 2026-11-08 | Preserve the existing `text.format` carrier through preparation instead of rejecting its whole owner. Keep strict-function admission and origin-bound report fidelity independent; Provider content qualification remains scoped in [AR5](ar5-review.md#pending-observations). |
 | Bailian GLM/DeepSeek bindings | 2026-11-07 | Register GLM Responses and DeepSeek Chat/Responses under the existing DashScope Provider. Reuse canonical `deepseek-flash` and public `deepseek-v4.1-flash-1017`, with the exact dated upstream name on Bailian only. Preserve native candidate order, isolate replay issuers, use Bailian low/high/max effort assessment and ceiling rules, and do not inherit native-beta strictness. Catalog selection does not activate a deployed route; current acceptance and unresolved SDK/decode boundaries belong to [AR5](ar5-review.md#binding-and-independent-rechecks-2026-11-07). |
 | Dual-SDK Decision direction | 2026-10-23 | Shared Decision IR supporting TypeSafe and OpenAI Decision SDKs |
 | Stage-4 equal priority | 2026-10-25 | Decision, Embedding, Audio, Images, Files/Uploads, and Video advance at equal priority |

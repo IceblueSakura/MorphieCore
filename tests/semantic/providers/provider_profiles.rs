@@ -1176,11 +1176,60 @@ fn bailian_created_drift_is_chat_only_and_preserves_identity() {
 
 #[test]
 fn bailian_schema_alias_is_response_only_and_rejects_ambiguity() {
-    let provider = GenerationCodec::new(GenerationApi::Responses, Dialect::Bailian, None);
+    use morphiecore::semantic::task::generation::OutputConstraint;
+    let provider = GenerationCodec::new(
+        GenerationApi::Responses,
+        Dialect::Bailian,
+        Some(ReplayOrigin::new("synthetic-account").unwrap()),
+    );
     let mut source = crate::wire::response(2);
     source["text"] = json!({"format":{
         "type":"json_schema","name":"synthetic","strict":false,"schema_":{"type":"object"}
     }});
+    source["frequency_penalty"] = json!(0.0);
+    source["presence_penalty"] = Value::Null;
+    for key in ["schema_", "schema"] {
+        let mut reported = source.clone();
+        reported["text"]["format"]
+            .as_object_mut()
+            .unwrap()
+            .remove("schema_");
+        reported["text"]["format"][key] = json!({"type":"object"});
+        let decoded = provider
+            .decode_response(reported.to_string().as_bytes())
+            .unwrap();
+        let Some(OutputConstraint::JsonSchema {
+            name,
+            schema,
+            strict,
+            ..
+        }) = &decoded.metadata.context.settings().unwrap().text.format
+        else {
+            panic!("missing reported schema");
+        };
+        assert_eq!(name.as_ref().unwrap().as_str(), "synthetic");
+        assert_eq!(schema.root(), &json!({"type":"object"}));
+        assert_eq!(*strict, Some(false));
+        let rendered = provider
+            .encode_response(&decoded, &Contract::full())
+            .unwrap();
+        assert_eq!(
+            rendered["output"][0]["content"][0]["text"],
+            "{\"ok\":false}"
+        );
+        assert_eq!(
+            rendered["text"]["format"]["schema"],
+            json!({"type":"object"})
+        );
+        assert!(rendered["text"]["format"].get("schema_").is_none());
+        assert_eq!(rendered["frequency_penalty"], 0.0);
+        assert!(rendered["presence_penalty"].is_null());
+        assert!(
+            GenerationCodec::new(GenerationApi::Responses, Dialect::Bailian, None)
+                .decode_response(reported.to_string().as_bytes())
+                .is_err()
+        );
+    }
     for dialect in [Dialect::Standard, Dialect::MorphieCore] {
         assert!(
             GenerationCodec::new(GenerationApi::Responses, dialect, None)

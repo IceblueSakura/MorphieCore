@@ -54,12 +54,12 @@ This page owns current scope, priorities, dependencies, and exit gates. [Archite
 
 ## Current status
 
-**Current focus (2026-11-08):** Reopen AR5 follow-up analysis, including **R13/R18/R19/R21**, and retain selection of the next [Stage-4 operation contracts](#stage-4-scope). Inventory the remaining boundaries before selecting bounded investigations or repairs. The [scoped limitations](#scoped-limitations), **R09** prerequisites and [partial-delivery exit](#partial-delivery-exit) remain; closing every observation is not a new gate. [AR5 Review](ar5-review.md) owns observations and passing evidence; production activation remains separately approved.
+**Current focus (2026-11-08):** Carry forward the qualified **R19/R18/R13/R21** limitations and select the next [Stage-4 operation contracts](#stage-4-scope). The [scoped limitations](#scoped-limitations), **R09** prerequisites and [partial-delivery exit](#partial-delivery-exit) remain; closing every observation is not a new gate. [AR5 Review](ar5-review.md) owns observations and passing evidence; production activation remains separately approved.
 
 | Priority | Remaining work | Exit |
 |---|---|---|
 | Conditional tool follow-ups | [S3-T5–S3-T7](#conditional-stage-3-follow-ups): namespace aliases, custom-text wrappers and examples projection | Separate policy selection and full affected-loop acceptance; not default prerequisites for Stage 4 |
-| AR5 follow-ups | Reopened observation inventory; select bounded investigations, repairs or dependent-profile qualification | Preserve explicit guarantees, replay guards, prerequisites and affected-path acceptance |
+| AR5 follow-ups | Select a remaining dependent model/API boundary for further qualification | Preserve explicit guarantees, replay guards, prerequisites and affected-path acceptance |
 | API expansion | Select and implement Stage-4 operation contracts | Per-operation lifecycle, protocol and SDK acceptance |
 | Downstream integration | Implement opt-in per-Agent JSONL session storage | Selected isolation and lifetime bounds |
 | Production preparation | Decide diagnostic packaging and deferred observability scope | Explicit deployer selection |
@@ -87,6 +87,8 @@ The remaining boundaries are qualified limitations or next-stage analysis, not p
 
 Retain the exact profile, first divergent field/event, responsible owner and disposition for any follow-up. Use known field paths, event/block kinds, terminal classes and recognized error categories; private exchanges are not public fixtures. If fresh Provider evidence is necessary, fix target, operation, request/attempt budget, output/wire caps and deadline first, run serially without hidden retries, and use at most three independent scenarios per observation in that selected run.
 
+**User-selected follow-up bounds, 2026-11-08:** after a failed sample, allow up to **three explicit repeats** to distinguish transient Provider behavior (initial sample plus at most three repeats). Record each outcome independently; success does not erase earlier failures. OAuth renewal through the project manager/CLI is authorized for these checks. This does not change gateway/SDK retry policy or allow retrying quarantined refresh material outside the manager's lifecycle rules.
+
 Stop a branch when its prerequisite or semantic selection is unavailable. A later implementation slice needs independent directional regressions, the required offline baseline, relevant SDK/client checks and affected real acceptance. Preserve credential/auth, bounds, cancellation, replay isolation and terminal honesty.
 
 #### Next-stage analysis
@@ -100,14 +102,14 @@ These entries require unavailable prerequisites or separately selected qualifica
 
 #### Reopened Provider and model observations
 
-**User-selected reopening, 2026-11-08:** the temporary pause on analysis, Provider retests and repairs for **R13/R18/R19/R21** is lifted. First inventory their [AR5 evidence](ar5-review.md#pending-observations) and unresolved attribution; select each investigation or repair with the bounded qualification rules above. Reopening does not select content/signature loss, weaker explicit guarantees, new bindings or deployment. Preserve current guards and the partial-delivery exit. The routing freeze and general Google API expansion pause remain outside this reopening.
+**User-selected reopening, 2026-11-08:** the temporary pause on analysis, Provider retests and repairs for **R13/R18/R19/R21** is lifted. Their [AR5 evidence](ar5-review.md#pending-observations) retains the qualified boundaries below; select further investigation or repair with the bounded qualification rules above. Reopening does not select content/signature loss, weaker explicit guarantees, new bindings or deployment. Preserve current guards and the partial-delivery exit. The routing freeze and general Google API expansion pause remain outside this reopening.
 
 | Observation | Reopened boundary |
 |---|---|
-| **R13** | Dynamic-tool/instruction literal-label recall and its unresolved prepared/native/delivered attribution |
-| **R18** | Provider-specific forced-tool selection, strict arguments and tool-call terminal behavior |
-| **R19** | Structured-output content, variable SDK envelope **and the remaining codec rejection**, including SDK-valid Qwen responses |
-| **R21** | Grok recovery-label/new-tool behavior and cancellation-specific or direct-upstream attribution |
+| **R13** | Scoped upstream recall limitation: complete failing native answers omit a label retained in preparation, then reach delivery/pi unchanged. Keep the exact-label assertion; no prompting or history rewrite is selected. Separate HTTP failures and incomplete captures. |
+| **R18** | Scoped Provider tool limitations: preserve strict rejection and thinking-mode selection bounds. Qwen Chat's native `stop` beside the correctly forced call has a passing gateway feedback/recall loop; do not conflate identity with terminal spelling. Further model/API cells require their exact supported profile. |
+| **R19** | Retain variable native SDK envelope and GLM content qualification; no codec repair remains queued. Follow the accepted [output-format contract](architecture.md#shared-aliyun-billing-dialect). Qwen JSON/SSE qualification does not qualify GLM or TokenPlan. |
+| **R21** | Scoped upstream content/tool limitation: native no-cancellation controls also miss recovery labels and can issue a new write with tools available. Preserve honest cancellation and distinguish new calls from cancelled execution; explicit `tool_choice:none` is a separate diagnostic contract, not an automatic prompt-derived policy. |
 
 #### Partial-delivery exit
 

@@ -798,22 +798,37 @@ fn responses_ceiling_scope_projects_usefully_without_changing_source() {
 }
 
 #[test]
+fn responses_output_constraints_reach_preparation_without_losing_the_schema() {
+    let schema = json!({"type":"object","properties":{"ok":{"type":"boolean"}},
+        "required":["ok"],"additionalProperties":false});
+    for format in [
+        json!({"type":"json_object"}),
+        json!({"type":"json_schema","name":"answer","strict":true,"schema":schema}),
+    ] {
+        let source = json!({"model":"public-model","input":"Return JSON.",
+            "max_output_tokens":64,"text":{"format":format}});
+        let input = client(GenerationApi::Responses)
+            .decode_client_request(source.to_string().as_bytes())
+            .unwrap();
+        let before = input.clone();
+        let target = endpoint("dashscope-flash", GenerationProtocol::OpenAiResponses);
+        let (wire, rules) = target.encode_request_with_rules(&input).unwrap();
+        assert_eq!(wire["text"], json!({"format":format}));
+        assert!(rules.is_empty());
+        assert_eq!(input, before);
+    }
+}
+
+#[test]
 fn responses_unlisted_guarantees_reject_without_weakening_constraints() {
     let target = endpoint("dashscope-flash", GenerationProtocol::OpenAiResponses);
-    for patch in [
-        json!({"text":{"format":{"type":"json_object"}}}),
-        json!({"parallel_tool_calls":false}),
-    ] {
-        let mut wire = response_request();
-        wire["tools"][0]["strict"] = json!(false);
-        wire.as_object_mut()
-            .unwrap()
-            .extend(patch.as_object().unwrap().clone());
-        let input = client(GenerationApi::Responses)
-            .decode_client_request(wire.to_string().as_bytes())
-            .unwrap();
-        assert!(target.encode_request_with_rules(&input).is_err(), "{patch}");
-    }
+    let mut wire = response_request();
+    wire["tools"][0]["strict"] = json!(false);
+    wire["parallel_tool_calls"] = json!(false);
+    let input = client(GenerationApi::Responses)
+        .decode_client_request(wire.to_string().as_bytes())
+        .unwrap();
+    assert!(target.encode_request_with_rules(&input).is_err());
     for (patch, field) in [
         (json!({"reasoning":{"summary":null}}), "reasoning"),
         (json!({"truncation":"auto"}), "truncation"),
