@@ -60,7 +60,7 @@ This page owns current scope, priorities, dependencies, and exit gates. [Archite
 
 ## Current status
 
-**Current focus (2026-11-07):** The three priority repairs are delivered: generation controls, trusted Haiku truncated-tool intake and strict-admission ownership. [AR5 Review](ar5-review.md#priority-repair-verification-2026-11-07) records offline, SDK and current-Agent synthetic verification. The user selected delivery now with changed-profile real Provider rechecks deferred. Remaining work is the bounded extensions and explicit next-stage dispositions below; Stage 4 resumes at the [partial-delivery exit](#partial-delivery-exit).
+**Current focus (2026-11-07):** Remaining AR5 work is delivery/history compatibility, Google control projection and explicit next-stage dispositions. [AR5 Review](ar5-review.md#pending-observations) owns the unresolved evidence. Stage 4 resumes at the [partial-delivery exit](#partial-delivery-exit).
 
 | Priority | Remaining work | Exit |
 |---|---|---|
@@ -72,7 +72,7 @@ This page owns current scope, priorities, dependencies, and exit gates. [Archite
 
 ## Account rewrite execution order
 
-The remaining gate for the accepted [account specification](provider-account-redesign-plan.md) is real acceptance on fresh credentials and selected models. The user selected **offline three-protocol preparation before fresh credentials** on 2026-11-03; that default-profile preparation is complete. Setup uses the [Provider-owned, alias-only credential contract](provider-account-redesign-plan.md#credential-kind-and-header-placement). No compatibility mode, private-store migration or deployment is included.
+The accepted [account specification](provider-account-redesign-plan.md) uses the [Provider-owned, alias-only credential contract](provider-account-redesign-plan.md#credential-kind-and-header-placement). Remaining acceptance follows the scoped repair and deferral gates below. No compatibility mode, private-store migration or deployment is included.
 
 ### Ordered work and exit gates
 
@@ -80,7 +80,7 @@ The identifiers below belong only to planning and acceptance documentation, not 
 
 | Order | Work | Completion evidence |
 |---|---|---|
-| **AR5 — Fresh credentials, model selection and real acceptance** | Fresh-account preparation and the initial broad sweep are complete within their recorded profiles. Apply the [concentrated repair plan](#concentrated-repair-plan), using focused investigation for unresolved boundaries and rechecking changed workflows. | Meet the [partial-delivery exit](#partial-delivery-exit): principal workflows work, losses are recorded, affected paths are verified, and remaining gaps have explicit next-stage dispositions. Production activation remains separately approved. |
+| **AR5 — Fresh credentials, model selection and real acceptance** | Apply the [concentrated repair plan](#concentrated-repair-plan), using focused investigation for unresolved boundaries and rechecking changed workflows. | Meet the [partial-delivery exit](#partial-delivery-exit): principal workflows work, losses are recorded, affected paths are verified, and remaining gaps have explicit next-stage dispositions. Production activation remains separately approved. |
 
 Selected upstream lanes (2026-11-06; Bailian added 2026-11-07):
 
@@ -95,8 +95,6 @@ Selected upstream lanes (2026-11-06; Bailian added 2026-11-07):
 | `aliyun-dashscope-cn` | API key | `qwen3.8-flash` | `dashscope-flash-chat`, `dashscope-flash-responses` |
 | `aliyun-dashscope-cn` | API key | `glm-5.3` | `dashscope-glm-chat`; native Responses companion only |
 | `aliyun-dashscope-cn` | API key | `deepseek-v4.1-flash-1017` | Native Chat/Responses companions only; no production binding |
-
-Fresh local provisioning, Google key replacement and account-reference validation are complete. The selected [Responses replay authority](architecture.md#reasoning-replay) is implemented. The DeepSeek publication keeps canonical/upstream `deepseek-flash`; its label does not pin that upstream alias.
 
 Observations and concise passing results have one evidence home in [AR5 Review](ar5-review.md). This roadmap owns their execution/defer dispositions; [Architecture](architecture.md#conversion-ladder) owns accepted conversion policy. Historical samples retain their original scope as repairs and focused supplementary checks proceed.
 
@@ -132,14 +130,14 @@ Risks that change execution: unavailable compatible accounts, no returned replay
 
 ### Concentrated repair plan
 
-**Revised with the user on 2026-11-07.** The first three priority slices are complete within the [recorded verification scope](ar5-review.md#priority-repair-verification-2026-11-07); their accepted behavior belongs to Architecture. The subsequently requested [real Provider recheck](ar5-review.md#real-provider-recheck) passes selected DeepSeek small-cap/off, Haiku truncated-tool/persisted-session recovery and native Luna/Qwen strict workflows. The DeepSeek profile remains opt-in; deployment and workstation declarations remain operator-managed. Prefer existing conversion/projection owners and stream reducers for the remaining work; no new capability framework, replay store, retry layer or diagnostic platform is planned.
+**Revised with the user on 2026-11-07.** Prefer existing conversion/projection owners and stream reducers for the remaining work; no new capability framework, replay store, retry layer or diagnostic platform is planned.
 
 Only the remaining bounded extensions are listed. Complete a clear, locally supported mapping or carry its unresolved portion forward without delaying delivered work. Investigation for one slice must not gate the others.
 
 | Order / observations | Root-cause repair and owner | Check that completes the slice |
 |---|---|---|
-| **4. Delivery/history compatibility — R01/R04** | Separate unavailable replay carrier from invalid origin. Recommended R01 policy is whole-owner omission of uncarriable signed reasoning on Readable Chat, with bounded deferred publication until carriage is known; this profile change still needs its concrete selection. Qualify zero-byte, unbound text normalization first at the history oracle, then change target projection only if needed. | JSON, SSE and actual next-request serialization agree; meaningful text, tool links and replay dependencies remain intact. Do not equate whitespace, signed parts or boundary-bearing empty messages with absence. Defer R01's policy-dependent portion if unresolved. |
-| **5. Google control projection — R05/R06** | Candidate extension: reuse source-timed configuration resolution and effective active-tool-set projection before Google root conversion. Select the concrete ordered-history loss first; do not replace this with taking the last marker or weakening strict tools. Keep existing managed signature continuation. | Active/pending timing, tool-feedback turns, current declarations and protected history remain correct in a bounded loop. Any unresolved signature/profile requirement stays outside this slice. |
+| **Delivery/history compatibility — R01/R04** | Separate unavailable replay carrier from invalid origin. Recommended R01 policy is whole-owner omission of uncarriable signed reasoning on Readable Chat, with bounded deferred publication until carriage is known; this profile change still needs its concrete selection. Qualify zero-byte, unbound text normalization first at the history oracle, then change target projection only if needed. | JSON, SSE and actual next-request serialization agree; meaningful text, tool links and replay dependencies remain intact. Do not equate whitespace, signed parts or boundary-bearing empty messages with absence. Defer R01's policy-dependent portion if unresolved. |
+| **Google control projection — R05/R06** | Candidate extension: reuse source-timed configuration resolution and effective active-tool-set projection before Google root conversion. Select the concrete ordered-history loss first; do not replace this with taking the last marker or weakening strict tools. Keep existing managed signature continuation. | Active/pending timing, tool-feedback turns, current declarations and protected history remain correct in a bounded loop. Any unresolved signature/profile requirement stays outside this slice. |
 
 Use focused, body-free diagnostics only where a decision needs them: safe known field paths, event/block kinds, terminal class and recognized upstream error category. Reuse existing error/evidence owners. R03/R19 may receive a narrow discriminating check alongside this work, but their investigation is not an initial gate. If the first boundary remains unclear, retain the observation and continue the independent slices rather than guessing a lossy repair.
 
@@ -155,7 +153,7 @@ These entries are deferred investigation or activation scope, not failed prerequ
 | **R08/R12/R13/R21** | Separate application resubmission, fact retention, formatting, new tool execution and terminal behavior in existing observers. Grok needs a fresh direct-upstream/prepared-request comparison; retain passing coding/controls. Use explicit tool withdrawal for a structural no-tool recovery guarantee, separate from prompt-following assertions. No prompt injection or automatic retry is planned. |
 | **R09** | Account-compatible replay/failover awaits observed replay and independent compatible accounts. Record the unexercised boundary without creating aliases or reopening frozen routing to satisfy it. |
 | **R16; broader R18/R19 guarantees** | Missing Bailian bindings and broader strict/schema/tool guarantees are separate next-stage selections. Qualify each API's model identity, controls, ceiling scope and history; native success does not activate production bindings. Existing ordinary loops remain usable within their documented profiles. |
-| **R10** | Authorization prerequisite resolved; preserve historical blocked samples and later passing evidence, with no repair work. |
+| **Remaining real qualification** | Luna SIWC/router endpoints, non-Qwen Bailian reply-only ceiling adaptation and Haiku same-process cap-switch recovery remain unqualified by real calls. Keep these profile-specific checks separate from R14 cancellation and schedule them only when the corresponding workflow is selected. |
 
 #### Partial-delivery exit
 

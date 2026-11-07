@@ -489,7 +489,7 @@ Existing rule families remain valid ladder applications:
 
 #### Output-ceiling adaptation
 
-**Selected and implemented 2026-11-07; verification scope is in [AR5 Review](ar5-review.md#priority-repair-verification-2026-11-07).** A client output ceiling is an adaptable generation control. Prefer retaining useful control over rejecting a request because the target cannot express exactly the same ceiling:
+**Selected 2026-11-07.** A client output ceiling is an adaptable generation control. Prefer retaining useful control over rejecting a request because the target cannot express exactly the same ceiling:
 
 | Target carrier | Disposition |
 |---|---|
