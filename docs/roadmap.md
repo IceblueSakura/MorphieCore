@@ -57,12 +57,12 @@ This page owns current scope, priorities, dependencies, and exit gates. [Archite
 
 ## Current status
 
-**Current focus (2026-11-06):** Complete the [pi-first real-Agent scenario sweep](#pre-stage-4-real-agent-scenario-sweep) before Stage 4, then jointly analyze the collected failures and perform concentrated root-cause repairs. The user-requested [AR5 review](ar5-review.md) separately collects pending observations and passing-test evidence; AR5 and Stage 4 remain gated.
+**Current focus (2026-11-07):** The first [pi-first real-Agent scenario sweep](#pre-stage-4-real-agent-scenario-sweep) has collected real thinking/summary, coding, history, compaction and cancellation evidence in [AR5 Review](ar5-review.md#supplementary-coverage-2026-11-07). Remaining work is joint review of findings and missing prerequisites, then selected concentrated root-cause repairs and affected-loop rechecks. Grok supplementary testing awaits explicit reauthorization; AR5 and Stage 4 remain gated.
 
 | Priority | Remaining work | Exit |
 |---|---|---|
 | Conditional tool follow-ups | [S3-T5–S3-T7](#conditional-stage-3-follow-ups): namespace aliases, custom-text wrappers and examples projection | Separate policy selection and full affected-loop acceptance; not default prerequisites for AR5 |
-| Account and Agent acceptance | Complete the pi-first real scenario sweep, then jointly select root-cause repairs | Bounded real Provider/current-Agent evidence, repaired-loop acceptance and explicit disposition of remaining gaps |
+| Account and Agent acceptance | Jointly review the collected scenario sweep and remaining prerequisites, then select root-cause repairs | Bounded real Provider/current-Agent evidence, repaired-loop acceptance and explicit disposition of remaining gaps |
 | API expansion | Select and implement Stage-4 operation contracts after AR5 | Per-operation lifecycle, protocol and SDK acceptance |
 | Downstream integration | Implement opt-in per-Agent JSONL session storage | Selected isolation and lifetime bounds |
 | Production preparation | Decide diagnostic packaging and deferred observability scope | Explicit deployer selection |
