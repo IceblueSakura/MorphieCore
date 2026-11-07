@@ -10,6 +10,7 @@ The user-selected [pre-Stage-4 pi-first real-Agent sweep](roadmap.md#pre-stage-4
 - [Pending observations](#pending-observations)
 - [Passing tests](#passing-tests)
   - [Supplementary coverage, 2026-11-07](#supplementary-coverage-2026-11-07)
+  - [Bailian model and protocol coverage, 2026-11-07](#bailian-model-and-protocol-coverage-2026-11-07)
 - [Updating this record](#updating-this-record)
 
 ## Test context
@@ -19,6 +20,8 @@ Baseline date: **2026-11-06**. Installed clients: unwrapped **pi 1.5.0** and **O
 Supplementary date: **2026-11-07**, with the same installed client versions and a current `cargo build --locked --offline --bin morphiecore`. The sweep retains bundled compatibility and `thinkingLevelMap` metadata, uses synthetic workspaces and temporary captures, and reports each case independently. Two deliberately one-token DeepSeek probes and one one-token Haiku probe are separately labelled limit tests; the observed DeepSeek output exceeds that requested cap (R11). A runner's exit code is not the case verdict; the bounded runners emit per-case JSON outcomes.
 
 Supplementary collection totals, including qualification reruns and failed observers: **61 case executions, 162 client requests, 157 upstream attempts**. Gateway outcomes are 150 complete, 6 interrupted and 6 error; five errors have no upstream attempt (R10), and one follows upstream HTTP 200 (R14). A complete delivery can still fail the scenario's control/content assertion. Two additional synthetic-only OpenCode tool-declaration characterizations are excluded from these totals.
+
+The subsequent user-selected Bailian sweep separately covers `qwen3.8-flash`, `glm-5.3` (the requested GLM5.3) and `deepseek-v4.1-flash-1017`, each through native Chat and Responses. A new API-key test account validates through the project CLI. Bailian-only totals are **77 case executions, 103 client requests, 101 upstream attempts**: 98 native-companion attempts, 3 gateway attempts and 2 local admission failures. Native companions use the project account loader and trusted HTTP transport with unchanged official SDK request bodies, one send, a 120-second total deadline, 256 KiB requests and 2 MiB responses. They request native Chat `max_tokens:2048` or Responses `max_output_tokens:2048`; the legacy Chat field retains its native ceiling semantics. Responses are buffered before SDK consumption, so incremental publication is not measured.
 
 Cross-protocol profiles reuse bundled model metadata with an explicitly selected serializer. They do not qualify native Google client APIs. DeepSeek uses `deepseek-beta-chat`: public `deepseek-v4.1-flash-1017`, canonical/upstream `deepseek-flash`; OpenCode's passing built-in profile uses the canonical label.
 
@@ -45,6 +48,10 @@ All entries are **awaiting joint analysis**, not an implementation queue. Identi
 | R13 | Dynamic-tool/instruction recall assertion varies between samples | 2026-11-07, pi 1.5.0, Haiku Messages: a high→low effort, read→ls→no-tools story completes 5 requests but fails its combined label/filename/no-tool recall assertion. A separate instrumented 5-request story passes; both facts remain in ingress history and the final answer, with no recall tool execution and exact declarations `[read]`, `[read]`, `[ls]`, `[ls]`, `[]`. The first assertion's failing dimension remains unclassified. |
 | R14 | Recovery after cancelling incomplete tool arguments | 2026-11-07, pi 1.5.0, Haiku Messages, 2048-token/120-second bounds: the first 2-request sample aborts during argument generation without executing the tool, then completes same-session recovery. A separate `concurrency:1` sample records `interrupted` before recovery, then the second upstream HTTP 200 fails at `intake` with `codec.invalid.invalid_value` (2 requests / 2 attempts, 0 complete). Transport notes include reset/incomplete-read. Both keep returned history unchanged; the responsible stream/history boundary and any relationship to concurrency remain unconfirmed. |
 | R15 | DeepSeek off selection versus native disablement | 2026-11-07, pi 1.5.0, readable Chat `deepseek-beta-chat`: the one-request off sample retains effective UI level off and completes arithmetic delivery. Ingress contains `thinking:{type:disabled}` without `reasoning_effort`; prepared upstream controls contain neither. No thinking block is observed in this short sample. Native computation disablement remains unqualified; the accepted unknown-extension boundary and upstream defaults need joint review before selecting any adaptation. |
+| R16 | Bailian deployment-binding coverage | 2026-11-07: direct native SDK smoke and tool/history loops pass on both protocols for all three selected models. The production catalog has Qwen Chat/Responses and GLM Chat, but lacks GLM Responses and both Bailian bindings for the selected DeepSeek label. Those three cells have native-companion evidence only. No catalog activation or capability inheritance from another model is selected. |
+| R17 | pi Bailian Chat-profile admission | 2026-11-07, pi 1.5.0, Qwen and GLM Chat bindings: each read/history profile submits one request and receives local `400 invalid_request`, with 0 upstream attempts. The profile retains bundled `qwen-token-plan-cn` compatibility/thinking metadata, the selected model ID, low effort and a 2048-token cap. Separate native SDK loops pass; the exact local rejection remains unqualified. The configured Qwen Responses profile passes separately. |
+| R18 | Bailian explicit tool selection varies by model/profile | 2026-11-07 native JSON, one request per profile: combined `strict:true` plus standard OpenAI specific-choice probes fail the expected call/terminal on Qwen and GLM in both protocols, while DeepSeek returns the selected call and an allowed numeric enum value in both. Independent non-strict Responses `allowed_tools`/required probes still fail specific selection on Qwen/GLM and pass on DeepSeek. Nonthinking, non-strict specific Chat selection fails on Qwen and passes on DeepSeek. All 11 requests return HTTP 200; model/activation/choice/strictness dimensions remain separate, and strict decoding guarantees are not inferred from the passing samples. |
+| R19 | Bailian structured-output result and SDK boundary | 2026-11-07 native JSON Schema conflict probes: Qwen Chat satisfies the closed numeric-enum oracle; GLM Chat returns HTTP 200 but fails that oracle. DeepSeek Chat/Responses each reject with HTTP 400 (`invalid_parameter_error` / `InvalidParameter`). Qwen/GLM Responses each return HTTP 200 but fail OpenAI Python 3.37.0 strict response validation; separate one-request qualifications reproduce paths under response `text.format`, including missing JSON-Schema `schema`. Their response envelopes retain status/output and output-text items, with no error envelope. Ownership and any adaptation remain for joint review. |
 
 ## Passing tests
 
@@ -91,6 +98,31 @@ Collection qualifications:
 - OpenCode's initial coding configuration allowed `bash`, but the installed client's command tool is `shell`. A synthetic direct-authority comparison confirms that only the `shell` permission exposes that tool. The initial 6-request assertion failure and a 5-request edit/independent-check pass are kept separate from the corrected 6-request shell profile.
 - Product code, returned history and production guards were not changed to obtain passes. Captures are temporary, body-free verdict logs are saved locally, and private exchanges are not public fixtures.
 - Existing R01–R09 blocked lanes and missing replay/account prerequisites remain open. Grok needs explicit reauthorization before its supplementary workflows can continue. Full-context capacity, deterministic transport/rate-limit faults and remote computation/billing termination are outside these real samples.
+
+### Bailian model and protocol coverage, 2026-11-07
+
+Provider is **`aliyun-dashscope-cn`**, separate from Token Plan and native DeepSeek. The six cells below use the real Provider through the project loader/transport and OpenAI Python **3.37.0**. JSON and SSE are separate serial runs. Each smoke uses one request. Each ordinary non-strict tool story uses three requests: obtain a model-issued call, submit its test-owned result and consume the final answer, then recall using returned history. The SDK adapter retains returned reasoning and call/result identities; it removes only SDK-only parsed attributes when constructing Responses history. No Agent tool execution is claimed for this companion.
+
+| Model | Native upstream API | JSON / SSE smoke | JSON / SSE tool-history loops |
+|---|---|---|---|
+| `qwen3.8-flash` | Chat | 1/1 + 1/1 | 3/3 + 3/3 |
+| `qwen3.8-flash` | Responses | 1/1 + 1/1 | 3/3 + 3/3 |
+| `glm-5.3` | Chat | 1/1 + 1/1 | 3/3 + 3/3 |
+| `glm-5.3` | Responses | 1/1 + 1/1 | 3/3 + 3/3 |
+| `deepseek-v4.1-flash-1017` | Chat | 1/1 + 1/1 | 3/3 + 3/3 |
+| `deepseek-v4.1-flash-1017` | Responses | 1/1 + 1/1 | 3/3 + 3/3 |
+
+Additional passing evidence and qualified restrictions:
+
+| Profile | Observed result | Scope |
+|---|---|---|
+| Native thinking controls | Qwen off/low/medium/xhigh and DeepSeek off/low/high/max complete in both protocols; GLM low/high complete in both | 20 successful single-request profiles. The four Qwen/DeepSeek `enable_thinking:false` samples return no reasoning carrier. GLM off is explicitly rejected in each protocol (HTTP 400), qualifying that restriction. Short arithmetic does not measure effort quality or prove how the Provider computes internally. |
+| Native Responses summary settings | All three models accept auto/concise/detailed and complete the arithmetic answer | 9/9 single-request profiles. Qwen/DeepSeek return reasoning owners; GLM's selected low-effort samples do not. Requested summary granularity is not independently qualified. |
+| Native specific-tool samples | DeepSeek passes both combined strict/named profiles, plus non-strict Responses allowed-tools and nonthinking non-strict Chat specific selection | Four one-request samples. Numeric enum conformity is observed only in the two strict/named samples; R18 retains the other models' failing profiles. |
+| Native JSON Schema conflict sample | Qwen Chat returns the exact closed shape with an allowed numeric enum and Boolean | One request/attempt. Other model/protocol results remain R19; this is not an arbitrary-schema or internal constrained-decoding qualification. |
+| pi through the production gateway | Configured Responses → Qwen Responses completes 3 requests / 3 attempts | pi 1.5.0 with bundled Luna Responses serializer metadata and the selected Qwen ID: actual read/result/answer and same-session recall. Client root medium plus ordered low-effort updates prepare as native low; no strict opt-out or request/history rewrite is used. Chat-profile admission and absent deployments remain R17/R16. |
+
+The native companion establishes upstream wire/SDK behavior independently of gateway codecs. Temporary response files stay private, reject credential echoes and are deleted with each case. Its disposable loader helper does not add deployment bindings. Product repairs, binding activation and broader structured-output/tool policies remain unselected.
 
 ## Updating this record
 

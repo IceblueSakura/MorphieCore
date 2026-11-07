@@ -79,7 +79,7 @@ The identifiers below belong only to planning and acceptance documentation, not 
 |---|---|---|
 | **AR5 — Fresh credentials, model selection and real acceptance** | Entry: offline tool/default-profile preparation is complete. The user provisions new API keys and any required OAuth sessions through the new loader/CLI. Validate configured accounts and select actual Provider/model bindings. Complete the pi-first real scenario sweep below, then jointly analyze findings and select concentrated repairs. | Current installed pi/OpenCode complete the selected real workflows on the rewritten account path, including affected-loop rechecks after repairs. Blocking findings and unavailable prerequisites receive an explicit joint disposition before closure. Production activation remains separately approved. |
 
-Selected upstream lanes (2026-11-06):
+Selected upstream lanes (2026-11-06; Bailian added 2026-11-07):
 
 | Provider | Credential kind | Public model | Upstream binding |
 |---|---|---|---|
@@ -89,10 +89,15 @@ Selected upstream lanes (2026-11-06):
 | `google` | API key | `gemini-3.8-flash` | `google-gemini-3.8-flash-interactions` (isolated acceptance lane) |
 | `grok` | OAuth | `grok-4.7` | `grok-responses` |
 | `deepseek-beta` | API key | `deepseek-v4.1-flash-1017` | `deepseek-beta-chat` |
+| `aliyun-dashscope-cn` | API key | `qwen3.8-flash` | `dashscope-flash-chat`, `dashscope-flash-responses` |
+| `aliyun-dashscope-cn` | API key | `glm-5.3` | `dashscope-glm-chat`; native Responses companion only |
+| `aliyun-dashscope-cn` | API key | `deepseek-v4.1-flash-1017` | Native Chat/Responses companions only; no production binding |
 
 Fresh local provisioning, Google key replacement and account-reference validation are complete. The selected [Responses replay authority](architecture.md#reasoning-replay) is implemented. The DeepSeek publication keeps canonical/upstream `deepseek-flash`; its label does not pin that upstream alias.
 
 Pending observations and concise passing results have one review home in [AR5 Review](ar5-review.md). Keep them separate from this execution plan and unrelated backlogs while supplementary testing continues. The record grants no new conversion policy, credential operation, deployment or Stage-4 implementation approval.
+
+The user selected a separate six-cell [Bailian model/protocol sweep](ar5-review.md#bailian-model-and-protocol-coverage-2026-11-07), retaining model-specific controls rather than a Provider-wide support assumption. Native SDK evidence, installed-pi gateway acceptance and catalog gaps stay separate. Newly observed native support does not activate missing deployments before joint review.
 
 ### Pre-Stage-4 real-Agent scenario sweep
 
