@@ -9,7 +9,9 @@ This page owns current scope, priorities, dependencies, and exit gates. [Archite
   - [Ordered work and exit gates](#ordered-work-and-exit-gates)
   - [Pre-Stage-4 real-Agent scenario sweep](#pre-stage-4-real-agent-scenario-sweep)
   - [Concentrated repair plan](#concentrated-repair-plan)
+    - [Boundary-based analysis queue](#boundary-based-analysis-queue)
     - [Next-stage analysis](#next-stage-analysis)
+    - [Paused Provider and model observations](#paused-provider-and-model-observations)
     - [Partial-delivery exit](#partial-delivery-exit)
   - [Verification and operator handoff](#verification-and-operator-handoff)
 - [Three-protocol fidelity repair](#three-protocol-fidelity-repair)
@@ -60,12 +62,12 @@ This page owns current scope, priorities, dependencies, and exit gates. [Archite
 
 ## Current status
 
-**Current focus (2026-11-07):** Remaining AR5 work is delivery/history compatibility, Google control projection and explicit next-stage dispositions. [AR5 Review](ar5-review.md#pending-observations) owns the unresolved evidence. Stage 4 resumes at the [partial-delivery exit](#partial-delivery-exit).
+**Current focus (2026-11-07):** Prepare boundary-based analysis of **10 AR5 observations**, keep **R09** blocked on prerequisites, and pause **R13/R18/R19/R21** by user selection. [AR5 Review](ar5-review.md#pending-observations) owns the retained evidence; the [analysis queue](#boundary-based-analysis-queue) below owns grouping and order. Stage 4 resumes at the unchanged [partial-delivery exit](#partial-delivery-exit).
 
 | Priority | Remaining work | Exit |
 |---|---|---|
 | Conditional tool follow-ups | [S3-T5–S3-T7](#conditional-stage-3-follow-ups): namespace aliases, custom-text wrappers and examples projection | Separate policy selection and full affected-loop acceptance; not default prerequisites for AR5 |
-| Account and Agent acceptance | Deliver the concentrated root-cause repairs with low-loss adaptation | Principal workflows and affected paths verified; remaining boundaries explicitly deferred under the partial-delivery exit |
+| Account and Agent acceptance | Analyze the selected request, wire, projection and client boundaries; select bounded repairs from the findings | Exact failing field/event and responsible owner identified; delivered changes meet the partial-delivery exit without requiring every observation to close |
 | API expansion | Select and implement Stage-4 operation contracts after AR5 | Per-operation lifecycle, protocol and SDK acceptance |
 | Downstream integration | Implement opt-in per-Agent JSONL session storage | Selected isolation and lifetime bounds |
 | Production preparation | Decide diagnostic packaging and deferred observability scope | Explicit deployer selection |
@@ -123,36 +125,54 @@ Execution order and checks:
 1. **Characterize and inventory:** Record current unwrapped versions, exposed operations/settings, exact profiles and reusable evidence. Extend existing isolated drivers only where needed. Check actual client wire against public source or a synthetic authority before spending live requests.
 2. **Run the broad sweep:** Start with native/default controls and thinking/summary levels, then coding/tools, history changes, compaction and cancellation. Each run has fixed target, request/attempt budgets including auxiliary calls, output/wire limits and deadlines. Check filesystem/tool outcomes, client terminals, actual upstream controls and continuation history; keep SDK-only evidence separate.
 3. **Collect before repairing:** Add redacted findings and concise passes only to [AR5 Review](ar5-review.md). Distinguish observer/configuration errors, local admission, upstream rejection, delivery/replay failure and unmet prerequisites. Correct a broken test observer or test-owned configuration separately; do not patch product semantics, weaken guards or rewrite history to continue the sweep. Stop only the dependent cell and continue independent workflows.
-4. **Joint root-cause review:** The 2026-11-07 review produced the plan below. Resolve remaining field/event ambiguities only where they decide a current repair; investigation is local to that slice, not a global entry gate.
-5. **Concentrated repairs and exit:** Implement the current slices with focused regressions and required offline/SDK checks. Rerun affected real scenarios and newly reachable dependents. Use the partial-delivery exit; unresolved cells may retain a limited profile and a next-stage analysis entry.
+4. **Joint root-cause review:** Follow the boundary-based analysis queue below; paused observations are outside the current investigation. Resolve field/event ambiguities locally and obtain any required semantic selection, without making one uncertain branch a global entry gate.
+5. **Selected repairs and exit:** After analysis and required selections, implement bounded slices with focused regressions and required offline/SDK checks. Rerun affected real scenarios and newly reachable dependents. Use the partial-delivery exit; unresolved cells may retain a limited profile or explicit deferral.
 
 Risks that change execution: unavailable compatible accounts, no returned replay carrier, a client operation not exposed by the current version, or a required thinking/compaction budget exceeding the run's cap. Record these boundaries before selecting a separate bounded profile or an explicit deferral. A test-only reduced context threshold qualifies the trigger/rebuild path, not full model-context capacity. Do not induce throttling, rotate credentials or change host/deployed services for coverage. Controlled fault injection remains separately labelled from a naturally observed real-upstream failure.
 
 ### Concentrated repair plan
 
-**Revised with the user on 2026-11-07.** Prefer existing conversion/projection owners and stream reducers for the remaining work; no new capability framework, replay store, retry layer or diagnostic platform is planned.
+**Revised with the user on 2026-11-07:** temporarily set aside R13/R18/R19/R21 and classify the other observations by their actual failure boundary. The next step is analysis preparation, not another broad Provider sweep or implementation approval. There are **15 retained observations: 10 analysis candidates, one unavailable prerequisite and four paused observations**.
 
-Only the remaining bounded extensions are listed. Complete a clear, locally supported mapping or carry its unresolved portion forward without delaying delivered work. Investigation for one slice must not gate the others.
+Use existing request lowering, replay/projection owners, stream reducers, client drivers and pinned upstream/SDK tests. No new dependency, capability framework, replay store, retry layer or diagnostic platform is planned. Preserve current guards and working profiles while locating the first divergent boundary. This regrouping selects no new content-loss policy, explicit-guarantee downgrade, binding activation or deployed change.
 
-| Order / observations | Root-cause repair and owner | Check that completes the slice |
+#### Boundary-based analysis queue
+
+Start with the narrow, repeatable Responses wire boundaries, then history normalization and the policy-dependent request/replay branches. This is an investigation order, not a requirement to close every row before delivery. An unresolved selection blocks only its dependent branch.
+
+| Order / boundary / observations | Existing owner and next discriminating check | Analysis exit and selection gate |
 |---|---|---|
-| **Delivery/history compatibility — R01/R04** | Separate unavailable replay carrier from invalid origin. Recommended R01 policy is whole-owner omission of uncarriable signed reasoning on Readable Chat, with bounded deferred publication until carriage is known; this profile change still needs its concrete selection. Qualify zero-byte, unbound text normalization first at the history oracle, then change target projection only if needed. | JSON, SSE and actual next-request serialization agree; meaningful text, tool links and replay dependencies remain intact. Do not equate whitespace, signed parts or boundary-bearing empty messages with absence. Defer R01's policy-dependent portion if unresolved. |
-| **Google control projection — R05/R06** | Candidate extension: reuse source-timed configuration resolution and effective active-tool-set projection before Google root conversion. Select the concrete ordered-history loss first; do not replace this with taking the last marker or weakening strict tools. Keep existing managed signature continuation. | Active/pending timing, tool-feedback turns, current declarations and protected history remain correct in a bounded loop. Any unresolved signature/profile requirement stays outside this slice. |
+| **1 — Downstream lifecycle / SDK accumulation — R22** | Trace source `created`/status through queued-creation normalization, semantic queued/started transitions, [Responses encoding](../src/protocol/openai/events/encode/responses.rs) and the current SDK's opening requirement. Reproduce with a deterministic synthetic stream rather than another live loop. | Identify the first sequence divergence and a contract-permitted opening accepted by the SDK. Preserve queued versus actually started state, response identity and terminal honesty. Any new carrier/profile semantics need their concrete selection. |
+| **2 — Upstream item snapshot decoding — R23** | Use the [Responses decoder](../src/protocol/openai/events/decode/responses.rs), item reducer and pinned directional assets to isolate the first differing known field, identity or lifecycle value. Obtain a narrowly bounded live shape observation only if existing evidence cannot distinguish the check. | Produce a minimal source-shape counterexample and a named baseline/dialect disposition before proposing normalization. Preserve malformed-known-value, identity and completion checks. This snapshot investigation does not reopen paused R19 envelope/schema work. |
+| **3 — Returned-history representation — R04** | Compare delivered output, actual next-request serialization and the unchanged history oracle for zero-byte unsigned/unbound text blocks or messages. First determine whether the oracle rejects legitimate normalization or output projection introduces a semantic owner. | Isolate only genuinely nonsemantic empty representation, with JSON/SSE/next-turn agreement. Nonempty text, whitespace, signatures, tool links and boundary-bearing empties remain protected. Content/replay omission still needs selection. |
+| **4 — Replay ownership and missing carriers — R01/R02** | Separate invalid replay origin from a legitimate owner lacking a Readable Chat/stateless carrier. Trace decode → semantic ownership → projection using directional fixtures; keep managed Google continuation as the working control. | Identify the exact owner and missing/mismatched carrier. Whole-owner signed-reasoning omission and bounded publication remain unselected proposals, not a way to bypass origin validation. Stateless signatures require a selected client-retainable carrier or explicit loss disposition. |
+| **5 — Local request admission and controls — R05/R06/R17** | For Google, trace client message/configuration effort and active-tool timing through requirements and [request lowering](../src/lowering/request.rs); assess the existing source-timed/effective-tool-set approach before root conversion. Independently isolate GLM's explicit strict-tools requirement and target contract. Use local directional controls first: these failures occur before upstream sends. | Distinguish R05/R06 ordered-control projection from R17 strict capability admission. Preserve active/pending timing, feedback turns, declarations and earlier history. Do not take only the last marker, turn strict off, or weaken an explicit guarantee to manufacture acceptance; unresolved semantic loss needs selection. |
+| **6 — Upstream request validation / continuation — R03** | Verify the exact Provider, model, operation path and required headers first. Compare a successful native Luna request with the failing cross-protocol prepared history/controls, using existing preparation and recovery diagnostics. | Identify the rejected field or smallest request-shape difference before attributing `400 recovery.request` or changing continuation. A repeated identical failure is not a discriminating check. Preserve call/result identity and trusted target selection. |
+| **7 — Client post-error resubmission — R08** | Reuse existing failed OpenCode traces to order offered, admitted, failed and blocked submissions. Separate application resubmission from SDK/transport retries and the observer's response-completion race. | Assign the behavior to its actual owner and retain the forwarding ceiling. No manufactured upstream failures, extra Provider calls or new retry mechanism are needed merely to re-observe it. |
 
-Use focused, body-free diagnostics only where a decision needs them: safe known field paths, event/block kinds, terminal class and recognized upstream error category. Reuse existing error/evidence owners. R03/R19 may receive a narrow discriminating check alongside this work, but their investigation is not an initial gate. If the first boundary remains unclear, retain the observation and continue the independent slices rather than guessing a lossy repair.
+For each group, retain the exact profile, earliest divergence, minimal counterexample, responsible owner and proposed disposition. Use safe known field paths, event/block kinds, terminal classes and recognized error categories; private exchanges are not public fixtures. If fresh Provider evidence is necessary, fix the target, operation, request/attempt budget, output/wire caps and deadline first, run serially without hidden retries, and use at most three independent scenarios per observation in that selected run. Prefer a field/event discriminator over repeating the full story.
+
+Stop a branch when its source/control is unavailable or a semantic selection is required; record the concrete gap and continue independent groups. A later implementation slice needs independent directional regressions, the required offline baseline, relevant SDK/client checks and affected real acceptance. Preserve credential/auth, bounds, cancellation, replay isolation and terminal-honesty assertions.
 
 #### Next-stage analysis
 
-These entries are deferred investigation or activation scope, not failed prerequisites for the current delivery. At handoff, retain the affected profile, observed boundary, available working path and next discriminating check; update only the affected entry if new evidence changes its disposition.
+These entries are unavailable prerequisites or separately selected qualification, outside the executable analysis queue. They do not require another broad sweep or block the partial-delivery exit.
 
-| Observations | Retained boundary and next action |
+| Scope | Retained boundary and re-entry condition |
 |---|---|
-| **R02; unresolved R01/R05/R06 portions** | Keep managed Google continuation available. Stateless part/call signatures need a selected client-retainable carrier; do not discard attachments or fabricate reasoning owners. Revisit the profile/ordered-projection decisions independently of other Generation work. |
-| **R03/R19** | Independent repeats reproduce Luna's original rejection. Bailian's envelope varies: a fresh Qwen canonical-schema response passes the SDK but still fails the codec; GLM content and envelope remain separately qualified. Isolate Luna's rejected field and the codec's remaining known-value rejection, rather than attributing every decode failure to the schema alias. |
-| **R08/R13/R21** | Capped rechecks reproduce post-error client resubmission and Grok label/new-write behavior. R13's latest three stories all fail literal-label recall with facts retained at ingress; isolate a failing prepared/native/delivered boundary before claiming loss. Grok still needs direct-upstream comparison. Use explicit tool withdrawal for a structural no-tool guarantee; no prompt injection or automatic retry is planned. |
-| **R09** | Account-compatible replay/failover awaits observed replay and independent compatible accounts. Record the unexercised boundary without creating aliases or reopening frozen routing to satisfy it. |
-| **R22/R23; broader R18/R19 guarantees** | The selected Bailian bindings are registered. GLM Responses passes JSON smoke but its queued opening stops the current SDK accumulator; qualify a lawful created/queued lifecycle without claiming generation has started. DeepSeek Responses fails source item-snapshot verification before publication; isolate the differing known field before selecting any normalization. Keep the working DeepSeek Chat path and API-specific strict/schema boundaries explicit. |
+| **R09 — Replay isolation / account-compatible failover** | Replay transfer needs observed source opaque replay; same-model/account-compatible failover additionally needs independent compatible accounts. Resume only a cell whose prerequisites are met. Do not substitute aliases or a different-model switch. Existing source-only observations do not exercise transfer or qualify failover. |
 | **Remaining real qualification** | Luna SIWC/router endpoints, effective non-Qwen Bailian reply-ceiling enforcement and Haiku same-process cap-switch recovery remain unqualified. Existing native-ceiling preparation receipts and successful GLM JSON smoke do not close those profile-specific checks. Schedule them only when selected. |
+
+#### Paused Provider and model observations
+
+**User-selected temporary pause, 2026-11-07:** no new analysis, Provider retests or repairs for these four observations until the user reschedules them. Keep their [AR5 evidence](ar5-review.md#pending-observations) and current guards; they are neither deleted nor declared repaired. They do not gate the current analysis or partial delivery. Ordinary safety and affected standard regression checks remain required for other slices.
+
+| Observation | Entire paused boundary |
+|---|---|
+| **R13** | Dynamic-tool/instruction literal-label recall and its unresolved prepared/native/delivered attribution |
+| **R18** | Provider-specific forced-tool selection, strict arguments and tool-call terminal behavior |
+| **R19** | Structured-output content, variable SDK envelope **and the remaining codec rejection**, including SDK-valid Qwen responses |
+| **R21** | Grok recovery-label/new-tool behavior and cancellation-specific or direct-upstream attribution |
 
 #### Partial-delivery exit
 

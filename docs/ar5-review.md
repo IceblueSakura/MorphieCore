@@ -36,7 +36,7 @@ Collection totals retain their original execution scope when resolved entries ar
 
 ## Pending observations
 
-Entries retain unresolved boundaries and their scoped evidence, not an implementation queue. The [roadmap](roadmap.md#concentrated-repair-plan) owns repair/defer dispositions. A passing sample closes only its exercised boundary; remove completed portions without renumbering the remaining identifiers.
+Entries retain unresolved boundaries and their scoped evidence, not an implementation queue. The roadmap owns the [boundary-based analysis queue](roadmap.md#boundary-based-analysis-queue), [unavailable prerequisites](roadmap.md#next-stage-analysis) and [temporarily paused observations](roadmap.md#paused-provider-and-model-observations). Retained entries may therefore be outside the current work scope. A passing sample closes only its exercised boundary; remove completed portions without renumbering the remaining identifiers.
 
 | ID | Observation and affected path | Current evidence and unresolved boundary |
 |---|---|---|
