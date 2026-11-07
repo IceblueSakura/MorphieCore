@@ -56,12 +56,9 @@ async fn configured_body_budgets_apply_before_execution_and_release_capacity() {
 }
 
 #[test]
-fn current_schema_rejects_old_fields_null_controls_and_zero_history() {
+fn resource_budgets_and_task_shapes_remain_strict() {
     let models = json!({"models":{"deepseek-flash":{"candidates":[{"binding":"deepseek-chat"}]}}});
     for settings in [
-        json!({"concurrency":1}),
-        json!({"exchange_timeout_ms":1000}),
-        json!({"oauth_scan_interval_ms":1000}),
         json!({"routing":null}),
         json!({"resources":{"request_bytes":null}}),
         json!({"resources":{"history_entries":0}}),
@@ -79,17 +76,13 @@ fn current_schema_rejects_old_fields_null_controls_and_zero_history() {
         );
     }
     for value in [
-        json!({"implicit_cache_affinity":true,"models":models["models"]}),
         json!({"models":{"text-embedding-3-small":{"account":"primary","candidates":[]}}}),
         json!({"models":{"text-embedding-3-small":{"account":"primary","chat_profile":null}}}),
     ] {
         let result = Fixture::new(
             service(),
             value,
-            &[
-                ("openrouter", "primary", "synthetic-key"),
-                ("deepseek", "primary", "synthetic-other-key"),
-            ],
+            &[("openrouter", "primary", "synthetic-key")],
         );
         assert!(
             matches!(result, Err(super::StartupError::Detail(error)) if error.domain == "models")

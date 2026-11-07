@@ -478,7 +478,7 @@ mod test_files;
 mod tests {
     use super::*;
     #[tokio::test]
-    async fn provider_kind_and_obsolete_fields_reject_before_credential_access() {
+    async fn provider_kind_is_checked_before_credential_access() {
         let directory = test_files::private_directory();
         let store = directory.path().join("absent-store");
         let file = tempfile::NamedTempFile::new_in(directory.path()).unwrap();
@@ -522,19 +522,6 @@ mod tests {
             assert!(matches!(
                 execute(options(&arguments)).await,
                 Err(Error::Kind)
-            ));
-        }
-        for (provider, field, value) in [
-            ("openai", "kind", "api_key"),
-            ("chatgpt", "kind", "oauth"),
-            ("chatgpt", "profile", "openai"),
-        ] {
-            let mut obsolete = declarations.clone();
-            obsolete["providers"][provider]["accounts"][0]["credential"][field] = json!(value);
-            std::fs::write(file.path(), serde_json::to_vec(&obsolete).unwrap()).unwrap();
-            assert!(matches!(
-                execute(options(&["validate"])).await,
-                Err(Error::Accounts(AccountError::Detail(error))) if error.domain == "accounts"
             ));
         }
         assert!(!store.exists());

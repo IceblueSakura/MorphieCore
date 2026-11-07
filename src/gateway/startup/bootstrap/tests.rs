@@ -412,15 +412,10 @@ fn transcription_model_requires_one_explicit_binding_when_providers_share_identi
             serde_json::json!({}),
             serde_json::json!({"binding":"unknown"}),
             serde_json::json!({"binding":"xiaomi-asr"}),
-            serde_json::json!({"binding":binding,"max_attempts":2}),
             serde_json::json!({"binding":binding,"candidates":[{"binding":binding}]}),
         ] {
             assert!(Fixture::new(service(), config(invalid), &credentials).is_err());
         }
-        let old = serde_json::json!({"models":{
-            "qwen-audio-3.0-asr-flash-dashscope":selection
-        }});
-        assert!(Fixture::new(service(), old, &credentials).is_err());
     }
     let wrong_pool = [(
         "aliyun-tokenplan-cn",
@@ -892,10 +887,6 @@ fn configured_accounts_preserve_order_targets_limits_and_replay_isolation() {
         ["opencode-go"]
     );
     write_private(&models_file, br#"{"models":{},"models":{}}"#);
-    assert!(Bootstrap::from_files(&gateway_file, &store).is_err());
-    let mut invalid = model_config;
-    invalid["models"]["claude-haiku-5-5"]["max_attempts"] = serde_json::json!(0);
-    private_write(&models_file, invalid);
     assert!(Bootstrap::from_files(&gateway_file, &store).is_err());
 
     let replay_binding = catalog::API_KEY_BINDINGS

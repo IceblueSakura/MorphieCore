@@ -121,7 +121,7 @@ morphiecore-auth --accounts "$ROOT/accounts.json" --store "$ROOT/credentials" va
 morphiecore --config "$ROOT/gateway.json" --validate --json
 ```
 
-Gateway validation also uses the real model/task loader and Agent authentication configuration, without a listener or observation-sink activation. Unsupported schema versions, old fields, duplicate names/subjects, incompatible references and unsafe storage fail closed. Provision every referenced account first; there is no migration, import or credential-alias bypass.
+Gateway validation also uses the real model/task loader and Agent authentication configuration, without a listener or observation-sink activation. Schema errors, duplicate names/subjects, incompatible references and unsafe storage fail closed. Provision every referenced account first.
 
 ### OAuth
 
@@ -313,7 +313,7 @@ Keep edited copies, credentials, certificates and captures outside the repositor
 
 Paths in the service file resolve relative to that file, not the process working directory. CLI paths remain explicit process-relative or absolute paths.
 
-The current schema remains **version 1**, with no historical aliases or migration. Policy fields belong to the following objects; old flat fields and `models.json.implicit_cache_affinity` reject. Omit a group or field to use its default. Groups and numeric/boolean fields reject `null`; `delivery.delta_coalescing:null` explicitly disables batching. Optional paths, proxy and capture retain their nullable form.
+The configuration uses **version 1**. Policy fields belong to the following objects. Omit a group or field to use its default. Groups and numeric/boolean fields reject `null`; `delivery.delta_coalescing:null` explicitly disables batching. Optional paths, proxy and capture retain their nullable form.
 
 | Group | Fields and defaults | Bounds / effect |
 |---|---|---|
@@ -354,7 +354,7 @@ Explanation uses the production loader and requires valid local credentials. It 
 | `name` | Optional mutable display label; defaults to empty, at most 256 UTF-8 bytes, no control characters |
 | `desc` | Optional maintenance description; defaults to empty, at most 2048 UTF-8 bytes |
 
-Records reject unknown fields; supplied fields must have their declared types, not null. Both duplicate IDs and duplicate keys reject startup. The file must exist and pass the same private-file checks as other configuration; there is no environment-key or anonymous fallback. The former `gateway.json.client_key` and unversioned ID-to-key dictionaries are not accepted.
+Records reject unknown fields; supplied fields must have their declared types, not null. Both duplicate IDs and duplicate keys reject startup. The file must exist and pass the same private-file checks as other configuration; there is no environment-key or anonymous fallback.
 
 Use the Agent's `key` in the SDK. Authentication determines `agent_id`; request headers, metadata and business content cannot choose it. Names and descriptions are private maintenance metadata, not authentication or public discovery fields. The runtime retains key digests, not plaintext keys; ordinary inference diagnostics record only the authenticated ID.
 
@@ -410,11 +410,11 @@ Omitted model-value fields inherit the binding's declaration. Effort/output limi
 
 The Go/Haiku Messages binding declares a `32000` default; generic Messages targets do not. `default_output_tokens` is independent of `maximum_output_tokens`: it may be raised or lowered, but a resolved default above the effective maximum rejects startup. For example, narrowing the maximum to `8192` requires overriding the inherited `32000` with a value at most `8192`, or clearing it with `null`. Zero, malformed values and this field on a non-Messages candidate (including `null`) reject. Defaults fill absence only; explicit request caps still take the model-maximum clamp above. An uncapped Messages candidate with no effective default rejects locally. Defaults are neither a promise to generate that amount nor a model-limit guarantee. See [missing output ceilings](architecture.md#missing-output-ceilings).
 
-Account selection happens before dispatch. Generation may retry one explicitly eligible unpublished network/server failure on that exact target, with the same credential material and wire request. Rate/quota/auth/permission/request failures, malformed output, trust/local faults and ambiguous post-dispatch timeouts do not authorize the additional send. A returned failure never causes another account or Provider to be dispatched in that request. Model `max_attempts` and candidate `credential`, `base_url` and `attempt_timeout_ms` are unsupported fields, not dormant settings.
+Account selection happens before dispatch. Generation may retry one explicitly eligible unpublished network/server failure on that exact target, with the same credential material and wire request. Rate/quota/auth/permission/request failures, malformed output, trust/local faults and ambiguous post-dispatch timeouts do not authorize the additional send. A returned failure never causes another account or Provider to be dispatched in that request.
 
 Cooling targets are never tried early. If every otherwise-legal target is cooling or probing, the gateway returns 429 for rate/quota-only blocking and 503 otherwise. It supplies `Retry-After` only for a credible positive delay within `routing.retry_hint_horizon_ms`; probing alone supplies no deadline. [Health and recovery](architecture.md#health-and-recovery) defines cooldown scopes, delay bounds, foreground probes and cancellation.
 
-All Generation client protocols use the same configured candidate array. To send Responses clients through Chat, select a Chat binding; there is no separate `responses_via_chat` switch. The old service-file `models`, `failover` and attempt fields are rejected, not automatically migrated.
+All Generation client protocols use the same configured candidate array. To send Responses clients through Chat, select a Chat binding.
 
 For `claude-haiku-5-5`, `opencode-go-haiku-messages` candidates natively carry Messages owner-local `cache_control` markers, caller-selected 5m/1h automatic policy, ordered function `input_examples` and per-use document `context`. Mixed routes no longer close public cache admission: each candidate preserves supported carriers or applies its selected named projection. Explicit strictness, media and output guarantees still require a carrier. The native profile also has ordered effort, block-binding and tool-change carriers; public intake restrictions remain listed [below](#messages-profile-and-cache-markers). Credentials alone never activate a binding. Trusted deployment overrides retain the selected binding's contract and do not establish support for a different model. [Bounded acceptance](development.md#native-messages-input-acceptance) does not prove elapsed cache retention or invoices.
 

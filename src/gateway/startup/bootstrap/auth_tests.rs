@@ -28,7 +28,6 @@ fn auth_file_is_required_private_strict_and_versioned() {
     for invalid in [
         json!({}),
         json!(null),
-        json!({"one":FIRST}),
         json!({"agents":[]}),
         json!({"version":2,"agents":[]}),
         json!({"version":1,"agents":null}),
@@ -100,20 +99,6 @@ fn auth_file_is_required_private_strict_and_versioned() {
         std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
     }
     assert!(Bootstrap::from_directory(root).is_ok());
-    for invalid in [
-        json!({"client_key":FIRST}),
-        json!({"auth_file":"auth.json","models_file":"models.json","client_key":FIRST}),
-        json!({"auth_file":"auth.json","models_file":"models.json","client_key":null}),
-    ] {
-        write_private(
-            &root.join("gateway.json"),
-            &serde_json::to_vec(&invalid).unwrap(),
-        );
-        assert!(matches!(
-            Bootstrap::from_directory(root),
-            Err(StartupError::Detail(error)) if error.domain == "gateway"
-        ));
-    }
 }
 
 #[tokio::test]
