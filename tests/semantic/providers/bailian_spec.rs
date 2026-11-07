@@ -445,11 +445,69 @@ fn model_binding_and_local_delivery_prefs_cannot_be_bypassed_by_direct_native_ad
     let input = client(GenerationApi::Responses)
         .decode_client_request(wire.to_string().as_bytes())
         .unwrap();
-    let (wire, rules) = endpoint("tokenplan-glm", GenerationProtocol::OpenAiResponses)
+    let (wire, rules) = endpoint("dashscope-glm", GenerationProtocol::OpenAiResponses)
         .encode_request_with_rules(&input)
         .unwrap();
     assert_eq!(wire["reasoning"]["effort"], "high");
     assert_eq!(rules, ["bailian.glm-5.3.responses.effort.v1"]);
+}
+#[test]
+fn deepseek_bindings_keep_bailian_identity_controls_and_strictness_boundary() {
+    for (api, protocol) in [
+        (GenerationApi::Chat, GenerationProtocol::OpenAiChat),
+        (
+            GenerationApi::Responses,
+            GenerationProtocol::OpenAiResponses,
+        ),
+    ] {
+        let target = endpoint("dashscope-deepseek", protocol);
+        for effort in ["low", "high", "max", "none"] {
+            let mut wire = match api {
+                GenerationApi::Chat => json!({
+                    "model":"deepseek-v4.1-flash-1017",
+                    "messages":[{"role":"user","content":"go"}],
+                    "reasoning_effort":effort,"max_completion_tokens":64,
+                    "tools":[{"type":"function","function":{"name":"lookup",
+                        "parameters":{"type":"object"},"strict":false}}]
+                }),
+                GenerationApi::Responses => json!({
+                    "model":"deepseek-v4.1-flash-1017",
+                    "input":"go","reasoning":{"effort":effort},"max_output_tokens":64,
+                    "tools":[{"type":"function","name":"lookup",
+                        "parameters":{"type":"object"},"strict":false}]
+                }),
+            };
+            let input = client(api)
+                .decode_client_request(wire.to_string().as_bytes())
+                .unwrap();
+            let before = input.clone();
+            let (prepared, rules) = target.encode_request_with_rules(&input).unwrap();
+            assert_eq!(prepared["model"], "deepseek-v4.1-flash-1017");
+            if effort == "none" {
+                assert_eq!(prepared["enable_thinking"], false);
+            }
+            if api == GenerationApi::Chat {
+                assert_eq!(prepared["max_completion_tokens"], 64);
+                assert!(prepared.get("max_tokens").is_none());
+                if effort != "none" {
+                    assert_eq!(prepared["reasoning_effort"], effort);
+                }
+                wire["tools"][0]["function"]["strict"] = json!(true);
+            } else {
+                assert_eq!(prepared["max_output_tokens"], 64);
+                if effort != "none" {
+                    assert_eq!(prepared["reasoning"]["effort"], effort);
+                    assert!(rules.contains(&"generation.reply-only-output-ceiling.v1"));
+                }
+                wire["tools"][0]["strict"] = json!(true);
+            }
+            assert_eq!(input, before);
+            let strict = client(api)
+                .decode_client_request(wire.to_string().as_bytes())
+                .unwrap();
+            assert!(target.encode_request_with_rules(&strict).is_err());
+        }
+    }
 }
 fn response_request() -> Value {
     json!({"model":"qwen3.8-flash","input":"go","max_output_tokens":64,

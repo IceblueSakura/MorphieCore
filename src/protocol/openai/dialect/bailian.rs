@@ -287,6 +287,12 @@ const KIMI_CHAT: ReasoningEffortMapping = ReasoningEffortMapping {
     rule: "bailian.kimi-k3.chat.effort.v1",
     ..GLM_CHAT
 };
+// Native low/high/max controls qualified on both Bailian APIs, 2026-11-07.
+const DEEPSEEK: ReasoningEffortMapping = ReasoningEffortMapping {
+    canonical_model: "deepseek-flash",
+    rule: "bailian.deepseek-flash.effort.v1",
+    ..GLM_CHAT
+};
 const GLM_RESPONSES: ReasoningEffortMapping = ReasoningEffortMapping {
     rule: "bailian.glm-5.3.responses.effort.v1",
     encode: &[
@@ -309,6 +315,7 @@ pub(crate) fn effort_mapping(
         ("glm-5.3" | "glm-5.3-prime", GenerationApi::Chat) => Some(&GLM_CHAT),
         ("glm-5.3" | "glm-5.3-prime", GenerationApi::Responses) => Some(&GLM_RESPONSES),
         ("kimi-k3", GenerationApi::Chat) => Some(&KIMI_CHAT),
+        ("deepseek-flash" | "deepseek-v4.1-flash-1017", _) => Some(&DEEPSEEK),
         _ => None,
     }
 }

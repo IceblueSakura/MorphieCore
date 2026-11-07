@@ -14,10 +14,8 @@ pub enum RequestSlice {
     RestrictedLuna,
     OpenCodeHy4,
     AudioText,
-    /// The DeepSeek standard endpoint does not validate strict tool schemas;
-    /// the model's strict-tools capability belongs to the beta binding.
-    /// Source: https://api-docs.deepseek.com/guides/tool_calls/
-    DeepSeekStandard,
+    /// Do not inherit a canonical model's endpoint-specific strict guarantee.
+    NonStrictTools,
 }
 impl RequestSlice {
     pub fn apply(
@@ -78,7 +76,7 @@ impl RequestSlice {
                 false,
             );
         }
-        if matches!(self, Self::DeepSeekStandard) {
+        if matches!(self, Self::NonStrictTools) {
             contract.set_native(
                 crate::semantic::task::generation::Feature::StrictTools,
                 false,
@@ -486,7 +484,7 @@ pub const API_KEY_BINDINGS: &[ApiKeyBinding] = &[
         model: "glm-5.3",
         canonical_model: "glm-5.3",
         upstream: "glm-5.3",
-        protocols: CHAT,
+        protocols: BOTH,
         reasoning_history: &[],
         replay_responses: false,
         replay_chat: false,
@@ -569,7 +567,8 @@ pub const API_KEY_BINDINGS: &[ApiKeyBinding] = &[
         replay_responses: true,
         replay_chat: false,
         public_slice: RequestSlice::Canonical,
-        endpoint_slice: RequestSlice::DeepSeekStandard,
+        // https://api-docs.deepseek.com/guides/tool_calls/
+        endpoint_slice: RequestSlice::NonStrictTools,
     },
     // Endpoint-qualified strict-tool validation on the DeepSeek beta chat path.
     // Activation still requires an explicit models-file candidate and account.
@@ -588,6 +587,22 @@ pub const API_KEY_BINDINGS: &[ApiKeyBinding] = &[
         replay_chat: false,
         public_slice: RequestSlice::Canonical,
         endpoint_slice: RequestSlice::Canonical,
+    },
+    ApiKeyBinding {
+        provider: catalog::aliyun_dashscope_cn,
+        dialect: Dialect::Bailian,
+        endpoint_prefix: "dashscope-deepseek",
+        effort_mappings: &[],
+        model: "deepseek-flash",
+        canonical_model: "deepseek-flash",
+        upstream: "deepseek-v4.1-flash-1017",
+        protocols: BOTH,
+        reasoning_history: &[],
+        replay_responses: false,
+        replay_chat: false,
+        public_slice: RequestSlice::Canonical,
+        // Native beta strictness is not a Bailian guarantee.
+        endpoint_slice: RequestSlice::NonStrictTools,
     },
     ApiKeyBinding {
         provider: catalog::xiaomi,

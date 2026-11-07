@@ -93,12 +93,12 @@ Selected upstream lanes (2026-11-06; Bailian added 2026-11-07):
 | `grok` | OAuth | `grok-4.7` | `grok-responses` |
 | `deepseek-beta` | API key | `deepseek-v4.1-flash-1017` | `deepseek-beta-chat` |
 | `aliyun-dashscope-cn` | API key | `qwen3.8-flash` | `dashscope-flash-chat`, `dashscope-flash-responses` |
-| `aliyun-dashscope-cn` | API key | `glm-5.3` | `dashscope-glm-chat`; native Responses companion only |
-| `aliyun-dashscope-cn` | API key | `deepseek-v4.1-flash-1017` | Native Chat/Responses companions only; no production binding |
+| `aliyun-dashscope-cn` | API key | `glm-5.3` | `dashscope-glm-chat`, `dashscope-glm-responses` |
+| `aliyun-dashscope-cn` | API key | `deepseek-v4.1-flash-1017` | `dashscope-deepseek-chat`, `dashscope-deepseek-responses` |
 
 Observations and concise passing results have one evidence home in [AR5 Review](ar5-review.md). This roadmap owns their execution/defer dispositions; [Architecture](architecture.md#conversion-ladder) owns accepted conversion policy. Historical samples retain their original scope as repairs and focused supplementary checks proceed.
 
-The user selected a separate six-cell [Bailian model/protocol sweep](ar5-review.md#bailian-model-and-protocol-coverage-2026-11-07), retaining model-specific controls rather than a Provider-wide support assumption. Native SDK evidence, installed-pi gateway acceptance and catalog gaps stay separate. Missing binding activation is a separate follow-up, not a prerequisite for repairing existing bindings.
+The user selected a separate six-cell [Bailian model/protocol sweep](ar5-review.md#bailian-model-and-protocol-coverage-2026-11-07), retaining model-specific controls rather than a Provider-wide support assumption, and subsequently selected the three missing catalog bindings. [Independent rechecks](ar5-review.md#binding-and-independent-rechecks-2026-11-07) qualify DeepSeek Chat and retain the GLM/DeepSeek Responses SDK/decode boundaries. Production deployment remains separately approved.
 
 ### Pre-Stage-4 real-Agent scenario sweep
 
@@ -148,12 +148,12 @@ These entries are deferred investigation or activation scope, not failed prerequ
 | Observations | Retained boundary and next action |
 |---|---|
 | **R02; unresolved R01/R05/R06 portions** | Keep managed Google continuation available. Stateless part/call signatures need a selected client-retainable carrier; do not discard attachments or fabricate reasoning owners. Revisit the profile/ordered-projection decisions independently of other Generation work. |
-| **R03/R14/R19** | Unknown Luna rejected field, intermittent recovery decoder failure and the remaining Bailian response rejection need a precise field/event boundary. R19 already has schema-alias handling: add a successful directional control and isolate the remaining shape before changing it. Existing native Luna/Haiku and Qwen workflows retain their recorded scope. |
-| **R07** | Qualify the current OpenCode public-label declaration and full redacted client error before changing gateway model routing; the canonical-label workflow is already available. |
+| **R03/R14/R19** | Independent repeats reproduce Luna's original rejection, do not reproduce the historical Haiku decoder failure, and retain the Bailian schema-envelope/codec rejection despite variable GLM schema conformity. Isolate Luna's rejected field and a successful Bailian directional decode control; canonicalizing the schema alias or removing reported text still rejects. Preserve passing recovery and observer failures separately. |
+| **R07** | Both `deepseek-v4.1-flash` and `deepseek-v4.1-flash-1017` custom OpenCode declarations fail before HTTP, while current built-in `deepseek-flash` passes synthetic and real loops. Use the working canonical profile; revisit custom client route declaration only when needed, without adding gateway aliases to repair a pre-gateway failure. |
 | **R08/R12/R13/R21** | Separate application resubmission, fact retention, formatting, new tool execution and terminal behavior in existing observers. Grok needs a fresh direct-upstream/prepared-request comparison; retain passing coding/controls. Use explicit tool withdrawal for a structural no-tool recovery guarantee, separate from prompt-following assertions. No prompt injection or automatic retry is planned. |
 | **R09** | Account-compatible replay/failover awaits observed replay and independent compatible accounts. Record the unexercised boundary without creating aliases or reopening frozen routing to satisfy it. |
-| **R16; broader R18/R19 guarantees** | Missing Bailian bindings and broader strict/schema/tool guarantees are separate next-stage selections. Qualify each API's model identity, controls, ceiling scope and history; native success does not activate production bindings. Existing ordinary loops remain usable within their documented profiles. |
-| **Remaining real qualification** | Luna SIWC/router endpoints, non-Qwen Bailian reply-only ceiling adaptation and Haiku same-process cap-switch recovery remain unqualified by real calls. Keep these profile-specific checks separate from R14 cancellation and schedule them only when the corresponding workflow is selected. |
+| **R22/R23; broader R18/R19 guarantees** | The selected Bailian bindings are registered. GLM Responses passes JSON smoke but its queued opening stops the current SDK accumulator; qualify a lawful created/queued lifecycle without claiming generation has started. DeepSeek Responses fails source item-snapshot verification before publication; isolate the differing known field before selecting any normalization. Keep the working DeepSeek Chat path and API-specific strict/schema boundaries explicit. |
+| **Remaining real qualification** | Luna SIWC/router endpoints, effective non-Qwen Bailian reply-ceiling enforcement and Haiku same-process cap-switch recovery remain unqualified. Existing native-ceiling preparation receipts and successful GLM JSON smoke do not close those profile-specific checks. Keep them separate from R14 cancellation and schedule them only when selected. |
 
 #### Partial-delivery exit
 

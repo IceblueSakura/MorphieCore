@@ -1379,6 +1379,8 @@ const BASIC_EXPECTATIONS: &[(&[&str], [&[&str]; 4])] = &[
     (
         &[
             "dashscope-flash-responses",
+            "dashscope-glm-responses",
+            "dashscope-deepseek-responses",
             "tokenplan-max-responses",
             "aliyun-dashscope-cn-responses",
             "aliyun-tokenplan-cn-responses",
@@ -1397,6 +1399,7 @@ const BASIC_EXPECTATIONS: &[(&[&str], [&[&str]; 4])] = &[
         &[
             "dashscope-kimi-chat",
             "dashscope-glm-chat",
+            "dashscope-deepseek-chat",
             "dashscope-glm-prime-chat",
             "tokenplan-glm-chat",
         ],
