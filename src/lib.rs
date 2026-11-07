@@ -7,6 +7,7 @@
 
 pub mod account;
 pub mod adapter;
+pub mod configuration;
 pub mod credential;
 pub mod execution;
 pub mod gateway;

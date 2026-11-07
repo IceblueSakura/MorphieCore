@@ -1,6 +1,5 @@
 {
   "version": 1,
-  "implicit_cache_affinity": false,
   "models": {
     "text-embedding-3-small": {
       "account": "primary"

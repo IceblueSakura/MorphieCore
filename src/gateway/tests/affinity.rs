@@ -158,7 +158,6 @@ fn gateway(origin: &str, profile: GenerationApi, dialect: Dialect) -> Gateway {
             .into(),
         execution: ExecutionContract {
             streaming: true,
-            retry_before_commit: false,
             request_body_limit: 256 << 10,
             response_body_limit: 1 << 20,
             timeout_ms: 2000,

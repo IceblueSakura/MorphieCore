@@ -14,7 +14,7 @@ use std::{
 /// # Bounds
 /// - `max_delay_ms`: Window duration in milliseconds (`1..=100`, default 50 ms).
 /// - `max_pending_bytes`: Maximum buffered bytes before flushing (`1024..=1048576`, default 16 KiB).
-#[derive(Clone, Copy, Debug, serde::Deserialize)]
+#[derive(Clone, Copy, Debug, serde::Deserialize, serde::Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct DeltaCoalescing {
     pub max_delay_ms: u64,

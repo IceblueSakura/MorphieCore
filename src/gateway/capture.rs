@@ -24,7 +24,7 @@ use std::{
 };
 
 /// Selection flags for capturing headers and bodies at an exchange boundary.
-#[derive(Clone, Copy, Debug, Default, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct Selection {
     pub headers: bool,

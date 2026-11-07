@@ -86,27 +86,72 @@ impl Limits {
         })
     }
 
-    pub(super) fn validate(&self) -> bool {
-        self.delta_coalescing.is_none_or(|policy| policy.valid())
-            && (1..=64 << 20).contains(&self.request_bytes)
-            && (1..=64 << 20).contains(&self.response_bytes)
-            && (1..=crate::semantic::task::image_generation::MAX_IMAGE_BYTES)
-                .contains(&self.image_bytes)
-            && (1..=crate::semantic::task::image_generation::MAX_IMAGES_BYTES)
-                .contains(&self.images_bytes)
-            && (1..=crate::semantic::value::MAX_AUDIO_BYTES).contains(&self.speech_bytes)
-            && (1..=crate::protocol::openai::transcription::MAX_UPLOAD_BYTES)
-                .contains(&self.transcription_request_bytes)
-            && (1..=64 << 20).contains(&self.event_bytes)
-            && (1..=1_000_000).contains(&self.max_events)
-            && (1..=256).contains(&self.concurrency)
-            && (1..=4096).contains(&self.history_entries)
-            && (1..=1 << 30).contains(&self.history_bytes)
-            && !self.history_ttl.is_zero()
-            && self.history_ttl <= Duration::from_secs(24 * 60 * 60)
-            && !self.body_timeout.is_zero()
-            && self.body_timeout <= Duration::from_secs(60)
-            && !self.exchange_timeout.is_zero()
-            && self.exchange_timeout <= Duration::from_secs(24 * 60 * 60)
+    pub(super) fn validate(&self) -> Result<(), super::error::StartupError> {
+        let checks = [
+            (
+                "delivery.delta_coalescing",
+                self.delta_coalescing.is_none_or(|p| p.valid()),
+            ),
+            (
+                "resources.request_bytes",
+                (1..=64 << 20).contains(&self.request_bytes),
+            ),
+            (
+                "resources.response_bytes",
+                (1..=64 << 20).contains(&self.response_bytes),
+            ),
+            (
+                "image_bytes",
+                (1..=crate::semantic::task::image_generation::MAX_IMAGE_BYTES)
+                    .contains(&self.image_bytes),
+            ),
+            (
+                "images_bytes",
+                (1..=crate::semantic::task::image_generation::MAX_IMAGES_BYTES)
+                    .contains(&self.images_bytes),
+            ),
+            (
+                "speech_bytes",
+                (1..=crate::semantic::value::MAX_AUDIO_BYTES).contains(&self.speech_bytes),
+            ),
+            (
+                "transcription_request_bytes",
+                (1..=crate::protocol::openai::transcription::MAX_UPLOAD_BYTES)
+                    .contains(&self.transcription_request_bytes),
+            ),
+            ("event_bytes", (1..=64 << 20).contains(&self.event_bytes)),
+            ("max_events", (1..=1_000_000).contains(&self.max_events)),
+            (
+                "resources.concurrency",
+                (1..=256).contains(&self.concurrency),
+            ),
+            (
+                "resources.history_entries",
+                (1..=4096).contains(&self.history_entries),
+            ),
+            (
+                "resources.history_bytes",
+                (1..=1 << 30).contains(&self.history_bytes),
+            ),
+            (
+                "resources.history_ttl_ms",
+                !self.history_ttl.is_zero()
+                    && self.history_ttl <= Duration::from_secs(24 * 60 * 60),
+            ),
+            (
+                "resources.body_timeout_ms",
+                !self.body_timeout.is_zero() && self.body_timeout <= Duration::from_secs(60),
+            ),
+            (
+                "delivery.exchange_timeout_ms",
+                !self.exchange_timeout.is_zero()
+                    && self.exchange_timeout <= Duration::from_secs(24 * 60 * 60),
+            ),
+        ];
+        if let Some((field, _)) = checks.into_iter().find(|(_, valid)| !valid) {
+            return Err(crate::configuration::ConfigurationError::new(
+                "gateway", field, "outside supported safety bounds; check the documented resource and delivery limits").into());
+        }
+        Ok(())
     }
 }

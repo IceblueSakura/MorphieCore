@@ -25,22 +25,22 @@ use std::collections::{BTreeMap, BTreeSet};
 pub(super) struct Models {
     version: u32,
     pub models: BTreeMap<String, Model>,
-    #[serde(default = "enabled")]
-    pub implicit_cache_affinity: bool,
-}
-fn enabled() -> bool {
-    true
 }
 
 #[derive(Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct Model {
+    #[serde(default, deserialize_with = "crate::configuration::optional")]
     binding: Option<String>,
+    #[serde(default, deserialize_with = "crate::configuration::optional")]
     account: Option<String>,
-    #[serde(default)]
-    candidates: Vec<Candidate>,
+    #[serde(default, deserialize_with = "crate::configuration::optional")]
+    candidates: Option<Vec<Candidate>>,
+    #[serde(default, deserialize_with = "crate::configuration::optional")]
     total_timeout_ms: Option<u64>,
+    #[serde(default, deserialize_with = "crate::configuration::optional")]
     thinking_tokens: Option<ThinkingTokens>,
+    #[serde(default, deserialize_with = "crate::configuration::optional")]
     chat_profile: Option<ChatProfile>,
 }
 
@@ -48,15 +48,21 @@ pub(super) struct Model {
 #[serde(deny_unknown_fields)]
 struct Candidate {
     binding: String,
+    #[serde(default, deserialize_with = "crate::configuration::optional")]
     allowed_effort: Option<Vec<String>>,
+    #[serde(default, deserialize_with = "crate::configuration::optional")]
     context_window_tokens: Option<u64>,
+    #[serde(default, deserialize_with = "crate::configuration::optional")]
     maximum_input_tokens: Option<u64>,
+    #[serde(default, deserialize_with = "crate::configuration::optional")]
     maximum_output_tokens: Option<u64>,
     #[serde(default)]
     default_output_tokens: crate::semantic::value::Presence<u64>,
+    #[serde(default, deserialize_with = "crate::configuration::optional")]
     upstream_model: Option<String>,
     #[serde(default)]
     reasoning_as_text: bool,
+    #[serde(default, deserialize_with = "crate::configuration::optional")]
     thinking_conversion: Option<ThinkingConversion>,
 }
 #[derive(Clone, Copy, Deserialize)]
@@ -94,6 +100,7 @@ pub(super) struct Plan {
     pub topology: CompiledTopology,
     pub entries: TaskEntries,
     pub credentials: Credentials,
+    pub explanation: Vec<serde_json::Value>,
 }
 fn invalid() -> StartupError {
     StartupError::Configuration("models")
@@ -110,9 +117,15 @@ impl Models {
         let mut endpoints = Vec::new();
         let mut routes = Vec::new();
         let mut public_models = Vec::new();
+        let mut explanation = Vec::new();
         for (model_index, (label, config)) in self.models.into_iter().enumerate() {
+            let invalid = || {
+                crate::configuration::ConfigurationError::new(
+                "models", format!("models[{model_index}]"),
+                "invalid model fields or task selection; choose a catalog model and its supported fields").into()
+            };
             let Some(public) = catalog.model(&label) else {
-                if !config.candidates.is_empty()
+                if config.candidates.is_some()
                     || config.total_timeout_ms.is_some()
                     || config.thinking_tokens.is_some()
                     || config.chat_profile.is_some()
@@ -120,65 +133,93 @@ impl Models {
                     return Err(invalid());
                 }
                 let name = config.account.as_deref().ok_or_else(invalid)?;
-                let provider = if let Some(route) = catalog.image_route(&label) {
-                    if config.binding.is_some() {
-                        return Err(invalid());
-                    }
-                    entries.images.push(ImageEntry {
-                        model: label.clone(),
-                    });
-                    &route.endpoint.provider
-                } else if let Some(route) = catalog.speech_route(&label) {
-                    if config.binding.is_some() {
-                        return Err(invalid());
-                    }
-                    entries.speech.push(SpeechEntry {
-                        model: label.clone(),
-                    });
-                    &route.endpoint.provider
-                } else if catalog.transcription_model(&label).is_some() {
-                    let route = match config.binding.as_deref() {
-                        Some(binding) => catalog.transcription_binding(
-                            &label,
-                            &EndpointId::new(binding).map_err(|_| invalid())?,
-                        ),
-                        None => catalog.transcription_route(&label),
-                    }
-                    .ok_or(StartupError::Binding)?;
-                    entries.transcriptions.push(TranscriptionEntry {
-                        model: label.clone(),
-                        binding: Some(route.endpoint.id.clone()),
-                    });
-                    &route.endpoint.provider
-                } else if let Some(route) = catalog.embedding_route(&label) {
-                    if config.binding.is_some() {
-                        return Err(invalid());
-                    }
-                    entries.embeddings.push(EmbeddingEntry {
-                        model: label.clone(),
-                    });
-                    &route.endpoint.provider
-                } else {
-                    return Err(StartupError::Binding);
-                };
+                let (provider, binding, execution, task) =
+                    if let Some(route) = catalog.image_route(&label) {
+                        if config.binding.is_some() {
+                            return Err(invalid());
+                        }
+                        entries.images.push(ImageEntry {
+                            model: label.clone(),
+                        });
+                        (
+                            &route.endpoint.provider,
+                            &route.endpoint.id,
+                            &route.endpoint.execution,
+                            "images",
+                        )
+                    } else if let Some(route) = catalog.speech_route(&label) {
+                        if config.binding.is_some() {
+                            return Err(invalid());
+                        }
+                        entries.speech.push(SpeechEntry {
+                            model: label.clone(),
+                        });
+                        (
+                            &route.endpoint.provider,
+                            &route.endpoint.id,
+                            &route.endpoint.execution,
+                            "speech",
+                        )
+                    } else if catalog.transcription_model(&label).is_some() {
+                        let route = match config.binding.as_deref() {
+                            Some(binding) => catalog.transcription_binding(
+                                &label,
+                                &EndpointId::new(binding).map_err(|_| invalid())?,
+                            ),
+                            None => catalog.transcription_route(&label),
+                        }
+                        .ok_or(StartupError::Binding)?;
+                        entries.transcriptions.push(TranscriptionEntry {
+                            model: label.clone(),
+                            binding: Some(route.endpoint.id.clone()),
+                        });
+                        (
+                            &route.endpoint.provider,
+                            &route.endpoint.id,
+                            &route.endpoint.execution,
+                            "transcription",
+                        )
+                    } else if let Some(route) = catalog.embedding_route(&label) {
+                        if config.binding.is_some() {
+                            return Err(invalid());
+                        }
+                        entries.embeddings.push(EmbeddingEntry {
+                            model: label.clone(),
+                        });
+                        (
+                            &route.endpoint.provider,
+                            &route.endpoint.id,
+                            &route.endpoint.execution,
+                            "embeddings",
+                        )
+                    } else {
+                        return Err(StartupError::Binding);
+                    };
                 let account = accounts
                     .account(provider.as_str(), name)
                     .ok_or(StartupError::Credentials)?;
                 if !account.enabled || !matches!(account.credential, AccountCredential::ApiKey(_)) {
                     return Err(StartupError::Credentials);
                 }
+                let mut described = super::inspection::task(
+                    &label,
+                    provider.as_str(),
+                    binding.as_str(),
+                    execution,
+                    task,
+                );
+                described["account"] = serde_json::json!(name);
+                explanation.push(described);
                 credentials.select_task(label, account.binding_id());
                 continue;
             };
+            let candidates = config.candidates.ok_or_else(invalid)?;
             if config.binding.is_some()
                 || config.account.is_some()
-                || config.candidates.is_empty()
-                || config.candidates.len() > 64
+                || candidates.is_empty()
+                || candidates.len() > 64
                 || config.thinking_tokens.is_some()
-                    && config
-                        .candidates
-                        .iter()
-                        .all(|c| c.thinking_conversion.is_none())
+                    && candidates.iter().all(|c| c.thinking_conversion.is_none())
             {
                 return Err(invalid());
             }
@@ -193,22 +234,29 @@ impl Models {
                 .map_or(SHARED_BUDGETS, ThinkingTokens::table);
             table.validate().map_err(|_| invalid())?;
             let mut deployments = BTreeSet::new();
-            for (candidate_index, candidate) in config.candidates.into_iter().enumerate() {
+            for (candidate_index, candidate) in candidates.into_iter().enumerate() {
+                let problem = |reason| -> StartupError {
+                    crate::configuration::ConfigurationError::new(
+                        "models",
+                        format!("models[{model_index}].candidates[{candidate_index}]"),
+                        reason,
+                    )
+                    .into()
+                };
+                let invalid =
+                    || problem("invalid candidate controls; check limits and reasoning conversion");
                 let binding = EndpointId::new(&candidate.binding).map_err(|_| invalid())?;
                 if !template_route.endpoints.contains(&binding) {
-                    return Err(StartupError::Binding);
+                    return Err(problem(
+                        "binding is not registered for this public model; use --catalog",
+                    ));
                 }
                 let template = catalog.endpoint(&binding).ok_or(StartupError::Binding)?;
                 let configured = accounts.provider(template.provider.as_str());
                 if configured.is_empty() {
                     return Err(StartupError::Credentials);
                 }
-                for (account_index, account) in
-                    configured.iter().enumerate().filter(|(_, a)| a.enabled)
-                {
-                    if route.endpoints.len() >= crate::execution::plan::MAX_CANDIDATES {
-                        return Err(StartupError::Binding);
-                    }
+                for (account_index, account) in configured.iter().enumerate() {
                     let mut endpoint = template.clone();
                     let provider = account.provider.clone();
                     let operation = provider
@@ -232,20 +280,6 @@ impl Models {
                         let limits = endpoint.representation.model_limits_mut();
                         limits.context_window_tokens = None;
                         limits.maximum_input_tokens = None;
-                    }
-                    if !deployments.insert((
-                        provider.id.as_str().to_owned(),
-                        endpoint.target.origin.as_str().to_owned(),
-                        endpoint.target.path.as_str().to_owned(),
-                        endpoint.upstream_model.clone(),
-                        endpoint.protocol.identity_tag(),
-                        credentials
-                            .get(&endpoint.credential)
-                            .expect("enabled account binding")
-                            .source
-                            .provenance(),
-                    )) {
-                        return Err(StartupError::Binding);
                     }
                     reasoning(
                         &mut endpoint,
@@ -287,10 +321,50 @@ impl Models {
                                 Presence::Null => caps.default_output_tokens = None,
                                 Presence::Value(value) => caps.default_output_tokens = Some(*value),
                             }
-                            caps.validate().map_err(|_| invalid())?;
+                            caps.validate().map_err(|_| problem("invalid Messages output default; set default_output_tokens within the effective maximum or clear it with null"))?;
                         }
                         (_, crate::semantic::value::Presence::Absent) => {}
-                        _ => return Err(invalid()),
+                        _ => {
+                            return Err(problem(
+                                "default_output_tokens is only supported by Messages bindings",
+                            ));
+                        }
+                    }
+                    endpoint.validate().map_err(|_| invalid())?;
+                    let mut described = super::inspection::endpoint(&endpoint);
+                    described["model"] = serde_json::json!(label);
+                    described["binding"] = serde_json::json!(candidate.binding);
+                    described["account"] = serde_json::json!(account.name);
+                    described["enabled"] = serde_json::json!(account.enabled);
+                    described["output_default_source"] =
+                        serde_json::json!(if candidate.default_output_tokens.is_absent() {
+                            "catalog"
+                        } else {
+                            "configured"
+                        });
+                    described["chat_profile"] =
+                        serde_json::json!(format!("{:?}", config.chat_profile.unwrap_or_default()));
+                    described["model_timeout_ms"] = serde_json::json!(config.total_timeout_ms);
+                    explanation.push(described);
+                    if !account.enabled {
+                        continue;
+                    }
+                    if route.endpoints.len() >= crate::execution::plan::MAX_CANDIDATES {
+                        return Err(problem("enabled account expansion exceeds 64 candidates"));
+                    }
+                    if !deployments.insert((
+                        provider.id.as_str().to_owned(),
+                        endpoint.target.origin.as_str().to_owned(),
+                        endpoint.target.path.as_str().to_owned(),
+                        endpoint.upstream_model.clone(),
+                        endpoint.protocol.identity_tag(),
+                        credentials
+                            .get(&endpoint.credential)
+                            .expect("enabled account binding")
+                            .source
+                            .provenance(),
+                    )) {
+                        return Err(StartupError::Binding);
                     }
                     route.endpoints.push(endpoint.id.clone());
                     entries
@@ -321,6 +395,7 @@ impl Models {
             topology,
             entries,
             credentials,
+            explanation,
         })
     }
 }

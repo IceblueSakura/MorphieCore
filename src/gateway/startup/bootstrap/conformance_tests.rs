@@ -493,9 +493,8 @@ async fn observe_intake(
     }));
     let mut config = service();
     config["diagnostics"] = json!("events.jsonl");
-    config["concurrency"] = json!(1);
-    config["exchange_timeout_ms"] = json!(3000);
-    config["delta_coalescing"] = Value::Null;
+    config["resources"] = json!({"concurrency":1});
+    config["delivery"] = json!({"exchange_timeout_ms":3000,"delta_coalescing":null});
     let mut models = json!({"models":{model:{"candidates":[{
         "binding":binding
     }]}}});

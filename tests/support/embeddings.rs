@@ -44,7 +44,6 @@ pub fn binding(provider: &ProviderDefinition) -> (ProviderEntry, EmbeddingRoute)
                 credential: CredentialBindingId::new("fixture-key").unwrap(),
                 execution: ExecutionContract {
                     streaming: false,
-                    retry_before_commit: false,
                     request_body_limit: 4096,
                     response_body_limit: 4096,
                     credential_kind: CredentialKind::ApiKey,

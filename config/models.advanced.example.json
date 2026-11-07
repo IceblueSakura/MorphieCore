@@ -1,6 +1,5 @@
 {
   "version": 1,
-  "implicit_cache_affinity": true,
   "models": {
     "claude-haiku-5-5": {
       "chat_profile": "standard",

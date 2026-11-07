@@ -755,13 +755,13 @@ fn configured_accounts_preserve_order_targets_limits_and_replay_isolation() {
     let mut service = serde_json::json!({
         "auth_file":"auth.json",
         "bind":"127.0.0.1:0","models_file":"models.json",
-        "delta_coalescing":{"max_delay_ms":10,"max_pending_bytes":16384}
+        "delivery":{"delta_coalescing":{"max_delay_ms":10,"max_pending_bytes":16384}}
     });
     private_write(&gateway_file, service.clone());
     let enabled = Bootstrap::from_files(&gateway_file, &store).unwrap();
     let policy = enabled.gateway.state.limits.delta_coalescing.unwrap();
     assert_eq!((policy.max_delay_ms, policy.max_pending_bytes), (10, 16384));
-    service["delta_coalescing"] = serde_json::Value::Null;
+    service["delivery"]["delta_coalescing"] = serde_json::Value::Null;
     private_write(&gateway_file, service.clone());
     assert!(
         Bootstrap::from_files(&gateway_file, &store)
@@ -779,11 +779,14 @@ fn configured_accounts_preserve_order_targets_limits_and_replay_isolation() {
         serde_json::json!({"max_delay_ms":50}),
         serde_json::json!(false),
     ] {
-        service["delta_coalescing"] = invalid;
+        service["delivery"]["delta_coalescing"] = invalid;
         private_write(&gateway_file, service.clone());
         assert!(Bootstrap::from_files(&gateway_file, &store).is_err());
     }
-    service.as_object_mut().unwrap().remove("delta_coalescing");
+    service["delivery"]
+        .as_object_mut()
+        .unwrap()
+        .remove("delta_coalescing");
     private_write(&gateway_file, service);
     let entry = &configured.gateway.state.entries[&(
         crate::protocol::ClientProtocol::Chat,

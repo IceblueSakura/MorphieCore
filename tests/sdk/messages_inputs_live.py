@@ -58,7 +58,7 @@ class Gateway:
         private_json(directory / "gateway.json", {
             "version": 1, "accounts_file": str(accounts), "credentials_dir": str(store),
             "auth_file": "auth.json", "bind": "127.0.0.1:0", "models_file": "models.json",
-            "exchange_timeout_ms": DEADLINE_MS, "diagnostics": "diagnostics.jsonl",
+            "delivery": {"exchange_timeout_ms": DEADLINE_MS}, "diagnostics": "diagnostics.jsonl",
             "capture": capture})
         candidate = {"binding": binding, "maximum_output_tokens": CAP}
         if chat_profile is None:

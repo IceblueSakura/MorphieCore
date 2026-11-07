@@ -153,7 +153,6 @@ async fn selected_target_never_changes_after_dispatch() {
                 .into(),
                 execution: ExecutionContract {
                     streaming: true,
-                    retry_before_commit: false,
                     request_body_limit: 4096,
                     response_body_limit: 4096,
                     timeout_ms: if status == 0 && id == "a" { 50 } else { 2000 },

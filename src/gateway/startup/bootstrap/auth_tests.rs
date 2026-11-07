@@ -20,6 +20,7 @@ fn fixture() -> Fixture {
 
 #[test]
 fn auth_file_is_required_private_strict_and_versioned() {
+    // Diagnostics must locate the domain without echoing malformed secrets or map keys.
     let fixture = fixture();
     let root = fixture.directory();
     let path = root.join("auth.json");
@@ -42,7 +43,7 @@ fn auth_file_is_required_private_strict_and_versioned() {
         write_private(&path, &serde_json::to_vec(&invalid).unwrap());
         assert!(matches!(
             Bootstrap::from_directory(root),
-            Err(StartupError::Configuration("auth"))
+            Err(StartupError::Detail(error)) if error.domain == "auth"
         ));
     }
     for agents in [
@@ -55,25 +56,36 @@ fn auth_file_is_required_private_strict_and_versioned() {
             &path,
             &serde_json::to_vec(&json!({"version":1,"agents":agents})).unwrap(),
         );
-        assert!(matches!(
-            Bootstrap::from_directory(root),
-            Err(StartupError::Credentials)
-        ));
+        let error = Bootstrap::from_directory(root).err().unwrap();
+        assert!(matches!(&error, StartupError::Detail(error) if error.domain == "auth"));
+        let report = error.diagnostic().to_string();
+        assert!(!report.contains(FIRST) && !report.contains("bad/id"));
     }
+    write_private(
+        &path,
+        &serde_json::to_vec(&json!({
+            "version":1,"agents":[{"agent_id":"one","key":{FIRST:"private-value"}}]
+        }))
+        .unwrap(),
+    );
+    let error = Bootstrap::from_directory(root).err().unwrap().diagnostic();
+    assert_eq!(error["field"], "agents[0].key");
+    assert!(!error.to_string().contains(FIRST));
+    assert!(!error.to_string().contains("private-value"));
     write_private(&path, br#"{"version":1,"version":1,"agents":[]}"#);
     assert!(matches!(
         Bootstrap::from_directory(root),
-        Err(StartupError::Configuration("auth"))
+        Err(StartupError::Detail(error)) if error.domain == "auth"
     ));
     write_private(&path, &vec![b' '; 65537]);
     assert!(matches!(
         Bootstrap::from_directory(root),
-        Err(StartupError::Configuration("auth"))
+        Err(StartupError::Detail(error)) if error.domain == "auth"
     ));
     std::fs::remove_file(&path).unwrap();
     assert!(matches!(
         Bootstrap::from_directory(root),
-        Err(StartupError::Configuration("auth"))
+        Err(StartupError::Detail(error)) if error.domain == "auth"
     ));
 
     write_private(&path, &serde_json::to_vec(&valid).unwrap());
@@ -83,7 +95,7 @@ fn auth_file_is_required_private_strict_and_versioned() {
         std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
         assert!(matches!(
             Bootstrap::from_directory(root),
-            Err(StartupError::Configuration("auth"))
+            Err(StartupError::Detail(error)) if error.domain == "auth"
         ));
         std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
     }
@@ -99,7 +111,7 @@ fn auth_file_is_required_private_strict_and_versioned() {
         );
         assert!(matches!(
             Bootstrap::from_directory(root),
-            Err(StartupError::Configuration("gateway"))
+            Err(StartupError::Detail(error)) if error.domain == "gateway"
         ));
     }
 }

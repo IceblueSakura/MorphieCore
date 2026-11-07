@@ -466,7 +466,6 @@ fn aliases(count: usize, metadata: bool) -> crate::topology::CompiledTopology {
         representation: TargetContract::full().into(),
         execution: ExecutionContract {
             streaming: true,
-            retry_before_commit: false,
             request_body_limit: 4096,
             response_body_limit: 4096,
             timeout_ms: 1000,

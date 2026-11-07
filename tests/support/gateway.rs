@@ -105,7 +105,6 @@ fn bound_gateway(origin: &str, limits: Limits, embeddings: bool, messages: bool)
         .into(),
         execution: ExecutionContract {
             streaming: true,
-            retry_before_commit: false,
             request_body_limit: 256 << 10,
             response_body_limit: 8 << 20,
             timeout_ms: 3000,

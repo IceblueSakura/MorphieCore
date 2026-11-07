@@ -117,7 +117,6 @@ impl GoogleBinding {
             .into(),
             execution: ExecutionContract {
                 streaming: true,
-                retry_before_commit: false,
                 request_body_limit: super::GENERATION_REQUEST_BYTES,
                 response_body_limit: super::GENERATION_RESPONSE_BYTES,
                 credential_kind: CredentialKind::ApiKey,

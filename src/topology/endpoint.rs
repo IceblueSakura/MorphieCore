@@ -20,9 +20,6 @@ pub struct EndpointTarget {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ExecutionContract {
     pub streaming: bool,
-    /// Retries are forbidden once any semantic output is visible; this flag
-    /// additionally declares whether pre-commit retry is eligible at all.
-    pub retry_before_commit: bool,
     pub request_body_limit: usize,
     pub response_body_limit: usize,
     pub credential_kind: CredentialKind,

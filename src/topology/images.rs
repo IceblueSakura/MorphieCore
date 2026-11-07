@@ -104,7 +104,6 @@ impl CompiledTopology {
                 return Err(TopologyError::InvalidModelBinding);
             }
             if endpoint.execution.streaming
-                || endpoint.execution.retry_before_commit
                 || endpoint.execution.request_body_limit == 0
                 || endpoint.execution.response_body_limit == 0
                 || endpoint.execution.timeout_ms == 0

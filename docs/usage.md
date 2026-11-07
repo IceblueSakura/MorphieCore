@@ -103,9 +103,9 @@ Names are unique within a Provider and stay stable when the list is reordered. R
 
 Account affinity groups trusted Agent identity, public model and an explicit conversation/session carrier. Only validated completed work, including tool calls and requested output-limit completion, can commit after final delivery. Failed, cancelled and other incomplete outcomes do not recover health or change the binding. Concurrent stale completions cannot overwrite or renew another request's binding.
 
-`gateway.json` sets `affinity_ttl_ms` (default 3600000) and `affinity_capacity` (default 4096). TTL slides only on an authorized successful commit, not on lookups or failures; expiry and eviction revoke in-flight commit rights. Zero capacity or TTL retains no bindings. Prompt-prefix hints remain independent.
+`gateway.json.routing` sets `affinity_ttl_ms` (default 3600000) and `affinity_capacity` (default 4096). TTL slides only on an authorized successful commit, not on lookups or failures; expiry and eviction revoke in-flight commit rights. Zero capacity or TTL retains no bindings. Prompt-prefix hints remain independent.
 
-`max_wait_ms` (default 10000) bounds one pre-dispatch wait for a conversation's cooling bound target. Zero disables waiting. New conversations never wait for an unbound candidate; after waiting, lifecycle and probe ownership are checked again within the original request deadline.
+`routing.max_wait_ms` (default 10000) bounds one pre-dispatch wait for a conversation's cooling bound target. Zero disables waiting. New conversations never wait for an unbound candidate; after waiting, lifecycle and probe ownership are checked again within the original request deadline.
 
 Each Provider declaration accepts an optional `recovery` object with the timing fields in [`RecoveryPolicy`](../src/provider/recovery.rs). Omitted fields use the [selected defaults](provider-account-redesign-plan.md#configuration-surface). Settings do not change failure classes, health scopes or the fixed two-send ceiling. `recovery_timeout_ms` bounds the one same-target retry through readiness for deliverable content; zero disables that retry. The original request deadline still bounds all work.
 
@@ -164,10 +164,10 @@ An Active account rejects another login; use `refresh`, or explicitly sign out b
 Callbacks listen on `127.0.0.1`. Login checks issuer, client and subject. Gateway inference never starts login or refresh.
 
 Automatic renewal runs in the background when running `morphiecore` (`Gateway::serve`):
-- Checks configured OAuth accounts independently of routes and enablement on startup and at `oauth_scan_interval_ms` (default 15000).
-- Renews credentials within `oauth_refresh_ahead_seconds` (default 120).
-- Bounds each renewal with `oauth_renewal_timeout_ms` (default 90000); zero dispatches no renewal and consumes no material.
-- Spaces successful short-grant renewals with `oauth_minimum_renewal_interval_ms` (default 60000). Failed eligible work uses `oauth_failed_renewal_delay_ms` (default 60000), not an exponential retry loop.
+- Checks configured OAuth accounts independently of routes and enablement on startup and at `oauth.scan_interval_ms` (default 15000).
+- Renews credentials within `oauth.refresh_ahead_seconds` (default 120).
+- Bounds each renewal with `oauth.renewal_timeout_ms` (default 90000); zero dispatches no renewal and consumes no material.
+- Spaces successful short-grant renewals with `oauth.minimum_renewal_interval_ms` (default 60000). Failed eligible work uses `oauth.failed_renewal_delay_ms` (default 60000), not an exponential retry loop.
 - Persists rotated tokens in the private credential store.
 
 All settings belong to `gateway.json`. Zero scan interval keeps the startup check but disables periodic scanning. Timing never restores uncertain refresh material or automatically resumes pending verification. Current SIWC/Grok network and temporary-service failures provide no safe-consumption proof, so ambiguous dispatched refresh remains quarantined; the delay alone authorizes no retry.
@@ -304,13 +304,42 @@ Keep edited copies, credentials, certificates and captures outside the repositor
 | `accounts_file` | Shared account configuration; default `accounts.json` beside this file |
 | `credentials_dir` | Optional credential-store path; omission retains the independent home-relative default |
 | `proxy` | Outbound proxy |
-| `concurrency` | Concurrent exchanges; default 16, range 1–256 |
-| `exchange_timeout_ms` | Service-wide exchange ceiling; default 3600000, range 1–86400000 |
-| `delta_coalescing` | Bounded text delivery batching; omitted selects 50 ms / 16 KiB, `null` disables it, an object overrides it. See [Delta coalescing](#delta-coalescing) |
+| `routing` | Global affinity, pre-dispatch wait and downstream retry-hint policy |
+| `oauth` | Global credential-maintenance timing |
+| `delivery` | Post-admission exchange deadline and text batching |
+| `resources` | Concurrent exchanges, body budgets and Responses history retention |
 | `diagnostics` | Private bounded diagnostics path, reusable after a clean restart; no bodies are recorded. See [Body-free diagnostics](#body-free-diagnostics) |
 | `capture` | Optional private exchange capture; omitted or all-disabled selections record no content |
 
 Paths in the service file resolve relative to that file, not the process working directory. CLI paths remain explicit process-relative or absolute paths.
+
+The current schema remains **version 1**, with no historical aliases or migration. Policy fields belong to the following objects; old flat fields and `models.json.implicit_cache_affinity` reject. Omit a group or field to use its default. Groups and numeric/boolean fields reject `null`; `delivery.delta_coalescing:null` explicitly disables batching. Optional paths, proxy and capture retain their nullable form.
+
+| Group | Fields and defaults | Bounds / effect |
+|---|---|---|
+| `routing` | `implicit_cache_affinity: true`, `affinity_ttl_ms: 3600000`, `affinity_capacity: 4096`, `max_wait_ms: 10000`, `retry_hint_horizon_ms: 60000` | Timing choices remain operator-owned. Zero TTL/capacity retains no bindings; zero wait disables waiting. The hint horizon limits credible **downstream** `Retry-After` values |
+| `oauth` | `scan_interval_ms: 15000`, `refresh_ahead_seconds: 120`, `renewal_timeout_ms: 90000`, `failed_renewal_delay_ms: 60000`, `minimum_renewal_interval_ms: 60000` | Zero scan interval keeps the startup check only; zero renewal timeout disables renewal |
+| `delivery` | `exchange_timeout_ms: 3600000` | 1–86400000 ms; begins **after body collection and admission**, includes execution/delivery, and bounds model-local deadlines |
+| `delivery` | `delta_coalescing: {"max_delay_ms":50,"max_pending_bytes":16384}` | Delay 1–100 ms, pending bytes 1024–1048576; see [batching](#delta-coalescing) |
+| `resources` | `concurrency: 16` | 1–256; body collection occupies a permit |
+| `resources` | `request_bytes: 33554432`, `response_bytes: 67108864` | Each 1–67108864 bytes; intersect with endpoint/task limits. A budget too small to publish discovery rejects startup |
+| `resources` | `body_timeout_ms: 60000` | 1–60000 ms; separate upload deadline, not subtracted from the later exchange budget |
+| `resources` | `history_entries: 1024`, `history_bytes: 268435456`, `history_ttl_ms: 1800000` | Entries 1–4096, bytes 1–1073741824, TTL 1–86400000 ms. TTL controls expiration; exhausted entry/byte budgets reject additional storage instead of evicting retained responses. No history-disable setting |
+
+These are deployment budgets, not new protocol capabilities. Transcription retains its independent multipart upload ceiling; image/audio/event and internal queue ceilings remain code-owned. Compiled Generation attempts retain a one-hour ceiling and standalone task operations retain their own ceilings (currently 120 seconds). OAuth HTTP operations retain a 30-second ceiling and a 10-second connection timeout. Raising an outer deadline does not enlarge these inner ceilings.
+
+Responses storage reserves capacity before final publication. A full history budget can therefore fail a stored response after upstream generation, rather than silently dropping history or claiming a successful stored result. Size these budgets for the intended stored-response workload.
+
+Inspect available bindings without configuration or credentials, then validate or explain an explicit setup without starting a listener, renewal, diagnostics or capture:
+
+```sh
+morphiecore --catalog
+morphiecore --catalog --json
+morphiecore --config "$ROOT/gateway.json" --validate
+morphiecore --config "$ROOT/gateway.json" --explain --json
+```
+
+Explanation uses the production loader and requires valid local credentials. It reports resolved service defaults, Provider recovery, ordered account selections (including disabled candidates), inherited/configured output defaults, resolved task bindings, endpoint limits and path-free diagnostics/capture state. It never prints keys, credential aliases, private paths, custom upstream model strings or target URLs. Context/input capacities are planning metadata; output maxima clamp a present ceiling and do not impose a universal token/spending budget. Only Messages defaults fill absent output ceilings. Errors identify the configuration domain and safe field/index location without echoing rejected values; numbered Provider/model maps follow sorted key order.
 
 ### Agent API keys
 
@@ -355,14 +384,13 @@ After the old process exits, reuse the same path. Valid records remain; a recogn
 
 `models.json` owns explicit public-model selection and ordered upstream candidates. Start with [`models.example.json`](../config/models.example.json); the separate [advanced](../config/models.advanced.example.json) and [standalone-task](../config/models.tasks.example.json) templates demonstrate optional configuration shapes without expanding the default activation.
 
-Select a registered public label and its catalog endpoint IDs. Each candidate expands that Provider's enabled accounts in declaration order; account names, targets and credential references belong only in [accounts.json](#configure-accounts). Binding definitions are in [the catalog](../src/topology/catalog.rs). Omitted model controls inherit the binding's values.
+Use `morphiecore --catalog` to select a registered public label and its catalog endpoint IDs. Each candidate expands that Provider's enabled accounts in declaration order; account names, targets and credential references belong only in [accounts.json](#configure-accounts). Binding definitions are in [the catalog](../src/topology/catalog.rs). Omitted model controls inherit the binding's values.
 
 `deepseek-v4.1-flash-1017` is an additional registered public label for canonical `deepseek-flash`; upstream requests still use `deepseek-flash`. It accepts the existing DeepSeek bindings, including `deepseek-beta-chat` under Provider `deepseek-beta`. Select it explicitly to publish that name. The label does not pin the moving upstream alias to an immutable model revision.
 
 | Scope | Field | Meaning |
 |---|---|---|
 | File | `version` | Required current schema version, `1` |
-| File | `implicit_cache_affinity` | Best-effort prefix affinity; default `true` |
 | Model | `candidates` | Nonempty ordered array of existing bindings for this public model |
 | Model | `chat_profile` | `standard` (default) or `readable_reasoning`; selects the downstream Chat contract for all candidates, never an upstream dialect. Responses/Messages remain unchanged; invalid on frozen tasks |
 | Model | `total_timeout_ms` | Optional model-local exchange deadline, bounded by the service ceiling |
@@ -384,7 +412,7 @@ The Go/Haiku Messages binding declares a `32000` default; generic Messages targe
 
 Account selection happens before dispatch. Generation may retry one explicitly eligible unpublished network/server failure on that exact target, with the same credential material and wire request. Rate/quota/auth/permission/request failures, malformed output, trust/local faults and ambiguous post-dispatch timeouts do not authorize the additional send. A returned failure never causes another account or Provider to be dispatched in that request. Model `max_attempts` and candidate `credential`, `base_url` and `attempt_timeout_ms` are unsupported fields, not dormant settings.
 
-Cooling targets are never tried early. If every otherwise-legal target is cooling or probing, the gateway returns `503 upstream_unavailable` with `Retry-After`. [Health and recovery](architecture.md#health-and-recovery) defines cooldown scopes, delay bounds, foreground probes and cancellation.
+Cooling targets are never tried early. If every otherwise-legal target is cooling or probing, the gateway returns 429 for rate/quota-only blocking and 503 otherwise. It supplies `Retry-After` only for a credible positive delay within `routing.retry_hint_horizon_ms`; probing alone supplies no deadline. [Health and recovery](architecture.md#health-and-recovery) defines cooldown scopes, delay bounds, foreground probes and cancellation.
 
 All Generation client protocols use the same configured candidate array. To send Responses clients through Chat, select a Chat binding; there is no separate `responses_via_chat` switch. The old service-file `models`, `failover` and attempt fields are rejected, not automatically migrated.
 
@@ -439,11 +467,13 @@ Transcription also requires `account`. A shared model requires an explicit model
 
 Select `dashscope-qwen-asr` for metered DashScope or `tokenplan-qwen-asr` for Token Plan. Both expose `qwen-audio-3.0-asr-flash`; trusted origins and account namespaces remain separate. Missing, disabled or mismatched selections reject at startup. Execution uses exactly the selected binding/account, even when other accounts are enabled.
 
+Model optional fields reject explicit null except the named Messages default-clearing field. Standalone tasks reject Generation-only fields even when an array is empty. Candidate controls are validated for disabled accounts as well as enabled ones; enablement only selects routing participation.
+
 The file supports at most 64 models and 64 candidates per model, with at most 64 expanded account targets per public-model/client entry. Unknown bindings, mismatched model identities, duplicate deployments and invalid account references fail startup. See [service loading](../src/gateway/startup/bootstrap.rs) and [model assembly](../src/gateway/startup/models.rs).
 
 ### Delta coalescing
 
-Text-delta coalescing is enabled by default. Omitting the field selects this policy; a complete object can override either bound:
+Text-delta coalescing is configured at `gateway.json.delivery.delta_coalescing` and enabled by default. Omitting the field selects this policy; a complete object can override either bound:
 
 ```json
 {

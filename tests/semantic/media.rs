@@ -431,7 +431,7 @@ mod image_binding {
     fn image_routes_require_explicit_operation_identity_and_bounded_execution() {
         let (operation, route) = super::super::image_support::binding(ORIGIN);
         assert!(topology().with_images(vec![], vec![route.clone()]).is_err());
-        for case in 0..7 {
+        for case in 0..6 {
             let mut route = route.clone();
             match case {
                 0 => {
@@ -440,9 +440,8 @@ mod image_binding {
                 }
                 1 => route.endpoint.canonical_model = ModelId::new("other").unwrap(),
                 2 => route.endpoint.execution.streaming = true,
-                3 => route.endpoint.execution.retry_before_commit = true,
-                4 => route.endpoint.execution.response_body_limit = 0,
-                5 => route.endpoint.upstream_model = "".into(),
+                3 => route.endpoint.execution.response_body_limit = 0,
+                4 => route.endpoint.upstream_model = "".into(),
                 _ => {
                     route.endpoint.target.path =
                         morphiecore::provider::EndpointPath::new("/other").unwrap()
@@ -886,7 +885,6 @@ mod tokenplan_speech {
         );
         assert_eq!(route.endpoint.credential.as_str(), "aliyun-tokenplan-cn");
         assert!(route.endpoint.execution.streaming);
-        assert!(!route.endpoint.execution.retry_before_commit);
         assert!(topology.model("qwen-audio-3.0-tts-plus").is_none());
         let mut changed = route.clone();
         changed.endpoint.execution.streaming = false;

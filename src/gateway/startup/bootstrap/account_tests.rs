@@ -9,6 +9,195 @@ use serde_json::{Value, json};
 use std::sync::{Arc, Mutex};
 use tower::ServiceExt;
 
+#[tokio::test(start_paused = true)]
+async fn configured_body_budgets_apply_before_execution_and_release_capacity() {
+    use axum::{body::Body, http::Request};
+    let boot = Fixture::new(
+        json!({"resources":{"concurrency":1,"request_bytes":1024,"body_timeout_ms":20},
+            "delivery":{"exchange_timeout_ms":1}}),
+        json!({"models":{"deepseek-flash":{"candidates":[{"binding":"deepseek-chat"}]}}}),
+        &[("deepseek", "primary", "synthetic-key")],
+    )
+    .unwrap();
+    let request = |body| {
+        Request::builder()
+            .method("POST")
+            .uri("/v1/chat/completions")
+            .header(
+                "authorization",
+                "Bearer synthetic-gateway-client-token-0001",
+            )
+            .header("content-type", "application/json")
+            .body(body)
+            .unwrap()
+    };
+    let response = boot
+        .gateway
+        .router()
+        .oneshot(request(Body::from("x".repeat(1025))))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::PAYLOAD_TOO_LARGE);
+    let start = tokio::time::Instant::now();
+    let response = boot
+        .gateway
+        .router()
+        .oneshot(request(Body::from_stream(futures_util::stream::pending::<
+            Result<bytes::Bytes, std::io::Error>,
+        >())))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::REQUEST_TIMEOUT);
+    assert!(
+        start.elapsed() >= std::time::Duration::from_millis(20),
+        "the post-admission execution deadline must not consume the upload budget"
+    );
+    assert_eq!(boot.gateway.state.permits.available_permits(), 1);
+}
+
+#[test]
+fn current_schema_rejects_old_fields_null_controls_and_zero_history() {
+    let models = json!({"models":{"deepseek-flash":{"candidates":[{"binding":"deepseek-chat"}]}}});
+    for settings in [
+        json!({"concurrency":1}),
+        json!({"exchange_timeout_ms":1000}),
+        json!({"oauth_scan_interval_ms":1000}),
+        json!({"routing":null}),
+        json!({"resources":{"request_bytes":null}}),
+        json!({"resources":{"history_entries":0}}),
+        json!({"resources":{"history_bytes":0}}),
+        json!({"resources":{"history_ttl_ms":0}}),
+        json!({"resources":{"request_bytes":67108865u64}}),
+    ] {
+        assert!(
+            Fixture::new(
+                settings,
+                models.clone(),
+                &[("deepseek", "primary", "synthetic-key")]
+            )
+            .is_err()
+        );
+    }
+    for value in [
+        json!({"implicit_cache_affinity":true,"models":models["models"]}),
+        json!({"models":{"text-embedding-3-small":{"account":"primary","candidates":[]}}}),
+        json!({"models":{"text-embedding-3-small":{"account":"primary","chat_profile":null}}}),
+    ] {
+        let result = Fixture::new(
+            service(),
+            value,
+            &[
+                ("openrouter", "primary", "synthetic-key"),
+                ("deepseek", "primary", "synthetic-other-key"),
+            ],
+        );
+        assert!(
+            matches!(result, Err(super::StartupError::Detail(error)) if error.domain == "models")
+        );
+    }
+}
+
+#[test]
+fn disabled_candidates_still_validate_model_controls() {
+    // Validation does not become optional when a Provider is disabled.
+    for enabled in [false, true] {
+        for controls in [
+            json!({"allowed_effort":["typo"]}),
+            json!({"maximum_output_tokens":0}),
+            json!({"default_output_tokens":null}),
+        ] {
+            let mut candidate = controls;
+            candidate["binding"] = json!("openrouter-haiku-chat");
+            let result = Fixture::with_accounts(
+                service(),
+                json!({"models":{"claude-haiku-5-5":{"candidates":[candidate,
+                    {"binding":"opencode-go-haiku-messages"}]}}}),
+                &[
+                    ("openrouter", "primary", "synthetic-one"),
+                    ("opencode-go", "primary", "synthetic-two"),
+                ],
+                json!({"version":1,"providers":{
+                    "openrouter":{"accounts":[{"name":"primary","enabled":enabled,"credential":{"alias":"primary"}}]},
+                    "opencode-go":{"accounts":[{"name":"primary","enabled":true,"credential":{"alias":"primary"}}]}
+                }}),
+            );
+            assert!(
+                result.is_err(),
+                "invalid controls admitted with enabled={enabled}"
+            );
+        }
+    }
+}
+
+#[test]
+fn account_failures_locate_records_without_echoing_names_or_aliases() {
+    let account = json!({"name":"sensitive-account-marker","enabled":true,
+        "credential":{"alias":"sensitive-alias-marker"}});
+    for declarations in [json!([account]), json!([account, account])] {
+        let error = Fixture::with_accounts(
+            service(),
+            json!({"models":{"deepseek-flash":{"candidates":[{"binding":"deepseek-chat"}]}}}),
+            &[],
+            json!({"version":1,"providers":{"deepseek":{"accounts":declarations}}}),
+        )
+        .err()
+        .unwrap();
+        let diagnostic = error.diagnostic();
+        assert_eq!(diagnostic["domain"], "accounts");
+        assert!(
+            diagnostic["field"]
+                .as_str()
+                .unwrap()
+                .starts_with("providers[0].accounts[")
+        );
+        for output in [error.to_string(), diagnostic.to_string()] {
+            assert!(!output.contains("sensitive-account-marker"));
+            assert!(!output.contains("sensitive-alias-marker"));
+        }
+    }
+}
+
+#[test]
+fn task_explanation_reports_the_resolved_binding_without_target_locators() {
+    for (label, provider, binding) in [
+        ("mimo-v2.5-asr", "xiaomi", None),
+        (
+            "qwen-audio-3.0-asr-flash",
+            "aliyun-tokenplan-cn",
+            Some("tokenplan-qwen-asr"),
+        ),
+    ] {
+        let mut model = json!({"account":"primary"});
+        if let Some(binding) = binding {
+            model["binding"] = json!(binding);
+        }
+        let fixture = Fixture::new(
+            service(),
+            json!({"models":{label:model}}),
+            &[(provider, "primary", "synthetic-secret")],
+        )
+        .unwrap();
+        let value = super::Bootstrap::explain(
+            &fixture.directory().join("gateway.json"),
+            Some(&fixture.directory().join("credentials")),
+            None,
+        )
+        .unwrap();
+        assert_eq!(
+            value["selections"][0]["binding"],
+            binding.unwrap_or("xiaomi-asr")
+        );
+        assert!(
+            value["selections"][0]["endpoint_timeout_ms"]
+                .as_u64()
+                .unwrap()
+                > 0
+        );
+        assert!(value["selections"][0]["request_bytes"].as_u64().unwrap() > 0);
+        assert!(!value.to_string().contains("synthetic-secret"));
+    }
+}
+
 #[tokio::test]
 async fn public_label_preserves_upstream_identity_and_discovery() {
     const LABEL: &str = "deepseek-v4.1-flash-1017";
@@ -186,7 +375,7 @@ async fn loader_binds_named_accounts_without_switching_after_dispatch() {
 fn provider_recovery_configuration_reaches_bound_health_and_keeps_schema_strict() {
     use std::time::Duration;
     let mut settings = service();
-    settings["max_wait_ms"] = json!(0);
+    settings["routing"] = json!({"max_wait_ms":0});
     let models =
         json!({"models":{"deepseek-flash":{"candidates":[{"binding":"deepseek-responses"}]}}});
     let keys = [("deepseek", "primary", "synthetic-key")];

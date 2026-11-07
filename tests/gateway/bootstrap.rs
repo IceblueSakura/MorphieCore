@@ -10,6 +10,31 @@ use serde_json::{Value, json};
 use std::{sync::Arc, time::Duration};
 use tokio::net::TcpListener;
 
+#[tokio::test]
+async fn catalog_inspection_needs_neither_home_nor_credentials() {
+    let mut command = tokio::process::Command::new(env!("CARGO_BIN_EXE_morphiecore"));
+    command.env_clear().args(["--catalog", "--json"]);
+    let output = child_process::run(&mut command, b"", Duration::from_secs(5), 256 << 10)
+        .await
+        .unwrap();
+    assert!(output.status.success());
+    let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let model = value["models"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["model"] == "claude-haiku-5-5")
+        .unwrap();
+    assert!(
+        model["candidates"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|row| row["binding"] == "opencode-go-haiku-messages")
+    );
+    assert!(!String::from_utf8_lossy(&output.stdout).contains("https://"));
+}
+
 #[cfg(unix)]
 #[tokio::test]
 async fn fresh_account_setup_live_runner_and_diagnostics_share_the_production_loader() {
@@ -208,6 +233,50 @@ assert len(requests[0]["candidates"]) == 1
     assert_eq!(
         serde_json::from_slice::<Value>(&validated.stdout).unwrap(),
         json!({"valid":true})
+    );
+    assert_eq!(
+        std::fs::read(run.join("diagnostics.jsonl")).unwrap(),
+        diagnostics
+    );
+    assert!(!run.join("validation-capture.jsonl").exists());
+    let mut explanation = tokio::process::Command::new(env!("CARGO_BIN_EXE_morphiecore"));
+    explanation.env_clear().args([
+        "--config",
+        run.join("gateway.json").to_str().unwrap(),
+        "--explain",
+        "--json",
+    ]);
+    let explained = child_process::run(&mut explanation, b"", Duration::from_secs(5), 64 << 10)
+        .await
+        .unwrap();
+    assert!(
+        explained.status.success(),
+        "{}",
+        String::from_utf8_lossy(&explained.stderr)
+    );
+    let effective: Value = serde_json::from_slice(&explained.stdout).unwrap();
+    assert_eq!(effective["capture"]["enabled"], true);
+    assert_eq!(effective["capture"]["upstream_request"]["body"], true);
+    assert!(effective["capture"].get("path").is_none());
+    assert_eq!(effective["selections"][0]["account"], "primary");
+    assert_eq!(effective["selections"][1]["account"], "backup");
+    assert_eq!(
+        effective["selections"][0]["binding"],
+        "opencode-go-haiku-messages"
+    );
+    for secret in [
+        "synthetic-primary",
+        "synthetic-backup",
+        origin.as_str(),
+        store.to_str().unwrap(),
+        run.to_str().unwrap(),
+    ] {
+        assert!(!String::from_utf8_lossy(&explained.stdout).contains(secret));
+    }
+    assert_eq!(
+        calls.lock().unwrap().len(),
+        1,
+        "explanation must not send or probe"
     );
     assert_eq!(
         std::fs::read(run.join("diagnostics.jsonl")).unwrap(),
@@ -531,7 +600,7 @@ async fn cli_diagnostics_rotate_recover_and_refuse_unowned_files_before_listenin
         .unwrap(),
     );
     let mut config = json!({"version":1,"auth_file":"auth.json","bind":"127.0.0.1:0",
-        "models_file":"models.json","diagnostics":"diagnostics.jsonl","exchange_timeout_ms":5000});
+        "models_file":"models.json","diagnostics":"diagnostics.jsonl","delivery":{"exchange_timeout_ms":5000}});
     write("gateway.json", &serde_json::to_vec(&config).unwrap());
     write(
         "models.json",

@@ -3,7 +3,6 @@
 use crate::{
     credential::{AccessBinding, ApiKeyAccess, CredentialError, CredentialManager},
     provider::{CredentialKind, ProviderDefinition, catalog},
-    semantic::value::{JsonLimits, parse_json},
 };
 use serde::{Deserialize, Serialize};
 use std::{
@@ -14,6 +13,8 @@ use std::{
 
 #[derive(Debug, thiserror::Error)]
 pub enum AccountError {
+    #[error(transparent)]
+    Detail(#[from] crate::configuration::ConfigurationError),
     #[error("invalid or unsafe account configuration")]
     Configuration,
     #[error("unknown Provider: {0}")]
@@ -41,6 +42,11 @@ pub struct Account {
     pub name: String,
     pub enabled: bool,
     pub credential: CredentialRef,
+    #[serde(
+        default,
+        deserialize_with = "crate::configuration::optional",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub base_url: Option<String>,
 }
 
@@ -143,41 +149,50 @@ impl Account {
 
 impl Accounts {
     pub fn load(path: &Path) -> Result<Self, AccountError> {
-        let bytes = crate::credential::read_private_file(path, 65536)
-            .map_err(|_| AccountError::Configuration)?;
-        let value = parse_json(
-            &bytes,
-            JsonLimits {
-                bytes: 65536,
-                depth: 16,
-                nodes: 16384,
-            },
-        )
-        .map_err(|_| AccountError::Configuration)?;
-        let accounts: Self =
-            serde_json::from_value(value).map_err(|_| AccountError::Configuration)?;
+        let accounts: Self = crate::configuration::read(path, "accounts")?;
         accounts.validate()?;
         Ok(accounts)
     }
     pub fn validate(&self) -> Result<(), AccountError> {
         if self.version != 1 || self.providers.len() > 64 {
-            return Err(AccountError::Configuration);
+            return Err(crate::configuration::ConfigurationError::new(
+                "accounts",
+                "version/providers",
+                "expected version 1 and at most 64 Providers",
+            )
+            .into());
         }
-        for (id, configured) in &self.providers {
-            let provider = catalog::get(id).ok_or_else(|| AccountError::Provider(id.clone()))?;
+        for (provider_index, (id, configured)) in self.providers.iter().enumerate() {
+            let provider = catalog::get(id).ok_or_else(|| {
+                crate::configuration::ConfigurationError::new(
+                    "accounts",
+                    "providers.*",
+                    "unknown Provider; use --catalog to list registered bindings",
+                )
+            })?;
             if configured.accounts.is_empty() || configured.accounts.len() > 64 {
-                return Err(AccountError::Configuration);
+                return Err(crate::configuration::ConfigurationError::new(
+                    "accounts",
+                    format!("providers[{provider_index}].accounts"),
+                    "expected 1 to 64 named accounts",
+                )
+                .into());
             }
             let mut names = BTreeSet::new();
-            for account in &configured.accounts {
+            for (index, account) in configured.accounts.iter().enumerate() {
+                let invalid = |field, reason| account_problem(provider_index, index, field, reason);
                 crate::credential::valid_alias(&account.name)
-                    .map_err(|_| AccountError::Configuration)?;
+                    .map_err(|_| invalid("name", "invalid account identifier"))?;
                 if !names.insert(&account.name) {
-                    return Err(account.invalid(id));
+                    return Err(invalid(
+                        "name",
+                        "duplicate account name; assign distinct names",
+                    ));
                 }
                 crate::credential::valid_alias(&account.credential.alias)
-                    .map_err(|_| account.invalid(id))?;
-                account.target(provider)?;
+                    .map_err(|_| invalid("credential.alias", "invalid credential alias"))?;
+                account.target(provider).map_err(|_| invalid("base_url",
+                    "unsafe API root or override on an OAuth account; use a trusted API-key target"))?;
             }
         }
         Ok(())
@@ -202,16 +217,30 @@ impl Accounts {
     pub fn bind(&self, manager: &CredentialManager) -> Result<BoundAccounts, AccountError> {
         self.validate()?;
         let mut providers = BTreeMap::new();
-        for (id, configured) in &self.providers {
-            let provider = catalog::get(id).ok_or_else(|| AccountError::Provider(id.clone()))?;
+        for (provider_index, (id, configured)) in self.providers.iter().enumerate() {
+            let provider = catalog::get(id).expect("validated Provider");
             let mut subjects = BTreeSet::new();
             let mut bound = Vec::new();
-            for account in &configured.accounts {
-                let binding = account.bind(provider, manager)?;
+            for (index, account) in configured.accounts.iter().enumerate() {
+                let binding = account.bind(provider, manager).map_err(|error| {
+                    let reason = match error {
+                        AccountError::Credential { cause: CredentialError::Storage, .. } =>
+                            "credential store unavailable or unsafe; check private permissions",
+                        AccountError::Credential { cause: CredentialError::IdentityMismatch, .. } =>
+                            "credential identity differs from the configured account; provision the correct identity",
+                        _ => "credential unavailable; provision this account or inspect morphiecore-auth status",
+                    };
+                    account_problem(provider_index, index, "credential", reason)
+                })?;
                 if let AccountCredential::OAuth(access) = &binding.credential
                     && !subjects.insert(access.subject().to_owned())
                 {
-                    return Err(account.invalid(id));
+                    return Err(account_problem(
+                        provider_index,
+                        index,
+                        "credential",
+                        "duplicate OAuth subject; use distinct account identities",
+                    ));
                 }
                 bound.push(Arc::new(binding));
             }
@@ -219,6 +248,20 @@ impl Accounts {
         }
         Ok(BoundAccounts(providers))
     }
+}
+
+fn account_problem(
+    provider: usize,
+    account: usize,
+    field: &str,
+    reason: &'static str,
+) -> AccountError {
+    crate::configuration::ConfigurationError::new(
+        "accounts",
+        format!("providers[{provider}].accounts[{account}].{field}"),
+        reason,
+    )
+    .into()
 }
 
 impl BoundAccounts {

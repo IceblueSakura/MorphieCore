@@ -17,48 +17,17 @@ mod test_support;
 mod tests;
 use crate::{
     credential::{CredentialManager, Secret},
-    gateway::{Gateway, Limits, StartupError},
+    gateway::{Gateway, StartupError},
     provider::SecretMaterial,
-    semantic::value::{JsonLimits, parse_json},
 };
 #[cfg(test)]
-use crate::{protocol::openai::GenerationApi, topology::catalog};
+use crate::{gateway::Limits, protocol::openai::GenerationApi, topology::catalog};
 use std::{
     net::SocketAddr,
     path::{Path, PathBuf},
-    time::Duration,
 };
 
-#[derive(serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-struct Configuration {
-    version: u32,
-    #[serde(default = "auth_file")]
-    auth_file: PathBuf,
-    #[serde(default = "listen")]
-    bind: SocketAddr,
-    credentials_dir: Option<PathBuf>,
-    #[serde(default = "models_file")]
-    models_file: PathBuf,
-    #[serde(default = "accounts_file")]
-    accounts_file: PathBuf,
-    proxy: Option<String>,
-    diagnostics: Option<PathBuf>,
-    capture: Option<crate::gateway::CaptureConfig>,
-    concurrency: Option<usize>,
-    exchange_timeout_ms: Option<u64>,
-    affinity_ttl_ms: Option<u64>,
-    affinity_capacity: Option<usize>,
-    max_wait_ms: Option<u64>,
-    retry_hint_horizon_ms: Option<u64>,
-    oauth_scan_interval_ms: Option<u64>,
-    oauth_refresh_ahead_seconds: Option<u64>,
-    oauth_renewal_timeout_ms: Option<u64>,
-    oauth_failed_renewal_delay_ms: Option<u64>,
-    oauth_minimum_renewal_interval_ms: Option<u64>,
-    #[serde(default = "Limits::default_delta_coalescing")]
-    delta_coalescing: Option<crate::execution::delivery::DeltaCoalescing>,
-}
+use super::settings::Configuration;
 
 #[derive(serde::Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -83,36 +52,43 @@ impl AuthConfiguration {
         self,
     ) -> Result<std::collections::BTreeMap<String, SecretMaterial>, StartupError> {
         if self.version != 1 {
-            return Err(StartupError::Configuration("auth"));
+            return Err(crate::configuration::ConfigurationError::new(
+                "auth",
+                "version",
+                "expected schema version 1",
+            )
+            .into());
         }
         let mut agents = std::collections::BTreeMap::new();
-        for agent in self.agents {
+        for (index, agent) in self.agents.into_iter().enumerate() {
+            let invalid = |field, reason| -> StartupError {
+                crate::configuration::ConfigurationError::new(
+                    "auth",
+                    format!("agents[{index}].{field}"),
+                    reason,
+                )
+                .into()
+            };
             if agent.name.len() > 256
                 || agent.name.chars().any(char::is_control)
                 || agent.desc.len() > 2048
             {
-                return Err(StartupError::Configuration("auth"));
+                return Err(invalid(
+                    "name/desc",
+                    "metadata exceeds the allowed length or contains control characters",
+                ));
             }
-            let key =
-                SecretMaterial::new(agent.key.expose()).map_err(|_| StartupError::Credentials)?;
+            let key = SecretMaterial::new(agent.key.expose())
+                .map_err(|_| invalid("key", "expected printable non-space ASCII key"))?;
             if agents.insert(agent.agent_id, key).is_some() {
-                return Err(StartupError::Configuration("auth"));
+                return Err(invalid(
+                    "agent_id",
+                    "duplicate Agent identity; assign distinct IDs",
+                ));
             }
         }
         Ok(agents)
     }
-}
-fn listen() -> SocketAddr {
-    ([127, 0, 0, 1], 8080).into()
-}
-fn models_file() -> PathBuf {
-    "models.json".into()
-}
-fn accounts_file() -> PathBuf {
-    "accounts.json".into()
-}
-fn auth_file() -> PathBuf {
-    "auth.json".into()
 }
 fn relative(parent: &Path, path: &Path) -> Result<PathBuf, StartupError> {
     if path.as_os_str().is_empty() {
@@ -120,27 +96,12 @@ fn relative(parent: &Path, path: &Path) -> Result<PathBuf, StartupError> {
     }
     Ok(parent.join(path))
 }
-fn read_configuration<T: serde::de::DeserializeOwned>(
-    path: &Path,
-    domain: &'static str,
-) -> Result<T, StartupError> {
-    let bytes = crate::credential::read_private_file(path, 65536)
-        .map_err(|_| StartupError::Configuration(domain))?;
-    let value = parse_json(
-        &bytes,
-        JsonLimits {
-            bytes: 65536,
-            depth: 16,
-            nodes: 16384,
-        },
-    )
-    .map_err(|_| StartupError::Configuration(domain))?;
-    serde_json::from_value(value).map_err(|_| StartupError::Configuration(domain))
-}
+use crate::configuration::read as read_configuration;
 
 pub struct Bootstrap {
     pub gateway: Gateway,
     pub listen: SocketAddr,
+    explanation: serde_json::Value,
 }
 impl Bootstrap {
     pub fn from_directory(directory: &Path) -> Result<Self, StartupError> {
@@ -169,6 +130,14 @@ impl Bootstrap {
     ) -> Result<(), StartupError> {
         Self::load(configuration, directory, proxy, true, false).map(|_| ())
     }
+    /// Validate local bindings and describe effective budgets without starting any service.
+    pub fn explain(
+        configuration: &Path,
+        directory: Option<&Path>,
+        proxy: Option<&str>,
+    ) -> Result<serde_json::Value, StartupError> {
+        Self::load(configuration, directory, proxy, true, false).map(|boot| boot.explanation)
+    }
     fn load(
         path: &Path,
         directory: Option<&Path>,
@@ -178,7 +147,12 @@ impl Bootstrap {
     ) -> Result<Self, StartupError> {
         let configuration: Configuration = read_configuration(path, "gateway")?;
         if configuration.version != 1 {
-            return Err(StartupError::Configuration("gateway"));
+            return Err(crate::configuration::ConfigurationError::new(
+                "gateway",
+                "version",
+                "expected schema version 1",
+            )
+            .into());
         }
         if !configuration.bind.ip().is_loopback() {
             return Err(StartupError::Listener);
@@ -190,8 +164,8 @@ impl Bootstrap {
         let directory = match directory {
             Some(path) if !path.as_os_str().is_empty() => path.to_owned(),
             Some(_) => return Err(StartupError::Configuration("credential directory")),
-            None => match configuration.credentials_dir {
-                Some(path) => relative(parent, &path)?,
+            None => match &configuration.credentials_dir {
+                Some(path) => relative(parent, path)?,
                 None => crate::credential::resolve_store_directory(None)
                     .map_err(|_| StartupError::Credentials)?,
             },
@@ -202,58 +176,14 @@ impl Bootstrap {
             return Err(StartupError::Credentials);
         }
         let accounts =
-            crate::account::Accounts::load(&relative(parent, &configuration.accounts_file)?)
-                .map_err(|_| StartupError::Configuration("accounts"))?;
-        let defaults = Limits::default();
-        let limits = Limits {
-            max_wait: configuration
-                .max_wait_ms
-                .map(Duration::from_millis)
-                .unwrap_or(defaults.max_wait),
-            retry_hint_horizon: configuration
-                .retry_hint_horizon_ms
-                .map(Duration::from_millis)
-                .unwrap_or(defaults.retry_hint_horizon),
-            provider_recovery: accounts
-                .providers
-                .iter()
-                .map(|(id, provider)| (id.clone(), provider.recovery.clone()))
-                .collect(),
-            delta_coalescing: configuration.delta_coalescing,
-            implicit_cache_affinity: models.implicit_cache_affinity,
-            concurrency: configuration.concurrency.unwrap_or(defaults.concurrency),
-            exchange_timeout: configuration
-                .exchange_timeout_ms
-                .map(Duration::from_millis)
-                .unwrap_or(defaults.exchange_timeout),
-            affinity_ttl: configuration
-                .affinity_ttl_ms
-                .map(Duration::from_millis)
-                .unwrap_or(defaults.affinity_ttl),
-            affinity_capacity: configuration
-                .affinity_capacity
-                .unwrap_or(defaults.affinity_capacity),
-            oauth_scan_interval: configuration
-                .oauth_scan_interval_ms
-                .map(Duration::from_millis)
-                .unwrap_or(defaults.oauth_scan_interval),
-            oauth_refresh_ahead_seconds: configuration
-                .oauth_refresh_ahead_seconds
-                .unwrap_or(defaults.oauth_refresh_ahead_seconds),
-            oauth_renewal_timeout: configuration
-                .oauth_renewal_timeout_ms
-                .map(Duration::from_millis)
-                .unwrap_or(defaults.oauth_renewal_timeout),
-            oauth_failed_renewal_delay: configuration
-                .oauth_failed_renewal_delay_ms
-                .map(Duration::from_millis)
-                .unwrap_or(defaults.oauth_failed_renewal_delay),
-            oauth_minimum_renewal_interval: configuration
-                .oauth_minimum_renewal_interval_ms
-                .map(Duration::from_millis)
-                .unwrap_or(defaults.oauth_minimum_renewal_interval),
-            ..defaults
-        };
+            crate::account::Accounts::load(&relative(parent, &configuration.accounts_file)?)?;
+        let mut limits = configuration.limits();
+        limits.provider_recovery = accounts
+            .providers
+            .iter()
+            .map(|(id, provider)| (id.clone(), provider.recovery.clone()))
+            .collect();
+        limits.validate()?;
         let manager = CredentialManager::new(
             directory,
             crate::credential::drivers::builtin_drivers_with_environment(
@@ -263,10 +193,25 @@ impl Bootstrap {
             .map_err(|_| StartupError::Credentials)?,
         )
         .map_err(|_| StartupError::Credentials)?;
-        let accounts = accounts
-            .bind(&manager)
-            .map_err(|_| StartupError::Credentials)?;
+        let accounts = accounts.bind(&manager)?;
         let plan = models.bind(&accounts)?;
+        let explanation = serde_json::json!({
+            "valid":true,"version":1,
+            "routing":configuration.routing,"oauth":configuration.oauth,
+            "delivery":configuration.delivery,"resources":configuration.resources,
+            "proxy_source":if proxy.is_some() {"cli"} else if configuration.proxy.is_some() {"config"} else {"environment"},
+            "diagnostics_enabled":configuration.diagnostics.is_some(),
+            "capture":configuration.capture.as_ref().map(|capture| serde_json::json!({
+                "enabled":capture.enabled(),
+                "client_request":capture.client_request,"upstream_request":capture.upstream_request,
+                "upstream_response":capture.upstream_response,"client_response":capture.client_response,
+                "max_unit_bytes":capture.max_unit_bytes,"max_exchange_bytes":capture.max_exchange_bytes,
+                "max_total_bytes":capture.max_total_bytes
+            })),
+            "providers":limits.provider_recovery,
+            "selections":plan.explanation,
+            "semantics":"Body collection has a separate deadline. Execution starts after admission; model and endpoint deadlines narrow it. Omitted service fields use application defaults. Context/input capacities are planning metadata; output maxima do not fill absent request caps."
+        });
         let mut gateway = Gateway::bind(
             plan.topology,
             plan.entries,
@@ -298,6 +243,7 @@ impl Bootstrap {
         Ok(Self {
             gateway,
             listen: configuration.bind,
+            explanation,
         })
     }
 }

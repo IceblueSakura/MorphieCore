@@ -33,7 +33,6 @@ pub fn binding(origin: &str) -> (ProviderEntry, ImageRoute) {
                 credential: CredentialBindingId::new("fixture-key").unwrap(),
                 execution: ExecutionContract {
                     streaming: false,
-                    retry_before_commit: false,
                     request_body_limit: 256 << 10,
                     response_body_limit: 4 << 20,
                     credential_kind: CredentialKind::ApiKey,

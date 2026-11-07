@@ -66,9 +66,9 @@ def gateway_configuration(root, native, origin, *, credential_root=None,
     service = {"version": 1, "auth_file": "auth.json", "bind": "127.0.0.1:0",
         "accounts_file": "accounts.json", "models_file": "models.json",
         "credentials_dir": str((credential_root or root) / "credentials"),
-        "exchange_timeout_ms": exchange_timeout_ms, "diagnostics": "diagnostics.jsonl"}
+        "delivery": {"exchange_timeout_ms": exchange_timeout_ms}, "diagnostics": "diagnostics.jsonl"}
     if concurrency is not None:
-        service["concurrency"] = concurrency
+        service["resources"] = {"concurrency": concurrency}
     private_json(root / "gateway.json", service)
     private_json(root / "models.json", {"version": 1, "models": {model: {
         "chat_profile": "standard" if native else "readable_reasoning",

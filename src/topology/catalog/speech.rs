@@ -112,7 +112,6 @@ impl SpeechBinding {
                 credential: self.credential(),
                 execution: ExecutionContract {
                     streaming: self.profile.upstream_sse(),
-                    retry_before_commit: false,
                     request_body_limit: 64 << 10,
                     response_body_limit: 8 << 20,
                     credential_kind: CredentialKind::ApiKey,

@@ -44,7 +44,6 @@ pub(crate) fn topology_at(origin: &str) -> CompiledTopology {
     let canonical = ModelId::new("fixture-canonical").unwrap();
     let execution = ExecutionContract {
         streaming: true,
-        retry_before_commit: false,
         request_body_limit: 256 << 10,
         response_body_limit: 1 << 20,
         timeout_ms: 1000,

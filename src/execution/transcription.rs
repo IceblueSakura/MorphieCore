@@ -17,7 +17,6 @@ pub fn prepare(
         || provider.auth.kind() != CredentialKind::ApiKey
         || endpoint.execution.credential_kind != CredentialKind::ApiKey
         || endpoint.execution.streaming
-        || endpoint.execution.retry_before_commit
     {
         return Err(AttemptError::Protocol(
             crate::execution::attempt::ProtocolReason::TranscriptionBinding,

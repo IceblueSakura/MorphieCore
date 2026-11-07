@@ -7,7 +7,13 @@ struct Options {
     /// Validate through production construction without listening or starting maintenance.
     #[arg(long)]
     validate: bool,
-    #[arg(long, requires = "validate")]
+    /// Show the compiled model/binding catalog without opening configuration or credentials.
+    #[arg(long, conflicts_with_all = ["validate", "explain", "config", "credentials_dir", "proxy"])]
+    catalog: bool,
+    /// Validate and explain effective settings and account-bound candidates, without serving.
+    #[arg(long, conflicts_with = "validate")]
+    explain: bool,
+    #[arg(long)]
     json: bool,
     /// Override the default ~/.local/share/morphiecore/credentials directory.
     #[arg(long)]
@@ -45,8 +51,19 @@ async fn main() -> std::process::ExitCode {
             return std::process::ExitCode::FAILURE;
         }
     };
+    if options.json && !options.validate && !options.explain && !options.catalog {
+        eprintln!("--json requires --validate, --explain or --catalog.");
+        return std::process::ExitCode::FAILURE;
+    }
+    if options.catalog {
+        return report(
+            morphiecore::gateway::startup::inspection::catalog(),
+            options.json,
+        );
+    }
     let proxy = options.proxy.clone();
     let validate = options.validate;
+    let explain = options.explain;
     let json = options.json;
     let (directory, config) = match options.paths() {
         Ok(paths) => paths,
@@ -55,6 +72,12 @@ async fn main() -> std::process::ExitCode {
             return std::process::ExitCode::FAILURE;
         }
     };
+    if explain {
+        return report(
+            Bootstrap::explain(&config, directory.as_deref(), proxy.as_deref()),
+            json,
+        );
+    }
     if validate {
         return match Bootstrap::validate(&config, directory.as_deref(), proxy.as_deref()) {
             Ok(()) => {
@@ -67,10 +90,7 @@ async fn main() -> std::process::ExitCode {
             }
             Err(error) => {
                 if json {
-                    println!(
-                        "{}",
-                        serde_json::json!({"error":{"message":error.to_string()}})
-                    );
+                    println!("{}", serde_json::json!({"error":error.diagnostic()}));
                 } else {
                     eprintln!("MorphieCore validation failed: {error}");
                 }
@@ -105,6 +125,58 @@ async fn main() -> std::process::ExitCode {
         Ok(()) => std::process::ExitCode::SUCCESS,
         Err(_) => {
             eprintln!("MorphieCore server stopped with an I/O error");
+            std::process::ExitCode::FAILURE
+        }
+    }
+}
+
+fn report(
+    result: Result<serde_json::Value, morphiecore::gateway::StartupError>,
+    json: bool,
+) -> std::process::ExitCode {
+    match result {
+        Ok(value) => {
+            if json {
+                println!("{value}");
+            } else {
+                if let Some(semantics) = value["semantics"].as_str() {
+                    println!("{semantics}");
+                }
+                for section in [
+                    "routing",
+                    "oauth",
+                    "delivery",
+                    "resources",
+                    "providers",
+                    "proxy_source",
+                    "diagnostics_enabled",
+                    "capture",
+                ] {
+                    if let Some(settings) = value.get(section) {
+                        println!(
+                            "{section}: {}",
+                            serde_json::to_string_pretty(settings).expect("JSON value")
+                        );
+                    }
+                }
+                if let Some(rows) = value
+                    .get("models")
+                    .or_else(|| value.get("selections"))
+                    .and_then(|v| v.as_array())
+                {
+                    for row in rows {
+                        println!("{}", serde_json::to_string_pretty(row).expect("JSON value"));
+                    }
+                }
+            }
+            std::process::ExitCode::SUCCESS
+        }
+        Err(error) => {
+            if json {
+                println!("{}", serde_json::json!({"error":error.diagnostic()}));
+            } else {
+                eprintln!("Configuration inspection failed: {error}");
+            }
             std::process::ExitCode::FAILURE
         }
     }

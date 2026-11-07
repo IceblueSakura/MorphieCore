@@ -25,7 +25,12 @@ pub(in crate::gateway) struct Auth {
 impl Auth {
     pub fn new(agents: BTreeMap<String, SecretMaterial>) -> Result<Self, StartupError> {
         if agents.is_empty() || agents.len() > 256 {
-            return Err(StartupError::Credentials);
+            return Err(crate::configuration::ConfigurationError::new(
+                "auth",
+                "agents",
+                "expected 1 to 256 Agent records",
+            )
+            .into());
         }
         let mut keys: Vec<AgentKey> = Vec::with_capacity(agents.len());
         let mut namespace = Sha256::new();
@@ -36,12 +41,30 @@ impl Auth {
                 && id
                     .bytes()
                     .all(|c| c.is_ascii_alphanumeric() || b"._-".contains(&c));
-            if !valid_id || !(32..=4096).contains(&secret.expose().len()) {
-                return Err(StartupError::Credentials);
+            if !valid_id {
+                return Err(crate::configuration::ConfigurationError::new(
+                    "auth",
+                    "agents.agent_id",
+                    "expected 1 to 128 ASCII identifier bytes",
+                )
+                .into());
+            }
+            if !(32..=4096).contains(&secret.expose().len()) {
+                return Err(crate::configuration::ConfigurationError::new(
+                    "auth",
+                    "agents.key",
+                    "expected 32 to 4096 printable non-space ASCII bytes",
+                )
+                .into());
             }
             let digest: [u8; 32] = Sha256::digest(secret.expose().as_bytes()).into();
             if keys.iter().any(|key| bool::from(digest.ct_eq(&key.digest))) {
-                return Err(StartupError::Credentials);
+                return Err(crate::configuration::ConfigurationError::new(
+                    "auth",
+                    "agents.key",
+                    "duplicate Agent key; generate independent keys",
+                )
+                .into());
             }
             namespace.update((id.len() as u64).to_le_bytes());
             namespace.update(id.as_bytes());

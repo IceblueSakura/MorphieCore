@@ -342,7 +342,7 @@ fn messages_output_defaults_inherit_override_or_clear_without_widening_maxima() 
     ] {
         assert!(matches!(
             load(configured),
-            Err(StartupError::Configuration("models"))
+            Err(StartupError::Detail(error)) if error.domain == "models"
         ));
     }
     let catalog = catalog::default_topology().unwrap();
@@ -355,7 +355,7 @@ fn messages_output_defaults_inherit_override_or_clear_without_widening_maxima() 
     for value in [Value::Null, json!(4096)] {
         assert!(matches!(
             load(json!({"binding":chat.id.as_str(),"default_output_tokens":value})),
-            Err(StartupError::Configuration("models"))
+            Err(StartupError::Detail(error)) if error.domain == "models"
         ));
     }
 }

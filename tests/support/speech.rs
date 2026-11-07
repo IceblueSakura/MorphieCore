@@ -52,7 +52,6 @@ pub fn binding(origin: &str) -> (ProviderEntry, SpeechRoute) {
                 credential: CredentialBindingId::new("speech-key").unwrap(),
                 execution: ExecutionContract {
                     streaming: false,
-                    retry_before_commit: false,
                     request_body_limit: 64 << 10,
                     response_body_limit: 1 << 20,
                     credential_kind: CredentialKind::ApiKey,

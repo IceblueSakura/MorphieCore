@@ -534,7 +534,7 @@ mod tests {
             std::fs::write(file.path(), serde_json::to_vec(&obsolete).unwrap()).unwrap();
             assert!(matches!(
                 execute(options(&["validate"])).await,
-                Err(Error::Accounts(AccountError::Configuration))
+                Err(Error::Accounts(AccountError::Detail(error))) if error.domain == "accounts"
             ));
         }
         assert!(!store.exists());

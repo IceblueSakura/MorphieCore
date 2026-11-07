@@ -104,7 +104,6 @@ impl CompiledTopology {
                 return Err(TopologyError::ContractUnsatisfiable);
             }
             if endpoint.execution.streaming != endpoint.profile.upstream_sse()
-                || endpoint.execution.retry_before_commit
                 || endpoint.execution.request_body_limit == 0
                 || endpoint.execution.response_body_limit == 0
                 || endpoint.execution.timeout_ms == 0

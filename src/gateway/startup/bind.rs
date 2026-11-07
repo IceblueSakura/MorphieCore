@@ -58,9 +58,7 @@ impl Gateway {
             crate::gateway::tasks::transcription::bind(&topology, transcriptions, &credentials)?;
         let embeddings =
             crate::gateway::tasks::embeddings::bind(&topology, embeddings, &credentials)?;
-        if !limits.validate() {
-            return Err(StartupError::Limits);
-        }
+        limits.validate()?;
         let auth = auth::Auth::new(agents)?;
         let transport = HttpTransport::with_environment_proxy(proxy, environment)
             .map_err(|_| StartupError::Transport)?;

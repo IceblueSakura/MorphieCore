@@ -5,18 +5,35 @@
   "models_file": "models.json",
   "credentials_dir": "credentials",
   "proxy": null,
-  "concurrency": 16,
-  "exchange_timeout_ms": 3600000,
-  "affinity_ttl_ms": 3600000,
-  "affinity_capacity": 4096,
-  "oauth_scan_interval_ms": 15000,
-  "oauth_refresh_ahead_seconds": 120,
-  "oauth_renewal_timeout_ms": 90000,
-  "oauth_failed_renewal_delay_ms": 60000,
-  "oauth_minimum_renewal_interval_ms": 60000,
-  "delta_coalescing": {
-    "max_delay_ms": 50,
-    "max_pending_bytes": 16384
+  "routing": {
+    "implicit_cache_affinity": true,
+    "affinity_ttl_ms": 3600000,
+    "affinity_capacity": 4096,
+    "max_wait_ms": 10000,
+    "retry_hint_horizon_ms": 60000
+  },
+  "oauth": {
+    "scan_interval_ms": 15000,
+    "refresh_ahead_seconds": 120,
+    "renewal_timeout_ms": 90000,
+    "failed_renewal_delay_ms": 60000,
+    "minimum_renewal_interval_ms": 60000
+  },
+  "delivery": {
+    "exchange_timeout_ms": 3600000,
+    "delta_coalescing": {
+      "max_delay_ms": 50,
+      "max_pending_bytes": 16384
+    }
+  },
+  "resources": {
+    "concurrency": 16,
+    "request_bytes": 33554432,
+    "response_bytes": 67108864,
+    "body_timeout_ms": 60000,
+    "history_entries": 1024,
+    "history_bytes": 268435456,
+    "history_ttl_ms": 1800000
   },
   "diagnostics": null,
   "capture": {
