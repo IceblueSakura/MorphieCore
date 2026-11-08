@@ -274,6 +274,18 @@ async fn pi_messages_incremental_lifecycle() {
 }
 
 #[tokio::test]
+#[ignore = "requires installed pi; incomplete Responses arguments, cancellation and a new call"]
+async fn pi_responses_tool_argument_cancellation() {
+    installed_case(
+        "lifecycle",
+        "pi-responses-tool-cancel",
+        "MORPHIECORE_PI_BIN",
+        &[],
+    )
+    .await;
+}
+
+#[tokio::test]
 #[ignore = "requires installed OpenCode; core delta, interrupt and single-permit recovery"]
 async fn opencode_chat_incremental_lifecycle() {
     installed_case(

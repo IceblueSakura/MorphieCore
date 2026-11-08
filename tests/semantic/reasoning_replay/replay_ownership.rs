@@ -91,6 +91,42 @@ fn final_incomplete_reasoning_replays_exactly_but_partial_tokens_do_not() {
         .unwrap();
         d.fidelity.bind_replay_origin(&origin()).unwrap();
         let m = metadata();
+        if status == "completed" {
+            use morphiecore::protocol::openai::lowering::RepresentationError;
+            use morphiecore::protocol::openai::{Dialect, GenerationCodec};
+            let mut readable = contract();
+            readable.adaptation =
+                GenerationCodec::new(GenerationApi::Chat, Dialect::ChatReasoning, None).adaptation;
+            assert_eq!(
+                lower_response(&d.semantic, &d.fidelity, &m, GenerationApi::Chat, readable)
+                    .err()
+                    .unwrap()
+                    .cause,
+                morphiecore::protocol::ConversionCause::Representation(
+                    RepresentationError::ReplayFormat
+                ),
+                "a trusted final value still needs a client carrier"
+            );
+            let mut foreign = contract();
+            foreign.replay_origin =
+                Some(morphiecore::semantic::value::ReplayOrigin::new("different-issuer").unwrap());
+            assert_eq!(
+                lower_response(
+                    &d.semantic,
+                    &d.fidelity,
+                    &m,
+                    GenerationApi::Responses,
+                    foreign
+                )
+                .err()
+                .unwrap()
+                .cause,
+                morphiecore::protocol::ConversionCause::Representation(
+                    RepresentationError::ReplayOrigin
+                ),
+                "a supported carrier must still enforce origin binding"
+            );
+        }
         let projected = lower_response(
             &d.semantic,
             &d.fidelity,

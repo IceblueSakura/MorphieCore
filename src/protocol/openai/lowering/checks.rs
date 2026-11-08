@@ -158,18 +158,25 @@ pub(super) fn represent_reasoning(
         }
         if let Item::Reasoning(reasoning) = item
             && let Some(replay) = &reasoning.replay
-            && (profile != GenerationApi::Responses
-                && !(profile == GenerationApi::Chat && structured_chat)
-                || !history.map_or_else(
-                    || fidelity.replay_matches(*id, reasoning, origin),
-                    |request| fidelity.replay_matches_request(*id, reasoning, origin, request),
-                )
-                || replay.replay_token().is_none()
-                    && (request
-                        || reasoning.status == ItemLifecycle::Completed
-                        || profile == GenerationApi::Chat))
         {
-            return Err(RepresentationError::ReplayOrigin);
+            if profile != GenerationApi::Responses
+                && !(profile == GenerationApi::Chat && structured_chat)
+            {
+                return Err(RepresentationError::ReplayFormat);
+            }
+            if !history.map_or_else(
+                || fidelity.replay_matches(*id, reasoning, origin),
+                |request| fidelity.replay_matches_request(*id, reasoning, origin, request),
+            ) {
+                return Err(RepresentationError::ReplayOrigin);
+            }
+            if replay.replay_token().is_none()
+                && (request
+                    || reasoning.status == ItemLifecycle::Completed
+                    || profile == GenerationApi::Chat)
+            {
+                return Err(RepresentationError::ReplayPhase);
+            }
         }
     }
     let has_reasoning_items = items

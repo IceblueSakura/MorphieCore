@@ -16,8 +16,11 @@ import time
 from urllib.parse import urlsplit
 
 from drivers import (TEXT, Child, Pi, check, check_client_version, environment,
-                     gateway_configuration, opencode_configuration, opencode_prompt, pi_configuration)
+                     gateway_configuration, opencode_configuration, opencode_prompt, pi_configuration,
+                     private_json)
 from recovery import OwnedServer
+from protocol_defaults import PROFILES, responses_events
+from recovery_boundary import wait_for_diagnostic
 
 FIRST = "synthetic-client-first-content"
 CANCEL = "synthetic-hold-and-cancel"
@@ -53,6 +56,8 @@ def frames(native, text, final):
 
 
 class State:
+    count = 2
+
     def __init__(self, native):
         self.native = native
         self.accepted = threading.Event()
@@ -69,9 +74,62 @@ class State:
         with self.guard:
             self.attempts += 1
             ordinal = self.attempts
-        check(ordinal <= 2, "upstream_attempt_budget")
+        check(ordinal <= self.count, "upstream_attempt_budget")
         check((CANCEL if ordinal == 1 else RECOVER) in json.dumps(body), "upstream_request_order")
         return ordinal
+
+    @property
+    def endpoint_path(self):
+        return "/v1/messages" if self.native else "/v1/chat/completions"
+
+    def frames(self, ordinal):
+        return frames(self.native, FIRST if ordinal == 1 else TEXT, ordinal == 2)
+
+
+class ToolState(State):
+    count = 3
+    endpoint_path = "/v1/responses"
+    cancelled_call = "call_cancelled"
+    recovered_call = "call_recovered"
+
+    def __init__(self, path):
+        super().__init__(False)
+        self.path = path
+
+    def admit(self, headers, body):
+        ordinal = super().admit(headers, body)
+        if ordinal == 3:
+            calls = [item for item in body["input"] if item.get("type") == "function_call"
+                     and item.get("call_id") == self.recovered_call]
+            results = [item for item in body["input"] if item.get("type") == "function_call_output"
+                       and item.get("call_id") == self.recovered_call]
+            check(len(calls) == len(results) == 1, "recovered_call_result_count")
+            check(json.loads(calls[0]["arguments"]) == {"path": str(self.path)}
+                  and TEXT in str(results[0]["output"]), "recovered_call_result")
+        return ordinal
+
+    def frames(self, ordinal):
+        if ordinal == 1:
+            response = {"id": "resp_cancelled", "object": "response", "created_at": 1,
+                        "model": PROFILES["responses"][0], "status": "in_progress", "output": []}
+            events = [
+                {"type": "response.created", "response": response},
+                {"type": "response.output_item.added", "output_index": 0, "item": {
+                    "id": "fc_cancelled", "type": "function_call", "status": "in_progress",
+                    "call_id": self.cancelled_call, "name": "read", "arguments": ""}},
+                {"type": "response.function_call_arguments.delta", "output_index": 0,
+                 "item_id": "fc_cancelled", "delta": '{"path":"'},
+            ]
+            return "".join(f"event: {event['type']}\ndata: "
+                           f"{json.dumps({**event, 'sequence_number': index})}\n\n"
+                           for index, event in enumerate(events)).encode()
+        items = ([{"id": "fc_recovered", "type": "function_call", "status": "completed",
+                   "call_id": self.recovered_call, "name": "read",
+                   "arguments": json.dumps({"path": str(self.path)})}] if ordinal == 2 else
+                 [{"id": "msg_recovered", "type": "message", "role": "assistant",
+                   "status": "completed", "content": [{"type": "output_text", "text": TEXT,
+                                                       "annotations": [], "logprobs": []}]}])
+        return responses_events(ordinal, self.path, items=items)
 
 
 def observed_held_content(state):
@@ -94,7 +152,7 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         try:
             state = self.server.state
-            check(self.path == ("/v1/messages" if state.native else "/v1/chat/completions"), "upstream_path")
+            check(self.path == state.endpoint_path, "upstream_path")
             size = int(self.headers.get("content-length", "-1"))
             check(0 < size <= 256 << 10, "upstream_request_bytes")
             body = json.loads(self.rfile.read(size))
@@ -103,7 +161,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("content-type", "text/event-stream")
             self.send_header("transfer-encoding", "chunked")
             self.end_headers()
-            data = frames(state.native, FIRST if ordinal == 1 else TEXT, ordinal == 2)
+            data = state.frames(ordinal)
             self.wfile.write(f"{len(data):x}\r\n".encode() + data + b"\r\n")
             self.wfile.flush()
             if ordinal == 1:
@@ -149,11 +207,25 @@ def authority(state):
 
 
 def pi_case(binary, env, root, work, origin, state):
-    directory, model = pi_configuration(root, origin, state.native)
+    tools = isinstance(state, ToolState)
+    if tools:
+        model, provider, _, _ = PROFILES["responses"]
+        directory = root / "pi-agent"
+        directory.mkdir(mode=0o700)
+        private_json(directory / "models.json", {"providers": {provider: {
+            "baseUrl": origin + "/v1", "apiKey": "$INGRESS_KEY",
+            "modelOverrides": {model: {"maxTokens": 2048}}}}})
+        private_json(directory / "settings.json", {"retry": {"enabled": False,
+            "provider": {"maxRetries": 0, "timeoutMs": 10000}},
+            "compaction": {"enabled": False}, "cacheWarming": "off"})
+    else:
+        directory, model = pi_configuration(root, origin, state.native)
     env = {**env, "PI_CODING_AGENT_DIR": str(directory), "PI_CACHE_RETENTION": "short"}
-    with Pi(binary, env, work, model) as pi:
+    with Pi(binary, env, work, model,
+            **({"provider": provider, "thinking": None} if tools else {})) as pi:
         initial, _ = pi.command("get_state")
-        prompt_id = pi.submit("prompt", message=f"{CANCEL}: Say {FIRST} without tools.")
+        prompt_id = pi.submit("prompt", message=f"{CANCEL}: " +
+                             ("Read the file." if tools else f"Say {FIRST} without tools."))
         deadline = time.monotonic() + 5
         acknowledged = set()
         visible = ""
@@ -166,7 +238,13 @@ def pi_case(binary, env, root, work, origin, state):
             check(not assistant_end and event.get("type") not in ("agent_settled", "tool_execution_start"),
                   "client_finished_before_visible_content")
             delta = event.get("assistantMessageEvent", {})
+            if tools and event.get("type") == "message_update" and delta.get("type") == "toolcall_delta":
+                visible += delta.get("delta", "")
+                check(len(visible) <= 1024, "visible_arguments_bound")
+                if visible == '{"path":"':
+                    break
             if event.get("type") == "message_update" and delta.get("type") == "text_delta":
+                check(not tools, "cancelled_call_became_text")
                 visible += delta.get("delta", "")
                 check(len(visible) <= 1024, "visible_text_bound")
                 if FIRST in visible:
@@ -189,12 +267,41 @@ def pi_case(binary, env, root, work, origin, state):
                 settled = True
             check(not event.get("type", "").startswith(("auto_retry", "compaction", "summarization_retry")),
                   "unexpected_auxiliary_request")
+            if tools:
+                check(not event.get("type", "").startswith("tool_execution"), "cancelled_call_executed")
         check(aborted == ["aborted"], "cancelled_assistant_terminal")
         check(state.dropped.wait(timeout=3), "upstream_not_released_before_recovery")
-        pi.prompt(f"{RECOVER}: Say {TEXT} without tools.", ["stop"])
+        if tools:
+            receipt = wait_for_diagnostic(root, lambda row: row.get("event") == "request",
+                                          3, "cancelled_gateway_receipt_missing")
+            check(receipt["outcome"] != "complete" and len(receipt["candidates"]) == 1,
+                  "cancelled_gateway_receipt")
+            _, events = pi.command("prompt", message=f"{RECOVER}: Read {state.path}, then answer.")
+            assert_recovered_tool(events, state.recovered_call)
+        else:
+            pi.prompt(f"{RECOVER}: Say {TEXT} without tools.", ["stop"])
         final, _ = pi.command("get_state")
         check(final["sessionId"] == initial["sessionId"] and not final["isStreaming"], "recovery_session_or_idle")
-    return "rpc_text_delta"
+    return "rpc_toolcall_delta" if tools else "rpc_text_delta"
+
+
+def assert_recovered_tool(events, call):
+    check(not any(e.get("type", "").startswith(("auto_retry", "compaction", "summarization_retry"))
+                  for e in events), "unexpected_recovery_request")
+    executions = [e for e in events if e.get("type") in ("tool_execution_start", "tool_execution_end")]
+    check([e["type"] for e in executions] == ["tool_execution_start", "tool_execution_end"],
+          "recovered_execution_count")
+    # pi Responses IDs pair the native call ID with its item ID for replay.
+    check(all(e.get("toolCallId") == call + "|fc_recovered" and e.get("toolName") == "read"
+              for e in executions), "cancelled_or_unrelated_call_executed")
+    check(executions[1].get("isError") is False and TEXT in json.dumps(executions[1].get("result")),
+          "recovered_read_result")
+    assistants = [e["message"] for e in events if e.get("type") == "message_end"
+                  and e.get("message", {}).get("role") == "assistant"]
+    check([m.get("stopReason") for m in assistants] == ["toolUse", "stop"],
+          "recovered_assistant_terminals")
+    check(any(p.get("type") == "text" and p.get("text") == TEXT
+              for p in assistants[-1]["content"]), "recovered_final_text")
 
 
 class Events:
@@ -425,13 +532,19 @@ def main():
     with Child([client_binary, "--version"], env, work) as child:
         version = child.wait(timeout=5).decode().strip()
     check_client_version(case, version)
-    state = State(case == "pi-messages")
+    tools = case == "pi-responses-tool-cancel"
+    if tools:
+        path = work / "sample.txt"
+        path.write_text(TEXT + "\n", encoding="utf-8")
+    state = ToolState(path) if tools else State(case == "pi-messages")
     with ExitStack() as stack:
         upstream = stack.enter_context(authority(state))
         gateway_configuration(root, state.native, upstream, total_timeout_ms=25000,
                               exchange_timeout_ms=30000, concurrency=1,
                               accounts=("primary", "secondary"),
-                              recovery={"recovery_timeout_ms": 2500})
+                              recovery={"recovery_timeout_ms": 2500},
+                              **({"model": PROFILES["responses"][0], "provider": "openai",
+                                  "binding": PROFILES["responses"][2]} if tools else {}))
         gateway = stack.enter_context(Child([gateway_binary, "--config", str(root / "gateway.json"),
             "--credentials-dir", str(root / "credentials")], env, work))
         try:
@@ -442,12 +555,14 @@ def main():
         origin = ready.removeprefix("MorphieCore listening on ")
         proxy_report = None
         if proxy_binary:
+            check(not tools, "tool_proxy_profile_not_selected")
             proxy_report = {}
             origin = stack.enter_context(nginx_proxy(proxy_binary[0], root, env, origin, proxy_report))
         try:
             run = pi_case if case.startswith("pi-") else opencode_case
             surface = run(client_binary, env, root, work, origin, state)
-            check(state.attempts == 2 and not state.errors and state.dropped.is_set(), "upstream_lifecycle_accounting")
+            check(state.attempts == state.count and not state.errors and state.dropped.is_set(),
+                  "upstream_lifecycle_accounting")
         except Exception:
             print(json.dumps({"upstream_attempts": state.attempts, "content_sent": state.sent.is_set(),
                               "peer_closed": state.dropped.is_set(), "authority_errors": state.errors}), file=sys.stderr)
@@ -458,14 +573,17 @@ def main():
         records = [json.loads(line) for line in (root / "diagnostics.jsonl").read_text().splitlines()]
         check(all(r.get("event") in ("file", "request", "log", "span") for r in records), "lifecycle_diagnostic_loss")
         requests = [r for r in records if r.get("event") == "request"]
-        check(len(requests) == 2 and requests[0]["outcome"] != "complete" and requests[1]["outcome"] == "complete",
+        check(len(requests) == state.count and requests[0]["outcome"] != "complete"
+              and all(r["outcome"] == "complete" for r in requests[1:]),
               "cancelled_or_recovered_gateway_outcome")
         check(all(len(r["candidates"]) == 1 and r["candidates"][0]["advanced"] is False
                   and r.get("ignored_request_field_count", 0) == 0 for r in requests), "post_publication_replay")
-    check(state.attempts == 2 and not state.errors, "late_upstream_lifecycle_failure")
-    print(json.dumps({"case": case, "version": version, "client_requests": 2, "upstream_attempts": 2,
+    check(state.attempts == state.count and not state.errors, "late_upstream_lifecycle_failure")
+    print(json.dumps({"case": case, "version": version,
+        "client_requests": state.count, "upstream_attempts": state.count,
         "consumer_surface": surface, "content_before_terminal_and_eof": True,
-        "coalesced_before_cancel": True,
+        **({"cancelled_call_executions": 0, "new_call_executions": 1} if tools else
+           {"coalesced_before_cancel": True}),
         "upstream_cancelled": True, "single_permit_recovery": True, "post_publication_replays": 0,
         "proxy": proxy_report}))
 

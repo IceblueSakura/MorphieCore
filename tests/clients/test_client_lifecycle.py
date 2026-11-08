@@ -1,4 +1,5 @@
 """Held-stream authority oracles, independent of installed clients and Providers."""
+import copy
 import json
 from contextlib import closing
 import http.client
@@ -6,10 +7,32 @@ import unittest
 from unittest.mock import Mock
 from urllib.parse import urlsplit
 
-from lifecycle import CANCEL, FIRST, RECOVER, State, authority, frames, observed_held_content
+from lifecycle import (CANCEL, FIRST, RECOVER, State, authority, frames, observed_held_content,
+                       assert_recovered_tool)
 
 
 class LifecycleOracles(unittest.TestCase):
+    def test_recovery_cannot_execute_cancelled_calls_or_skip_tool_feedback(self):
+        events = [
+            {"type": "tool_execution_start", "toolCallId": "new|fc_recovered", "toolName": "read"},
+            {"type": "tool_execution_end", "toolCallId": "new|fc_recovered", "toolName": "read",
+             "isError": False, "result": "cedar-71"},
+            {"type": "message_end", "message": {"role": "assistant", "stopReason": "toolUse"}},
+            {"type": "message_end", "message": {"role": "assistant", "stopReason": "stop",
+              "content": [{"type": "text", "text": "cedar-71"}]}},
+        ]
+        assert_recovered_tool(events, "new")
+        cancelled = copy.deepcopy(events)
+        cancelled[0]["toolCallId"] = "cancelled|fc_cancelled"
+        with self.assertRaisesRegex(RuntimeError, "^cancelled_or_unrelated_call_executed$"):
+            assert_recovered_tool(cancelled, "new")
+        with self.assertRaisesRegex(RuntimeError, "^recovered_execution_count$"):
+            assert_recovered_tool(events[:2] + events, "new")
+        with self.assertRaisesRegex(RuntimeError, "^recovered_assistant_terminals$"):
+            assert_recovered_tool(events[:-1], "new")
+        with self.assertRaisesRegex(RuntimeError, "^unexpected_recovery_request$"):
+            assert_recovered_tool(events + [{"type": "auto_retry_start"}], "new")
+
     def test_consumer_receipt_can_precede_flush_acknowledgement(self):
         state = State(False)
         def acknowledge(timeout):

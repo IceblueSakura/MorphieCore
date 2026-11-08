@@ -121,6 +121,31 @@ fn final_item_replay_cannot_be_revoked_or_rewritten_at_closure() {
 }
 
 #[test]
+fn chat_replay_finality_and_origin_failures_remain_distinct() {
+    use morphiecore::protocol::openai::{
+        Dialect, GenerationApi, GenerationCodec,
+        lowering::{RepresentationError, events::check_event},
+    };
+    let mut target = crate::events_support::contract();
+    target.adaptation =
+        GenerationCodec::new(GenerationApi::Chat, Dialect::MorphieCore, None).adaptation;
+    let replay = crate::events_support::token("synthetic-prefix", false);
+    let state = ready(ItemKind::Reasoning, replay.clone());
+    let event = close(ItemLifecycle::Incomplete, Some(replay));
+    assert_eq!(
+        check_event(&state, &event, GenerationApi::Chat, &target),
+        Err(RepresentationError::ReplayPhase),
+        "a matching origin does not make a partial token final"
+    );
+    target.replay_origin = Some(ReplayOrigin::new("foreign").unwrap());
+    assert_eq!(
+        check_event(&state, &event, GenerationApi::Chat, &target),
+        Err(RepresentationError::ReplayOrigin),
+        "origin rejection takes precedence over finality"
+    );
+}
+
+#[test]
 fn partial_call_replay_may_finish_but_cannot_change_intake_origin() {
     let format = ReplayFormat::GoogleInteractionsV1FunctionCall;
     for (old, new) in [

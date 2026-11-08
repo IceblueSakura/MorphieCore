@@ -39,11 +39,11 @@ pub enum RepresentationError {
     StructuredOutput,
     #[error("target cannot represent reasoning")]
     Reasoning,
-    #[error("target cannot represent this replay-value phase at item start")]
+    #[error("target cannot represent this replay-value phase")]
     ReplayPhase,
     #[error("target has no carrier for this replay format")]
     ReplayFormat,
-    #[error("opaque replay requires a final token and a matching trusted origin")]
+    #[error("opaque replay requires matching trusted origin and owner dependencies")]
     ReplayOrigin,
     #[error("target cannot represent image input")]
     ImageInput,

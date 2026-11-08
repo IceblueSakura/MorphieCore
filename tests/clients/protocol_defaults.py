@@ -166,9 +166,9 @@ def response_items(phase, path):
     return items
 
 
-def responses_events(phase, path):
+def responses_events(phase, path, *, items=None):
     # Same finite source-derived event contract as tests/support/responses_profile.rs.
-    items = response_items(phase, path)
+    items = response_items(phase, path) if items is None else items
     response = {"id": f"resp_default_{phase}", "object": "response", "created_at": 1,
                 "model": PROFILES["responses"][0], "status": "in_progress", "output": []}
     events = [{"type": "response.created", "response": response}]
@@ -194,16 +194,18 @@ def responses_events(phase, path):
                 {**owner, "type": "response.function_call_arguments.done", "arguments": item["arguments"]},
             ]
         else:
-            part = item["content"][0]
-            events += [
-                {**owner, "type": "response.content_part.added", "content_index": 0,
-                 "part": {"type": "output_text", "text": "", "annotations": []}},
-                {**owner, "type": "response.output_text.delta", "content_index": 0,
-                 "delta": TEXT, "logprobs": []},
-                {**owner, "type": "response.output_text.done", "content_index": 0,
-                 "text": TEXT, "logprobs": []},
-                {**owner, "type": "response.content_part.done", "content_index": 0, "part": part},
-            ]
+            for content_index, part in enumerate(item["content"]):
+                position = {**owner, "content_index": content_index}
+                events.append({**position, "type": "response.content_part.added",
+                               "part": {"type": "output_text", "text": "", "annotations": []}})
+                if part["text"]:
+                    events.append({**position, "type": "response.output_text.delta",
+                                   "delta": part["text"], "logprobs": []})
+                events += [
+                    {**position, "type": "response.output_text.done",
+                     "text": part["text"], "logprobs": []},
+                    {**position, "type": "response.content_part.done", "part": part},
+                ]
         events.append({"type": "response.output_item.done", "output_index": index, "item": item})
     events.append({"type": "response.completed", "response": {
         **response, "status": "completed", "output": items,

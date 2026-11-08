@@ -287,12 +287,17 @@ pub fn check_event(
             }
         }
         StreamEvent::ItemFinished { replay, .. }
-            if replay.as_ref().is_some_and(|r| {
-                !r.permits(contract.replay_origin.as_ref())
-                    || profile == GenerationApi::Chat && r.value.replay_token().is_none()
-            }) =>
+            if replay
+                .as_ref()
+                .is_some_and(|r| !r.permits(contract.replay_origin.as_ref())) =>
         {
             return Err(RepresentationError::ReplayOrigin);
+        }
+        StreamEvent::ItemFinished {
+            replay: Some(replay),
+            ..
+        } if profile == GenerationApi::Chat && replay.value.replay_token().is_none() => {
+            return Err(RepresentationError::ReplayPhase);
         }
         StreamEvent::ItemFinished {
             status,
