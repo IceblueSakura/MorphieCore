@@ -188,10 +188,10 @@ def shutdown_gateway(child, *, failed=False):
 
 
 class Pi(Child):
-    def __init__(self, binary, env, work, model, *, provider="recovery", thinking="low"):
+    def __init__(self, binary, env, work, model, *, provider="recovery", thinking="low", tools="read"):
         super().__init__([binary, "--mode", "rpc", "--offline", "--no-session",
             "--no-extensions", "--no-skills", "--no-context-files", "--no-mcp",
-            "--no-prompt-templates", "--no-themes", "--tools", "read",
+            "--no-prompt-templates", "--no-themes", "--tools", tools,
             "--provider", provider, "--model", model,
             *([] if thinking is None else ["--thinking", thinking])],
             env, work, rpc=True)

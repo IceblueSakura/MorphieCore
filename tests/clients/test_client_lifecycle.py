@@ -1,22 +1,24 @@
 """Held-stream authority oracles, independent of installed clients and Providers."""
 import copy
 import json
+from pathlib import Path
+import tempfile
 from contextlib import closing
 import http.client
 import unittest
 from unittest.mock import Mock
 from urllib.parse import urlsplit
 
-from lifecycle import (CANCEL, FIRST, RECOVER, State, authority, frames, observed_held_content,
+from lifecycle import (CANCEL, FIRST, RECOVER, State, ToolState, authority, frames, observed_held_content,
                        assert_recovered_tool)
 
 
 class LifecycleOracles(unittest.TestCase):
     def test_recovery_cannot_execute_cancelled_calls_or_skip_tool_feedback(self):
         events = [
-            {"type": "tool_execution_start", "toolCallId": "new|fc_recovered", "toolName": "read"},
-            {"type": "tool_execution_end", "toolCallId": "new|fc_recovered", "toolName": "read",
-             "isError": False, "result": "cedar-71"},
+            {"type": "tool_execution_start", "toolCallId": "new|fc_recovered", "toolName": "write"},
+            {"type": "tool_execution_end", "toolCallId": "new|fc_recovered", "toolName": "write",
+             "isError": False, "result": "Successfully wrote the synthetic file"},
             {"type": "message_end", "message": {"role": "assistant", "stopReason": "toolUse"}},
             {"type": "message_end", "message": {"role": "assistant", "stopReason": "stop",
               "content": [{"type": "text", "text": "cedar-71"}]}},
@@ -32,6 +34,33 @@ class LifecycleOracles(unittest.TestCase):
             assert_recovered_tool(events[:-1], "new")
         with self.assertRaisesRegex(RuntimeError, "^unexpected_recovery_request$"):
             assert_recovered_tool(events + [{"type": "auto_retry_start"}], "new")
+
+    def test_recovery_cannot_replay_cancelled_calls_or_misassociate_write_feedback(self):
+        headers = {"authorization": "Bearer synthetic-client-primary"}
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "recovered.txt"
+            state = ToolState(path)
+            state.admit(headers, {"stream": True, "input": [{"role": "user", "content": CANCEL}]})
+            recovery = {"stream": True, "input": [{"role": "user", "content": RECOVER}]}
+            cancelled = copy.deepcopy(recovery)
+            cancelled["input"].append({"type": "function_call", "call_id": state.cancelled_call})
+            with self.assertRaisesRegex(RuntimeError, "^cancelled_call_replayed$"):
+                state.admit(headers, cancelled)
+            feedback = copy.deepcopy(recovery)
+            feedback["input"] += [
+                {"type": "function_call", "call_id": state.recovered_call, "name": "write",
+                 "arguments": json.dumps({"path": str(path), "content": state.content})},
+                {"type": "function_call_output", "call_id": "unrelated", "output": "written"},
+            ]
+            with self.assertRaisesRegex(RuntimeError, "^recovered_call_result_identity$"):
+                state.admit(headers, feedback)
+            state = ToolState(path)
+            state.admit(headers, {"stream": True, "input": [{"role": "user", "content": CANCEL}]})
+            state.admit(headers, recovery)
+            feedback["input"][-1]["call_id"] = state.recovered_call
+            path.write_bytes(state.content.replace("\n", "\r\n").encode("utf-8"))
+            with self.assertRaisesRegex(RuntimeError, "^recovered_write_bytes$"):
+                state.admit(headers, feedback)
 
     def test_consumer_receipt_can_precede_flush_acknowledgement(self):
         state = State(False)

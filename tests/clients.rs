@@ -274,7 +274,7 @@ async fn pi_messages_incremental_lifecycle() {
 }
 
 #[tokio::test]
-#[ignore = "requires installed pi; incomplete Responses arguments, cancellation and a new call"]
+#[ignore = "requires installed pi; incomplete Responses write, cancellation and new-write feedback"]
 async fn pi_responses_tool_argument_cancellation() {
     installed_case(
         "lifecycle",

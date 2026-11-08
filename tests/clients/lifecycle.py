@@ -95,17 +95,25 @@ class ToolState(State):
     def __init__(self, path):
         super().__init__(False)
         self.path = path
+        self.content = TEXT + "\n"
+        self.unfinished_arguments = f'{{"path": {json.dumps(str(path))}, "content": "'
 
     def admit(self, headers, body):
         ordinal = super().admit(headers, body)
+        if ordinal >= 2:
+            check(not any(item.get("call_id") == self.cancelled_call
+                          or item.get("id") == "fc_cancelled" for item in body["input"]),
+                  "cancelled_call_replayed")
         if ordinal == 3:
-            calls = [item for item in body["input"] if item.get("type") == "function_call"
-                     and item.get("call_id") == self.recovered_call]
-            results = [item for item in body["input"] if item.get("type") == "function_call_output"
-                       and item.get("call_id") == self.recovered_call]
+            calls = [item for item in body["input"] if item.get("type") == "function_call"]
+            results = [item for item in body["input"] if item.get("type") == "function_call_output"]
             check(len(calls) == len(results) == 1, "recovered_call_result_count")
-            check(json.loads(calls[0]["arguments"]) == {"path": str(self.path)}
-                  and TEXT in str(results[0]["output"]), "recovered_call_result")
+            check(calls[0].get("call_id") == results[0].get("call_id") == self.recovered_call,
+                  "recovered_call_result_identity")
+            check(calls[0].get("name") == "write" and json.loads(calls[0]["arguments"]) == {
+                "path": str(self.path), "content": self.content} and results[0].get("output"),
+                "recovered_call_result")
+            check(self.path.read_bytes() == self.content.encode("utf-8"), "recovered_write_bytes")
         return ordinal
 
     def frames(self, ordinal):
@@ -116,16 +124,16 @@ class ToolState(State):
                 {"type": "response.created", "response": response},
                 {"type": "response.output_item.added", "output_index": 0, "item": {
                     "id": "fc_cancelled", "type": "function_call", "status": "in_progress",
-                    "call_id": self.cancelled_call, "name": "read", "arguments": ""}},
+                    "call_id": self.cancelled_call, "name": "write", "arguments": ""}},
                 {"type": "response.function_call_arguments.delta", "output_index": 0,
-                 "item_id": "fc_cancelled", "delta": '{"path":"'},
+                 "item_id": "fc_cancelled", "delta": self.unfinished_arguments},
             ]
             return "".join(f"event: {event['type']}\ndata: "
                            f"{json.dumps({**event, 'sequence_number': index})}\n\n"
                            for index, event in enumerate(events)).encode()
         items = ([{"id": "fc_recovered", "type": "function_call", "status": "completed",
-                   "call_id": self.recovered_call, "name": "read",
-                   "arguments": json.dumps({"path": str(self.path)})}] if ordinal == 2 else
+                   "call_id": self.recovered_call, "name": "write",
+                   "arguments": json.dumps({"path": str(self.path), "content": self.content})}] if ordinal == 2 else
                  [{"id": "msg_recovered", "type": "message", "role": "assistant",
                    "status": "completed", "content": [{"type": "output_text", "text": TEXT,
                                                        "annotations": [], "logprobs": []}]}])
@@ -222,10 +230,10 @@ def pi_case(binary, env, root, work, origin, state):
         directory, model = pi_configuration(root, origin, state.native)
     env = {**env, "PI_CODING_AGENT_DIR": str(directory), "PI_CACHE_RETENTION": "short"}
     with Pi(binary, env, work, model,
-            **({"provider": provider, "thinking": None} if tools else {})) as pi:
+            **({"provider": provider, "thinking": None, "tools": "write"} if tools else {})) as pi:
         initial, _ = pi.command("get_state")
         prompt_id = pi.submit("prompt", message=f"{CANCEL}: " +
-                             ("Read the file." if tools else f"Say {FIRST} without tools."))
+                             (f"Write {state.path}." if tools else f"Say {FIRST} without tools."))
         deadline = time.monotonic() + 5
         acknowledged = set()
         visible = ""
@@ -241,7 +249,7 @@ def pi_case(binary, env, root, work, origin, state):
             if tools and event.get("type") == "message_update" and delta.get("type") == "toolcall_delta":
                 visible += delta.get("delta", "")
                 check(len(visible) <= 1024, "visible_arguments_bound")
-                if visible == '{"path":"':
+                if visible == state.unfinished_arguments:
                     break
             if event.get("type") == "message_update" and delta.get("type") == "text_delta":
                 check(not tools, "cancelled_call_became_text")
@@ -272,12 +280,15 @@ def pi_case(binary, env, root, work, origin, state):
         check(aborted == ["aborted"], "cancelled_assistant_terminal")
         check(state.dropped.wait(timeout=3), "upstream_not_released_before_recovery")
         if tools:
+            check(not state.path.exists(), "cancelled_write_side_effect")
             receipt = wait_for_diagnostic(root, lambda row: row.get("event") == "request",
                                           3, "cancelled_gateway_receipt_missing")
             check(receipt["outcome"] != "complete" and len(receipt["candidates"]) == 1,
                   "cancelled_gateway_receipt")
-            _, events = pi.command("prompt", message=f"{RECOVER}: Read {state.path}, then answer.")
+            _, events = pi.command("prompt", message=(
+                f"{RECOVER}: Write {state.content!r} to {state.path}, then answer only {TEXT}."))
             assert_recovered_tool(events, state.recovered_call)
+            check(state.path.read_bytes() == state.content.encode("utf-8"), "recovered_write_bytes")
         else:
             pi.prompt(f"{RECOVER}: Say {TEXT} without tools.", ["stop"])
         final, _ = pi.command("get_state")
@@ -292,10 +303,9 @@ def assert_recovered_tool(events, call):
     check([e["type"] for e in executions] == ["tool_execution_start", "tool_execution_end"],
           "recovered_execution_count")
     # pi Responses IDs pair the native call ID with its item ID for replay.
-    check(all(e.get("toolCallId") == call + "|fc_recovered" and e.get("toolName") == "read"
+    check(all(e.get("toolCallId") == call + "|fc_recovered" and e.get("toolName") == "write"
               for e in executions), "cancelled_or_unrelated_call_executed")
-    check(executions[1].get("isError") is False and TEXT in json.dumps(executions[1].get("result")),
-          "recovered_read_result")
+    check(executions[1].get("isError") is False, "recovered_write_result")
     assistants = [e["message"] for e in events if e.get("type") == "message_end"
                   and e.get("message", {}).get("role") == "assistant"]
     check([m.get("stopReason") for m in assistants] == ["toolUse", "stop"],
@@ -535,7 +545,6 @@ def main():
     tools = case == "pi-responses-tool-cancel"
     if tools:
         path = work / "sample.txt"
-        path.write_text(TEXT + "\n", encoding="utf-8")
     state = ToolState(path) if tools else State(case == "pi-messages")
     with ExitStack() as stack:
         upstream = stack.enter_context(authority(state))
@@ -582,7 +591,8 @@ def main():
     print(json.dumps({"case": case, "version": version,
         "client_requests": state.count, "upstream_attempts": state.count,
         "consumer_surface": surface, "content_before_terminal_and_eof": True,
-        **({"cancelled_call_executions": 0, "new_call_executions": 1} if tools else
+        **({"cancelled_call_executions": 0, "new_call_executions": 1,
+            "recovered_write_verified": True, "recovery_feedback_completed": True} if tools else
            {"coalesced_before_cancel": True}),
         "upstream_cancelled": True, "single_permit_recovery": True, "post_publication_replays": 0,
         "proxy": proxy_report}))
