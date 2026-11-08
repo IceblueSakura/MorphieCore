@@ -8,10 +8,11 @@ This page owns current scope, priorities, dependencies, and exit gates. [Archite
 - [Remaining Agent qualification](#remaining-agent-qualification)
   - [AR5 closure order](#ar5-closure-order)
   - [Remaining observation dispositions](#remaining-observation-dispositions)
-    - [Scoped limitations](#scoped-limitations)
-    - [Next-stage analysis](#next-stage-analysis)
-    - [Reopened Provider and model observations](#reopened-provider-and-model-observations)
-    - [Deferred Provider and model observations](#deferred-provider-and-model-observations)
+    - [Tool invocation and argument guarantees](#tool-invocation-and-argument-guarantees)
+    - [History and replay carriers](#history-and-replay-carriers)
+    - [Routing and account failover](#routing-and-account-failover)
+    - [Instruction following and content recall](#instruction-following-and-content-recall)
+    - [Other qualification gates](#other-qualification-gates)
     - [Partial-delivery exit](#partial-delivery-exit)
 - [Deferred protocol follow-ups](#deferred-protocol-follow-ups)
   - [Endpoint qualification and emitter follow-ups](#endpoint-qualification-and-emitter-follow-ups)
@@ -56,7 +57,7 @@ This page owns current scope, priorities, dependencies, and exit gates. [Archite
 
 ## Current status
 
-**Current focus (2026-11-08):** Prioritize **AR5**, completing small, independently verifiable project-owned repairs or attribution boundaries before larger carrier decisions. General and Chat/Responses work precedes Messages/Google; strict-related follow-ups remain lower priority within each tier. R21 is [explicitly deferred](#deferred-provider-and-model-observations). Follow the [AR5 closure order](#ar5-closure-order); external-client repairs remain excluded and Stage-4 contract selection is not the current focus. The [scoped limitations](#scoped-limitations), observed-replay prerequisites and [partial-delivery exit](#partial-delivery-exit) remain; closing every observation is not a new gate. [AR5 Review](ar5-review.md) owns observations and passing evidence; production activation remains separately approved.
+**Current focus (2026-11-08):** Prioritize **AR5**, completing small, independently verifiable project-owned repairs or attribution boundaries before larger carrier decisions. General and Chat/Responses work precedes Messages/Google; strict-related follow-ups remain lower priority within each tier. Follow the [AR5 closure order](#ar5-closure-order) and [function-grouped dispositions](#remaining-observation-dispositions); grouping changes neither priority nor approval. R21 remains explicitly deferred, external-client repairs remain excluded, and Stage-4 contract selection is not the current focus. The [partial-delivery exit](#partial-delivery-exit) does not require closing every observation. [AR5 Review](ar5-review.md) owns observations and passing evidence; production activation remains separately approved.
 
 | Priority | Remaining work | Exit |
 |---|---|---|
@@ -74,23 +75,23 @@ The remaining AR5 boundaries are the current priority. [AR5 Review](ar5-review.m
 
 **User-selected priority, 2026-11-08:** Fix simple project-owned AR5 issues first, remove external-client repair items, and lower the priority of strict-related work. **Re-ordered 2026-11-08:** general IR/cross-protocol boundaries and Chat/Responses boundaries come first; Messages and Google boundaries come next. Within a tier, content/attribution precedes strict guarantees, and prerequisite-gated cells come last. Semantic changes still require their boundary-specific selection.
 
-R09 now retains only real same-model, independent-account failover; [real JSON/SSE replay isolation is qualified](ar5-review.md#passing-tests). No further transfer sweep is scheduled. Until compatible accounts are available, the next independent queued slice remains the R18 mode-specific gap. R21 remains deferred.
+The next independent queued slice remains the R18 mode-specific gap. R09 is prerequisite-gated and R21 remains deferred. Detailed work and exit conditions have one home in the functional dispositions below.
 
-| Tier and order | Boundary | Action and completion condition |
+| Tier and order | Functional branch | Entry / dependency |
 |---|---|---|
-| **1 — general and Chat/Responses**, 1a | **R18 — nonthinking Qwen Responses forced selection** | Prepare one function with explicit non-strictness, explicit thinking-off, serial false and the documented required-subset carrier used by specific selection. Run a native conflict discriminator before gateway qualification, with at most three explicit repeats after failure. If supported, qualify JSON and SSE call/feedback/recall loops, three requests each; otherwise record the exact unsupported profile and repair admission only where the guarantee cannot be carried. Do not infer default-pi acceptance from this diagnostic mode or repeat completed thinking-mode/serial controls. |
-| 1, 1b — lower priority | **R17 and R18 strict arguments** | Review current primary contracts for an equivalent strict-function carrier on GLM Chat and Bailian Responses before any new live run. Without a new carrier, retain explicit rejection and record the limitation; do not repeat known ignored-strict samples. If a carrier exists, qualify schema enforcement independently from tool identity and terminal spelling before changing admission. No automatic strict opt-out, schema deletion or local repair/retry layer. |
-| 1, 1c — prerequisite-gated | **R09 — real account-compatible failover** | Resume only after independent compatible accounts exist on one authorized same-model route. Verify A success/affinity, a bounded A failure without switching inside that request, then B selection on a new request with A-private replay omitted, and B success/stickiness. Define fault injection and budgets before the run. No repeated transfer sweep, same-key alias substitute or different-model failover claim. |
-| **2 — Messages and Google**, 2a | **R02/R06 — Google stateless signatures** | Prepare the minimal signed ordinary-text/call counterexample and compare lawful client-retainable carriers using existing evidence; obtain carrier/disposition selection before implementation. R02 affects Chat/Responses and R06 Messages, but both follow the generateContent root cause into the Google tier. Keep these attachments distinct from reasoning. A selected repair must verify JSON/SSE delivery and returned-history continuation per distinct affected boundary, reusing managed Responses evidence; no new Google API activation. |
-| 2, 2b — conditional attribution | **R13 — pi Messages label recall** | Use existing native/prepared/delivered comparisons; retain the upstream limitation and exact-label assertion unless a concrete new local divergence appears. No broad recall sweep or prompting/history rewrite. |
-| 2, 2c — lower priority | **R05 — pi Google Responses strict profile** | Retain explicit strict rejection until a genuinely equivalent guarantee or carrier is selected; no strict opt-out or schema deletion. Further Google loops need their own fixed budgets. |
-| 2, 2d — prerequisite-gated | **R01 — real Haiku protected output** | The carrier repair is selected and verified; resume only the real Haiku protected-output cell when that output is observed. Do not repeat completed carrier loops. |
+| **1 — general and Chat/Responses**, 1a | [R18 forced invocation](#tool-invocation-and-argument-guarantees) | Next bounded cell: explicit thinking-off Qwen Responses. |
+| 1, 1b — lower priority | [R17 / R18 strict arguments](#tool-invocation-and-argument-guarantees) | Primary-contract carrier review before new live qualification. |
+| 1, 1c — prerequisite-gated | [R09 account failover](#routing-and-account-failover) | Independent compatible accounts on one same-model route. |
+| **2 — Messages and Google**, 2a | [R02 / R06 attachment carriage](#history-and-replay-carriers) | One shared carrier/disposition decision across affected client paths; Google tier follows the generateContent root cause. |
+| 2, 2b — conditional attribution | [R13 label recall](#instruction-following-and-content-recall) | Concrete new project-owned divergence. |
+| 2, 2c — lower priority | [R05 strict profile](#tool-invocation-and-argument-guarantees) | Genuinely equivalent strict guarantee/carrier. |
+| 2, 2d — prerequisite-gated | [R01 real protected output](#history-and-replay-carriers) | Observed real Haiku protected output in the existing profile. |
 
 Reuse the existing lowering/disposition owners, codecs, pinned SDKs and isolated client drivers; no new dependency or test framework is planned. Fix each live run's target, budget, caps and deadline before sending under the bounds below. Run one coherent slice at a time. If a carrier decision or prerequisite is unavailable, record the precise blocked subcase and continue the next independent row; ordering does not authorize semantic loss. Implementation exits require directional regressions, the offline baseline, relevant SDK checks and affected real-client acceptance. Documentation-only disposition changes use documentation checks. Once the remaining rows have verified repairs or explicit dispositions, use the partial-delivery exit rather than inventing more AR5 sweeps.
 
 ### Remaining observation dispositions
 
-There are **nine retained observations: four scoped limitations/follow-ups, two unavailable prerequisites, two reopened Provider/model observations and one explicitly deferred Provider/model observation**. The existing Readable Chat carrier extension is selected in [Architecture](architecture.md#chat-reasoning-extensions); no deployment, new binding or additional content/signature loss is selected.
+There are **nine retained observation IDs across four functional domains**, matching the [AR5 inventory](ar5-review.md#pending-observations). Status and re-entry are attributes of each boundary, not separate copies of its plan. R18 has independent selection and strict-argument subcases; R02/R06 share one carrier problem across client protocols. The existing Readable Chat carrier extension is selected in [Architecture](architecture.md#chat-reasoning-extensions); this reorganization selects no deployment, new binding or additional content/signature loss.
 
 **User-selected scope, 2026-11-08:** Bailian structured-output variability and its associated envelope/failed-stream observations are removed from AR5 follow-up. No further investigation, retest or repair is scheduled for that issue; existing format carriage and envelope normalization remain unchanged.
 
@@ -98,15 +99,7 @@ There are **nine retained observations: four scoped limitations/follow-ups, two 
 
 Use the existing lowering, replay/projection owners, reducers and client drivers for separately selected follow-ups. No new dependency, replay store, retry layer or diagnostic platform is planned.
 
-#### Scoped limitations
-
-The remaining boundaries are qualified limitations or next-stage analysis, not prerequisites requiring another broad sweep. Re-enter only the selected dependent branch.
-
-| Boundary / observations | Current disposition | Re-entry condition |
-|---|---|---|
-| **Ordinary Google attachments — R02** | Stateless Google text/call attachments still lack a selected carrier. Use managed Google Responses continuation. The Readable Chat reasoning carrier does not authorize ordinary content/call attachment transport; origin/signature guards remain intact. | Select a client-retainable ordinary-attachment carrier or a concrete disposition before implementation; never silently delete signatures. |
-| **Strict Chat profile — R17** | Keep explicit strict rejection on GLM Chat; non-strict diagnostic variants are not strict opt-outs. | Qualify a supported profile without strict opt-outs or select a genuinely equivalent guarantee/carrier. |
-| **Original strict profiles / remaining Google qualification — R05/R06** | Keep explicit strict rejection on Google. generateContent's signed stateless path and unobserved Interactions signed-call shapes remain limited. | Qualify a supported profile without strict opt-outs or select a genuinely equivalent guarantee/carrier. Further Google loops need their own fixed budgets; root projection is not permission to delete returned signatures. |
+**User-selected status, 2026-11-08:** R13/R18 remain reopened for bounded follow-up; the later explicit R21 deferral supersedes its reopening. Reopening does not select weaker explicit guarantees or content/signature loss. The routing freeze and general Google API expansion pause remain unchanged.
 
 Retain the exact profile, first divergent field/event, responsible owner and disposition for any follow-up. Use known field paths, event/block kinds, terminal classes and recognized error categories; private exchanges are not public fixtures. If fresh Provider evidence is necessary, fix target, operation, request/attempt budget, output/wire caps and deadline first, run serially without hidden retries, and use at most three independent scenarios per observation in that selected run.
 
@@ -114,32 +107,49 @@ Retain the exact profile, first divergent field/event, responsible owner and dis
 
 Stop a branch when its prerequisite or semantic selection is unavailable. A later implementation slice needs independent directional regressions, the required offline baseline, relevant SDK/client checks and affected real acceptance. Preserve credential/auth, bounds, cancellation, replay isolation and terminal honesty.
 
-#### Next-stage analysis
+#### Tool invocation and argument guarantees
 
-These entries require unavailable prerequisites or separately selected qualification. They do not require another broad sweep or block the partial-delivery exit.
+Invocation identity, seriality, argument-schema guarantees and terminal spelling are separate contracts. Preserve the accepted [strict-tool ownership](architecture.md#standard-request-boundary) and [Bailian tool policy](architecture.md#shared-aliyun-billing-dialect); passing one dimension does not reopen another.
 
-| Scope | Retained boundary and re-entry condition |
+| Boundary | Current disposition | Next work and exit / re-entry condition |
+|---|---|---|
+| **R18 — Forced invocation** | Remaining mode-specific qualification; known unsupported thinking profiles keep their selection rejection. | Next: one function on Qwen Responses with explicit non-strictness, explicit thinking-off, serial false and the required-subset carrier used by specific selection. Run the native conflict discriminator first, with at most three explicit repeats after failure. If supported, qualify JSON and SSE call/feedback/recall loops, three requests each; otherwise record the exact unsupported profile and repair admission only where the guarantee cannot be carried. Do not infer default-pi acceptance or repeat completed thinking/serial/call-terminal controls. |
+| **R17 / R18 — Strict arguments** | Scoped GLM Chat and Bailian Responses limitations; lower priority within tier 1. | Review current primary contracts for a genuinely equivalent strict-function carrier before new live runs. Without one, retain explicit rejection and stop. With one, qualify schema enforcement independently of tool identity/terminal spelling before changing admission. Non-strict diagnostic variants are not strict opt-outs; no schema deletion or local repair/retry layer. |
+| **R05 — Google strict profile** | Original Responses profiles retain explicit strict rejection; lower priority within tier 2. | Resume only for a genuinely equivalent strict guarantee/carrier, without strict opt-outs or schema deletion. A fix for ordinary attachments in R02/R06 cannot close this guarantee. Any selected Google loop needs its own fixed budget. |
+
+#### History and replay carriers
+
+Ordinary content/call attachments and protected reasoning have distinct semantic owners. Follow [history and replay](architecture.md#history-and-replay); the selected Readable Chat reasoning transport does not authorize ordinary signature transport.
+
+| Boundary | Current disposition | Next work and exit / re-entry condition |
+|---|---|---|
+| **R02 / R06 — Google ordinary attachments** | One unselected stateless generateContent carrier/disposition across R02's Chat/Responses clients and R06's Messages client. Managed Google Responses continuation is already available. | Prepare the minimal signed ordinary-text/call counterexample and compare lawful client-retainable carriers using existing evidence. Obtain carrier/disposition selection before implementation; never silently delete signatures or move ordinary content into reasoning. A selected repair must verify JSON/SSE delivery and returned-history continuation per distinct affected boundary, reusing managed evidence. No new Google API activation. |
+| **R01 — Real Haiku protected output** | Only the unobserved real protected-output cell remains; the existing-profile carrier repair is selected and verified. | Resume only when protected output is available on the same profile, preserving signatures, replay guards and original assertions. No new carrier/loss decision or repeat of completed synthetic/SDK/client carrier loops is needed. |
+
+#### Routing and account failover
+
+| Boundary | Current disposition | Next work and exit / re-entry condition |
+|---|---|---|
+| **R09 — Real account-compatible failover** | Real stateless JSON/SSE replay isolation is qualified. The project loader reports one enabled declared account per Provider; no independent compatible pair is qualified. | Resume with independent compatible accounts on one authorized same-model route. Verify A success/affinity, a bounded A failure without switching inside that request, B selection on a new request with A-private replay omitted, then B success/stickiness. Define fault injection and budgets first; provisioning new credentials or other unapproved lifecycle changes requires separate approval. No repeated transfer sweep; same-key aliases, different-model switching and synthetic authorities cannot close this real-account gate. |
+
+#### Instruction following and content recall
+
+Keep upstream content attribution separate from request preservation, tool policy, cancellation and feedback mechanics. Exact-label assertions remain; prompt/history rewriting is not selected.
+
+| Boundary | Current disposition | Next work and exit / re-entry condition |
+|---|---|---|
+| **R13 — Messages literal-label recall** | Scoped upstream omission on complete native comparisons; reopened for bounded follow-up, not a scheduled recall sweep. | Re-enter only for a concrete new project-owned divergence. Reuse native/prepared/delivered evidence, keep the exact-label assertion and separate HTTP failures/incomplete captures. No prompting or history rewrite. |
+| **R21 — Grok recovery content/tool behavior** | **Explicitly deferred by the user, 2026-11-08.** No further analysis, Provider retest or repair is scheduled; unresolved evidence remains in AR5. | Preserve qualified cancellation/write-feedback mechanics and original content assertions. Resume only when the user selects a concrete new local divergence, upstream contract change or explicit recovery-policy contract. Prompt-only no-tool text must not become `tool_choice:none`; no prompt/history rewrite or repeated shape/feedback-budget sweep. Deferral does not claim content compliance or block partial delivery. |
+
+#### Other qualification gates
+
+These previously retained, unnumbered profile gates are separate from the nine observation IDs. They are not new scheduled tasks or prerequisites requiring another broad sweep; resume only when separately selected.
+
+| Function | Retained gate |
 |---|---|
-| **R01 — Real Haiku protected-output qualification** | The selected Readable Chat carrier passes independent JSON/SSE, pinned SDK and current-client synthetic signed/redacted loops. Real Grok encrypted and Interactions thought replay loops complete; real Haiku read/feedback/recall completes without opaque replay. Resume only that unobserved real Haiku cell when protected output is available, preserving the same profile and assertions. No further carrier/loss decision or broad rerun is required. |
-| **R09 — Real account-compatible failover** | Real stateless replay isolation is qualified in JSON/SSE. The project loader reports one enabled declared account per Provider; no independent compatible pair is qualified. Resume only with that pair on one same-model route and a selected bounded fault scenario. Credential provisioning/lifecycle changes need separate approval. Same-key aliases, different-model switching and synthetic authorities cannot close this remaining real-account gate. |
-| **Remaining real qualification** | Luna router endpoints, effective non-Qwen Bailian reply-ceiling enforcement and Haiku same-process cap-switch recovery remain unqualified. SIWC qualification has its own [endpoint follow-up](#endpoint-qualification-and-emitter-follow-ups). Existing native-ceiling preparation receipts and successful GLM JSON smoke do not close those profile-specific checks. Schedule them only when selected. |
-
-#### Reopened Provider and model observations
-
-**User-selected reopening, 2026-11-08:** the temporary pause on analysis, Provider retests and repairs remains lifted for **R13/R18**. The subsequent [R21 deferral](#deferred-provider-and-model-observations) supersedes its earlier reopening. Their [AR5 evidence](ar5-review.md#pending-observations) retains the qualified boundaries below; follow the closure order and bounded qualification rules above. Reopening does not select content/signature loss, weaker explicit guarantees, new bindings or deployment. Preserve current guards and the partial-delivery exit. The routing freeze and general Google API expansion pause remain outside this reopening.
-
-| Observation | Reopened boundary |
-|---|---|
-| **R13** | Scoped upstream recall limitation: complete failing native answers omit a label retained in preparation, then reach delivery/pi unchanged. Keep the exact-label assertion; no prompting or history rewrite is selected. Separate HTTP failures and incomplete captures. |
-| **R18** | Scoped Provider tool limitations: preserve strict rejection and thinking-mode selection bounds. Responses serial carriage and Qwen/GLM auto-tool SDK loops are qualified; default/enabled-thinking forcing on those exact models is rejected after both native required spellings fail. Qwen Chat's call/`stop` loop is already qualified. Re-enter only an independently selected remaining model/mode/guarantee; do not repeat completed serial or call/terminal qualification. |
-
-#### Deferred Provider and model observations
-
-**User-selected deferral, 2026-11-08:** R21 is postponed from the current execution queue. No further R21 analysis, Provider retest or repair is scheduled. Its unresolved evidence remains in AR5; deferral does not claim content compliance or block the partial-delivery exit.
-
-| Observation | Deferred scope and re-entry condition |
-|---|---|
-| **R21 — Grok recovery content/tool behavior** | Preserve the qualified cancellation/write-feedback lifecycle and original content assertions. Existing native comparisons and request-shape controls support a scoped upstream limitation, not a role/carrier repair. Resume only when the user selects a concrete new local divergence, upstream contract change or explicit recovery-policy contract. Prompt-only no-tool text must not automatically become `tool_choice:none`; no prompt/history rewrite or repeated shape/feedback-budget sweep is selected. |
+| Replay carriers | Interactions signed-call replay remains unqualified because no signed call was observed. Thought-replay acceptance does not close this call-signature cell. |
+| Output ceilings and recovery | Effective non-Qwen Bailian reply-ceiling enforcement and Haiku same-process cap-switch recovery remain unqualified. Native-ceiling preparation receipts and GLM JSON smoke do not close them. |
+| Endpoint contracts | Luna router endpoints remain unqualified; SIWC retains its [inline-tool continuation follow-up](#endpoint-qualification-and-emitter-follow-ups). No new binding or endpoint activation is selected. |
 
 #### Partial-delivery exit
 

@@ -8,6 +8,10 @@ This record retains the dated scenario coverage. Further qualification follows [
 
 - [Test context](#test-context)
 - [Pending observations](#pending-observations)
+  - [Tool invocation and argument guarantees](#tool-invocation-and-argument-guarantees)
+  - [History and replay carriers](#history-and-replay-carriers)
+  - [Routing and account failover](#routing-and-account-failover)
+  - [Instruction following and content recall](#instruction-following-and-content-recall)
 - [Passing tests](#passing-tests)
   - [Supplementary coverage, 2026-11-07](#supplementary-coverage-2026-11-07)
   - [Bailian model and protocol coverage, 2026-11-07](#bailian-model-and-protocol-coverage-2026-11-07)
@@ -42,21 +46,49 @@ Collection totals retain their original execution scope when resolved entries ar
 
 ## Pending observations
 
-Entries retain unresolved boundaries and their scoped evidence, not an implementation queue. The roadmap owns the [scoped limitations](roadmap.md#scoped-limitations), [unavailable prerequisites](roadmap.md#next-stage-analysis) and [reopened Provider/model observations](roadmap.md#reopened-provider-and-model-observations). Reopening permits follow-up analysis; each repair or qualification still follows its boundary-specific selection and prerequisites. A passing sample closes only its exercised boundary; remove completed portions without renumbering the remaining identifiers.
+The **nine retained IDs** are grouped by function, not collection date, Provider or execution status. The [roadmap dispositions](roadmap.md#remaining-observation-dispositions) own scheduling, re-entry conditions and deferrals; functional order does not change the [selected execution priority](roadmap.md#ar5-closure-order). Dated evidence below retains its original collection scope.
 
-**R21 is explicitly deferred** under the [user-selected roadmap disposition](roadmap.md#deferred-provider-and-model-observations). Its unresolved evidence below is retained without an active retest or repair task.
+| Functional domain | IDs | Remaining boundary |
+|---|---|---|
+| [Tool invocation and argument guarantees](#tool-invocation-and-argument-guarantees) | R18, R17, R05 | Forced invocation and strict argument guarantees are separate; supported non-strict controls do not qualify either guarantee. |
+| [History and replay carriers](#history-and-replay-carriers) | R02, R06, R01 | R02/R06 share one ordinary Google attachment-carriage gap. R01 is an unobserved real Haiku protected-output cell, not a missing carrier implementation. |
+| [Routing and account failover](#routing-and-account-failover) | R09 | Real cross-target replay isolation passes; independent-account failover remains unexercised. |
+| [Instruction following and content recall](#instruction-following-and-content-recall) | R13, R21 | Complete captures show upstream omissions with unchanged delivery; R21 is explicitly deferred. |
+
+A passing sample closes only its exercised boundary. Completed portions stay in passing evidence, not the pending inventory; identifiers are not renumbered.
+
+### Tool invocation and argument guarantees
 
 | ID | Observation and affected path | Current evidence and unresolved boundary |
 |---|---|---|
-| R01 | Real Haiku protected Readable-Chat replay qualification | The existing profile's carrier repair is selected and verified below, including current-client signed/redacted Messages loops and real Grok/Interactions replay. Haiku's bounded real read/feedback/recall loop completes **3/3**, but returns no opaque replay; that real protected-output cell remains unobserved. Keep the profile and replay guards unchanged; do not repeat completed carrier qualification or infer native protected coverage from an unsigned sample. |
-| R02 | Stateless generateContent signature carriage | OpenCode Chat/Responses and the Responses SDK smoke reach upstream HTTP 200, then fail projection with `codec.unsupported.replay`; ordinary text can carry `thoughtSignature`. Managed continuation passes separately. No disposition for discarding or substituting these attachments is selected. |
-| R05 | pi Google Responses strict-profile qualification | Both original Responses profiles remain locally rejected after ordered-control projection. Three bounded local checks make **0 upstream attempts**; the final generateContent discriminator reports `admission.strict_tools`. Independent preparation tests preserve explicit strict rejection on both bindings. No strict opt-out is selected. |
-| R06 | pi Google generateContent Messages stateless carriage | The original Messages profile now reaches generateContent: **1 request / 1 attempt**, then `codec.unsupported.replay` on signed stateless delivery. The Interactions read/result/answer/recall loop passes separately below; only generateContent's carrier limitation remains pending. |
-| R09 | Real same-model, independent-account failover prerequisite | Real stateless JSON/SSE replay isolation is qualified in the passing table. Same-model account failover remains unexercised: the project loader reports one enabled declared account per Provider, with no qualified independent compatible pair. Same-key aliases and different-model switching do not qualify that remaining gate. |
-| R13 | pi Messages dynamic-tool/instruction literal-label recall failure | The 2026-11-08 qualification runs **7 stories / 35 attempts** on pi 1.5.0 with `opencode-go-haiku-messages` (Messages, `opencode-go/claude-haiku-5-5`): two full passes, four recall failures and one final-request upstream HTTP 400. All recall failures retain the exact label in preparation and the filename in the answer. Three have complete native text capture: the upstream already omits the label, including under case-folded search, and native/delivered/pi text agrees exactly. Active declarations remain `[read]`, `[read]`, `[ls]`, `[ls]`, `[]`. One other failed recall has incomplete native capture and supplies only delivery/pi agreement. |
+| R18 | Bailian forced invocation and strict arguments | **Selection:** thinking GLM Chat chooses the prompted decoy through an initial sample plus three repeats. Single-tool, low-effort Qwen/GLM Responses both ignore `allowed_tools/required`; string `required` independently returns zero calls in **4/4 per model**. These exact default/enabled-thinking forcing profiles now reject locally. The explicit thinking-off Qwen Responses forcing cell remains unqualified. **Arguments:** native Qwen Responses strict/auto emits an out-of-enum value through an initial sample plus three repeats; Responses strict tools retain their unsupported boundary. Serial carriage and the Qwen Chat call/`stop` loop are qualified separately. |
 | R17 | pi GLM Chat strict-profile admission | 2026-11-07, pi 1.5.0, `dashscope-glm-chat`: the original read/history profile rejects locally with `400 invalid_request`, 0 upstream attempts and planning reason `admission.strict_tools`. Pure preflight isolates explicit strict tools: false/omitted controls encode, while true rejects at capability admission. These non-strict controls are diagnostic variants, not strict opt-outs for acceptance. |
-| R18 | Bailian forced selection and strict arguments | Native Qwen Responses strict/auto emits an out-of-enum value and thinking GLM Chat chooses the prompted decoy through an initial sample plus three repeats each. New single-tool, low-effort Qwen/GLM Responses controls both ignore `allowed_tools/required`; string `required` independently returns zero calls in **4/4 per model**. These exact default/enabled-thinking forcing profiles now reject locally. Responses strict tools and thinking Chat named forcing retain their unsupported boundaries; other model/mode guarantees remain unqualified. Serial carriage and the Qwen Chat call/`stop` loop are qualified separately. |
-| R21 | Grok recovery-label assertions and newly issued recovery tools | Two pi write-cancellation stories complete **3/3 each**, without cancelled execution and with exact new-write/feedback identities, but omit `RECOVERED` and issue write despite the prompt-only no-tool instruction. One complete native final already omits the marker and equals delivery/pi. Native tool-call snapshots remain incomplete. Four new no-cancellation, no-tool controls vary only instruction role, instruction type and user text carrier; all return the prior arithmetic answer, not the marker. Exact offline request checks preserve developer text, user order and tool policy. No role/carrier repair is supported by these samples; remaining scope is upstream content/tool behavior. |
+| R05 | pi Google Responses strict-profile qualification | Both original Responses profiles remain locally rejected after ordered-control projection. Three bounded local checks make **0 upstream attempts**; the final generateContent discriminator reports `admission.strict_tools`. Independent preparation tests preserve explicit strict rejection on both bindings. This strict guarantee is independent of the ordinary-attachment gap in R02/R06. |
+
+### History and replay carriers
+
+R02 and R06 are distinct affected client paths through the same generateContent attachment boundary. Ordinary signed text/calls remain distinct from reasoning; the Readable Chat reasoning extension and managed continuation do not qualify stateless ordinary-attachment carriage.
+
+| ID | Observation and affected path | Current evidence and unresolved boundary |
+|---|---|---|
+| R02 | Stateless generateContent signature carriage | OpenCode Chat/Responses and the Responses SDK smoke reach upstream HTTP 200, then fail projection with `codec.unsupported.replay`; ordinary text can carry `thoughtSignature`. Managed continuation passes separately. No disposition for discarding or substituting these attachments is selected. |
+| R06 | pi Google generateContent Messages stateless carriage | The original Messages profile now reaches generateContent: **1 request / 1 attempt**, then `codec.unsupported.replay` on signed stateless delivery. The Interactions read/result/answer/recall loop passes separately below; only generateContent's carrier limitation remains pending. |
+| R01 | Real Haiku protected Readable-Chat replay qualification | The existing profile's carrier repair is selected and verified below, including current-client signed/redacted Messages loops and real Grok/Interactions replay. Haiku's bounded real read/feedback/recall loop completes **3/3**, but returns no opaque replay; that real protected-output cell remains unobserved. Unsigned output does not exercise that cell. |
+
+### Routing and account failover
+
+| ID | Observation and affected path | Current evidence and unresolved boundary |
+|---|---|---|
+| R09 | Real same-model, independent-account failover prerequisite | Real stateless JSON/SSE replay isolation is qualified in the passing table. Same-model account failover remains unexercised: the project loader reports one enabled declared account per Provider, with no qualified independent compatible pair. Same-key aliases and different-model switching do not qualify that remaining gate. |
+
+### Instruction following and content recall
+
+These observations retain content assertions independently from the qualified tool/lifecycle mechanics. Complete native captures support scoped upstream attribution; incomplete captures do not establish equivalence or a local divergence.
+
+| ID | Observation and affected path | Current evidence and unresolved boundary |
+|---|---|---|
+| R13 | pi Messages dynamic-tool/instruction literal-label recall failure | The 2026-11-08 qualification runs **7 stories / 35 attempts** on pi 1.5.0 with `opencode-go-haiku-messages` (Messages, `opencode-go/claude-haiku-5-5`): two full passes, four recall failures and one final-request upstream HTTP 400. All recall failures retain the exact label in preparation and the filename in the answer. Three have complete native text capture: the upstream already omits the label, including under case-folded search, and native/delivered/pi text agrees exactly. Active declarations remain `[read]`, `[read]`, `[ls]`, `[ls]`, `[]`. One other failed recall has incomplete native capture and supplies only delivery/pi agreement. |
+| R21 | Grok recovery-label assertions and newly issued recovery tools — **deferred** | Two pi write-cancellation stories complete **3/3 each**, without cancelled execution and with exact new-write/feedback identities, but omit `RECOVERED` and issue write despite the prompt-only no-tool instruction. One complete native final already omits the marker and equals delivery/pi. Native tool-call snapshots remain incomplete. Four new no-cancellation, no-tool controls vary only instruction role, instruction type and user text carrier; all return the prior arithmetic answer, not the marker. Exact offline request checks preserve developer text, user order and tool policy. No role/carrier repair is supported by these samples; the [explicit deferral](roadmap.md#instruction-following-and-content-recall) remains in force. |
 
 ## Passing tests
 
