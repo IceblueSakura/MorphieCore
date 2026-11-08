@@ -544,6 +544,9 @@ fn chat_strictness_is_rendered_from_the_effective_binding_contract() {
 
 #[test]
 fn responses_non_strict_defaults_and_single_function_selection_have_native_oracles() {
+    let mut reasoning = ReasoningRequest::absent();
+    reasoning.presence = ReasoningPresence::Present;
+    reasoning.activation = Some(ReasoningActivation::Disabled);
     let native_request = native(GenerationApi::Responses)
         .decode_request(response_request().to_string().as_bytes())
         .unwrap();
@@ -567,12 +570,14 @@ fn responses_non_strict_defaults_and_single_function_selection_have_native_oracl
             eager_input: None,
         })]),
         tool_choice: Some(ToolChoice::Specific(text("lookup"))),
+        reasoning,
         ..Default::default()
     };
     let input = request(settings);
     let target = endpoint("dashscope-flash", GenerationProtocol::OpenAiResponses);
     let (wire, rules) = target.encode_request_with_rules(&input).unwrap();
     let mut expected = response_request();
+    expected["enable_thinking"] = json!(false);
     expected["store"] = json!(false);
     expected["stream"] = json!(true);
     expected["input"] =
@@ -609,6 +614,110 @@ fn responses_non_strict_defaults_and_single_function_selection_have_native_oracl
     assert_eq!(direct["tools"], wire["tools"]);
     assert_eq!(source, before);
 }
+#[test]
+fn responses_serial_auto_tools_keep_the_native_control_and_source() {
+    let mut wire = response_request();
+    wire.as_object_mut().unwrap().remove("max_output_tokens");
+    wire["parallel_tool_calls"] = json!(false);
+    wire["tool_choice"] = json!("auto");
+    let native_request = native(GenerationApi::Responses)
+        .decode_request(wire.to_string().as_bytes())
+        .unwrap();
+    assert_eq!(
+        native_request.task.semantic.settings().parallel_tool_calls,
+        Some(false)
+    );
+    wire["tools"][0]["strict"] = json!(false);
+    let source = client(GenerationApi::Responses)
+        .decode_client_request(wire.to_string().as_bytes())
+        .unwrap();
+    for (prefix, model) in [
+        ("dashscope-flash", "qwen3.8-flash"),
+        ("dashscope-glm", "glm-5.3"),
+    ] {
+        let before = source.clone();
+        let (encoded, rules) = endpoint(prefix, GenerationProtocol::OpenAiResponses)
+            .encode_request_with_rules(&source)
+            .unwrap();
+        let mut expected = wire.clone();
+        expected["model"] = json!(model);
+        expected["store"] = json!(false);
+        expected["stream"] = json!(true);
+        expected["input"] =
+            json!([{"type":"message","role":"user","content":[{"type":"input_text","text":"go"}]}]);
+        expected["tools"][0]
+            .as_object_mut()
+            .unwrap()
+            .remove("strict");
+        assert_eq!(encoded, expected);
+        assert!(rules.is_empty());
+        assert_eq!(source, before);
+    }
+    wire["model"] = json!("kimi-k3");
+    assert!(
+        native(GenerationApi::Responses)
+            .decode_request(wire.to_string().as_bytes())
+            .is_err()
+    );
+}
+
+#[test]
+fn responses_thinking_profiles_reject_unenforced_forced_selection() {
+    use morphiecore::protocol::conversion::generation::RepresentationError;
+    for choice in [
+        json!("required"),
+        json!({"type":"allowed_tools","mode":"required","tools":[{"type":"function","name":"lookup"}]}),
+        json!({"type":"function","name":"lookup"}),
+    ] {
+        for (prefix, model) in [
+            ("dashscope-flash", "qwen3.8-flash"),
+            ("dashscope-glm", "glm-5.3"),
+        ] {
+            let mut wire = response_request();
+            wire.as_object_mut().unwrap().remove("max_output_tokens");
+            wire["model"] = json!(model);
+            wire["tools"][0]["strict"] = json!(false);
+            native(GenerationApi::Responses)
+                .decode_request(wire.to_string().as_bytes())
+                .expect("the unforced native profile is otherwise expressible");
+            wire["tool_choice"] = choice.clone();
+            let source = client(GenerationApi::Responses)
+                .decode_client_request(wire.to_string().as_bytes())
+                .unwrap();
+            assert!(matches!(
+                endpoint(prefix, GenerationProtocol::OpenAiResponses)
+                    .encode_request_with_rules(&source),
+                Err(ConversionFailure {
+                    cause: morphiecore::protocol::ConversionCause::Representation(
+                        RepresentationError::Admission(Feature::ToolChoice)
+                    ),
+                    ..
+                })
+            ));
+            assert!(
+                native(GenerationApi::Responses)
+                    .decode_request(wire.to_string().as_bytes())
+                    .is_err()
+            );
+            let morphiecore::lowering::target::TargetContract::OpenAi(contract) =
+                endpoint(prefix, GenerationProtocol::OpenAiResponses).representation
+            else {
+                panic!("OpenAI contract")
+            };
+            assert!(
+                morphiecore::protocol::openai::lowering::lower_request(
+                    &source.task.semantic,
+                    &source.task.fidelity,
+                    GenerationApi::Responses,
+                    *contract,
+                )
+                .is_err(),
+                "model-bound direct lowering must keep the forcing restriction"
+            );
+        }
+    }
+}
+
 #[test]
 fn responses_history_keeps_summary_and_transfers_uncarried_readable_reasoning() {
     let target = endpoint("dashscope-flash", GenerationProtocol::OpenAiResponses);
@@ -822,13 +931,6 @@ fn responses_output_constraints_reach_preparation_without_losing_the_schema() {
 #[test]
 fn responses_unlisted_guarantees_reject_without_weakening_constraints() {
     let target = endpoint("dashscope-flash", GenerationProtocol::OpenAiResponses);
-    let mut wire = response_request();
-    wire["tools"][0]["strict"] = json!(false);
-    wire["parallel_tool_calls"] = json!(false);
-    let input = client(GenerationApi::Responses)
-        .decode_client_request(wire.to_string().as_bytes())
-        .unwrap();
-    assert!(target.encode_request_with_rules(&input).is_err());
     for (patch, field) in [
         (json!({"reasoning":{"summary":null}}), "reasoning"),
         (json!({"truncation":"auto"}), "truncation"),

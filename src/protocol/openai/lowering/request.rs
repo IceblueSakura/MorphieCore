@@ -17,10 +17,15 @@ pub fn lower_request<'a>(
     profile: GenerationApi,
     contract: TargetContract,
 ) -> Result<RequestRepresentation<'a>, crate::protocol::ConversionFailure> {
+    let model = contract
+        .adaptation
+        .effort_mapping
+        .map(|mapping| mapping.canonical_model)
+        .unwrap_or("");
     let projection = crate::lowering::request::project_semantic(
         request,
         crate::lowering::request::Target::OpenAi(profile, &contract),
-        "",
+        model,
     )?;
     let mut rendered = render_request(projection.value, fidelity, profile, contract)?;
     rendered

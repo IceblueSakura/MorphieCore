@@ -125,6 +125,79 @@ fn native_request_directions_use_actual_subscription_bindings() {
         assert_eq!(independent, before);
     }
 }
+
+#[test]
+fn grok_recovery_preserves_instruction_text_order_and_explicit_tool_policy() {
+    let binding = SUBSCRIPTION_BINDINGS
+        .iter()
+        .find(|binding| binding.dialect == Dialect::Grok)
+        .unwrap();
+    let developer = "Answer the synthetic task concisely.\nKeep UTF-8: cedar 🧪.";
+    let first = "Call lookup with n 17. Wait for its result.";
+    let recovery = "Do not use tools. Reply only RECOVERED.";
+    for explicit_none in [false, true] {
+        let semantic = GenerationRequest::from_settings(
+            vec![
+                (
+                    ItemId::new(1),
+                    Item::Instruction(Instruction {
+                        participant: None,
+                        parts: vec![Part::new(PartId::new(1), text(developer))],
+                        status: None,
+                    }),
+                ),
+                (ItemId::new(2), message(MessageRole::User, 2, first)),
+                (ItemId::new(3), message(MessageRole::User, 3, recovery)),
+            ],
+            GenerationSettings {
+                tools: Some(tools(false)),
+                tool_choice: explicit_none.then_some(ToolChoice::None),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let independent = Request::from_generation(
+            DecodedRequest {
+                evidence: Default::default(),
+                semantic,
+                fidelity: FidelityRecords::default(),
+            },
+            "client-model",
+        )
+        .unwrap();
+        let tool = json!({"type":"function","name":"lookup","strict":false,
+            "parameters":{"type":"object","properties":{"n":{"type":"integer"}}}});
+        let mut ingress = json!({"model":"client-model","store":false,"tools":[tool],
+            "input":[
+                {"type":"message","role":"developer","content":developer},
+                {"type":"message","role":"user","content":first},
+                {"type":"message","role":"user","content":recovery}]});
+        let mut expected = json!({"model":binding.upstream,"stream":true,"store":false,"tools":[tool],
+            "input":[
+                {"role":"developer","content":developer},
+                {"type":"message","role":"user","content":[{"type":"input_text","text":first}]},
+                {"type":"message","role":"user","content":[{"type":"input_text","text":recovery}]}]});
+        if explicit_none {
+            ingress["tool_choice"] = json!("none");
+            expected["tool_choice"] = json!("none");
+        }
+        let decoded = adapter(Dialect::Grok)
+            .decode_client_request(ingress.to_string().as_bytes())
+            .unwrap();
+        assert_eq!(decoded.task.semantic, independent.task.semantic);
+        for source in [&decoded, &independent] {
+            let before = source.clone();
+            let (actual, rules) = binding
+                .endpoint()
+                .encode_request_with_rules(source)
+                .unwrap();
+            assert_eq!(actual, expected);
+            assert!(rules.is_empty());
+            assert_eq!(source, &before);
+        }
+    }
+}
+
 fn response(grouped: bool, streamed: bool) -> DecodedResponse {
     let reasoning = ReasoningItem {
         status: ItemLifecycle::Completed,

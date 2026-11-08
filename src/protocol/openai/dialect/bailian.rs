@@ -363,6 +363,13 @@ pub(in crate::protocol::openai) fn check_context(
     }
     Ok(())
 }
+/// These thinking profiles ignore both documented required-selection spellings.
+/// Keep the observed model/API restriction separate from the serial carrier.
+pub(crate) fn responses_forcing_unavailable(model: &str, reasoning: &ReasoningRequest) -> bool {
+    matches!(model, "qwen3.8-flash" | "glm-5.3")
+        && reasoning.activation != Some(ReasoningActivation::Disabled)
+}
+
 pub(in crate::protocol::openai) fn check_semantic(
     semantic: &GenerationRequest,
     profile: GenerationApi,
@@ -445,7 +452,7 @@ pub(in crate::protocol::openai) fn check_semantic(
         if c.has_extended_controls()
             || c.truncation.is_some()
             || s.text.verbosity.is_some()
-            || s.parallel_tool_calls.is_some()
+            || model == "kimi-k3" && s.parallel_tool_calls == Some(false)
             || r.encrypted_output()
             || r.budget_tokens.is_some()
             || !r.read_history.is_none()
@@ -472,7 +479,7 @@ pub(in crate::protocol::openai) fn check_semantic(
                     | ToolChoice::Allowed { required: true, .. }
             )
         );
-        if required && tools.len() != 1 {
+        if required && (tools.len() != 1 || responses_forcing_unavailable(model, r)) {
             return Err(CodecError::Unsupported(CarrierReason::Unavailable));
         }
         for (_, item) in semantic.items() {
@@ -550,9 +557,7 @@ pub(in crate::protocol::openai) fn write_tools(
         };
         o.insert("tool_choice".into(), value);
     }
-    if profile == GenerationApi::Chat
-        && let Some(parallel) = s.parallel_tool_calls
-    {
+    if let Some(parallel) = s.parallel_tool_calls {
         o.insert("parallel_tool_calls".into(), json!(parallel));
     }
     Ok(())

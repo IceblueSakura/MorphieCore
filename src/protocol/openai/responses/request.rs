@@ -124,7 +124,11 @@ pub fn encode_generation(target: &RequestRepresentation<'_>) -> Result<Value, Co
         crate::protocol::openai::dialect::bailian::check_semantic(
             &target.semantic,
             GenerationApi::Responses,
-            "",
+            target
+                .adaptation
+                .effort_mapping
+                .map(|mapping| mapping.canonical_model)
+                .unwrap_or(""),
         )?;
     }
     check_item_carriers(target.semantic.items())?;

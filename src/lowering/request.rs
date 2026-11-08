@@ -451,7 +451,9 @@ impl<'a> Target<'a> {
                 omit(&mut table, ExplicitCache);
                 omit(&mut table, AutomaticPrefixCache);
                 if rules.parallel_tools_always_enabled
-                    || api == GenerationApi::Responses && rules.bailian_requests
+                    || api == GenerationApi::Responses
+                        && rules.bailian_requests
+                        && model == "kimi-k3"
                 {
                     table.set(ParallelTools, Disposition::Equivalent);
                     table.set(
@@ -882,7 +884,11 @@ impl<'a> Target<'a> {
                                 | ToolChoice::Allowed { required: true, .. }
                         )
                     )
-                    && source.available_tool_count() != Ok(1)
+                    && (source.available_tool_count() != Ok(1)
+                        || crate::protocol::openai::dialect::bailian::responses_forcing_unavailable(
+                            model,
+                            &settings.reasoning,
+                        ))
             {
                 table.set(
                     Feature::ToolChoice,
