@@ -122,12 +122,6 @@ pub fn check_event(
         _ => {}
     }
     match event {
-        StreamEvent::PartStarted {
-            kind: PartKind::Summary,
-            ..
-        } if contract.adaptation.rules.readable_reasoning_text_only => {
-            return Err(RepresentationError::Reasoning);
-        }
         StreamEvent::PartInterrupted { .. } | StreamEvent::CompactionProgress { .. }
             if profile != GenerationApi::Responses =>
         {

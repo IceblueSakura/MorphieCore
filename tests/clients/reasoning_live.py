@@ -7,18 +7,15 @@ responses are observed in bounded memory, never persisted as raw SSE fragments.
 """
 import argparse
 import copy
-from contextlib import closing
 import json
 from pathlib import Path
 import re
-import sqlite3
 import sys
 import tempfile
 import threading
 
-from drivers import (Child, Pi, TEXT, check, check_client_version, environment,
-                     check_opencode_session, opencode_configuration,
-                     opencode_prompt, pi_configuration)
+from drivers import (Child, TEXT, check, check_client_version, environment,
+                     opencode_final_output, pi_final_output, run_reasoning_client as run_client)
 from recovery import server, text
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "sdk"))
@@ -45,16 +42,6 @@ def plain_content(value):
     return "".join(part["text"] for part in value)
 
 
-def opencode_final_output(events):
-    # A real tool turn can publish a pre-tool text block. The last text is the
-    # final answer; verify its whole delivered message separately in State.
-    texts = [event["part"]["text"] for event in events if event.get("type") == "text"]
-    check(bool(texts) and texts[-1].strip() == TEXT, "live_client_final_answer")
-
-
-def pi_final_output(content):
-    answer = "".join(block["text"] for block in content if block.get("type") == "text")
-    check(answer.strip() == TEXT, "live_client_final_answer")
 
 
 def same_message(actual, observed):
@@ -262,31 +249,6 @@ class State:
                     for record in requests]}
 
 
-def run_client(case, binary, env, root, work, origin, path):
-    first = f"Read {path} exactly once using read. Then reply with only the exact file contents, without quotes or markup."
-    next_turn = "Repeat the exact file contents from our conversation. Do not use any tool. Reply with only those contents."
-    if case == "pi-chat":
-        directory, model = pi_configuration(root, origin, False, provider_timeout_ms=120000)
-        env = {**env, "PI_CODING_AGENT_DIR": str(directory), "PI_CACHE_RETENTION": "short"}
-        with Pi(binary, env, work, model) as client:
-            client.prompt(first, ["toolUse", "stop"], timeout=250, check_output=pi_final_output)
-            client.prompt(next_turn, ["stop"], timeout=130, check_output=pi_final_output)
-    else:
-        configuration = opencode_configuration(root, origin)
-        env = {**env, "OPENCODE_CONFIG": str(configuration), "OPENCODE_DISABLE_AUTOUPDATE": "1",
-               "OPENCODE_DISABLE_MODELS_FETCH": "1", "OPENCODE_DISABLE_PROJECT_CONFIG": "1"}
-        identity, events = opencode_prompt(binary, env, work, first, "reasoning-acceptance", timeout=250,
-                                          check_output=opencode_final_output)
-        tools = [event for event in events if event.get("type") == "tool_use"]
-        check(len(tools) == 1 and tools[0]["part"]["tool"] == "read"
-              and tools[0]["part"]["state"]["status"] == "completed", "live_client_tool_execution")
-        resumed, _ = opencode_prompt(binary, env, work, next_turn, "reasoning-acceptance", identity, timeout=130,
-                                    check_output=opencode_final_output)
-        check(resumed == identity, "live_client_session_changed")
-        databases = list(Path(env["XDG_DATA_HOME"]).rglob("opencode.db"))
-        check(len(databases) == 1, "opencode_database_count")
-        with closing(sqlite3.connect(f"file:{databases[0]}?mode=ro", uri=True)) as database:
-            check_opencode_session(database, identity, ["tool-calls", "stop", "stop"])
 
 
 def main():

@@ -24,7 +24,7 @@ def require_sdk(package: str) -> None:
         raise RuntimeError(f"expected pinned {package}=={versions[package]}")
 
 
-def client_for(base_url: str) -> openai.OpenAI:
+def client_for(base_url: str, *, api_key="synthetic-local-token") -> openai.OpenAI:
     """Reject non-loopback targets and private client defaults before making requests."""
     require_sdk("openai")
     parsed = urlsplit(base_url)
@@ -34,7 +34,7 @@ def client_for(base_url: str) -> openai.OpenAI:
             or parsed.username or parsed.password):
         raise ValueError("only a literal loopback /v1 listener is allowed")
     return openai.OpenAI(
-        api_key="synthetic-local-token", base_url=base_url, max_retries=0,
+        api_key=api_key, base_url=base_url, max_retries=0,
         timeout=8.0, organization="", project="", _strict_response_validation=True,
         http_client=openai.DefaultHttpxClient(trust_env=False, follow_redirects=False),
     )

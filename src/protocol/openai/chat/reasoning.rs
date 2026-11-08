@@ -225,7 +225,7 @@ pub(in crate::protocol::openai) fn decode_static(
     a: &Adaptation,
 ) -> Result<Map<String, Value>, CodecError> {
     let mut clean = m.clone();
-    if a.rules.readable_reasoning_text_only
+    if a.rules.readable_reasoning
         && m.contains_key("reasoning_content")
         && string(m, "role")? != "assistant"
     {

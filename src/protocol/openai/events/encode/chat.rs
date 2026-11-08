@@ -95,7 +95,40 @@ impl EventEncoder {
         }
         Err(CodecError::invalid())
     }
-    /// Readable deltas carry both the view and the detail, as the static message does.
+    /// Backfill only structured metadata; readable text has already streamed.
+    fn pending_chat_details(&mut self) -> Result<Vec<Value>, CodecError> {
+        let mut pending = vec![];
+        for item in self.state()?.items() {
+            if !matches!(item.kind, ItemKind::Reasoning) {
+                continue;
+            }
+            for part in &item.parts {
+                if self.chat_detail_parts.contains(&(item.id, part.id)) {
+                    continue;
+                }
+                let (kind, field) = match part.kind {
+                    PartKind::ReasoningText => ("reasoning.text", "text"),
+                    PartKind::Summary => ("reasoning.summary", "summary"),
+                    _ => return Err(CodecError::Unsupported(CarrierReason::Reasoning)),
+                };
+                let mut detail = json!({
+                    "type": kind, "format": "openai-responses-v1",
+                    "index": self.detail_index(item.id, Some(part.id))?,
+                });
+                detail[field] = json!(part.text().ok_or(CodecError::invalid())?);
+                pending.push(((item.id, part.id), detail));
+            }
+        }
+        Ok(pending
+            .into_iter()
+            .map(|(part, detail)| {
+                self.chat_detail_parts.insert(part);
+                detail
+            })
+            .collect())
+    }
+
+    /// Plain unsigned text keeps its scalar carrier in JSON and SSE.
     fn chat_delta(
         &mut self,
         item: ItemId,
@@ -103,13 +136,13 @@ impl EventEncoder {
         fragment: &str,
         structured: bool,
     ) -> Result<Value, CodecError> {
-        let first_text = !fragment.is_empty()
-            && self
-                .state()?
-                .part(item, part)?
-                .text()
-                .is_some_and(|text| text.len() == fragment.len());
-        Ok(match self.state()?.part(item, part)?.kind {
+        let kind = self.state()?.part(item, part)?.kind;
+        if structured && kind == PartKind::Summary && !self.chat_details_active {
+            self.chat_details_active = true;
+            let details = self.pending_chat_details()?;
+            return Ok(json!({ "reasoning_content": fragment, "reasoning_details": details }));
+        }
+        Ok(match kind {
             PartKind::Text => json!({ "content": fragment }),
             PartKind::Refusal => json!({ "refusal": fragment }),
             PartKind::Arguments => {
@@ -119,14 +152,16 @@ impl EventEncoder {
                 });
                 json!({ "tool_calls": [call] })
             }
-            PartKind::ReasoningText if !structured => json!({ "reasoning_content": fragment }),
+            PartKind::ReasoningText if !structured || !self.chat_details_active => {
+                json!({ "reasoning_content": fragment })
+            }
             PartKind::ReasoningText => {
                 let mut detail = json!({
                     "type": "reasoning.text",
                     "text": fragment,
                     "index": self.detail_index(item, Some(part))?,
                 });
-                if first_text {
+                if self.chat_detail_parts.insert((item, part)) {
                     detail["format"] = json!("openai-responses-v1");
                 }
                 json!({ "reasoning_content": fragment, "reasoning_details": [detail] })
@@ -137,7 +172,7 @@ impl EventEncoder {
                     "summary": fragment,
                     "index": self.detail_index(item, Some(part))?,
                 });
-                if first_text {
+                if self.chat_detail_parts.insert((item, part)) {
                     detail["format"] = json!("openai-responses-v1");
                 }
                 json!({ "reasoning_content": fragment, "reasoning_details": [detail] })
@@ -223,24 +258,32 @@ impl EventEncoder {
                 ..
             } => vec![self.chunk(json!({"refusal": ""}), Value::Null)],
             // Some consumers open a reasoning block per delta, so no empty opener.
-            StreamEvent::ItemFinished {
-                item,
-                replay: Some(replay),
-                ..
-            } if structured => {
-                let id = self
-                    .fidelity
-                    .response_item_id(*item)
-                    .map(str::to_owned)
-                    .unwrap_or_else(|| crate::protocol::fidelity::generated_item_id(*item, "item"));
-                let detail = json!({
-                    "type": "reasoning.encrypted",
-                    "data": replay.value.as_str(),
-                    "format": "openai-responses-v1",
-                    "index": self.detail_index(*item, None)?,
-                    "id": id,
-                });
-                vec![self.chunk(json!({ "reasoning_details": [detail] }), Value::Null)]
+            StreamEvent::ItemFinished { item, replay, .. }
+                if structured
+                    && matches!(self.state()?.item(*item)?.kind, ItemKind::Reasoning)
+                    && (self.chat_details_active || replay.is_some()) =>
+            {
+                self.chat_details_active = true;
+                let mut details = self.pending_chat_details()?;
+                if let Some(replay) = replay {
+                    let id = self
+                        .fidelity
+                        .response_item_id(*item)
+                        .map(str::to_owned)
+                        .unwrap_or_else(|| {
+                            crate::protocol::fidelity::generated_item_id(*item, "item")
+                        });
+                    details.push(json!({
+                        "type": "reasoning.encrypted", "data": replay.value.as_str(),
+                        "format": "openai-responses-v1", "index": self.detail_index(*item, None)?,
+                        "id": id,
+                    }));
+                }
+                if details.is_empty() {
+                    vec![]
+                } else {
+                    vec![self.chunk(json!({ "reasoning_details": details }), Value::Null)]
+                }
             }
             StreamEvent::Delta {
                 item,

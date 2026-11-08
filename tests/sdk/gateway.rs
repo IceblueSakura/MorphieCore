@@ -18,6 +18,166 @@ use std::{
 use tokio::{net::TcpListener, process::Command, sync::oneshot};
 
 #[tokio::test]
+#[ignore = "requires pinned OpenAI SDK; Readable Chat signed/opaque reasoning JSON/SSE tool history"]
+async fn sdk_chat_signed_reasoning_tool_history() {
+    let seen = Arc::new(Mutex::new(Vec::<Value>::new()));
+    let observed = seen.clone();
+    let answer = move |headers: HeaderMap, axum::Json(body): axum::Json<Value>| {
+        let seen = seen.clone();
+        async move {
+            assert_eq!(
+                headers["authorization"],
+                "Bearer synthetic-upstream-credential-0001"
+            );
+            assert_eq!(body["model"], "private-model");
+            assert_eq!(body["max_output_tokens"], 256);
+            let turn = {
+                let mut seen = seen.lock().unwrap();
+                assert!(seen.len() < 6, "extra signed-history request");
+                let turn = seen.len() % 3 + 1;
+                let input = body["input"].as_array().unwrap();
+                assert_eq!(
+                    input[0]["content"][0]["text"],
+                    if seen.len() < 3 {
+                        "signed-json"
+                    } else {
+                        "signed-sse"
+                    }
+                );
+                if turn > 1 {
+                    let reasoning: Vec<_> = input
+                        .iter()
+                        .filter(|item| item["type"] == "reasoning")
+                        .collect();
+                    assert_eq!(reasoning.len(), 2);
+                    assert_eq!(
+                        reasoning[0],
+                        &json!({"id":"rs-readable","type":"reasoning",
+                        "summary":[{"type":"summary_text","text":"Plan 🧪"}],
+                        "encrypted_content":"synthetic-readable-token"})
+                    );
+                    assert_eq!(
+                        reasoning[1],
+                        &json!({"id":"rs-opaque","type":"reasoning",
+                        "summary":[],"encrypted_content":"synthetic-opaque-token"})
+                    );
+                    assert_eq!(
+                        input
+                            .iter()
+                            .filter(|item| item["type"] == "function_call")
+                            .count(),
+                        1
+                    );
+                    assert_eq!(
+                        input
+                            .iter()
+                            .filter(|item| item["type"] == "function_call_output")
+                            .count(),
+                        1
+                    );
+                    let call = input
+                        .iter()
+                        .position(|item| item["type"] == "function_call")
+                        .unwrap();
+                    assert_eq!(input[call]["call_id"], "call-lookup");
+                    assert_eq!(input[call]["name"], "lookup");
+                    assert_eq!(input[call]["arguments"], "{ \"key\": \"A\" }");
+                    let result = input
+                        .iter()
+                        .position(|item| item["type"] == "function_call_output")
+                        .unwrap();
+                    assert!(
+                        input
+                            .iter()
+                            .position(|item| item["id"] == "rs-opaque")
+                            .unwrap()
+                            < call
+                            && call < result
+                    );
+                    assert_eq!(input[result]["call_id"], "call-lookup");
+                    assert_eq!(input[result]["output"], "lookup-result");
+                    if turn == 3 {
+                        assert!(input.iter().any(|item| item["role"] == "assistant"
+                            && item["content"][0]["text"] == "cedar-71"));
+                        assert_eq!(input.last().unwrap()["content"][0]["text"], "next");
+                    }
+                }
+                seen.push(body.clone());
+                turn
+            };
+            let response = json!({"id":format!("response-{turn}"),"object":"response","created_at":1,
+                "model":"private-model","status":"completed","error":null,"incomplete_details":null,
+                "output":if turn == 1 {json!([
+                    {"id":"rs-readable","type":"reasoning","status":"completed",
+                        "summary":[{"type":"summary_text","text":"Plan 🧪"}],
+                        "encrypted_content":"synthetic-readable-token"},
+                    {"id":"rs-opaque","type":"reasoning","status":"completed",
+                        "summary":[],"encrypted_content":"synthetic-opaque-token"},
+                    {"id":"fc","type":"function_call","status":"completed","call_id":"call-lookup",
+                        "name":"lookup","arguments":"{ \"key\": \"A\" }"}
+                ])} else {json!([
+                    {"id":format!("message-{turn}"),"type":"message","role":"assistant","status":"completed",
+                        "content":[{"type":"output_text","text":"cedar-71","annotations":[],"logprobs":[]}]}
+                ])},"usage":{"input_tokens":11,"output_tokens":7,"total_tokens":18}});
+            let stream = body["stream"] == true;
+            let bytes = if stream {
+                wire::response_events(response)
+                    .iter()
+                    .map(|event| format!("data: {event}\n\n"))
+                    .collect::<String>()
+            } else {
+                response.to_string()
+            };
+            Response::builder()
+                .header(
+                    "content-type",
+                    if stream {
+                        "text/event-stream"
+                    } else {
+                        "application/json"
+                    },
+                )
+                .body(Body::from(bytes))
+                .unwrap()
+        }
+    };
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let origin = format!("http://{}", listener.local_addr().unwrap());
+    let upstream = tokio::spawn(async move {
+        axum::serve(listener, Router::new().route("/responses", post(answer)))
+            .await
+            .unwrap();
+    });
+    let _upstream = ServerGuard(upstream.abort_handle());
+    let gateway = support::gateway_with_readable_chat(&origin, Limits::default());
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}/v1", listener.local_addr().unwrap());
+    let owner = gateway.clone();
+    let serving = tokio::spawn(async move {
+        owner.serve(listener, std::future::pending()).await.unwrap();
+    });
+    let _server = ServerGuard(serving.abort_handle());
+    let home = tempfile::tempdir().unwrap();
+    let mut command = super::isolated_sdk_python(home.path());
+    command.args(["tests/sdk/chat_signed_history.py", &base]);
+    let output = super::child_process::run(&mut command, b"", Duration::from_secs(30), 64 << 10)
+        .await
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "signed Chat SDK: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let report: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(report["requests"], 6);
+    assert_eq!(report["deliveries"], 2);
+    assert_eq!(report["signed_reasoning_replayed"], true);
+    assert_eq!(report["opaque_reasoning_replayed"], true);
+    assert_eq!(observed.lock().unwrap().len(), 6);
+    gateway.flush_diagnostics().await;
+}
+
+#[tokio::test]
 #[ignore = "requires pinned Anthropic SDK; synthetic Chat/Responses completion and Messages history"]
 async fn sdk_messages_completion_from_openai_sources() {
     let seen = Arc::new(Mutex::new(BTreeMap::<(bool, bool), usize>::new()));

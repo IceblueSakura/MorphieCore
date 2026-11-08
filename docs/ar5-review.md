@@ -22,6 +22,7 @@ This record retains the dated scenario coverage. Further qualification follows [
 - [Follow-up qualification, 2026-11-08](#follow-up-qualification-2026-11-08)
 - [Offline attribution, 2026-11-08](#offline-attribution-2026-11-08)
 - [R21 write-feedback qualification, 2026-11-08](#r21-write-feedback-qualification-2026-11-08)
+- [Readable Chat replay qualification, 2026-11-08](#readable-chat-replay-qualification-2026-11-08)
 - [Updating this record](#updating-this-record)
 
 ## Test context
@@ -44,7 +45,7 @@ Entries retain unresolved boundaries and their scoped evidence, not an implement
 
 | ID | Observation and affected path | Current evidence and unresolved boundary |
 |---|---|---|
-| R01 | Readable-Chat replay projection: OpenCode→Haiku, Grok and Interactions | The dated samples report `representation.replay_origin` at `event.project`: Haiku 3 attempts / 2 complete; Grok and Interactions 1/0 each. Offline discrimination confirms that a correctly bound final replay value also fails when Readable Chat lacks its carrier. Current diagnostics distinguish carrier, origin/dependency and finality failures; no new real sample identifies the historical failing predicate. A client-retained signed carrier remains unselected. |
+| R01 | Real Haiku protected Readable-Chat replay qualification | The existing profile's carrier repair is selected and verified below, including current-client signed/redacted Messages loops and real Grok/Interactions replay. Haiku's bounded real read/feedback/recall loop completes **3/3**, but returns no opaque replay; that real protected-output cell remains unobserved. Keep the profile and replay guards unchanged; do not repeat completed carrier qualification or infer native protected coverage from an unsigned sample. |
 | R02 | Stateless generateContent signature carriage | OpenCode Chat/Responses and the Responses SDK smoke reach upstream HTTP 200, then fail projection with `codec.unsupported.replay`; ordinary text can carry `thoughtSignature`. Managed continuation passes separately. No disposition for discarding or substituting these attachments is selected. |
 | R05 | pi Google Responses strict-profile qualification | Both original Responses profiles remain locally rejected after ordered-control projection. Three bounded local checks make **0 upstream attempts**; the final generateContent discriminator reports `admission.strict_tools`. Independent preparation tests preserve explicit strict rejection on both bindings. No strict opt-out is selected. |
 | R06 | pi Google generateContent Messages stateless carriage | The original Messages profile now reaches generateContent: **1 request / 1 attempt**, then `codec.unsupported.replay` on signed stateless delivery. The Interactions read/result/answer/recall loop passes separately below; only generateContent's carrier limitation remains pending. |
@@ -197,7 +198,6 @@ The user requested the exact undated DeepSeek label and at most **three scenario
 
 | Observation | Executed scope and result |
 |---|---|
-| R01 | Three Readable Chat targets: Haiku **3 attempts / 2 complete**, Grok and Interactions **1/0 each**. All reproduce `representation.replay_origin` at `event.project`. |
 | R02 | OpenCode Chat, OpenCode Responses and stateless SDK smoke: **1 attempt each**, all repeat `codec.unsupported.replay`. |
 | R09 | JSON and SSE each complete one Luna source attempt, then stop because opaque replay is absent. No cross-target transfer is sent; compatible-account failover prerequisites remain unavailable. |
 | Repeated compaction | Two independent stories pass **9/9 each**, including both exact no-tool recalls and rebuilt read. |
@@ -268,7 +268,7 @@ These checks use current unwrapped **pi 1.5.0 / OpenCode 2.0.32**, isolated home
 
 | Boundary | Evidence | Remaining limit |
 |---|---|---|
-| R01 replay attribution | A trusted final replay value without a Readable Chat carrier reports `replay_format`; a supported carrier with foreign origin reports `replay_origin`; partial Chat closure reports `replay_phase`. Independent positive Responses replay and source/identity checks remain passing. | No carrier activation, signature omission or reclassification of an unobserved historical event. |
+| Replay discrimination | A trusted final value on a target without a structured carrier reports `replay_format`; a supported carrier with foreign origin reports `replay_origin`; partial Chat closure reports `replay_phase`. Independent Responses replay and source/identity checks remain passing. | These guards do not retroactively identify an old sample's failing predicate. Current Readable Chat qualification follows below. |
 | R21 cancellation ownership | The installed-pi Responses gate holds write arguments after the target path, aborts before execution, observes upstream release and a non-complete receipt, and verifies no file before recovery. One distinct new write creates the exact UTF-8 bytes and its feedback completes request three. Cancelled identities are absent from returned history; call/result identities match. **3 requests / 3 attempts**, no cancelled execution or replay; outcomes are non-complete, complete, complete. | This qualifies write lifecycle, side effects and feedback, not Grok instruction adherence or remote compute termination. |
 
 The durable cancellation gate is `pi_responses_tool_argument_cancellation`; its write story replaces the earlier read story using the existing authority and protocol fixtures. Negative oracles reject cancelled identities, unrelated feedback, skipped final answers, duplicate execution and CRLF/LF byte changes. The shared pi driver defaults to read; this gate explicitly enables write. No production cancellation or client behavior is changed.
@@ -284,6 +284,24 @@ An initial local rejection has **one client request / zero upstream attempts** b
 Both stories retain failed exact-marker and prompt-only no-tool verdicts. Complete delivery text equals pi text in both. The second story aligns capture by exchange: request three's complete native final text already lacks the marker and equals delivery; all prepared user text and the returned call/result feedback agree with ingress. Only that final native output is complete enough for comparison; partial native tool-call capture is not a call-equivalence oracle. The first story's aggregate native comparison lacks full-output coverage and is not a mismatch finding. These samples support the retained upstream content limitation without claiming cancellation-specific causality or remote compute termination.
 
 Body-free evidence is retained at `testdata/reports/ar5-r21-{write-baseline,live-slot1,renewal,live-slot2,live-slot3}-20261108.log`. Temporary captures, client state and the disposable observer are removed; no model prose or credentials are published.
+
+## Readable Chat replay qualification, 2026-11-08
+
+The selected [existing-profile extension](architecture.md#chat-reasoning-extensions) reuses typed details and independent `mc1.` envelopes, not the whole MorphieCore dialect. The multi-owner directional regression fails on the old public profile with `representation.replay_format` and passes after repair. A late signed-text regression verifies immediate readable text, closure-time metadata without repeated text, original replay restoration and JSON/SSE agreement. The earlier unsigned SDK no-details assertions remain unchanged and pass; foreign-origin, malformed-envelope, dependency and partial-replay guards remain passing.
+
+Current unwrapped **pi 1.5.0 / OpenCode 2.0.32** each pass a **three-request** CLI-gateway loop with independent native Messages signature/redacted-data expectations, actual read execution, feedback and recall. In-memory observation verifies the delivered native-format envelopes equal returned client details. The pinned OpenAI SDK separately passes **six requests** across JSON/SSE, retaining two protected reasoning owners through tool feedback and recall. Direct current-client characterization also establishes the [adjacent text-signature counterexample](refs/2026-11-08-chat-reasoning-carriers.md).
+
+Real checks use **OpenCode 2.0.32**, its generic Chat client, `readable_reasoning`, one read tool and project-loader credentials. Every story fixes **3 requests / 3 attempts maximum**, **2048 output tokens**, **120-second route/exchange deadlines**, **256-KiB requests / 2-MiB responses**, concurrency **1**, a **420-second outer bound** and no hidden retries. Messages default output is cleared in the test-owned selection so its catalog default cannot exceed the fixed cap; no client body/history is rewritten.
+
+| Target | Completed story | Qualified boundary |
+|---|---|---|
+| `claude-haiku-5-5` / `opencode-go-haiku-messages` | **3 requests / 3 complete attempts**, no authority errors | Actual read, feedback and recall succeed; no opaque replay is returned. Real protected output remains unobserved, separately from the passing synthetic native-signature gate. |
+| `grok-4.7` / `grok-responses` | **3 requests / 3 complete attempts**; one protected owner per response | Delivered envelope bytes equal returned client details; prepared native history restores the original opaque values on requests two and three. Tool feedback/recall and exact call identities pass. |
+| `gemini-3.8-flash` / `google-gemini-3.8-flash-interactions` | **3 requests / 3 complete attempts**; one thought replay owner per response | Client details remain unchanged; prepared native thought anchors and optional signatures agree with the enclosed native payloads. This is thought replay, not ordinary generateContent attachment or signed-call qualification. |
+
+Two startup trials and one loader-only diagnostic send no inference. An earlier **one-attempt Haiku** observer stops on raw JSON argument formatting; an earlier **three-complete-attempt Interactions** observer compares its internal thought wrapper to a native signature string. Those observer verdicts are retained separately. Correct wire oracles compare JSON object arguments semantically and restore the Interactions native payload; signature/envelope bytes and call IDs stay exact.
+
+The final full offline baseline, all-target Clippy under `-D warnings`, formatting, production-only checks and **20 pinned assets** pass. Python suites pass **8 upstream / 16 SDK-oracle / 47 client-oracle / 17 OpenAPI** checks. Separate connected acceptance passes all **20 pinned SDK** and **25 current installed-client synthetic** scenarios. Body-free evidence is retained in `testdata/reports/ar5-r01-*20261108.log`; temporary observers, captures and test-owned state are removed.
 
 ## Updating this record
 

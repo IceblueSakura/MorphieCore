@@ -16,6 +16,8 @@ pub struct EventEncoder {
     target_locked: bool,
     sequence: u64,
     pub(super) chat_audio_pending: Vec<u8>,
+    pub(super) chat_details_active: bool,
+    pub(super) chat_detail_parts: std::collections::BTreeSet<(ItemId, PartId)>,
     pub(super) projection: Vec<crate::protocol::conversion::generation::Effect>,
     /// Atomic output items have no in-progress wire status. Hold their opener
     /// and following frames until observed item closure supplies a lawful value.
@@ -37,6 +39,8 @@ impl EventEncoder {
             target_locked: false,
             sequence: 0,
             chat_audio_pending: Vec::new(),
+            chat_details_active: false,
+            chat_detail_parts: Default::default(),
             projection: Vec::new(),
             pending_program_outputs: Default::default(),
             held_frames: vec![],

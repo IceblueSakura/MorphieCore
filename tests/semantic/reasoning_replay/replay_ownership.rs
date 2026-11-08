@@ -94,11 +94,11 @@ fn final_incomplete_reasoning_replays_exactly_but_partial_tokens_do_not() {
         if status == "completed" {
             use morphiecore::protocol::openai::lowering::RepresentationError;
             use morphiecore::protocol::openai::{Dialect, GenerationCodec};
-            let mut readable = contract();
-            readable.adaptation =
-                GenerationCodec::new(GenerationApi::Chat, Dialect::ChatReasoning, None).adaptation;
+            let mut uncarried = contract();
+            uncarried.adaptation =
+                GenerationCodec::new(GenerationApi::Chat, Dialect::DeepSeek, None).adaptation;
             assert_eq!(
-                lower_response(&d.semantic, &d.fidelity, &m, GenerationApi::Chat, readable)
+                lower_response(&d.semantic, &d.fidelity, &m, GenerationApi::Chat, uncarried)
                     .err()
                     .unwrap()
                     .cause,

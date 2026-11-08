@@ -412,7 +412,7 @@ fn foreign_replay_remains_bound_and_malformed_replay_rejects() {
 fn chat_client() -> GenerationCodec {
     GenerationCodec::new(
         GenerationApi::Chat,
-        Dialect::MorphieCore,
+        Dialect::ChatReasoning,
         Some(CLIENT_ORIGIN.clone()),
     )
 }
@@ -623,7 +623,7 @@ fn chat_details_keep_item_boundaries_and_survive_pi_and_opencode_replays() {
             _ => merged.push(detail),
         }
     }
-    // opencode (e5a557e) merges alike and also returns the concatenated view.
+    // Also admit clients that return the matching concatenated readable view.
     for view in [None, Some("AaB")] {
         let mut assistant = json!({"role":"assistant","content":"ok","reasoning_details":merged});
         if let Some(view) = view {
@@ -652,6 +652,108 @@ fn chat_details_keep_item_boundaries_and_survive_pi_and_opencode_replays() {
 }
 
 #[test]
+fn signed_text_streams_immediately_and_backfills_details_only_at_replay_closure() {
+    use morphiecore::protocol::openai::events::EventEncoder;
+    let issuer = upstream("openai/model-a");
+    let (mut response, frames) = two_reasoning_items();
+    response["output"].as_array_mut().unwrap().remove(0);
+    let frames: Vec<_> = frames
+        .into_iter()
+        .filter_map(|mut frame| {
+            if let Some(index) = frame["output_index"].as_u64() {
+                if index == 0 {
+                    return None;
+                }
+                frame["output_index"] = json!(index - 1);
+            }
+            if frame["type"] == "response.completed" {
+                frame["response"] = response.clone();
+            }
+            Some(frame)
+        })
+        .collect();
+    let mut decoded = issuer
+        .decode_response(response.to_string().as_bytes())
+        .unwrap();
+    seal_for_client(&mut decoded, &CLIENT_ORIGIN).unwrap();
+    let json = chat_client()
+        .encode_response(&decoded, &contract(CLIENT_ORIGIN.as_str()))
+        .unwrap();
+    let mut encoder = EventEncoder::new(GenerationApi::Chat, decoded.metadata.clone())
+        .unwrap()
+        .with_contract(chat_client().contract(&contract(CLIENT_ORIGIN.as_str())));
+    let mut decoder = issuer.event_decoder();
+    let mut deltas = vec![];
+    for (sequence, mut frame) in frames.into_iter().enumerate() {
+        frame["sequence_number"] = json!(sequence);
+        for event in decoder.push(&frame).unwrap() {
+            let event = seal_event(event, &CLIENT_ORIGIN, decoder.fidelity()).unwrap();
+            deltas.extend(
+                encoder
+                    .encode(&event, &decoded.fidelity)
+                    .unwrap()
+                    .into_iter()
+                    .map(|chunk| chunk["choices"][0]["delta"].clone()),
+            );
+        }
+    }
+    let readable = deltas
+        .iter()
+        .position(|delta| delta["reasoning_content"] == "B")
+        .unwrap();
+    assert!(deltas[readable].get("reasoning_details").is_none());
+    let closed = deltas
+        .iter()
+        .position(|delta| delta.get("reasoning_details").is_some())
+        .unwrap();
+    assert!(
+        readable < closed,
+        "visible text must not wait for the signature"
+    );
+    assert!(
+        deltas[closed].get("reasoning_content").is_none(),
+        "backfill must not repeat visible text"
+    );
+    let details = &deltas[closed]["reasoning_details"];
+    assert_eq!(details.as_array().unwrap().len(), 2);
+    assert_eq!(
+        details[0],
+        json!({
+            "type":"reasoning.text","text":"B","format":"openai-responses-v1","index":0
+        })
+    );
+    let (origin, format, token) =
+        replay_envelope::open(details[1]["data"].as_str().unwrap()).unwrap();
+    assert_eq!(origin, self::origin("openai/model-a"));
+    assert_eq!(format, ReplayFormat::ResponsesEncrypted);
+    assert_eq!(token.as_str(), "tok-2");
+    assert_eq!(details[1]["id"], "r2");
+    assert_eq!(details[1]["index"], 1);
+    assert_eq!(details, &json["choices"][0]["message"]["reasoning_details"]);
+    let mut request = chat_client()
+        .decode_client_request(
+            json!({"model":"m","messages":[
+                {"role":"assistant","content":"ok","reasoning_details":details},
+                {"role":"user","content":"next"}
+            ]})
+            .to_string()
+            .as_bytes(),
+        )
+        .unwrap();
+    open_from_client(&mut request).unwrap();
+    let returned = issuer
+        .encode_request(&request, "model-a", &contract("openai/model-a"))
+        .unwrap();
+    assert_eq!(
+        returned["input"][0],
+        json!({
+            "type":"reasoning","id":"r2","summary":[],
+            "content":[{"type":"reasoning_text","text":"B"}],"encrypted_content":"tok-2"
+        })
+    );
+}
+
+#[test]
 fn openrouter_signed_text_details_become_items_and_views_must_agree() {
     use morphiecore::semantic::{
         task::generation::{ItemLifecycle, PartId, ReasoningContent, ReasoningItem, ReplayValue},
@@ -660,7 +762,7 @@ fn openrouter_signed_text_details_become_items_and_views_must_agree() {
     let history = |view: &str| {
         json!({"model":"m","messages":[
             {"role":"user","content":"q"},
-            {"role":"assistant","content":"ok","reasoning":view,"reasoning_details":[
+            {"role":"assistant","content":"ok","reasoning_content":view,"reasoning_details":[
                 {"type":"reasoning.text","text":"A","signature":"sig-1","format":"anthropic-claude-v1","index":0},
                 {"type":"reasoning.summary","summary":"B","format":"openai-responses-v1","index":0},
                 {"type":"reasoning.encrypted","id":"r2","data":"tok-2","format":"openai-responses-v1","index":0},

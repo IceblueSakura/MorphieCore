@@ -38,7 +38,7 @@ impl Dialect {
                 "chat-readable-reasoning-v1",
                 WireRules {
                     readable_reasoning: true,
-                    readable_reasoning_text_only: true,
+                    structured_chat_reasoning: true,
                     chat_preserve_thinking: true,
                     ..Default::default()
                 },

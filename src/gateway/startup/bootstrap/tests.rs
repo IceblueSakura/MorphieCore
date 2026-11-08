@@ -29,7 +29,10 @@ fn readable_chat_profile_is_explicit_and_does_not_widen_other_protocols() {
             selected == Some("readable_reasoning")
         );
         assert!(!adapter.adaptation.rules.thinking_controls);
-        assert!(!adapter.adaptation.rules.structured_chat_reasoning);
+        assert_eq!(
+            adapter.adaptation.rules.structured_chat_reasoning,
+            selected == Some("readable_reasoning")
+        );
         assert!(!adapter.adaptation.rules.chat_video_url);
         let responses =
             &boot.gateway.state.entries[&(ClientProtocol::Responses, "qwen3.8-flash".into())];

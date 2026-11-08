@@ -55,7 +55,7 @@ This page owns current scope, priorities, dependencies, and exit gates. [Archite
 
 ## Current status
 
-**Current focus (2026-11-08):** Prioritize **AR5**, completing small, independently verifiable project-owned repairs or attribution boundaries before larger carrier decisions. External client repairs are excluded; strict-related follow-ups have lower priority without weakening their guarantees. Follow the [AR5 closure order](#ar5-closure-order); Stage-4 contract selection is not the current focus. The [scoped limitations](#scoped-limitations), **R09** prerequisites and [partial-delivery exit](#partial-delivery-exit) remain; closing every observation is not a new gate. [AR5 Review](ar5-review.md) owns observations and passing evidence; production activation remains separately approved.
+**Current focus (2026-11-08):** Prioritize **AR5**, completing small, independently verifiable project-owned repairs or attribution boundaries before larger carrier decisions. External client repairs are excluded; strict-related follow-ups have lower priority without weakening their guarantees. Follow the [AR5 closure order](#ar5-closure-order); Stage-4 contract selection is not the current focus. The [scoped limitations](#scoped-limitations), observed-replay prerequisites and [partial-delivery exit](#partial-delivery-exit) remain; closing every observation is not a new gate. [AR5 Review](ar5-review.md) owns observations and passing evidence; production activation remains separately approved.
 
 | Priority | Remaining work | Exit |
 |---|---|---|
@@ -75,17 +75,16 @@ The remaining AR5 boundaries are the current priority. [AR5 Review](ar5-review.m
 
 | Order | Boundary | Action and completion condition |
 |---|---|---|
-| 1 | **R01 — Readable Chat replay** | Use the existing format/origin/finality discriminators to isolate the missing signed-reasoning carrier. Evaluate gateway-side delivery and untouched history with unmodified clients. Present a minimal counterexample and carrier/loss options before implementing any unselected semantic change; do not reopen external client patches. |
-| 2 | **R02/R06 — Google stateless signatures** | Treat these as one shared attachment-carriage problem, with separate affected client profiles. Keep ordinary signed text/calls distinct from reasoning; select a carrier/disposition before implementation. Verify JSON/SSE delivery and returned-history continuation once per distinct affected boundary, reusing managed Responses evidence. |
-| 3 | **R13, non-strict R18 and remaining R21 content/tool behavior** | Review the remaining exact model/API contracts using existing native/prepared/delivered evidence. Repair only a demonstrated project-owned divergence; otherwise retain the scoped upstream limitation and stop. Do not repeat qualified Qwen call/`stop` or R21 cancellation/write-feedback loops, or broad recall sweeps. |
-| 4 — lower priority | **R05/R17 and R18 strict arguments** | Re-enter only after the earlier actionable slices, for the exact strict guarantee under investigation. Retain explicit rejection and unsupported-profile boundaries; no automatic strict opt-out or schema deletion. |
-| Prerequisite-gated | **R09** | Resume only with observed opaque replay and, for compatible failover, independent compatible accounts. Do not delay independent repairs for unavailable prerequisites. |
+| 1 | **R02/R06 — Google stateless signatures** | Treat these as one shared attachment-carriage problem, with separate affected client profiles. Keep ordinary signed text/calls distinct from reasoning; select a carrier/disposition before implementation. Verify JSON/SSE delivery and returned-history continuation once per distinct affected boundary, reusing managed Responses evidence. |
+| 2 | **R13, non-strict R18 and remaining R21 content/tool behavior** | Review the remaining exact model/API contracts using existing native/prepared/delivered evidence. Repair only a demonstrated project-owned divergence; otherwise retain the scoped upstream limitation and stop. Do not repeat qualified Qwen call/`stop`, Readable Chat carrier or R21 cancellation/write-feedback loops, or broad recall sweeps. |
+| 3 — lower priority | **R05/R17 and R18 strict arguments** | Re-enter only after the earlier actionable slices, for the exact strict guarantee under investigation. Retain explicit rejection and unsupported-profile boundaries; no automatic strict opt-out or schema deletion. |
+| Prerequisite-gated | **R01 Haiku / R09** | R01's carrier repair is selected and verified; resume only the real Haiku protected-output cell when that output is observed. R09 additionally needs independent compatible accounts for failover. Do not delay independent repairs or repeat completed carrier loops for absent prerequisites. |
 
 Run one coherent slice at a time. If a carrier decision or prerequisite is unavailable, record the precise blocked subcase and continue the next independent row; ordering does not authorize semantic loss. Implementation exits require directional regressions, the offline baseline, relevant SDK checks and affected real-client acceptance. Documentation-only disposition changes use documentation checks.
 
 ### Remaining observation dispositions
 
-There are **nine retained observations: five scoped limitations/follow-ups, one unavailable prerequisite and three reopened Provider/model observations**. No deployment, binding activation or additional content/signature loss is selected.
+There are **nine retained observations: four scoped limitations/follow-ups, two unavailable prerequisites and three reopened Provider/model observations**. The existing Readable Chat carrier extension is selected in [Architecture](architecture.md#chat-reasoning-extensions); no deployment, new binding or additional content/signature loss is selected.
 
 **User-selected scope, 2026-11-08:** Bailian structured-output variability and its associated envelope/failed-stream observations are removed from AR5 follow-up. No further investigation, retest or repair is scheduled for that issue; existing format carriage and envelope normalization remain unchanged.
 
@@ -99,7 +98,7 @@ The remaining boundaries are qualified limitations or next-stage analysis, not p
 
 | Boundary / observations | Current disposition | Re-entry condition |
 |---|---|---|
-| **Replay carriers — R01/R02** | Readable Chat has no signed-reasoning carrier; stateless Google text/call attachments likewise lack a selected carrier. Use existing Messages/Responses reasoning carriers and managed Google Responses continuation. Origin/signature guards remain intact. | A client-retainable carrier or a concrete content/replay-loss disposition must be selected. Whole-owner reasoning omission and bounded publication remain unselected for Readable Chat. |
+| **Ordinary Google attachments — R02** | Stateless Google text/call attachments still lack a selected carrier. Use managed Google Responses continuation. The Readable Chat reasoning carrier does not authorize ordinary content/call attachment transport; origin/signature guards remain intact. | Select a client-retainable ordinary-attachment carrier or a concrete disposition before implementation; never silently delete signatures. |
 | **Original strict profiles / remaining Google qualification — R05/R06/R17** | Keep explicit strict rejection on Google and GLM. generateContent's signed stateless path and unobserved Interactions signed-call shapes remain limited. | Qualify a supported profile without strict opt-outs or select a genuinely equivalent guarantee/carrier. Further Google loops need their own fixed budgets; root projection is not permission to delete returned signatures. |
 
 Retain the exact profile, first divergent field/event, responsible owner and disposition for any follow-up. Use known field paths, event/block kinds, terminal classes and recognized error categories; private exchanges are not public fixtures. If fresh Provider evidence is necessary, fix target, operation, request/attempt budget, output/wire caps and deadline first, run serially without hidden retries, and use at most three independent scenarios per observation in that selected run.
@@ -114,6 +113,7 @@ These entries require unavailable prerequisites or separately selected qualifica
 
 | Scope | Retained boundary and re-entry condition |
 |---|---|
+| **R01 — Real Haiku protected-output qualification** | The selected Readable Chat carrier passes independent JSON/SSE, pinned SDK and current-client synthetic signed/redacted loops. Real Grok encrypted and Interactions thought replay loops complete; real Haiku read/feedback/recall completes without opaque replay. Resume only that unobserved real Haiku cell when protected output is available, preserving the same profile and assertions. No further carrier/loss decision or broad rerun is required. |
 | **R09 — Replay isolation / account-compatible failover** | Replay transfer needs observed source opaque replay; same-model/account-compatible failover additionally needs independent compatible accounts. Resume only a cell whose prerequisites are met. Do not substitute aliases or a different-model switch. Existing source-only observations do not exercise transfer or qualify failover. |
 | **Remaining real qualification** | Luna router endpoints, effective non-Qwen Bailian reply-ceiling enforcement and Haiku same-process cap-switch recovery remain unqualified. SIWC qualification has its own [endpoint follow-up](#endpoint-qualification-and-emitter-follow-ups). Existing native-ceiling preparation receipts and successful GLM JSON smoke do not close those profile-specific checks. Schedule them only when selected. |
 

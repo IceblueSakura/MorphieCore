@@ -12,6 +12,7 @@ from unittest.mock import patch
 from urllib.parse import urlsplit
 
 import reasoning_live as live
+import drivers
 
 
 class ReasoningLiveOracles(unittest.TestCase):
@@ -27,12 +28,12 @@ class ReasoningLiveOracles(unittest.TestCase):
                 "role": "assistant", "stopReason": "stop",
                 "content": [{"type": "text", "text": live.TEXT + "\n"}]}}]
 
-        client = object.__new__(live.Pi)
+        client = object.__new__(drivers.Pi)
         client.command = command
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             env = live.environment(root)
-            with patch.object(live, "Pi") as constructor:
+            with patch.object(drivers, "Pi") as constructor:
                 constructor.return_value.__enter__.return_value = client
                 live.run_client("pi-chat", "/pi", env, root, root,
                                 "http://127.0.0.1:1", root / "sample.txt")
@@ -66,7 +67,7 @@ class ReasoningLiveOracles(unittest.TestCase):
                     database.commit()
                 events = [{"type": "tool_use", "part": {"tool": "read", "state": {"status": "completed"}}},
                           {"type": "text", "part": {"text": live.TEXT + "\n"}}]
-                with patch.object(live, "opencode_prompt", return_value=("live-session", events)):
+                with patch.object(drivers, "opencode_prompt", return_value=("live-session", events)):
                     if error:
                         with self.assertRaisesRegex(RuntimeError, "^" + error + "$"):
                             live.run_client("opencode-chat", "/opencode", env, root, root,
