@@ -54,7 +54,7 @@ This page owns current scope, priorities, dependencies, and exit gates. [Archite
 
 ## Current status
 
-**Current focus (2026-11-08):** Carry forward the qualified **R19/R18/R13/R21** limitations and select the next [Stage-4 operation contracts](#stage-4-scope). The [scoped limitations](#scoped-limitations), **R09** prerequisites and [partial-delivery exit](#partial-delivery-exit) remain; closing every observation is not a new gate. [AR5 Review](ar5-review.md) owns observations and passing evidence; production activation remains separately approved.
+**Current focus (2026-11-08):** Carry forward the qualified **R18/R13/R21** limitations and select the next [Stage-4 operation contracts](#stage-4-scope). The [scoped limitations](#scoped-limitations), **R09** prerequisites and [partial-delivery exit](#partial-delivery-exit) remain; closing every observation is not a new gate. [AR5 Review](ar5-review.md) owns observations and passing evidence; production activation remains separately approved.
 
 | Priority | Remaining work | Exit |
 |---|---|---|
@@ -70,7 +70,9 @@ The remaining AR5 boundaries are open for analysis and may be selected alongside
 
 ### Remaining observation dispositions
 
-There are **12 retained observations: seven scoped limitations/follow-ups, one unavailable prerequisite and four reopened Provider/model observations**. No deployment, binding activation or additional content/signature loss is selected.
+There are **11 retained observations: seven scoped limitations/follow-ups, one unavailable prerequisite and three reopened Provider/model observations**. No deployment, binding activation or additional content/signature loss is selected.
+
+**User-selected scope, 2026-11-08:** Bailian structured-output variability and its associated envelope/failed-stream observations are removed from AR5 follow-up. No further investigation, retest or repair is scheduled for that issue; existing format carriage and envelope normalization remain unchanged.
 
 Use the existing lowering, replay/projection owners, reducers and client drivers for separately selected follow-ups. No new dependency, replay store, retry layer or diagnostic platform is planned.
 
@@ -102,13 +104,12 @@ These entries require unavailable prerequisites or separately selected qualifica
 
 #### Reopened Provider and model observations
 
-**User-selected reopening, 2026-11-08:** the temporary pause on analysis, Provider retests and repairs for **R13/R18/R19/R21** is lifted. Their [AR5 evidence](ar5-review.md#pending-observations) retains the qualified boundaries below; select further investigation or repair with the bounded qualification rules above. Reopening does not select content/signature loss, weaker explicit guarantees, new bindings or deployment. Preserve current guards and the partial-delivery exit. The routing freeze and general Google API expansion pause remain outside this reopening.
+**User-selected reopening, 2026-11-08:** the temporary pause on analysis, Provider retests and repairs for **R13/R18/R21** is lifted. Their [AR5 evidence](ar5-review.md#pending-observations) retains the qualified boundaries below; select further investigation or repair with the bounded qualification rules above. Reopening does not select content/signature loss, weaker explicit guarantees, new bindings or deployment. Preserve current guards and the partial-delivery exit. The routing freeze and general Google API expansion pause remain outside this reopening.
 
 | Observation | Reopened boundary |
 |---|---|
 | **R13** | Scoped upstream recall limitation: complete failing native answers omit a label retained in preparation, then reach delivery/pi unchanged. Keep the exact-label assertion; no prompting or history rewrite is selected. Separate HTTP failures and incomplete captures. |
 | **R18** | Scoped Provider tool limitations: preserve strict rejection and thinking-mode selection bounds. Qwen Chat's native `stop` beside the correctly forced call has a passing gateway feedback/recall loop; do not conflate identity with terminal spelling. Further model/API cells require their exact supported profile. |
-| **R19** | Matched GLM JSON/SSE controls observe variable content compliance on both native modes; complete gateway observations preserve the prepared body and native text for an enum violation and a conforming result. Keep the existing envelope normalization; no completed-path codec repair is queued. Separate HTTP/failed-stream propagation from content quality. Any new local content-validation/rejection policy needs its own JSON/SSE publication selection; no schema weakening, repair or hidden retry is selected. Follow the accepted [output-format contract](architecture.md#shared-aliyun-billing-dialect); Qwen and GLM observations do not qualify TokenPlan. |
 | **R21** | Scoped upstream content/tool limitation: native no-cancellation controls also miss recovery labels and can issue a new write with tools available. The offline pi Responses gate distinguishes cancelled arguments from a new call and permits its legitimate feedback. Keep lifecycle, content and tool-policy verdicts separate; explicit `tool_choice:none` is a separate diagnostic contract, not an automatic prompt-derived policy. |
 
 #### Partial-delivery exit
