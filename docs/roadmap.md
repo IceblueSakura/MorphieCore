@@ -6,6 +6,7 @@ This page owns current scope, priorities, dependencies, and exit gates. [Archite
 
 - [Current status](#current-status)
 - [Remaining Agent qualification](#remaining-agent-qualification)
+  - [AR5 closure order](#ar5-closure-order)
   - [Remaining observation dispositions](#remaining-observation-dispositions)
     - [Scoped limitations](#scoped-limitations)
     - [Next-stage analysis](#next-stage-analysis)
@@ -54,19 +55,35 @@ This page owns current scope, priorities, dependencies, and exit gates. [Archite
 
 ## Current status
 
-**Current focus (2026-11-08):** Carry forward the qualified **R18/R13/R21** limitations and select the next [Stage-4 operation contracts](#stage-4-scope). The [scoped limitations](#scoped-limitations), **R09** prerequisites and [partial-delivery exit](#partial-delivery-exit) remain; closing every observation is not a new gate. [AR5 Review](ar5-review.md) owns observations and passing evidence; production activation remains separately approved.
+**Current focus (2026-11-08):** Prioritize **AR5**, completing small, independently verifiable project-owned repairs or attribution boundaries before larger carrier decisions. External client repairs are excluded; strict-related follow-ups have lower priority without weakening their guarantees. Follow the [AR5 closure order](#ar5-closure-order); Stage-4 contract selection is not the current focus. The [scoped limitations](#scoped-limitations), **R09** prerequisites and [partial-delivery exit](#partial-delivery-exit) remain; closing every observation is not a new gate. [AR5 Review](ar5-review.md) owns observations and passing evidence; production activation remains separately approved.
 
 | Priority | Remaining work | Exit |
 |---|---|---|
-| Conditional tool follow-ups | [S3-T5–S3-T7](#conditional-stage-3-follow-ups): namespace aliases, custom-text wrappers and examples projection | Separate policy selection and full affected-loop acceptance; not default prerequisites for Stage 4 |
-| AR5 follow-ups | Select a remaining dependent model/API boundary for further qualification | Preserve explicit guarantees, replay guards, prerequisites and affected-path acceptance |
+| AR5 first | Close the smallest actionable boundary, then narrow the remaining investigation | Verified repair or explicit attribution/disposition; preserve guarantees, replay guards and affected-path acceptance |
+| Conditional tool follow-ups | [S3-T5–S3-T7](#conditional-stage-3-follow-ups): namespace aliases, custom-text wrappers and examples projection | Separate policy selection and full affected-loop acceptance; not default prerequisites for AR5 |
 | API expansion | Select and implement Stage-4 operation contracts | Per-operation lifecycle, protocol and SDK acceptance |
 | Downstream integration | Implement opt-in per-Agent JSONL session storage | Selected isolation and lifetime bounds |
 | Production preparation | Decide diagnostic packaging and deferred observability scope | Explicit deployer selection |
 
 ## Remaining Agent qualification
 
-The remaining AR5 boundaries are open for analysis and may be selected alongside relevant Stage-4 work. [AR5 Review](ar5-review.md#pending-observations) owns their evidence; [Architecture](architecture.md) owns accepted contracts, and [Development](development.md#production-profile-acceptance) owns bounded qualification procedures. No broad Provider sweep, credential reprovisioning or account rewrite is scheduled.
+The remaining AR5 boundaries are the current priority. [AR5 Review](ar5-review.md#pending-observations) owns their evidence; [Architecture](architecture.md) owns accepted contracts, and [Development](development.md#production-profile-acceptance) owns bounded qualification procedures. No broad Provider sweep, credential reprovisioning or account rewrite is scheduled.
+
+### AR5 closure order
+
+**User-selected priority, 2026-11-08:** Fix simple AR5 issues first to reduce the active surface, then address the remaining boundaries incrementally. Do not repair external clients; lower the priority of strict-related work. The order below is an engineering recommendation within that priority, not approval for new semantic loss, weaker guarantees or client patches.
+
+| Order | Boundary | Action and completion condition |
+|---|---|---|
+| 1 | **R08 — client error attribution** | Before-text truncation and gateway-shaped HTTP 502 now have direct client application-retry evidence. Keep only the unavailable historical wire attribution open; resume that subcase with contemporaneous client-facing evidence, not another broad replay. Preserve the forwarding ceiling; no gateway retry/deduplication repair is indicated. |
+| 2 | **R21 — recovery feedback qualification** | First inspect the project-owned acceptance story: a newly issued recovery call needs its legitimate feedback within a fixed three-request budget. Reuse the passing synthetic cancellation gate; any real write-specific qualification keeps cancelled-call, content and tool-policy assertions separate. A corrected budget closes only that observer boundary, not Grok marker adherence. |
+| 3 | **R01, then R02/R06 — replay carriers** | Select one concrete client-retainable carrier at a time. Keep signed reasoning separate from signatures on ordinary Google text/calls; no shared signature-dropping shortcut. Verify delivery and untouched returned history for the selected path. |
+| Scoped limits | **R13 and non-strict R18/R21 boundaries** | Re-enter for a demonstrated local divergence or an exact selected qualification. Keep upstream recall, thinking-mode named selection, terminal spelling and cancellation causality separate; repeated generic Provider samples do not constitute a repair. |
+| Lower priority | **R05/R17 and R18 strict arguments** | Retain explicit strict rejection and existing unsupported-profile boundaries. Resume only for the exact guarantee under investigation; no automatic strict opt-out or schema deletion. |
+| External limitation | **R04 — empty Responses owner** | No OpenCode parser/storage patch or patched-client prototype is scheduled. Preserve the exact-history guard and retain the client limitation. A gateway omission/equivalence proposal needs independent identity, phase, lifecycle and binding significance evidence plus separate selection; none is selected. |
+| Prerequisites | **R09** | Resume only with observed opaque replay and, for compatible failover, independent compatible accounts. Do not delay independent repairs for unavailable prerequisites. |
+
+An attributed client or Provider limitation is a disposition, not a code repair. Remove an entire observation only after its remaining boundary is repaired and accepted or its retirement is selected; preserve unresolved subcases and their guards.
 
 ### Remaining observation dispositions
 
@@ -82,10 +99,10 @@ The remaining boundaries are qualified limitations or next-stage analysis, not p
 
 | Boundary / observations | Current disposition | Re-entry condition |
 |---|---|---|
-| **Returned-history representation — R04** | OpenCode's Responses parser suppresses empty owners before Agent storage; the historical block is the test authority's count guard, not gateway admission. Keep that exact-history guard. | Prefer a client retention repair. Any comparison equivalence or production omission must first establish identity, phase, lifecycle and binding significance; empty rendered text is insufficient. Preserve whitespace, nonempty content, signatures and tool links. |
+| **Returned-history representation — R04** | OpenCode's Responses parser suppresses empty owners before Agent storage; the historical block is the test authority's count guard, not gateway admission. Keep that exact-history guard. External client repairs are excluded from current work. | A separately selected gateway comparison-equivalence or omission proposal must first establish identity, phase, lifecycle and binding significance; empty rendered text is insufficient. Preserve whitespace, nonempty content, signatures and tool links. |
 | **Replay carriers — R01/R02** | Readable Chat has no signed-reasoning carrier; stateless Google text/call attachments likewise lack a selected carrier. Use existing Messages/Responses reasoning carriers and managed Google Responses continuation. Origin/signature guards remain intact. | A client-retainable carrier or a concrete content/replay-loss disposition must be selected. Whole-owner reasoning omission and bounded publication remain unselected for Readable Chat. |
 | **Original strict profiles / remaining Google qualification — R05/R06/R17** | Keep explicit strict rejection on Google and GLM. generateContent's signed stateless path and unobserved Interactions signed-call shapes remain limited. | Qualify a supported profile without strict opt-outs or select a genuinely equivalent guarantee/carrier. Further Google loops need their own fixed budgets; root projection is not permission to delete returned signatures. |
-| **Client post-error submissions — R08** | Direct synthetic controls isolate after-text truncated-stream application continuation; explicit errors terminate, while the before-text retransmission layer remains unresolved. Retain the authority's forwarding ceiling; no gateway retry/deduplication repair is selected. | Match the historical failure's wire shape before attribution. Count client POSTs and gateway attempts separately; use changed history or invocation evidence to distinguish application continuation from transport retries. Install any forwarding failure latch before exposing the failure, not after an EOF observer. |
+| **Client post-error submissions — R08** | Direct controls establish after-text truncated-stream application continuation and before-text/HTTP-502 application retry through core retry events. HTTP-400 and tested SSE-error controls terminate after one POST. Only the historical failure's exact client-facing shape remains unavailable. Retain the forwarding ceiling; no gateway retry/deduplication repair is selected. | Re-enter historical attribution only with its client-facing wire/event evidence. Count client POSTs and gateway attempts separately; identical bodies alone do not identify a transport retry. Install any forwarding failure latch before exposing the failure, not after an EOF observer. |
 
 Retain the exact profile, first divergent field/event, responsible owner and disposition for any follow-up. Use known field paths, event/block kinds, terminal classes and recognized error categories; private exchanges are not public fixtures. If fresh Provider evidence is necessary, fix target, operation, request/attempt budget, output/wire caps and deadline first, run serially without hidden retries, and use at most three independent scenarios per observation in that selected run.
 
