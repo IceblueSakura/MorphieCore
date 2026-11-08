@@ -44,6 +44,8 @@ Collection totals retain their original execution scope when resolved entries ar
 
 Entries retain unresolved boundaries and their scoped evidence, not an implementation queue. The roadmap owns the [scoped limitations](roadmap.md#scoped-limitations), [unavailable prerequisites](roadmap.md#next-stage-analysis) and [reopened Provider/model observations](roadmap.md#reopened-provider-and-model-observations). Reopening permits follow-up analysis; each repair or qualification still follows its boundary-specific selection and prerequisites. A passing sample closes only its exercised boundary; remove completed portions without renumbering the remaining identifiers.
 
+**R21 is explicitly deferred** under the [user-selected roadmap disposition](roadmap.md#deferred-provider-and-model-observations). Its unresolved evidence below is retained without an active retest or repair task.
+
 | ID | Observation and affected path | Current evidence and unresolved boundary |
 |---|---|---|
 | R01 | Real Haiku protected Readable-Chat replay qualification | The existing profile's carrier repair is selected and verified below, including current-client signed/redacted Messages loops and real Grok/Interactions replay. Haiku's bounded real read/feedback/recall loop completes **3/3**, but returns no opaque replay; that real protected-output cell remains unobserved. Keep the profile and replay guards unchanged; do not repeat completed carrier qualification or infer native protected coverage from an unsigned sample. |
