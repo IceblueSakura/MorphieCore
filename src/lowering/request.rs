@@ -609,6 +609,13 @@ impl<'a> Target<'a> {
                 Disposition::Approximate(super::disposition::CONDITIONAL_STRICTNESS),
             );
         }
+        if matches!(self, Target::GenerateContent(_) | Target::Interactions(_))
+            && source.tool_choice() == Some(&crate::semantic::task::generation::ToolChoice::None)
+        {
+            // Google's native NONE also satisfies at-most-one without removing
+            // any declaration or weakening a guarantee for enabled calls.
+            table.set(SerialTools, Disposition::Equivalent);
+        }
         if !matches!(self, Target::Messages(_)) || !table.native(EagerToolInput) {
             table.set(
                 EagerToolInput,
@@ -1927,7 +1934,9 @@ fn project_semantic_with_table<'a>(
     if matches!(
         table.get(Feature::ConditionalToolStrictness),
         Disposition::Approximate(_)
-    ) {
+    ) && !(matches!(target, Target::GenerateContent(_) | Target::Interactions(_))
+        && semantic.tool_choice() == Some(&ToolChoice::None))
+    {
         let resolved = crate::protocol::openai::lowering::strictness::project(
             &semantic,
             |schema| match target {

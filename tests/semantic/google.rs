@@ -2093,6 +2093,218 @@ fn referenced_function_parameters_reach_google_without_schema_rewriting() {
 }
 
 #[test]
+fn no_call_keeps_strict_schemas_and_makes_serial_intent_vacuous() {
+    let parameters = json!({"type":"object","properties":{
+        "label":{"type":"string","minLength":5,"pattern":"^[a-z]+$"}},
+        "required":["label"],"additionalProperties":false});
+    let source = client(
+        GenerationApi::Responses,
+        json!({"model":"gemini","input":"go","tool_choice":"none",
+            "parallel_tool_calls":false,
+            "tools":[{"type":"function","name":"lookup","strict":true,"parameters":parameters}]}),
+    );
+    let before = source.clone();
+    let (generate, rules) = encode_generation_request(
+        &source.task.semantic,
+        &source.task.fidelity,
+        &target(),
+        None,
+    )
+    .unwrap();
+    let (interactions, other_rules) =
+        morphiecore::protocol::google::interactions::encode_generation_request(
+            &source.task.semantic,
+            &source.task.fidelity,
+            &target(),
+        )
+        .unwrap();
+    assert_eq!(
+        generate,
+        json!({
+            "contents":[{"role":"user","parts":[{"text":"go"}]}],
+            "tools":[{"functionDeclarations":[{"name":"lookup","parametersJsonSchema":parameters}]}],
+            "toolConfig":{"functionCallingConfig":{"mode":"NONE"}}
+        })
+    );
+    assert_eq!(
+        interactions,
+        json!({
+            "model":"gemini-synthetic","store":false,"stream":true,
+            "input":[{"type":"user_input","content":[{"type":"text","text":"go"}]}],
+            "tools":[{"type":"function","name":"lookup","parameters":parameters}],
+            "generation_config":{"tool_choice":"none"}
+        })
+    );
+    assert!(rules.is_empty() && other_rules.is_empty());
+    assert_eq!(source, before);
+}
+
+#[test]
+fn strict_local_references_keep_the_original_document_in_both_google_apis() {
+    for parameters in [
+        json!({"$ref":"#/$defs/Args","$defs":{
+        "Args":{"type":"object","properties":{
+            "label":{"anyOf":[{"$ref":"#/$defs/Label~1~0"},{"type":"null"}]}},
+            "required":["label"],"additionalProperties":false},
+        "Label/~":{"type":"string","enum":["cedar"]}}}),
+        json!({"type":"object","properties":{
+            "label":{"anyOf":[{"type":"string","enum":["cedar"]},{"type":"null"}]}},
+            "required":["label"],"additionalProperties":false}),
+    ] {
+        let source = client(
+            GenerationApi::Responses,
+            json!({"model":"gemini","input":"go",
+            "tools":[{"type":"function","name":"lookup","strict":true,"parameters":parameters}]}),
+        );
+        let before = source.clone();
+        let (generate, rules) = encode_generation_request(
+            &source.task.semantic,
+            &source.task.fidelity,
+            &target(),
+            None,
+        )
+        .unwrap();
+        let (interactions, other_rules) =
+            morphiecore::protocol::google::interactions::encode_generation_request(
+                &source.task.semantic,
+                &source.task.fidelity,
+                &target(),
+            )
+            .unwrap();
+        assert_eq!(
+            generate["tools"],
+            json!([{"functionDeclarations":[{
+        "name":"lookup","parametersJsonSchema":parameters}]}])
+        );
+        assert_eq!(
+            generate["toolConfig"],
+            json!({"functionCallingConfig":{"mode":"VALIDATED"}})
+        );
+        assert_eq!(
+            interactions["tools"],
+            json!([{
+        "type":"function","name":"lookup","parameters":parameters}])
+        );
+        assert_eq!(
+            interactions["generation_config"],
+            json!({"tool_choice":"validated"})
+        );
+        assert!(rules.is_empty() && other_rules.is_empty());
+        assert_eq!(source, before);
+    }
+}
+
+#[test]
+fn strict_local_references_cannot_hide_constraints_scopes_or_cycles() {
+    let closed = json!({"type":"object","properties":{},"additionalProperties":false});
+    let mut cases = vec![
+        json!({"$ref":"#/$defs/Missing","$defs":{"Args":closed}}),
+        json!({"$ref":"https://example.invalid/schema","$defs":{"Args":closed}}),
+        json!({"$ref":"#/$defs/Args~2","$defs":{"Args~2":closed}}),
+        json!({"$ref":"#/$defs/%41rgs","$defs":{"Args":closed}}),
+        json!({"$ref":"#/$defs/Args","enum":[{}],"$defs":{"Args":closed}}),
+        json!({"$ref":"#/$defs/Args","$id":"scope","$defs":{"Args":closed}}),
+        json!({"$ref":"#/$defs/Args","$defs":{"Args":{"type":"string"}}}),
+        json!({"$ref":"#/$defs/Args","$defs":{"Args":{"$ref":"#/$defs/Other"},
+            "Other":{"$ref":"#/$defs/Args"}}}),
+    ];
+    for property in [
+        json!({"type":"string","minLength":5}),
+        json!({"$ref":"#/$defs/Label","enum":["cedar"]}),
+        json!({"$ref":"#/$defs/Args"}),
+        json!({"type":"array","items":{"$ref":"#/$defs/Args"}}),
+        json!({"$defs":{"Local":{"type":"string"}},"$ref":"#/$defs/Local"}),
+    ] {
+        cases.push(json!({"$ref":"#/$defs/Args","$defs":{
+            "Args":{"type":"object","properties":{"label":property},
+                "required":["label"],"additionalProperties":false},
+            "Label":{"type":"string"}}}));
+    }
+    let mut deep = json!({"$ref":"#/$defs/0","$defs":{}});
+    for i in 0..70 {
+        deep["$defs"][i.to_string()] = if i == 69 {
+            closed.clone()
+        } else {
+            json!({"$ref":format!("#/$defs/{}", i + 1)})
+        };
+    }
+    cases.push(deep);
+    for parameters in cases {
+        let source = client(
+            GenerationApi::Responses,
+            json!({"model":"gemini","input":"go",
+            "tools":[{"type":"function","name":"lookup","strict":true,"parameters":parameters}]}),
+        );
+        assert!(
+            encode_generation_request(
+                &source.task.semantic,
+                &source.task.fidelity,
+                &target(),
+                None,
+            )
+            .is_err(),
+            "generateContent admitted {parameters}"
+        );
+        assert!(
+            morphiecore::protocol::google::interactions::encode_generation_request(
+                &source.task.semantic,
+                &source.task.fidelity,
+                &target(),
+            )
+            .is_err(),
+            "Interactions admitted {parameters}"
+        );
+    }
+}
+
+#[test]
+fn strict_shared_reference_graphs_remain_bounded_without_schema_expansion() {
+    let mut parameters = json!({"$ref":"#/$defs/20","$defs":{
+        "0":{"type":"object","properties":{},"additionalProperties":false}}});
+    for i in 1..=20 {
+        let reference = json!({"$ref":format!("#/$defs/{}", i - 1)});
+        parameters["$defs"][i.to_string()] = json!({
+            "type":"object","properties":{"left":reference,"right":reference},
+            "required":["left","right"],"additionalProperties":false});
+    }
+    let source = client(
+        GenerationApi::Responses,
+        json!({"model":"gemini","input":"go",
+        "tools":[{"type":"function","name":"lookup","strict":true,"parameters":parameters}]}),
+    );
+    let (wire, _) = encode_generation_request(
+        &source.task.semantic,
+        &source.task.fidelity,
+        &target(),
+        None,
+    )
+    .unwrap();
+    assert_eq!(
+        wire["tools"][0]["functionDeclarations"][0]["parametersJsonSchema"],
+        parameters
+    );
+    // Cached subtrees must still count when reached through a longer path.
+    for i in 21..50 {
+        parameters["$defs"][i.to_string()] = json!({"$ref":format!("#/$defs/{}", i - 1)});
+    }
+    parameters["$ref"] = json!("#/$defs/49");
+    let source = client(
+        GenerationApi::Responses,
+        json!({"model":"gemini","input":"go",
+        "tools":[{"type":"function","name":"lookup","strict":true,"parameters":parameters}]}),
+    );
+    assert!(
+        encode_generation_request(
+            &source.task.semantic,
+            &source.task.fidelity,
+            &target(),
+            None,
+        )
+        .is_err()
+    );
+}
+
+#[test]
 fn strict_function_arguments_use_validated_modes_without_rewriting_schemas() {
     let parameters = json!({"type":"object","properties":{
         "value":{"type":"integer","enum":[7]},

@@ -115,7 +115,7 @@ pub(super) fn project(
         || s.controls.truncation.is_some()
         || !s.output_modalities.is_none()
         || !s.audio.is_none()
-        || s.parallel_tool_calls == Some(false)
+        || s.parallel_tool_calls == Some(false) && request.tool_choice() != Some(&ToolChoice::None)
         || crate::protocol::image_constraints::rejects_downsize(request.items())
     {
         return Err(unsupported());

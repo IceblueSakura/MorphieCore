@@ -114,6 +114,21 @@ async fn answer(
         expected["tools"][0]["functionDeclarations"][0]["parametersJsonSchema"]["additionalProperties"] =
             json!(false);
         expected["toolConfig"] = json!({"functionCallingConfig":{"mode":"VALIDATED"}});
+        if body["toolConfig"]["functionCallingConfig"]["mode"] == "NONE" {
+            assert_eq!(turn, 4);
+            expected["toolConfig"] = json!({"functionCallingConfig":{"mode":"NONE"}});
+            expected["tools"][0]["functionDeclarations"][0]["parametersJsonSchema"]["properties"]
+                ["path"]["minLength"] = json!(5);
+        }
+        if body["tools"][0]["functionDeclarations"][0]["parametersJsonSchema"]
+            .get("$ref")
+            .is_some()
+        {
+            let parameters =
+                expected["tools"][0]["functionDeclarations"][0]["parametersJsonSchema"].take();
+            expected["tools"][0]["functionDeclarations"][0]["parametersJsonSchema"] =
+                json!({"$ref":"#/$defs/Args","$defs":{"Args":parameters}});
+        }
     }
     assert_eq!(body, expected);
     let mut seen = state.seen.lock().unwrap();

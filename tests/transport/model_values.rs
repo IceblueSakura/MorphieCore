@@ -481,9 +481,61 @@ fn projected(endpoint: &Endpoint, request: &Request) -> (Value, Vec<&'static str
 }
 
 #[test]
+fn google_no_call_admission_agrees_with_preparation_without_relaxing_other_choices() {
+    let parameters = json!({"type":"object","properties":{
+        "label":{"type":"string","minLength":5}},"required":["label"],"additionalProperties":false});
+    for endpoint in [
+        GOOGLE_BINDINGS[0].endpoint(),
+        GOOGLE_BINDINGS[0].interactions_endpoint(),
+    ] {
+        for strict in [Some(true), None] {
+            let mut body = json!({"model":GOOGLE_BINDINGS[0].model,"input":"go",
+                "tool_choice":"none","parallel_tool_calls":false,
+                "tools":[{"type":"function","name":"lookup","parameters":parameters}]});
+            if let Some(strict) = strict {
+                body["tools"][0]["strict"] = json!(strict);
+            }
+            let request = source(body.clone());
+            let before = request.clone();
+            assert_eq!(representable(&endpoint, &request), Ok(()));
+            let (wire, rules) = projected(&endpoint, &request);
+            assert!(rules.is_empty());
+            if endpoint.protocol == morphiecore::topology::GenerationProtocol::GoogleGenerateContent
+            {
+                assert_eq!(
+                    wire["tools"][0]["functionDeclarations"][0]["parametersJsonSchema"],
+                    parameters
+                );
+                assert_eq!(
+                    wire["toolConfig"]["functionCallingConfig"],
+                    json!({"mode":"NONE"})
+                );
+            } else {
+                assert_eq!(wire["tools"][0]["parameters"], parameters);
+                assert_eq!(wire["generation_config"]["tool_choice"], "none");
+            }
+            assert_eq!(request, before);
+            for choice in ["auto", "required"] {
+                body["tool_choice"] = json!(choice);
+                // Isolate schema enforcement from serial enforcement.
+                body["parallel_tool_calls"] = json!(true);
+                body["tools"][0]["strict"] = json!(true);
+                assert!(representable(&endpoint, &source(body.clone())).is_err());
+                body["tools"][0]["parameters"] = json!({"type":"object",
+                    "properties":{},"additionalProperties":false});
+                body["parallel_tool_calls"] = json!(false);
+                assert!(representable(&endpoint, &source(body.clone())).is_err());
+                body["tools"][0]["parameters"] = parameters.clone();
+            }
+        }
+    }
+}
+
+#[test]
 fn google_conditional_strictness_accounts_for_the_entire_validated_inventory() {
     let closed = json!({"type":"object","properties":{"minLength":{"type":"integer","enum":[7]}},
         "required":["minLength"],"additionalProperties":false});
+    let closed = json!({"$ref":"#/$defs/Args","$defs":{"Args":closed}});
     for endpoint in [
         GOOGLE_BINDINGS[0].endpoint(),
         GOOGLE_BINDINGS[0].interactions_endpoint(),
@@ -500,6 +552,10 @@ fn google_conditional_strictness_accounts_for_the_entire_validated_inventory() {
         assert!(representable(&endpoint, &source(explicit.clone())).is_err());
         explicit["tools"][1]["parameters"] = closed.clone();
         let (wire, _) = projected(&endpoint, &source(explicit));
+        let mut conditional = body;
+        conditional["tools"][1]["parameters"] = closed.clone();
+        let (_, rules) = projected(&endpoint, &source(conditional));
+        assert!(!rules.contains(&"openai.omit-conditional-tool-strictness.v1"));
         if endpoint.protocol == morphiecore::topology::GenerationProtocol::GoogleGenerateContent {
             assert_eq!(
                 wire["tools"][0]["functionDeclarations"][0]["parametersJsonSchema"],

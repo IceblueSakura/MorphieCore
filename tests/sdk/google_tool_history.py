@@ -57,12 +57,23 @@ def run(base, profile, api):
                           timeout=5.0, http_client=http,
                           _strict_response_validation=True) as client:
         for stream in (False, True):
+            parameters = function["parameters"]
+            if not stream:
+                parameters = {"$ref": "#/$defs/Args", "$defs": {"Args": parameters}}
             params = dict(model="gemini-3.8-flash", max_output_tokens=256,
                               reasoning={"effort": "low", "summary": "auto"},
-                              tools=[{"type": "function", **function}], store=True,
+                              tools=[{"type": "function", **function, "parameters": parameters}], store=True,
                               include=["reasoning.encrypted_content"],
                               input=[{"role": "user", "content": "Read."}])
             for turn in range(1, 5):
+                if turn == 4:
+                    params["tool_choice"] = "none"
+                    params["parallel_tool_calls"] = False
+                    # NONE must retain even a vocabulary outside validated mode.
+                    constrained = json.loads(json.dumps(parameters))
+                    root = constrained["$defs"]["Args"] if "$defs" in constrained else constrained
+                    root["properties"]["path"]["minLength"] = 5
+                    params["tools"][0]["parameters"] = constrained
                 requests += 1
                 result = responses_completion(client, params, stream)
                 if api == "generate_content":
